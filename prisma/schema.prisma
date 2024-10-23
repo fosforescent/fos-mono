@@ -1,0 +1,183 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+model User {
+  id                               Int       @id @default(autoincrement())
+  user_name                        String    @unique
+  password                         String
+  // openapi_token                     String?  @default("")
+  // api_calls_available               Int     @default(0)
+  // api_calls_used                     Int     @default(0)
+  // api_calls_total                   Int     @default(0)
+  api_calls_available              Int       @default(0)
+  api_calls_used                   Int       @default(0)
+  api_calls_total                  Int       @default(0)
+  user_profile                     Json      @default("{}")
+  // data                              Json     @default("{}")
+  subscription_checkout_session_id String?   @unique
+  portal_session_id                String?
+  // topup_checkout_session_id         String
+  stripe_customer_id               String?   @unique
+  subscription_status              String    @default("")
+  email_confirmation_token         String?   @unique
+  email_confirmation_expiration    DateTime?
+  password_reset_token             String?   @unique
+  password_reset_expiration        DateTime?
+  approved                         Boolean   @default(false)
+  accepted_terms                   DateTime
+  cookies                          Json      @default("{}")
+  data                             Json      @default("{}")
+  fosGroup                         FosGroup  @relation(fields: [fosGroupId], references: [id])
+  fosGroupId                       Int       @unique
+
+  AuthEvent   UserEvent[]
+  AppUserRole AppUserRole[]
+  ClientError ClientError[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @default(now())
+}
+
+model InboundEmail {
+  id         Int      @id @default(autoincrement())
+  from       String
+  to         String
+  subject    String?
+  textBody   String?
+  htmlBody   String?
+  receivedAt DateTime @default(now())
+}
+
+model OutboundEmail {
+  id                      Int                       @id @default(autoincrement())
+  from                    String
+  to                      String
+  templateAlias           String
+  templateModel           Json
+  OutboundDeliveryAttempt OutboundDeliveryAttempt[]
+}
+
+model OutboundDeliveryAttempt {
+  id        Int           @id @default(autoincrement())
+  emailId   Int
+  timestamp DateTime      @default(now())
+  status    String
+  reason    String?
+  email     OutboundEmail @relation(fields: [emailId], references: [id])
+}
+
+model UserEvent {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  eventType String
+  timestamp DateTime @default(now())
+  ipAddress String
+  userAgent String
+  location  String
+  status    Boolean
+  reason    String?
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model App {
+  id            Int           @id @default(autoincrement())
+  name          String
+  domain        String
+  token         String
+  repo_url      String
+  repo_password String
+  repo_username String
+  // data      Json     @default("{}")
+  // settings  Json     @default("{}")
+  // logs      Json     @default("{}")
+  // events    Json     @default("{}")
+  AppUserRole   AppUserRole[]
+}
+
+model AppUserRole {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  appId  Int
+  roleId Int
+  user   User @relation(fields: [userId], references: [id])
+  app    App  @relation(fields: [appId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+}
+
+model Role {
+  id          Int           @id @default(autoincrement())
+  name        String
+  description String?
+  // data        Json     @default("{}")
+  // permissions Json     @default("{}")
+  AppUserRole AppUserRole[]
+}
+
+model ClientError {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  timestamp DateTime @default(now())
+  error     Json
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model DataHistory {
+  id        Int      @id @default(autoincrement())
+  group_id  Int
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  group     FosGroup @relation(fields: [group_id], references: [id])
+}
+
+model FosGroup {
+  id                     Int                      @id @default(autoincrement())
+  rootNode               FosNode                  @relation(fields: [rootNodeId], references: [id])
+  rootNodeId             String                   @db.Uuid
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @default(now())
+  data                   Json                     @default("{}")
+  user                   User?
+  privateKey             String
+  publicKey              String
+  DataHistory            DataHistory[]
+  members                FosGroupLink[]           @relation(name: "MemberGroup")
+  containers             FosGroupLink[]           @relation(name: "ContainerGroup")
+  FosNodeGroupAccessLink FosNodeGroupAccessLink[]
+}
+
+model FosGroupLink {
+  id                     Int      @id @default(autoincrement())
+  fosGroupIdForMember    Int
+  fosGroupIdForContainer Int
+  linkData               Json     @default("{}")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @default(now())
+  memberGroup            FosGroup @relation(name: "MemberGroup", fields: [fosGroupIdForMember], references: [id])
+  containerGroup         FosGroup @relation(name: "ContainerGroup", fields: [fosGroupIdForContainer], references: [id])
+}
+
+model FosNodeGroupAccessLink {
+  id         Int      @id @default(autoincrement())
+  fosNodeId  String   @db.Uuid
+  fosGroupId Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now())
+  fosNode    FosNode  @relation(fields: [fosNodeId], references: [id])
+  fosGroup   FosGroup @relation(fields: [fosGroupId], references: [id])
+}
+
+model FosNode {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  data                   Json                     @default("{}")
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @default(now())
+  FosGroup               FosGroup[]
+  FosNodeGroupAccessLink FosNodeGroupAccessLink[]
+}

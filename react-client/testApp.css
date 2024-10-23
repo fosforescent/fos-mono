@@ -1,0 +1,14 @@
+body:has(.fos-root.light) {
+  background-color: #9cc;
+}
+
+body:has(.fos-root.dark) {
+  background-color: #333;
+}
+
+.fos-root {
+  /* border: 1px solid #0005; */
+  /* border-radius: 15px; */
+  /* box-sizing: border-box; */
+  /* filter: brightness(1.3) contrast(1.3); */
+}
