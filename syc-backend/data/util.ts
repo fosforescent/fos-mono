@@ -204,7 +204,7 @@ export const generateBackupNodes = (userGroup: FosGroup) => {
 
   return {
     [userGroup.rootNodeId]: {
-      content: [["task", startTaskId]],
+      content: [["workflow", startTaskId]],
       data: {
         description: {
           content: "",
@@ -514,6 +514,11 @@ export const updateRootNodeId = (
   }
 
   const rootNodeData = contextData.nodes[currentRootId];
+
+  if (!rootNodeData) {
+    throw new Error("no root node in context data");
+  }
+
   contextData.nodes[newRootId] = rootNodeData;
   delete contextData.nodes[currentRootId];
 
@@ -524,6 +529,11 @@ export const updateRootNodeId = (
     };
   } else {
     const [head, ...tail] = contextData.trail;
+
+    if(!head) {
+      throw new Error("improperly formatted trail in context data");
+    }
+
     return {
       ...contextData,
       trail: [[head[0], newRootId], ...tail],
