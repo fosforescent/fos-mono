@@ -1,5 +1,5 @@
 
-import { AppState,FosReactOptions } from '@/fos-combined/types';
+import { AppState,FosReactOptions, FosRoute } from '@/fos-combined/types';
 import { FosRowsComponent } from './rows';
 import { RootScreenHead } from './head';
 
@@ -14,7 +14,7 @@ export function DefaultRootComponent({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) {
 

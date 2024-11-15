@@ -2,14 +2,9 @@
 import { BrainCircuit, ChevronLeft, ChevronRight, Timer } from 'lucide-react';
 import React, { useEffect, useRef, useState, DetailedHTMLProps, HTMLAttributes } from 'react'
 
-
-import { FosDataModule, FosModuleProps } from './fosModules';
-import { SelectionPath, IFosNode, FosDataContent } from "@/fos-js"
+import { SelectionPath, FosDataContent, FosReactOptions } from "../../types"
 import { Button } from '@/components/ui/button';
-import { suggestRecursive } from '../../../lib/suggestRecursive';
-import { parse } from 'path';
-import { FosReactOptions } from '..';
-import { FosWrapper } from '../fosWrapper';
+import { AppState, FosRoute } from '@/fos-combined/types';
 
 
 
@@ -248,7 +243,18 @@ export const DurationInput = ({
 
 
 
-const ResourceComponent = ({ node, options }: FosModuleProps) => {
+const ResourceComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: [string, string][]
+  setData: (state: AppState) => void
+}) => {
 
 
 
@@ -386,7 +392,7 @@ type DurationInfo = {
   marginal: number
 }
 
-export const getDurationInfo = (thisNode: IFosNode): DurationInfo => {
+export const getDurationInfo = (nodeRoute: FosRoute, appState: AppState): DurationInfo => {
 
 
     
@@ -492,7 +498,18 @@ export const checkDurationInfo = (node: IFosNode) => {
 
 
 
-const DurationRowComponent = ({ node, options: fosOptions, meta, state, updateState }: FosModuleProps) => {
+const DurationRowComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: [string, string][]
+  setData: (state: AppState) => void
+}) => {
 
 
   return (<div className="flex flex-initial grow">
@@ -503,7 +520,7 @@ const DurationRowComponent = ({ node, options: fosOptions, meta, state, updateSt
 
 
 
-const module: FosDataModule = {
+const module = {
   icon: <Timer />,
   name: 'duration',
   HeadComponent: ResourceComponent,

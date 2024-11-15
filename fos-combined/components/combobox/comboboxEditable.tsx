@@ -45,8 +45,6 @@ export function ComboboxEditable({
   locked,
   hasFocus,
   focusChar,
-  getFocus,
-  setFocus,
   suggestOption,
   // shouldFocus,
   ...props
@@ -70,8 +68,6 @@ export function ComboboxEditable({
   hasFocus: boolean,
   focusChar: number | null,
   locked: boolean,
-  getFocus: () => (void | Promise<void>),
-  setFocus: (focusChar: number) => (void | Promise<void>),
   suggestOption: (() => (void | Promise<void>)) | null,
   // shouldFocus: boolean,
 } & React.HTMLAttributes<HTMLDivElement>) {
@@ -155,7 +151,6 @@ export function ComboboxEditable({
             // ...dropOnStyle,
             ...draggingStyle,
           }}
-          getFocus={getFocus}
           onChange={onTextChange}
           onClick={(e) => { /* console.log("here"); */ e.stopPropagation()}}
           onKeyDown={onKeyDown}

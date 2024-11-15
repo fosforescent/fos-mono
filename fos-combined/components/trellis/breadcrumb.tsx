@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 
 import { AppState, FosNodesData, FosPath, FosReactOptions, FosRoute, } from "@/fos-combined/types";
 import { getActions } from "@/fos-combined/lib/actions";
+import { getNodeOperations } from "@/fos-combined/lib/nodeOperations";
+import { getNodeInfo } from "@/fos-combined/lib/utils";
 
 
 export const DefaultBreadcrumbComponent = ({ 
@@ -18,20 +20,37 @@ export const DefaultBreadcrumbComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosPath
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) => {
 
 
-  const nodeType = nodeRoute[nodeRoute.length - 1]?.[0]
-  const nodeId = nodeRoute[nodeRoute.length - 1]?.[1]
+    
+  const { locked, 
+    hasFocus, focusChar, isDragging, draggingOver, 
+    nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
+    nodeType, nodeId, disabled, depth, isCollapsed, 
+    isTooDeep, isOption, hasChildren, truncatedDescription
+  } = getNodeInfo(nodeRoute, data)
+  
+  const { 
+    suggestOption, 
+    setFocus, 
+    setSelectedOption, 
+    setFocusAndDescription, 
+    deleteRow,
+    deleteOption,
+    keyDownEvents,
+    keyUpEvents,
+    keyPressEvents,
+    addOption,
+    toggleOptionCollapse,
+    suggestSteps,
+    toggleCollapse,
+    zoom
+   } = getNodeOperations(options, data, setData, nodeRoute)
+ 
 
-  if (!nodeType || !nodeId){
-    throw new Error('nodeType or nodeId is undefined')
-  }
-
-
-  const nodeLabel = `${nodeType}-${nodeId}`  
 
   // console.log('breadcrumb', nodeId)
   const {
@@ -43,14 +62,7 @@ export const DefaultBreadcrumbComponent = ({
     data: { nodeRoute: nodeRoute, breadcrumb: true }
   });
 
-  const nodeContent =  data.data.fosData.nodes[nodeId]
 
-  const { zoom } = getActions(options, data, setData)
-
-  const description = getNodeDescription(nodeRoute, data.data.fosData.nodes)
-
-
-  const truncatedDescription = description.length > 20 ? description.slice(0, 17) + '...' : description
 
 
 
@@ -58,22 +70,14 @@ export const DefaultBreadcrumbComponent = ({
   // console.log('displayString', displayString)
 
 
-  const handleClick = () => {
-    // console.log('handleClick', breadcrumbNode, getRoute(node).map(n => n.getId()), getRoute(node), state)
-    zoom(nodeRoute)
-  }
 
-
-  const disabled = nodeRoute.length === data.data.fosData.route.length
   const showChevron = nodeRoute.length !== data.data.fosData.route.length
-
-  const draggingOnThis = data.data.trellisData.draggingNode && data.data.trellisData.draggingOverNode === nodeLabel && !disabled
 
   // console.log('breadcrumb', draggingOnThis, breadcrumbNode.getId(), dragOverInfo, dndNode, isOver)
 
 
-  return (<div className={`${draggingOnThis ? "scale-110 py-2 p-0 " : `py-2 p-0`} flex flex-row items-center`}>
-    <Button key={nodeRoute.length - 1} onClick={handleClick} variant="secondary" disabled={disabled} className={`px-1`}  ref={setNodeRef}>{displayString}</Button>
+  return (<div className={`${draggingOver ? "scale-110 py-2 p-0 " : `py-2 p-0`} flex flex-row items-center`}>
+    <Button key={nodeRoute.length - 1} onClick={zoom} variant="secondary" disabled={disabled} className={`px-1`}  ref={setNodeRef}>{displayString}</Button>
     {showChevron && <ChevronRight height={'1rem'} width={'1rem'}/>}
   </div>)
 }

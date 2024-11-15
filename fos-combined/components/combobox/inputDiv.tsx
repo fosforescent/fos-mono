@@ -19,7 +19,6 @@ export interface InputDivProps {
   shouldFocus?: boolean;
   placeholder: string;
   focusChar?: number | null;
-  getFocus: () => void;
 }
 
 export const InputDiv: React.FC<InputDivProps> = ({
@@ -36,7 +35,6 @@ export const InputDiv: React.FC<InputDivProps> = ({
   shouldFocus,
   placeholder,
   focusChar,
-  getFocus,
   ...props
 }) => {
   const divRef = useRef<HTMLDivElement>(null);
@@ -97,14 +95,7 @@ export const InputDiv: React.FC<InputDivProps> = ({
     updateInput();
   };
 
-  
-  const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!divRef.current) {
-      return;
-    }
-    getFocus();
-    updateInput();
-  }
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     onKeyDown && onKeyDown(e);

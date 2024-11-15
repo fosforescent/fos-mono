@@ -1,62 +1,82 @@
 
 
-import { suggestOption } from "./suggestOption"
-import { suggestSteps } from "./suggestSteps"
+import { suggestTaskOptions } from "./suggestOption"
+import { suggestTaskSteps } from "./suggestSteps"
 
-import { setCostInfo, getCostInfo } from "../components/fos-react/modules/cost" 
-import { setDurationInfo, getDurationInfo } from "../components/fos-react/modules/duration"
+import { setCostInfo, getCostInfo } from "../components/fos-react/cost" 
+import { setDurationInfo, getDurationInfo } from "../components/fos-react/duration"
+import { AppState, FosNodeContent, FosReactOptions, FosRoute } from "../types"
+import { getNodeInfo } from "./utils"
+import { getNodeOperations } from "./nodeOperations"
+import { updateFosData, updateNodeData } from "./mutations"
 
 
 
-export const suggestMagic = async (
-  promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number | undefined; }) => Promise<{
-    choices: {message: {
-      role: string, content: string
-    }, finishReason: string}[]
-  }>,
-  node: IFosNode,
-  ) => {
+export const suggestStepsMagic = async (
+  options: FosReactOptions,
+  nodeRoute: FosRoute,
+  appState: AppState,
+  setAppState: (appState: AppState) => void
+  ): Promise<AppState> => {
 
-  console.log('suggestMagic', node)
+  console.log('suggestMagic', nodeRoute)
 
-  const past = node.getAncestors().slice(1).reverse().map(([node, number], index) => {
-    return node
-  }).concat([node])
 
+
+  if (!options.canPromptGPT || !options.promptGPT) {
+    throw new Error('GPT not available')
+  }
+
+  const pastRoutes: FosRoute[] = nodeRoute.slice(2, -1).map((_, i) => nodeRoute.slice(0, i + 1)) as FosRoute[]
+
+  const { getParentInfo, childRoutes } = getNodeInfo(nodeRoute, appState)
+
+  const siblingDescriptions = childRoutes.map((childRoute) => {
+    const { nodeDescription } = getNodeInfo(childRoute, appState)
+    return nodeDescription
+  })
   
 
-  const descriptions = past.map((node, index: number) => {
-    const data = node.getData();
-    return data.description?.content
+  const descriptions = pastRoutes.map((nodeRoute, index: number) => {
+    const { nodeDescription } = getNodeInfo(nodeRoute, appState)
+    return nodeDescription
   })
 
+  const [mainTask, ...contextTasks] = descriptions.slice().reverse()
 
-  const getChildTimes = async (node: IFosNode, index: number, parentDescriptions: string[], options?: { temperature?: number | undefined; }): Promise<void> => {
+  const getChildTimes = async (lAppData: AppState, lNodeRoute: FosRoute, index: number, parentDescriptions: string[], gptOptions?: { temperature?: number | undefined; }): Promise<AppState> => {
 
-    const nodeData = node.getData()
-    const children = node.getChildren()
 
-    if (children.length === 0) {
+    const { nodeDescription: lDesc, childRoutes: lChildRoutes, nodeData: lNodeData } = getNodeInfo(lNodeRoute, lAppData)
+
+    if (lChildRoutes.length === 0) {
           let systemPrompt: string;
           let userPrompt: string;
           const keys: (keyof FosNodeContent['data'])[] = ["duration"]
           keys.forEach(async (resourceName: keyof FosNodeContent['data']) => {
               
-          if (!nodeData?.[resourceName]){
+          if (!lNodeData?.[resourceName]){
       
               switch(resourceName) {
               case 'cost':
                 systemPrompt = `Take a deep breath.  Please respond only with a single valid JSON object with the key "cost" and a number value`
-                userPrompt = `How much does it cost to ${nodeData.description?.content || ""} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')}`
+                userPrompt = `How much does it cost to ${lNodeData.description?.content || ""} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')}`
                 break;
               case 'duration': 
                 systemPrompt = `Take a deep breath.  Please respond only with a single valid JSON object with the optional keys "milliseconds", "seconds", "minutes", "hours", "days", "weeks", "months", or "years" and a number value`
-                userPrompt = `How long does it take to ${nodeData.description?.content || ""} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')} please express in terms of milliseconds, seconds, minutes, hours, days, weeks, months, or years.`
+                userPrompt = `How long does it take to ${lNodeData.description?.content || ""} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')} please express in terms of milliseconds, seconds, minutes, hours, days, weeks, months, or years.`
                 break;
 
             }
+            
 
-            const response: any = await promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
+              if (!options.canPromptGPT || !options.promptGPT) {
+                throw new Error('GPT not available')
+              }
+
+
+
+            const response: any = await options.promptGPT(systemPrompt, userPrompt, gptOptions).catch((error: Error) => {
               console.log('error', error)
               throw new Error('error getting suggestions')
             });
@@ -73,9 +93,12 @@ export const suggestMagic = async (
 
             const resultParsed = results[0]
 
+
+
             switch (resourceName) {
               case 'duration':
-                setDurationInfo(node, { plannedMarginal: parseTime(resultParsed), entries: [] })
+                const newContext = updateNodeData(lAppData, { duration: { plannedMarginal: parseTime(resultParsed), entries: [] } }, lNodeRoute)
+                return newContext
                 break;
 
             }
@@ -83,30 +106,39 @@ export const suggestMagic = async (
 
         });
 
-        return
+        return lAppData
  
     } else {
 
 
         const keys: (keyof FosNodeContent['data'])[] = ["duration"]
+
+        let mAppData = lAppData
+
+        const lNodeInfo = getNodeInfo(lNodeRoute, lAppData)
+
         keys.forEach(async (resourceName: keyof FosNodeContent['data']) => {
 
-          for (const child of children) {
+          if (!options.canPromptGPT || !options.promptGPT) {
+            throw new Error('GPT not available')
+          }
 
-            const itemNodeData = child.getData()
 
-            for ( const [j, option] of child.getChildren().entries()){
+          for (const childRoute of lNodeInfo.childRoutes) {
 
-              const description = option.getData().description?.content || ""
-              await getChildTimes(child, j, [...parentDescriptions, description])
-
+            const lChildInfo = getNodeInfo(childRoute, mAppData)
+            
+            let j = 0
+            for ( const grandchildRoute of lChildInfo.childRoutes) {
+              mAppData = await getChildTimes(mAppData, grandchildRoute, j, [...parentDescriptions, lNodeInfo.nodeDescription])
+              j++
             }
           }
 
 
-          if (!nodeData?.[resourceName]){
+          if (!lNodeInfo.nodeData?.[resourceName]){
 
-            const durationInfo = getDurationInfo(node)
+            const durationInfo = getDurationInfo(lNodeRoute, mAppData)
 
             let systemPrompt: string;
             let userPrompt: string;
@@ -114,14 +146,14 @@ export const suggestMagic = async (
             switch(resourceName) {
               case 'duration': 
                 systemPrompt = `Take a deep breath.  Please respond only with a single valid JSON object with the optional keys "milliseconds", "seconds", "minutes", "hours", "days", "weeks", "months", or "years" and a number value`
-                userPrompt = `How long does it take to ${nodeData.description?.content || ""} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')} please express in terms of milliseconds, seconds, minutes, hours, days, weeks, months, or years., but factoring out the time of its subtasks, which are estimated to take somewhere between ${durationInfo.min} and ${durationInfo.max}, averaging ${durationInfo.average}. This will leave only the marginal time, which is the information we want.`
+                userPrompt = `How long does it take to ${lNodeInfo.nodeData?.description?.content || ""} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')} please express in terms of milliseconds, seconds, minutes, hours, days, weeks, months, or years., but factoring out the time of its subtasks, which are estimated to take somewhere between ${durationInfo.min} and ${durationInfo.max}, averaging ${durationInfo.average}. This will leave only the marginal time, which is the information we want.`
                 break;
               default:
                 throw new Error(`Resource ${resourceName} not recognized`)
             }
 
                   
-            const response: any = await promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
+            const response: any = await options.promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
               console.log('error', error)
               throw new Error('error getting suggestions')
             });
@@ -141,7 +173,7 @@ export const suggestMagic = async (
             switch (resourceName) {
 
               case 'duration':
-                setDurationInfo(node, { plannedMarginal: parseTime(resultParsed), entries: []})
+                setDurationInfo(lNodeRoute, { plannedMarginal: parseTime(resultParsed), entries: []})
                 break;
 
             }
@@ -151,37 +183,42 @@ export const suggestMagic = async (
       });
 
 
-      if (getDurationInfo(node).average > (30 * 60 * 1000)) {
+      if (getDurationInfo(lNodeRoute, mAppData).average > (30 * 60 * 1000)) {
 
         // suggest steps
 
-        await suggestSteps(promptGPT, node)
+        await suggestTaskSteps(options, nodeRoute, appState, setAppState)
 
 
         
-        const numOptions = node.getChildren().length
+        const numOptions = lNodeInfo.childRoutes.length
 
 
         for (const i of Array(numOptions).keys()) {
           
           
-          await suggestOption(promptGPT, node)
+          mAppData = await suggestTaskOptions(options, lNodeRoute, mAppData, setAppState)
 
         }
 
-        await getChildTimes(node, index, parentDescriptions)
+        const contextWithupdates = await getChildTimes(mAppData, lNodeRoute, index, parentDescriptions, gptOptions)
 
         // if length of option is less than 3, suggest options until there are 3
-
+        return contextWithupdates
 
       }
 
-      return 
+      return mAppData
       
     }
+    return lAppData
   }
 
-  return
+  
+  
+  const contextWithTimes = await getChildTimes(appState, nodeRoute, 0, descriptions)
+
+  return contextWithTimes
 
 }
 

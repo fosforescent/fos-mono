@@ -1,5 +1,5 @@
-import { getGlobal } from "./components/fos-react"
-import { FosModule } from "./components/fos-react/modules/fosModules"
+import { getGlobal } from "./App"
+import { FosModule } from "./components/fos-react/fosModules"
 
 export type FosReactGlobal = ReturnType<typeof getGlobal>
 
@@ -28,18 +28,19 @@ export type FosReactOptions = Partial<{
 
 
 export interface TrellisSerializedData {
-  zoomRoute: FosRoute,
   focusRoute: FosRoute,
   focusChar: number | null,
   collapsedList: FosRoute[],
   rowDepth: number,
   draggingNode: FosRoute | null,
   draggingOverNode: FosRoute | null,
+  dragInfo: DragInfo,
 }
 
 
 
 export type FosDataContent = {
+  alias: FosNodeId,
   duration?: {
     plannedMarginal: number;
     entries: {
@@ -123,7 +124,12 @@ export type FosDataContent = {
 
 export type FosNodeContent = {
   data: FosDataContent,
-  content: [string, string][];
+  content: FosPathElem[];
+}
+
+export type FosNodeNewContent = {
+  data: Partial<FosDataContent>,
+  content: FosPathElem[];
 }
 
 // export type FosNodeData = {
@@ -139,20 +145,20 @@ export type SelectionPath = {
   [key: string]: SelectionPath
 }
 
-export type NodeAddress = string
+export type NodeAddress = `${string}-${string}-${string}-${string}-${string}`
 export type ContentId = string
 export type FosNodeId  = NodeAddress | ContentId
 
-export type RouteElement = [FosNodeId, FosNodeId] 
+export type RouteElement = FosPathElem 
 
 
 
+export type FosPathElem = [FosNodeId, FosNodeId]
+export type FosTrail = [FosPathElem, ...FosPathElem[]]
+export type FosPath = FosPathElem[]
+export type FosRoute = [FosPathElem, ...FosPathElem[]]
 
-export type FosTrail = [[string, string], ...[string, string][]]
-export type FosPath = [string, string][]
-export type FosRoute = [[string, string], ...[string, string][]]
-
-export type FosNodesData = { [key: string]: FosNodeContent }
+export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
 
 export type FosContextData = { 
   nodes: FosNodesData,
@@ -217,7 +223,7 @@ type DragInfo = {
   } | null
   dragOverInfo: {
     id: string
-    node: FosRoute
+    nodeRoute: FosRoute
     position: 'above' | 'below' | 'on' | 'breadcrumb'
   } | null
 }

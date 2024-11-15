@@ -127,7 +127,6 @@ export function ComboboxEditableTask({
         onKeyDown={props.onKeyDown}
         onKeyUp={props.onKeyUp}
         focusChar={focusChar}
-        getFocus={getFocus}
         />
         {/* </PopoverAnchor> */}
         

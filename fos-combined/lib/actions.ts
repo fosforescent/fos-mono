@@ -8,7 +8,10 @@ import { getNodeOperations } from "./nodeOperations"
 
 export const getActions = (options: FosReactOptions, appData: AppState, setAppData: (state: AppState) => void) => {
 
-
+  if (!appData.apiUrl){
+    console.log('appData', appData, options)
+    throw new Error('apiUrl not found')
+  }
 
     const apiObj = api(appData.apiUrl)
 
@@ -25,7 +28,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         moveNodeDown: async () => {
 
         },
-        setDrag: async (draggingNode: string | null, draggingOverNode: string | null) => {
+        setDrag: async (draggingNode: FosRoute | null, draggingOverNode: FosRoute | null) => {
             setAppData({
                 ...appData,
                 data: {

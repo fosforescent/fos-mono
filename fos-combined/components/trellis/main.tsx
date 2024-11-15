@@ -1,8 +1,5 @@
 import React, { ReactElement, useEffect, useState } from 'react'
 
-import '../../../../global.css'
-import '../../../../index.css'
-
 import { HomeIcon } from '@radix-ui/react-icons'
 import { Button } from "@/components/ui/button"
 import {
@@ -39,10 +36,11 @@ import {
 
 import { DroppableContainersMap } from '@dnd-kit/core/dist/store/constructors';
 
-import { AppState, FosNodeContent,  FosReactOptions, FosRoute } from '../../../types'
-import { getActions } from '../../../lib/actions'
+import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosRoute } from '../../types'
+import { getActions } from '../../lib/actions'
 import { DefaultBreadcrumbsComponent } from './breadcrumbs'
 import { DefaultRootComponent } from './root'
+
 
 
 
@@ -53,7 +51,7 @@ export function MainView ({
   options,
   ...props
 } : {
-  options: FosReactOptions
+  options: FosReactGlobal
   data: AppState
   setData: (state: AppState) => void
 }){
@@ -81,7 +79,7 @@ export function MainView ({
       (activeId?.id || null) !== data.data.trellisData.draggingNode 
       ||  (dragOverInfo?.id || null) !== data.data.trellisData.draggingOverNode
     ) {
-      actions.setDrag(activeId?.id || null, dragOverInfo?.id || null)
+      actions.setDrag(activeId?.nodeRoute || null, dragOverInfo?.nodeRoute || null)
     }
 
 
@@ -327,6 +325,8 @@ export function MainView ({
   
 
   const route = data.data.fosData.route
+
+  console.log('zoomroute', route)
 
   return (
     <DndContext 

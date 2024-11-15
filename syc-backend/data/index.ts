@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express'
-import crypto from 'crypto'
 import _, { merge } from 'lodash'
 import { checkDataFormat, getRootId, getRootNode, hashFosContextData, loadCtxFromDb,storeCtxToDb, updateRootNodeId, } from './util'
 import { FosContextData, FosNodeContent, FosNodesData, FosPath, FosPeer } from '@/fos-js'

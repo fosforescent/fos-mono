@@ -318,13 +318,17 @@ export const initialAuthState = {
 }
 
 export const defaultTrellisData: TrellisSerializedData = {
-  zoomRoute: [],
-  focusRoute: [],
+  zoomRoute: [['root', rootId]],
+  focusRoute: [['root', rootId]],
   focusChar: null,
   collapsedList: [],
   rowDepth: 0,
   draggingNode: null,
   draggingOverNode: null,
+  dragInfo: {
+    dragging: null,
+    dragOverInfo: null
+  }
 }
 
 export const initialDataState: DataState =  JSON.parse(localStorage.getItem("data") || "null") || {

@@ -6,9 +6,6 @@ import React, { useEffect } from 'react'
 import { Meta, StoryFn } from "@storybook/react";
 import { DurationInput }  from './duration'
 
-import '../../../global.css'
-import '../../../index.css'
-
 export default {
   // component: div,
   title: 'Duration Input',

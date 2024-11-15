@@ -1,11 +1,10 @@
 import { BrainCircuit, Download, FileText } from "lucide-react"
-import { FosDataModule, FosModuleProps } from "./fosModules"
-import { SelectionPath, IFosNode } from "@/fos-js"
+
+
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { suggestRecursive } from "../../../lib/suggestRecursive"
-import { FosReactOptions } from ".."
-import { FosWrapper } from "../fosWrapper"
+import { suggestRecursive } from "../../lib/suggestRecursive"
+import { AppState, FosReactOptions, FosRoute } from "@/fos-combined/types"
 
 
 
@@ -13,7 +12,19 @@ import { FosWrapper } from "../fosWrapper"
 
 
 
-const ResourceComponent = ({ node, options }: FosModuleProps) => {
+
+const ResourceComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosRoute
+  setData: (state: AppState) => void
+}) => {
 
 
   const documentInfo = getDocumentInfo(node.fosNode())

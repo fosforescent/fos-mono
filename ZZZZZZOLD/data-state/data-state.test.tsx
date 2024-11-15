@@ -3,7 +3,7 @@ import { render, fireEvent, waitFor } from '@testing-library/react';
 import { useDataState } from './data-state'; 
 import { initialAppState, initialDataState } from '.';
 import { FosContextData, FosNodeContent } from '@/react-client';
-import { randomUUID } from 'crypto';
+// import { randomUUID } from 'crypto';
 
 // console.log('Global crypto (test):', Object.keys(global.crypto));
 // console.log('Global expect (test):', Object.keys((global as any).expect));

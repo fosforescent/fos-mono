@@ -1,16 +1,25 @@
 import { BrainCircuit, Dices } from "lucide-react"
-import { FosDataModule, FosModuleProps } from "./fosModules"
+
 import { Button } from "@/components/ui/button"
-import { SelectionPath, IFosNode } from "@/fos-js"
-import { suggestRecursive } from "../../../lib/suggestRecursive"
-import { FosReactOptions } from ".."
-import { FosWrapper } from "../fosWrapper"
+import { suggestRecursive } from "../../lib/suggestRecursive"
+import { AppState, FosReactOptions, FosRoute } from "@/fos-combined/types"
 
 
 
 
 
-const ResourceComponent = ({ node, options }: { node: FosWrapper, options: FosReactOptions }) => {
+const ResourceComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosRoute
+  setData: (state: AppState) => void
+}) => {
 
 
 
@@ -412,7 +421,18 @@ const checkProbabilityInfo = (node: IFosNode): boolean => {
   return !!nodeData.probability
 }
 
-const ProbabilityRowComponent = ({ node, options: fosOptions, meta, state, updateState }: FosModuleProps) => {
+const ProbabilityRowComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosRoute
+  setData: (state: AppState) => void
+}) => {
 
 
   return (<div className="flex flex-initial grow">
@@ -422,7 +442,7 @@ const ProbabilityRowComponent = ({ node, options: fosOptions, meta, state, updat
 
 
 
-const module: FosDataModule = {
+const module = {
   icon: <Dices />,
   name: 'probability',
   HeadComponent: ResourceComponent,

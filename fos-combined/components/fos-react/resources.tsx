@@ -1,6 +1,6 @@
 import { Boxes, BrainCircuit, PlusCircle } from 'lucide-react'
 import { FosDataModule, FosModuleProps } from './fosModules'
-import { suggestRecursive } from '../../../lib/suggestRecursive'
+import { suggestRecursive } from '../../lib/suggestRecursive'
 import { SelectionPath, IFosNode } from "@/fos-js"
 import { Button } from '/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,12 +10,17 @@ import { FosWrapper } from '../fosWrapper'
 
 
 
-const ResourceComponent = ({
-  node,
-  options
-}: {
-  node: FosWrapper,
+const ResourceComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
   options: FosReactOptions
+  data: AppState
+  nodeRoute: [string, string][]
+  setData: (state: AppState) => void
 }) => {
 
 
@@ -198,7 +203,18 @@ const checkResourceInfo = (node: IFosNode) => {
   return !!nodeData.resources
 }
 
-const ResourceRowComponent = ({ node, options: fosOptions, meta, state, updateState }: FosModuleProps) => {
+const ResourceRowComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosRoute
+  setData: (state: AppState) => void
+}) => {
 
 
   return (<div className="flex flex-initial grow">

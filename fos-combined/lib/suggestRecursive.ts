@@ -1,12 +1,12 @@
+import { AppState, FosReactOptions, FosRoute } from "../types"
+import { getNodeInfo } from "./utils"
 
 
-export const suggestRecursive = async <T, S>(
-    promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number | undefined; }) => Promise<{
-      choices: {message: {
-        role: string, content: string
-      }, finishReason: string}[]
-    }>,
-    node: IFosNode,
+export const suggestStepsRecursive = async <T, S>(
+    options: FosReactOptions,
+    nodeRoute: FosRoute,
+    appState: AppState,
+    setAppState: (appState: AppState) => void,
     {
       pattern, 
       parsePattern,
@@ -15,68 +15,70 @@ export const suggestRecursive = async <T, S>(
       systemPromptRecursive,
       getUserPromptRecursive,
       getResourceInfo,
-      setResourceInfo,
+      updateResourceInfo,
       checkResourceInfo
     } : {
       pattern: RegExp,
-      parsePattern: (response: string, node: IFosNode) => S,
+      parsePattern: (appData: AppState, nodeRoute: FosRoute, response: string) => S,
       systemPromptBase: string,
-      getUserPromptBase: (nodeDescription: string, parentDescriptions: string[], node: IFosNode) => string,
+      getUserPromptBase: (appData: AppState, nodeRoute: FosRoute, nodeDescription: string, parentDescriptions: string[]) => string,
       systemPromptRecursive: string,
-      getUserPromptRecursive: (nodeDescription: string, parentDescriptions: string[], node: IFosNode) => string,
-      getResourceInfo: (node: IFosNode) => T,
-      setResourceInfo: (node: IFosNode, resourceInfo: S) => void,
-      checkResourceInfo: (node: IFosNode) => boolean
+      getUserPromptRecursive: (appData: AppState, nodeRoute: FosRoute, nodeDescription: string, parentDescriptions: string[]) => string,
+      getResourceInfo: (appData: AppState, nodeRoute: FosRoute) => T,
+      updateResourceInfo: (appData: AppState, nodeRoute: FosRoute, setAppData: (appState: AppState) => void,  resourceInfo: S) => AppState,
+      checkResourceInfo: (appData: AppState, nodeRoute: FosRoute) => boolean
     }
-  ) => {
-  const trail = node.getRoute()
-  const [root, ...trailWithoutRoot] = trail
+  ): Promise<AppState> => {
 
-  console.log('starting to suggest', node.getRoute())
-
-  const nodeType = node.getNodeType()
-
-  if (nodeType !== 'workflow'){
-    throw new Error('node must be a task')
-  }
-
+    if (!options.canPromptGPT || !options.promptGPT) {
+      throw new Error('GPT not available')
+    }
   
-  const past = node.getAncestors().slice(1).reverse().map(([node, number], index) => {
-    return node
-  }).concat([node])
+    const pastRoutes: FosRoute[] = nodeRoute.slice(2, -1).map((_, i) => nodeRoute.slice(0, i + 1)) as FosRoute[]
+  
+    const { getParentInfo, childRoutes } = getNodeInfo(nodeRoute, appState)
+  
+    const siblingDescriptions = childRoutes.map((childRoute) => {
+      const { nodeDescription } = getNodeInfo(childRoute, appState)
+      return nodeDescription
+    })
+    
+  
+    const descriptions = pastRoutes.map((nodeRoute, index: number) => {
+      const { nodeDescription } = getNodeInfo(nodeRoute, appState)
+      return nodeDescription
+    })
+  
+    const [mainTask, ...contextTasks] = descriptions.slice().reverse()
 
-  const descriptions: string[] = past.map((node, index: number) => {
-    const data = node.getData();
-    const result: string = data.description?.content || ""
-    return result
-  })
 
+  const getChildTimes = async (localAppData: AppState, localNodeRoute:FosRoute,  index: number, parentDescriptions: string[]): Promise<AppState> => {
 
-  const getChildTimes = async (node: IFosNode, index: number, parentDescriptions: string[]): Promise<void> => {
-    const nodeData = node.getData()
+    
+    const { childRoutes, nodeDescription } = getNodeInfo(localNodeRoute, localAppData)
+    
 
+    if (!options.canPromptGPT || !options.promptGPT) {
+      throw new Error('GPT not available')
+    }
 
-    const children = node.getChildren()
-
-    console.log('getChildTimes', node.getRoute(), node.getData(), node)
-
-    if (children.length === 0) {
+    if (childRoutes.length === 0) {
 
       
 
-      const resourceInfo = checkResourceInfo(node)
+      const resourceInfo = checkResourceInfo(localAppData, localNodeRoute)
       console.log('resourceInfo', resourceInfo)
 
       if (!resourceInfo){
 
 
         const systemPrompt = systemPromptBase
-        const userPrompt = getUserPromptBase(nodeData.description?.content || "", parentDescriptions, node)
+        const userPrompt = getUserPromptBase(localAppData, localNodeRoute, nodeDescription, parentDescriptions, )
 
         console.log('systemPrompt', systemPrompt, userPrompt)
         if (!systemPrompt || !userPrompt) throw new Error('missing prompt');
 
-        const response: any = await promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
+        const response: any = await options.promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
           console.log('error', error)
           throw new Error('error getting suggestions')
         });
@@ -93,45 +95,48 @@ export const suggestRecursive = async <T, S>(
 
         const resultParsed = results[0]
 
-        setResourceInfo(node, parsePattern(resultParsed, node))
+        const newAppState = updateResourceInfo(localAppData, localNodeRoute, setAppState, parsePattern(localAppData, nodeRoute, resultParsed))
 
-        return
+        return newAppState
       } else {
-        return
+        return appState
       }
 
     } else {
 
   
-        for (const child of children) {
+      let updatedState = localAppData
 
-          const itemNodeData = child.getData()
-          
-          const children = child.getChildren()
+      for (const childRoute of childRoutes) {
 
-          let j = 0;
-          for (const option of children) {
-            const childDescription = option.getData().description?.content || ""
+        const childInfo = getNodeInfo(childRoute, updatedState)
+        const itemNodeData = childInfo.nodeData
+        
+        // const children = child.getChildren()
 
-            await getChildTimes(node, j++, [...parentDescriptions, childDescription])
-          }
+        let j = 0;
+        for (const childRoute of childRoutes) {
+          const { nodeDescription: childDescription } = getNodeInfo(childRoute, updatedState)
+
+          updatedState = await getChildTimes(updatedState, localNodeRoute, j++, [...parentDescriptions, childDescription])
         }
+      }
 
 
-        const resourceInfo = checkResourceInfo(node)
+        const resourceInfo = checkResourceInfo(updatedState, localNodeRoute, )
 
         console.log('resourceInfo', resourceInfo)
 
         if (!resourceInfo){
-          const description = node.getData().description?.content || ""
+          const { nodeDescription: description }  = getNodeInfo(localNodeRoute, updatedState)
 
           const systemPrompt = systemPromptRecursive
-          const userPrompt = getUserPromptRecursive(description, parentDescriptions, node)
+          const userPrompt = getUserPromptRecursive(updatedState, localNodeRoute, description, parentDescriptions)
   
           console.log('systemPrompt', systemPrompt, userPrompt)
           if (!systemPrompt || !userPrompt) throw new Error('missing prompt');
                 
-          const response: any = await promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
+          const response: any = await options.promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
             console.log('error', error)
             throw new Error('error getting suggestions')
           });
@@ -148,19 +153,21 @@ export const suggestRecursive = async <T, S>(
 
         const resultParsed = results[0]
         
-        setResourceInfo(node, parsePattern(resultParsed,node))
-  
-      } 
+        const newState = updateResourceInfo(updatedState, nodeRoute, setAppState, parsePattern(localAppData, nodeRoute, resultParsed))
+        
+        return newState
+      } else {
+        return updatedState
+      }
       
     }
   }
+  
 
-  const selectedOption = node.getData().option?.selectedIndex || 0
-
-  const contextWithTimes = await getChildTimes(node, 0, descriptions)
+  const contextWithTimes = await getChildTimes(appState, nodeRoute, 0, descriptions)
 
 
-  return
+  return contextWithTimes
 
 }
 

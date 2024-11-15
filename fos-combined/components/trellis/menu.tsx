@@ -23,22 +23,12 @@ import { Button } from "@/components/ui/button"
 
 import { CSS } from '@dnd-kit/utilities';
 
-import { useDraggable, useDroppable } from '@dnd-kit/core';
 import _, { update } from 'lodash'
-import { useWindowSize } from '../window-size'
-import { TrellisMeta, TrellisNodeClass, TrellisNodeInterface, TrellisSerializedData } from '@/react-trellis/trellis/types'
-import { AppState, FosReactOptions, TrellisInterfaceOptions } from '@/fos-combined/types'
+import { AppState, FosReactOptions, FosRoute } from '@/fos-combined/types'
+import { getNodeInfo } from '@/fos-combined/lib/utils'
+import { getNodeOperations } from '@/fos-combined/lib/nodeOperations'
 
 
-
-export type TrellisMenuComponentProps<T extends TrellisNodeInterface<T>, S> = {
-  trellisNode: TrellisNodeClass<T, S>,
-  node: T,
-  global: S,
-  meta: TrellisMeta<T, S>
-  state: TrellisSerializedData
-  updateState: (state: TrellisSerializedData) => void
-}
 
 
 export function DefaultMenuComponent({ 
@@ -50,12 +40,37 @@ export function DefaultMenuComponent({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) {
 
-  const node = meta.trellisNode
 
+
+  const { locked, getOptionInfo,
+    hasFocus, focusChar, isDragging, draggingOver, 
+    nodeDescription, isRoot, childRoutes, isBase,
+    nodeType, nodeId, disabled, depth, isCollapsed, 
+    isTooDeep, hasChildren
+  } = getNodeInfo(nodeRoute, data)
+  
+  const { 
+    zoom,
+    snip, 
+    suggestOption, 
+    setFocus, 
+    setSelectedOption, 
+    setFocusAndDescription, 
+    deleteRow, 
+    deleteOption,
+    keyDownEvents,
+    keyUpEvents,
+    keyPressEvents,
+    addOption,
+    
+    suggestSteps,
+   } = getNodeOperations(options, data, setData, nodeRoute)
+  
+   const { selectedIndex, nodeOptions, } = getOptionInfo()
   const [menuOpen, setMenuOpen] = React.useState(false)
 
 
@@ -68,10 +83,7 @@ export function DefaultMenuComponent({
     setMenuOpen(false)
   }
 
-  const zoom = () => {
-    node.setZoom()
-    setMenuOpen(false)
-  }
+
 
   // const deleteNode = () => {
   //   node.remove()
@@ -79,19 +91,10 @@ export function DefaultMenuComponent({
   // }
 
   const snipNode = () => {
-    node.snip()
+    snip()
     setMenuOpen(false)
   }
 
-  const deleteNode = () => {
-    throw new Error('Not implemented')
-
-  }
-
-
-  // const longPressEvent = useLongPress(onLongPress, onClick, defaultOptions);
-
-  const hasChildren = node.getChildren().length > 0
 
   return (
     <>      
@@ -110,7 +113,7 @@ export function DefaultMenuComponent({
                     {/* <Button variant={"secondary"} className='bg-emerald-900'><QuestionMarkCircledIcon /></Button> */}
                     {/* <Button variant={"secondary"} className='bg-emerald-900'><PlayIcon /></Button> */}
                     <Button variant={"destructive"} onClick={snipNode}><ComponentNoneIcon /></Button>
-                    <Button variant={"destructive"} onClick={deleteNode}><TrashIcon /></Button>
+                    <Button variant={"destructive"} onClick={deleteRow}><TrashIcon /></Button>
                   </div>
   
   

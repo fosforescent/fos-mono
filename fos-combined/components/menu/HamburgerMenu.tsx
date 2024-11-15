@@ -153,6 +153,9 @@ const HamburgerMenu = ({
                     setShowEmailConfirm={setShowEmailConfirm}
                     setShowPrivacy={setShowPrivacy}
                     setShowCookies={setShowCookieConsent}
+                    data={appState}
+                    setData={setData}
+                    options={options}
                     />  
                 </AccordionContent>
               </AccordionItem>

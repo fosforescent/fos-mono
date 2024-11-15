@@ -14,10 +14,7 @@ import sharing from './sharing'
 import comments from './comments'
 import budget from './budget'
 import importExport from './import_export'
-import { FosReactOptions } from '..'
-import { IFosNode } from '@/fos-js'
-import { TrellisMeta, TrellisSerializedData } from '@/react-trellis'
-import { FosReactGlobal } from '..'
+
 
 
 const fosDataModules = {
@@ -63,7 +60,10 @@ const fosModuleNames = [...fosNodeModuleNames, ...fosDataModuleNames, ...fosReso
 
 
 
-type FosModule = typeof fosModules[keyof typeof fosModules]
+type FosModule = typeof fosModules[keyof typeof fosModules] & {
+  RowComponent?: React.FC<any>;
+  HeadComponent?: React.FC<any>;
+}
 
 type FosNodeModuleName = keyof typeof fosNodeModules
 type FosDataModuleName = keyof typeof fosDataModules

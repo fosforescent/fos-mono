@@ -59,7 +59,8 @@ export default defineConfig(({ mode }) => {
             tailwindcss: 'tailwindcss',
           },
         },
-        plugins: []
+        plugins: [],
+
       }
     },
     plugins: [
@@ -82,7 +83,7 @@ export default defineConfig(({ mode }) => {
       },
       postcss: {
         plugins: [
-          tailwindcss,
+          tailwindcss(),
           autoprefixer,
         ],
       }

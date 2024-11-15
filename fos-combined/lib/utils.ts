@@ -1,6 +1,8 @@
-import { FosNodesData, FosPath, AppState } from "../types"
+import e from "cors"
+import { FosNodesData, FosPath, AppState, FosRoute, FosPathElem } from "../types"
+import { updateNodeContent } from "./mutations"
 
-export const getNodeDescription = (nodeRoute: FosPath, state: AppState) => {
+export const getNodeDescription = (nodeRoute: FosRoute, state: AppState) => {
     const nodeId = nodeRoute[nodeRoute.length - 1]?.[1]
   
     if (!nodeId){
@@ -15,7 +17,8 @@ export const getNodeDescription = (nodeRoute: FosPath, state: AppState) => {
   
     const description = nodeContent?.data.description?.content
   
-    if (!description){
+    if (!nodeContent?.data.description || description === undefined){
+      console.log( nodeContent)
       throw new Error('description is undefined')
     }
   
@@ -24,17 +27,22 @@ export const getNodeDescription = (nodeRoute: FosPath, state: AppState) => {
 
 
 
-export const getNodeContent = (nodeRoute: FosPath, state: AppState) => {
+export const getNodeContent = (nodeRoute: FosRoute, state: AppState) => {
     const [nodeType, nodeId] = nodeRoute[nodeRoute.length - 1]!
     if (!nodeType || !nodeId){
         throw new Error('nodeType or nodeId is undefined')
     }
     
     const nodeContent = state.data.fosData.nodes[nodeId]
+
+    if (!nodeContent){
+        throw new Error('nodeContent is undefined')
+    }
+
     return nodeContent
 }
 
-export const getNodeChildren = (nodeRoute: FosPath, state: AppState) => {
+export const getNodeChildren = (nodeRoute: FosRoute, state: AppState) => {
     const nodeContent = getNodeContent(nodeRoute, state)
     if (!nodeContent){
       throw new Error('nodeContent is undefined')
@@ -43,7 +51,7 @@ export const getNodeChildren = (nodeRoute: FosPath, state: AppState) => {
     return nodeChildren
 }
 
-export const getNodeData = (nodeRoute: FosPath, state: AppState) => {
+export const getNodeData = (nodeRoute: FosRoute, state: AppState) => {
     const nodeContent = getNodeContent(nodeRoute, state)
     if (!nodeContent){
       throw new Error('nodeContent is undefined')
@@ -54,7 +62,7 @@ export const getNodeData = (nodeRoute: FosPath, state: AppState) => {
 
 
   
-export const getOptions = (nodeRoute: FosPath, state: AppState) => {
+export const getOptions = (nodeRoute: FosRoute, state: AppState) => {
     const [nodeType, nodeId] = nodeRoute[nodeRoute.length - 1]!
     if (!nodeType || !nodeId){
         throw new Error('nodeType or nodeId is undefined')
@@ -70,9 +78,24 @@ export const getOptions = (nodeRoute: FosPath, state: AppState) => {
       console.log('node', nodeRoute)
       throw new Error('getoptions must be used on a task or option node')
     }
+
+    // const getOptions = (node: FosWrapper) => {
+    //   if (node.getNodeType() === 'option'){
+    //     // console.log('node', node)
+    //     return node.getOptions().map((child, index) => {
+    //       return ({value: index.toString(), label: getDescription(child)})
+    //     })
+    //   }else if (node.getNodeType() === 'workflow'){
+    //     return [{value: '0', label: getDescription(node)}]
+    //   }else{
+    //     console.log('node', node)
+    //     throw new Error('getoptions must be used on a task or option node')
+    //   }
+    // }
+  
 }
 
-export const getDragItem = (nodeRoute: FosPath, breadcrumb: boolean) => {
+export const getDragItem = (nodeRoute: FosRoute, breadcrumb: boolean) => {
     const [nodeType, nodeId] = nodeRoute[nodeRoute.length - 1]!
     if (!nodeType || !nodeId){
         throw new Error('nodeType or nodeId is undefined')
@@ -86,65 +109,104 @@ export const getDragItem = (nodeRoute: FosPath, breadcrumb: boolean) => {
     return dragItem
 }
 
-export const getNodeInfo = (nodeRoute: FosPath, state: AppState) => {
-    const [nodeType, nodeId] = nodeRoute[nodeRoute.length - 1]!
-    if (!nodeType || !nodeId){
-        throw new Error('nodeType or nodeId is undefined')
-    }
+export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
+
+  if (!nodeRoute){
+    console.log('nodeRoute undefined', state)
     
-    const isCollapsed = state.data.trellisData.collapsedList.some((route) => pathEqual(route, nodeRoute))
+    throw new Error('nodeRoute is undefined')
+  }
 
-    const nodeContent = getNodeContent(nodeRoute, state)
-    const nodeChildren = getNodeChildren(nodeRoute, state)
-    const childRoutes = nodeChildren.map((child) => [...nodeRoute, child])
-    const nodeData = getNodeData(nodeRoute, state)
-    const nodeDescription = getNodeDescription(nodeRoute, state)
-
-    const isTask = ["workflow", "todo", "option"].includes(nodeType)
-    const isRoot = nodeType === "root"
-    const isComment = nodeType === "comment"
-    const isDocument = nodeType === "document"
-    const isMaxDepth = false
-    const isBase = nodeRoute.length === state.data.fosData.route.length
-    const isSmallWindow = window.innerWidth !== undefined && window.innerWidth < 500
-    const nodeOptions = getOptions(nodeRoute, state)
-    const selectedIndex = nodeData.option?.selectedIndex || 0
-    const locked = false
-
-
-    const hasFocus = pathEqual(state.data.trellisData.focusRoute, nodeRoute)
-    const focusChar = state.data.trellisData.focusChar
+  const [nodeType, nodeId] = nodeRoute[nodeRoute.length - 1]!
+  if (!nodeType || !nodeId){
+    console.log('nodeRoute', nodeRoute, state)
+    throw new Error('nodeType or nodeId is undefined')
+  }
   
-    const isDragging = pathEqual(state.data.trellisData.draggingNode, nodeRoute)
-    const draggingOver = pathEqual(state.data.trellisData.draggingOverNode, nodeRoute)
+  const isCollapsed = state.data.trellisData.collapsedList.some((route) => pathEqual(route, nodeRoute))
 
-    return {
-        childRoutes,
-        isCollapsed,
-        locked,
-        nodeType,
-        nodeId,
-        nodeContent,
-        nodeChildren,
-        nodeData,
-        nodeDescription,
-        isTask,
-        isRoot,
-        isComment,
-        isDocument,
-        isMaxDepth,
-        isBase,
-        isSmallWindow,
-        selectedIndex,
-        nodeOptions,
-        hasFocus,
-        focusChar,
-        isDragging,
-        draggingOver
-    }
+  const nodeContent = getNodeContent(nodeRoute, state)
+  const nodeChildren = getNodeChildren(nodeRoute, state)
+  const childRoutes: FosRoute[] = nodeChildren.map((child) => [...nodeRoute, child])
+  const nodeData = getNodeData(nodeRoute, state)
+  const nodeDescription = getNodeDescription(nodeRoute, state)
+
+  const isTask = ["workflow", "todo", "option"].includes(nodeType)
+  const isRoot = nodeType === "root"
+  const isComment = nodeType === "comment"
+  const isDocument = nodeType === "document"
+  const isOption = nodeType === "option"
+  const isMaxDepth = false
+  const isBase = nodeRoute.length === state.data.fosData.route.length
+  const isSmallWindow = window.innerWidth !== undefined && window.innerWidth < 500
+  const locked = false
+
+
+  const hasFocus = pathEqual(state.data.trellisData.focusRoute, nodeRoute)
+  const focusChar = state.data.trellisData.focusChar
+
+  const isDragging = pathEqual(state.data.trellisData.draggingNode, nodeRoute)
+  const somethingIsDragging = state.data.trellisData.draggingNode !== null
+  const draggingOver = pathEqual(state.data.trellisData.draggingOverNode, nodeRoute)
+
+  const disabled = false
+
+  const depth = nodeRoute.length - state.data.fosData.route.length
+
+  const maxDepth = ( (window.innerWidth - 500) / 100)
+
+  const isTooDeep = depth > maxDepth
+  const hasChildren = childRoutes.length > 0
+  
+  const nodeLabel = `${nodeType}-${nodeId}`  
+
+  const truncatedDescription = nodeDescription.length > 20 ? nodeDescription.slice(0, 17) + '...' : nodeDescription
+
+
+  const hasParent = nodeRoute.length > 1
+  
+  const childrenVisible = !isCollapsed && !isTooDeep
+
+
+  return {
+      childRoutes,
+      disabled,
+      isCollapsed,
+      locked,
+      nodeType,
+      nodeId,
+      nodeContent,
+      nodeChildren,
+      nodeData,
+      nodeDescription,
+      truncatedDescription,
+      isTask,
+      isRoot,
+      isComment,
+      isDocument,
+      isMaxDepth,
+      isBase,
+      isSmallWindow,
+      childrenVisible,
+      maxDepth,
+      isTooDeep,
+      depth,
+      hasFocus,
+      focusChar,
+      isDragging,
+      draggingOver,
+      hasChildren,
+      isOption,
+      somethingIsDragging,
+      nodeLabel,
+      nodeRoute,
+      getParentInfo: () => getParentInfo(nodeRoute, state),
+      getOptionInfo: () => getOptionInfo(nodeRoute, state),
+      hasParent,
+  }
 }
 
-const pathEqual = (path1: FosPath | null, path2: FosPath | null) => {
+export const pathEqual = (path1: FosPath | null, path2: FosPath | null) => {
     if (!path1 || !path2){
         return path1 === path2
     }
@@ -158,4 +220,179 @@ const pathEqual = (path1: FosPath | null, path2: FosPath | null) => {
         return p1type === p2type && p1id === p2id
     })
     return sameLength && sameValues
+}
+
+
+export const getParentInfo = (nodeRoute: FosRoute, appData: AppState) => {
+  const parentRoute = nodeRoute.slice(0, nodeRoute.length - 1)
+  if (parentRoute.length === 0){
+    throw new Error('Cannot get parent of root node')
+  } else {
+      const parentInfo = getNodeInfo(parentRoute as FosRoute, appData)
+
+      const nodeType = nodeRoute[nodeRoute.length - 1]?.[0]
+      const nodeId = nodeRoute[nodeRoute.length - 1]?.[1]
+
+      if (!nodeType || !nodeId){
+        throw new Error('nodeType or nodeId is undefined')
+      }
+
+      const indexInParent = parentInfo.nodeChildren.findIndex(([childType, childId]) => {
+        childType === nodeType && childId === nodeId
+      })
+
+      const siblingRoutes = parentInfo.childRoutes.filter((_, i) => i !== indexInParent)
+
+      return {
+        ...parentInfo,
+        indexInParent,
+        siblingRoutes,
+      }
+  }
+}
+
+export const getOptionInfo = (nodeRoute: FosRoute, appData: AppState) => {
+
+  const { nodeData, nodeContent, nodeChildren } = getNodeInfo(nodeRoute, appData)
+
+  if (nodeContent.content.length < 2){
+    throw new Error('Should not have less than 2 options')
+  }
+
+  const selectedIndex = nodeData.option?.selectedIndex || 0
+
+  const nodeOptions = getOptions(nodeRoute, appData)
+
+
+  if (!nodeChildren[selectedIndex]){
+    throw new Error('selectedChild not found')
+  }
+  const selectedChildRoute: FosRoute = [...nodeRoute , nodeChildren[selectedIndex]]
+
+  
+  const isCollapsedOption = appData.data.trellisData.collapsedList.some((route) => pathEqual(route, selectedChildRoute))
+
+  if (!selectedChildRoute){
+    throw new Error('selectedChild not found')
+  }
+  return {
+    selectedIndex,
+    selectedChildRoute,
+    nodeOptions,
+    isCollapsedOption,
+  }
+}
+
+export const getDownNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
+  const { nodeData, nodeContent, nodeChildren, getParentInfo, childRoutes, childrenVisible } = getNodeInfo(nodeRoute, appData)
+  const { indexInParent, 
+    nodeContent: parentContent, 
+    nodeRoute: parentRoute, 
+    siblingRoutes,
+    childrenVisible: parentChildrenVisible 
+  } = getParentInfo()
+
+  if (!parentChildrenVisible){
+    throw new Error('Parent is not visible')
+  }
+
+  if (childRoutes.length > 0 && childrenVisible){
+    return childRoutes[0]!
+  }
+  const downSibling = getDownSibling(nodeRoute, appData)
+  if (downSibling){
+    return downSibling
+  }else{
+    return getAncestorLeastDownSibling(nodeRoute, appData)
+  }
+
+}
+
+export const getAncestorLeastDownSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
+  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+  const { 
+    nodeRoute: parentRoute, 
+    childrenVisible: parentChildrenVisible 
+  } = getParentInfo()
+
+  if (parentRoute.length === 1){
+    return null
+  }
+  const parentDownSibling = getDownSibling(parentRoute, appData)
+  if (parentDownSibling){
+    return parentDownSibling
+  } else {
+    return getAncestorLeastDownSibling(parentRoute, appData)
+  }
+}
+
+export const getAncestorLeastUpSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
+  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+  const { 
+    nodeRoute: parentRoute, 
+    childrenVisible: parentChildrenVisible 
+  } = getParentInfo()
+
+  if (parentRoute.length === 1){
+    return null
+  }
+  const parentUpSibling = getUpSibling(parentRoute, appData)
+  if (parentUpSibling){
+    return parentUpSibling
+  } else {
+    return getAncestorLeastUpSibling(parentRoute, appData)
+  }
+}
+
+
+export const getUpSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
+  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+  const { indexInParent, siblingRoutes } = getParentInfo()
+  if (indexInParent === 0){
+    return null
+  }
+  const newRoute = siblingRoutes[indexInParent - 1]
+  if (!newRoute){
+    throw new Error('Error accessing up sibling')
+  }
+  return newRoute
+}
+
+export const getDownSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
+  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+  const { indexInParent, siblingRoutes } = getParentInfo()
+  if (indexInParent === siblingRoutes.length - 1){
+    return null
+  }
+  const newRoute = siblingRoutes[indexInParent + 1]
+  if (!newRoute){
+    throw new Error('Error accessing down sibling')
+  }
+  return newRoute
+}
+
+
+
+export const getDownmostDescendent = (nodeRoute: FosRoute, appData: AppState, depthLimit: number = -1): FosRoute => {
+  if (depthLimit === 0){
+    return nodeRoute
+  }
+  const { hasChildren, childRoutes, childrenVisible } = getNodeInfo(nodeRoute, appData)
+  if (childrenVisible && hasChildren ){
+    return getDownmostDescendent(childRoutes[childRoutes.length - 1]!, appData, depthLimit - 1)
+  } else {
+    return nodeRoute
+  }
+}
+
+
+export const getUpNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
+  const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(nodeRoute, appData)
+  const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute, siblingRoutes } = getParentInfo()
+
+  if (indexInParent > 0 ){
+    return getDownmostDescendent(siblingRoutes[indexInParent - 1]!, appData)
+  }else{
+    return parentRoute
+  }
 }

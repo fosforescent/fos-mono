@@ -3,14 +3,12 @@ import React from 'react'
 import { Button } from '@/components/ui/button';
 import { TrashIcon, PlusCircledIcon, MinusIcon, PlusIcon, MagicWandIcon  } from '@radix-ui/react-icons'
 import { DragOverlay } from '@dnd-kit/core';
-import { useWindowSize } from "../../window-size";
+import { useWindowSize } from "../window-size";
 import { BrainCircuit, CircleEllipsis, Wand } from "lucide-react";
 
 
-import { ComboboxEditable } from '../../combobox/comboboxEditable';
+import { ComboboxEditable } from '../combobox/comboboxEditable';
 
-import { suggestOption } from '../../../lib/suggestOption';
-import { suggestSteps } from '../../../lib/suggestSteps';
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
@@ -33,7 +31,7 @@ export const FosRowsComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) => {
   
@@ -109,12 +107,14 @@ const OptionRowsCombined = ( {
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) => {
 
   
-  const { selectedIndex, nodeOptions, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription } = getNodeInfo(nodeRoute, data)
+  const {  locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, getOptionInfo } = getNodeInfo(nodeRoute, data)
+
+  const { selectedIndex, nodeOptions } = getOptionInfo()
   
   const { 
     suggestOption, 
@@ -122,7 +122,7 @@ const OptionRowsCombined = ( {
     setSelectedOption, 
     setFocusAndDescription, 
     deleteRow, 
-    getFocus, 
+    
     deleteOption,
     keyDownEvents,
     keyUpEvents,
@@ -140,15 +140,16 @@ const OptionRowsCombined = ( {
 
 
   // console.log('isRoot', isRoot, meta.trellisNode.getId())
-
+  const handleChange = (value: string) => {
+     setSelectedOption(parseInt(value))
+  }
 
   return (<div className="flex flex-initial grow">
     <ComboboxEditable 
       className='w-full bg-transparent'
       handleTextEdit={setFocusAndDescription}
-      handleChange={setSelectedOption}
+      handleChange={handleChange}
       suggestOption={suggestOption}
-      getFocus={getFocus}
       hasFocus={hasFocus}
       focusChar={focusChar}
       deleteOption={deleteOption}
@@ -160,7 +161,6 @@ const OptionRowsCombined = ( {
       selectedIndex={selectedIndex}
       values={nodeOptions}
       locked={fosOptions.locked || false }
-      setFocus={setFocus}
       // defaultValue={selectedNodeDescription}
       defaultValue={selectedIndex.toString()}
       addOption={addOption}
@@ -184,34 +184,41 @@ const OptionRowsExpanded = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) => {
   
  
   
-  const { selectedIndex, nodeOptions, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, isRoot, childRoutes, isBase } = getNodeInfo(nodeRoute, data)
+  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, isRoot, childRoutes, isBase } = getNodeInfo(nodeRoute, data)
   
+  const { selectedIndex, nodeOptions } = getOptionInfo()
+
   const { 
     suggestOption, 
     setFocus, 
     setSelectedOption, 
     setFocusAndDescription, 
     deleteRow, 
-    getFocus, 
     deleteOption,
     keyDownEvents,
     keyUpEvents,
     keyPressEvents,
     addOption,
-    suggestOptions,
-    addRow,
+    
+    addRowAsChild,
    } = getNodeOperations(options, data, setData, nodeRoute)
   
   
 
 
+  // console.log('isRoot', isRoot, meta.trellisNode.getId())
+  const handleChange = (value: string) => {
+    setSelectedOption(parseInt(value))
+ }
 
+
+   const canPrompt = options.canPromptGPT && options.promptGPT
 
   const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && getNodeDescription(childRoutes[0], data) === "")
 
@@ -219,7 +226,7 @@ const OptionRowsExpanded = ({
   return (    <div className="pl-6">
     
     {childRoutes.length > 0 && 
-      (<RadioGroup value={`${selectedIndex}`} onValueChange={setSelectedOption}>
+      (<RadioGroup value={`${selectedIndex}`} onValueChange={handleChange}>
         {childRoutes.map((childRoute , i) => {
 
     
@@ -255,14 +262,14 @@ const OptionRowsExpanded = ({
   <div>
     {isBase && <div className='py-1' key={`-1`}>
       <Button 
-        onClick={() => addRow()}
+        onClick={() => addRowAsChild()}
         className={`bg-secondary/30 text-white-900 hover:bg-secondary/80 px-2 shadow-none`}
         // style={{padding: !isSmallWindow ? '15px 15px 15px 15px' : '31px 3px'}}
         >
         <PlusCircledIcon height={'1rem'} width={'1rem'}/>
       </Button>
-      {options.canPromptGPT && rowsEmpty && !isRoot && <Button
-        onClick={suggestOptions}
+      {canPrompt && rowsEmpty && !isRoot && <Button
+        onClick={suggestOption}
         className={`bg-emerald-900 text-white-900 px-2 shadow-none`}
       >
         <BrainCircuit height={'1rem'} width={'1rem'}/>
@@ -287,95 +294,61 @@ const TaskRows = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) => {
 
-  const parentNode = meta.trellisNode
-
-  const rows = parentNode.getWrappedChildren()
-
-  const items = rows.map((node, index) => {
-
-    const nodeId = node.getId()
-
-    return {
-      id: `${nodeId}`,
-      data: { node: node.getInterfaceNode(), breadcrumb: false },
-      breadcrumb: false
-    }
-  })
-
-  // console.log('rows', rows)
 
 
-  const handleSuggestSubtasks = async () => {
-    options?.promptGPT && suggestSteps(options.promptGPT, interfaceNode.fosNode())
-  }
 
-  const handleAddNewRow = () => {
-    console.log('clicked')
-    const newChild = parentNode.getInterfaceNode().newChild("workflow")
-    parentNode.refresh()
-    // newChild.setFocus(0)
-  }
 
-  const trail = parentNode.getMeta().zoom?.route || []
 
-  const route = [...parentNode.getRoute(), parentNode]
+  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, isRoot, childRoutes, isBase } = getNodeInfo(nodeRoute, data)
+  
+  const { 
+    suggestOption, 
+    setFocus, 
+    setSelectedOption, 
+    setFocusAndDescription, 
+    deleteRow, 
+ 
+    deleteOption,
+    keyDownEvents,
+    keyUpEvents,
+    keyPressEvents,
+    addOption,
+    
+    suggestSteps,
+    addRowAsChild,
+  } = getNodeOperations(options, data, setData, nodeRoute)
+
+
+
 
   const canPrompt = options.canPromptGPT && options.promptGPT
 
-  // console.log("nodeType", interfaceNode.getNodeType(), options.activeModule)
 
-  const rowsEmpty = rows.length === 0 || (rows.length === 1 && rows[0]?.getString() === "")
 
-  const isRoot = !meta.trellisNode.getParent()
 
-  React.useEffect(() => {
-    const handler = () => {
-      interfaceNode.syncPeers()
-    }
-    const interval = setInterval(handler, 1000)
-    return () => clearInterval(interval)
-  }, [])
+  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && getNodeDescription(childRoutes[0], data) === "")
+
 
   return (
     <div>
   
-        {rows.length > 0 && 
-          rows.map((childNode , i) => {
+        {childRoutes.length > 0 && 
+          childRoutes.map((childRoute , i) => {
   
       
-          
-            const RowComponent = childNode.components.row
-            
-
-            // console.log('RowComponent', childNode.getInterfaceNode().fosNode().getNodeType(), RowComponent)
-                  
-            const item = items[i]
-  
-            if (item === undefined) {
-              throw new Error('item is undefined')
-            }
-            
-            const rowMeta = childNode.getMeta()
-  
             return (<div key={i} className={` `}>
             {/* <RowComponent key={index} nodes={nodes} left={leftNode} right={rightNode} dragging={dragging} blank={false} updateRow={updateNodes} /> */}
               <div  className="flex w-full">
-                {(<RowComponent
+                {(<DefaultRowComponent
   
-                  node={childNode.getInterfaceNode()}
-                  dragItem={item}
-                  dragging={dragging}
-                  dragOverInfo={dragOverInfo}
-                  disabled={disabled}
-                  rowDepth={rowDepth}
-                  global={options}
-                  meta={rowMeta}
-                  state={state}
-                  updateState={updateState}
+                  nodeRoute={childRoute}
+                  options={options}
+                  data={data}
+                  setData={setData}
                 />)}
                 {/* <DragOverlay>
                   {dragging === item.id ? <DragOverlayDisplay 
@@ -386,16 +359,16 @@ const TaskRows = ({
             </div>)
         })}
       <div>
-        {(route.length - trail.length) <= 0 && <div className='py-1' key={`-1`}>
+        {isBase && <div className='py-1' key={`-1`}>
           <Button 
-            onClick={() => handleAddNewRow()}
+            onClick={() => addRowAsChild()}
             className={`bg-secondary/30 text-white-900 hover:bg-secondary/80 px-2 shadow-none`}
             // style={{padding: !isSmallWindow ? '15px 15px 15px 15px' : '31px 3px'}}
             >
             <PlusCircledIcon height={'1rem'} width={'1rem'}/>
           </Button>
           {canPrompt && rowsEmpty && !isRoot && <Button
-            onClick={handleSuggestSubtasks}
+            onClick={() => suggestSteps()}
             className={`bg-emerald-900 text-white-900 px-2 shadow-none`}
           >
             <BrainCircuit height={'1rem'} width={'1rem'}/>

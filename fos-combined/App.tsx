@@ -2,10 +2,11 @@
 import React, { useEffect, useState } from 'react'
 
 
-import { AppState, FosContextData,} from './types'
+import { AppState, FosContextData, FosReactGlobal, FosReactOptions,} from './types'
 import { useTraceUpdate } from './components/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
+import './global.css'
 
 import {
   CheckCircle2,
@@ -18,8 +19,7 @@ import {
 } from 'lucide-react'
 import { TrellisSerializedData } from './types'
 
-import './App.css'
-import '../global.css'
+
 
 import HamburgerMenu from './components/menu/HamburgerMenu'
 
@@ -36,10 +36,11 @@ import { ErrorBoundary } from './components/error-boundary'
 import { useToast } from '@/components/ui/use-toast';
 import { jwtDecode } from 'jwt-decode';
 import { api } from './api'
+import { FosModule, fosDataModules, fosResourceModules, fosReportModules, fosNodeModules, fosModules } from './components/fos-react/fosModules'
 
 import { defaultContext, defaultTrellisData } from './defaults'
 
-import { MainView } from './components/fos-react'
+import { MainView } from './components/trellis/main'
 
 
 declare const __SYC_API_URL__: string;
@@ -113,7 +114,7 @@ export default function App({
   const [showEmailConfirm, setShowEmailConfirm] = useState<{ open: boolean, email: string}>({ open: false, email: ""})
 
  
-  const [ appState, setAppState ] = React.useState<AppState>(initialDataState)
+  const [ appState, setAppState ] = React.useState<AppState>({...initialDataState, apiUrl})
 
 
   useEffect(() => {
@@ -194,8 +195,6 @@ export default function App({
     }
 
     root.classList.remove("light", "dark")
-    
-
 
     if (theme === "system") {
       const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
@@ -206,10 +205,8 @@ export default function App({
       root.classList.add(systemTheme)
       return
     }
-
     root.classList.add(theme)
-
-
+    // console.log('setting theme', theme, root)
   }, [theme])
 
 
@@ -227,12 +224,7 @@ export default function App({
 
 
 
-    setAppState( (prevData) => {
-      return {
-        ...prevData,
-        appData: data
-      }
-    })
+    setAppState(data)
 
 
   }
@@ -251,10 +243,31 @@ export default function App({
 
 
 
+  useEffect(() => {
+    // console.log('set data changed', data)
+  }, [setAppState])
+
+  const [activeModule, setActiveModule] = useState<FosModule | undefined>(fosDataModules.description)
+
+  const setActiveModuleWithLog = (module: FosModule | undefined) => {
+    // console.log('setActiveModule', module)
+    setActiveModule(module)
+  }
+
+  const optionsWithModule = {
+    ...(options || {}),
+    activeModule,
+    setActiveModule: setActiveModuleWithLog,
+  }
+
+  const global: FosReactGlobal = getGlobal(optionsWithModule || { activeModule: fosDataModules.description })
+
+
+  
 
 
  
-  return (<><div className="App h-full" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden' }}>
+  return (<><div className="App h-full bg-background" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden' }}>
       <div style={{textAlign: 'left', boxSizing: 'border-box'}} className='w-full'>
         <HamburgerMenu 
           emailConfirmationToken={emailConfirmationToken} 
@@ -277,7 +290,9 @@ export default function App({
           />
         <div className="flex items-center justify-center h-full w-full" style={{overflowX: 'hidden' }}>
         <></>
-        <MainView data={appState} setData={setDataWithLog} options={options} />
+        <MainView data={appState} setData={setDataWithLog} options={global} />
+
+        
         <TutorialDialog open={showTutorial} setOpen={setShowTutorial} />
       </div>
       </div>
@@ -303,3 +318,35 @@ export default function App({
 
 
 
+
+
+export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> => {
+  // console.log('options', options)
+  const global = {
+    ...( options && options?.canPromptGPT && options?.promptGPT ? {
+      canPromptGPT: true,
+      promptGPT: options.promptGPT,
+    } : {
+      canPromptGPT: false,
+    }),
+    ...( options && options?.canRedo ? { canRedo: true } : { canRedo: false }),
+    ...( options && options?.canUndo ? { canUndo: true } : { canUndo: false }),
+    ...( options && options?.canRedo ? { redo: options.redo } : {}),
+    ...( options && options?.canUndo ? { undo: options.undo } : {}),
+    ...( options ? { toast: options.toast } : {}),
+    ...( options ? { theme: options.theme } : {}),
+    ...( options ? { activeModule: options.activeModule || fosDataModules.description } : { activeModule: fosDataModules.description }),
+    ...( options ? { activeModuleRows: options.activeModuleRows || fosDataModules.description } : { activeModuleRows: fosDataModules.description }),
+    ...( options ? { setActiveModule: options.setActiveModule } : {}),
+    ...( options ? { setActiveModuleRows: options.setActiveModuleRows } : {}),
+    ...( { modules: [...(options.modules || []), ...Object.values({
+      ...fosDataModules,
+      ...fosResourceModules,
+      ...fosReportModules,
+      ...fosNodeModules,
+    })] } ),
+    ...( options ? { locked: options.locked } : { locked: false }),
+  }
+
+  return global
+}

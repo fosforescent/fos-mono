@@ -1,40 +1,79 @@
-import { BrainCircuit, Landmark } from "lucide-react"
-// import { Bank } from '@radix-ui/react-icons'
-import { FosDataModule, FosModuleProps } from "./fosModules"
+import { BrainCircuit, DollarSign } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import CurrencyInput from "react-currency-input-field"
 import * as SliderPrimitive from "@radix-ui/react-slider"
 import { cn } from "@/lib/utils"
-import { SelectionPath, IFosNode, FosDataContent } from "@/fos-js"
-import { suggestRecursive } from "../../../lib/suggestRecursive"
-import { FosReactOptions } from ".."
-import { FosWrapper } from "../fosWrapper"
+
+import { AppState, FosDataContent, FosReactOptions, FosRoute, SelectionPath } from "@/fos-combined/types"
+import { getNodeInfo } from "@/fos-combined/lib/utils"
+import { getNodeOperations } from "@/fos-combined/lib/nodeOperations"
 
 
 
 
-const ResourceComponent = ({ node, options }: FosModuleProps) => {
+
+
+const ResourceComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosRoute
+  setData: (state: AppState) => void
+}) => {
 
 
 
-  const costInfo = getCostInfo(node.fosNode())
+
+  const { locked, 
+    hasFocus, focusChar, isDragging, draggingOver, 
+    nodeDescription: thisDescription, isRoot, childRoutes, isBase, nodeLabel, 
+    nodeType, nodeId, disabled, depth, isCollapsed, 
+    isTooDeep, isOption, hasChildren, 
+  } = getNodeInfo(nodeRoute, data)
+  
+  const { 
+    suggestOption, 
+    setFocus, 
+    setSelectedOption, 
+    setFocusAndDescription, 
+    deleteRow, 
+    deleteOption,
+    keyDownEvents,
+    keyUpEvents,
+    keyPressEvents,
+    addOption,
+    toggleOptionCollapse,
+    suggestSteps,
+    toggleCollapse,
+    zoom,
+    suggestRecursive,
+   } = getNodeOperations(options, data, setData, nodeRoute)
+
 
  
   
 
   const systemPromptBase = `Take a deep breath.  Please respond only with a single valid JSON object with the key "cost" and a number value`
-  const getUserPromptBase = (thisDescription: string, parentDescriptions: string[], node: IFosNode) => `How much does it cost to ${thisDescription} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')}`
+  const getUserPromptBase = (appData: AppState, nodeRoute: FosRoute, nodeDescription: string, parentDescriptions: string[]) => `How much does it cost to ${thisDescription} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')}`
   const systemPromptRecursive = `Take a deep breath.  Please respond only with a single valid JSON object with the key "cost" and a number value`
-  const getUserPromptRecursive = (thisDescription: string, parentDescriptions: string[], node: IFosNode) => {
-    const resourceInfo = getCostInfo(node)
+  const getUserPromptRecursive = (appData: AppState, nodeRoute: FosRoute, nodeDescription: string, parentDescriptions: string[]) => {
+    const resourceInfo = getCostInfo(data, nodeRoute)
     return `How much does it cost to ${thisDescription} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')}, but factoring out the cost of its subtasks, which are estimated to cost somewhere between $${resourceInfo.min} and $${resourceInfo.max}, averaging $${resourceInfo.average}.  This will leave only the marginal cost, which is the information we want.`
   }
   const pattern = /.*(\{[^{}]*\}).*/m
-  const parsePattern = (result: any, node: IFosNode): CostData => {
+  const parsePattern = (lAppData: AppState, lNodeRoute: FosRoute, response: string): CostData => {
+
+    const result = JSON.parse(response)
 
     const resultParsed = result as { cost: string }
 
-    const budgetInfo = node.getData().cost?.budget
+    const budgetInfo = getCostInfo(lAppData, lNodeRoute).budget
     
     return { marginal: parseFloat(resultParsed.cost), budget: budgetInfo } 
   } 
@@ -42,10 +81,10 @@ const ResourceComponent = ({ node, options }: FosModuleProps) => {
 
 
     
-  const handleSuggestCost = async () => {
+  const handleSuggestCost = async <CostData, CostInfo>() => {
     if (options?.canPromptGPT && options?.promptGPT){
       try {
-        await suggestRecursive(options.promptGPT, node.fosNode(), {
+        await suggestRecursive({
           systemPromptBase,
           getUserPromptBase,
           systemPromptRecursive,
@@ -53,7 +92,7 @@ const ResourceComponent = ({ node, options }: FosModuleProps) => {
           pattern,
           parsePattern,
           getResourceInfo: getCostInfo,
-          setResourceInfo: setCostInfo,
+          updateResourceInfo: setCostInfo,
           checkResourceInfo: checkCostInfo
         } )
   
@@ -76,8 +115,8 @@ const ResourceComponent = ({ node, options }: FosModuleProps) => {
 
   const handleCostEdit = (value: number | undefined) => {
     if (!value) return
-    const costInfo = getCostInfo(node.fosNode())
-    setCostInfo(node.fosNode(), { marginal: value, budget: costInfo.budget })
+    const costInfo = getCostInfo(data, nodeRoute)
+    setCostInfo(options, data, setData, nodeRoute, { marginal: value, budget: costInfo.budget })
   }
     
 
@@ -112,20 +151,20 @@ const ResourceComponent = ({ node, options }: FosModuleProps) => {
 
 
 
-export const setCostInfo = (node:IFosNode, { marginal, budget} : { marginal: number, budget?: { available: number } }) => {
-  const nodeData = node.getData()
+export const setCostInfo = (appData: AppState, nodeRoute: FosRoute, options: FosReactOptions, setAppData: (appState: AppState) => void, { marginal, budget} : { marginal: number, budget?: { available: number } }) => {
+  const { nodeData }  = getNodeInfo(nodeRoute, appData)
+  const { setNodeData } = getNodeOperations(options, appData, setAppData, nodeRoute)
   const newCostData: FosDataContent["cost"] = {
     plannedMarginal: marginal,
     budget,
     entries: []
   }
-  return node.setData({
-    ...nodeData,
+  return setNodeData({
     cost: newCostData
   })
 }
 
-export const getCostInfo = (thisNode: IFosNode, index?: number): CostInfo => {
+export const getCostInfo = (appData: AppState, nodeRoute: FosRoute): CostInfo => {
   throw new Error('Not implemented')
   // const indexToGet = thisNode.parseIndex(index)
   // get selected option
@@ -218,8 +257,9 @@ export const getCostInfo = (thisNode: IFosNode, index?: number): CostInfo => {
 
 }
 
-const checkCostInfo = (node: IFosNode): boolean => {
-  const nodeData = node.getData()
+const checkCostInfo = (appData: AppState, nodeRoute: FosRoute): boolean => {
+  const { nodeData } = getNodeInfo(nodeRoute, appData)
+
   return !!nodeData.cost
 }
 
@@ -341,7 +381,18 @@ const BudgetSlider = (props: {
 }
 
 
-const CostRowComponent = ({ node, options: fosOptions, meta, state, updateState }: FosModuleProps) => {
+const CostRowComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosRoute
+  setData: (state: AppState) => void
+}) => {
 
 
   return (<div className="flex flex-initial grow">
@@ -352,9 +403,9 @@ const CostRowComponent = ({ node, options: fosOptions, meta, state, updateState 
 
 
 
-const module: FosDataModule = {
-  icon: <Landmark />,
-  name: 'budget',
+const module = {
+  icon: <DollarSign />,
+  name: 'cost',
   HeadComponent: ResourceComponent,
   // RowComponent: CostRowComponent,
 }

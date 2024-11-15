@@ -1,30 +1,35 @@
 
-
-export const suggestSteps = async (
-  promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number | undefined; }) => Promise<{
-    choices: {message: {
-      role: string, content: string
-    }, finishReason: string}[]
-  }>,
-  node: IFosNode,
-  ) => {
-  const trail = node.getRoute()
-  const [root, ...trailWithoutRoot] = trail
-  const token = localStorage.getItem('token')
-
- 
-  const description = node.getData().description?.content || ""
+import { AppState, FosDataContent, FosReactOptions, FosRoute } from "../types";
+import { addChild } from "./mutations";
+import { getNodeOperations } from "./nodeOperations";
+import { getNodeInfo } from "./utils";
 
 
-  const past = node.getAncestors().slice(1).reverse().map(([node, number], index) => {
-    return node
-  }).concat([node])
-
+export const suggestTaskSteps = async (
+  options: FosReactOptions,
+  nodeRoute: FosRoute,
+  appState: AppState,
+  setAppState: (appState: AppState) => void
+) => {
   
 
-  const descriptions = past.map((node, index: number) => {
-    const data = node.getData();
-    return data.description?.content
+  if (!options.canPromptGPT || !options.promptGPT) {
+    throw new Error('GPT not available')
+  }
+
+  const pastRoutes: FosRoute[] = nodeRoute.slice(2, -1).map((_, i) => nodeRoute.slice(0, i + 1)) as FosRoute[]
+
+  const { getParentInfo, childRoutes } = getNodeInfo(nodeRoute, appState)
+
+  const siblingDescriptions = childRoutes.map((childRoute) => {
+    const { nodeDescription } = getNodeInfo(childRoute, appState)
+    return nodeDescription
+  })
+  
+
+  const descriptions = pastRoutes.map((nodeRoute, index: number) => {
+    const { nodeDescription } = getNodeInfo(nodeRoute, appState)
+    return nodeDescription
   })
 
   const [mainTask, ...contextTasks] = descriptions.slice().reverse()
@@ -33,7 +38,7 @@ export const suggestSteps = async (
 
   const promptIntro = `PLEASE OUTPUT SINGLE VALID JSON ARRAY OF STRINGS < 50 CHARS PER ENTRY.  `
 
-  const promptBody = `Please create 3-7 subtasks of the following task: ${mainTask}.  For context, this is a subtask of ${contextTasks.join(' subtask of the task ')}.  Please do not provide subtasks which are likely included in other branches.  If necessary, group information into a single subtask`
+  const promptBody = `Please create 3-7 subtasks of the following task: ${mainTask}.  For context, this is a subtask of ${contextTasks.join(' subtask of the task ')}.  Please do not provide subtasks which are likely included in other branches.  If necessary, group information into a single subtask. ${ childRoutes.length > 0 ? `The following subtasks have already been created, so create new ones other than these: '${siblingDescriptions.join(', ')}'.` : ""} `
 
   const promptConclusion = `Please output only single json array containing only strings.`
 
@@ -42,7 +47,7 @@ export const suggestSteps = async (
   console.log("PROMPT", userPrompt, systemPrompt)
 
   
-  const response: any = await promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
+  const response: any = await options.promptGPT(systemPrompt, userPrompt).catch((error: Error) => {
     console.log('error', error)
     throw new Error('error getting suggestions')
   });
@@ -97,7 +102,7 @@ export const suggestSteps = async (
   const newTasks = taskSets[0]
 
   const newNodeItems = newTasks.map((task: string) => {
-    const newNodeData: FosDataContent = {
+    const newNodeData: Partial<FosDataContent> = {
       description: {
         content: task
       }
@@ -105,36 +110,20 @@ export const suggestSteps = async (
     return newNodeData
   })
 
- 
-  console.log('suggestion1')
-  const nodeData = node.getData()
 
 
-
-  if (node.getChildren().length > 0){
-    // add new tasks to new option
-    console.log('suggestion1')
-
-    // if is option add child
-
-    // else create new option node on parent and move this under
+  const { newState: stateWithChildren, childRoutes: generatedChildRoutes }  = newNodeItems.reduce((acc: { newState: AppState, childRoutes: FosRoute[] }, newNodeItem: Partial<FosDataContent>, i: number) => {
 
     
+    const newRow = { data: newNodeItem, content: []}
 
-  }
+    const { newState: stateWithChild, childRoute }  = addChild(acc.newState, nodeRoute, "workflow", newRow , childRoutes.length + i)
 
+    return { newState: stateWithChild, childRoutes: [...acc.childRoutes, childRoute] }
 
-  for (const newNodeItem of newNodeItems){
-
-    const newNode = node.newChild("workflow")
-    const newNodeData = newNode.getData()
-    newNode.setData({
-      ...newNodeData,
-      ...newNodeItem
-    })
-  }
+  }, { newState: appState, childRoutes: [] })
 
 
 
-  return
+  return stateWithChildren
 }

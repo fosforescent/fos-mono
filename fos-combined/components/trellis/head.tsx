@@ -6,7 +6,7 @@ import { Apple, BrainCircuit, CircleEllipsis, DollarSign, Timer, Hammer, Dices, 
 import { Button } from '@/components/ui/button';
 
 
-import { FosModule } from '../modules/fosModules';
+import { FosModule } from '../fos-react/fosModules';
 
 import { AppState, FosReactOptions,} from '@/fos-combined/types';
 
@@ -71,7 +71,6 @@ export const RootScreenHead = ({
 
   
 
-
   const activeModule = (isRoot && [undefined, "root", "workflow", "todo"].includes(options.activeModule?.name)) ? undefined : options.activeModule
 
   const homeModules = options?.modules?.filter((module: FosModule) => module.name === 'budget' || module.name === 'import_export') || []
@@ -79,6 +78,9 @@ export const RootScreenHead = ({
   const availableModules = (isRoot ? homeModules : options?.modules) || []
 
   const hasModules = availableModules.length > 0
+
+
+  console.log('rootscreenhead', activeModule, availableModules, options?.modules, options)
 
   const HeadComponent = activeModule?.HeadComponent || (() => <></>)
 

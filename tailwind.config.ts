@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: ["class"],
+  darkMode: "class",
   content: [
     './pages/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
@@ -10,6 +10,7 @@ export default {
     './react-client/**/*.{ts,tsx}',
     './react-trellis/**/*.{ts,tsx}',
     './viridian-react/**/*.{ts,tsx}',
+    './fos-combined/**/*.{ts,tsx}',
 	],
   theme: {
   	container: {

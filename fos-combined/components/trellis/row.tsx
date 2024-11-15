@@ -24,10 +24,14 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import _, { update } from 'lodash'
-import { useWindowSize } from '../../window-size'
-import { FosReactOptions, TrellisSerializedData } from '../../../types'
+import { useWindowSize } from '../window-size'
+import { FosReactOptions, FosRoute, TrellisSerializedData } from '../../types'
 
 import { AppState } from '@/fos-combined/types'
+import { getNodeOperations } from '@/fos-combined/lib/nodeOperations'
+import { getDragItem, getNodeInfo } from '@/fos-combined/lib/utils'
+import { FosRowsComponent } from './rows'
+import { RowBody } from './rowBody'
 
 
 
@@ -41,30 +45,52 @@ export const DefaultRowComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) => {
 
 
 
-  const children = node.getChildren()
+  const { locked, getOptionInfo,
+    hasFocus, focusChar, isDragging, draggingOver, 
+    nodeDescription, isRoot, childRoutes, isBase,
+    nodeType, nodeId, disabled, depth, isCollapsed, 
+    isTooDeep
+  } = getNodeInfo(nodeRoute, data)
+  
+  const { 
+    suggestOption, 
+    setFocus, 
+    setSelectedOption, 
+    setFocusAndDescription, 
+    deleteRow, 
+    deleteOption,
+    keyDownEvents,
+    keyUpEvents,
+    keyPressEvents,
+    addOption,
+    suggestSteps,
+   } = getNodeOperations(options, data, setData, nodeRoute)
+  
+   
+   
+   const {
+    dragging, 
+    dragOverInfo,
+   } = data.data.trellisData.dragInfo
 
 
-  const nodeId = node.getId()
-  // const nodeItemId = `${nodeType}-${nodeId}`
-  // const dragItemNodeId = `${dragItem?.data.node.getNodeType()}-${dragItem?.data.node.getNodeId()}`
-
-
-  const isChildOf = (argNode: T) => {
-    const trail = node.getRoute()
-    const hasParent = trail.find((node) => node.getId() === argNode.getId())
-    return !!hasParent
+  const isChildOf = (argNodeRoute: FosRoute) => {
+    const matches = argNodeRoute.every((argNodeElem, index) => {
+      return argNodeElem[0] === nodeRoute[index]?.[0] && argNodeElem[1] === nodeRoute[index]?.[1]
+    })
+    return matches
   }
 
-  const isDraggingParent = !!(dragging && dragging.node && isChildOf(dragging.node))
+  const isDraggingParent = !!(dragging && dragging.nodeRoute && isChildOf(dragging.nodeRoute))
 
-  const nodeItemId = `${node.getId()}`
-  const nodeItemIdMaybeParent = dragging && isDraggingParent ? dragging.id : nodeItemId
+  const nodeItemId = `${nodeType}-${nodeId}`
+  const nodeItemIdMaybeParent = isDragging && isDraggingParent ? dragging.id : nodeItemId
 
 
   const {
@@ -73,7 +99,7 @@ export const DefaultRowComponent = ({
     setNodeRef: setDragNodeRef,
     transform,
     // transition,
-  } = useDraggable({id: nodeItemIdMaybeParent, data: { node: isDraggingParent ? dragging.node : node } });
+  } = useDraggable({id: nodeItemIdMaybeParent, data: { nodeRoute: isDraggingParent ? dragging.nodeRoute : nodeRoute } });
 
 
   const {
@@ -82,12 +108,15 @@ export const DefaultRowComponent = ({
   } = useDroppable({
     id: nodeItemIdMaybeParent,
     disabled: isDraggingParent || disabled,
-    data: { node }
+    data: { nodeRoute }
   });
 
 
   // console.log('transformstyle', transform, CSS.Transform.toString(transform))
     // transition,)
+
+
+  const dragItem = getDragItem(nodeRoute, false)
 
   const dragStyle = {
     transform: transform ? `translate3d( ${transform?.x}px, ${transform?.y}px, 0) scaleY(${transform?.scaleY || 1})` : undefined,
@@ -152,98 +181,7 @@ export const DefaultRowComponent = ({
   }
 
 
-  const hasFocus = node.hasFocus() !== null
-  
 
-  const setFocusToHere = () => {
-    const focusChar = node.getRoot().hasFocus()
-    node.setFocus(focusChar)
-  }
-
-  // const registerRecievedFocus = () => {
-  //   node.registerRecievedFocus()
-  // }
-
-
-
-  const moveFocusUp = () => {
-    const newContext = node.moveFocusUp()
-    // if (newContext){
-    //   updateNodes(newContext)
-    // }
-  }
-
-  const moveFocusDown = () => {
-    const newContext = node.moveFocusDown()
-  }
-
-  const toggleCollapse = () => {
-    node.toggleCollapse()
-  }
-
-  // const addYoungerSibling = () => {
-  //   node.addYoungerSibling()
-  // }
-
-  const moveLeft = () => {
-    node.moveLeft()
-  }
-
-  const moveRight = () => {
-    node.moveRight()
-  }
-
-  // const deleteRow = () => {
-  //   node.remove()
-  // }
-
-  const moveUp = () => {
-    node.moveUp()
-  }
-
-  const moveDown = () => {
-    node.moveDown()
-  }
-
-
-  // const handleUndo = () => {
-  //   node.undo()
-  // }
-
-  // const handleRedo = () => {
-  //   node.redo()
-  // }
-
-
-
-  // const handleTextEdit = ( e: string ) => {
-  //   node.updateData({...node.getData(), content: e})
-  // }
-
-
-  // const focusChar = node.getFocusChar()
-
-
-
-
-
-  
-  const handleZoom = () => {
-    console.log('zooming', node)
-    node.setZoom()
-    console.log('zooming2', node)
-    node.refresh()
-  }
-
-
-  const isDragging = dragging ? (dragging.id === `${dragItem?.id}`) : false 
-  const draggingOver = !!isOver
-
-  const RowsComponent = node.components.rows
-  const RowBodyComponent = node.components.rowBody
-  const MenuComponent = node.components.menu
-
-  const maxRowDepth = state.rowDepth
 
   // console.log('trellis row')
 
@@ -254,22 +192,24 @@ export const DefaultRowComponent = ({
     <div style={{
       ...dropStyle,
       width: 'calc(100%)',
-      paddingLeft: `${(maxRowDepth - rowDepth) * 1.5}rem`,
+      paddingLeft: `${(depth) * 1.5}rem`,
     }}  
       ref={setDropNodeRef} 
       className={``}>
 
-        <RowBodyComponent 
-          data={data}
-          setData={setData}
-          options={options}
+      <RowBody
+        data={data}
+        nodeRoute={nodeRoute}
+        setData={setData}
+        options={options}
           />
     </div>
   </div>
   <div className={` `}>
-    {!node.isCollapsed() && rowDepth > 0 && children.length > 0 && (
-      <RowsComponent 
+    {!isCollapsed && depth > 0 && childRoutes.length > 0 && (
+      <FosRowsComponent 
         data={data}
+        nodeRoute={nodeRoute}
         setData={setData}
         options={options}
       />

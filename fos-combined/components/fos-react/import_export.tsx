@@ -2,9 +2,20 @@ import React, { useState, useRef } from 'react';
 import { ArrowUpToLine, ArrowDownToLine, FileJson } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { FosContextData, FosDataContent, FosNodeContent, FosNodesData } from '../../../types';
+import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosReactOptions, FosRoute } from '../../types';
 
-const ResourceComponent = ({ node, options }: FosModuleProps) => {
+const ResourceComponent = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosRoute
+  setData: (state: AppState) => void
+}) => {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
