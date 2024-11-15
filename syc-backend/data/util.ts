@@ -3,9 +3,8 @@ import {
   FosContextData,
   FosNodeContent,
   FosNodesData,
-  FosPeer,
-  FosRootNode,
-} from "@/fos-js";
+
+} from "@/fos-combined/types";
 import { User, FosNode, FosGroup, PrismaClient } from "@prisma/client";
 
 import { generateKeyPair, randomUUID } from "crypto";
@@ -50,8 +49,7 @@ export function hashFosContextData(fosContextData: FosContextData) {
       };
       return returnVal;
     }, {}),
-    trail: fosContextData.trail,
-    focus: fosContextData.focus,
+    route: fosContextData.route,
   };
 
   const dataString = JSON.stringify(objectWithRelevantData);
@@ -95,7 +93,7 @@ export const checkDataFormat = (data: FosContextData) => {
     throw new Error("no data.nodes");
   }
 
-  const rootId = data.trail?.[0]?.[1] || "root";
+  const rootId = data.route?.[0]?.[1] || "root";
 
   const hasRoot = data.nodes[rootId];
 

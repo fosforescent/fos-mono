@@ -17,7 +17,7 @@ if (!STRIPE_TOKEN) {
   throw new Error('STRIPE_TOKEN not set')
 }
 
-const stripe = new Stripe(STRIPE_TOKEN, { apiVersion: '2023-10-16' })
+const stripe = new Stripe(STRIPE_TOKEN, { apiVersion: '2024-10-28.acacia' })
 
 interface CheckoutSessionCreateRequest {
   success_url: string;

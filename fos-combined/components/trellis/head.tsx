@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 
 import { FosModule } from '../fos-react/fosModules';
 
-import { AppState, FosReactOptions,} from '@/fos-combined/types';
+import { AppState, FosReactOptions, FosRoute,} from '@/fos-combined/types';
 
 export const RootScreenHead = ({ 
   data,
@@ -19,7 +19,7 @@ export const RootScreenHead = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: [string, string][]
+  nodeRoute: FosRoute
   setData: (state: AppState) => void
 }) => {
 

@@ -6,7 +6,8 @@ import _ from 'lodash'
 import { getNodeOperations } from "@/fos-combined/lib/nodeOperations"
 import { getNodeInfo } from "@/fos-combined/lib/utils"
 import { AppState, FosReactOptions, FosRoute } from "@/fos-combined/types"
-import { Workflow } from "lucide-react"
+import { PlaySquare, Workflow } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 const ResourceComponent = ({ 
   data,
@@ -76,7 +77,8 @@ const WorkflowRowComponent = ({
     toggleOptionCollapse,
     suggestSteps,
     toggleCollapse,
-    zoom
+    zoom,
+    runTask
    } = getNodeOperations(fosOptions, data, setData, nodeRoute)
  
 
@@ -106,6 +108,9 @@ const WorkflowRowComponent = ({
       setFocus={setFocus}
       addOption={addOption}
       />
+      <Button onClick={runTask}>
+        <PlaySquare />
+      </Button>
 
   </div>)
 }

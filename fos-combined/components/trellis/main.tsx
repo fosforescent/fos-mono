@@ -40,22 +40,27 @@ import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosRoute }
 import { getActions } from '../../lib/actions'
 import { DefaultBreadcrumbsComponent } from './breadcrumbs'
 import { DefaultRootComponent } from './root'
+import { useProps } from '@/fos-combined/App';
 
 
 
 
 // eslint-disable-next-line @typescript-eslint/ban-types
-export function MainView ({ 
-  data,
-  setData,
-  options,
-  ...props
-} : {
-  options: FosReactGlobal
-  data: AppState
-  setData: (state: AppState) => void
-}){
+export function MainView (){
 
+
+  const { 
+    data,
+    setData,
+    options,
+    nodeRoute: route,
+    ...props
+  } : {
+    options: FosReactGlobal
+    data: AppState
+    nodeRoute: FosRoute
+    setData: (state: AppState) => void
+  } = useProps()
 
   const actions = React.useMemo(() => {
     return getActions(options, data, setData)
@@ -324,7 +329,6 @@ export function MainView ({
   };
   
 
-  const route = data.data.fosData.route
 
   console.log('zoomroute', route)
 

@@ -202,6 +202,35 @@ app.use('/', protectedRoutes)
 
 
 
+
+
+
+var WSServer = require('ws').Server;
+let wss = new WSServer({
+  server: app
+});
+
+// Also mount the app here
+server.on('request', app);
+
+wss.on('connection', function connection(ws: WebSocket) {
+ 
+  ws.addEventListener('message', (message: MessageEvent<any>) => {
+    
+    console.log(`received: ${message}`);
+    
+    ws.send(JSON.stringify({
+
+      answer: 42
+    }));
+  });
+
+  ws.send(JSON.stringify({
+    question: 'What is the answer to the Ultimate Question of Life, the Universe, and Everything?',
+  }));
+
+});
+
 const port = process.env.PORT || 80
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`)

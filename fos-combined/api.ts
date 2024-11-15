@@ -1,8 +1,9 @@
 import React from "react"
 import { EventSourcePolyfill, Event } from 'event-source-polyfill'
+import { InfoState, SubscriptionInfo } from "./types"
 // import { AppData, Profile } from "./components/app-state/index"
 
-import {  AppState, InfoState, SubscriptionInfo, InfoProfile } from "./components/app-state";
+
 
 
 

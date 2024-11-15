@@ -41,7 +41,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { App } from '@prisma/client'
 import { AppState, FosReactOptions } from '@/fos-combined/types'
 import { getActions } from '@/fos-combined/lib/actions'
-
+import { NavLink } from "react-router-dom";
+import { cn } from '@/lib/utils'
 
 
 const HamburgerMenu = ({
@@ -60,7 +61,9 @@ const HamburgerMenu = ({
   setShowEmailConfirm,
   data: appState,
   setData,
-  options
+  options,
+  menuOpen,
+  setMenuOpen
 }: {
   emailConfirmationToken?: string,
   passwordResetToken?: string,
@@ -78,14 +81,15 @@ const HamburgerMenu = ({
   data: AppState
   setData: (data: AppState) => void
   options: FosReactOptions
+  menuOpen: boolean,
+  setMenuOpen: (open: boolean) => void
 }) => {
 
 
   const { sendMessage } = getActions(options, appState, setData)
+  
 
-  const [menuOpen, setMenuOpen] = useState<boolean>(emailConfirmationToken || passwordResetToken ? true : false)
-
-
+  const loggedIn = !!appState.auth.jwt
 
   
   const [messageEmail, setMessageEmail] = useState(appState.auth.email || '')
@@ -117,7 +121,7 @@ const HamburgerMenu = ({
     })
   }
 
-  const [accordionValue, setAccordionValue] = useState('account')
+  const [accordionValue, setAccordionValue] = useState(loggedIn ? 'nav' : 'account')
 
 
   return (
@@ -133,15 +137,65 @@ const HamburgerMenu = ({
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger><Menu /></SheetTrigger>
-          <SheetContent>
-            <SheetHeader>
+          <SheetContent className="md:min-w-[80%] sm:min-w-full">
+            <SheetHeader className="mb-10">
               Fos
             </SheetHeader>
-            <SheetTitle>
+            {/* <SheetTitle>
               Settings
-            </SheetTitle>
+            </SheetTitle> */}
 
+            <hr />
             <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue}>
+              {!loggedIn && <AccordionItem value="nav">
+                <AccordionTrigger>Navigation </AccordionTrigger>
+                <AccordionContent>
+                <div>
+                <hr />
+                <nav className="p-4 space-y-2">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="w-full justify-start"
+                  >
+                    <NavLink
+                      to="/todos"
+                      className={({ isActive }) =>
+                        cn(
+                          "w-full",
+                          isActive && "bg-accent text-accent-foreground"
+                        )
+                      }
+                      end
+                    >
+                      Todos
+                    </NavLink>
+                  </Button>     
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="w-full justify-start"
+                  >
+                    <NavLink
+                      to="/workflows"
+                      className={({ isActive }) =>
+                        cn(
+                          "w-full",
+                          isActive && "bg-accent text-accent-foreground"
+                        )
+                      }
+                      end
+                    >
+                      Workflows
+                    </NavLink>
+                  </Button>      
+                </nav>
+
+              </div>
+                </AccordionContent>
+              </AccordionItem>}
+
+
               <AccordionItem value="account">
                 <AccordionTrigger>Account </AccordionTrigger>
                 <AccordionContent>

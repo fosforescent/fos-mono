@@ -125,6 +125,11 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       })
 
 
+
+      //TODO: if is market todo or marketservice, then insert into vector db
+
+
+
     }
   } catch (error) {
     console.error(error)

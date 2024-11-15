@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react'
 
 
-import { AppState, FosContextData, FosReactGlobal, FosReactOptions,} from './types'
+import { AppState, FosContextData, FosReactGlobal, FosReactOptions, FosRoute,} from './types'
 import { useTraceUpdate } from './components/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
@@ -41,6 +41,8 @@ import { FosModule, fosDataModules, fosResourceModules, fosReportModules, fosNod
 import { defaultContext, defaultTrellisData } from './defaults'
 
 import { MainView } from './components/trellis/main'
+import { Outlet, useOutletContext, useLoaderData } from 'react-router-dom'
+import { useWebSocket } from './main'
 
 
 declare const __SYC_API_URL__: string;
@@ -97,13 +99,11 @@ export default function App({
   
 }) {
 
-  
-  const apiUrl = "http://localhost:4000"
+  const { shouldOpenMenu, apiUrl } = useLoaderData() as { shouldOpenMenu: boolean ; apiUrl: string };
   // const apiUrl = __PROD_SYC_API_URL__
   // const apiUrl = __DEV_SYC_API_URL__
 
   
-
   const [showCookieConsent, setShowCookieConsent] = useState(false)
 
   const [showTerms, setShowTerms] = useState({open: false, fromRegisterForm: false, setAcceptTerms: (accept: boolean) => {}})
@@ -230,6 +230,24 @@ export default function App({
   }
 
 
+  const { send, messages, connected } = useWebSocket()
+
+  useEffect(() => {
+    const message = messages.pop()
+    console.log('messages', message)
+
+  }, [messages])
+
+  useEffect(() => {
+    if (connected){
+      send({
+        type: 'auth',
+        jwt: appState.auth.jwt,
+      })
+
+    }
+  }, [connected, appState.auth.jwt])
+
 
   if (appState.data.fosData.route.length < 1){
     throw new Error('No route')
@@ -262,9 +280,14 @@ export default function App({
 
   const global: FosReactGlobal = getGlobal(optionsWithModule || { activeModule: fosDataModules.description })
 
+  const [menuOpen, setMenuOpen] = useState<boolean>(emailConfirmationToken || passwordResetToken ? true : false)
 
-  
 
+  useEffect(() => {
+    if (shouldOpenMenu) {
+      setMenuOpen(true);
+    }
+  }, [shouldOpenMenu]);
 
  
   return (<><div className="App h-full bg-background" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden' }}>
@@ -286,12 +309,20 @@ export default function App({
           data={appState}
           setData={setAppState}
           options={options}
+          menuOpen={menuOpen}
+          setMenuOpen={setMenuOpen}
           
           />
         <div className="flex items-center justify-center h-full w-full" style={{overflowX: 'hidden' }}>
         <></>
-        <MainView data={appState} setData={setDataWithLog} options={global} />
-
+        
+        <Outlet context={{
+          data: appState,
+          setData: setDataWithLog,
+          options: options,
+          nodeRoute: appState.data.fosData.route,
+        }} />
+        
         
         <TutorialDialog open={showTutorial} setOpen={setShowTutorial} />
       </div>
@@ -349,4 +380,14 @@ export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> =>
   }
 
   return global
+}
+type ContextType = { 
+  data: AppState, 
+  setData: (data: AppState) => void, 
+  options: FosReactOptions,
+  nodeRoute: FosRoute
+ };
+
+export function useProps() {
+  return useOutletContext<ContextType>();
 }

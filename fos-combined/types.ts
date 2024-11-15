@@ -73,6 +73,7 @@ export type FosDataContent = {
   }
   option?: {
     selectedIndex: number;
+    defaultResolutionStrategy: "choice" | "selected" | "race";
   }
   description?: {
     content: string;
