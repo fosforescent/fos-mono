@@ -188,7 +188,61 @@ const HamburgerMenu = ({
                     >
                       Workflows
                     </NavLink>
-                  </Button>      
+                  </Button>
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="w-full justify-start"
+                  >
+                    <NavLink
+                      to="/workflows"
+                      className={({ isActive }) =>
+                        cn(
+                          "w-full",
+                          isActive && "bg-accent text-accent-foreground"
+                        )
+                      }
+                      end
+                    >
+                      Market
+                    </NavLink>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="w-full justify-start"
+                  >
+                    <NavLink
+                      to="/workflows"
+                      className={({ isActive }) =>
+                        cn(
+                          "w-full",
+                          isActive && "bg-accent text-accent-foreground"
+                        )
+                      }
+                      end
+                    >
+                      Groups
+                    </NavLink>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="w-full justify-start"
+                  >
+                    <NavLink
+                      to="/workflows"
+                      className={({ isActive }) =>
+                        cn(
+                          "w-full",
+                          isActive && "bg-accent text-accent-foreground"
+                        )
+                      }
+                      end
+                    >
+                      Utilities
+                    </NavLink>
+                  </Button>  
                 </nav>
 
               </div>
