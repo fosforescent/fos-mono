@@ -137,7 +137,7 @@ const HamburgerMenu = ({
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger><Menu /></SheetTrigger>
-          <SheetContent className="md:min-w-[80%] sm:min-w-full">
+          <SheetContent className="md:min-w-[80%] sm:min-w-full" side={'left'}>
             <SheetHeader className="mb-10">
               Fos
             </SheetHeader>

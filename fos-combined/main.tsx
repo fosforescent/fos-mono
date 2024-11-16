@@ -6,6 +6,7 @@ import TrellisMain from './components/trellis/main'
 
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
+import TodoQueue from './todo/Queue'
 
 
 const apiUrl = "http://localhost:4000"
@@ -48,7 +49,18 @@ const router = createBrowserRouter([
       },
       {
         path: "todos",
-        element: <TrellisMain />
+        // element: <App />,
+        children: [
+          {
+            index: true,
+            element: <TodoQueue />,
+    
+          },
+          {
+            path: "workflows",
+            element: <TrellisMain />
+          },
+        ]
       }
     ]
   }
