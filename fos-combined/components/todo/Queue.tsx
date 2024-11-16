@@ -4,32 +4,39 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { AppState, FosReactGlobal, FosRoute } from '@/fos-combined/types';
+import { useProps } from '@/fos-combined/App';
+import { getAvailableTasks, getNodeInfo, getRootNodes } from '@/fos-combined/lib/utils';
 
 interface Message {
-  id: number;
+  id: string;
   text: string;
   timestamp: string;
 }
 
 interface AnimatedMessagesState {
   messages: Message[];
-  animatingMessages: number[];
+  animatingMessages: string[];
 }
 
 interface MessageCardProps {
   message: Message;
   isAnimating: boolean;
-  onAnimationEnd: (messageId: number) => void;
+  // onAnimationEnd: (messageId: string) => void;
 }
 
-const MessageCard: React.FC<MessageCardProps> = ({ message, isAnimating, onAnimationEnd }) => (
+const MessageCard: React.FC<MessageCardProps> = ({ 
+  message, 
+  isAnimating, 
+  // onAnimationEnd 
+}) => (
   <Card 
     className={`transform transition-all duration-500 ${
       isAnimating
         ? '-translate-y-full opacity-0'
         : 'translate-y-0 opacity-100'
     }`}
-    onAnimationEnd={() => onAnimationEnd(message.id)}
+    // onAnimationEnd={() => onAnimationEnd(message.id)}
   >
     <CardContent className="p-4">
       <div className="text-gray-800">{message.text}</div>
@@ -38,52 +45,62 @@ const MessageCard: React.FC<MessageCardProps> = ({ message, isAnimating, onAnima
   </Card>
 );
 
-const TodoQueue: React.FC = () => {
-  const [messageState, setMessageState] = useState<AnimatedMessagesState>({
-    messages: [
-        {
-            id: 1,
-            text: 'Hello, World!',
-            timestamp: new Date().toLocaleTimeString(),
-        },
-        {
-            id: 2,
-            text: 'This is a message',
-            timestamp: new Date().toLocaleTimeString(),
-        },
-        {
-            id: 3,
-            text: 'This is another message',
-            timestamp: new Date().toLocaleTimeString(),
-        },
-    
-    ],
-    animatingMessages: []
-  });
+const TodoQueue = () => {
+
+
+
+
+
+  const { 
+    data,
+    setData,
+    options,
+    nodeRoute: route,
+    ...props
+  } : {
+    options: FosReactGlobal
+    data: AppState
+    nodeRoute: FosRoute
+    setData: (state: AppState) => void
+  } = useProps()
+
+
+
+
+  const rootTodos = getRootNodes(data, 'todo');
+
+  const allTodos: FosRoute[] = rootTodos.todos.flatMap((todoRoute) => getAvailableTasks(data, todoRoute));
+
+  const messages = allTodos.map((todoRoute: FosRoute) => {
+    const { nodeDescription, nodeData, nodeId } = getNodeInfo(todoRoute, data);
+    return {
+      id: nodeId,
+      text: nodeDescription,
+      timestamp: new Date().toLocaleTimeString(),
+    }
+  })
+  
+
+
   const [newMessage, setNewMessage] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    const message: Message = {
-      id: Date.now(),
-      text: newMessage,
-      timestamp: new Date().toLocaleTimeString(),
-    };
+    // const message: Message = {
+    //   id: Date.now(),
+    //   text: newMessage,
+    //   timestamp: new Date().toLocaleTimeString(),
+    // };
 
-    setMessageState(prev => ({
-      messages: [...prev.messages, message],
-      animatingMessages: [...prev.animatingMessages, message.id]
-    }));
+
     setNewMessage('');
   };
 
   const handleAnimationEnd = (messageId: number): void => {
-    setMessageState(prev => ({
-      ...prev,
-      animatingMessages: prev.animatingMessages.filter(id => id !== messageId)
-    }));
+ 
+    
   };
 
   return (
@@ -94,12 +111,12 @@ const TodoQueue: React.FC = () => {
       
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-4">
-          {messageState.messages.map((message) => (
+          {messages.map((message) => (
             <MessageCard
               key={message.id}
               message={message}
-              isAnimating={messageState.animatingMessages.includes(message.id)}
-              onAnimationEnd={handleAnimationEnd}
+              isAnimating={false}
+              // onAnimationEnd={handleAnimationEnd}
             />
           ))}
         </div>

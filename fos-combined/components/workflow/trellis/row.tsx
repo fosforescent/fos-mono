@@ -24,8 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import _, { update } from 'lodash'
-import { useWindowSize } from '../window-size'
-import { FosReactOptions, FosRoute, TrellisSerializedData } from '../../types'
+import { FosReactOptions, FosRoute, TrellisSerializedData } from '../../../types'
 
 import { AppState } from '@/fos-combined/types'
 import { getNodeOperations } from '@/fos-combined/lib/nodeOperations'

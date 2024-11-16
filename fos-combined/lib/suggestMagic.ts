@@ -3,8 +3,8 @@
 import { suggestTaskOptions } from "./suggestOption"
 import { suggestTaskSteps } from "./suggestSteps"
 
-import { setCostInfo, getCostInfo } from "../components/fos-react/cost" 
-import { setDurationInfo, getDurationInfo } from "../components/fos-react/duration"
+import { setCostInfo, getCostInfo } from "../components/fos-modules/cost" 
+import { setDurationInfo, getDurationInfo } from "../components/fos-modules/duration"
 import { AppState, FosNodeContent, FosReactOptions, FosRoute } from "../types"
 import { getNodeInfo } from "./utils"
 import { getNodeOperations } from "./nodeOperations"

@@ -30,24 +30,19 @@ import { getUserProfile, postUserProfile } from './user'
 import { putError } from './error'
 import { maxRequests } from './maxRequests'
 // import { clientManagerMiddleware } from './clientManager'
-import { getDataSSEvents } from './events'
-import { Socket } from 'socket.io'
+
 import jwt from 'jsonwebtoken'
 
 
 const http = require('http');
 
-const { Server } = require("socket.io");
 
 config()
 
 
 const app = express()
 
-const server = http.createServer(app);
-const io = new Server(server, {
-  path: '/mycustompath'
-});
+
 const stripeRoute = express.Router()
 
 
@@ -211,6 +206,7 @@ if (!JWT_SECRET) {
 }
 
 import {prisma} from './prismaClient'
+import { attachWs } from './ws'
 
 
 export interface Claims {
@@ -220,62 +216,28 @@ export interface Claims {
 }
 
 
-var WSServer = require('ws').Server;
-let wss = new WSServer({
-  server: app,
-  verifyClient: async (info: any, done: any) => {
-    console.log(info.req.url);
-    console.log('------verify client------');
 
-    const token = info.req.url.split('/')[1];
-    var decoded = jwt.verify(token, JWT_SECRET) as Claims;
+const server = http.createServer(app);
 
 
-    const user = await prisma.user.findUnique({
-      where: { user_name: (decoded as any).claims.username }
-    })
+attachWs(server)
 
-    if (!user) {
-      console.log('user not found')
-      throw new Error('User not found or not approved')
-    }
+// Start the server
+const PORT = process.env.PORT || 4000;
 
-    if (!user.approved) {
-      console.log('user not approved')
-      throw new Error('User not found or not approved')
-    }
-    /*info.req.user is either null or the user and you can destroy the connection
-     if its null */
-
-    done(info.req);
-  },
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);
 });
+
 
 // Also mount the app here
-server.on('request', app);
+// server.on('request', app);
 
-wss.on('connection', function connection(ws: WebSocket) {
- 
-  ws.addEventListener('message', (message: MessageEvent<any>) => {
-    
-    console.log(`received: ${message}`);
-    
-    ws.send(JSON.stringify({
-
-      answer: 42
-    }));
-  });
-
-  ws.send(JSON.stringify({
-    question: 'What is the answer to the Ultimate Question of Life, the Universe, and Everything?',
-  }));
-
-});
-
-const port = process.env.PORT || 80
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`)
-})
+// const port = process.env.PORT || 80
+// app.listen(port, () => {
+//   console.log(`Server running on http://localhost:${port}`)
+// })
 
 
 // // Your Socket.IO code here, e.g., handling connections

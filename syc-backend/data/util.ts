@@ -5,6 +5,11 @@ import {
   FosNodesData,
 
 } from "@/fos-combined/types";
+
+
+import { Pinecone } from '@pinecone-database/pinecone';
+
+
 import { User, FosNode, FosGroup, PrismaClient } from "@prisma/client";
 
 import { generateKeyPair, randomUUID } from "crypto";
@@ -280,6 +285,8 @@ export const storeCtxToDb = async (
         // })
       }
     } else {
+
+
       await prisma.fosNode.create({
         data: {
           id: fNode.id,

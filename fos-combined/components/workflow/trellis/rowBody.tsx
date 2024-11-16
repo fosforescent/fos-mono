@@ -10,7 +10,7 @@ import {
   fosModuleNames, 
   FosModule, 
   FosResourceModuleName, 
-} from '../fos-react/fosModules'
+} from '../../fos-modules/fosModules'
 
 import { ChevronDownCircleIcon, ChevronRightCircleIcon, ChevronLeftCircleIcon, DiscIcon } from 'lucide-react'
 

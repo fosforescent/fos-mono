@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react'
 
 
-import { AppState, FosContextData, FosReactGlobal, FosReactOptions, FosRoute,} from './types'
+import { AppState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosRoute,} from './types'
 import { useTraceUpdate } from './components/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
@@ -28,7 +28,6 @@ import { Toaster } from "@/components/ui/toaster"
 import { CookieDialog } from './components/dialog/CookieDialog'
 import { PrivacyPolicyDialog } from './components/dialog/PrivacyPolicyDialog'
 import { TermsDialog } from './components/dialog/TermsDialog'
-import { set } from 'lodash'
 import { ConfirmClearData } from './components/dialog/ConfirmClearData'
 import { ConfirmDeleteUser } from './components/dialog/ConfirmDeleteUser'
 import { ConfirmEmailChange } from './components/dialog/ConfirmEmailChange'
@@ -36,12 +35,13 @@ import { ErrorBoundary } from './components/error-boundary'
 import { useToast } from '@/components/ui/use-toast';
 import { jwtDecode } from 'jwt-decode';
 import { api } from './api'
-import { FosModule, fosDataModules, fosResourceModules, fosReportModules, fosNodeModules, fosModules } from './components/fos-react/fosModules'
+import { FosModule, fosDataModules, fosResourceModules, fosReportModules, fosNodeModules, fosModules } from './components/fos-modules/fosModules'
 
 import { defaultContext, defaultTrellisData } from './defaults'
 
-import { MainView } from './components/trellis/main'
 import { Outlet, useOutletContext, useLoaderData } from 'react-router-dom'
+import { getActions } from './lib/actions'
+import { diff } from '@n1ru4l/json-patch-plus'
 
 
 declare const __SYC_API_URL__: string;
@@ -87,9 +87,10 @@ export const initialDataState: AppState =  JSON.parse(localStorage.getItem("data
   auth: initialAuthState,
   info: initialInfoState,
   theme: JSON.parse(localStorage.getItem("theme") || "null") || "system",
+  loaded: false,
 }
 
-
+import { useLocation } from 'react-router-dom'
 
 
 export default function App({
@@ -98,10 +99,8 @@ export default function App({
   
 }) {
 
-  const { shouldOpenMenu, apiUrl } = useLoaderData() as { shouldOpenMenu: boolean ; apiUrl: string };
-  // const apiUrl = __PROD_SYC_API_URL__
-  // const apiUrl = __DEV_SYC_API_URL__
-
+  const apiUrl = window.Fos.apiUrl
+  
   
   const [showCookieConsent, setShowCookieConsent] = useState(false)
 
@@ -128,12 +127,19 @@ export default function App({
 
 
   
-  const jwt = localStorage.getItem('auth')
+  const jwt = JSON.parse(localStorage.getItem('auth') || "") || undefined
 
   const {
     username,
     exp
   } = jwt ? jwtDecode(jwt) as { username: string, exp: number } : { username: "", exp: 0 }
+
+
+  const location = useLocation();
+
+
+  const shouldOpenMenu = !jwt && (location.pathname) === "/"
+  // const shouldOpenMenu = !jwt 
 
 
   
@@ -142,16 +148,16 @@ export default function App({
       return
     }
     // console.log('apiUrl', apiUrl, props.mode)
-    const handler = (e: string | Buffer) => {
+    const handler: EventListener = (e) => {
       console.log('ws message', e)
     }
 
 
     if (!window.Fos.ws) {
 
-      window.Fos.ws = new WebSocket(`${apiUrl}/${jwt}`);
-      console.log('connecting to', `${apiUrl}/${jwt}`)
-      window.Fos.ws.on('connected', () => {
+      window.Fos.ws = new WebSocket(`${apiUrl}/socket/${jwt}`);
+      console.log('connecting to', `${apiUrl}/socket/${jwt}`)
+      window.Fos.ws.addEventListener('connected', () => {
         console.log('connected')
         window.Fos.ws.send('hello')
       })
@@ -162,6 +168,8 @@ export default function App({
       return () => {
         window.Fos.ws.removeEventListener('message', handler)
       }
+    } else {
+      window.Fos.ws = new WebSocket(`${apiUrl}/socket/${jwt}`);
     }
   }, [apiUrl, jwt])
   
@@ -288,12 +296,46 @@ export default function App({
 
   const [menuOpen, setMenuOpen] = useState<boolean>(emailConfirmationToken || passwordResetToken ? true : false)
 
+  
 
+  
   useEffect(() => {
     if (shouldOpenMenu) {
       setMenuOpen(true);
     }
   }, [shouldOpenMenu]);
+
+  const { saveFosAndTrellisData, saveProfileData, loadAppData } = getActions(options, appState, setAppState)
+
+  useEffect(() => {
+    if (appState.auth.jwt && !appState.loaded){
+      loadAppData()
+    }
+  }, [appState.auth.jwt])
+
+  const setAppStateWithEffects = (newData: AppState) => {
+
+    if (newData.auth.jwt){
+      localStorage.setItem('auth', JSON.stringify(newData.auth.jwt))
+    }
+
+
+    const syncData = async () => {
+      const dataDiff = diff({ left: newData.data, right: appState.data})
+      const profileDiff = diff({ left: newData.info, right: appState.info})
+
+      if (dataDiff){
+        await saveFosAndTrellisData(newData)
+
+      }
+
+      if (profileDiff){
+        await saveProfileData(newData)
+      }
+    }
+    syncData()
+
+  }
 
  
   return (<><div className="App h-full bg-background" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden' }}>
@@ -313,7 +355,7 @@ export default function App({
           setShowDeleteAccount={setShowDeleteAccount}
           setShowEmailConfirm={setShowEmailConfirm}
           data={appState}
-          setData={setAppState}
+          setData={setAppStateWithEffects}
           options={global}
           menuOpen={menuOpen}
           setMenuOpen={setMenuOpen}
@@ -327,6 +369,26 @@ export default function App({
           setData: setDataWithLog,
           options: global,
           nodeRoute: appState.data.fosData.route,
+          dialogueProps: {
+            loading: false,
+            setLoading: () => {},
+            showCookies: showCookieConsent,
+            setShowCookies: setShowCookieConsent,
+            showTerms,
+            setShowTerms,
+            showPrivacy,
+            setShowPrivacy,
+            showClearData,
+            setShowClearData,
+            showDeleteAccount,
+            setShowDeleteAccount,
+            showEmailConfirm,
+            setShowEmailConfirm,
+          },
+          tokens: {
+            emailConfirmationToken,
+            passwordResetToken
+          }
         }} />
         
         
@@ -387,12 +449,6 @@ export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> =>
 
   return global
 }
-type ContextType = { 
-  data: AppState, 
-  setData: (data: AppState) => void, 
-  options: FosReactOptions,
-  nodeRoute: FosRoute
- };
 
 export function useProps() {
   return useOutletContext<ContextType>();

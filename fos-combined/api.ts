@@ -317,7 +317,7 @@ const api = (sycApiUrl: string) => {
 
     type InfoResponse = {
       user_profile: {
-        name: string
+        displayName: string
       },
       email_confirmed: boolean,
       subscription_status: string,
@@ -354,7 +354,7 @@ const api = (sycApiUrl: string) => {
         if (!res) { return }
   
         const result: InfoState = {
-          profile: res.user_profile,
+          profile: res.user_profile as InfoState["profile"],
           cookies: res.cookies,
           emailConfirmed: res.email_confirmed,
           subscription: {

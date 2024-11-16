@@ -1,5 +1,5 @@
 import { getGlobal } from "./App"
-import { FosModule } from "./components/fos-react/fosModules"
+import { FosModule } from "./components/fos-modules/fosModules"
 
 export type FosReactGlobal = ReturnType<typeof getGlobal>
 
@@ -173,7 +173,7 @@ export type InfoProfile = {
   // profileInfo: {
   //   [key: string]: any;
   // }
-  name: string,
+  displayName: string,
 }
 
 export type SubscriptionInfo = {
@@ -203,6 +203,7 @@ export type AppState = {
   theme: string
   auth: AuthState
   data:  { fosData: FosContextData, trellisData: TrellisSerializedData }
+  loaded: boolean
 }
 
 
@@ -240,3 +241,32 @@ export type LoginResult = {
   type: string,
 } & InfoState
  
+
+
+
+export type ContextType = { 
+  data: AppState, 
+  setData: (data: AppState) => void, 
+  options: FosReactOptions,
+  nodeRoute: FosRoute,
+  dialogueProps: {
+    loading: boolean,
+    setLoading: (loading: boolean) => void,
+    showCookies: boolean,
+    setShowCookies: (showCookies: boolean) => void,
+    showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void},
+    setShowTerms: (showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void}) => void,
+    showPrivacy: {open: boolean, fromRegisterForm: boolean},
+    setShowPrivacy: (showPrivacy: {open: boolean, fromRegisterForm: boolean}) => void,
+    showClearData: boolean,
+    setShowClearData: (showClearData: boolean) => void,
+    showDeleteAccount: boolean,
+    setShowDeleteAccount: (showDeleteAccount: boolean) => void,
+    showEmailConfirm: { open: boolean, email: string},
+    setShowEmailConfirm: (showEmailConfirm: { open: boolean, email: string }) => void,
+  },
+  tokens: {
+    emailConfirmationToken?: string,
+    passwordResetToken?: string
+  }
+ };

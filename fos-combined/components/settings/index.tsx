@@ -32,9 +32,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { SettingsComponent } from "./Settings"
 import { Premium } from "./Premium"
 import { Password } from "./Password"
-import { api } from "../../../api"
+
 import { getActions } from "@/fos-combined/lib/actions"
-import { AppState, FosReactOptions } from "@/fos-combined/types"
 
 export const ProfilePasswordLogout = ({
   emailConfirmationToken,
@@ -116,3 +115,38 @@ export const ProfilePasswordLogout = ({
   )
 
 }
+
+
+
+
+import { AppState, ContextType, FosReactOptions, FosRoute } from "@/fos-combined/types"
+import { useProps } from "@/fos-combined/App"
+
+
+export const FosSettingsPage = () => {
+  
+  const {  
+    data,
+    setData,
+    options,
+    dialogueProps,
+    tokens
+  } : ContextType = useProps()
+
+
+  return (<div className='flex w-full px-2 items-center overflow-x-scroll no-scrollbar'>
+    <ProfilePasswordLogout 
+      emailConfirmationToken={tokens.emailConfirmationToken}
+      setShowClearData={dialogueProps.setShowClearData}
+      setShowEmailConfirm={dialogueProps.setShowEmailConfirm}
+      setShowCookies={dialogueProps.setShowCookies}
+      setLoading={dialogueProps.setLoading}
+      data={data}
+      setData={setData}
+      options={options}
+        />
+</div>)
+
+}
+
+

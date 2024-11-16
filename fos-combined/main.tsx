@@ -2,11 +2,11 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 
-import TrellisMain from './components/trellis/main'
-
+import TrellisMain from './components/workflow/trellis/main'
+import { FosSettingsPage }  from './components/settings'
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
-import TodoQueue from './todo/Queue'
+import TodoQueue from './components/todo/Queue'
 
 
 const apiUrl = "http://localhost:4000"
@@ -17,11 +17,17 @@ interface LoaderData {
 }
 
 declare global {
-  interface Window { Fos: any; }
+  interface Window { 
+    Fos: {
+      ws: WebSocket;
+      apiUrl: string;
+    }; 
+  }
 }
 
-window.Fos = window.Fos || {};
-
+window.Fos = window.Fos || {  
+  apiUrl
+};
 
 
 const router = createBrowserRouter([
@@ -29,14 +35,7 @@ const router = createBrowserRouter([
     path: "/",
     element: (<App />),
 
-    loader: async ({ request }) => {
-      // You can check the URL and return data
-      const url = new URL(request.url);
-      return { 
-        shouldOpenMenu: url.pathname === "/", 
-        apiUrl
-      };
-    },
+
     children: [
       {
         index: true,
@@ -49,7 +48,6 @@ const router = createBrowserRouter([
       },
       {
         path: "todos",
-        // element: <App />,
         children: [
           {
             index: true,
@@ -61,7 +59,18 @@ const router = createBrowserRouter([
             element: <TrellisMain />
           },
         ]
-      }
+      },
+      {
+        path: "settings",
+        children: [
+          {
+            index: true,
+            element: <FosSettingsPage />,
+    
+          },
+        ]
+      },
+
     ]
   }
 ], {

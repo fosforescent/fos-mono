@@ -6,7 +6,7 @@ import { Apple, BrainCircuit, CircleEllipsis, DollarSign, Timer, Hammer, Dices, 
 import { Button } from '@/components/ui/button';
 
 
-import { FosModule } from '../fos-react/fosModules';
+import { FosModule } from '../../fos-modules/fosModules';
 
 import { AppState, FosReactOptions, FosRoute,} from '@/fos-combined/types';
 

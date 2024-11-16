@@ -31,7 +31,8 @@ import {
   Redo2,
   // MenuSquare,
   Menu,
-  Send
+  Send,
+  LogOut
 } from 'lucide-react'
 
 
@@ -87,7 +88,7 @@ const HamburgerMenu = ({
 }) => {
 
 
-  const { sendMessage } = getActions(options, appState, setData)
+  const { sendMessage, logOut } = getActions(options, appState, setData)
   
 
   const loggedIn = !!appState.auth.jwt
@@ -122,7 +123,7 @@ const HamburgerMenu = ({
     })
   }
 
-  const [accordionValue, setAccordionValue] = useState(loggedIn ? 'nav' : 'account')
+  const [accordionValue, setAccordionValue] = useState("")
 
 
   return (
@@ -142,7 +143,7 @@ const HamburgerMenu = ({
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger><Menu /></SheetTrigger>
-          <SheetContent className="md:min-w-[80%] sm:min-w-full" side={'left'} aria-description='Fos Menu'>
+          <SheetContent className="md:min-w-[80%] sm:min-w-full flex flex-col justify-around" side={'left'} aria-description='Fos Menu'>
             {/* <SheetHeader className="mb-10">
               Fos
             </SheetHeader> */}
@@ -152,93 +153,102 @@ const HamburgerMenu = ({
             </SheetTitle>
             <SheetDescription className="hidden">Menu</SheetDescription>
 
-            <hr className={`my-5`}/>
-            <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue}>
-              {loggedIn && <AccordionItem value="nav">
-                <AccordionTrigger>Navigation </AccordionTrigger>
-                <AccordionContent>
-                <div>
-                <hr />
-                <nav className="p-4 space-y-2">
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="w-full justify-start"
-                  >
-                    <NavLink
-                      to="/todos"
-                      className={({ isActive }) =>
-                        cn(
-                          "w-full",
-                          isActive && "bg-accent text-accent-foreground"
-                        )
-                      }
-                      end
-                    >
-                      Todos
-                    </NavLink>
-                  </Button>     
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="w-full justify-start"
-                  >
-                    <NavLink
-                      to="/workflows"
-                      className={({ isActive }) =>
-                        cn(
-                          "w-full",
-                          isActive && "bg-accent text-accent-foreground"
-                        )
-                      }
-                      end
-                    >
-                      Workflows
-                    </NavLink>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="w-full justify-start"
-                  >
-                    <NavLink
-                      to="/workflows"
-                      className={({ isActive }) =>
-                        cn(
-                          "w-full",
-                          isActive && "bg-accent text-accent-foreground"
-                        )
-                      }
-                      end
-                    >
-                      Market
-                    </NavLink>
-                  </Button>      
-                </nav>
+            <hr  className={`my-5`} />
 
-              </div>
-                </AccordionContent>
-              </AccordionItem>}
+      
+            {loggedIn && (<div className="grow h-full">
+              <nav className="p-4 space-y-2 flex flex-col justify-center h-full">
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavLink
+                    to="/todos"
+                    className={({ isActive }) =>
+                      cn(
+                        "w-full",
+                        isActive && "bg-accent text-accent-foreground"
+                      )
+                    }
+                    end
+                  >
+                    Todos
+                  </NavLink>
+                </Button>     
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavLink
+                    to="/workflows"
+                    className={({ isActive }) =>
+                      cn(
+                        "w-full",
+                        isActive && "bg-accent text-accent-foreground"
+                      )
+                    }
+                    end
+                  >
+                    Workflows
+                  </NavLink>
+                </Button>
+                {/* <Button
+                  asChild
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavLink
+                    to="/market"
+                    className={({ isActive }) =>
+                      cn(
+                        "w-full",
+                        isActive && "bg-accent text-accent-foreground"
+                      )
+                    }
+                    end
+                  >
+                    Market
+                  </NavLink>
+                </Button> */}
+                <Button
+                  asChild
+                  variant="ghost"
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full justify-start"
+                >
+                  <NavLink
+                    to="/settings"
+                    className={({ isActive }) =>
+                      cn(
+                        "w-full",
+                        isActive && "bg-accent text-accent-foreground"
+                      )
+                    }
+                    end
+                  >
+                    Settings
+                  </NavLink>
+                </Button>      
+              </nav>
+
+            </div>)}
+            <div>
+              <Button variant="destructive" onClick={logOut}><LogOut /></Button><br/>
+            </div>
+            <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue} collapsible>
 
 
-              <AccordionItem value="account">
+              {/* <AccordionItem value="account">
                 <AccordionTrigger>Account </AccordionTrigger>
                 <AccordionContent>
-                  <Account 
-                    emailConfirmationToken={emailConfirmationToken} 
-                    passwordResetToken={passwordResetToken}
-                    setShowTerms={setShowTerms}
-                    setShowClearData={setShowClearData}
-                    setShowEmailConfirm={setShowEmailConfirm}
-                    setShowPrivacy={setShowPrivacy}
-                    setShowCookies={setShowCookieConsent}
-                    data={appState}
-                    setData={setData}
-                    options={options}
-                    setAccordionValue={setAccordionValue}
-                    />  
+
                 </AccordionContent>
-              </AccordionItem>
+              </AccordionItem> */}
               {/* <AccordionItem value="settings">
                 <AccordionTrigger>Settings</AccordionTrigger>
                 <AccordionContent>

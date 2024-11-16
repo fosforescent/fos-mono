@@ -81,7 +81,7 @@ export class ErrorBoundary extends React.Component {
       console.error('ErrorBoundary did catch error', error, info)
       api(this.props.apiUrl).public.putError(error, this.props.email).then(() => {
         console.warn('error logged', error)
-      }).catch((e) => {
+      }).catch((e: Error) => {
         console.error(error)
         console.error('error logging failed', e)
       })

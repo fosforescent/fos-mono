@@ -1,6 +1,7 @@
 import e from "cors"
-import { FosNodesData, FosPath, AppState, FosRoute, FosPathElem } from "../types"
+import { FosNodesData, FosPath, AppState, FosRoute, FosPathElem, FosNodeId } from "../types"
 import { updateNodeContent } from "./mutations"
+import { get } from "http"
 
 export const getNodeDescription = (nodeRoute: FosRoute, state: AppState) => {
     const nodeId = nodeRoute[nodeRoute.length - 1]?.[1]
@@ -400,4 +401,57 @@ export const getUpNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | nu
   }else{
     return parentRoute
   }
+}
+
+
+export const getRootNodes = (appData: AppState, nodeType: FosNodeId) => {
+
+  const rootPathElem: FosRoute = appData.data.fosData.route.slice(0, 1) as FosRoute
+
+  const { childRoutes } = getNodeInfo(rootPathElem, appData)
+
+  const workflows = childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfo(childRoute, appData)
+    return nodeType === 'workflow' || nodeType === 'option'
+  })
+
+  const todos =  childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfo(childRoute, appData)
+    return nodeType === 'todo' || nodeType === 'race' || nodeType === 'choice'
+  })
+
+  return {
+    workflows,
+    todos,
+  }
+
+}
+
+export const getAvailableTasks = (appData: AppState, nodeRoute: FosRoute): FosRoute[] => {
+  const { nodeChildren, nodeType } = getNodeInfo(nodeRoute, appData)
+  if (nodeType !== 'todo'){
+    return []
+  }
+  const childTasks =  nodeChildren.filter(([childType, childId]) => childType === 'todo' || childType === 'race' || childType === 'choice')
+
+  const childTodos: FosRoute[] = childTasks.reduce((acc: FosRoute[], childElem: FosPathElem, index: number): FosRoute[] => {
+    const [childType, childId] = childElem
+
+    if (childType === 'todo'){
+      const routes: FosRoute[] = [...acc, ...getAvailableTasks(appData, [...nodeRoute, childElem])]
+      return routes
+    } else if (childType === 'race'){
+      const routes: FosRoute[] = [...acc, ...getAvailableTasks(appData, [...nodeRoute, childElem])]
+      return routes
+    } else if (childType === 'choice'){
+      const routes: FosRoute[] = [...acc, [...nodeRoute, childElem]]
+      return routes
+    } else {
+      return []
+    }
+  }, [] as FosRoute[])
+
+  return childTodos
+
+
 }

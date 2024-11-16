@@ -36,8 +36,8 @@ import {
 
 import { DroppableContainersMap } from '@dnd-kit/core/dist/store/constructors';
 
-import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosRoute } from '../../types'
-import { getActions } from '../../lib/actions'
+import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosRoute } from '../../../types'
+import { getActions } from '../../../lib/actions'
 import { DefaultBreadcrumbsComponent } from './breadcrumbs'
 import { DefaultRootComponent } from './root'
 import { useProps } from '@/fos-combined/App';

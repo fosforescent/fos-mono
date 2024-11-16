@@ -170,7 +170,7 @@ export const exportNode = (nodeRoute: FosPath): FosContextData => {
   return nodeData
 }
 
-export const importNode = (data: FosContextData, nodeRoute: FosPath, initialContextData: FosContextData): FosContextData => {
+export const importNode = (data: FosContextData, nodeRoute: FosRoute, initialContextData: FosContextData): FosContextData => {
   
   // should we do it by the reference, or by the current operator?
   // should we require that it be an option node? 
@@ -182,14 +182,12 @@ export const importNode = (data: FosContextData, nodeRoute: FosPath, initialCont
   const staticDataPeer = new FosPeer({
     data: {
       nodes: data.nodes,
-      trail: initialContextData.trail,
-      focus: initialContextData.focus,
+      route: initialContextData.route,
     },
     pushToRemote: async () => {},
     pullFromRemote: async () => ({
       nodes: data.nodes,
-      trail: initialContextData.trail,
-      focus: initialContextData.focus,
+      route: initialContextData.route,
     }),
     pushCondition: async () => false,
     pullCondition: async () => true,

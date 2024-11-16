@@ -135,10 +135,6 @@ export const SettingsComponent = ({
   }
 
 
-  const handleLogoutClick = () => {
-    logOut()
-  }
-
 
   return (appState.info?.profile ?
     <><CardContent className="space-y-2 pt-3">
@@ -166,10 +162,7 @@ export const SettingsComponent = ({
             : (<Button className="bg-blue-900 text-white" onClick={handleEditButtonClick} title="Edit Email" ><Edit2 /></Button>
             )}
         </div>
-        <div className="basis-1/3">
-          {/* <Label htmlFor="reset_data">Log Out</Label> */}
-          <Button variant="destructive" title="Log Out" onClick={handleLogoutClick} ><LogOut /></Button>
-        </div>
+        
         <div className="basis-1/3">
           <Button onClick={() => setAdvancedSettings(!advancedSettings)} title="Advanced Settings"><ShieldQuestion /></Button>
         

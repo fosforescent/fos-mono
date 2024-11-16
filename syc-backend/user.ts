@@ -57,7 +57,11 @@ export const postUserProfile = async (req: Request, res: Response) => {
       const userData = parseUserDataFromRequest(req)
       const updatedUser = await prisma.user.update({
           where: { user_name: username },
-          data: userData
+          data: {
+            user_profile: userData.user_profile.profileInfo,
+            cookies: userData.user_profile.dataSettings,
+
+          }
         })
 
       return res.json({

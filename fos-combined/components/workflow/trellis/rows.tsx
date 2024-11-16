@@ -3,11 +3,10 @@ import React from 'react'
 import { Button } from '@/components/ui/button';
 import { TrashIcon, PlusCircledIcon, MinusIcon, PlusIcon, MagicWandIcon  } from '@radix-ui/react-icons'
 import { DragOverlay } from '@dnd-kit/core';
-import { useWindowSize } from "../window-size";
 import { BrainCircuit, CircleEllipsis, Wand } from "lucide-react";
 
 
-import { ComboboxEditable } from '../combobox/comboboxEditable';
+import { ComboboxEditable } from '../../combobox/comboboxEditable';
 
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"

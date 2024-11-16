@@ -149,8 +149,7 @@ export default fosModule
 
 type FosNodeExport = {
   nodes: FosNodesData,
-  trail: FosContextData['trail'],
-  focus: FosContextData['focus'],
+  route: FosContextData['route'],
 }
 
 export const exportNode = (node: FosWrapper): FosNodeExport => {

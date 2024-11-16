@@ -39,11 +39,10 @@ import {
 } from 'lucide-react'
 
 
-import { SettingsComponent } from "./Settings"
 
 
 
-import { api } from "../../../api"
+import { api } from "../../api"
 import { AppState, FosReactOptions } from "@/fos-combined/types"
 
 
