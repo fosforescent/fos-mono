@@ -42,7 +42,6 @@ import { defaultContext, defaultTrellisData } from './defaults'
 
 import { MainView } from './components/trellis/main'
 import { Outlet, useOutletContext, useLoaderData } from 'react-router-dom'
-import { useWebSocket } from './main'
 
 
 declare const __SYC_API_URL__: string;
@@ -138,9 +137,33 @@ export default function App({
 
 
   
-  useEffect(() => {
+  React.useEffect(() => {
+    if (!jwt) {
+      return
+    }
     // console.log('apiUrl', apiUrl, props.mode)
-  }, [apiUrl])
+    const handler = (e: string | Buffer) => {
+      console.log('ws message', e)
+    }
+
+
+    if (!window.Fos.ws) {
+
+      window.Fos.ws = new WebSocket(`${apiUrl}/${jwt}`);
+      console.log('connecting to', `${apiUrl}/${jwt}`)
+      window.Fos.ws.on('connected', () => {
+        console.log('connected')
+        window.Fos.ws.send('hello')
+      })
+      
+      
+      window.Fos.ws.addEventListener('message', handler)
+
+      return () => {
+        window.Fos.ws.removeEventListener('message', handler)
+      }
+    }
+  }, [apiUrl, jwt])
   
 
   const [showTutorial, setShowTutorial] = useState(false)
@@ -230,23 +253,6 @@ export default function App({
   }
 
 
-  const { send, messages, connected } = useWebSocket()
-
-  useEffect(() => {
-    const message = messages.pop()
-    console.log('messages', message)
-
-  }, [messages])
-
-  useEffect(() => {
-    if (connected){
-      send({
-        type: 'auth',
-        jwt: appState.auth.jwt,
-      })
-
-    }
-  }, [connected, appState.auth.jwt])
 
 
   if (appState.data.fosData.route.length < 1){
@@ -308,7 +314,7 @@ export default function App({
           setShowEmailConfirm={setShowEmailConfirm}
           data={appState}
           setData={setAppState}
-          options={options}
+          options={global}
           menuOpen={menuOpen}
           setMenuOpen={setMenuOpen}
           
@@ -319,7 +325,7 @@ export default function App({
         <Outlet context={{
           data: appState,
           setData: setDataWithLog,
-          options: options,
+          options: global,
           nodeRoute: appState.data.fosData.route,
         }} />
         

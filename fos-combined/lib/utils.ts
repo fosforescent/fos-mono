@@ -136,6 +136,7 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
   const isComment = nodeType === "comment"
   const isDocument = nodeType === "document"
   const isOption = nodeType === "option"
+  const isChoice = nodeType === "choice"
   const isMaxDepth = false
   const isBase = nodeRoute.length === state.data.fosData.route.length
   const isSmallWindow = window.innerWidth !== undefined && window.innerWidth < 500
@@ -200,6 +201,7 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
       somethingIsDragging,
       nodeLabel,
       nodeRoute,
+      isChoice,
       getParentInfo: () => getParentInfo(nodeRoute, state),
       getOptionInfo: () => getOptionInfo(nodeRoute, state),
       hasParent,
@@ -272,6 +274,8 @@ export const getOptionInfo = (nodeRoute: FosRoute, appData: AppState) => {
   
   const isCollapsedOption = appData.data.trellisData.collapsedList.some((route) => pathEqual(route, selectedChildRoute))
 
+  const resolutionStrategy = nodeData.option?.defaultResolutionStrategy || 'selected'
+
   if (!selectedChildRoute){
     throw new Error('selectedChild not found')
   }
@@ -280,6 +284,7 @@ export const getOptionInfo = (nodeRoute: FosRoute, appData: AppState) => {
     selectedChildRoute,
     nodeOptions,
     isCollapsedOption,
+    resolutionStrategy,
   }
 }
 

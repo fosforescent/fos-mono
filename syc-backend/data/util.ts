@@ -103,39 +103,7 @@ export const checkDataFormat = (data: FosContextData) => {
   }
 };
 
-export const getRootNode = (
-  prisma: PrismaClient,
-  data: FosContextData,
-  username: string,
-  userGroup: FosGroup
-) => {
-  // console.log("data", data);
 
-  const rootNode = new FosRootNode(data, async (ctxData: FosContextData) => {
-    console.log("ctxData --- ROOT NODE STORE", ctxData);
-    await prisma.user.update({
-      where: { user_name: username },
-      data: { data: ctxData },
-    });
-
-    // compare data to existing, update if different
-    const dataHistoryEntry = await prisma.dataHistory.create({
-      data: {
-        group_id: userGroup.id,
-        data: data,
-        createdAt: new Date(),
-      },
-    });
-
-    const meta = {
-      ...ctxData,
-      nodes: undefined,
-    };
-
-    await storeCtxToDb(prisma, userGroup, meta, ctxData.nodes);
-  });
-  return rootNode;
-};
 
 export const loadCtxFromDb = async (
   prisma: PrismaClient,
@@ -144,8 +112,7 @@ export const loadCtxFromDb = async (
   const existingData = userGroup.data as Partial<Omit<FosContextData, "nodes">>;
 
   const meta = {
-    trail: [["root", userGroup.rootNodeId]],
-    focus: { route: [["root", userGroup.rootNodeId]], char: 0 },
+    route: [["root", userGroup.rootNodeId]],
     ...(userGroup.data as Partial<Omit<FosContextData, "nodes">>),
   } as Omit<FosContextData, "nodes">;
 
@@ -228,7 +195,7 @@ export const storeCtxToDb = async (
 ) => {
   // console.log("STORE CTX TO DB", meta, nodes);
 
-  if (!meta.trail) {
+  if (!meta.route) {
     throw new Error("no trail");
   }
 
@@ -331,7 +298,7 @@ export const storeCtxToDb = async (
     }
   }
 
-  const rootNodeId = meta.trail?.[0]?.[1];
+  const rootNodeId = meta.route?.[0]?.[1];
   console.log("rootNodeId", rootNodeId);
   console.log("nodes", nodes);
 
@@ -437,10 +404,10 @@ export const createUserGroup = async (prisma: PrismaClient) => {
 };
 
 export const getRootId = (data: FosContextData) => {
-  if (!data.trail) {
+  if (!data.route) {
     throw new Error("!data.trail");
   }
-  const rootElem = data.trail?.[0];
+  const rootElem = data.route?.[0];
 
   if (!rootElem) {
     throw new Error("!rootElem");
@@ -520,13 +487,13 @@ export const updateRootNodeId = (
   contextData.nodes[newRootId] = rootNodeData;
   delete contextData.nodes[currentRootId];
 
-  if (!contextData.trail) {
+  if (!contextData.route) {
     return {
       ...contextData,
-      trail: [["root", newRootId]],
+      route: [["root", newRootId]],
     };
   } else {
-    const [head, ...tail] = contextData.trail;
+    const [head, ...tail] = contextData.route;
 
     if(!head) {
       throw new Error("improperly formatted trail in context data");
@@ -534,7 +501,7 @@ export const updateRootNodeId = (
 
     return {
       ...contextData,
-      trail: [[head[0], newRootId], ...tail],
+      route: [[head[0], newRootId], ...tail],
     };
   }
 };

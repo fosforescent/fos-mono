@@ -52,9 +52,13 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
     }
 
     const setSelectedOption = async ( selectedOption: number) => {
+        const { nodeData } = getNodeInfo(nodeRoute, appData)
         const newState = mut.updateNodeData(appData, {
             option: {
-                selectedIndex: selectedOption
+                defaultResolutionStrategy: 'selected',
+                chosenOptions: [],
+                ...nodeData,
+                selectedIndex: selectedOption,
             }
         }, nodeRoute)
         setAppData(newState)
@@ -68,7 +72,9 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
                     content: ""
                 },
                 option: {
-                    selectedIndex: 0
+                    selectedIndex: 0,
+                    chosenOptions: [],
+                    defaultResolutionStrategy: "selected" as "selected"
                 }
             },
             content: []
@@ -77,6 +83,7 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
         const newStateWithFocus = mut.updateFocus(newState, 0, childRoute)
         setAppData(newStateWithFocus)
     }
+
     const deleteRow = async () => {
         const newState = mut.removeNode(appData, nodeRoute)
         setAppData(newState)
@@ -110,13 +117,15 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
             const { nodeData: parentData, nodeContent: parentContent, nodeChildren: parentChildren, indexInParent, nodeRoute: parentRoute } = getParentInfo()
             const { newId, newState: stateWithClone } = mut.cloneNode(appData, nodeRoute)
             const newOptionNodeChildren: FosNodeContent['content'] = [[nodeType, nodeId], [nodeType, newId]]
-            const newOptionNodeContent = {
+            const newOptionNodeContent: FosNodeContent = {
                 data: {
                     description: {
                         content: `Choose method for ${nodeData.description?.content}`
                     },
                     option: {
-                        selectedIndex: 1
+                        selectedIndex: 1,
+                        chosenOptions: [],
+                        defaultResolutionStrategy: "selected"
                     }
                 },
                 content: newOptionNodeChildren
@@ -454,6 +463,11 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
         const keyPressEvents = async (event: React.KeyboardEvent<HTMLDivElement>) => {
 
         }
+
+        const runTask = async () => {
+
+        }
+
     return {
         zoom,
         snip,

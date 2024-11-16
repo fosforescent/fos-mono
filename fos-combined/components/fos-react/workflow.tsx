@@ -22,15 +22,34 @@ const ResourceComponent = ({
   setData: (state: AppState) => void
 }) => {
 
-
+  const { 
+    suggestOption, 
+    setFocus, 
+    setSelectedOption, 
+    setFocusAndDescription, 
+    deleteRow, 
+    deleteOption,
+    keyDownEvents,
+    keyUpEvents,
+    keyPressEvents,
+    addOption,
+    toggleOptionCollapse,
+    suggestSteps,
+    toggleCollapse,
+    zoom,
+   } = getNodeOperations(options, data, setData, nodeRoute)
+ 
   
   return (
-    <div className={`grid grid-cols-[1fr,2rem] items-center`}><WorkflowRowComponent
-      data={data}
-      setData={setData}
-      nodeRoute={nodeRoute}
-      options={options}
-    /></div>)
+    <div className={`grid grid-cols-[1fr,2rem] items-center`}>
+      <WorkflowRowComponent
+        data={data}
+        setData={setData}
+        nodeRoute={nodeRoute}
+        options={options}
+      />
+
+    </div>)
 }
 
 
@@ -109,9 +128,8 @@ const WorkflowRowComponent = ({
       addOption={addOption}
       />
       <Button onClick={runTask}>
-        <PlaySquare />
+        <PlaySquare /> Run
       </Button>
-
   </div>)
 }
 

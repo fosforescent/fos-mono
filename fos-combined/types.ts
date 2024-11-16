@@ -40,7 +40,6 @@ export interface TrellisSerializedData {
 
 
 export type FosDataContent = {
-  alias: FosNodeId,
   duration?: {
     plannedMarginal: number;
     entries: {
@@ -74,6 +73,7 @@ export type FosDataContent = {
   option?: {
     selectedIndex: number;
     defaultResolutionStrategy: "choice" | "selected" | "race";
+    chosenOptions: FosPathElem[]
   }
   description?: {
     content: string;

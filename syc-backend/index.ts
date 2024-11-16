@@ -32,6 +32,7 @@ import { maxRequests } from './maxRequests'
 // import { clientManagerMiddleware } from './clientManager'
 import { getDataSSEvents } from './events'
 import { Socket } from 'socket.io'
+import jwt from 'jsonwebtoken'
 
 
 const http = require('http');
@@ -202,12 +203,52 @@ app.use('/', protectedRoutes)
 
 
 
+const JWT_SECRET = process.env.JWT_SECRET
 
+if (!JWT_SECRET) {
+  console.error('JWT_SECRET not set')
+  throw new Error('JWT_SECRET not set')
+}
+
+import {prisma} from './prismaClient'
+
+
+export interface Claims {
+  username: string;
+  exp: number;
+  // Add other properties as needed
+}
 
 
 var WSServer = require('ws').Server;
 let wss = new WSServer({
-  server: app
+  server: app,
+  verifyClient: async (info: any, done: any) => {
+    console.log(info.req.url);
+    console.log('------verify client------');
+
+    const token = info.req.url.split('/')[1];
+    var decoded = jwt.verify(token, JWT_SECRET) as Claims;
+
+
+    const user = await prisma.user.findUnique({
+      where: { user_name: (decoded as any).claims.username }
+    })
+
+    if (!user) {
+      console.log('user not found')
+      throw new Error('User not found or not approved')
+    }
+
+    if (!user.approved) {
+      console.log('user not approved')
+      throw new Error('User not found or not approved')
+    }
+    /*info.req.user is either null or the user and you can destroy the connection
+     if its null */
+
+    done(info.req);
+  },
 });
 
 // Also mount the app here

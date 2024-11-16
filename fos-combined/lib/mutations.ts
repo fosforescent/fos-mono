@@ -3,6 +3,7 @@ import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodeId, Fo
 import { getAncestorLeastUpSibling, getDownSibling, getNodeInfo, getUpSibling } from "./utils"
 
 import { v4 as uuidv4 } from 'uuid';
+import { get } from "http";
 
 export const updateFosData = (currentAppData: AppState, newFosData: FosContextData): AppState => {
     return {
@@ -186,7 +187,6 @@ export const insertNewNode = (currentAppData: AppState, newNodeContent: FosNodeN
                 updated: {
                     time: new Date().getTime(),
                 },
-                alias: newId
             }
         }
     }
@@ -222,6 +222,8 @@ export const cloneNode = (currentAppData: AppState, route: FosRoute): { newId: F
         }
         return returnVal
     }, { newRows: [], newContext: currentAppData })
+
+
     const newNodeContent: FosNodeContent = {
         content: newRows,
         data: {
@@ -232,7 +234,6 @@ export const cloneNode = (currentAppData: AppState, route: FosRoute): { newId: F
             updated: {
                 time: new Date().getTime(),
             },
-            alias: generateId(currentAppData, nodeContent)
         }
     }
     const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
@@ -453,4 +454,229 @@ export const moveDown = (appData: AppState, route: FosRoute): { newRoute: FosRou
         // move above parent
         return moveNodeIntoRoute(appData, route, parentRoute, 0)
     }
+}
+
+export const instantiate = (startAppData: AppState, route: FosRoute): { newId: FosNodeId, newState: AppState, newType: FosNodeId } => {
+    const { nodeId, nodeType, nodeData, nodeContent, isOption, isTask, isChoice, getOptionInfo} = getNodeInfo(route, startAppData)
+
+
+    type InstReturnVal = { newRows: FosPathElem[], newContext: AppState }
+
+
+
+    if (isOption){
+
+        const { newRows, newContext }  = nodeContent.content.reduce((acc: InstReturnVal, childPathElem: FosPathElem) => {
+
+            const [childType, childId] = childPathElem
+    
+    
+            const {
+                newId: newChildId,
+                newState: stateWithChild,
+                newType: newChildType
+            } = instantiate(acc.newContext, [...route, childPathElem])
+            const returnVal: InstReturnVal = {
+                newRows: [...acc.newRows, [newChildType, newChildId]],
+                newContext: stateWithChild
+            }
+            return returnVal
+    
+    
+        }, { newRows: [], newContext: startAppData })
+    
+    
+        const newNodeContent: FosNodeContent = {
+            content: newRows,
+            data: {
+                ...nodeData,
+                description: {
+                    content: `${nodeData.description?.content}`
+                },
+                updated: {
+                    time: new Date().getTime(),
+                },
+            }
+        }
+    
+
+
+       const { resolutionStrategy, selectedIndex } = getOptionInfo()
+
+        if (resolutionStrategy === "selected") {
+
+            const selectedElem = newRows[selectedIndex]
+            if (!selectedElem){
+                throw new Error('Selected index out of range')
+            }
+  
+            return {
+                newId: selectedElem[1],
+                newType: selectedElem[0],
+                newState: startAppData
+            }
+
+        } else if (resolutionStrategy === "race"){
+            
+            const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
+
+            return {
+                newId,
+                newType: "race",
+                newState: stateWithNewNode
+            }
+    
+        
+        } else if (resolutionStrategy === "choice"){
+
+            const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
+
+            return {
+                newId,
+                newType: "choice",
+                newState: stateWithNewNode
+            }
+
+        } else {
+            throw new Error("Invalid resolution strategy")
+        }
+
+
+    } else if (isTask) {
+
+        const { newRows, newContext }  = nodeContent.content.reduce((acc: InstReturnVal, childPathElem: FosPathElem) => {
+
+            const [childType, childId] = childPathElem
+    
+    
+            const {
+                newId: newChildId,
+                newState: stateWithChild,
+                newType: newChildType
+            } = instantiate(acc.newContext, [...route, childPathElem])
+            const returnVal: InstReturnVal = {
+                newRows: [...acc.newRows, [newChildType, newChildId]],
+                newContext: stateWithChild
+            }
+            return returnVal
+    
+    
+        }, { newRows: [], newContext: startAppData })
+    
+    
+        const newNodeContent: FosNodeContent = {
+            content: newRows,
+            data: {
+                ...nodeData,
+                description: {
+                    content: `${nodeData.description?.content}`
+                },
+                updated: {
+                    time: new Date().getTime(),
+                },
+            }
+        }
+    
+
+        const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
+
+        return {
+            newId,
+            newType: "todo",
+            newState: stateWithNewNode
+        }
+    } else if (isChoice) {
+
+
+        const { newRows, newContext }  = nodeContent.content.reduce((acc: InstReturnVal, childPathElem: FosPathElem) => {
+
+            const [childType, childId] = childPathElem
+    
+    
+            const {
+                newId: newChildId,
+                newState: stateWithChild,
+                newType: newChildType
+            } = instantiate(acc.newContext, [...route, childPathElem])
+            const returnVal: InstReturnVal = {
+                newRows: [...acc.newRows, [newChildType, newChildId]],
+                newContext: stateWithChild
+            }
+            return returnVal
+    
+    
+        }, { newRows: [], newContext: startAppData })
+    
+    
+         
+
+        const newNodeContent: FosNodeContent = {
+            content: newRows,
+            data: {
+                ...nodeData,
+                description: {
+                    content: `${nodeData.description?.content}`
+                },
+                updated: {
+                    time: new Date().getTime(),
+                },
+            }
+        }
+    
+
+        const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
+
+        return {
+            newId,
+            newType: "todo",
+            newState: stateWithNewNode
+        }
+
+
+    } else {
+
+        const { newRows, newContext }  = nodeContent.content.reduce((acc: InstReturnVal, childPathElem: FosPathElem) => {
+
+            const [childType, childId] = childPathElem
+    
+    
+            const {
+                newId: newChildId,
+                newState: stateWithChild,
+                newType: newChildType
+            } = instantiate(acc.newContext, [...route, childPathElem])
+            const returnVal: InstReturnVal = {
+                newRows: [...acc.newRows, [newChildType, newChildId]],
+                newContext: stateWithChild
+            }
+            return returnVal
+    
+    
+        }, { newRows: [], newContext: startAppData })
+    
+        
+        const newNodeContent: FosNodeContent = {
+            content: newRows,
+            data: {
+                ...nodeData,
+                description: {
+                    content: `${nodeData.description?.content}`
+                },
+                updated: {
+                    time: new Date().getTime(),
+                },
+            }
+        }
+    
+
+        const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
+
+        return {
+            newId,
+            newType: nodeType,
+            newState: stateWithNewNode
+        }
+    }
+
+    
 }

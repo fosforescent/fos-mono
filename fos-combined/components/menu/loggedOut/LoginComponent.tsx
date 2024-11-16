@@ -74,6 +74,7 @@ export const LoginComponent = ({
     console.log('login, email', email, password);
     
     logIn(email, password, remember).then(() => {
+      // window.Fos.ws.
       setMessage({ messageType: "success", message: "Logged In Successfully" })
     }).catch((error: Error) => {
       console.log('login error', error)

@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from 'express'
 import _, { merge } from 'lodash'
-import { checkDataFormat, getRootId, getRootNode, hashFosContextData, loadCtxFromDb,storeCtxToDb, updateRootNodeId, } from './util'
-import { FosContextData, FosNodeContent, FosNodesData, FosPath, FosPeer } from '@/fos-js'
+import { checkDataFormat, getRootId, hashFosContextData, loadCtxFromDb,storeCtxToDb, updateRootNodeId, } from './util'
 import { ReqWithClients } from '../clientManager'
 
 import { prisma } from './../prismaClient'
+import { FosContextData } from '@/fos-combined/types'
 
 
 
@@ -105,8 +105,7 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       })
 
       const meta: Omit<FosContextData, "nodes"> = {
-        trail: userDataWithNewRootNode.trail,
-        focus: userDataWithNewRootNode.focus
+        route: userDataWithNewRootNode.route,
       }
 
       const nodes = userDataWithNewRootNode.nodes
@@ -126,7 +125,9 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
 
 
 
-      //TODO: if is market todo or marketservice, then insert into vector db
+      /*
+        TODO: if is todo or service or public workflow, then insert into vector db
+      */
 
 
 
