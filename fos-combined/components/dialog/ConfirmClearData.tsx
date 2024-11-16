@@ -47,7 +47,7 @@ export const ConfirmClearData = ({
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Account</AlertDialogTitle>
+          <AlertDialogTitle aria-description='Clear Data'>Delete Data</AlertDialogTitle>
         </AlertDialogHeader>
         <AlertDialogDescription>
           Are you sure you want to reset your app data?

@@ -34,7 +34,10 @@ export const getUserData = async (req: Request, res: Response): Promise<Response
     checkDataFormat(serverData)
 
     return res.json({
-      data: serverData,
+      data: { 
+        fosData: serverData,
+        trellisData: user.data,
+      },
       updated: false,
     })
 
@@ -78,7 +81,10 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       if (!userData?.nodes) {
         console.log('userData.nodes is empty')
         return res.json({
-          data: serverData,
+          data: {
+            fosData: serverData,
+            trellisData: user.data,
+          },
           updated: false,
         })
   
@@ -119,7 +125,10 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
 
       // console.log('newServerData', newServerData)
       return res.json({
-        data: newServerData,
+        data: { 
+          fosData: newServerData,
+          trellisData: user.data,
+        },
         updated: true,
       })
 

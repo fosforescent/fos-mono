@@ -27,7 +27,7 @@ export const getUserProfile = async (req: Request, res: Response) => {
       email_confirmed: !user.email_confirmation_token,
       subscription_status: user.subscription_status,
       subscription_session: !!user.subscription_checkout_session_id,
-      cookies: user.cookies,
+      cookies: user.cookies
     })
   } catch (error) {
     console.error(error)

@@ -52,7 +52,7 @@ export function TermsDialog({
 
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader className="sm:max-w-[425px] max-h-96 overflow-y-hidden">
-          <DialogTitle>Terms And Conditions</DialogTitle>
+          <DialogTitle aria-description='Terms and Conditions'>Terms And Conditions</DialogTitle>
           <DialogDescription className="overflow-y-scroll">
             <span>SUBSCRIBER AGREEMENT</span>
             <p>

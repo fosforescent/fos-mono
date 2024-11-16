@@ -19,7 +19,8 @@ export function Account({
   setShowCookies,
   data,
   setData,
-  options
+  options,
+  setAccordionValue
 } : {
   passwordResetToken?: string,
   emailConfirmationToken?: string,
@@ -30,7 +31,8 @@ export function Account({
   setShowCookies: (showCookies: boolean) => void
   data: AppState,
   setData: (data: AppState) => void,
-  options: FosReactOptions
+  options: FosReactOptions,
+  setAccordionValue: (value: "nav" | "account" | "about" | "help") => void
 }) {
 
 
@@ -65,6 +67,7 @@ export function Account({
           setLoading={setLoading}
           setShowTerms={setShowTerms} 
           setShowPrivacy={setShowPrivacy}
+          setAccordionValue={setAccordionValue}
           data={data}
           setData={setData}
           options={options}

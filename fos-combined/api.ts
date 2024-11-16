@@ -1,6 +1,6 @@
 import React from "react"
 import { EventSourcePolyfill, Event } from 'event-source-polyfill'
-import { InfoState, SubscriptionInfo } from "./types"
+import { AppState, InfoState, LoginResult, SubscriptionInfo } from "./types"
 // import { AppData, Profile } from "./components/app-state/index"
 
 
@@ -47,7 +47,8 @@ const api = (sycApiUrl: string) => {
   }
 
 
-  const login = async (user: string, pass: string): Promise<string> => {
+
+  const login = async (user: string, pass: string): Promise<LoginResult> => {
     const url = `${sycApiUrl}/auth/login`
     console.log("handleAuth", user, pass, url)
     const result = fetch(url, {
@@ -70,7 +71,7 @@ const api = (sycApiUrl: string) => {
       })
       .then((res) => {
         console.log("handleAuth - success", res)
-        return res.access_token
+        return res
       }).catch((err) => {
         console.log("handleLogin - err", err)
         err.cause = "login"
@@ -303,7 +304,6 @@ const api = (sycApiUrl: string) => {
             apiCallsTotal: res.subscription_data.api_calls_total,
             apiCallsUsed: res.subscription_data.api_calls_used,
           },
-          subscriptionSession: res.subscription_session
         }
         return result
       }).catch(handleAuthedApiError);
@@ -363,7 +363,6 @@ const api = (sycApiUrl: string) => {
             apiCallsTotal: res.subscription_data.api_calls_total,
             apiCallsUsed: res.subscription_data.api_calls_used,
           },
-          subscriptionSession: res.subscription_session
         }
         return result
       }).catch(handleAuthedApiError)
@@ -375,14 +374,14 @@ const api = (sycApiUrl: string) => {
       return result
     }
 
-    const postData = async <T>(data: T): Promise<T | null> => {
+    const postData = async (data: AppState["data"]): Promise<AppState["data"] | null> => {
       if (!jwt) {
         console.log("postData - no jwt")
         throw new Error("no jwt")
       }
 
       const url = `${sycApiUrl}/user/data`
-      const result: T | undefined | void = await fetch(url, {
+      const result: AppState["data"] | undefined | void = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -391,7 +390,7 @@ const api = (sycApiUrl: string) => {
         body: JSON.stringify({ data: data, updatedTime: Date.now() }),
       })
       .then(handleAuthedApiJson)
-      .then((res: {data: T}) => {
+      .then((res: {data: AppState["data"]}) => {
         if (!res) { return }
         // console.log("getProfile - success", res)
         return res.data
@@ -404,7 +403,7 @@ const api = (sycApiUrl: string) => {
       return result || null
     }
 
-    const getData = async <T>(): Promise<T> => {
+    const getData = async (): Promise<AppState["data"]> => {
       if (!jwt) {
         console.log("getData - no jwt")
         throw new Error("no jwt")
@@ -419,7 +418,7 @@ const api = (sycApiUrl: string) => {
         },
       })
       .then(handleAuthedApiJson)
-      .then((res: {data: T }) => {
+      .then((res: {data: AppState["data"] }) => {
         if (!res) { return }
         // console.log("getdata - success", res)
         return res.data

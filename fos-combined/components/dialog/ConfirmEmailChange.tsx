@@ -54,7 +54,7 @@ export const ConfirmEmailChange = ({
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Change Email</AlertDialogTitle>
+          <AlertDialogTitle aria-description='Change Email'>Change Email</AlertDialogTitle>
         </AlertDialogHeader>
         <AlertDialogDescription>
           Are you sure you want to change your email to: {email}?

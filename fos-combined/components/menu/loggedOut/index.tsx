@@ -51,6 +51,7 @@ export const LoginRegister = ({
   setLoading,
   setShowTerms,
   setShowPrivacy,
+  setAccordionValue,
   data,
   setData,
   options
@@ -60,6 +61,7 @@ export const LoginRegister = ({
   setLoading?: (loading: boolean) => void
   setShowTerms: (showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void}) => void
   setShowPrivacy: (showPrivacy: {open: boolean, fromRegisterForm: boolean }) => void
+  setAccordionValue: (value: "nav" | "account" | "about" | "help") => void
   data: AppState,
   setData: (data: AppState) => void,
   options: FosReactOptions
@@ -105,7 +107,7 @@ export const LoginRegister = ({
         </Alert>}
 
       <TabsContent value="login">
-        <LoginComponent setMessage={setMessage} setForgot={handleForgot} data={data} setData={setData} options={options} />
+        <LoginComponent setMessage={setMessage} setForgot={handleForgot} data={data} setData={setData} options={options} setAccordionValue={setAccordionValue} />
       </TabsContent>
       <TabsContent value="register">
         <RegisterComponent setMessage={setMessage} setShowTerms={setShowTerms} setShowPrivacy={setShowPrivacy} data={data} setData={setData} options={options} />

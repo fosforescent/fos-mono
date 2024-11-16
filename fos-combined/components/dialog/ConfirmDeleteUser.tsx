@@ -47,7 +47,7 @@ export const ConfirmDeleteUser = ({
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Account</AlertDialogTitle>
+          <AlertDialogTitle aria-description='Delete'>Delete Account</AlertDialogTitle>
         </AlertDialogHeader>
         <AlertDialogDescription>
           Are you sure you want to delete your account? This action cannot be undone.

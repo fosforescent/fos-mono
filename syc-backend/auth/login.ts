@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 
 import {prisma} from './../prismaClient'
+import { InfoState, LoginResult } from '@/fos-combined/types'
 
 const JWT_SECRET = process.env.JWT_SECRET
 
@@ -29,6 +30,9 @@ export const postLogin = async (req: Request, res: Response) => {
       where: { user_name: credentials.username }
     })
 
+
+
+
     if (!user) {
       return res.status(404).json({ error: 'User does not exist' })
     }
@@ -44,7 +48,21 @@ export const postLogin = async (req: Request, res: Response) => {
 
       const token = jwt.sign(claims, JWT_SECRET)
 
-      return res.json({ access_token: token, type: 'Bearer' })
+      const result: LoginResult = { 
+        access_token: token, 
+        type: 'Bearer',
+        profile: user.user_profile as InfoState['profile'],           
+        subscription: {
+          apiCallsAvailable: user.api_calls_available,
+          apiCallsUsed: user.api_calls_used,
+          apiCallsTotal: user.api_calls_total,
+          subscriptionStatus: user.subscription_status,
+          // subscription_session: !!user.subscription_checkout_session_id,
+        }, 
+        emailConfirmed: !user.email_confirmation_token,
+        cookies: user.cookies as InfoState['cookies']
+       }
+      return res.json(result)
     } else {
       return res.status(401).json({ error: 'Wrong credentials' })
     }

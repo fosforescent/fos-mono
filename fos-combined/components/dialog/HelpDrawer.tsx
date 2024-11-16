@@ -82,7 +82,7 @@ export const HelpDrawer = ({
       <DrawerTrigger className="p-7"><QuestionMarkCircledIcon width={24} height={24} /></DrawerTrigger>
       <DrawerContent>
         <DrawerHeader>
-          <DrawerTitle className="text-center">Shortcuts</DrawerTitle>
+          <DrawerTitle className="text-center" aria-description='Shortcuts'>Shortcuts</DrawerTitle>
           {/* <DrawerDescription>This action cannot be undone.</DrawerDescription> */}
         </DrawerHeader>
         <div className="flex flex-row justify-around flex-wrap">

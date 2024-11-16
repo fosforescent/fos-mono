@@ -1,6 +1,6 @@
 import { jwtDecode } from "jwt-decode"
 import { api } from "../api"
-import { AppState, FosPath, FosReactOptions, FosRoute, InfoState } from "../types"
+import { AppState, FosPath, FosReactOptions, FosRoute, InfoProfile, InfoState, SubscriptionInfo, UserProfile } from "../types"
 import { diff } from "@n1ru4l/json-patch-plus"
 import { getNodeOperations } from "./nodeOperations"
 
@@ -18,212 +18,222 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     const authedApi = appData.auth.jwt ? apiObj.authed(appData.auth.jwt) : undefined
 
 
-    return {
-        loggedIn: () => {
-            return !!appData.auth.jwt
-        },
-        moveNodeUp: async () => {
-
-        },
-        moveNodeDown: async () => {
-
-        },
-        setDrag: async (draggingNode: FosRoute | null, draggingOverNode: FosRoute | null) => {
-            setAppData({
-                ...appData,
-                data: {
-                    ...appData.data,
-                    trellisData: {
-                        ...appData.data.trellisData,
-                        draggingNode: draggingNode,
-                        draggingOverNode: draggingOverNode
-                    }
+    const loggedIn = () => {
+      return !!appData.auth.jwt
+    }
+    const setDrag = async (draggingNode: FosRoute | null, draggingOverNode: FosRoute | null) => {
+        setAppData({
+            ...appData,
+            data: {
+                ...appData.data,
+                trellisData: {
+                    ...appData.data.trellisData,
+                    draggingNode: draggingNode,
+                    draggingOverNode: draggingOverNode
                 }
-            })
-        },
-        clearDraggingNode: async () => {
-            setAppData({
-                ...appData,
-                data: {
-                    ...appData.data,
-                    trellisData: {
-                        ...appData.data.trellisData,
-                        draggingNode: null,
-                        draggingOverNode: null
-                    }
+            }
+        })
+    }
+    const clearDraggingNode = async () => {
+        setAppData({
+            ...appData,
+            data: {
+                ...appData.data,
+                trellisData: {
+                    ...appData.data.trellisData,
+                    draggingNode: null,
+                    draggingOverNode: null
                 }
-            })
-        },
-        clearData: async () => {
-
-        },
-        deleteAccount: async () => {
-            if (!appData.auth.jwt) {
-                throw new Error('Trying to delete account without being logged in')
-              }
-              await api(appData.apiUrl).authed(appData.auth.jwt).deleteAccount().then(() => {
-                localStorage.clear()
-                window.location.href = '/'
-              })
-        },
-        setCookieConsent: async (cookieInfo: AppState['info']['cookies']) => {
-
-        },
-        updateEmail: async (email: string) => {
-          if (!appData.auth.jwt) throw new Error('no jwt, not logged in', {cause: 'unauthorized'});
-          api(appData.apiUrl).authed(appData.auth.jwt).updateEmail(email).then((result) => {
-            if (!appData.info){
-              throw new Error('user info not found -- shouldn\'t have gotten here')
             }
-            if (!appData.info.profile){
-              throw new Error('user info profile not found -- shouldn\'t have gotten here')
-            }
-      
-            const jwtProps = jwtDecode<{ username: string, exp: number}>(result)
-      
-            if (jwtProps.username !== email){
-              throw new Error('jwt username does not match email, update failed')
-            }
-      
-            setAppData({ 
-              ...appData, 
-              info: { 
-                ...appData.info, 
-                profile: { 
-                  ...appData.info.profile
-                }, 
-                emailConfirmed: false  
-              },
-              auth: {
-                ...appData.auth,
-                email: email,
-                jwt: result
-              } 
-            })
-          });
-        },
-        sendMessage: async (email: string, message: string ) => {
-            return await api(appData.apiUrl).public.sendMessage(email, message)
-        },
-        confirmEmail: async (token: string) => {
-            if (authedApi){
-                await authedApi.confirmEmail(token)
+        })
+    }
+    const clearData = async () => {
 
-            } else {
-                throw new Error('Must Be Logged in to Confirm Email')
-            }
-        },
-        registerUser: async (email: string, password: string, acceptTerms: boolean) => {
-
-            console.log('registerUser', appData.info, appData)
-            if(!appData.info.cookies){
-            // throw new Error('Trying to register without cookie consent')
-            console.warn('Registering without cookie consent')
-            }
-
-            if (email && password) {
-            const result = await api(appData.apiUrl).public.register(email, password, acceptTerms, appData.info.cookies || {
-                acceptRequiredCookies: false,
-                acceptSharingWithThirdParties: false,
-            }).catch((error: Error) => {
-                console.log('error', error)
-                throw error
-            });
-            console.log('registerUser', result)
-            }
-        },
-        resetPassword: async (email: string, password: string, token: string) => {        
-          await api(appData.apiUrl).public.resetPassword(email, password, token)
-        },
-        changePassword: async (oldPassword: string, newPassword: string) => {
-            if (!appData.auth.jwt) {
-                throw new Error('Trying to change password without being logged in')
-              }
-              await api(appData.apiUrl).authed(appData.auth.jwt).changePassword(oldPassword, newPassword)
-        },
-        logIn: async (email: string, password: string, remember: boolean) => {
-            if (remember) {
-                localStorage.setItem("email", appData.auth.email)
-              }
-              const jwt = await api(appData.apiUrl).public.login(email, password).catch((error: Error) => {
-                console.log('error', error)
-                throw error
-              });
-              if (!jwt) {
-                throw new Error('Login failed')
-              }
-          
-              const jwtProps = jwtDecode<{ username: string, exp: number}>(jwt)
-          
-              if (jwtProps.username !== email){
-                throw new Error('jwt username does not match email, login failed')
-              }
-          
-              const authedApi = api(appData.apiUrl).authed(jwt)
-          
-          
-              authedApi.postProfile(null)
-                .then(getServerStateProfile(appData, jwt))
-                .then( (response: AppState) => {
-          
-                  authedApi.postData<null | AppState['data']>(null)
-                    .then(getServerStateData(response))
-                    .then((loggedInDataState) => {
-                      const difference = diff({ left: appData.info, right: loggedInDataState.info })
-                      console.log('difference', difference)
-                      if (Object.keys(difference).length > 0){
-                        setAppData(loggedInDataState)
-                      }
-                    }).catch((error: Error) => {
-                      console.log('error', error)
-                      throw error
-                    });
-          
-                }).catch((error: Error) => {
-                  console.log('error', error)
-                  throw error
-                });
-          
-          
-        },
-        confirmEmailInit: async () => {
-
-            if (!appData.auth.jwt) {
-                throw new Error("calling confirmEmailInit when not authenticated")
-              }
-              if(!appData.info.profile){
-                throw new Error("calling confirmEmailInit when no profile, but authenticated")
-              }
-              const result = api(appData.apiUrl).authed(appData.auth.jwt).confirmEmailInit()
-              const profile = appData.info.profile
-          
-              const newInfo = { 
-                ...appData.info, 
-                profile: {
-                  ...profile,
-                  emailConfirmed: false
-                },
-              }
-              checkInfoFormat(newInfo)
-          
-              setAppData({ ...appData, 
-                info: newInfo })
-        },
-        logOut: async () => {
-            const loggedOutState = await api(appData.apiUrl).public.logout().then(() => {
-                return { ...appData, auth: { ...appData.auth, jwt: undefined, loggedIn: false } }
-              }).catch((error: Error) => {
-                console.log('error', error)
-                throw error
-              });
-              setAppData(loggedOutState)
+    }
+    const deleteAccount = async () => {
+        if (!appData.auth.jwt) {
+            throw new Error('Trying to delete account without being logged in')
+          }
+          await api(appData.apiUrl).authed(appData.auth.jwt).deleteAccount().then(() => {
             localStorage.clear()
             window.location.href = '/'
-        },
+          })
+    }
+    const setCookieConsent = async (cookieInfo: AppState['info']['cookies']) => {
+
+    }
+    const updateEmail = async (email: string) => {
+      if (!appData.auth.jwt) throw new Error('no jwt, not logged in', {cause: 'unauthorized'});
+      api(appData.apiUrl).authed(appData.auth.jwt).updateEmail(email).then((result) => {
+        if (!appData.info){
+          throw new Error('user info not found -- shouldn\'t have gotten here')
+        }
+        if (!appData.info.profile){
+          throw new Error('user info profile not found -- shouldn\'t have gotten here')
+        }
+  
+        const jwtProps = jwtDecode<{ username: string, exp: number}>(result)
+  
+        if (jwtProps.username !== email){
+          throw new Error('jwt username does not match email, update failed')
+        }
+  
+        setAppData({ 
+          ...appData, 
+          info: { 
+            ...appData.info, 
+            profile: { 
+              ...appData.info.profile
+            }, 
+            emailConfirmed: false  
+          },
+          auth: {
+            ...appData.auth,
+            email: email,
+            jwt: result
+          } 
+        })
+      });
+    }
+    const sendMessage = async (email: string, message: string ) => {
+        return await api(appData.apiUrl).public.sendMessage(email, message)
+    }
+    const confirmEmail = async (token: string) => {
+        if (authedApi){
+            await authedApi.confirmEmail(token)
+
+        } else {
+            throw new Error('Must Be Logged in to Confirm Email')
+        }
+    }
+    const registerUser = async (email: string, password: string, acceptTerms: boolean) => {
+
+        console.log('registerUser', appData.info, appData)
+        if(!appData.info.cookies){
+        // throw new Error('Trying to register without cookie consent')
+        console.warn('Registering without cookie consent')
+        }
+
+        if (email && password) {
+        const result = await api(appData.apiUrl).public.register(email, password, acceptTerms, appData.info.cookies || {
+            acceptRequiredCookies: false,
+            acceptSharingWithThirdParties: false,
+        }).catch((error: Error) => {
+            console.log('error', error)
+            throw error
+        });
+        console.log('registerUser', result)
+        }
+    }
+    const resetPassword = async (email: string, password: string, token: string) => {        
+      await api(appData.apiUrl).public.resetPassword(email, password, token)
+    }
+    const changePassword = async (oldPassword: string, newPassword: string) => {
+        if (!appData.auth.jwt) {
+            throw new Error('Trying to change password without being logged in')
+          }
+          await api(appData.apiUrl).authed(appData.auth.jwt).changePassword(oldPassword, newPassword)
+    }
+    const logIn = async (email: string, password: string, remember: boolean) => {
+      if (remember) {
+          localStorage.setItem("email", appData.auth.email)
+        }
+                  
+        type LoginResult = { 
+          access_token: string, 
+          type: string,
+        } & InfoState
+          
+
+        const { access_token: jwt, ...infoState } : LoginResult = await api(appData.apiUrl).public.login(email, password).catch((error: Error) => {
+          console.log('error', error)
+          throw error
+        });
+        if (!jwt) {
+          console.log('no jwt', jwt, infoState)
+          throw new Error('Login failed')
+        }
+    
+        const jwtProps = jwtDecode<{ username: string, exp: number}>(jwt)
+    
+        if (jwtProps.username !== email){
+          throw new Error('jwt username does not match email, login failed')
+        }
+    
+        const authedApi = api(appData.apiUrl).authed(jwt)
+    
+          
+        const initialData = await authedApi.getData()
+          .catch((error: Error) => {
+            console.log('error', error)
+            throw error
+          });
+
+        const newAppState: AppState = {
+          ...appData,
+          auth: {
+            ...appData.auth,
+            jwt,
+            email,
+            remember,
+          },
+          info: {
+            ...infoState,
+          },
+          data: initialData
+        }
+          
+        setAppData(newAppState)
+      
+    }
+    const confirmEmailInit = async () => {
+
+        if (!appData.auth.jwt) {
+            throw new Error("calling confirmEmailInit when not authenticated")
+          }
+          if(!appData.info.profile){
+            throw new Error("calling confirmEmailInit when no profile, but authenticated")
+          }
+          const result = api(appData.apiUrl).authed(appData.auth.jwt).confirmEmailInit()
+          const profile = appData.info.profile
+      
+          const newInfo = { 
+            ...appData.info, 
+            profile: {
+              ...profile,
+              emailConfirmed: false
+            },
+          }
+          checkInfoFormat(newInfo)
+      
+          setAppData({ ...appData, 
+            info: newInfo })
+    }
+    const logOut = async () => {
+        const loggedOutState = await api(appData.apiUrl).public.logout().then(() => {
+            return { ...appData, auth: { ...appData.auth, jwt: undefined, loggedIn: false } }
+          }).catch((error: Error) => {
+            console.log('error', error)
+            throw error
+          });
+          setAppData(loggedOutState)
+        localStorage.clear()
+        window.location.href = '/'
+    }
+    const saveFosAndTrellisData = () => {
+
+    }
+    
+    const saveProfileData = () => {
 
     }
 
-}
+    return {
+
+    }
+
+  }
+
 
 
 
@@ -260,7 +270,6 @@ export const getServerStateProfile = (appState: AppState, jwt: string) => (newPr
         profile: newProfile.profile,
         subscription: newProfile.subscription,
         emailConfirmed: newProfile.emailConfirmed,
-        subscriptionSession: newProfile.subscriptionSession,
         cookies: newProfile.cookies || appState.info.cookies
       }
   

@@ -59,7 +59,7 @@ export function TutorialDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="w-full border-none h-dvh">
+      <DialogContent className="w-full border-none h-dvh" aria-description='Fos Menu'>
         <Tabs value={tab} onValueChange={onTabChange}>
           <TabsContent value="0" >
             <Card >

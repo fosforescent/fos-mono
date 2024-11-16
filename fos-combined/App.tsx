@@ -260,7 +260,7 @@ export default function App({
   }
 
 
-  console.log('rerender web client main')
+  console.log('rerender web client main', appState.data, appState)
  
   
   const [showHelp, setShowHelp] = useState(false)

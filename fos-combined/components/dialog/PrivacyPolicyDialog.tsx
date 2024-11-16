@@ -38,7 +38,7 @@ export function PrivacyPolicyDialog({
     <Dialog open={open.open} onOpenChange={setOpen}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader className="max-h-96 overflow-y-hidden">
-          <DialogTitle>Privacy Policy</DialogTitle>
+          <DialogTitle aria-description='Privacy Policy'>Privacy Policy</DialogTitle>
           <DialogDescription className="overflow-y-scroll">
 
           <p>Sycamore

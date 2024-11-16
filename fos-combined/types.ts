@@ -181,16 +181,16 @@ export type SubscriptionInfo = {
   apiCallsAvailable: number,
   apiCallsUsed: number,
   apiCallsTotal: number,
+  // subscription_session?: string,
 }
 
 
 
 export type InfoState = {
-  profile?: InfoProfile
+  profile: InfoProfile
   subscription?: SubscriptionInfo
   emailConfirmed: boolean,
-  subscriptionSession: boolean,
-  cookies?: {
+  cookies: {
     acceptRequiredCookies: boolean
     acceptSharingWithThirdParties: boolean
   }
@@ -216,7 +216,7 @@ export type AuthState = {
 }
 
 
-type DragInfo = {
+export type DragInfo = {
   dragging: {
     id: string
     nodeRoute: FosRoute
@@ -228,3 +228,15 @@ type DragInfo = {
     position: 'above' | 'below' | 'on' | 'breadcrumb'
   } | null
 }
+
+export type UserProfile = {
+  displayName: string,
+
+}
+
+            
+export type LoginResult = { 
+  access_token: string, 
+  type: string,
+} & InfoState
+ 

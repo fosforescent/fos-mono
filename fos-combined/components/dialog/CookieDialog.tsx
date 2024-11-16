@@ -74,7 +74,7 @@ export function CookieDialog({
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogContent className="sm:max-w-[425px] z-50 text-center">
         <AlertDialogHeader>
-          <AlertDialogTitle>Edit data & cookie settings</AlertDialogTitle>
+          <AlertDialogTitle aria-description='Data Settings'>Edit data & cookie settings</AlertDialogTitle>
             <div className="text-left">
               Fosforescent stores your preferences and data in local storage as well as on the database.
               We do not use cookies. 

@@ -47,10 +47,12 @@ export const LoginComponent = ({
   setForgot,
   data,
   setData,
+  setAccordionValue,
   options
 }: {
   setMessage: (message: { messageType: string, message: string }) => void
   setForgot: (forgot: boolean) => void
+  setAccordionValue: (value: "nav" | "account" | "about" | "help") => void
   data: AppState,
   setData: (data: AppState) => void,
   options: FosReactOptions
@@ -75,7 +77,9 @@ export const LoginComponent = ({
     
     logIn(email, password, remember).then(() => {
       // window.Fos.ws.
-      setMessage({ messageType: "success", message: "Logged In Successfully" })
+      setMessage({ messageType: "success", message: "Logged In Successfully" })    
+      setAccordionValue("nav")
+      
     }).catch((error: Error) => {
       console.log('login error', error)
       if (error.message === 'Failed to fetch') {

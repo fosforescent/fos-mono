@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 
 import { buttonVariants, Button } from "@/components/ui/button"
 
+import LogoUrl from "../../assets/logo3-bare.png"
 
 import { Input } from "@/components/ui/input"
 
@@ -132,22 +133,28 @@ const HamburgerMenu = ({
         // boxShadow: '0 0 10px 0 rgba(200,255,230,1)',
       }} >
       <div className={`flex pl-1`}>
+        
+      <div className={`px-3`}>
+        <img src={LogoUrl} alt="Fosforescent" className="h-7" /></div>
+              Fosforescent
         {/* {<TopButtons />}  */}
       </div>
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger><Menu /></SheetTrigger>
-          <SheetContent className="md:min-w-[80%] sm:min-w-full" side={'left'}>
-            <SheetHeader className="mb-10">
+          <SheetContent className="md:min-w-[80%] sm:min-w-full" side={'left'} aria-description='Fos Menu'>
+            {/* <SheetHeader className="mb-10">
               Fos
-            </SheetHeader>
-            {/* <SheetTitle>
-              Settings
-            </SheetTitle> */}
+            </SheetHeader> */}
+            <SheetTitle className={`flex flex-row`}>
+              <div className={`px-3`}><img src={LogoUrl} alt="Fosforescent" className="h-7" /></div>
+              Fosforescent
+            </SheetTitle>
+            <SheetDescription className="hidden">Menu</SheetDescription>
 
-            <hr />
+            <hr className={`my-5`}/>
             <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue}>
-              {!loggedIn && <AccordionItem value="nav">
+              {loggedIn && <AccordionItem value="nav">
                 <AccordionTrigger>Navigation </AccordionTrigger>
                 <AccordionContent>
                 <div>
@@ -228,6 +235,7 @@ const HamburgerMenu = ({
                     data={appState}
                     setData={setData}
                     options={options}
+                    setAccordionValue={setAccordionValue}
                     />  
                 </AccordionContent>
               </AccordionItem>
