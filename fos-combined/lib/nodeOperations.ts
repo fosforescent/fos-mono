@@ -1,4 +1,4 @@
-import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosPath, FosPathElem, FosReactOptions, FosRoute } from "../types"
+import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodesData, FosPath, FosPathElem, FosReactOptions, FosRoute } from "../types"
 
 import { suggestTaskOptions } from "./suggestOption"
 import { suggestStepsMagic } from "./suggestMagic"
@@ -8,11 +8,14 @@ import { suggestStepsRecursive } from "./suggestRecursive"
 import { getDownNode, getNodeInfo, getUpNode, pathEqual } from "./utils"
 
 import * as mut from "./mutations"
+import { diff } from "@n1ru4l/json-patch-plus"
 
 
 
 export const getNodeOperations = (options: FosReactOptions, appData: AppState, setAppData: (state: AppState) => void, nodeRoute: FosRoute, ) => {
 
+
+    const { nodeType } = getNodeInfo(nodeRoute, appData)
 
     const zoom =  async () => {
         // const {
@@ -56,7 +59,6 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
         const newState = mut.updateNodeData(appData, {
             option: {
                 defaultResolutionStrategy: 'selected',
-                chosenOptions: [],
                 ...nodeData,
                 selectedIndex: selectedOption,
             }
@@ -64,23 +66,27 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
         setAppData(newState)
     }
 
-    const addRowAsChild = async () => {
+    const addRowAsChild = async (newType: FosNodeId = nodeType) => {
         const { nodeType, nodeChildren } = getNodeInfo(nodeRoute, appData)
-        const newNodeContent = {
+        const newNodeContent: FosNodeContent = {
             data: {
                 description: {
                     content: ""
                 },
                 option: {
                     selectedIndex: 0,
-                    chosenOptions: [],
                     defaultResolutionStrategy: "selected" as "selected"
+                },
+                updated: {
+                    time: Date.now()
                 }
             },
             content: []
         }
-        const { newState, childRoute }  = mut.addChild(appData, nodeRoute, nodeType, newNodeContent, nodeChildren.length)
+        const { newState, childRoute }  = mut.addChild(appData, nodeRoute, newType, newNodeContent, nodeChildren.length)
+        // console.log('newState', newState, diff({left: appData, right: newState}))
         const newStateWithFocus = mut.updateFocus(newState, 0, childRoute)
+        console.log('newStateWithFocus', newStateWithFocus)
         setAppData(newStateWithFocus)
     }
 
@@ -124,7 +130,6 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
                     },
                     option: {
                         selectedIndex: 1,
-                        chosenOptions: [],
                         defaultResolutionStrategy: "selected"
                     }
                 },
@@ -260,6 +265,7 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
 
         const moveFocusDown = async () => {
             const { focusChar, nodeDescription } = getNodeInfo(nodeRoute, appData)
+            console.log(appData.data.trellisData)
             const downNodeRoute = getDownNode(nodeRoute, appData)
             if (downNodeRoute){
                 const newState = mut.updateFocus(appData, focusChar || 0, downNodeRoute)
@@ -268,6 +274,7 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
         }
         const moveFocusUp = async () => {
             const { focusChar, nodeDescription } = getNodeInfo(nodeRoute, appData)
+            console.log(appData.data.trellisData)
             const upNodeRoute = getUpNode(nodeRoute, appData)
             if (upNodeRoute){
                 const newState = mut.updateFocus(appData, focusChar || 0, upNodeRoute)
@@ -293,8 +300,9 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
 
         const moveRight = async () => {
             const focusChar = appData.data.trellisData.focusChar || 0
-            const { newState, newRoute } = mut.moveLeft(appData, nodeRoute)
+            const { newState, newRoute } = mut.moveRight(appData, nodeRoute)
             const newStateWithFocus = mut.updateFocus(newState, focusChar, newRoute)
+            console.log('newStateWithFocus', newStateWithFocus, appData)
             setAppData(newStateWithFocus)
         }
         const moveUp = async () => {
@@ -313,10 +321,11 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
 
         const addDownSibling = async () => {
             const { nodeType, getParentInfo } = getNodeInfo(nodeRoute, appData)
-            const { indexInParent } = getParentInfo()
+            const { indexInParent, nodeRoute: parentRoute } = getParentInfo()
+            console.log('addDownSibling', nodeType, parentRoute, indexInParent)
             const { newState, childRoute } = mut.addChild(
                 appData, 
-                nodeRoute, 
+                parentRoute, 
                 nodeType, 
                 {data: {description: {content: ""}}, content: []}, 
             indexInParent + 1)
@@ -358,9 +367,7 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
             const value = e.target
             const { focusChar, nodeDescription } = getNodeInfo(nodeRoute, appData)
 
-            if (e.key === 'Enter' && focusChar === nodeDescription.length){
-                moveFocusDown()
-            }
+
             if (e.key === 'Backspace' && focusChar === 0){
                 moveFocusUp()
             }
@@ -417,6 +424,7 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
         
             if (e.key === "ArrowRight"){
                 if (e.altKey && e.ctrlKey){
+                    console.log('moveRight - comboboxEditable', nodeDescription, nodeRoute)
                     moveRight()
                 }
             }
@@ -466,6 +474,24 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
 
         const runTask = async () => {
 
+            const { newId, newType, newState } = mut.instantiate(appData, nodeRoute)
+            const rootRoute: FosRoute = [nodeRoute[0]]
+            const { nodeChildren } = getNodeInfo(rootRoute, newState)        
+            const { newState: newStateWithExpr, childRoute: exprRoute } = mut.attachChild(newState, rootRoute, newType, newId, nodeChildren.length )
+            const newStateWithFocus = mut.updateFocus(newStateWithExpr, 0, exprRoute)
+
+            const newRoute: FosRoute = [["todo", nodeRoute[0][1]], ...exprRoute.slice(1)]
+            const newStateWithChangedRootInstruction = {
+                ...newStateWithFocus,
+                data: {
+                    ...newStateWithFocus.data,
+                    fosData: {
+                        ...newStateWithFocus.data.fosData,
+                        route: newRoute
+                    }
+                }
+            }
+            setAppData(newStateWithChangedRootInstruction)
         }
 
     return {
@@ -474,7 +500,7 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
         moveBelowRoute,
         moveAboveRoute,
         moveToTopChildOfRoute,
-        
+        runTask,
         toggleCollapse,
         toggleOptionCollapse,
         moveLeft,

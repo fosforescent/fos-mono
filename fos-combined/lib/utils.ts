@@ -170,6 +170,7 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
   const childrenVisible = !isCollapsed && !isTooDeep
 
 
+
   return {
       childRoutes,
       disabled,
@@ -203,9 +204,10 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
       nodeLabel,
       nodeRoute,
       isChoice,
+      hasParent,
       getParentInfo: () => getParentInfo(nodeRoute, state),
       getOptionInfo: () => getOptionInfo(nodeRoute, state),
-      hasParent,
+      getChildrenOfType: (type: FosNodeId) => getChildrenToShow(state, nodeRoute, type),
   }
 }
 
@@ -240,11 +242,14 @@ export const getParentInfo = (nodeRoute: FosRoute, appData: AppState) => {
         throw new Error('nodeType or nodeId is undefined')
       }
 
+      // console.log('parentInfo', nodeType, nodeId, parentInfo.nodeChildren)
       const indexInParent = parentInfo.nodeChildren.findIndex(([childType, childId]) => {
-        childType === nodeType && childId === nodeId
+        // console.log('childType', childType, nodeType, childType === nodeType, childType === nodeType && childId === nodeId)
+        // console.log('childId', childId, nodeId, childId === nodeId, childType === nodeType && childId === nodeId)
+        return childType === nodeType && childId === nodeId
       })
 
-      const siblingRoutes = parentInfo.childRoutes.filter((_, i) => i !== indexInParent)
+      const siblingRoutes = parentInfo.childRoutes //.filter((_, i) => i !== indexInParent)
 
       return {
         ...parentInfo,
@@ -306,6 +311,7 @@ export const getDownNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | 
     return childRoutes[0]!
   }
   const downSibling = getDownSibling(nodeRoute, appData)
+  // console.log('downSibling', downSibling)
   if (downSibling){
     return downSibling
   }else{
@@ -321,10 +327,12 @@ export const getAncestorLeastDownSibling = (nodeRoute: FosRoute, appData: AppSta
     childrenVisible: parentChildrenVisible 
   } = getParentInfo()
 
+  console.log('leastDownSibling', parentRoute,)
   if (parentRoute.length === 1){
     return null
   }
   const parentDownSibling = getDownSibling(parentRoute, appData)
+  // console.log('parentDownSibling', parentDownSibling)
   if (parentDownSibling){
     return parentDownSibling
   } else {
@@ -359,7 +367,7 @@ export const getUpSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute |
   }
   const newRoute = siblingRoutes[indexInParent - 1]
   if (!newRoute){
-    throw new Error('Error accessing up sibling')
+    return null
   }
   return newRoute
 }
@@ -367,12 +375,14 @@ export const getUpSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute |
 export const getDownSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
   const { getParentInfo } = getNodeInfo(nodeRoute, appData)
   const { indexInParent, siblingRoutes } = getParentInfo()
+
+  // console.log('downSibling - sibling routes', siblingRoutes, indexInParent, nodeRoute)
   if (indexInParent === siblingRoutes.length - 1){
     return null
   }
   const newRoute = siblingRoutes[indexInParent + 1]
   if (!newRoute){
-    throw new Error('Error accessing down sibling')
+    return null
   }
   return newRoute
 }
@@ -427,12 +437,42 @@ export const getRootNodes = (appData: AppState, nodeType: FosNodeId) => {
 
 }
 
+
+export const getChildrenToShow = (appData: AppState, parentRoute: FosRoute, parentType: FosNodeId) => {
+  const { childRoutes  } = getNodeInfo(parentRoute, appData)
+
+  if (parentType === 'workflow'){
+    const routes = childRoutes.filter((childRoute) => {
+      const { nodeType } = getNodeInfo(childRoute, appData)
+      return nodeType === 'workflow' || nodeType === 'option'
+    })
+    return routes
+  } else if (parentType === 'todo'){
+    const routes = childRoutes.filter((childRoute) => {
+      const { nodeType } = getNodeInfo(childRoute, appData)
+      return nodeType === 'todo' || nodeType === 'race' || nodeType === 'choice'
+    })
+    return routes
+  } else {
+    const routes = childRoutes.filter((childRoute) => {
+      const { nodeType } = getNodeInfo(childRoute, appData)
+      return nodeType === parentType
+    })
+    return routes
+  }
+
+}
+
+
 export const getAvailableTasks = (appData: AppState, nodeRoute: FosRoute): FosRoute[] => {
   const { nodeChildren, nodeType } = getNodeInfo(nodeRoute, appData)
-  if (nodeType !== 'todo'){
+  if (nodeType !== 'todo' && nodeType !== 'race' && nodeType !== 'choice'){
     return []
   }
   const childTasks =  nodeChildren.filter(([childType, childId]) => childType === 'todo' || childType === 'race' || childType === 'choice')
+  
+  const thisRoute = nodeType === 'todo' || nodeType === 'choice' ? [nodeRoute] : []
+
 
   const childTodos: FosRoute[] = childTasks.reduce((acc: FosRoute[], childElem: FosPathElem, index: number): FosRoute[] => {
     const [childType, childId] = childElem
@@ -449,7 +489,7 @@ export const getAvailableTasks = (appData: AppState, nodeRoute: FosRoute): FosRo
     } else {
       return []
     }
-  }, [] as FosRoute[])
+  }, [] as FosRoute[]).concat(thisRoute)
 
   return childTodos
 

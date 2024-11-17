@@ -20,7 +20,6 @@ export function DefaultRootComponent({
 
 
 
-
   return (<div>
     {<div className={`border-b border-t`}>
       <RootScreenHead nodeRoute={nodeRoute} options={options} data={data} setData={setData} />

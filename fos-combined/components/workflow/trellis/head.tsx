@@ -73,14 +73,13 @@ export const RootScreenHead = ({
 
   const activeModule = (isRoot && [undefined, "root", "workflow", "todo"].includes(options.activeModule?.name)) ? undefined : options.activeModule
 
-  const homeModules = options?.modules?.filter((module: FosModule) => module.name === 'budget' || module.name === 'import_export') || []
+  const homeModules: FosModule[] = [] // options?.modules?.filter((module: FosModule) => module.name === 'budget' || module.name === 'import_export') || []
 
   const availableModules = (isRoot ? homeModules : options?.modules) || []
 
   const hasModules = availableModules.length > 0
 
 
-  console.log('rootscreenhead', activeModule, availableModules, options?.modules, options)
 
   const HeadComponent = activeModule?.HeadComponent || (() => <></>)
 

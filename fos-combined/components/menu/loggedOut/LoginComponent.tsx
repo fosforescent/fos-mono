@@ -39,6 +39,7 @@ import _ from 'lodash'
 import { Form } from "@/components/ui/form"
 import { getActions } from "@/fos-combined/lib/actions"
 import { AppState, FosReactOptions } from "@/fos-combined/types"
+import { useNavigate } from "react-router-dom"
 
 
 
@@ -71,14 +72,17 @@ export const LoginComponent = ({
 
   const canSubmit = emailValid 
 
+  const navigate = useNavigate()
+
 
   const handleLogin = () => {
     console.log('login, email', email, password);
     
     logIn(email, password, remember).then(() => {
       // window.Fos.ws.
+
       setMessage({ messageType: "success", message: "Logged In Successfully" })    
-      setAccordionValue("nav")
+      navigate("/")
       
     }).catch((error: Error) => {
       console.log('login error', error)

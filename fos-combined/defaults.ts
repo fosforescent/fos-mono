@@ -141,7 +141,8 @@ export const defaultNodesTest: FosNodesData = {
   task2a_1: {
     data: {
       option: {
-        selectedIndex: 0
+        selectedIndex: 0,
+        defaultResolutionStrategy: "selected",
       },
       description: {
         content: "Task 2a.1"
@@ -318,16 +319,15 @@ export const initialAuthState = {
 }
 
 export const defaultTrellisData: TrellisSerializedData = {
-  zoomRoute: [['root', rootId]],
-  focusRoute: [['root', rootId]],
-  focusChar: null,
-  collapsedList: [],
-  rowDepth: 0,
-  draggingNode: null,
-  draggingOverNode: null,
-  dragInfo: {
-    dragging: null,
-    dragOverInfo: null
+  "focusRoute": [['root', rootId]],
+  "focusChar": null,
+  "collapsedList": [],
+  "rowDepth": 0,
+  "draggingNode": null,
+  "draggingOverNode": null,
+  "dragInfo": {
+    "dragging": null,
+    "dragOverInfo": null
   }
 }
 

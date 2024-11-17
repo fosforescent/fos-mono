@@ -83,7 +83,7 @@ export const Password = ({
     const jwt = appState.auth.jwt
     setLoading(true)
 
-    api(appState.apiUrl).authed(jwt).changePassword(currentPassword, newPassword).then(() => {
+    api(appState, setData).authed().changePassword(currentPassword, newPassword).then(() => {
       setMessage({ messageType: "success", message: "Password updated successfully" })
       setLoading(false)
     }).catch((error: Error) => {

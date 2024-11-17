@@ -38,7 +38,7 @@ import { DroppableContainersMap } from '@dnd-kit/core/dist/store/constructors';
 
 import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosRoute } from '../../../types'
 import { getActions } from '../../../lib/actions'
-import { DefaultBreadcrumbsComponent } from './breadcrumbs'
+import { DefaultBreadcrumbsComponent } from '../../breadcrumbs/breadcrumbs'
 import { DefaultRootComponent } from './root'
 import { useProps } from '@/fos-combined/App';
 
@@ -330,7 +330,7 @@ export function MainView (){
   
 
 
-  console.log('zoomroute', route)
+  // console.log('zoomroute', route)
 
   return (
     <DndContext 

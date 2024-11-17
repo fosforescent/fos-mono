@@ -39,9 +39,11 @@ import { FosModule, fosDataModules, fosResourceModules, fosReportModules, fosNod
 
 import { defaultContext, defaultTrellisData } from './defaults'
 
-import { Outlet, useOutletContext, useLoaderData } from 'react-router-dom'
+import { Outlet, useOutletContext, useLoaderData, useNavigate } from 'react-router-dom'
 import { getActions } from './lib/actions'
 import { diff } from '@n1ru4l/json-patch-plus'
+
+import { useLocation } from 'react-router-dom'
 
 
 declare const __SYC_API_URL__: string;
@@ -52,7 +54,7 @@ declare const __PROD_SYC_API_URL__: string;
 
 
 export const initialInfoState = {
-  cookies: localStorage.getItem('cookiePrefs') ? JSON.parse(localStorage.getItem('cookiePrefs') || "") : undefined,
+  cookies: localStorage.getItem('cookiePrefs') ? JSON.parse(localStorage.getItem('cookiePrefs') || "null") : undefined,
   emailConfirmed: false,
   subscriptionSession: false,
 }
@@ -90,9 +92,6 @@ export const initialDataState: AppState =  JSON.parse(localStorage.getItem("data
   loaded: false,
 }
 
-import { useLocation } from 'react-router-dom'
-
-
 export default function App({
   
 }: {
@@ -115,19 +114,13 @@ export default function App({
   const [ appState, setAppState ] = React.useState<AppState>({...initialDataState, apiUrl})
 
 
-  useEffect(() => {
-    if (appState.auth.jwt){
-      setLogout(logOut)
-    }
-  }, [])
-
 
   const emailConfirmationToken = new URLSearchParams(window.location.search).get('confirm-email-token') || undefined
   const passwordResetToken = new URLSearchParams(window.location.search).get('reset-password-token') || undefined
 
 
   
-  const jwt = JSON.parse(localStorage.getItem('auth') || "") || undefined
+  const jwt = appState.auth.jwt
 
   const {
     username,
@@ -136,10 +129,7 @@ export default function App({
 
 
   const location = useLocation();
-
-
-  const shouldOpenMenu = !jwt && (location.pathname) === "/"
-  // const shouldOpenMenu = !jwt 
+  const navigate = useNavigate()
 
 
   
@@ -156,7 +146,7 @@ export default function App({
     if (!window.Fos.ws) {
 
       window.Fos.ws = new WebSocket(`${apiUrl}/socket/${jwt}`);
-      console.log('connecting to', `${apiUrl}/socket/${jwt}`)
+      console.log('connecting to', `${apiUrl}/socket/`)
       window.Fos.ws.addEventListener('connected', () => {
         console.log('connected')
         window.Fos.ws.send('hello')
@@ -178,12 +168,10 @@ export default function App({
 
 
 
-  
-
-  console.log('rerender', )
+  // console.log('rerender', )
 
   // useTraceUpdate({ apiDataState, loggedIn, theme, promptGPT, canPromptGPT, toast, data })
-  const authedApi = appState.auth.jwt ? api(apiUrl).authed(appState.auth.jwt) : undefined
+  const authedApi = appState.auth.jwt ? api(appState, setAppState).authed() : undefined
 
   const promptGPT = React.useCallback(async (systemPrompt: string, userPrompt: string, options?: {
     temperature?: number,
@@ -241,26 +229,6 @@ export default function App({
   }, [theme])
 
 
-  const [logOut, setLogout] = useState<() => Promise<void>>(async () => { /* console.log('logout not set') */});
-
-
-  const setDataWithLog = (data: AppState) => {
-    console.log('setting data from CLIENT', data)
-    // TODO: change setFosData to handle trellis data too
-    // OR --- move trellis data into node data / fos context
-
-    if (data.data.fosData.route.length < 1){
-      throw new Error('No route')
-    }
-
-
-
-    setAppState(data)
-
-
-  }
-
-
 
 
   if (appState.data.fosData.route.length < 1){
@@ -268,18 +236,15 @@ export default function App({
   }
 
 
-  console.log('rerender web client main', appState.data, appState)
+  // console.log('rerender web client main', appState.data, appState)
  
   
   const [showHelp, setShowHelp] = useState(false)
 
 
 
-  useEffect(() => {
-    // console.log('set data changed', data)
-  }, [setAppState])
 
-  const [activeModule, setActiveModule] = useState<FosModule | undefined>(fosDataModules.description)
+  const [activeModule, setActiveModule] = useState<FosModule | undefined>(fosModules.workflow)
 
   const setActiveModuleWithLog = (module: FosModule | undefined) => {
     // console.log('setActiveModule', module)
@@ -296,46 +261,106 @@ export default function App({
 
   const [menuOpen, setMenuOpen] = useState<boolean>(emailConfirmationToken || passwordResetToken ? true : false)
 
+  const {  loadAppData, loggedIn, getRootInstruction, setRootInstruction } = getActions(options, appState, setAppState)
+
   
 
   
   useEffect(() => {
-    if (shouldOpenMenu) {
-      setMenuOpen(true);
-    }
-  }, [shouldOpenMenu]);
+    if (!jwt) {
+      navigate('/')
+      setMenuOpen(true)
+    } else {
+      if (!appState.loaded){
+        loadAppData()
+      }else{
+        if (location.pathname === '/'){
+          (async () => {
+            const rootInstruction = await getRootInstruction()
+            if (['todo', 'workflow'].includes(rootInstruction)){
+              navigate(`/${rootInstruction}`)
+            } 
+          })()
+        } else {
+          const locationInstruction = location.pathname.split('/')[0] || 'blank'
+          if (['todo', 'workflow'].includes(locationInstruction)){
+            setRootInstruction(locationInstruction )
+          }
+        }
 
-  const { saveFosAndTrellisData, saveProfileData, loadAppData } = getActions(options, appState, setAppState)
+      }
+    }
+  }, [jwt]);
+
+
+
+
 
   useEffect(() => {
-    if (appState.auth.jwt && !appState.loaded){
-      loadAppData()
+
+    if (loggedIn()){
+      if (location.pathname === '/'){
+        navigate('')
+      } else {
+        setAppState({...appState, })
+      }
+  
     }
-  }, [appState.auth.jwt])
+
+
+
+  }, [location.pathname])
+
 
   const setAppStateWithEffects = (newData: AppState) => {
+    // console.log('setting data from CLIENT',newData, appState)
+    // TODO: change setFosData to handle trellis data too
+    // OR --- move trellis data into node data / fos context
+
+
+
 
     if (newData.auth.jwt){
       localStorage.setItem('auth', JSON.stringify(newData.auth.jwt))
     }
+    if (newData.data.fosData.route.length < 1){
+      throw new Error('No route')
+    }
 
+    const newActions =  getActions(options, newData, setAppState)
+
+    setAppState(newData)
 
     const syncData = async () => {
       const dataDiff = diff({ left: newData.data, right: appState.data})
       const profileDiff = diff({ left: newData.info, right: appState.info})
+      const authDiff = diff({ left: newData.auth, right: appState.auth})
 
-      if (dataDiff){
-        await saveFosAndTrellisData(newData)
+      let updatedWithServerData: AppState = newData
+
+      if (dataDiff && appState.loaded){
+        // console.log('saving data')
+        await newActions.saveFosAndTrellisData(updatedWithServerData)
 
       }
 
-      if (profileDiff){
-        await saveProfileData(newData)
+      if (profileDiff && appState.loaded){
+        newActions.saveProfileData(updatedWithServerData)
       }
+
+      // console.log('setappdata', authDiff)
+      // console.trace()
+
+      if (diff({left: newData, right: updatedWithServerData})){
+        setAppState(updatedWithServerData)
+      }
+
     }
     syncData()
 
   }
+
+
 
  
   return (<><div className="App h-full bg-background" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden' }}>
@@ -366,7 +391,7 @@ export default function App({
         
         <Outlet context={{
           data: appState,
-          setData: setDataWithLog,
+          setData: setAppStateWithEffects,
           options: global,
           nodeRoute: appState.data.fosData.route,
           dialogueProps: {
@@ -434,15 +459,12 @@ export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> =>
     ...( options && options?.canUndo ? { undo: options.undo } : {}),
     ...( options ? { toast: options.toast } : {}),
     ...( options ? { theme: options.theme } : {}),
-    ...( options ? { activeModule: options.activeModule || fosDataModules.description } : { activeModule: fosDataModules.description }),
-    ...( options ? { activeModuleRows: options.activeModuleRows || fosDataModules.description } : { activeModuleRows: fosDataModules.description }),
+    ...( options ? { activeModule: options.activeModule || fosModules.workflow } : { activeModule: fosModules.workflow }),
+    ...( options ? { activeModuleRows: options.activeModuleRows || fosModules.workflow } : { activeModuleRows: fosModules.workflow }),
     ...( options ? { setActiveModule: options.setActiveModule } : {}),
     ...( options ? { setActiveModuleRows: options.setActiveModuleRows } : {}),
     ...( { modules: [...(options.modules || []), ...Object.values({
-      ...fosDataModules,
-      ...fosResourceModules,
-      ...fosReportModules,
-      ...fosNodeModules,
+      ...fosModules,
     })] } ),
     ...( options ? { locked: options.locked } : { locked: false }),
   }

@@ -45,6 +45,7 @@ import { AppState, FosReactOptions } from '@/fos-combined/types'
 import { getActions } from '@/fos-combined/lib/actions'
 import { NavLink } from "react-router-dom";
 import { cn } from '@/lib/utils'
+import { LoginRegister } from './loggedOut'
 
 
 const HamburgerMenu = ({
@@ -88,10 +89,8 @@ const HamburgerMenu = ({
 }) => {
 
 
-  const { sendMessage, logOut } = getActions(options, appState, setData)
+  const { sendMessage, logOut, loggedIn } = getActions(options, appState, setData)
   
-
-  const loggedIn = !!appState.auth.jwt
 
   
   const [messageEmail, setMessageEmail] = useState(appState.auth.email || '')
@@ -123,7 +122,15 @@ const HamburgerMenu = ({
     })
   }
 
-  const [accordionValue, setAccordionValue] = useState("")
+  const [accordionValue, setAccordionValue] = useState(loggedIn() ? "": "account")
+
+
+  useEffect(() => {
+    if(!loggedIn()){
+      setAccordionValue('account')
+    }
+  }, [appState])
+
 
 
   return (
@@ -156,7 +163,7 @@ const HamburgerMenu = ({
             <hr  className={`my-5`} />
 
       
-            {loggedIn && (<div className="grow h-full">
+            {loggedIn() && (<div className="grow h-full">
               <nav className="p-4 space-y-2 flex flex-col justify-center h-full">
                 <Button
                   asChild
@@ -165,7 +172,7 @@ const HamburgerMenu = ({
                   onClick={() => setMenuOpen(false)}
                 >
                   <NavLink
-                    to="/todos"
+                    to="/todo"
                     className={({ isActive }) =>
                       cn(
                         "w-full",
@@ -184,7 +191,7 @@ const HamburgerMenu = ({
                   onClick={() => setMenuOpen(false)}
                 >
                   <NavLink
-                    to="/workflows"
+                    to="/workflow"
                     className={({ isActive }) =>
                       cn(
                         "w-full",
@@ -237,18 +244,29 @@ const HamburgerMenu = ({
               </nav>
 
             </div>)}
-            <div>
-              <Button variant="destructive" onClick={logOut}><LogOut /></Button><br/>
-            </div>
+            
             <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue} collapsible>
 
 
-              {/* <AccordionItem value="account">
+              <AccordionItem value="account">
                 <AccordionTrigger>Account </AccordionTrigger>
                 <AccordionContent>
-
+                {!loggedIn()
+                  ? <LoginRegister
+                    emailConfirmationToken={emailConfirmationToken}
+                    passwordResetToken={passwordResetToken}
+                    setShowTerms={setShowTerms}
+                    setShowPrivacy={setShowPrivacy}
+                    setAccordionValue={setAccordionValue}
+                    data={appState}
+                    setData={setData}
+                    options={options}
+                    />
+                  : <div>
+                  <Button variant="destructive" onClick={logOut}><LogOut /></Button><br/>
+                </div>}
                 </AccordionContent>
-              </AccordionItem> */}
+              </AccordionItem>
               {/* <AccordionItem value="settings">
                 <AccordionTrigger>Settings</AccordionTrigger>
                 <AccordionContent>

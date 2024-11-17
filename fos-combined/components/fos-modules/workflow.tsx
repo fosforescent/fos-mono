@@ -37,18 +37,36 @@ const ResourceComponent = ({
     suggestSteps,
     toggleCollapse,
     zoom,
-   } = getNodeOperations(options, data, setData, nodeRoute)
+    runTask,
+  } = getNodeOperations(options, data, setData, nodeRoute)
+
  
+  const descriptionModule = options.modules?.find((module) => module.name === 'description')
+ 
+  if (!descriptionModule){
+    console.log('description', options.modules)
+    throw new Error('description module not found')
+  }
+
+  const HeadComponent = descriptionModule.HeadComponent || (() => null)
   
   return (
     <div className={`grid grid-cols-[1fr,2rem] items-center`}>
-      <WorkflowRowComponent
+      {/* <WorkflowRowComponent
+        data={data}
+        setData={setData}
+        nodeRoute={nodeRoute}
+        options={options}
+      /> */}
+      <HeadComponent
         data={data}
         setData={setData}
         nodeRoute={nodeRoute}
         options={options}
       />
-
+      <Button onClick={runTask}>
+        <PlaySquare /> Run
+      </Button>
     </div>)
 }
 
@@ -97,7 +115,7 @@ const WorkflowRowComponent = ({
     suggestSteps,
     toggleCollapse,
     zoom,
-    runTask
+    
    } = getNodeOperations(fosOptions, data, setData, nodeRoute)
  
 
@@ -127,9 +145,7 @@ const WorkflowRowComponent = ({
       setFocus={setFocus}
       addOption={addOption}
       />
-      <Button onClick={runTask}>
-        <PlaySquare /> Run
-      </Button>
+
   </div>)
 }
 

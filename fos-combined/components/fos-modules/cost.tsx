@@ -396,7 +396,7 @@ const CostRowComponent = ({
 
 
   return (<div className="flex flex-initial grow">
-    If you are seeing this, there is an error. 
+    If you are seeing this, there is an error (cost)
   </div>)
 }
 

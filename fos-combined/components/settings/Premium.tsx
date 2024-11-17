@@ -88,7 +88,7 @@ const ProductDisplay = ( {
     if (!appState.info.cookies?.acceptSharingWithThirdParties) {
       setShowCookies(true);
     } else {
-      const { url } = await api(appState.apiUrl).authed(appState.auth.jwt).getCheckoutSession();
+      const { url } = await api(appState, setData).authed().getCheckoutSession();
       window.open(url, '_blank');  
     }
   }
@@ -151,7 +151,7 @@ const GoToPortal = ( {
 
   const handlePortalClick = async (event: any) => {
     if (!appState.auth.jwt) return console.error('no jwt, not logged in');
-    const { url } = await api(appState.apiUrl).authed(appState.auth.jwt).getCheckoutSession();
+    const { url } = await api(appState, setData).authed().getCheckoutSession();
     window.open(url, '_blank');
   }
 

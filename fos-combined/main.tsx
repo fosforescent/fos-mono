@@ -7,6 +7,7 @@ import { FosSettingsPage }  from './components/settings'
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 import TodoQueue from './components/todo/Queue'
+import { TodoTree } from './components/todo/Tree'
 
 
 const apiUrl = "http://localhost:4000"
@@ -43,11 +44,11 @@ const router = createBrowserRouter([
 
       },
       {
-        path: "workflows",
+        path: "workflow",
         element: <TrellisMain />
       },
       {
-        path: "todos",
+        path: "todo",
         children: [
           {
             index: true,
@@ -55,8 +56,8 @@ const router = createBrowserRouter([
     
           },
           {
-            path: "workflows",
-            element: <TrellisMain />
+            path: "tree",
+            element: <TodoTree />
           },
         ]
       },

@@ -299,10 +299,7 @@ const TaskRows = ({
 
 
 
-
-
-
-  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, isRoot, childRoutes, isBase } = getNodeInfo(nodeRoute, data)
+  const { getChildrenOfType, isRoot, isBase } = getNodeInfo(nodeRoute, data)
   
   const { 
     suggestOption, 
@@ -328,15 +325,22 @@ const TaskRows = ({
 
 
 
+  const activeChildRoutes = getChildrenOfType("workflow")
 
-  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && getNodeDescription(childRoutes[0], data) === "")
+  const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && getNodeDescription(activeChildRoutes[0], data) === "")
+
+
+  // console.log('taskRows', activeChildRoutes, activeChildRoutes.length, rowsEmpty)
+
+
+  
 
 
   return (
     <div>
   
-        {childRoutes.length > 0 && 
-          childRoutes.map((childRoute , i) => {
+        {activeChildRoutes.length > 0
+          ? activeChildRoutes.map((childRoute , i) => {
   
       
             return (<div key={i} className={` `}>
@@ -356,11 +360,21 @@ const TaskRows = ({
                 </DragOverlay> */}
               </div>
             </div>)
-        })}
+        })
+        : <div className={`p-10`}>
+          No workflows found            <span><Button 
+            onClick={() => addRowAsChild('workflow')}
+            className={`bg-secondary/30 text-white-900 hover:bg-secondary/80 px-2 shadow-none`}
+            // style={{padding: !isSmallWindow ? '15px 15px 15px 15px' : '31px 3px'}}
+            >
+            Create one
+          </Button></span>
+          </div>
+        }
       <div>
         {isBase && <div className='py-1' key={`-1`}>
           <Button 
-            onClick={() => addRowAsChild()}
+            onClick={() => addRowAsChild('workflow')}
             className={`bg-secondary/30 text-white-900 hover:bg-secondary/80 px-2 shadow-none`}
             // style={{padding: !isSmallWindow ? '15px 15px 15px 15px' : '31px 3px'}}
             >

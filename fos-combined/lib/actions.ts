@@ -1,6 +1,6 @@
 import { jwtDecode } from "jwt-decode"
 import { api } from "../api"
-import { AppState, FosPath, FosReactOptions, FosRoute, InfoProfile, InfoState, SubscriptionInfo, UserProfile } from "../types"
+import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, FosRoute, InfoProfile, InfoState, SubscriptionInfo, UserProfile } from "../types"
 import { diff } from "@n1ru4l/json-patch-plus"
 import { getNodeOperations } from "./nodeOperations"
 import { debounce } from "lodash"
@@ -13,10 +13,31 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     throw new Error('apiUrl not found')
   }
 
-  const apiObj = api(appData.apiUrl)
+  const apiObj = api(appData, setAppData)
 
-  const authedApi = appData.auth.jwt ? apiObj.authed(appData.auth.jwt) : undefined
+  const authedApi = () => {
+    if (!appData.auth.jwt) {
+      throw new Error('no jwt, not logged in');
+    }
+    return apiObj.authed()
+  }
 
+  const publicApi = () => {
+    return apiObj.public
+  }
+
+  const getRootInstruction = async () => {
+    const rootElem = appData.data.fosData.route[0]
+    return rootElem[0]
+  }
+
+  const setRootInstruction = async (rootInstruction: FosNodeId) => {
+    const rootElem = appData.data.fosData.route[0]
+    const newRootElem: FosPathElem = [rootInstruction, rootElem[1]]
+    const newRoute: FosRoute = [newRootElem, ...appData.data.fosData.route.slice(1)]
+    const newData: AppState["data"] = { ...appData.data, fosData: { ...appData.data.fosData, route: newRoute } }
+    setAppData({ ...appData, data: newData })
+  }
 
   const loggedIn = () => {
     return !!appData.auth.jwt
@@ -54,7 +75,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
       if (!appData.auth.jwt) {
           throw new Error('Trying to delete account without being logged in')
         }
-        await api(appData.apiUrl).authed(appData.auth.jwt).deleteAccount().then(() => {
+        await authedApi().deleteAccount().then(() => {
           localStorage.clear()
           window.location.href = '/'
         })
@@ -64,7 +85,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   }
   const updateEmail = async (email: string) => {
     if (!appData.auth.jwt) throw new Error('no jwt, not logged in', {cause: 'unauthorized'});
-    api(appData.apiUrl).authed(appData.auth.jwt).updateEmail(email).then((result) => {
+    authedApi().updateEmail(email).then((result) => {
       if (!appData.info){
         throw new Error('user info not found -- shouldn\'t have gotten here')
       }
@@ -96,15 +117,10 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     });
   }
   const sendMessage = async (email: string, message: string ) => {
-      return await api(appData.apiUrl).public.sendMessage(email, message)
+    return await publicApi().sendMessage(email, message)
   }
   const confirmEmail = async (token: string) => {
-      if (authedApi){
-          await authedApi.confirmEmail(token)
-
-      } else {
-          throw new Error('Must Be Logged in to Confirm Email')
-      }
+    await authedApi().confirmEmail(token)
   }
   const registerUser = async (email: string, password: string, acceptTerms: boolean) => {
 
@@ -115,7 +131,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
       }
 
       if (email && password) {
-      const result = await api(appData.apiUrl).public.register(email, password, acceptTerms, appData.info.cookies || {
+      const result = await publicApi().register(email, password, acceptTerms, appData.info.cookies || {
           acceptRequiredCookies: false,
           acceptSharingWithThirdParties: false,
       }).catch((error: Error) => {
@@ -126,13 +142,13 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
       }
   }
   const resetPassword = async (email: string, password: string, token: string) => {        
-    await api(appData.apiUrl).public.resetPassword(email, password, token)
+    await publicApi().resetPassword(email, password, token)
   }
   const changePassword = async (oldPassword: string, newPassword: string) => {
       if (!appData.auth.jwt) {
           throw new Error('Trying to change password without being logged in')
         }
-        await api(appData.apiUrl).authed(appData.auth.jwt).changePassword(oldPassword, newPassword)
+        await authedApi().changePassword(oldPassword, newPassword)
   }
   const logIn = async (email: string, password: string, remember: boolean) => {
     if (remember) {
@@ -145,7 +161,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
       } & InfoState
         
 
-      const { access_token: jwt, ...infoState } : LoginResult = await api(appData.apiUrl).public.login(email, password).catch((error: Error) => {
+      const { access_token: jwt, ...infoState } : LoginResult = await publicApi().login(email, password).catch((error: Error) => {
         console.log('error', error)
         throw error
       });
@@ -159,11 +175,12 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
       if (jwtProps.username !== email){
         throw new Error('jwt username does not match email, login failed')
       }
+
+      const newlyAuthedState = { ...appData, auth: { ...appData.auth, jwt }}
   
-      const authedApi = api(appData.apiUrl).authed(jwt)
-  
+      const newlyAuthedApi = api(newlyAuthedState, setAppData).authed()
         
-      const initialFosAndTrellisData = await authedApi.getData()
+      const initialFosAndTrellisData = await newlyAuthedApi.getData()
         .catch((error: Error) => {
           console.log('error', error)
           throw error
@@ -173,11 +190,14 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         const actualTrellisData = Object.keys(initialFosAndTrellisData.trellisData).length > 0 ? initialFosAndTrellisData.trellisData : appData.data.trellisData
         const actualData = { ...initialFosAndTrellisData, trellisData: actualTrellisData }
     
+        if(!jwt){
+          throw new Error('no jwt')
+        }
 
       const newAppState: AppState = {
-        ...appData,
+        ...newlyAuthedState,
         auth: {
-          ...appData.auth,
+          ...newlyAuthedState.auth,
           jwt,
           email,
           remember,
@@ -188,6 +208,8 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         data: actualData,
         loaded: true
       }
+
+      console.log('newAppState', newAppState)
         
       setAppData(newAppState)
     
@@ -200,7 +222,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         if(!appData.info.profile){
           throw new Error("calling confirmEmailInit when no profile, but authenticated")
         }
-        const result = api(appData.apiUrl).authed(appData.auth.jwt).confirmEmailInit()
+        const result = authedApi().confirmEmailInit()
         const profile = appData.info.profile
     
         const newInfo = { 
@@ -216,7 +238,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
           info: newInfo })
   }
   const logOut = async () => {
-      const loggedOutState = await api(appData.apiUrl).public.logout().then(() => {
+      const loggedOutState = await publicApi().logout().then(() => {
           return { ...appData, auth: { ...appData.auth, jwt: undefined, loggedIn: false }, loaded: false }
         }).catch((error: Error) => {
           console.log('error', error)
@@ -231,10 +253,10 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     if (!appData.auth.jwt) {
       throw new Error('Trying to load data without being logged in')
     }
-    const authedApi = api(appData.apiUrl).authed(appData.auth.jwt)
+    
   
         
-    const initialFosAndTrellisData = await authedApi.getData()
+    const initialFosAndTrellisData = await authedApi().getData()
       .catch((error: Error) => {
         console.log('error', error)
         throw error
@@ -243,7 +265,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     const actualTrellisData = Object.keys(initialFosAndTrellisData.trellisData).length > 0 ? initialFosAndTrellisData.trellisData : appData.data.trellisData
     const actualData = { ...initialFosAndTrellisData, trellisData: actualTrellisData }
 
-    const initialProfileData = await authedApi.getProfile()
+    const initialProfileData = await authedApi().getProfile()
       .catch((error: Error) => {
         console.log('error', error)
         throw error
@@ -261,9 +283,9 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     
   }
 
-  const saveFosAndTrellisData = debounce(async (newData: AppState) => {
+  const saveFosAndTrellisData = debounce(async (newData: AppState): Promise<void> => {
 
-    const data: AppState["data"] | null | undefined = await authedApi?.postData(appData.data).catch((error: Error) => {
+    const data: AppState["data"] | null | undefined = await authedApi().postData(newData.data).catch((error: Error) => {
       console.log('error', error)
       throw error
     });
@@ -271,30 +293,41 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     if (!data){
       throw new Error('error saving data')
     }else{
-      setAppData({ ...appData, data: data })
+      if (!diff({left: newData.data, right: data})){
+        setAppData({ ...newData, data })
+        console.log('data change', diff({left: newData.data, right: data}), newData.data, data)
+      } else {
+        // console.log('no change in data')
+      }
     }
-    
 
-  }, 9000)
+  }, 9000, {leading: true})
   
-  const saveProfileData = debounce(async (newData: AppState) => {
-    const profile: AppState["info"] | null | undefined = await authedApi?.postProfile(appData.info).catch((error: Error) => {
+  const saveProfileData = debounce(async (newData: AppState): Promise<void> => {
+    const profile: AppState["info"] | null | undefined = await authedApi().postProfile(newData.info).catch((error: Error) => {
       console.log('error', error)
       throw error
     });
 
     if (!profile){
-      throw new Error('error saving data')
+      throw new Error('error saving info data')
     }else{
-      setAppData({ ...appData, info: profile })
+      if (!diff({left: newData.info, right: profile})){
+        setAppData({ ...newData, info: profile })
+        console.log('profile data change', diff({left: newData.info, right: profile}), newData.info, profile)
+      }else{
+        // console.log('no change in profile data')
+      }
     }
 
-  }, 9000)
+  }, 9000, {leading: true})
 
 
   
   return {
     loadAppData,
+    getRootInstruction,
+    setRootInstruction,
     loggedIn,
     setDrag,
     clearDraggingNode,

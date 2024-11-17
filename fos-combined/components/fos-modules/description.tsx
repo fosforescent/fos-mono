@@ -1,7 +1,6 @@
 import { ComboboxOptions } from "../combobox/comboboxOptions"
-import { PenBox } from "lucide-react"
+import { PenBox, PlaySquare } from "lucide-react"
 
-import { suggestOption } from "../../lib/suggestOption"
 
 import { FosReactOptions } from "../../types"
 import { InputDiv } from "../combobox/inputDiv"
@@ -10,6 +9,7 @@ import { AppState, FosRoute } from "@/fos-combined/types"
 import _ from "lodash"
 import { getNodeOperations } from "@/fos-combined/lib/nodeOperations"
 import { getNodeInfo } from "@/fos-combined/lib/utils"
+import { Button } from "@/components/ui/button"
 
 
 
@@ -28,7 +28,7 @@ const ResourceComponent = ({
 
 
     
-  const { selectedIndex, nodeOptions, locked, 
+  const { locked, 
     hasFocus, focusChar, isDragging, draggingOver, 
     nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
     nodeType, nodeId, disabled, depth, isCollapsed, 
@@ -41,16 +41,13 @@ const ResourceComponent = ({
     setSelectedOption, 
     setFocusAndDescription, 
     deleteRow, 
-    getFocus, 
     deleteOption,
     keyDownEvents,
     keyUpEvents,
     keyPressEvents,
     addOption,
-    suggestOptions,
     toggleOptionCollapse,
     suggestSteps,
-    addRow,
     toggleCollapse,
     zoom
    } = getNodeOperations(options, data, setData, nodeRoute)
@@ -76,13 +73,14 @@ const ResourceComponent = ({
         height: 'auto',
         border: '1px solid rgba(23, 20, 20, .3)',
       }}
-      getFocus={getFocus}
+      
       onChange={setFocusAndDescription}
       onClick={(e) => { /* console.log("here"); */ e.stopPropagation()}}
       // onKeyDown={}
       // onKeyUp={onKeyUp}
       focusChar={focusChar}
     />}
+
   </div>)
 }
 
@@ -90,7 +88,7 @@ const ResourceComponent = ({
 
 const module = {
   icon: <PenBox />,
-  name: 'workflow',
+  name: 'description',
   HeadComponent: ResourceComponent,
 }
 

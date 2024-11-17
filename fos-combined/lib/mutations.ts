@@ -20,7 +20,15 @@ export  const updateNodeContent = (currentAppData: AppState, newNodeContent: Fos
 
     const newNodesData: FosNodesData = {
         ...currentAppData.data.fosData.nodes,
-        [nodeId]: newNodeContent
+        [nodeId]: {
+            ...newNodeContent,
+            data: {
+                ...newNodeContent.data,
+                updated: {
+                    time: Date.now(),
+                },
+            },
+        }
     }
 
     const newAppState: AppState = {
@@ -85,12 +93,17 @@ export const addChild = (currentAppData: AppState, route: FosRoute, newType: Fos
     if (index < -1 || index > nodeContent.content.length){
         throw new Error('Index out of range')
     }
+    // console.log("index", index)
     const newRows = index < 0
         ? [...nodeContent.content, newPathElem]
         : [...nodeContent.content.slice(0, index), newPathElem, ...nodeContent.content.slice(index)]
     const newContent = {
         ...nodeContent,
-        content: newRows
+        content: newRows,
+        data: {
+            ...nodeData,
+
+        }
     }
     const newState = updateNodeContent(newState1, newContent, route)
     const childRoute: FosRoute = [...route, [newType, newId]]
@@ -338,13 +351,16 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
     const newElem: FosPathElem = [subjectType, subjectId]
     const newParentRows: FosPathElem[] = index < 0 
         ? [...nodeContent.content, newElem]
-        : nodeContent.content.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
+        : index === 0
+            ? [ newElem ] 
+            : nodeContent.content.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
         if (i === index){
             return [...acc, newElem, child]
         }
         return [...acc, child]
         }, [])
-  
+
+    console.log('newParentRows', newParentRows, targetRoute, newElem, index, nodeContent.content)
     const newParentContent = {
       ...nodeContent,
       content: newParentRows,
@@ -352,6 +368,8 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
   
     const newState = updateNodeContent(appData, newParentContent, targetRoute)
     const stateWithOriginalRemoved = removeNode(newState, subjectRoute)
+
+    console.log('stateWithOriginalRemoved', stateWithOriginalRemoved, appData)
     return { newState: stateWithOriginalRemoved, newRoute: [...targetRoute, [subjectType, subjectId]] }
   }
   
@@ -420,9 +438,14 @@ export const moveRight = (appData: AppState, route: FosRoute): { newRoute: FosRo
     const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
     const upSiblingRoute = getUpSibling(route, appData)
 
+    console.log('upSiblingRoute', upSiblingRoute)
     if (upSiblingRoute) {
         const { nodeChildren: upSiblingChildren } = getNodeInfo(upSiblingRoute, appData)
-        const result = moveNodeIntoRoute(appData, route, upSiblingRoute, upSiblingChildren.length)        
+        const {
+            newState: newState1,
+            newRoute: newRoute1
+        } = moveNodeIntoRoute(appData, route, upSiblingRoute, upSiblingChildren.length)
+        return { newRoute: newRoute1, newState: newState1 }      
     }
     return { newRoute: route, newState: appData }   
 }
@@ -431,6 +454,7 @@ export const moveUp = (appData: AppState, route: FosRoute): { newRoute: FosRoute
     const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
     const { nodeRoute: parentRoute, indexInParent } = getParentInfo()
     const upSibling = getUpSibling(route, appData)
+    console.log('upSibling', upSibling)
     if (upSibling){
         return moveNodeAboveRoute(appData, route, upSibling)
     } else {
@@ -680,3 +704,4 @@ export const instantiate = (startAppData: AppState, route: FosRoute): { newId: F
 
     
 }
+

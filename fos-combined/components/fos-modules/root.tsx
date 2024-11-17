@@ -95,9 +95,10 @@ const RootRowComponent = ({
   setData: (state: AppState) => void
 }) => {
 
+  throw new Error('RootRowComponent not implemented')
 
   return (<div className="flex flex-initial grow">
-    If you are seeing this, there is an error. 
+    If you are seeing this, there is an error. (root)
   </div>)
 }
 

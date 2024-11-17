@@ -73,7 +73,6 @@ export type FosDataContent = {
   option?: {
     selectedIndex: number;
     defaultResolutionStrategy: "choice" | "selected" | "race";
-    chosenOptions: FosPathElem[]
   }
   description?: {
     content: string;

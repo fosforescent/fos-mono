@@ -1,6 +1,6 @@
 import React from "react"
 import { EventSourcePolyfill, Event } from 'event-source-polyfill'
-import { AppState, InfoState, LoginResult, SubscriptionInfo } from "./types"
+import { AppState, FosReactOptions, InfoState, LoginResult, SubscriptionInfo } from "./types"
 // import { AppData, Profile } from "./components/app-state/index"
 
 
@@ -10,10 +10,24 @@ import { AppState, InfoState, LoginResult, SubscriptionInfo } from "./types"
 export type Mode = "production" | "development" | "custom"
 
 
-const api = (sycApiUrl: string) => {
+const api = (appData: AppState, setAppData: (state: AppState) => void) => {
+
+  const sycApiUrl = appData.apiUrl
 
 
-
+  const logOut = () => {
+    localStorage.removeItem("auth")
+    setAppData({
+      ...appData,
+      auth: {
+        username: "",
+        remember: false,
+        jwt: "",
+        password: "",
+        email: "",
+      }
+    })
+  }
 
 
   const handleAuthError = (err: Error) => {
@@ -24,7 +38,7 @@ const api = (sycApiUrl: string) => {
       cause: 'unauthorized'
     })
     throw newError
-    // window.location.reload()
+    logOut()
 
   }
 
@@ -216,9 +230,14 @@ const api = (sycApiUrl: string) => {
     return result
   }
 
-  const authedApi = (jwt: string) => {
+  const authedApi = () => {
 
+    const jwt = appData.auth.jwt
 
+    if (!jwt) {
+      console.log("authedApi - no jwt")
+      throw new Error("no jwt")
+    }
 
 
     const confirmEmail = async (token: string): Promise<void> => {

@@ -4,7 +4,8 @@ import { checkDataFormat, getRootId, hashFosContextData, loadCtxFromDb,storeCtxT
 import { ReqWithClients } from '../clientManager'
 
 import { prisma } from './../prismaClient'
-import { FosContextData } from '@/fos-combined/types'
+import { FosContextData, TrellisSerializedData } from '@/fos-combined/types'
+import { InputJsonValue, JsonObject } from '@prisma/client/runtime/library'
 
 
 
@@ -65,11 +66,13 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       console.log('User not found', user, prisma.user.findUnique, prisma.user, prisma)
       throw new Error('User not found')
     } else {
-      const userData = req.body.data as FosContextData
+      const userData = req.body.data as { fosData: FosContextData, trellisData: TrellisSerializedData } 
       const updatedTime = new Date(parseInt(req.body.updatedTime))
 
-      // console.log('completeUserData', completeUserData, userData)
-
+      if (!userData) {
+        throw new Error('No data provided')
+      }
+      
 
       // console.log('user', user)
       const serverData = await loadCtxFromDb(prisma, user.fosGroup)
@@ -78,7 +81,7 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       
       checkDataFormat(serverData)
 
-      if (!userData?.nodes) {
+      if (!userData.fosData.nodes) {
         console.log('userData.nodes is empty')
         return res.json({
           data: {
@@ -90,7 +93,7 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
   
       }
 
-      const userDataWithNewRootNode = updateRootNodeId(userData, getRootId(serverData))
+      const userDataWithNewRootNode = updateRootNodeId(userData.fosData, getRootId(serverData))
 
       // console.log('userData', userDataWithNewRootNode)
       // Object.keys(userDataWithNewRootNode.nodes).forEach((key) => {
@@ -122,6 +125,12 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       // console.log("stored")
 
       const newServerData = await loadCtxFromDb(prisma, user.fosGroup)
+
+
+      const updatedUser = await prisma.user.update({
+        where: { user_name: username },
+        data: { data: userData.trellisData as unknown as JsonObject}
+      })
 
       // console.log('newServerData', newServerData)
       return res.json({
