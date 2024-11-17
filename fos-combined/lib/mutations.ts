@@ -1,6 +1,6 @@
 import { th } from "date-fns/locale";
 import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodeNewContent, FosNodesData, FosPathElem, FosRoute } from "../types"
-import { getAncestorLeastUpSibling, getDownSibling, getNodeInfo, getUpSibling } from "./utils"
+import { getAncestorLeastUpSibling, getDownSibling, getNodeInfo, getUpNode, getUpSibling } from "./utils"
 
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "http";
@@ -17,6 +17,13 @@ export const updateFosData = (currentAppData: AppState, newFosData: FosContextDa
 
 export  const updateNodeContent = (currentAppData: AppState, newNodeContent: FosNodeContent, route: FosRoute): AppState => {
     const { nodeId, nodeData, nodeContent } = getNodeInfo(route, currentAppData)
+
+    newNodeContent.content.forEach(([childType, childId]) => {
+        if (childId === nodeId){
+            throw new Error('Cannot add node as child of itself')
+        }
+    })
+
 
     const newNodesData: FosNodesData = {
         ...currentAppData.data.fosData.nodes,
@@ -165,15 +172,18 @@ export const addSibling = (currentAppData: AppState, route: FosRoute, newRowType
 }
 
 
-export const removeNode = (currentAppData: AppState, route: FosRoute): AppState => {
+export const removeNode = (currentAppData: AppState, route: FosRoute, indexHint?: number): AppState => {
     const { nodeType, nodeId, hasParent, getParentInfo } = getNodeInfo(route, currentAppData)
     if (!hasParent) {
         throw new Error('Cannot remove root node')
     }
-    const { nodeId: parentId, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
+    const { nodeId: parentId, nodeContent: parentContent, nodeRoute: parentRoute, indexInParent } = getParentInfo()
+
+
+    console.log('removeNode', route, parentContent.content, indexHint, indexInParent, parentContent.content[indexInParent], parentContent.content[indexHint || 0])
     const newParentContent = {
         ...parentContent,
-        content: parentContent.content.filter(([childType, childId]) => childType !== nodeType || childId !== nodeId)
+        content: parentContent.content.filter(([childType, childId], i) =>  childType !== nodeType || childId !== nodeId)
     }
     return updateNodeContent(currentAppData, newParentContent, parentRoute)
 }
@@ -295,12 +305,16 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
   }
 
   
-  
+ 
   export const moveNodeAboveRoute = (appData: AppState, subjectRoute: FosRoute, targetRoute: FosRoute): { newRoute: FosRoute, newState: AppState } => {
-    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(targetRoute, appData)
-    const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
     const { nodeId: subjectId, nodeType: subjectType } = getNodeInfo(subjectRoute, appData)
-  
+
+    const stateWithOriginalRemoved = removeNode(appData, subjectRoute) 
+
+    
+    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(targetRoute, stateWithOriginalRemoved)
+    const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
+
     const newParentRows: FosPathElem[] = parentContent.content.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
       if (i === indexInParent){
         const newElem: FosPathElem = [subjectType, subjectId]
@@ -314,17 +328,23 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
       content: newParentRows,
     }
   
-    const newState = updateNodeContent(appData, newParentContent, parentRoute)
-    const stateWithOriginalRemoved = removeNode(newState, subjectRoute)
-    return { newState: stateWithOriginalRemoved, newRoute: [...parentRoute, [subjectType, subjectId]] }
+    const newState = updateNodeContent(stateWithOriginalRemoved, newParentContent, parentRoute)
+    console.log('newState', appData, newState, stateWithOriginalRemoved, newParentContent, parentRoute)
+    return { newState: newState, newRoute: [...parentRoute, [subjectType, subjectId]] }
   
   }
   
   export const moveNodeBelowRoute = (appData: AppState, subjectRoute: FosRoute, targetRoute: FosRoute): { newRoute: FosRoute, newState: AppState } => {
-    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(targetRoute, appData)
-    const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
+
     const { nodeId: subjectId, nodeType: subjectType } = getNodeInfo(subjectRoute, appData)
   
+    const stateWithOriginalRemoved = removeNode(appData, subjectRoute)
+
+
+    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(targetRoute, stateWithOriginalRemoved)
+    const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
+
+
     const newParentRows: FosPathElem[] = parentContent.content.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
       if (i === indexInParent){
         const newElem: FosPathElem = [subjectType, subjectId]
@@ -338,9 +358,8 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
       content: newParentRows,
     }
   
-    const newState = updateNodeContent(appData, newParentContent, parentRoute)
-    const stateWithOriginalRemoved = removeNode(newState, subjectRoute)
-    return { newState: stateWithOriginalRemoved, newRoute: [...parentRoute, [subjectType, subjectId]] }
+    const newState = updateNodeContent(stateWithOriginalRemoved, newParentContent, parentRoute)
+    return { newState, newRoute: [...parentRoute, [subjectType, subjectId]] }
   
   }
   
@@ -421,10 +440,12 @@ export const moveLeft = (appData: AppState, route: FosRoute): { newRoute: FosRou
     // } = getGrandParentInfo()
 
     const addLowerSiblingsToNodeState = siblingRoutes.reduce((acc: AppState, siblingRoute: FosRoute, i: number) => {
-        if (i < indexInParent){
+        if (i < indexInParent + 1){
             return acc
         } else {
-            const { newState } = moveNodeIntoRoute(acc, siblingRoute, route, i - indexInParent)
+            console.log('siblingRoute', siblingRoute, route, i, indexInParent)
+            throw new Error('Not implemented')
+            const { newState } = moveNodeIntoRoute(acc, siblingRoute, route, i - indexInParent + 1)
             return newState
         }
     }, appData)
@@ -436,7 +457,17 @@ export const moveLeft = (appData: AppState, route: FosRoute): { newRoute: FosRou
 
 export const moveRight = (appData: AppState, route: FosRoute): { newRoute: FosRoute, newState: AppState }  => {
     const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
-    const upSiblingRoute = getUpSibling(route, appData)
+
+    /** TODO
+     *  this should use getUpSibling and be put inside that node if it's a sibling
+     *  if it's an uncle, then it should be put inside the uncle node
+     *  if it's an ancestor of an older sibling, then it should be moved under
+     *  this node, and then this node should be moved to a down sibling of whatever
+     *  it's nested under
+     */
+
+    const upSiblingRoute = getUpNode(route, appData)
+    const actualUpSibling = getUpSibling(route, appData)
 
     console.log('upSiblingRoute', upSiblingRoute)
     if (upSiblingRoute) {
@@ -445,8 +476,11 @@ export const moveRight = (appData: AppState, route: FosRoute): { newRoute: FosRo
             newState: newState1,
             newRoute: newRoute1
         } = moveNodeIntoRoute(appData, route, upSiblingRoute, upSiblingChildren.length)
+        if (actualUpSibling){
+            console.warn('this is a case that needs to be caught for better useability')
+        }        
         return { newRoute: newRoute1, newState: newState1 }      
-    }
+    } 
     return { newRoute: route, newState: appData }   
 }
 
@@ -454,11 +488,14 @@ export const moveUp = (appData: AppState, route: FosRoute): { newRoute: FosRoute
     const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
     const { nodeRoute: parentRoute, indexInParent } = getParentInfo()
     const upSibling = getUpSibling(route, appData)
+
+
     console.log('upSibling', upSibling)
     if (upSibling){
         return moveNodeAboveRoute(appData, route, upSibling)
     } else {
         const leastUpSibling = getAncestorLeastUpSibling(route, appData)
+        console.log('leastUpSibling', leastUpSibling)
         if (leastUpSibling){
             return moveNodeIntoRoute(appData, route, leastUpSibling, -1)
         } else {
@@ -476,7 +513,8 @@ export const moveDown = (appData: AppState, route: FosRoute): { newRoute: FosRou
         return moveNodeBelowRoute(appData, route, downSibling)
     } else {
         // move above parent
-        return moveNodeIntoRoute(appData, route, parentRoute, 0)
+        throw new Error('Not implemented')
+        // return moveNodeIntoRoute(appData, route, parentRoute, 0)
     }
 }
 

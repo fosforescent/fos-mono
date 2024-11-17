@@ -344,9 +344,10 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
             const focusChar = appData.data.trellisData.focusChar || 0
             const { newState, newRoute } = mut.moveNodeAboveRoute(appData, nodeRoute, targetRoute)
             const newStateWithFocus = mut.updateFocus(newState, focusChar, newRoute)
+            console.log('moveAboveRoute', appData, newState, newStateWithFocus)
             setAppData(newStateWithFocus)
-            
         }
+
         const moveToTopChildOfRoute = async (targetRoute: FosRoute) => {
             const focusChar = appData.data.trellisData.focusChar || 0
             const { newState, newRoute } = mut.moveNodeIntoRoute(appData, nodeRoute, targetRoute, 0)
@@ -403,8 +404,13 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
                     return 
                 }
                 if (e.ctrlKey){
-                    moveFocusToStart()
+                    if (e.altKey){
+                        moveUp()
+                    } else {
+                        moveFocusToStart()
+                    }
                     e.stopPropagation();
+                    return 
                 }
             }
         
@@ -417,8 +423,13 @@ export const getNodeOperations = (options: FosReactOptions, appData: AppState, s
                     return 
                 }
                 if (e.ctrlKey){
-                    moveFocusToEnd()
+                    if (e.altKey){
+                        moveDown()
+                    } else {
+                        moveFocusToEnd()
+                    }
                     e.stopPropagation();
+                    return;
                 }
             }
         

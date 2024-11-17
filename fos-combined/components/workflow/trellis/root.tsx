@@ -2,6 +2,8 @@
 import { AppState,FosReactOptions, FosRoute } from '@/fos-combined/types';
 import { FosRowsComponent } from './rows';
 import { RootScreenHead } from './head';
+import { DefaultBreadcrumbsComponent } from '../../breadcrumbs/breadcrumbs';
+import React from 'react';
 
 
 
@@ -19,26 +21,40 @@ export function DefaultRootComponent({
 }) {
 
 
+  const [query, setQuery] = React.useState('')
 
-  return (<div>
-    {<div className={`border-b border-t`}>
-      <RootScreenHead nodeRoute={nodeRoute} options={options} data={data} setData={setData} />
-        {/* <AddOption /> */}
-    </div>}
-    <div>
-      {<FosRowsComponent 
+
+  return (
+    <div className={` bg-background/50 text-primary`}>
+      <DefaultBreadcrumbsComponent 
         data={data}
         setData={setData}
         options={options}
         nodeRoute={nodeRoute}
-      />}
+        />
+      
+      <div className="w-full">
+        <div>
+          {<div className={`border-b border-t`}>
+            <RootScreenHead nodeRoute={nodeRoute} options={options} data={data} setData={setData} />
+              {/* <AddOption /> */}
+          </div>}
+          <div>
+            {<FosRowsComponent 
+              data={data}
+              setData={setData}
+              options={options}
+              nodeRoute={nodeRoute}
+            />}
+          </div>
+
+        {/* {node.data.duration && <GanttComponent root={node} />} */}
+        {/* <DataComponent node={node} trail={trail} forceUpdate={forceUpdate} /> */}
+        {/* {node.data.cost && <CostComponent root={node} forceUpdate={forceUpdate} />} */}
+        </div>
+      </div>
     </div>
-
-
-      {/* {node.data.duration && <GanttComponent root={node} />} */}
-      {/* <DataComponent node={node} trail={trail} forceUpdate={forceUpdate} /> */}
-      {/* {node.data.cost && <CostComponent root={node} forceUpdate={forceUpdate} />} */}
-  </div>)
+)
 
 }
 

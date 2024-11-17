@@ -32,8 +32,6 @@ export interface TrellisSerializedData {
   focusChar: number | null,
   collapsedList: FosRoute[],
   rowDepth: number,
-  draggingNode: FosRoute | null,
-  draggingOverNode: FosRoute | null,
   dragInfo: DragInfo,
 }
 

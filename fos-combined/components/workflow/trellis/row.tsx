@@ -179,7 +179,7 @@ export const DefaultRowComponent = ({
     backgroundColor: 'transparent',
   }
 
-
+  // console.log('row', isDragging, dragging, dragOverInfo, isOver, draggingOn)
 
 
   // console.log('trellis row')

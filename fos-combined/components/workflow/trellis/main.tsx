@@ -38,9 +38,10 @@ import { DroppableContainersMap } from '@dnd-kit/core/dist/store/constructors';
 
 import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosRoute } from '../../../types'
 import { getActions } from '../../../lib/actions'
-import { DefaultBreadcrumbsComponent } from '../../breadcrumbs/breadcrumbs'
+
 import { DefaultRootComponent } from './root'
 import { useProps } from '@/fos-combined/App';
+import { getNodeOperations } from '@/fos-combined/lib/nodeOperations';
 
 
 
@@ -69,26 +70,29 @@ export function MainView (){
 
   const theme = options?.theme ? options.theme : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 
+  const {
+    dragging: draggingInfo,
+    dragOverInfo: dragOverInfo,
+  } = actions.getDragInfo()
 
-  const [activeId, setActiveId] = useState< { id: string, nodeRoute: FosRoute, breadcrumb: boolean } | null>(null);
+  // const [activeId, setActiveId] = useState< { id: string, nodeRoute: FosRoute, breadcrumb: boolean } | null>(null);
 
-  const [dragOverInfo, setDragOverInfo] = useState<{ id: string, position: 'above' | 'below' | 'on' | 'breadcrumb', nodeRoute: FosRoute } | null>(null);
+  // const [dragOverInfo, setDragOverInfo] = useState<{ id: string, position: 'above' | 'below' | 'on' | 'breadcrumb', nodeRoute: FosRoute } | null>(null);
 
-  useEffect(() => {
-    // console.log('dragging', activeId?.id, state.draggingNode, 'dragging Over', dragOverInfo?.id, state.draggingOverNode)
-    // console.log('dragging', dragOverInfo?.position)
+  // useEffect(() => {
+  //   // console.log('dragging', activeId?.id, state.draggingNode, 'dragging Over', dragOverInfo?.id, state.draggingOverNode)
+  //   // console.log('dragging', dragOverInfo?.position)
 
-    const dragNode =  (activeId?.id || null) !== data.data.trellisData.draggingNode
-
-    if ( 
-      (activeId?.id || null) !== data.data.trellisData.draggingNode 
-      ||  (dragOverInfo?.id || null) !== data.data.trellisData.draggingOverNode
-    ) {
-      actions.setDrag(activeId?.nodeRoute || null, dragOverInfo?.nodeRoute || null)
-    }
+  //   const dragNode =  (activeId?.id || null) !== data.data.trellisData.dragInfo.dragging?.id
 
 
-  }, [activeId, dragOverInfo])
+  //     actions.setDragInfo({
+  //       dragging: null,
+  //       dragOverInfo: null
+  //     })
+
+
+  // }, [activeId, dragOverInfo])
 
 
   const sensors = useSensors(
@@ -188,19 +192,29 @@ export function MainView (){
     console.log('drag start')
     const { active } = event;
     if (active && active.data.current) {
-      setActiveId({ id: active.id.toString(), nodeRoute: active.data.current.node, breadcrumb: active.data.current?.breadcrumb });
+      actions.setDragInfo({
+        dragOverInfo, 
+        dragging: { 
+          id: active.id.toString(), 
+          nodeRoute: active.data.current.node, 
+          breadcrumb: active.data.current?.breadcrumb 
+        }
+    });
     }
-    // console.log('drag start', active.id, active.data, event)
+    console.log('drag start', active.id, active.data, event)
   }
   
   function handleDragOver(event: DragOverEvent) {
     const { over, active } = event;
-    // console.log('drag over', over, active, event, dragOverInfo)
+    console.log('drag over', over, active, event, dragOverInfo)
     
     const dragInfo = getDragOverInfo(over, active);
     if (dragInfo) {
       if (dragInfo.id !== dragOverInfo?.id || dragInfo.position !== dragOverInfo?.position) {
-        setDragOverInfo(dragInfo);
+        actions.setDragInfo({
+          dragging: draggingInfo, 
+          dragOverInfo: dragInfo
+        });
       }
     }
   }
@@ -213,39 +227,74 @@ export function MainView (){
     const dragInfo = dragOverInfo
     // console.log('dragInfo', dragOverInfo)
     if (!over || !over.data.current){
-      setActiveId(null);
-      setDragOverInfo(null);
+      actions.setDragInfo({
+        dragging: draggingInfo,
+        dragOverInfo: null
+      });
       return
     }
     if(!active || !active.data.current){
-      setActiveId(null);
-      setDragOverInfo(null);
+      actions.setDragInfo({
+        dragging: null,
+        dragOverInfo: null
+      });
+
       return
     }
     
     if (active.id === over?.id) {
-      setActiveId(null);
-      setDragOverInfo(null);
+      actions.setDragInfo({
+        dragging: null,
+        dragOverInfo: null
+      });
+
       return
     }
     if(!dragOverInfo){
       throw new Error('no dragInfo, but over is not null')
     }
 
-    const activeNode = active.data.current.node
-    const overNode = over.data.current.node
+    const activeNode = active.data.current.nodeRoute
+    const overNode = over.data.current.nodeRoute
 
-    console.log('dragInfo', dragInfo)
 
-    if (dragInfo?.position === 'on' || dragInfo?.position === 'breadcrumb') {
-      activeNode.moveNodeToTopChild(overNode)
-    } else if (dragInfo?.position === 'above') {
-      activeNode.moveNodeToUpSibling(overNode)
-    } else if (dragInfo?.position === 'below') {
-      activeNode.moveNodeToDownSibling(overNode)
+
+    const resolveDrag = async () => {
+
+ 
+      const newData = {
+        ...data,
+        data: {
+          ...data.data,
+          trellisData: {
+            ...data.data.trellisData,
+            dragInfo: {
+              dragging: null,
+              dragOverInfo: null
+            }
+          }
+        }
+      }
+
+      const { moveAboveRoute, moveBelowRoute, moveToTopChildOfRoute } = getNodeOperations(options, newData, setData, activeNode)
+
+      console.log('resolve Drag', dragInfo)
+
+
+      if (dragInfo?.position === 'on' || dragInfo?.position === 'breadcrumb') {
+        await moveToTopChildOfRoute(overNode)
+      } else if (dragInfo?.position === 'above') {
+        await moveAboveRoute(overNode)
+      } else if (dragInfo?.position === 'below') {
+        await moveBelowRoute(overNode)
+      }
+    
+
+  
+  
     }
 
-    
+    resolveDrag()  
 
     // const reorderItems = (items: (string | null)[]) => {
     //   const oldIndex = items.indexOf(active.id);
@@ -272,10 +321,6 @@ export function MainView (){
 
     // context.setNodes(newContext.data.nodes)
 
-    
-    setActiveId(null);
-    setDragOverInfo(null);
-    actions.clearDraggingNode()
   }
     
   const customCollisionDetection = (args: {
@@ -341,23 +386,12 @@ export function MainView (){
         onDragOver={handleDragOver}
       >
       <div className={`w-full trellis-root ${theme}`} >
-        <div className={` bg-background/50 text-primary`}>
-          <DefaultBreadcrumbsComponent 
-            data={data}
-            setData={setData}
-            options={options}
-            nodeRoute={route}
-            />
-
-          <div className="w-full">
-            {<DefaultRootComponent 
-              data={data}
-              setData={setData}
-              options={options}
-              nodeRoute={route}
-              />}
-          </div>
-        </div>
+        {<DefaultRootComponent 
+          data={data}
+          setData={setData}
+          options={options}
+          nodeRoute={route}
+          />}
       </div>
     </DndContext>
   )

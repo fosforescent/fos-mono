@@ -3,7 +3,7 @@ import { api } from "../api"
 import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, FosRoute, InfoProfile, InfoState, SubscriptionInfo, UserProfile } from "../types"
 import { diff } from "@n1ru4l/json-patch-plus"
 import { getNodeOperations } from "./nodeOperations"
-import { debounce } from "lodash"
+import { debounce, set } from "lodash"
 
 
 export const getActions = (options: FosReactOptions, appData: AppState, setAppData: (state: AppState) => void) => {
@@ -42,32 +42,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   const loggedIn = () => {
     return !!appData.auth.jwt
   }
-  const setDrag = async (draggingNode: FosRoute | null, draggingOverNode: FosRoute | null) => {
-      setAppData({
-          ...appData,
-          data: {
-              ...appData.data,
-              trellisData: {
-                  ...appData.data.trellisData,
-                  draggingNode: draggingNode,
-                  draggingOverNode: draggingOverNode
-              }
-          }
-      })
-  }
-  const clearDraggingNode = async () => {
-      setAppData({
-          ...appData,
-          data: {
-              ...appData.data,
-              trellisData: {
-                  ...appData.data.trellisData,
-                  draggingNode: null,
-                  draggingOverNode: null
-              }
-          }
-      })
-  }
+
   const clearData = async () => {
 
   }
@@ -323,14 +298,65 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   }, 9000, {leading: true})
 
 
+  const getDragInfo = () => {
+    return appData.data.trellisData.dragInfo
+  }
+
+  const setDragInfo = async (dragInfo: AppState['data']['trellisData']['dragInfo']) => {
+
+    setAppData({
+      ...appData,
+      data: {
+        ...appData.data,
+        trellisData: {
+          ...appData.data.trellisData,
+          dragInfo: {
+            ...appData.data.trellisData.dragInfo,
+            ...dragInfo
+          }
+        }
+      }
+    })
+
+  }
+
+  // const setDrag = async (draggingNode: FosRoute | null, draggingOverNode: FosRoute | null) => {
+  //   setAppData({
+  //       ...appData,
+  //       data: {
+  //           ...appData.data,
+  //           trellisData: {
+  //               ...appData.data.trellisData,
+  //               draggingNode: draggingNode,
+  //               draggingOverNode: draggingOverNode
+  //           }
+  //       }
+  //   })
+  // }
+  // const clearDraggingNode = async () => {
+  //     setAppData({
+  //         ...appData,
+  //         data: {
+  //             ...appData.data,
+  //             trellisData: {
+  //                 ...appData.data.trellisData,
+  //                 draggingNode: null,
+  //                 draggingOverNode: null
+  //             }
+  //         }
+  //     })
+  // }
+
   
   return {
     loadAppData,
     getRootInstruction,
     setRootInstruction,
     loggedIn,
-    setDrag,
-    clearDraggingNode,
+    setDragInfo,
+    getDragInfo,
+    // setDrag,
+    // clearDraggingNode,
     clearData,
     deleteAccount,
     setCookieConsent,

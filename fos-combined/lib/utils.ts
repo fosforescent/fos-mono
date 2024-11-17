@@ -147,9 +147,9 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
   const hasFocus = pathEqual(state.data.trellisData.focusRoute, nodeRoute)
   const focusChar = state.data.trellisData.focusChar
 
-  const isDragging = pathEqual(state.data.trellisData.draggingNode, nodeRoute)
-  const somethingIsDragging = state.data.trellisData.draggingNode !== null
-  const draggingOver = pathEqual(state.data.trellisData.draggingOverNode, nodeRoute)
+  const isDragging = pathEqual(state.data.trellisData.dragInfo.dragging?.nodeRoute || [], nodeRoute)
+  const somethingIsDragging = state.data.trellisData.dragInfo.dragging !== null
+  const draggingOver = pathEqual(state.data.trellisData.dragInfo.dragOverInfo?.nodeRoute || [], nodeRoute)
 
   const disabled = false
 
@@ -495,3 +495,5 @@ export const getAvailableTasks = (appData: AppState, nodeRoute: FosRoute): FosRo
 
 
 }
+
+

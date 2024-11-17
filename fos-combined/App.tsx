@@ -313,7 +313,8 @@ export default function App({
 
 
   const setAppStateWithEffects = (newData: AppState) => {
-    // console.log('setting data from CLIENT',newData, appState)
+    console.log('setting data from CLIENT',newData, appState)
+    console.trace()
     // TODO: change setFosData to handle trellis data too
     // OR --- move trellis data into node data / fos context
 
@@ -432,10 +433,10 @@ export default function App({
     <div className="w-full relative">
       
     <div className='flex w-full justify-end'>
-  <div className={`opacity-30 hover:opacity-80 transition`}>
-    <HelpDrawer open={showHelp} setOpen={setShowHelp} setShowTutorial={setShowTutorial} showTutorial={showTutorial}/>
-  </div></div>
+    <div className={`opacity-30 hover:opacity-80 transition`}>
+    </div></div>
     </div>
+    <HelpDrawer open={showHelp} setOpen={setShowHelp} setShowTutorial={setShowTutorial} showTutorial={showTutorial}/>
     <Toaster />
     </>)
 }

@@ -55,12 +55,12 @@ export const InputDiv: React.FC<InputDivProps> = ({
 
   useEffect(() => {
     if (fosHasFocus && divRef.current && !inputHasFocus) {
-      console.log("GOT FOCUS -- ", "chars", charsMatch, fosChar, inputChar, "values", valuesMatch, fosValue, inputValue, "focuses", focusesMatch, fosHasFocus, inputHasFocus)
+      // console.log("GOT FOCUS -- ", "chars", charsMatch, fosChar, inputChar, "values", valuesMatch, fosValue, inputValue, "focuses", focusesMatch, fosHasFocus, inputHasFocus)
       setCursorPosition(divRef.current, fosChar || 0)
       // updateInput(fosChar || 0);
     }
     if (!fosHasFocus && divRef.current && inputHasFocus) {
-      console.log("LOST FOCUS -- ", "chars", charsMatch, fosChar, inputChar, "values", valuesMatch, fosValue, inputValue, "focuses", focusesMatch, fosHasFocus, inputHasFocus)
+      // console.log("LOST FOCUS -- ", "chars", charsMatch, fosChar, inputChar, "values", valuesMatch, fosValue, inputValue, "focuses", focusesMatch, fosHasFocus, inputHasFocus)
       // updateInput(null);
     }
   }, [fosHasFocus, divRef.current, inputHasFocus]);
@@ -126,13 +126,13 @@ export const InputDiv: React.FC<InputDivProps> = ({
 
 
 
-  const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    if (!divRef.current) {
-      return;
-    }
-    updateInput(null);
+  // const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+  //   if (!divRef.current) {
+  //     return;
+  //   }
+  //   updateInput(null);
     
-  };
+  // };
 
   const handleFocus = (e: React.FocusEvent<HTMLDivElement>) => {
     if (!divRef.current) {
@@ -170,7 +170,7 @@ export const InputDiv: React.FC<InputDivProps> = ({
       e.stopPropagation();
       return
     }
-    console.log('keyup', e.key)
+    // console.log('keyup', e.key)
     updateInput();
 
 
@@ -186,7 +186,7 @@ export const InputDiv: React.FC<InputDivProps> = ({
     // updateInput();
   };
 
-  console.log('fosValue', fosValue, 'inputValue', inputValue, 'fosHasFocus', fosHasFocus, 'inputHasFocus', inputHasFocus)
+  // console.log('fosValue', fosValue, 'inputValue', inputValue, 'fosHasFocus', fosHasFocus, 'inputHasFocus', inputHasFocus)
 
 
   const dontShowPlaceholder = !!(fosValue && inputValue) || (inputHasFocus && fosHasFocus);
@@ -211,7 +211,7 @@ export const InputDiv: React.FC<InputDivProps> = ({
         }}
         // onInput={updateInput}
         onFocus={handleFocus}
-        onBlur={handleBlur}
+        // onBlur={handleBlur}
         onClick={onClick}
         onKeyDown={handleKeyDown}
         onKeyUp={handleKeyUp}
@@ -257,7 +257,7 @@ const getCursorPosition = (divElement: HTMLDivElement) => {
 
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) {
-    console.warn('selection is null or rangeCount is 0');
+    // console.warn('selection is null or rangeCount is 0');
     return 0;
   }
 
