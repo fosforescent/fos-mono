@@ -17,13 +17,26 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
   const authedApi = () => {
     if (!appData.auth.jwt) {
-      throw new Error('no jwt, not logged in');
+      if (appData.auth.loggedIn){
+        // hacky fix for weird issue of jwt missing in state, probably relate to stale appData
+        const jwt = JSON.parse(localStorage.getItem('auth') || 'null')
+        if (jwt){
+          appData.auth.jwt = jwt
+        }
+      }
+      if(!appData.auth.jwt){
+        throw new Error('no jwt, not logged in');
+      }
     }
     return apiObj.authed()
   }
 
   const publicApi = () => {
     return apiObj.public
+  }
+
+  const putError = async (error: Error) => {
+    await publicApi().putError(error, appData.auth.email)
   }
 
   const getRootInstruction = async () => {
@@ -40,7 +53,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   }
 
   const loggedIn = () => {
-    return !!appData.auth.jwt
+    return appData.auth.loggedIn
   }
 
   const clearData = async () => {
@@ -151,7 +164,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         throw new Error('jwt username does not match email, login failed')
       }
 
-      const newlyAuthedState = { ...appData, auth: { ...appData.auth, jwt }}
+      const newlyAuthedState = { ...appData, auth: { ...appData.auth, jwt, email: jwtProps.username, remember } }
   
       const newlyAuthedApi = api(newlyAuthedState, setAppData).authed()
         
@@ -176,6 +189,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
           jwt,
           email,
           remember,
+          loggedIn: true
         },
         info: {
           ...infoState,
@@ -213,7 +227,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
           info: newInfo })
   }
   const logOut = async () => {
-      const loggedOutState = await publicApi().logout().then(() => {
+      const loggedOutState = await publicApi().logOut().then(() => {
           return { ...appData, auth: { ...appData.auth, jwt: undefined, loggedIn: false }, loaded: false }
         }).catch((error: Error) => {
           console.log('error', error)
@@ -225,7 +239,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   }
 
   const loadAppData = async () => {
-    if (!appData.auth.jwt) {
+    if (!appData.auth.loggedIn) {
       throw new Error('Trying to load data without being logged in')
     }
     
@@ -350,6 +364,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   
   return {
     loadAppData,
+    putError,
     getRootInstruction,
     setRootInstruction,
     loggedIn,

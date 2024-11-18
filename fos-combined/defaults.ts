@@ -323,8 +323,7 @@ export const defaultTrellisData: TrellisSerializedData = {
   "focusChar": null,
   "collapsedList": [],
   "rowDepth": 0,
-  "draggingNode": null,
-  "draggingOverNode": null,
+  
   "dragInfo": {
     "dragging": null,
     "dragOverInfo": null

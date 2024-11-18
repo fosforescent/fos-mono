@@ -2,28 +2,28 @@ import React from 'react';
 
 import { toast, useToast } from '@/components/ui/use-toast';
 import { api } from '../api';
+import { AppState, FosReactGlobal } from '../types';
+import { getActions } from '../lib/actions';
 
 export class ErrorBoundary extends React.Component {
 
   state: { hasError: boolean; };
   props: {
     children: React.ReactNode;
-    toast?: ReturnType<typeof useToast>['toast'] 
-    // setAppState: React.Dispatch<React.SetStateAction<any>>
-    logOut: () => Promise<void>
-    email: string
-    apiUrl: string
     mode: string
+    options: FosReactGlobal
+    data: AppState
+    setData: (data: AppState) => void
+
   };
 
   constructor(props: {
     children: React.ReactNode;
-    toast?: ReturnType<typeof useToast>['toast'] 
-    // setAppState: React.Dispatch<React.SetStateAction<any>>
-    logOut: () => Promise<void>
-    email: string
-    apiUrl: string
     mode: string
+    options: FosReactGlobal
+    data: AppState
+    setData: (data: AppState) => void
+
   }) {
     super(props);
     this.state = { hasError: false };
@@ -44,16 +44,20 @@ export class ErrorBoundary extends React.Component {
     // logErrorToMyService(error, info.componentStack);
 
     console.error('ErrorBoundary did catch error', error, info)
-    if (this.props.toast) {
-      this.props.toast({
+    if (this.props.options.toast) {
+      this.props.options.toast({
         title: 'Error',
         description: error.message,
+        duration: 5000,
       })
     }
 
+    const { logOut, putError } = getActions(this.props.options, this.props.data, this.props.setData)
+
     if(error.cause === 'unauthorized'){
-      localStorage.removeItem('auth')
-      this.props.logOut().then(() => {
+      console.log('unauthorized error', error.message)
+      // localStorage.removeItem('auth')
+      logOut().then(() => {
       
         if (error.message === 'Token expired') {
           toast({
@@ -79,7 +83,7 @@ export class ErrorBoundary extends React.Component {
       })
 
       console.error('ErrorBoundary did catch error', error, info)
-      api(this.props.apiUrl).public.putError(error, this.props.email).then(() => {
+      putError(error).then(() => {
         console.warn('error logged', error)
       }).catch((e: Error) => {
         console.error(error)

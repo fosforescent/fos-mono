@@ -31,6 +31,15 @@ check:
 publish: 
 	npm publish --access public
 
+reset:
+	npx prisma db push --force-reset
+	npx prisma generate
+	npx prisma db seed
+
+run-clean-backend:
+	make reset
+	npm run dev:backend
+
 	
 m ?= wip
 push:

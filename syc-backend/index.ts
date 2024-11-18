@@ -32,10 +32,12 @@ import { maxRequests } from './maxRequests'
 // import { clientManagerMiddleware } from './clientManager'
 
 import jwt from 'jsonwebtoken'
-
+import bodyparser from 'body-parser'
 
 const http = require('http');
 
+
+var jsonParser = bodyparser.json()
 
 config()
 
@@ -87,8 +89,6 @@ app.options('*', cors(corsOptions)) // Respond to preflight requests
 stripeRoute.post('/', postSubscriptionWebhook)
 
 app.use('/subscription/webhook', stripeRoute)
-
-
 
 // protectedRoutes.use(express.json());
 // dataRoutes.use(express.json());
@@ -179,6 +179,7 @@ protectedRoutes.post('/auth/confirm-email', postConfirmEmail)
 protectedRoutes.post('/auth/update-password', postUpdatePwd)
 protectedRoutes.post('/auth/update-email', postUpdateEmail)
 
+protectedRoutes.post('/subscription/connect-session',postCreateOrGetConnectAccount)
 protectedRoutes.post('/subscription/checkout-session', postCreateCheckoutSession)
 protectedRoutes.post('/subscription/portal-session', postCreatePortalSession)
 protectedRoutes.get('/user/profile', getUserProfile)
@@ -207,6 +208,7 @@ if (!JWT_SECRET) {
 
 import {prisma} from './prismaClient'
 import { attachWs } from './ws'
+import { postCreateOrGetConnectAccount } from './subscription/connectSession'
 
 
 export interface Claims {

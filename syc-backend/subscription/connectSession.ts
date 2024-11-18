@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import Stripe from 'stripe'
 import { prisma } from './../prismaClient'
 
+
 const stripe = new Stripe(process.env.STRIPE_TOKEN!, { apiVersion: '2024-10-28.acacia' })
 
 interface ConnectAccountCreateRequest {
@@ -14,50 +15,8 @@ interface ConnectAccountCreateRequest {
 
 
 
-
-
-
-app.post("/account_link", async (req, res) => {
-    try {
-      const { account } = req.body;
-  
-      const accountLink = await stripe.accountLinks.create({
-        account: account,
-        return_url: `${req.headers.origin}/return/${account}`,
-        refresh_url: `${req.headers.origin}/refresh/${account}`,
-        type: "account_onboarding",
-      });
-  
-      res.json(accountLink);
-    } catch (error) {
-      console.error(
-        "An error occurred when calling the Stripe API to create an account link:",
-        error
-      );
-      res.status(500);
-      res.send({ error: error.message });
-    }
-  });
-  
-  app.post("/account", async (req, res) => {
-    try {
-      const account = await stripe.accounts.create({});
-  
-      res.json({
-        account: account.id,
-      });
-    } catch (error) {
-      console.error(
-        "An error occurred when calling the Stripe API to create an account",
-        error
-      );
-      res.status(500);
-      res.send({ error: error.message });
-    }
-  });
-
-
 export const postCreateOrGetConnectAccount = async (req: Request, res: Response) => {
+  console.log('postCreateOrGetConnectAccount', req.body)
   const { success_url, cancel_url }: ConnectAccountCreateRequest = req.body
   const claims = (req as any).claims
   const username = claims.username
@@ -71,26 +30,23 @@ export const postCreateOrGetConnectAccount = async (req: Request, res: Response)
     if (existingUser?.stripe_connected_account_id) {
       // If they have an account, create a login link
       const loginLink = await stripe.accounts.createLoginLink(
-        existingUser.stripe_connected_account_id,
-        {
-          redirect_url: success_url
-        }
+        existingUser.stripe_connected_account_id
       )
       return res.json({ url: loginLink.url })
     }
 
     // Create a new Connect account
     const account = await stripe.accounts.create({
-      type: 'express',
-      email: username,
-      capabilities: {
-        transfers: { requested: true },
-        card_payments: { requested: true },
-        // If you need users to do recurring payments:
-        card_issuing: { requested: true },
-        // For subscriptions:
-        transfers_requested: { requested: true }
-      },
+      // type: 'express',
+      // email: username,
+      // capabilities: {
+      //   transfers: { requested: true },
+      //   card_payments: { requested: true },
+      //   // If you need users to do recurring payments:
+      //   card_issuing: { requested: true },
+      //   // For subscriptions:
+      //   transfers_requested: { requested: true }
+      // },
       settings: {
         payouts: {
           schedule: {
@@ -113,7 +69,7 @@ export const postCreateOrGetConnectAccount = async (req: Request, res: Response)
       where: { user_name: username },
       data: { 
         stripe_connected_account_id: account.id,
-        stripe_account_enabled: false
+        stripe_connect_enabled: false
       }
     })
 

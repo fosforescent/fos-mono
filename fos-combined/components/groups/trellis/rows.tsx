@@ -219,7 +219,7 @@ const OptionRowsExpanded = ({
 
    const canPrompt = options.canPromptGPT && options.promptGPT
 
-  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && getNodeDescription(childRoutes[0], data.data) === "")
+  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && getNodeDescription(childRoutes[0], data) === "")
 
 
   return (    <div className="pl-6">
@@ -327,7 +327,7 @@ const TaskRows = ({
 
   const activeChildRoutes = getChildrenOfType("workflow")
 
-  const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && getNodeDescription(activeChildRoutes[0], data.data) === "")
+  const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && getNodeDescription(activeChildRoutes[0], data) === "")
 
 
   // console.log('taskRows', activeChildRoutes, activeChildRoutes.length, rowsEmpty)

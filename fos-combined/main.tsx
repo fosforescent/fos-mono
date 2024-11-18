@@ -2,12 +2,16 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 
-import TrellisMain from './components/workflow/trellis/main'
+import WorkflowMain from './components/workflow/trellis/main'
 import { FosSettingsPage }  from './components/settings'
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 import TodoQueue from './components/todo/Queue'
 import { TodoTree } from './components/todo/Tree'
+import { GroupForum } from './components/groups/Forum'
+import { PinBoard } from './components/home/Pins'
+import { InfoHome } from './components/info/Info'
+import { MarketBrowse } from './components/market/MarketBrowse'
 
 
 const apiUrl = "http://localhost:4000"
@@ -40,12 +44,12 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <div>Please Log In or Register to continue</div>,
+        element: <PinBoard />,
 
       },
       {
         path: "workflow",
-        element: <TrellisMain />
+        element: <WorkflowMain />
       },
       {
         path: "todo",
@@ -62,6 +66,26 @@ const router = createBrowserRouter([
         ]
       },
       {
+        path: "market",
+        children: [
+          {
+            index: true,
+            element: <MarketBrowse />,
+    
+          },
+        ]
+      },
+      {
+        path: "group",
+        children: [
+          {
+            index: true,
+            element: <GroupForum />,
+    
+          },
+        ]
+      },
+      {
         path: "settings",
         children: [
           {
@@ -71,7 +95,16 @@ const router = createBrowserRouter([
           },
         ]
       },
-
+      {
+        path: "info",
+        children: [
+          {
+            index: true,
+            element: <InfoHome />,
+    
+          },
+        ]
+      },
     ]
   }
 ], {

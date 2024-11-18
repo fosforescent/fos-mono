@@ -1,6 +1,6 @@
 import React from "react"
 import { EventSourcePolyfill, Event } from 'event-source-polyfill'
-import { AppState, FosReactOptions, InfoState, LoginResult, SubscriptionInfo } from "./types"
+import { AppState, FosContextData, FosReactOptions, FosRoute, InfoState, LoginResult, SubscriptionInfo } from "./types"
 // import { AppData, Profile } from "./components/app-state/index"
 
 
@@ -15,7 +15,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
   const sycApiUrl = appData.apiUrl
 
 
-  const logOut = () => {
+  const logOut = async () => {
     localStorage.removeItem("auth")
     setAppData({
       ...appData,
@@ -25,6 +25,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
         jwt: "",
         password: "",
         email: "",
+        loggedIn: false,
       }
     })
   }
@@ -32,7 +33,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
 
   const handleAuthError = (err: Error) => {
     console.log("handleAuthedApiError - 401", err)
-    localStorage.removeItem("auth")
+    // localStorage.removeItem("auth")
     
     const newError = new Error("unauthorized", {
       cause: 'unauthorized'
@@ -94,10 +95,6 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
     return result
   }
 
-  const logout = async () => {
-    // TODO: implement jwt invalidation
-    localStorage.removeItem("jwt");
-  }
 
   const register = async (user: string, pass: string, acceptTerms: boolean, cookies: {
     acceptRequiredCookies: boolean,
@@ -296,11 +293,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
 
 
     const getProfile = async (): Promise<InfoState> => {
-      if (!jwt) {
-        console.log("getProfile - no jwt")
-        throw new Error("no jwt")
-      }
-      // console.log('getProfile', jwt)
+
       const url = `${sycApiUrl}/user/profile`
       const result = await fetch(url, {
         method: "GET",
@@ -322,6 +315,9 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
             apiCallsAvailable: res.subscription_data.api_calls_available,
             apiCallsTotal: res.subscription_data.api_calls_total,
             apiCallsUsed: res.subscription_data.api_calls_used,
+            connectedAccountCreated: res.subscription_data.connected_account_created,
+            connectedAccountLinked: res.subscription_data.connected_account_linked,
+            connectedAccountEnabled: res.subscription_data.connected_account_enabled,
           },
         }
         return result
@@ -349,7 +345,10 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
         api_calls_used: number,
         api_calls_total: number,
         api_calls_available: number,
-        subscription_status: string
+        subscription_status: string,
+        connected_account_created: boolean,
+        connected_account_linked: boolean,
+        connected_account_enabled: boolean,
       }
 
     }
@@ -381,6 +380,9 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
             apiCallsAvailable: res.subscription_data.api_calls_available,
             apiCallsTotal: res.subscription_data.api_calls_total,
             apiCallsUsed: res.subscription_data.api_calls_used,
+            connectedAccountCreated: res.subscription_data.connected_account_created,
+            connectedAccountLinked: res.subscription_data.connected_account_linked,
+            connectedAccountEnabled: res.subscription_data.connected_account_enabled,
           },
         }
         return result
@@ -492,10 +494,13 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
           suggestions: typeof res.responses 
         } = {
           subscriptionData: {
-            apiCallsUsed: res.subscription_data.api_calls_used,
-            apiCallsTotal: res.subscription_data.api_calls_total,
+            subscriptionStatus: res.subscription_data.subscription_status,
             apiCallsAvailable: res.subscription_data.api_calls_available,
-            subscriptionStatus: res.subscription_data.subscription_status
+            apiCallsTotal: res.subscription_data.api_calls_total,
+            apiCallsUsed: res.subscription_data.api_calls_used,
+            connectedAccountCreated: res.subscription_data.connected_account_created,
+            connectedAccountLinked: res.subscription_data.connected_account_linked,
+            connectedAccountEnabled: res.subscription_data.connected_account_enabled,
           },
           suggestions: res.responses
         }
@@ -537,6 +542,34 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
       const successUrl = `${window.location.origin}`
       const cancelUrl = `${window.location.origin}`
       const result = await fetch(`${sycApiUrl}/subscription/checkout-session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ 
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+        }),
+      })
+      .then(handleAuthedApiJson)
+      .then((res) => {
+        if (!res) { return }
+        console.log("getCheckoutSession - success", res)
+        return res
+      }).catch(handleAuthedApiError);
+      return result
+    }
+
+
+    const getConnectSession = async () => {
+      if (!jwt) {
+        console.log("getCheckoutSession - no jwt")
+        throw new Error("no jwt")
+      }
+      const successUrl = `${window.location.origin}`
+      const cancelUrl = `${window.location.origin}`
+      const result = await fetch(`${sycApiUrl}/subscription/connect-session`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -688,6 +721,172 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
       return window.fosEventSource || initEventSource()
     }
 
+
+    const postRequestFriend = async (friendEmail: "string"): Promise<FosContextData> => {
+
+      const url = `${sycApiUrl}/group/create-by-email`
+      const result = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ friendEmail }),
+      })
+      .then(handleAuthedApiJson)
+      .then((res: { fosData: FosContextData }): FosContextData => {
+        if (!res){
+          throw new Error("no response")
+        }
+        return res.fosData
+      }).catch(handleAuthedApiError);
+
+      if(!result){
+        throw new Error("error getting profile")
+      }
+
+      return result
+    }
+
+
+    const postRequestGroup = async (groupId: string): Promise<FosContextData> => {
+
+      const url = `${sycApiUrl}/group/request-access`
+      const result = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ groupId }),
+      })
+      .then(handleAuthedApiJson)
+      .then((res: { fosData: FosContextData }): FosContextData => {
+        if (!res){
+          throw new Error("no response")
+        }
+        return res.fosData
+      }).catch(handleAuthedApiError);
+
+      if(!result){
+        throw new Error("error getting profile")
+      }
+
+      return result
+    }
+
+
+    const postQueryUserByDisplayName = async (groupId: string): Promise<FosContextData> => {
+
+      const url = `${sycApiUrl}/user/query-display-name`
+      const result = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ groupId }),
+      })
+      .then(handleAuthedApiJson)
+      .then((res: { fosData: FosContextData }): FosContextData => {
+        if (!res){
+          throw new Error("no response")
+        }
+        return res.fosData
+      }).catch(handleAuthedApiError);
+
+      if(!result){
+        throw new Error("error getting display name")
+      }
+
+      return result
+    }
+
+  
+    const postGetUserProfileForGroup = async (groupId: string, userId: string): Promise<FosContextData> => {
+
+      const url = `${sycApiUrl}/user/profile-for-group`
+      const result = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ groupId, userId }),
+      })
+      .then(handleAuthedApiJson)
+      .then((res: { fosData: FosContextData }): FosContextData => {
+        if (!res){
+          throw new Error("no response")
+        }
+        return res.fosData
+      }).catch(handleAuthedApiError);
+
+      if(!result){
+        throw new Error("error getting profile for group")
+      }
+
+      return result
+    }
+  
+
+
+  
+    const postSemanticSearch = async (queryString: string, options: { routesToIgnore: FosRoute, routesToInclude: FosRoute }): Promise<FosContextData> => {
+
+      const url = `${sycApiUrl}/user/profile-for-group`
+      const result = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ queryString, options }),
+      })
+      .then(handleAuthedApiJson)
+      .then((res: { fosData: FosContextData }): FosContextData => {
+        if (!res){
+          throw new Error("no response")
+        }
+        return res.fosData
+      }).catch(handleAuthedApiError);
+
+      if(!result){
+        throw new Error("error getting semantic search")
+      }
+
+      return result
+    }
+  
+
+
+    const getNodeByRoute = async (route: FosRoute): Promise<FosContextData> => {
+        
+        const url = `${sycApiUrl}/data/node-by-route`
+        const result = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${jwt}`,
+          },
+          body: JSON.stringify({ route }),
+        })
+        .then(handleAuthedApiJson)
+        .then((res: { fosData: FosContextData }): FosContextData => {
+          if (!res){
+            throw new Error("no response")
+          }
+          return res.fosData
+        }).catch(handleAuthedApiError);
+
+        if(!result){
+          throw new Error("error getting node by route")
+        }
+
+        return result
+
+    }
+
     return {
       getEvents,
       getProfile,
@@ -697,6 +896,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
       getSuggestions,
       getPortalSession,
       getCheckoutSession,
+      getConnectSession,
       resetPassword,
       confirmEmail,
       updateEmail,
@@ -704,14 +904,19 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
       confirmEmailInit,
       deleteAccount,
       clearData,
+      postRequestFriend,
+      postRequestGroup,
+      postQueryUserByDisplayName,
+      postGetUserProfileForGroup,
+
     }
   }
 
   return {
     public: {
       login,
+      logOut,
       register,
-      logout,
       resetPassword,
       resetPasswordRequest,
       sendMessage,

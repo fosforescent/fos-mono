@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 
 import {prisma} from './prismaClient'
+import { SubscriptionInfo } from '@/fos-combined/types'
 
 export const getUserProfile = async (req: Request, res: Response) => {
   console.log('user profile')
@@ -16,17 +17,22 @@ export const getUserProfile = async (req: Request, res: Response) => {
       return res.status(404).send('User not found')
     }
 
+
+    const subscriptionData: SubscriptionInfo = {
+      apiCallsAvailable: user.api_calls_available,
+      apiCallsUsed: user.api_calls_used,
+      apiCallsTotal: user.api_calls_total,
+      subscriptionStatus: user.subscription_status,
+      connectedAccountCreated: !!user.stripe_connected_account_id,
+      connectedAccountLinked: !!user.stripe_connect_linked,
+      connectedAccountEnabled: !!user.stripe_connect_enabled,
+
+    }
+
     return res.json({ 
       user_profile: user.user_profile,           
-      subscription_data: {
-        api_calls_available: user.api_calls_available,
-        api_calls_used: user.api_calls_used,
-        api_calls_total: user.api_calls_total,
-        subscription_status: user.subscription_status
-      }, 
+      subscription_data: subscriptionData, 
       email_confirmed: !user.email_confirmation_token,
-      subscription_status: user.subscription_status,
-      subscription_session: !!user.subscription_checkout_session_id,
       cookies: user.cookies
     })
   } catch (error) {
@@ -71,10 +77,14 @@ export const postUserProfile = async (req: Request, res: Response) => {
         subscription_status: updatedUser.subscription_status,
         subscription_session: !!updatedUser.subscription_checkout_session_id,          
         subscription_data: {
-          api_calls_available: updatedUser.api_calls_available,
-          api_calls_used: updatedUser.api_calls_used,
-          api_calls_total: updatedUser.api_calls_total,
-          subscription_status: updatedUser.subscription_status
+          apiCallsAvailable: updatedUser.api_calls_available,
+          apiCallsUsed: updatedUser.api_calls_used,
+          apiCallsTotal: updatedUser.api_calls_total,
+          subscriptionStatus: updatedUser.subscription_status,
+          connectedAccountCreated: !!updatedUser.stripe_connected_account_id,
+          connectedAccountLinked: !!updatedUser.stripe_connect_linked,
+          connectedAccountEnabled: !!updatedUser.stripe_connect_enabled,
+          // subscription_session: !!updatedUser.subscription_checkout_session_id,
         },
       })
     } else {
@@ -94,10 +104,14 @@ export const postUserProfile = async (req: Request, res: Response) => {
         subscription_status: user.subscription_status,
         subscription_session: !!user.subscription_checkout_session_id,
         subscription_data: {
-          api_calls_available: user.api_calls_available,
-          api_calls_used: user.api_calls_used,
-          api_calls_total: user.api_calls_total,
-          subscription_status: user.subscription_status
+          apiCallsAvailable: user.api_calls_available,
+          apiCallsUsed: user.api_calls_used,
+          apiCallsTotal: user.api_calls_total,
+          subscriptionStatus: user.subscription_status,
+          connectedAccountCreated: !!user.stripe_connected_account_id,
+          connectedAccountLinked: !!user.stripe_connect_linked,
+          connectedAccountEnabled: !!user.stripe_connect_enabled,
+          // subscription_session: !!user.subscription_checkout_session_id,
         },
       })
     }

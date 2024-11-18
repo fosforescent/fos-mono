@@ -2,15 +2,16 @@ import e from "cors"
 import { FosNodesData, FosPath, AppState, FosRoute, FosPathElem, FosNodeId } from "../types"
 import { updateNodeContent } from "./mutations"
 import { get } from "http"
+import { is } from "date-fns/locale"
 
-export const getNodeDescription = (nodeRoute: FosRoute, state: AppState) => {
+export const getNodeDescription = (nodeRoute: FosRoute, state: AppState["data"]) => {
     const nodeId = nodeRoute[nodeRoute.length - 1]?.[1]
   
     if (!nodeId){
       throw new Error('nodeType or nodeId is undefined')
     }
   
-    const nodeContent =  state.data.fosData.nodes[nodeId]
+    const nodeContent =  state.fosData.nodes[nodeId]
   
     if (!nodeContent){
       throw new Error('nodeContent is undefined')
@@ -28,13 +29,13 @@ export const getNodeDescription = (nodeRoute: FosRoute, state: AppState) => {
 
 
 
-export const getNodeContent = (nodeRoute: FosRoute, state: AppState) => {
+export const getNodeContent = (nodeRoute: FosRoute, state: AppState["data"]) => {
     const [nodeType, nodeId] = nodeRoute[nodeRoute.length - 1]!
     if (!nodeType || !nodeId){
         throw new Error('nodeType or nodeId is undefined')
     }
     
-    const nodeContent = state.data.fosData.nodes[nodeId]
+    const nodeContent = state.fosData.nodes[nodeId]
 
     if (!nodeContent){
         throw new Error('nodeContent is undefined')
@@ -43,7 +44,7 @@ export const getNodeContent = (nodeRoute: FosRoute, state: AppState) => {
     return nodeContent
 }
 
-export const getNodeChildren = (nodeRoute: FosRoute, state: AppState) => {
+export const getNodeChildren = (nodeRoute: FosRoute, state: AppState["data"]) => {
     const nodeContent = getNodeContent(nodeRoute, state)
     if (!nodeContent){
       throw new Error('nodeContent is undefined')
@@ -52,7 +53,7 @@ export const getNodeChildren = (nodeRoute: FosRoute, state: AppState) => {
     return nodeChildren
 }
 
-export const getNodeData = (nodeRoute: FosRoute, state: AppState) => {
+export const getNodeData = (nodeRoute: FosRoute, state: AppState["data"]) => {
     const nodeContent = getNodeContent(nodeRoute, state)
     if (!nodeContent){
       throw new Error('nodeContent is undefined')
@@ -63,7 +64,7 @@ export const getNodeData = (nodeRoute: FosRoute, state: AppState) => {
 
 
   
-export const getOptions = (nodeRoute: FosRoute, state: AppState) => {
+export const getOptions = (nodeRoute: FosRoute, state: AppState["data"]) => {
     const [nodeType, nodeId] = nodeRoute[nodeRoute.length - 1]!
     if (!nodeType || !nodeId){
         throw new Error('nodeType or nodeId is undefined')
@@ -110,7 +111,9 @@ export const getDragItem = (nodeRoute: FosRoute, breadcrumb: boolean) => {
     return dragItem
 }
 
-export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
+export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => getNodeInfoShared(nodeRoute, state.data)
+
+export const getNodeInfoShared = (nodeRoute: FosRoute, state: AppState["data"]) => {
 
   if (!nodeRoute){
     console.log('nodeRoute undefined', state)
@@ -124,7 +127,7 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
     throw new Error('nodeType or nodeId is undefined')
   }
   
-  const isCollapsed = state.data.trellisData.collapsedList.some((route) => pathEqual(route, nodeRoute))
+  const isCollapsed = state.trellisData.collapsedList.some((route) => pathEqual(route, nodeRoute))
 
   const nodeContent = getNodeContent(nodeRoute, state)
   const nodeChildren = getNodeChildren(nodeRoute, state)
@@ -139,21 +142,19 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
   const isOption = nodeType === "option"
   const isChoice = nodeType === "choice"
   const isMaxDepth = false
-  const isBase = nodeRoute.length === state.data.fosData.route.length
+  const isBase = nodeRoute.length === state.fosData.route.length
   const isSmallWindow = window.innerWidth !== undefined && window.innerWidth < 500
   const locked = false
 
 
-  const hasFocus = pathEqual(state.data.trellisData.focusRoute, nodeRoute)
-  const focusChar = state.data.trellisData.focusChar
+  const hasFocus = pathEqual(state.trellisData.focusRoute, nodeRoute)
+  const focusChar = state.trellisData.focusChar
 
-  const isDragging = pathEqual(state.data.trellisData.dragInfo.dragging?.nodeRoute || [], nodeRoute)
-  const somethingIsDragging = state.data.trellisData.dragInfo.dragging !== null
-  const draggingOver = pathEqual(state.data.trellisData.dragInfo.dragOverInfo?.nodeRoute || [], nodeRoute)
+
 
   const disabled = false
 
-  const depth = nodeRoute.length - state.data.fosData.route.length
+  const depth = nodeRoute.length - state.fosData.route.length
 
   const maxDepth = ( (window.innerWidth - 500) / 100)
 
@@ -169,7 +170,27 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
   
   const childrenVisible = !isCollapsed && !isTooDeep
 
+  const isChildOf = (argNodeRoute: FosRoute) => {
+    const matches = argNodeRoute.every((argNodeElem, index) => {
+      return argNodeElem[0] === nodeRoute[index]?.[0] && argNodeElem[1] === nodeRoute[index]?.[1]
+    })
+    return matches
+  }
 
+     
+  const {
+    dragging, 
+    dragOverInfo,
+   } = state.trellisData.dragInfo
+
+
+  
+  const isDraggingParent = !!(dragging && dragging.nodeRoute && isChildOf(dragging.nodeRoute))
+
+  const isDragging = pathEqual(dragging?.nodeRoute || [], nodeRoute)
+  const somethingIsDragging = dragging !== null
+  const draggingOver = pathEqual(dragOverInfo?.nodeRoute || [], nodeRoute)
+  
 
   return {
       childRoutes,
@@ -198,6 +219,9 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
       focusChar,
       isDragging,
       draggingOver,
+      isDraggingParent,
+      draggingItem: dragging,
+      dragOverItem: dragOverInfo,
       hasChildren,
       isOption,
       somethingIsDragging,
@@ -205,9 +229,11 @@ export const getNodeInfo = (nodeRoute: FosRoute, state: AppState) => {
       nodeRoute,
       isChoice,
       hasParent,
+      getDragItem: (breadcrumb: boolean) => getDragItem(nodeRoute, breadcrumb),
       getParentInfo: () => getParentInfo(nodeRoute, state),
       getOptionInfo: () => getOptionInfo(nodeRoute, state),
       getChildrenOfType: (type: FosNodeId) => getChildrenToShow(state, nodeRoute, type),
+      getGroupInfo: () => getGroupInfo(nodeRoute, state),
   }
 }
 
@@ -227,13 +253,26 @@ export const pathEqual = (path1: FosPath | null, path2: FosPath | null) => {
     return sameLength && sameValues
 }
 
+export const getGroupInfo = (nodeRoute: FosRoute, appData: AppState["data"]) => {
 
-export const getParentInfo = (nodeRoute: FosRoute, appData: AppState) => {
+
+  const { nodeData, nodeContent, nodeChildren, nodeId } = getNodeInfoShared(nodeRoute, appData)
+
+  const name = `${nodeId}`
+  const userProfiles = nodeData.group?.userProfiles
+
+  return {
+    name,
+    userProfiles
+  }
+}
+
+export const getParentInfo = (nodeRoute: FosRoute, appData: AppState["data"]) => {
   const parentRoute = nodeRoute.slice(0, nodeRoute.length - 1)
   if (parentRoute.length === 0){
-    throw new Error('Cannot get parent of root node')
+    throw new Error('Cannot get parent of root node') 
   } else {
-      const parentInfo = getNodeInfo(parentRoute as FosRoute, appData)
+      const parentInfo = getNodeInfoShared(parentRoute as FosRoute, appData)
 
       const nodeType = nodeRoute[nodeRoute.length - 1]?.[0]
       const nodeId = nodeRoute[nodeRoute.length - 1]?.[1]
@@ -259,9 +298,9 @@ export const getParentInfo = (nodeRoute: FosRoute, appData: AppState) => {
   }
 }
 
-export const getOptionInfo = (nodeRoute: FosRoute, appData: AppState) => {
+export const getOptionInfo = (nodeRoute: FosRoute, appData: AppState["data"]) => {
 
-  const { nodeData, nodeContent, nodeChildren } = getNodeInfo(nodeRoute, appData)
+  const { nodeData, nodeContent, nodeChildren } = getNodeInfoShared(nodeRoute, appData)
 
   if (nodeContent.content.length < 2){
     throw new Error('Should not have less than 2 options')
@@ -278,7 +317,7 @@ export const getOptionInfo = (nodeRoute: FosRoute, appData: AppState) => {
   const selectedChildRoute: FosRoute = [...nodeRoute , nodeChildren[selectedIndex]]
 
   
-  const isCollapsedOption = appData.data.trellisData.collapsedList.some((route) => pathEqual(route, selectedChildRoute))
+  const isCollapsedOption = appData.trellisData.collapsedList.some((route) => pathEqual(route, selectedChildRoute))
 
   const resolutionStrategy = nodeData.option?.defaultResolutionStrategy || 'selected'
 
@@ -294,8 +333,8 @@ export const getOptionInfo = (nodeRoute: FosRoute, appData: AppState) => {
   }
 }
 
-export const getDownNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
-  const { nodeData, nodeContent, nodeChildren, getParentInfo, childRoutes, childrenVisible } = getNodeInfo(nodeRoute, appData)
+export const getDownNode = (nodeRoute: FosRoute, appData: AppState["data"]): FosRoute | null => {
+  const { nodeData, nodeContent, nodeChildren, getParentInfo, childRoutes, childrenVisible } = getNodeInfoShared(nodeRoute, appData)
   const { indexInParent, 
     nodeContent: parentContent, 
     nodeRoute: parentRoute, 
@@ -320,8 +359,8 @@ export const getDownNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | 
 
 }
 
-export const getAncestorLeastDownSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
-  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+export const getAncestorLeastDownSibling = (nodeRoute: FosRoute, appData: AppState["data"]): FosRoute | null => {
+  const { getParentInfo } = getNodeInfoShared(nodeRoute, appData)
   const { 
     nodeRoute: parentRoute, 
     childrenVisible: parentChildrenVisible 
@@ -340,8 +379,8 @@ export const getAncestorLeastDownSibling = (nodeRoute: FosRoute, appData: AppSta
   }
 }
 
-export const getAncestorLeastUpSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
-  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+export const getAncestorLeastUpSibling = (nodeRoute: FosRoute, appData: AppState["data"]): FosRoute | null => {
+  const { getParentInfo } = getNodeInfoShared(nodeRoute, appData)
   const { 
     nodeRoute: parentRoute, 
     childrenVisible: parentChildrenVisible 
@@ -359,8 +398,8 @@ export const getAncestorLeastUpSibling = (nodeRoute: FosRoute, appData: AppState
 }
 
 
-export const getUpSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
-  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+export const getUpSibling = (nodeRoute: FosRoute, appData: AppState["data"]): FosRoute | null => {
+  const { getParentInfo } = getNodeInfoShared(nodeRoute, appData)
   const { indexInParent, siblingRoutes } = getParentInfo()
   if (indexInParent === 0){
     return null
@@ -372,8 +411,8 @@ export const getUpSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute |
   return newRoute
 }
 
-export const getDownSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
-  const { getParentInfo } = getNodeInfo(nodeRoute, appData)
+export const getDownSibling = (nodeRoute: FosRoute, appData: AppState["data"]): FosRoute | null => {
+  const { getParentInfo } = getNodeInfoShared(nodeRoute, appData)
   const { indexInParent, siblingRoutes } = getParentInfo()
 
   // console.log('downSibling - sibling routes', siblingRoutes, indexInParent, nodeRoute)
@@ -389,11 +428,11 @@ export const getDownSibling = (nodeRoute: FosRoute, appData: AppState): FosRoute
 
 
 
-export const getDownmostDescendent = (nodeRoute: FosRoute, appData: AppState, depthLimit: number = -1): FosRoute => {
+export const getDownmostDescendent = (nodeRoute: FosRoute, appData: AppState["data"], depthLimit: number = -1): FosRoute => {
   if (depthLimit === 0){
     return nodeRoute
   }
-  const { hasChildren, childRoutes, childrenVisible } = getNodeInfo(nodeRoute, appData)
+  const { hasChildren, childRoutes, childrenVisible } = getNodeInfoShared(nodeRoute, appData)
   if (childrenVisible && hasChildren ){
     return getDownmostDescendent(childRoutes[childRoutes.length - 1]!, appData, depthLimit - 1)
   } else {
@@ -402,8 +441,8 @@ export const getDownmostDescendent = (nodeRoute: FosRoute, appData: AppState, de
 }
 
 
-export const getUpNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | null => {
-  const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(nodeRoute, appData)
+export const getUpNode = (nodeRoute: FosRoute, appData: AppState["data"]): FosRoute | null => {
+  const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(nodeRoute, appData)
   const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute, siblingRoutes } = getParentInfo()
 
   if (indexInParent > 0 ){
@@ -414,48 +453,85 @@ export const getUpNode = (nodeRoute: FosRoute, appData: AppState): FosRoute | nu
 }
 
 
-export const getRootNodes = (appData: AppState, nodeType: FosNodeId) => {
+export const getNodesOfTypeForPath = (appData: AppState["data"], nodeRoute: FosRoute) => {
 
-  const rootPathElem: FosRoute = appData.data.fosData.route.slice(0, 1) as FosRoute
 
-  const { childRoutes } = getNodeInfo(rootPathElem, appData)
+  const { childRoutes } = getNodeInfoShared(nodeRoute, appData)
 
-  const workflows = childRoutes.filter((childRoute) => {
-    const { nodeType } = getNodeInfo(childRoute, appData)
+  const workflows = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
     return nodeType === 'workflow' || nodeType === 'option'
   })
 
-  const todos =  childRoutes.filter((childRoute) => {
-    const { nodeType } = getNodeInfo(childRoute, appData)
+  const todos = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
     return nodeType === 'todo' || nodeType === 'race' || nodeType === 'choice'
+  })
+
+  const groups = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
+    return nodeType === 'group'
+  })
+
+  const comments = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
+    return nodeType === 'comment'
+  })
+
+  const documents = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
+    return nodeType === 'document'
+  })
+
+  const marketRequest = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
+    return nodeType === 'marketRequest'
+  })
+
+  const marketService = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
+    return nodeType === 'marketService'
+  })
+
+  const field = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getNodeInfoShared(childRoute, appData)
+    return nodeType === 'field'
   })
 
   return {
     workflows,
     todos,
+    groups,
+    comments,
+    documents,
+    marketRequest,
+    marketService,
+    field,
+
   }
 
 }
 
 
-export const getChildrenToShow = (appData: AppState, parentRoute: FosRoute, parentType: FosNodeId) => {
-  const { childRoutes  } = getNodeInfo(parentRoute, appData)
+export const getChildrenToShow = (appData: AppState["data"], parentRoute: FosRoute, parentType: FosNodeId) => {
+  console.log('getChildrenToShow', parentRoute, parentType)
+  const { childRoutes  } = getNodeInfoShared(parentRoute, appData)
 
   if (parentType === 'workflow'){
     const routes = childRoutes.filter((childRoute) => {
-      const { nodeType } = getNodeInfo(childRoute, appData)
+      const { nodeType } = getNodeInfoShared(childRoute, appData)
       return nodeType === 'workflow' || nodeType === 'option'
     })
     return routes
   } else if (parentType === 'todo'){
     const routes = childRoutes.filter((childRoute) => {
-      const { nodeType } = getNodeInfo(childRoute, appData)
+      const { nodeType } = getNodeInfoShared(childRoute, appData)
       return nodeType === 'todo' || nodeType === 'race' || nodeType === 'choice'
     })
     return routes
   } else {
     const routes = childRoutes.filter((childRoute) => {
-      const { nodeType } = getNodeInfo(childRoute, appData)
+      const { nodeType } = getNodeInfoShared(childRoute, appData)
       return nodeType === parentType
     })
     return routes
@@ -464,8 +540,8 @@ export const getChildrenToShow = (appData: AppState, parentRoute: FosRoute, pare
 }
 
 
-export const getAvailableTasks = (appData: AppState, nodeRoute: FosRoute): FosRoute[] => {
-  const { nodeChildren, nodeType } = getNodeInfo(nodeRoute, appData)
+export const getAvailableTasks = (appData: AppState["data"], nodeRoute: FosRoute): FosRoute[] => {
+  const { nodeChildren, nodeType } = getNodeInfoShared(nodeRoute, appData)
   if (nodeType !== 'todo' && nodeType !== 'race' && nodeType !== 'choice'){
     return []
   }

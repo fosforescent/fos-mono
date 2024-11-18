@@ -38,6 +38,9 @@ export interface TrellisSerializedData {
 
 
 export type FosDataContent = {
+  commit?: {
+    
+  }
   duration?: {
     plannedMarginal: number;
     entries: {
@@ -89,19 +92,40 @@ export type FosDataContent = {
       connectionInfo: {
         type: "serverHttp";
         address: string;
+        nodeId: string;
       } | {
         type: "serverWs";
         address: string;
+        nodeId: string;
       } | {
         type: "webRtc";
         offerSdpJson: string;
+        nodeId: string;
+      } | {
+        type: "group";
+        id: string;
       },
 
     }
   }
+  group?: {
+    id: string;
+    name: string;
+    userProfiles: string[];
+
+  }
+  market?:{
+    sellerProfile: string;
+    buyerProfile: string;
+    price: number;
+    approveBid: boolean;
+    approveFulfillment: boolean;
+    approvePayment: boolean;
+  }
   todo?: {
     completed: boolean;
     notes: string;
+    type: string;
   }
   reactClient?:{
     collapsed: boolean;
@@ -178,6 +202,9 @@ export type SubscriptionInfo = {
   apiCallsAvailable: number,
   apiCallsUsed: number,
   apiCallsTotal: number,
+  connectedAccountCreated: boolean,
+  connectedAccountLinked: boolean,
+  connectedAccountEnabled: boolean,
   // subscription_session?: string,
 }
 
@@ -206,6 +233,7 @@ export type AppState = {
 
 
 export type AuthState = {
+  loggedIn: boolean,
   username: string,
   remember: boolean,
   jwt?: string,

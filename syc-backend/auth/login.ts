@@ -43,7 +43,7 @@ export const postLogin = async (req: Request, res: Response) => {
     if (match) {
       const claims = {
         username: user.user_name,
-        exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60) // 8 hours from now
+        exp: Math.floor(Date.now() / 1000) + (72 * 60 * 60) // 8 hours from now
       }
 
       const token = jwt.sign(claims, JWT_SECRET)
@@ -57,6 +57,9 @@ export const postLogin = async (req: Request, res: Response) => {
           apiCallsUsed: user.api_calls_used,
           apiCallsTotal: user.api_calls_total,
           subscriptionStatus: user.subscription_status,
+          connectedAccountCreated: !!user.stripe_connected_account_id,
+          connectedAccountLinked: !!user.stripe_connect_linked,
+          connectedAccountEnabled: !!user.stripe_connect_enabled,
           // subscription_session: !!user.subscription_checkout_session_id,
         }, 
         emailConfirmed: !user.email_confirmation_token,

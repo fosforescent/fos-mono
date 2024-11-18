@@ -125,16 +125,17 @@ export const loadCtxFromDb = async (
     throw new Error("user does not have associated fos group");
   }
 
-  const groupIds = (await getAllMemberships(userGroup, [], prisma)).map(
-    (group) => group.id
-  );
+  // const groupIds = (await getAllMemberships(userGroup, [], prisma)).map(
+  //   (group) => group.id
+  // );
 
   const nodeModels = await prisma.fosNode.findMany({
     where: {
       FosNodeGroupAccessLink: {
         some: {
           fosGroupId: {
-            in: groupIds,
+            // in: groupIds,
+            in: [userGroup.id],
           },
         },
       },
@@ -215,9 +216,9 @@ export const storeCtxToDb = async (
     };
   });
 
-  const groupIds = (await getAllMemberships(userGroup, [], prisma)).map(
-    (group) => group.id
-  );
+  // const groupIds = (await getAllMemberships(userGroup, [], prisma)).map(
+  //   (group) => group.id
+  // );
 
   for (const fNode of formattedNodes) {
     const node = await prisma.fosNode.findUnique({
@@ -233,7 +234,8 @@ export const storeCtxToDb = async (
         where: {
           fosNodeId: node.id,
           fosGroupId: {
-            in: groupIds,
+            // in: groupIds,
+            in: [userGroup.id],
           },
         },
       });
@@ -261,7 +263,7 @@ export const storeCtxToDb = async (
           nodeLink,
           !!nodeLink,
           "groupIds",
-          groupIds,
+          // groupIds,
           fNode.data,
           userGroup.rootNodeId
         );
@@ -292,7 +294,7 @@ export const storeCtxToDb = async (
           id: fNode.id,
           data: fNode.data,
           FosNodeGroupAccessLink: {
-            create: groupIds.map((groupId) => {
+            create: [userGroup.id].map((groupId) => {
               return {
                 fosGroupId: groupId,
               };
@@ -318,38 +320,38 @@ export const storeCtxToDb = async (
   });
 };
 
-export const getAllMemberships = async (
-  group: FosGroup,
-  all: FosGroup[],
-  prisma: PrismaClient
-) => {
-  const groupWithContainers = await prisma.fosGroup.findUnique({
-    where: {
-      id: group.id,
-    },
-    select: {
-      containers: {
-        select: {
-          containerGroup: true,
-        },
-      },
-    },
-  });
-  if (groupWithContainers && groupWithContainers.containers.length > 0) {
-    const children: FosGroup[] = [group];
-    for (const item of groupWithContainers.containers) {
-      const childMemberships = await getAllMemberships(
-        item.containerGroup,
-        [] as FosGroup[],
-        prisma
-      );
-      children.concat(childMemberships);
-    }
-    return all.concat();
-  } else {
-    return [group, ...all];
-  }
-};
+// export const getAllMemberships = async (
+//   group: FosGroup,
+//   all: FosGroup[],
+//   prisma: PrismaClient
+// ) => {
+//   const groupWithContainers = await prisma.fosGroup.findUnique({
+//     where: {
+//       id: group.id,
+//     },
+//     select: {
+//       containers: {
+//         select: {
+//           containerGroup: true,
+//         },
+//       },
+//     },
+//   });
+//   if (groupWithContainers && groupWithContainers.containers.length > 0) {
+//     const children: FosGroup[] = [group];
+//     for (const item of groupWithContainers.containers) {
+//       const childMemberships = await getAllMemberships(
+//         item.containerGroup,
+//         [] as FosGroup[],
+//         prisma
+//       );
+//       children.concat(childMemberships);
+//     }
+//     return all.concat();
+//   } else {
+//     return [group, ...all];
+//   }
+// };
 
 export const createUserGroup = async (prisma: PrismaClient) => {
   const rootNodeData: FosNodeContent = {
@@ -427,16 +429,17 @@ export const getGroupNodes = async (
   prisma: PrismaClient,
   userGroup: FosGroup
 ) => {
-  const groupIds = (await getAllMemberships(userGroup, [], prisma)).map(
-    (group) => group.id
-  );
+  // const groupIds = (await getAllMemberships(userGroup, [], prisma)).map(
+  //   (group) => group.id
+  // );
 
   const nodeModels = await prisma.fosNode.findMany({
     where: {
       FosNodeGroupAccessLink: {
         some: {
           fosGroupId: {
-            in: groupIds,
+            // in: groupIds,
+            in: [userGroup.id],
           },
         },
       },

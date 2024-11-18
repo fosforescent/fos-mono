@@ -8,16 +8,6 @@ import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
 import './global.css'
 
-import {
-  CheckCircle2,
-  CircleEllipsis,
-  Undo2,
-  Redo2,
-  // MenuSquare,
-  Menu,
-  Send
-} from 'lucide-react'
-import { TrellisSerializedData } from './types'
 
 
 
@@ -44,6 +34,7 @@ import { getActions } from './lib/actions'
 import { diff } from '@n1ru4l/json-patch-plus'
 
 import { useLocation } from 'react-router-dom'
+import { set } from 'date-fns'
 
 
 declare const __SYC_API_URL__: string;
@@ -61,14 +52,25 @@ export const initialInfoState = {
 
 
 
+const parsedJwt = JSON.parse(localStorage.getItem("auth") || "null")
 
-export const initialAuthState = {
+const decodedJwt =  parsedJwt ? jwtDecode(parsedJwt)  as { username: string, exp: number } : { username: "", exp: 0 }
+const parsedUsername = JSON.parse(localStorage.getItem("username") || "null")
+
+export const initialAuthState = !parsedJwt ? {
   username: "",
-  remember: false,
-  jwt: JSON.parse(localStorage.getItem("auth") || "null") || null,
-  email: "",
+  remember: !!parsedUsername,
+  jwt: null,
+  email: parsedUsername,
   password: "",
   loggedIn: false,
+} : {
+  username: decodedJwt.username,
+  remember: !!parsedUsername,
+  jwt: parsedJwt.jwt,
+  email: parsedUsername,
+  password: "",
+  loggedIn: true,
 }
 
 
@@ -111,21 +113,33 @@ export default function App({
   const [showEmailConfirm, setShowEmailConfirm] = useState<{ open: boolean, email: string}>({ open: false, email: ""})
 
  
+
+  
+
+
   const [ appState, setAppState ] = React.useState<AppState>({...initialDataState, apiUrl})
 
+  const jwt = appState.auth.jwt
 
 
   const emailConfirmationToken = new URLSearchParams(window.location.search).get('confirm-email-token') || undefined
   const passwordResetToken = new URLSearchParams(window.location.search).get('reset-password-token') || undefined
 
 
-  
-  const jwt = appState.auth.jwt
 
-  const {
-    username,
-    exp
-  } = jwt ? jwtDecode(jwt) as { username: string, exp: number } : { username: "", exp: 0 }
+  if (appState.auth.loggedIn && !jwt){
+   
+    console.log('auth token',  localStorage.getItem('auth'), parsedJwt. appState  )
+    // throw new Error('logged out for some reason')
+  }
+
+  useEffect(() => {
+    if (appState.auth.loggedIn && !jwt){
+      if (parsedJwt){
+        setAppState({...appState, auth: { ...appState.auth, jwt: parsedJwt }})
+      }
+    }
+  }, [jwt, parsedJwt, appState.auth.loggedIn])
 
 
   const location = useLocation();
@@ -267,7 +281,8 @@ export default function App({
 
   
   useEffect(() => {
-    if (!jwt) {
+    if (!jwt && !appState.auth.loggedIn) {
+  
       navigate('/')
       setMenuOpen(true)
     } else {
@@ -296,20 +311,20 @@ export default function App({
 
 
 
-  useEffect(() => {
+  // useEffect(() => {
 
-    if (loggedIn()){
-      if (location.pathname === '/'){
-        navigate('')
-      } else {
-        setAppState({...appState, })
-      }
+  //   if (loggedIn()){
+  //     if (location.pathname === '/'){
+  //       navigate('')
+  //     } else {
+  //       setAppState({...appState, })
+  //     }
   
-    }
+  //   }
 
 
 
-  }, [location.pathname])
+  // }, [location.pathname])
 
 
   const setAppStateWithEffects = (newData: AppState) => {
@@ -347,6 +362,13 @@ export default function App({
 
       if (profileDiff && appState.loaded){
         newActions.saveProfileData(updatedWithServerData)
+      }
+
+      if (authDiff){
+        if (appState.auth.jwt && !newData.auth.jwt){
+          console.log('auth diff', authDiff, appState.auth, newData.auth)
+          throw new Error('auth diff')
+        }
       }
 
       // console.log('setappdata', authDiff)

@@ -40,7 +40,7 @@ import {
 
 import { Account } from './Account'
 import { Textarea } from '@/components/ui/textarea'
-import { App } from '@prisma/client'
+
 import { AppState, FosReactOptions } from '@/fos-combined/types'
 import { getActions } from '@/fos-combined/lib/actions'
 import { NavLink } from "react-router-dom";
@@ -203,7 +203,7 @@ const HamburgerMenu = ({
                     Workflows
                   </NavLink>
                 </Button>
-                {/* <Button
+                <Button
                   asChild
                   variant="ghost"
                   className="w-full justify-start"
@@ -221,7 +221,45 @@ const HamburgerMenu = ({
                   >
                     Market
                   </NavLink>
-                </Button> */}
+                </Button>
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavLink
+                    to="/group"
+                    className={({ isActive }) =>
+                      cn(
+                        "w-full",
+                        isActive && "bg-accent text-accent-foreground"
+                      )
+                    }
+                    end
+                  >
+                    Groups
+                  </NavLink>
+                </Button>
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setMenuOpen(false)}
+                  >
+                  <NavLink
+                    to="/info"
+                    className={({ isActive }) =>
+                      cn(
+                        "w-full",
+                        isActive && "bg-accent text-accent-foreground"
+                      )
+                    }
+                    end
+                  >
+                    Info
+                  </NavLink>
+                </Button>
                 <Button
                   asChild
                   variant="ghost"
