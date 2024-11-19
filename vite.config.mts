@@ -31,7 +31,7 @@ const backendExternals = [
 const getFrontendConfig = (): UserConfig => ({
   root: resolve(__dirname, 'frontend'),
   define: {
-    ENV_TOKEN: `"${process?.env?.OPEN_AI_API_KEY}"`,
+    // ENV_TOKEN: `"${process?.env?.OPEN_AI_API_KEY}"`,
     __FOS_API_URL__: `"${process.env.FOS_API_URL}"`,
   },
   build: {

@@ -62,12 +62,29 @@ const protectedRoutes = express.Router()
 const dataRoutes = express.Router()
 
 // Define your list of allowed origins
-const allowedOrigins = ['localhost', 'fosforescent.com', 'fos-prod.pages.dev', 'www.fosforescent.com', "www.davidmnoll.com"]
+const allowedOrigins = [
+  'localhost', 
+  'fosforescent.com', 
+  'fos-prod.pages.dev', 
+  'www.fosforescent.com',
+  "fos-mono.pages.dev",
+  /^.*\.fosforescent\.com$/,
+  /^.*\.fos-mono.pages\.dev$/,
+  /^localhost\:[0-9]+$/,
+  
+]
 
 // CORS configuration
 const corsOptions = {
   origin: (origin: string | undefined, callback: any) => {
-    if (allowedOrigins.find((item) => origin?.indexOf(item || '!@#$%^') !== -1) || !origin) {
+    if (allowedOrigins.find((item) => {
+        const exactMatch = origin?.indexOf(item || '!@#$%^') !== -1
+        const regexMatch = origin?.match(item)
+        return exactMatch || regexMatch
+      }) 
+      || !origin
+      || allowedOrigins.find((item) => origin.match(item))
+    ) {
       callback(null, true)
     } else {
       console.log('origin', origin, allowedOrigins)

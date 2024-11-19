@@ -15,8 +15,12 @@ import { MarketBrowse } from './components/market/MarketBrowse'
 import QueueView from './components/views/Queue'
 
 
+declare const __FOS_API_URL__: string;
+const FOS_API_URL = __FOS_API_URL__
 
-const apiUrl = "http://localhost:4000"
+
+
+const apiUrl = FOS_API_URL || "http://localhost:4000"
 
 interface LoaderData {
   shouldOpenMenu: boolean;
