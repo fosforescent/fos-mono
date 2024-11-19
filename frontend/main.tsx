@@ -16,11 +16,9 @@ import QueueView from './components/views/Queue'
 
 
 declare const __FOS_API_URL__: string;
-const FOS_API_URL = __FOS_API_URL__
 
 
-
-const apiUrl = FOS_API_URL || "http://localhost:4000"
+const apiUrl = __FOS_API_URL__ || "http://localhost:4000"
 
 interface LoaderData {
   shouldOpenMenu: boolean;

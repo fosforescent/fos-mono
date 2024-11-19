@@ -29,7 +29,7 @@
   },
   "types": "./dist/types/index.d.ts",
   "scripts": {
-    "serve": "vite preview",
+    "serve:frontend": "vite preview --mode frontend",
     "build:backend": "npx vite build --mode backend",
     "build:frontend": "npx vite build --mode frontend",
     "dev:frontend": "vite --mode frontend",

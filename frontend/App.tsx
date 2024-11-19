@@ -37,12 +37,6 @@ import { useLocation } from 'react-router-dom'
 import { set } from 'date-fns'
 
 
-declare const __FOS_API_URL__: string;
-const FOS_API_URL = __FOS_API_URL__
-
-declare const __DEV_FOS_API_URL__: string;
-declare const __PROD_FOS_API_URL__: string;
-
 
 export const initialInfoState = {
   cookies: localStorage.getItem('cookiePrefs') ? JSON.parse(localStorage.getItem('cookiePrefs') || "null") : undefined,
@@ -121,7 +115,7 @@ export default function App({
 
   const [ appState, setAppState ] = React.useState<AppState>({...initialDataState, apiUrl})
 
-  const jwt = appState.auth.jwt
+  const jwt = appState.auth?.jwt
 
 
   const emailConfirmationToken = new URLSearchParams(window.location.search).get('confirm-email-token') || undefined
@@ -129,7 +123,7 @@ export default function App({
 
 
 
-  if (appState.auth.loggedIn && !jwt){
+  if (appState.auth?.loggedIn && !jwt){
    
     // console.log('auth token',  localStorage.getItem('auth'), parsedJwt. appState  )
     // throw new Error('logged out for some reason')
