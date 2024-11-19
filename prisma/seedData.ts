@@ -1,4 +1,4 @@
-import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/fos-combined/types";
+import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/frontend/types";
 
 import { v4 as uuidv4 } from 'uuid';
 

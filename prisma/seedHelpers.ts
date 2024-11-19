@@ -1,4 +1,4 @@
-import { FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodesData } from '@/fos-combined/types'
+import { FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodesData } from '@/frontend/types'
 import { FosGroup, PrismaClient, User } from '@prisma/client'
 
 export const createNodes = async (prisma: PrismaClient, nodesData: FosNodesData) => {

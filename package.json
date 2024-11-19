@@ -4,25 +4,38 @@
   "scope": "@fosforescent",
   "main": "./dist/fosforescent-react.umd.js",
   "module": "./dist/fosforescent-react.mjs",
-  "exports": {
+"exports": {
     ".": {
-      "import": "./dist/fosforescent-react.mjs",
-      "require": "./dist/fosforescent-react.umd.js"
+      "browser": "./dist/frontend/index.js",
+      "node": "./dist/backend/index.js",
+      "require": "./dist/backend/index.js",
+      "default": "./dist/frontend/index.js"
     }
+  },
+  "browser": {
+    "net": false,
+    "tls": false,
+    "fs": false,
+    "path": false,
+    "os": false,
+    "crypto": false,
+    "stream": false,
+    "http": false,
+    "https": false,
+    "zlib": false,
+    "express": false,
+    "express-slow-down": false,
+    "express-rate-limit": false
   },
   "types": "./dist/types/index.d.ts",
   "scripts": {
     "serve": "vite preview",
-    "build": "npx vite build  && npx tsc -p tsconfig.package.json",
+    "build:backend": "npx vite build --mode backend",
+    "build:frontend": "npx vite build --mode backend",
     "dev:react": "vite --mode react-client",
     "dev:backend": "npx nodemon --config syc-backend/nodemon.json",
     "dev:web": "vite --mode web-client",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:combined\"",
-    "dev:viridian": "npx concurrently \"npm run dev:backend\" \"npm run dev:viridian-client\"",
-    "dev:viridian-client": "vite --mode viridian-client",
-    "dev:trellis": "vite --mode react-trellis",
-    "dev:combined": "vite --mode fos-combined",
-    "dev:fos": "vite --mode fos-client",
     "test": "npx jest",
     "test:ci": "npx jest --ci",
     "setup": "npx prisma generate",
@@ -36,7 +49,7 @@
     "test-storybook:ci": "npx concurrently -k -s first -n \"SB,TEST\" -c \"magenta,blue\" \"storybook build --quiet && npx http-server storybook-static --port 6006 --silent\" \"npx wait-on -d 60 -i 1000 tcp:127.0.0.1:6006 && npx test-storybook\""
   },
   "prisma": {
-  "seed": "tsx prisma\\seed.ts"
+    "seed": "tsx prisma\\seed.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

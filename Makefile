@@ -1,5 +1,13 @@
 MAKE=make
 
+
+build-backend:
+	npm run build:backend
+
+build-frontend:
+	npm run build:frontend
+
+
 run-dev:
 	npm run start
 

@@ -5,7 +5,7 @@ import { attachUserToGroup, createGroup, createUser, createUserWithNodes } from 
 import { generateSeedContext } from './seedData'
 
 import { v4 as uuidv4 } from 'uuid';
-import { FosDataContent } from '@/fos-combined/types';
+import { FosDataContent } from '@/frontend/types';
 
 
 const prisma = new PrismaClient()
@@ -48,9 +48,11 @@ async function main() {
   const group2 = await createGroup(prisma, uuidv4(), { groupId: 2 })
 
   attachUserToGroup(prisma, dn0, group0)
+  attachUserToGroup(prisma, dn0, group2)
   attachUserToGroup(prisma, dn1, group0)
   attachUserToGroup(prisma, dn2, group0)
   attachUserToGroup(prisma, dn3, group0)
+  attachUserToGroup(prisma, dn4, group0)
   attachUserToGroup(prisma, dn4, group1)
   attachUserToGroup(prisma, dn5, group0)
   attachUserToGroup(prisma, dn5, group1)
