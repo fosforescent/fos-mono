@@ -1,82 +1,50 @@
-resource "digitalocean_app" "fos_app" {
-  spec {
-    name   = "fosforescent-app"
-    region = "sfo3"
-
-    # Source code based service
-    service {
-      name               = "web"
-      instance_size_slug = "basic-xxs"
-      instance_count     = 1
-
-      github {
-        repo           = "fosforescent/fos-mono"
-        branch         = local.do_app_branch[terraform.workspace]
-        deploy_on_push = true
-      }
 
 
-      dockerfile_path = "backend/Dockerfile"
+resource "ovh_webpaas_project" "fos_app" {
+  name    = "fosforescent"
+  region  = "US"
+  plan_id = "development" # €15/month plan
 
-      env {
+  environment {
+    name = "production"
+    type = "production"
 
-        key   = "DATABASE_URL"
-        value = "postgresql://${digitalocean_database_user.fos_user.name}:${digitalocean_database_user.fos_user.password}@${digitalocean_database_cluster.postgres_cluster.host}:${tostring(digitalocean_database_cluster.postgres_cluster.port)}/${digitalocean_database_db.fos_db.name}?connection_limit=5"
-      }
-
-      env {
-        key   = "STRIPE_TOKEN"
-        value = local.stripe_token[terraform.workspace]
-
-      }
-
-      env {
-        key   = "JWT_SECRET"
-        value = local.jwt_secret[terraform.workspace]
-      }
-
-      env {
-        key   = "PINECONE_API_KEY"
-        value = local.pinecone_api_key[terraform.workspace]
-      }
-
-      env {
-        key   = "OPENAI_API_KEY"
-        value = local.openai_api_key[terraform.workspace]
-      }
-
-      env {
-        key   = "EMAIL_WEBHOOK_PASSWORD"
-        value = local.email_webhook_pwd[terraform.workspace]
-      }
-
-      env {
-        key   = "POSTMARK_API_TOKEN"
-        value = local.postmark_token[terraform.workspace]
-      }
-
-      env {
-        key   = "NODE_ENV"
-        value = local.node_env[terraform.workspace]
-      }
-
-      env {
-        key   = "STRIPE_TOPUP_PRICE_ID"
-        value = local.stripe_topup_price_id[terraform.workspace]
-      }
-
-      env {
-        key   = "STRIPE_SUBSCRIPTION_PRICE_ID"
-        value = local.stripe_subscription_price_id[terraform.workspace]
-      }
-
-
-      health_check {
-        http_path       = "/"
-        timeout_seconds = 5
-      }
-
-
+    variables = {
+      DATABASE_URL     = "postgresql://${var.db_user}:${var.db_password}@${var.db_host}:5432/${var.db_name}"
+      STRIPE_TOKEN     = local.stripe_token[terraform.workspace]
+      JWT_SECRET       = local.jwt_secret[terraform.workspace]
+      PINECONE_API_KEY = local.pinecone_api_key[terraform.workspace]
+      OPENAI_API_KEY   = local.openai_api_key[terraform.workspace]
+      NODE_ENV         = local.node_env[terraform.workspace]
     }
   }
+
+  service {
+    name = "app"
+    type = "nodejs:18"
+    size = "S"
+    disk = 2048
+
+    build {
+      flavor  = "none"
+      command = "npm run build:backend"
+    }
+
+    web {
+      command = "node dist/backend/index.js"
+      port    = 3000
+    }
+  }
+
+  service {
+    name = "db"
+    type = "postgresql:15"
+    size = "S"
+    disk = 2048
+  }
+}
+
+resource "ovh_webpaas_domain" "fos_domain" {
+  project_id = ovh_webpaas_project.fos_app.id
+  domain     = "api.fosforescent.com"
 }

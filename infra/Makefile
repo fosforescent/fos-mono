@@ -40,6 +40,10 @@ taint-all:
 		terraform taint -module ${module} ${resource}\
 	done
 
+taint:
+	exit 1
+	taint digitalocean_app.fos_app
+
 list: 
 	terraform state list
 

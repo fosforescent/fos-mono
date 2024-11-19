@@ -1,5 +1,7 @@
 MAKE=make
 
+include ./.env
+export $(shell sed 's/=.*//' ./.env)
 
 build-backend:
 	which node
@@ -58,3 +60,5 @@ push:
 	git commit -m "$(m)"
 	git push
 
+dockertest: 
+	docker run fos_img 

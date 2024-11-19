@@ -31,7 +31,7 @@
   "scripts": {
     "serve": "vite preview",
     "build:backend": "npx vite build --mode backend",
-    "build:frontend": "npx vite build --mode backend",
+    "build:frontend": "npx vite build --mode frontend",
     "dev:react": "vite --mode react-client",
     "dev:backend": "npx nodemon --config syc-backend/nodemon.json",
     "dev:web": "vite --mode web-client",

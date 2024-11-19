@@ -1,6 +1,10 @@
 locals {
   env_vars = { for tuple in regexall("(.*)=(.*)", file("../.env")) : tuple[0] => tuple[1] }
 
+  gcp_project = {
+    dev  = local.env_vars["GCP_PROJECT"]
+    prod = local.env_vars["GCP_PROJECT"]
+  }
 
   stripe_token = {
     dev  = local.env_vars["DEV_STRIPE_TOKEN"]

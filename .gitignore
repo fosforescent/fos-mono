@@ -247,3 +247,5 @@ override.tf.json
 terraform.rc
 
 *.mts.timestamp-*
+
+*.terraform.lock.hcl
