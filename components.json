@@ -4,8 +4,8 @@
   "rsc": false,
   "tsx": true,
   "tailwind": {
-    "config": "tailwind.config.js",
-    "css": "global.css",
+    "config": "frontend/tailwind.config.js",
+    "css": "frontend/global.css",
     "baseColor": "stone",
     "cssVariables": true,
     "prefix": ""
@@ -15,6 +15,6 @@
     "utils": "@/frontend/lib/utils",
     "ui": "@/frontend/components/ui",
     "lib": "@/frontend/lib",
-    "hooks": "@/hooks"
+    "hooks": "@/frontend/hooks"
   }
 }

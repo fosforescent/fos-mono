@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react'
 
 
 import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosRoute,} from './types'
-import { useTraceUpdate } from './components/trace-update'
+import { useTraceUpdate } from './hooks/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
 import './global.css'

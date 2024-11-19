@@ -1,25 +1,42 @@
-# Use a smaller, more specific Node.js base image
+# Build stage
 FROM node:20-slim as build
 
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json (or yarn.lock) to leverage Docker cache
-COPY ./package*.json ./
+# Add debugging steps
+RUN which node
+RUN node --version
+RUN echo $PATH
 
-COPY ./prisma ./prisma/
+# Copy package files
+COPY package*.json ./
+COPY prisma ./prisma/
 
-# Install ALL dependencies, including 'devDependencies'
-RUN npm install --omit=dev
+# Install dependencies
+RUN npm ci
 
-# Copy the rest of your app's source code from your host to your image filesystem.
-COPY ./ .
+# Copy the rest of your app's source code
+COPY . .
 
-# Install openssl and libssl
-RUN apt-get update && apt-get install -y openssl libssl-dev make && rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    openssl \
+    libssl-dev \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+# More debugging
+RUN ls -la /usr/src/app/node_modules/.bin
+RUN ls -la /usr/src/app/node_modules/vite/bin
+RUN which npx
+
+# Try building without make first
+RUN node ./node_modules/vite/bin/vite.js build --mode backend
+
+# If that works, then try make
+# RUN make setup && make build-backend
 
 
-# Generate prisma client and compile TypeScript to JavaScript
-RUN make setup && make build-backend
 
 # Second stage: Setup runtime environment
 FROM node:20-slim as runtime
@@ -32,11 +49,12 @@ RUN apt-get update && apt-get install -y openssl libssl-dev && rm -rf /var/lib/a
 
 
 # Only copy the build artifacts and necessary files from the previous stage
-COPY --from=build /usr/src/app/bin ./bin
+COPY --from=build /usr/src/app/dist ./dist
 COPY --from=build /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/package*.json ./
+COPY --from=build /usr/src/app/prisma ./prisma
 
 ENV PORT=80
 
 EXPOSE 80
-CMD [ "node", "bin/index.js" ]
+CMD [ "node", "dist/backend/index.js" ]

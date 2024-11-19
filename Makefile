@@ -2,6 +2,8 @@ MAKE=make
 
 
 build-backend:
+	which node
+	node --version
 	npm run build:backend
 
 build-frontend:

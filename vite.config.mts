@@ -80,12 +80,14 @@ const getFrontendConfig = (): UserConfig => ({
       css: { javascriptEnabled: true }
     },
     postcss: {
-      plugins: [tailwindcss(), autoprefixer()]
+      plugins: [tailwindcss(), autoprefixer()],
+      
     }
   }
 });
 
 const getBackendConfig = (): UserConfig => ({
+
   root: resolve(__dirname, 'backend'),
 
   build: {
@@ -93,6 +95,9 @@ const getBackendConfig = (): UserConfig => ({
     emptyOutDir: true,
     ssr: true,
     target: 'node16',
+    cssCodeSplit: false,
+
+    
     lib: {
       entry: resolve(__dirname, 'backend/index.ts'),
       formats: ['cjs'] as LibraryFormats[],
@@ -112,12 +117,19 @@ const getBackendConfig = (): UserConfig => ({
       treeshake: {
         moduleSideEffects: false,
         propertyReadSideEffects: false
-      }
+      },
+      
     },
 
   },
   optimizeDeps: {
-    disabled: true // Disable dependency pre-bundling for backend
+    noDiscovery: true,
+    include: [] 
+  },
+  css: {
+    
+    modules: false,
+    preprocessorOptions: {}
   },
   resolve: {
     
@@ -140,7 +152,9 @@ const getBackendConfig = (): UserConfig => ({
           source.match(/\/frontend\//) ||
           source.endsWith('.tsx') ||
           source.includes('/components/') ||
-          source.includes('/pages/')
+          source.includes('/pages/') ||
+          source.endsWith('.css') ||
+          source.includes('postcss.config.js')
         ) {
           return { id: source, external: true };
         }
@@ -154,7 +168,7 @@ export default defineConfig(({ command, mode }): UserConfig => {
 
 
   const target = mode;
-  
+  console.log('got here', mode, command)
   if (target === 'frontend') {
     return getFrontendConfig();
   } else if (target === 'backend') {
@@ -163,5 +177,4 @@ export default defineConfig(({ command, mode }): UserConfig => {
     throw new Error(`Invalid build target: ${target}`);
   }
   
-  throw new Error(`Invalid build target: ${target}`);
 });
