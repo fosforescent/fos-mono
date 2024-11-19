@@ -78,9 +78,12 @@ const allowedOrigins = [
 const corsOptions = {
   origin: (origin: string | undefined, callback: any) => {
     if (allowedOrigins.find((item) => {
+      if (typeof item === 'string') {
         const exactMatch = origin?.indexOf(item || '!@#$%^') !== -1
+        if (exactMatch) return true
+      }
         const regexMatch = origin?.match(item)
-        return exactMatch || regexMatch
+        return regexMatch
       }) 
       || !origin
       || allowedOrigins.find((item) => origin.match(item))
