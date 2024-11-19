@@ -1,16 +1,9 @@
 /** @type {import('tailwindcss').Config} */
-export default {
+module.exports =  {
   darkMode: "class",
   content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
-    './web-client/**/*.{ts,tsx}',
-    './react-client/**/*.{ts,tsx}',
-    './react-trellis/**/*.{ts,tsx}',
-    './viridian-react/**/*.{ts,tsx}',
-    './fos-combined/**/*.{ts,tsx}',
+
+    './**/*.{ts,tsx}',
 	],
   theme: {
   	container: {

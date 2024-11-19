@@ -4,7 +4,7 @@
   "scope": "@fosforescent",
   "main": "./dist/fosforescent-react.umd.js",
   "module": "./dist/fosforescent-react.mjs",
-"exports": {
+  "exports": {
     ".": {
       "browser": "./dist/frontend/index.js",
       "node": "./dist/backend/index.js",
@@ -192,12 +192,12 @@
     "node": "^22.10.0",
     "nodemon": "^3.1.7",
     "playwright": "^1.48.1",
-    "postcss": "^8.4.47",
+    "postcss": "^8.4.49",
     "prettier": "3.3.3",
     "react-dnd-test-backend": "^16.0.1",
     "storybook": "^8.3.6",
     "storybook-builder-vite": "^0.1.23",
-    "tailwindcss": "^3.4.14",
+    "tailwindcss": "^3.4.15",
     "ts-jest": "^29.2.5",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",

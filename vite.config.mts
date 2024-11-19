@@ -76,13 +76,11 @@ const getFrontendConfig = (): UserConfig => ({
     }
   ],
   css: {
+    postcss: './frontend/postcss.config.js',
     preprocessorOptions: {
       css: { javascriptEnabled: true }
     },
-    postcss: {
-      plugins: [tailwindcss(), autoprefixer()],
-      
-    }
+
   }
 });
 
