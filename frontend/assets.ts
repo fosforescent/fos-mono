@@ -1,19 +1,19 @@
 export const images = {
-  ethCode : new URL('../public/eth.png', import.meta.url).href,
-  btcCode : new URL('../public/btc.png', import.meta.url).href,
-  addRowGif : new URL('../pulic/tutorial/AddRow.gif', import.meta.url).href,
-  collapsingGif : new URL('../public/tutorial/Collapsing.gif', import.meta.url).href,
-  generateGif : new URL('../public/tutorial/Generate.gif', import.meta.url).href,
-  zoomGif : new URL('../public/tutorial/Zoom.gif', import.meta.url).href,
-  movingGif : new URL('../public/tutorial/Moving.gif', import.meta.url).href,
-  optionsGif : new URL('../public/tutorial/Options.gif', import.meta.url).href,
-  undoRedoGif : new URL('../public/tutorial/UndoRedo.gif', import.meta.url).href,
-  messageGif: new URL('../public/tutorial/Message.gif', import.meta.url).href,
+  // ethCode : new URL('../assets/eth.png', import.meta.url).href,
+  // btcCode : new URL('../assets/btc.png', import.meta.url).href,
+  addRowGif : new URL('../assets/tutorial/AddRow.gif', import.meta.url).href,
+  collapsingGif : new URL('../assets/tutorial/Collapsing.gif', import.meta.url).href,
+  generateGif : new URL('../assets/tutorial/Generate.gif', import.meta.url).href,
+  zoomGif : new URL('../assets/tutorial/Zoom.gif', import.meta.url).href,
+  movingGif : new URL('../assets/tutorial/Moving.gif', import.meta.url).href,
+  optionsGif : new URL('../assets/tutorial/Options.gif', import.meta.url).href,
+  undoRedoGif : new URL('../assets/tutorial/UndoRedo.gif', import.meta.url).href,
+  messageGif: new URL('../assets/tutorial/Message.gif', import.meta.url).href,
 }
 
 export const documents = {
-  agreement: new URL('../public/SubscriberAgreement4.23.2024.pdf', import.meta.url).href,
-  privacy: new URL('../public/PrivacyPolicy4.16.2024.pdf', import.meta.url).href,
+  agreement: new URL('../assets/SubscriberAgreement4.23.2024.pdf', import.meta.url).href,
+  privacy: new URL('../assets/PrivacyPolicy4.16.2024.pdf', import.meta.url).href,
 }
 
 
