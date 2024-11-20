@@ -2,7 +2,7 @@
 
 
 import cost from './cost'
-import workflow from './workflow'
+import todo from './todo'
 import description from './description'
 import duration from '../fields/duration'
 
@@ -33,7 +33,7 @@ const fosNodeModules = {
 
 const fosResourceModules = {
   budget,
-  workflow,
+  todo,
   importExport,
   sharing
 }

@@ -12,10 +12,19 @@ import { diff } from "@n1ru4l/json-patch-plus"
 
 
 
-export const getNodeOperations = (options: FosReactOptions, appData: AppState, setAppData: (state: AppState) => void, nodeRoute: FosRoute, ) => {
+export const getNodeOperations = (options: FosReactOptions, appState: AppState, setAppState: (state: AppState) => void, nodeRoute: FosRoute, ) => {
 
 
     const { nodeType } = getNodeInfo(nodeRoute, appData)
+
+    const appData = appState.data
+
+    const setAppData = (newState: AppState["data"]) => {
+        setAppState({
+            ...appState,
+            data:newState
+        })
+    }
 
     const zoom =  async () => {
         // const {

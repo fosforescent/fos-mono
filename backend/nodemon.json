@@ -1,6 +1,6 @@
 {
     "ignore": ["**/*.test.ts", "**/*.spec.ts", "node_modules"],
-    "watch": ["./syc-backend"],
-    "exec": "npx tsx -r dotenv/config ./syc-backend/index.ts",
+    "watch": ["./backend"],
+    "exec": "npx tsx -r dotenv/config ./backend/index.ts",
     "ext": "ts"
   }

@@ -44,7 +44,7 @@
     "lib/dnd/multi-backend.js",
     "./../../syc/react-trellis/dist/types/index.d.ts", 
     "./../../syc/react-trellis/dist/types/**/*",
-    "../vite.config.ts", "vite.config.mts", "frontend/tailwind.config.js", "frontend/postcss.config.js"  ],
+    "../vite.config.ts", "vite.config.mts", "frontend/tailwind.config.ts", "frontend/postcss.config.js"  ],
   "exclude": [
     "node_modules",
     "src/components/fos-old/**/*",

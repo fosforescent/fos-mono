@@ -1,22 +1,19 @@
-import { th } from "date-fns/locale";
+
 import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodeNewContent, FosNodesData, FosPathElem, FosRoute } from "../types"
-import { getAncestorLeastUpSibling, getDownSibling, getNodeInfo, getUpNode, getUpSibling } from "./utils"
+import { getAncestorLeastUpSibling, getDownSibling, getNodeInfo, getNodeInfoShared, getUpNode, getUpSibling } from "./utils"
 
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "http";
 
-export const updateFosData = (currentAppData: AppState, newFosData: FosContextData): AppState => {
+export const updateFosData = (currentAppData: AppState['data'], newFosData: FosContextData): AppState["data"] => {
     return {
         ...currentAppData,
-        data: {
-            ...currentAppData.data,
-            fosData: newFosData
-        }
+        fosData: newFosData
     }
 }
 
-export  const updateNodeContent = (currentAppData: AppState, newNodeContent: FosNodeContent, route: FosRoute): AppState => {
-    const { nodeId, nodeData, nodeContent } = getNodeInfo(route, currentAppData)
+export  const updateNodeContent = (currentAppData: AppState['data'], newNodeContent: FosNodeContent, route: FosRoute): AppState["data"] => {
+    const { nodeId, nodeData, nodeContent } = getNodeInfoShared(route, currentAppData)
 
     newNodeContent.content.forEach(([childType, childId]) => {
         if (childId === nodeId){
@@ -26,7 +23,7 @@ export  const updateNodeContent = (currentAppData: AppState, newNodeContent: Fos
 
 
     const newNodesData: FosNodesData = {
-        ...currentAppData.data.fosData.nodes,
+        ...currentAppData.fosData.nodes,
         [nodeId]: {
             ...newNodeContent,
             data: {
@@ -38,38 +35,32 @@ export  const updateNodeContent = (currentAppData: AppState, newNodeContent: Fos
         }
     }
 
-    const newAppState: AppState = {
+    const newAppState: AppState["data"] = {
         ...currentAppData,
-        data: {
-            ...currentAppData.data,
-            fosData: {
-                ...currentAppData.data.fosData,
-                nodes: newNodesData
-            },
-        }
+        fosData: {
+            ...currentAppData.fosData,
+            nodes: newNodesData
+        },
     }
     return newAppState
 }
 
-export  const updateFocus = (currentAppData: AppState, focusChar: number, route: FosRoute): AppState => {
+export  const updateFocus = (currentAppData: AppState['data'], focusChar: number, route: FosRoute): AppState["data"] => {
      const newTrellisData = {
-         ...currentAppData.data.trellisData,
+         ...currentAppData.trellisData,
          focusChar,
          focusRoute: route
      }
      return {
-         ...currentAppData,
-         data: {
-             ...currentAppData.data,
-             trellisData: newTrellisData
-         }
+        ...currentAppData,
+        trellisData: newTrellisData
      }
 
 }
 
-export const updateNodeData = (currentAppData: AppState, newNodeData: Partial<FosDataContent>, route: FosRoute): AppState => {
+export const updateNodeData = (currentAppData: AppState['data'], newNodeData: Partial<FosDataContent>, route: FosRoute): AppState["data"] => {
 
-    const { nodeId, nodeData, nodeContent } = getNodeInfo(route, currentAppData)
+    const { nodeId, nodeData, nodeContent } = getNodeInfoShared(route, currentAppData)
     const updatedNodeData: FosDataContent = {
         ...nodeData,
         ...newNodeData,
@@ -86,15 +77,15 @@ export const updateNodeData = (currentAppData: AppState, newNodeData: Partial<Fo
     return updateNodeContent(currentAppData, newNodeContent, route)
 }
 
-export const updateZoom = (currentAppData: AppState, route: FosRoute): AppState => {
+export const updateZoom = (currentAppData: AppState['data'], route: FosRoute): AppState["data"] => {
     return updateFosData(currentAppData, {
-        ...currentAppData.data.fosData,
+        ...currentAppData.fosData,
         route: route
     })
 }
 
-export const addChild = (currentAppData: AppState, route: FosRoute, newType: FosNodeId, newNodeContent: FosNodeNewContent, index: number = -1): { childRoute: FosRoute, newState: AppState }  => {
-    const { nodeId, nodeData, nodeContent } = getNodeInfo(route, currentAppData)
+export const addChild = (currentAppData: AppState['data'], route: FosRoute, newType: FosNodeId, newNodeContent: FosNodeNewContent, index: number = -1): { childRoute: FosRoute, newState: AppState["data"] }  => {
+    const { nodeId, nodeData, nodeContent } = getNodeInfoShared(route, currentAppData)
     const { newId, newState: newState1 }  = insertNewNode(currentAppData, newNodeContent)
     const newPathElem: FosPathElem = [newType, newId]
     if (index < -1 || index > nodeContent.content.length){
@@ -117,8 +108,8 @@ export const addChild = (currentAppData: AppState, route: FosRoute, newType: Fos
     return { childRoute, newState }
 }
 
-export const attachChild = (currentAppData: AppState, route: FosRoute, newRowType: FosNodeId, newRowId: FosNodeId, index: number): { childRoute: FosRoute, newState: AppState } => {
-    const { nodeId, nodeData, nodeContent } = getNodeInfo(route, currentAppData)
+export const attachChild = (currentAppData: AppState['data'], route: FosRoute, newRowType: FosNodeId, newRowId: FosNodeId, index: number): { childRoute: FosRoute, newState: AppState["data"] } => {
+    const { nodeId, nodeData, nodeContent } = getNodeInfoShared(route, currentAppData)
     const newPathElem: FosPathElem = [newRowType, newRowId]
     const newContent = {
         ...nodeContent,
@@ -129,9 +120,9 @@ export const attachChild = (currentAppData: AppState, route: FosRoute, newRowTyp
     return { childRoute, newState }
 }
 
-export const attachSibling = (currentAppData: AppState, route: FosRoute, newRowType: FosNodeId, newRowId: FosNodeId, position: number | string ): { childRoute: FosRoute, newState: AppState }  => {
+export const attachSibling = (currentAppData: AppState['data'], route: FosRoute, newRowType: FosNodeId, newRowId: FosNodeId, position: number | string ): { childRoute: FosRoute, newState: AppState["data"] }  => {
     // add option node to parent, put current node under it, and add new option
-    const { getParentInfo, nodeData } = getNodeInfo(route, currentAppData)
+    const { getParentInfo, nodeData } = getNodeInfoShared(route, currentAppData)
     const { nodeData: parentData, nodeContent: parentContent, nodeChildren: parentChildren, indexInParent, nodeRoute: parentRoute } = getParentInfo()
     let index = 0
     if (typeof position === 'number'){
@@ -150,9 +141,9 @@ export const attachSibling = (currentAppData: AppState, route: FosRoute, newRowT
     return returnVal
 }
 
-export const addSibling = (currentAppData: AppState, route: FosRoute, newRowType: FosNodeId, newNodeContent: FosNodeNewContent, position: number | string ): { childRoute: FosRoute, newState: AppState }  => {
+export const addSibling = (currentAppData: AppState['data'], route: FosRoute, newRowType: FosNodeId, newNodeContent: FosNodeNewContent, position: number | string ): { childRoute: FosRoute, newState: AppState["data"] }  => {
     // add option node to parent, put current node under it, and add new option
-    const { getParentInfo, nodeData } = getNodeInfo(route, currentAppData)
+    const { getParentInfo, nodeData } = getNodeInfoShared(route, currentAppData)
     const { nodeData: parentData, nodeContent: parentContent, nodeChildren: parentChildren, indexInParent, nodeRoute: parentRoute } = getParentInfo()
     let index = 0
     if (typeof position === 'number'){
@@ -172,8 +163,8 @@ export const addSibling = (currentAppData: AppState, route: FosRoute, newRowType
 }
 
 
-export const removeNode = (currentAppData: AppState, route: FosRoute, indexHint?: number): AppState => {
-    const { nodeType, nodeId, hasParent, getParentInfo } = getNodeInfo(route, currentAppData)
+export const removeNode = (currentAppData: AppState['data'], route: FosRoute, indexHint?: number): AppState["data"] => {
+    const { nodeType, nodeId, hasParent, getParentInfo } = getNodeInfoShared(route, currentAppData)
     if (!hasParent) {
         throw new Error('Cannot remove root node')
     }
@@ -191,18 +182,18 @@ export const removeNode = (currentAppData: AppState, route: FosRoute, indexHint?
 
 
 
-export const generateId = (currentAppData: AppState, newNodeContent: FosNodeNewContent ): FosNodeId => {
+export const generateId = (currentAppData: AppState['data'], newNodeContent: FosNodeNewContent ): FosNodeId => {
     let newIdResult: FosNodeId = uuidv4();
-    while (currentAppData.data.fosData.nodes[newIdResult]){
+    while (currentAppData.fosData.nodes[newIdResult]){
         newIdResult = generateId(currentAppData, newNodeContent)
     }
     return newIdResult;
 }
 
-export const insertNewNode = (currentAppData: AppState, newNodeContent: FosNodeNewContent): {newId: FosNodeId, newState: AppState} => {
+export const insertNewNode = (currentAppData: AppState['data'], newNodeContent: FosNodeNewContent): {newId: FosNodeId, newState: AppState["data"]} => {
     const newId = generateId(currentAppData, newNodeContent)
     const newNodesData: FosNodesData = {
-        ...currentAppData.data.fosData.nodes,
+        ...currentAppData.fosData.nodes,
         [newId]: {
             ...newNodeContent,
             data: {
@@ -218,22 +209,19 @@ export const insertNewNode = (currentAppData: AppState, newNodeContent: FosNodeN
         newId, 
         newState: {
             ...currentAppData,
-            data: {
-                ...currentAppData.data,
-                fosData: {
-                    ...currentAppData.data.fosData,
-                    nodes: newNodesData
-                }
+            fosData: {
+                ...currentAppData.fosData,
+                nodes: newNodesData
             }
         }
     }
 }
 
 
-export const cloneNode = (currentAppData: AppState, route: FosRoute): { newId: FosNodeId, newState: AppState } => {
-    const { nodeId, nodeData, nodeContent } = getNodeInfo(route, currentAppData)
+export const cloneNode = (currentAppData: AppState['data'], route: FosRoute): { newId: FosNodeId, newState: AppState["data"] } => {
+    const { nodeId, nodeData, nodeContent } = getNodeInfoShared(route, currentAppData)
 
-    type CloneReturnVal = { newRows: [FosNodeId, FosNodeId][], newContext: AppState }
+    type CloneReturnVal = { newRows: [FosNodeId, FosNodeId][], newContext: AppState["data"] }
     const { newRows, newContext }: CloneReturnVal  = nodeContent.content.reduce((acc: CloneReturnVal, childPathElem: FosPathElem) => {
         const {
             newId: newChildId,
@@ -266,8 +254,8 @@ export const cloneNode = (currentAppData: AppState, route: FosRoute): { newId: F
     }
 }
 
-export const changeInstruction = (currentAppData: AppState, route: FosRoute, newInstruction: FosNodeId): {newRoute: FosRoute, newState: AppState} => {
-    const { getParentInfo, nodeData, nodeId } = getNodeInfo(route, currentAppData)
+export const changeInstruction = (currentAppData: AppState['data'], route: FosRoute, newInstruction: FosNodeId): {newRoute: FosRoute, newState: AppState["data"]} => {
+    const { getParentInfo, nodeData, nodeId } = getNodeInfoShared(route, currentAppData)
     const { nodeData: parentData, nodeContent: parentContent, nodeChildren: parentChildren, indexInParent, nodeRoute: parentRoute } = getParentInfo()
     const newElem: FosPathElem = [newInstruction, nodeId]
     const newParentContent = {
@@ -282,8 +270,8 @@ export const changeInstruction = (currentAppData: AppState, route: FosRoute, new
 }
 
 
-export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
-    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(nodeRoute, appData)
+export const snipNode = (nodeRoute: FosRoute, appData: AppState["data"]): AppState["data"] => {
+    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(nodeRoute, appData)
   
     const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
   
@@ -306,13 +294,13 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
 
   
  
-  export const moveNodeAboveRoute = (appData: AppState, subjectRoute: FosRoute, targetRoute: FosRoute): { newRoute: FosRoute, newState: AppState } => {
-    const { nodeId: subjectId, nodeType: subjectType } = getNodeInfo(subjectRoute, appData)
+  export const moveNodeAboveRoute = (appData: AppState["data"], subjectRoute: FosRoute, targetRoute: FosRoute): { newRoute: FosRoute, newState: AppState["data"] } => {
+    const { nodeId: subjectId, nodeType: subjectType } = getNodeInfoShared(subjectRoute, appData)
 
     const stateWithOriginalRemoved = removeNode(appData, subjectRoute) 
 
     
-    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(targetRoute, stateWithOriginalRemoved)
+    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(targetRoute, stateWithOriginalRemoved)
     const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
 
     const newParentRows: FosPathElem[] = parentContent.content.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
@@ -334,14 +322,14 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
   
   }
   
-  export const moveNodeBelowRoute = (appData: AppState, subjectRoute: FosRoute, targetRoute: FosRoute): { newRoute: FosRoute, newState: AppState } => {
+  export const moveNodeBelowRoute = (appData: AppState["data"], subjectRoute: FosRoute, targetRoute: FosRoute): { newRoute: FosRoute, newState: AppState["data"] } => {
 
-    const { nodeId: subjectId, nodeType: subjectType } = getNodeInfo(subjectRoute, appData)
+    const { nodeId: subjectId, nodeType: subjectType } = getNodeInfoShared(subjectRoute, appData)
   
     const stateWithOriginalRemoved = removeNode(appData, subjectRoute)
 
 
-    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(targetRoute, stateWithOriginalRemoved)
+    const  { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(targetRoute, stateWithOriginalRemoved)
     const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute } = getParentInfo()
 
 
@@ -363,9 +351,9 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
   
   }
   
-  export const moveNodeIntoRoute = (appData: AppState, subjectRoute: FosRoute, targetRoute: FosRoute, index: number = 0): { newRoute: FosRoute, newState: AppState } => {
-    const { nodeData, nodeContent, nodeChildren } = getNodeInfo(targetRoute, appData)
-    const { nodeId: subjectId, nodeType: subjectType } = getNodeInfo(subjectRoute, appData)
+  export const moveNodeIntoRoute = (appData: AppState["data"], subjectRoute: FosRoute, targetRoute: FosRoute, index: number = 0): { newRoute: FosRoute, newState: AppState["data"] } => {
+    const { nodeData, nodeContent, nodeChildren } = getNodeInfoShared(targetRoute, appData)
+    const { nodeId: subjectId, nodeType: subjectType } = getNodeInfoShared(subjectRoute, appData)
   
     const newElem: FosPathElem = [subjectType, subjectId]
     const newParentRows: FosPathElem[] = index < 0 
@@ -392,8 +380,8 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
     return { newState: stateWithOriginalRemoved, newRoute: [...targetRoute, [subjectType, subjectId]] }
   }
   
-  export const reorderNodeChildren = (appData: AppState, subjectRoute: FosRoute, newOrder: number[]): AppState => {
-    const { nodeData, nodeContent, nodeChildren } = getNodeInfo(subjectRoute, appData)
+  export const reorderNodeChildren = (appData: AppState["data"], subjectRoute: FosRoute, newOrder: number[]): AppState["data"] => {
+    const { nodeData, nodeContent, nodeChildren } = getNodeInfoShared(subjectRoute, appData)
 
     if (newOrder.length !== nodeContent.content.length){
       throw new Error('New order does not match number of children')
@@ -415,8 +403,8 @@ export const snipNode = (nodeRoute: FosRoute, appData: AppState): AppState => {
 
   }
 
-export const moveLeft = (appData: AppState, route: FosRoute): { newRoute: FosRoute, newState: AppState }  => {
-    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
+export const moveLeft = (appData: AppState["data"], route: FosRoute): { newRoute: FosRoute, newState: AppState["data"] }  => {
+    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(route, appData)
     const { 
         nodeData: parentData, 
         nodeContent: parentContent, 
@@ -439,7 +427,7 @@ export const moveLeft = (appData: AppState, route: FosRoute): { newRoute: FosRou
     //     nodeRoute: grandParentRoute 
     // } = getGrandParentInfo()
 
-    const addLowerSiblingsToNodeState = siblingRoutes.reduce((acc: AppState, siblingRoute: FosRoute, i: number) => {
+    const addLowerSiblingsToNodeState = siblingRoutes.reduce((acc: AppState["data"], siblingRoute: FosRoute, i: number) => {
         if (i < indexInParent + 1){
             return acc
         } else {
@@ -455,8 +443,8 @@ export const moveLeft = (appData: AppState, route: FosRoute): { newRoute: FosRou
     return result
 }
 
-export const moveRight = (appData: AppState, route: FosRoute): { newRoute: FosRoute, newState: AppState }  => {
-    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
+export const moveRight = (appData: AppState["data"], route: FosRoute): { newRoute: FosRoute, newState: AppState["data"] }  => {
+    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(route, appData)
 
     /** TODO
      *  this should use getUpSibling and be put inside that node if it's a sibling
@@ -471,7 +459,7 @@ export const moveRight = (appData: AppState, route: FosRoute): { newRoute: FosRo
 
     console.log('upSiblingRoute', upSiblingRoute)
     if (upSiblingRoute) {
-        const { nodeChildren: upSiblingChildren } = getNodeInfo(upSiblingRoute, appData)
+        const { nodeChildren: upSiblingChildren } = getNodeInfoShared(upSiblingRoute, appData)
         const {
             newState: newState1,
             newRoute: newRoute1
@@ -484,8 +472,8 @@ export const moveRight = (appData: AppState, route: FosRoute): { newRoute: FosRo
     return { newRoute: route, newState: appData }   
 }
 
-export const moveUp = (appData: AppState, route: FosRoute): { newRoute: FosRoute, newState: AppState }  => {
-    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
+export const moveUp = (appData: AppState["data"], route: FosRoute): { newRoute: FosRoute, newState: AppState["data"] }  => {
+    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(route, appData)
     const { nodeRoute: parentRoute, indexInParent } = getParentInfo()
     const upSibling = getUpSibling(route, appData)
 
@@ -505,8 +493,8 @@ export const moveUp = (appData: AppState, route: FosRoute): { newRoute: FosRoute
 
 }
 
-export const moveDown = (appData: AppState, route: FosRoute): { newRoute: FosRoute, newState: AppState }  => {
-    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfo(route, appData)
+export const moveDown = (appData: AppState["data"], route: FosRoute): { newRoute: FosRoute, newState: AppState["data"] }  => {
+    const { nodeData, nodeContent, nodeChildren, getParentInfo } = getNodeInfoShared(route, appData)
     const { nodeRoute: parentRoute, indexInParent } = getParentInfo()
     const downSibling = getDownSibling(route, appData)
     if (downSibling){
@@ -518,12 +506,14 @@ export const moveDown = (appData: AppState, route: FosRoute): { newRoute: FosRou
     }
 }
 
-export const instantiate = (startAppData: AppState, route: FosRoute): { newId: FosNodeId, newState: AppState, newType: FosNodeId } => {
-    const { nodeId, nodeType, nodeData, nodeContent, isOption, isTask, isChoice, getOptionInfo} = getNodeInfo(route, startAppData)
+export const instantiate = (startAppData: AppState["data"], route: FosRoute): { newId: FosNodeId, newState: AppState["data"], newType: FosNodeId } => {
+    const { nodeId, nodeType, nodeData, nodeContent, isOption, isTask, isChoice, getOptionInfo} = getNodeInfoShared(route, startAppData)
 
 
-    type InstReturnVal = { newRows: FosPathElem[], newContext: AppState }
+    type InstReturnVal = { newRows: FosPathElem[], newContext: AppState["data"] }
 
+
+    // todo: apply context to child of each node in place of variable?
 
 
     if (isOption){

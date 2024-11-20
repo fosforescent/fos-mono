@@ -74,6 +74,7 @@ export type FosDataContent = {
   option?: {
     selectedIndex: number;
     defaultResolutionStrategy: "choice" | "selected" | "race";
+
   }
   description?: {
     content: string;
@@ -265,7 +266,6 @@ export type LoginResult = {
  
 
 
-
 export type ContextType = { 
   data: AppState, 
   setData: (data: AppState) => void, 
@@ -291,4 +291,12 @@ export type ContextType = {
     emailConfirmationToken?: string,
     passwordResetToken?: string
   }
- };
+};
+
+export type MockEvent = {
+  type: string;
+  payload: {
+    fosData: Partial<FosContextData>;
+    trellisData: Partial<TrellisSerializedData>;
+  };
+};

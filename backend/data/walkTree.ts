@@ -124,11 +124,9 @@ export const walkNodes = async (clientData: AppState["data"], nodeRoute: FosRout
    
 
 
-  }, [])
-
-
-
 }
+
+
 
 
 export const queryDbNodeByRoute = async (prisma: PrismaClient, route: FosRoute, data: AppState["data"]): Promise<FosNode | null> => {

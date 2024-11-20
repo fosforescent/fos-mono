@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Send } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/frontend/components/ui/card';
+import { Send, SendHorizonal, SendHorizonalIcon } from 'lucide-react';
+import { Card, CardContent, CardFooter, CardHeader } from '@/frontend/components/ui/card';
 import { Input } from '@/frontend/components/ui/input';
 import { Button } from '@/frontend/components/ui/button';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
@@ -65,11 +65,24 @@ const QueueView = () => {
 
 
 
-  const [newMessage, setNewMessage] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+
+  // const { text, userProfiles,  } = getCommentInfo()
+  // Ultimately this component is used to create new todos, comments, and other 
+  // items under the given route.  
+
+  // we need to be able to change types and have convenient ways of entering appropriate
+  // info for those types.. 
+
+  // action will be that a node is not added until sent
+  // other users recieve the node in their queue under the circumstances that
+  // (1) it requires approval because it's on one of their own nodes
+  // (2) it gets sorted to the top for varoius reasons (in the queue top is bottom)
+
+  
+
 
     // const message: Message = {
     //   id: Date.now(),
@@ -78,7 +91,6 @@ const QueueView = () => {
     // };
 
 
-    setNewMessage('');
   };
 
 
@@ -103,7 +115,7 @@ const QueueView = () => {
           <ScrollArea className="flex-1 p-4">
             <div className="space-y-4">
               {comments.map((commentRoute) => (
-                <DicussionCard
+                <QueueCard
                   data={data}
                   setData={setData}
                   options={options}
@@ -152,10 +164,7 @@ const QueueCard = ({
 
 
 
-  const { getCommentInfo } = getNodeInfo(route, data)
-
-  const { text, userProfiles,  } = getCommentInfo()
-
+  // const { getCommentInfo } = getNodeInfo(route, data)
 
   return (
   <Card 
@@ -166,6 +175,11 @@ const QueueCard = ({
       <div className="text-gray-800">{text || "This Todo is empty"}</div>
       {/* <div className="text-xs text-gray-500 mt-2">{message.timestamp}</div> */}
     </CardContent>
+    <CardFooter className="flex items-center justify-between p-4">
+      <Button variant="default" size="sm">
+        <SendHorizonal />   
+      </Button>
+    </CardFooter>
   </Card>
   )
 }

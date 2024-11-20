@@ -2,8 +2,6 @@
   "name": "@fosforescent/fos-mono",
   "version": "0.1.7",
   "scope": "@fosforescent",
-  "main": "./dist/fosforescent-react.umd.js",
-  "module": "./dist/fosforescent-react.mjs",
   "exports": {
     ".": {
       "browser": "./dist/frontend/index.js",
@@ -33,7 +31,7 @@
     "build:backend": "npx vite build --mode backend",
     "build:frontend": "npx vite build --mode frontend",
     "dev:frontend": "vite --mode frontend",
-    "dev:backend": "npx nodemon --config syc-backend/nodemon.json",
+    "dev:backend": "npx nodemon --config backend/nodemon.json",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:combined\"",
     "test": "npx jest",
     "test:ci": "npx jest --ci",

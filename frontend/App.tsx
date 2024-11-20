@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react'
 
 
@@ -35,6 +34,7 @@ import { diff } from '@n1ru4l/json-patch-plus'
 
 import { useLocation } from 'react-router-dom'
 import { set } from 'date-fns'
+import { mockEvents, applyMockEvent } from './hooks/mock-events';
 
 
 
@@ -141,6 +141,9 @@ export default function App({
   const location = useLocation();
   const navigate = useNavigate()
 
+  
+
+  
 
   
   React.useEffect(() => {
@@ -289,13 +292,13 @@ export default function App({
         if (location.pathname === '/'){
           (async () => {
             const rootInstruction = await getRootInstruction()
-            if (['todo', 'workflow'].includes(rootInstruction)){
+            if (['todo'].includes(rootInstruction)){
               navigate(`/${rootInstruction}`)
             } 
           })()
         } else {
           const locationInstruction = location.pathname.split('/')[0] || 'blank'
-          if (['todo', 'workflow'].includes(locationInstruction)){
+          if (['todo'].includes(locationInstruction)){
             setRootInstruction(locationInstruction )
           }
         }
@@ -381,6 +384,13 @@ export default function App({
   }
 
 
+
+  useEffect(() => {
+    // Apply mock events for testing
+    mockEvents.forEach(event => {
+      setAppState(prevState => applyMockEvent(prevState, event));
+    });
+  }, []);
 
  
   return (<><div className="App h-full bg-background" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden' }}>
@@ -479,8 +489,8 @@ export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> =>
     ...( options && options?.canUndo ? { undo: options.undo } : {}),
     ...( options ? { toast: options.toast } : {}),
     ...( options ? { theme: options.theme } : {}),
-    ...( options ? { activeModule: options.activeModule || fosModules.workflow } : { activeModule: fosModules.workflow }),
-    ...( options ? { activeModuleRows: options.activeModuleRows || fosModules.workflow } : { activeModuleRows: fosModules.workflow }),
+    ...( options ? { activeModule: options.activeModule || fosModules.todo } : { activeModule: fosModules.todo }),
+    ...( options ? { activeModuleRows: options.activeModuleRows || fosModules.todo } : { activeModuleRows: fosModules.todo }),
     ...( options ? { setActiveModule: options.setActiveModule } : {}),
     ...( options ? { setActiveModuleRows: options.setActiveModuleRows } : {}),
     ...( { modules: [...(options.modules || []), ...Object.values({

@@ -52,7 +52,7 @@ const router = createBrowserRouter([
 
       },
       {
-        path: "workflow",
+        path: "tree",
         element: <WorkflowMain />
       },
       {
@@ -61,14 +61,14 @@ const router = createBrowserRouter([
           {
             index: true,
             element: <TodoQueue />,
-    
+ 
           },
           {
             path: "tree",
             element: <TodoTree />
           },
         ]
-      },
+       },
       {
         path: "market",
         children: [
@@ -80,7 +80,7 @@ const router = createBrowserRouter([
         ]
       },
       {
-        path: "discussion",
+        path: "queue",
         children: [
           {
             index: true,
@@ -120,7 +120,6 @@ const router = createBrowserRouter([
     v7_skipActionErrorRevalidation: true,
   },
 })
-
 
 
 
