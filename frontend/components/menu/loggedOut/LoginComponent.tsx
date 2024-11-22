@@ -38,7 +38,7 @@ import {
 import _ from 'lodash'
 import { Form } from "@/frontend/components/ui/form"
 import { getActions } from "@/frontend/lib/actions"
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { useNavigate } from "react-router-dom"
 
 

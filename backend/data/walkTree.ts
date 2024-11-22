@@ -5,16 +5,16 @@ import {
   FosNodeContent,
   FosNodesData,
   FosPathElem,
-  FosRoute,
+  FosPath,
   TrellisSerializedData
-} from "@/frontend/types";
+} from "@/shared/types";
 
 
 import { Pinecone } from '@pinecone-database/pinecone';
 
 
 import { User, FosNode, FosGroup, PrismaClient } from "@prisma/client";
-import { getNodeInfo, getNodeInfoShared } from "@/frontend/lib/utils";
+import { getNodeInfo, getNodeInfo } from "@/frontend/lib/utils";
 
 import { Request, Response, NextFunction } from 'express'
 import _, { get, merge } from 'lodash'
@@ -28,7 +28,7 @@ import { validate } from "uuid";
 
 
 
-export const walkNodes = async (clientData: AppState["data"], nodeRoute: FosRoute): {
+export const walkNodes = async (clientData: AppState["data"], nodeRoute: FosPath): {
   contextToReturn: AppState["data"],
   contextToStore: AppState["data"],
 } => {
@@ -86,7 +86,7 @@ export const walkNodes = async (clientData: AppState["data"], nodeRoute: FosRout
    */
 
 
-  const { nodeChildren } = getNodeInfoShared(nodeRoute, clientData)
+  const { nodeChildren } = getNodeInfo(nodeRoute, clientData)
 
   const rootRoute = await queryDbNodeByRoute(prisma, nodeRoute, clientData)
 
@@ -112,7 +112,7 @@ export const walkNodes = async (clientData: AppState["data"], nodeRoute: FosRout
       console.log('diff', diff)
     }
 
-    const childNodeChildren = getNodeInfoShared(childRoute, clientData).nodeChildren
+    const childNodeChildren = getNodeInfo(childRoute, clientData).nodeChildren
 
     if (childNodeChildren.length) {
       await walkNodes(clientData, childRoute)
@@ -129,8 +129,8 @@ export const walkNodes = async (clientData: AppState["data"], nodeRoute: FosRout
 
 
 
-export const queryDbNodeByRoute = async (prisma: PrismaClient, route: FosRoute, data: AppState["data"]): Promise<FosNode | null> => {
-  const { nodeType, nodeId } = getNodeInfoShared(route, data)
+export const queryDbNodeByRoute = async (prisma: PrismaClient, route: FosPath, data: AppState["data"]): Promise<FosNode | null> => {
+  const { nodeType, nodeId } = getNodeInfo(route, data)
   const node = await prisma.fosNode.findUnique({
     where: { id: nodeId }
   })

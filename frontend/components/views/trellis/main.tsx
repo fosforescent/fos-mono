@@ -36,7 +36,7 @@ import {
 
 import { DroppableContainersMap } from '@dnd-kit/core/dist/store/constructors';
 
-import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosRoute } from '../../../types'
+import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosPath } from '../../../../shared/types'
 import { getActions } from '../../../lib/actions'
 
 import { DefaultRootComponent } from './root'
@@ -60,7 +60,7 @@ export function MainView (){
   } : {
     options: FosReactGlobal
     data: AppState
-    nodeRoute: FosRoute
+    nodeRoute: FosPath
     setData: (state: AppState) => void
   } = useProps()
 

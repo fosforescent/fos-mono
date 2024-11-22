@@ -15,7 +15,7 @@ import { Label } from "@/frontend/components/ui/label"
 
 import { Switch } from "@/frontend/components/ui/switch"
 import { useEffect, useState } from "react"
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { getActions } from "@/frontend/lib/actions"
 
 

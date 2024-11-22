@@ -24,13 +24,13 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import _, { update } from 'lodash'
-import { FosReactOptions, FosRoute, TrellisSerializedData } from '../../../types'
+import { FosReactOptions, FosPath, TrellisSerializedData } from '../../../../shared/types'
 
-import { AppState } from '@/frontend/types'
+import { AppState } from '@/shared/types'
 import { getNodeOperations } from '@/frontend/lib/nodeOperations'
 import { getDragItem, getNodeInfo } from '@/frontend/lib/utils'
 import { FosRowsComponent } from './rows'
-import { RowBody } from './rowBody'
+import { RowBody } from '../../node/NodeRow'
 import { getDragAndDropHandlers } from '../../drag-drop'
 
 
@@ -45,10 +45,17 @@ export const DefaultRowComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 
+
+  const setFosAndTrellisData = (state: AppState["data"]) => {
+    setData({
+      ...data,
+       data: state
+    })
+  }
 
 
   const { locked, getOptionInfo,
@@ -56,7 +63,7 @@ export const DefaultRowComponent = ({
     nodeDescription, isRoot, childRoutes, isBase,
     nodeType, nodeId, disabled, depth, isCollapsed, 
     isTooDeep
-  } = getNodeInfo(nodeRoute, data)
+  } = getNodeInfo(nodeRoute, data.data)
   
   const { 
     suggestOption, 
@@ -70,7 +77,7 @@ export const DefaultRowComponent = ({
     keyPressEvents,
     addOption,
     suggestSteps,
-  } = getNodeOperations(options, data, setData, nodeRoute)
+  } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
   
   const { 
     getNodeDragInfo 

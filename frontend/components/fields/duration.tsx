@@ -2,9 +2,9 @@
 import { BrainCircuit, ChevronLeft, ChevronRight, Timer } from 'lucide-react';
 import React, { useEffect, useRef, useState, DetailedHTMLProps, HTMLAttributes } from 'react'
 
-import { SelectionPath, FosDataContent, FosReactOptions } from "../../types"
+import { SelectionPath, FosDataContent, FosReactOptions } from "../../../shared/types"
 import { Button } from '@/frontend/components/ui/button';
-import { AppState, FosRoute } from '@/frontend/types';
+import { AppState, FosPath } from '@/shared/types';
 
 
 
@@ -392,7 +392,7 @@ type DurationInfo = {
   marginal: number
 }
 
-export const getDurationInfo = (nodeRoute: FosRoute, appState: AppState): DurationInfo => {
+export const getDurationInfo = (nodeRoute: FosPath, appState: AppState["data"]): DurationInfo => {
 
 
     

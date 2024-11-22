@@ -4,7 +4,7 @@ import { BrainCircuit, Download, FileText } from "lucide-react"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { Button } from "@/frontend/components/ui/button"
 import { suggestRecursive } from "../../lib/suggestRecursive"
-import { AppState, FosReactOptions, FosRoute } from "@/frontend/types"
+import { AppState, FosReactOptions, FosPath } from "@/shared/types"
 
 
 
@@ -22,7 +22,7 @@ const ResourceComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 
@@ -32,7 +32,7 @@ const ResourceComponent = ({
  
   
    const handleDocumentEdit = (value: string) => {
-    setDocumentInfo(node.fosNode(), { content: value })
+    setDocumentInfo(node.fosNode(), { children: value })
   }
 
   const handleDownloadDocument = async () => {
@@ -71,7 +71,7 @@ const ResourceComponent = ({
 
     const resultParsed = result as { document: string }
     
-    return { content: resultParsed.document } 
+    return { children: resultParsed.document } 
   } 
 
   
@@ -144,17 +144,17 @@ const DocumentRowComponent = ({ node }: { node: FosWrapper }) => {
 
 }
 type DocumentInfo = {
-  content: string
+  children: string
   aggregated: string
 }
 
 type DocumentData = {
-  content: string
+  children: string
 }
 
 
 const getDocumentInfo = (node: IFosNode): {
-  content: string,
+  children: string,
   aggregated?: string
 } => {
   const nodeData = node.getData()
@@ -164,7 +164,7 @@ const getDocumentInfo = (node: IFosNode): {
 
   if (!children.length){
     return {
-      content: nodeData.document?.content || '',
+      children: nodeData.document?.content || '',
       aggregated: nodeData.document?.content || ''
     }
   } else {
@@ -175,7 +175,7 @@ const getDocumentInfo = (node: IFosNode): {
     }, nodeData.document?.content || '')
   
     return {
-      content: nodeData.document?.content || '',
+      children: nodeData.document?.content || '',
       aggregated
     }
   }

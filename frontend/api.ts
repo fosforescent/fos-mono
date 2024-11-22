@@ -1,6 +1,6 @@
 import React from "react"
 import { EventSourcePolyfill, Event } from 'event-source-polyfill'
-import { AppState, FosContextData, FosReactOptions, FosRoute, InfoState, LoginResult, SubscriptionInfo } from "./types"
+import { AppState, FosContextData, FosReactOptions, FosPath, InfoState, LoginResult, SubscriptionInfo } from "../shared/types"
 // import { AppData, Profile } from "./components/app-state/index"
 
 
@@ -426,11 +426,11 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
           messages: [
             {
               role: "system",
-              content: systemPrompt
+              children: systemPrompt
             },
             {
               role: "user",
-              content: userPrompt
+              children: userPrompt
             }
           ],
           max_tokens: 300,
@@ -785,7 +785,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
 
 
   
-    const postSemanticSearch = async (queryString: string, options: { routesToIgnore: FosRoute, routesToInclude: FosRoute }): Promise<FosContextData> => {
+    const postSemanticSearch = async (queryString: string, options: { routesToIgnore: FosPath, routesToInclude: FosPath }): Promise<FosContextData> => {
 
       const url = `${sycApiUrl}/user/profile-for-group`
       const result = await fetch(url, {
@@ -813,7 +813,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
   
 
 
-    const getNodeByRoute = async (route: FosRoute): Promise<FosContextData> => {
+    const getNodeByRoute = async (route: FosPath): Promise<FosContextData> => {
         
         const url = `${sycApiUrl}/data/node-by-route`
         const result = await fetch(url, {

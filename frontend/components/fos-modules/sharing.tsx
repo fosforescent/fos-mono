@@ -4,11 +4,11 @@ import { Globe, Users2, Lock } from "lucide-react"
 
 import { CheckSquare, Wand } from "lucide-react"
 
-import { FosReactOptions } from "../../types"
+import { FosReactOptions } from "../../../shared/types"
 
 import { ComboboxEditableTask }  from "../combobox/comboboxEditableTask"
 import _ from 'lodash'
-import { AppState } from "@/frontend/types"
+import { AppState } from "@/shared/types"
 import { getNodeInfo } from "@/frontend/lib/utils"
 import { getNodeOperations } from "@/frontend/lib/nodeOperations"
 

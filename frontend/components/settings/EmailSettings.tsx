@@ -39,7 +39,7 @@ import {
 
 import _ from 'lodash'
 
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { getActions } from "@/frontend/lib/actions"
 
 

@@ -37,7 +37,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/frontend/components/ui/alert"
 
 import _, { set } from 'lodash'
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { getActions } from "@/frontend/lib/actions"
 
 

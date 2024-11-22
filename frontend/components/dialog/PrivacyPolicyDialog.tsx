@@ -16,7 +16,7 @@ import { Switch } from "@/frontend/components/ui/switch"
 import { useEffect, useState } from "react"
 
 import { documents } from "../../assets" 
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 
 export function PrivacyPolicyDialog({
   open,

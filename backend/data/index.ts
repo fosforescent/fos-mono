@@ -4,8 +4,11 @@ import { checkDataFormat, getRootId, hashFosContextData, loadCtxFromDb,storeCtxT
 import { ReqWithClients } from '../clientManager'
 
 import { prisma } from '../prismaClient'
-import { FosContextData, TrellisSerializedData } from '@/frontend/types'
+import { FosContextData, FosNodeContent, TrellisSerializedData } from '@/shared/types'
 import { InputJsonValue, JsonObject } from '@prisma/client/runtime/library'
+import { FosStore } from '@/shared/dag-implementation/store'
+import { semanticSearch } from '../pinecone'
+import {  processAndUpsertDocuments, searchQuery, upsertSearchTerms } from './search'
 
 
 
@@ -93,6 +96,8 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
   
       }
 
+      const userDataStore = new FosStore(userData)
+
       const userDataWithNewRootNode = updateRootNodeId(userData.fosData, getRootId(serverData))
 
       // console.log('userData', userDataWithNewRootNode)
@@ -110,11 +115,13 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       }
 
       Object.keys(userDataWithNewRootNode.nodes).forEach((key) => {
-        console.log('key - mergeddata', key, userDataWithNewRootNode.nodes[key]?.content, userDataWithNewRootNode.nodes[key]?.data?.description)
+        console.log('key - mergeddata', key, userDataWithNewRootNode.nodes[key]?.children, userDataWithNewRootNode.nodes[key]?.data?.description)
       })
 
       const meta: Omit<FosContextData, "nodes"> = {
         route: userDataWithNewRootNode.route,
+        baseNodeContent: userDataWithNewRootNode.baseNodeContent,
+        baseNodeInstruction: userDataWithNewRootNode.baseNodeInstruction,
       }
 
       const nodes = userDataWithNewRootNode.nodes
@@ -122,9 +129,51 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       // console.log('nodes', nodes, meta)
       await storeCtxToDb(prisma, user.fosGroup, meta, nodes)
 
+
       // console.log("stored")
 
       const newServerData = await loadCtxFromDb(prisma, user.fosGroup)
+
+      const userGroupData = user.fosGroup.data as { lastVectorUploadTime: number }
+      
+      if (userGroupData.lastVectorUploadTime < Date.now() - 1000 * 60 * 60) {
+
+
+        const result = await upsertSearchTerms({
+          fosData: newServerData,
+          trellisData: userData.trellisData
+        });
+
+        if (result) {
+          await prisma.fosGroup.update({
+            where: { id: user.fosGroup.id },
+            data: { data: {
+              ...(typeof user.fosGroup.data === 'object') ? user.fosGroup.data : {}, 
+              lastVectorUploadTime: Date.now() 
+            } }
+          })
+        }
+    
+      }
+    
+
+      for (const key of Object.keys(newServerData.nodes)) {
+        const result = userDataStore.getNodeByAddress(key)
+        if (key === userDataStore.searchQueryNode.getId()){
+
+          const results = searchQuery
+
+          const resultContent: FosNodeContent = {
+            data: {
+
+            },
+            children: []
+          }
+
+
+        }
+
+      }
 
 
       const updatedUser = await prisma.user.update({
@@ -177,6 +226,10 @@ export const deleteUserData = async (req: Request, res: Response) => {
         id: user?.fosGroupId
       }
     })
+
+
+    
+  
 
     if (!user) {
       res.status(401).send('User not found')

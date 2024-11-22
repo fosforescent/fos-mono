@@ -5,7 +5,7 @@ import { attachUserToGroup, createGroup, createUser, createUserWithNodes } from 
 import { generateSeedContext } from './seedData'
 
 import { v4 as uuidv4 } from 'uuid';
-import { FosDataContent } from '@/frontend/types';
+import { FosDataContent } from '@/shared/types';
 
 
 const prisma = new PrismaClient()

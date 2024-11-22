@@ -42,7 +42,7 @@ import { PwdResetComponent } from "./PwdResetComponent"
 import { ForgotPwdComponent } from "./ForgotPwdComponent"
 import { RegisterComponent } from "./RegisterComponent"
 import { LoginComponent } from "./LoginComponent"
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 
 
 export const LoginRegister = ({

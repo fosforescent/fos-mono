@@ -17,7 +17,7 @@ import { ConfirmDeleteUser } from "./ConfirmDeleteUser"
 
 import { Switch } from "@/frontend/components/ui/switch"
 import { useEffect, useState } from "react"
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { getActions } from "@/frontend/lib/actions"
 
 export function CookieDialog({

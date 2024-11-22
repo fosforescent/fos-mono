@@ -5,7 +5,7 @@ import { Skeleton } from "@/frontend/components/ui/skeleton"
 
 
 import { LoginRegister } from "./loggedOut"
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { getActions } from "@/frontend/lib/actions"
 import { Button } from "@/frontend/components/ui/button"
 import { LogOut } from "lucide-react"

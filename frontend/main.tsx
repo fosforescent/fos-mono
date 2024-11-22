@@ -7,12 +7,13 @@ import { FosSettingsPage }  from './components/settings'
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 import TodoQueue from './components/views/Queue'
-import { TodoTree } from './components/inbox/Tree'
+
 
 import { PinBoard } from './components/home/Pins'
 import { InfoHome } from './components/info/Info'
-import { MarketBrowse } from './components/market/MarketBrowse'
+import { MarketBrowse } from './components/home/MarketBrowse'
 import QueueView from './components/views/Queue'
+import { FieldTest } from '@/frontend/mockups/interactionMockups'
 
 
 declare const __FOS_API_URL__: string;
@@ -48,63 +49,111 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <PinBoard />,
+        // loader data
+        element: <QueueView />,
+        // loader: async () => {
+        //   return {
+        //     route: [["getPins", "myRootId"]],
+        //   }
+        // }
 
       },
-      {
-        path: "tree",
-        element: <WorkflowMain />
-      },
-      {
-        path: "todo",
-        children: [
-          {
-            index: true,
-            element: <TodoQueue />,
- 
-          },
-          {
-            path: "tree",
-            element: <TodoTree />
-          },
-        ]
-       },
-      {
-        path: "market",
-        children: [
-          {
-            index: true,
-            element: <MarketBrowse />,
+      // {
+      //   // Route should be [["root", "myRootId"]]
+      //   // Should route to queue view.. 
+      //   // how to route there?  Just set app state in app based on routes? 
+      //   path: "inbox",
+      //   element: <Todos />,
+      //   loader: async () => {
+      //     return {
+      //       route: [["getTodos", "myRootId"]],
+      //     }
+      //   }
+      // },
+      // {
+      //   path: "market",
+      //   // Route should be [["root", "myRootId"], ["group", "everyoneRootid"], ["browse", "{filters? workflow}"]]
+      //   // browsing services... anything workflows published to everyone
+      //   // so this is filtering based on workflows 
+      //   children: [
+      //     {
+      //       index: true,
+      //       element: <MarketBrowse />,
+      //       loader: async () => {
+      //         return {
+      //           route: [["root", "myRootId"], ["group", "everyoneRootid"]],
+      //         }
+      //       },
     
-          },
-        ]
-      },
-      {
-        path: "queue",
-        children: [
-          {
-            index: true,
-            element: <QueueView />,
+      //     },
+      //   ]
+      // },
+      // {
+      //   path: "agora",
+      //   // Route should be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? comments}"]]
+      //   // Route could also be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? none}"]]
+      //   children: [
+      //     {
+      //       index: true,
+      //       element: <MarketBrowse />,
+      //       loader: async () => {
+      //         return {
+      //           route: [["root", "myRootId"], ["group", "everyoneRootid"]],
+      //         }
+      //       },
     
-          },
-        ]
-      },
+      //     },
+      //   ]
+      // },
+      // {
+      //   path: "groups",
+      //   // Route should be [["root", "myrootid"], ["browse", "{filters? group}"]]
+      //   // browsing groups... upon clicking, 
+      //   // route would go to [["root", "myrootid"], ["group", "groupRootId"], ["queue", "{filters? comments}"]]
+      //   children: [
+      //     {
+      //       index: true,
+      //       element: <GroupsBrowse />,
+      //       loader: async () => {
+      //         return {
+      //           route: [["root", "myRootId"]],
+      //         }
+      //       },
+    
+      //     },
+      //   ]
+      // },
+      // ,
+      // {
+      //   path: "search",
+      //   // Route should be [["root", "myrootid"]] // "browse", "{filters? none}"
+      //   // browsing groups... upon clicking, 
+      //   // route would go to [["root", "myrootid"], ["group", "groupRootId"]] /// "queue", "{filters? comments}"
+      //   children: [
+      //     {
+      //       index: true,
+      //       element: <Browse />,
+      //       loader: async () => {
+      //         return {
+      //           route: [["root", "myRootId"]],
+      //         }
+      //       },
+    
+      //     },
+      //   ]
+      // },
       {
+        // Route should be [["root", "myrootid"]  // Routed to browse view
         path: "settings",
         children: [
           {
             index: true,
             element: <FosSettingsPage />,
-    
-          },
-        ]
-      },
-      {
-        path: "info",
-        children: [
-          {
-            index: true,
-            element: <InfoHome />,
+            // loader: async () => {
+            //   return {
+            //     route: [["root", "myRootId"]],
+            //   }
+            // },
     
           },
         ]
@@ -123,6 +172,11 @@ const router = createBrowserRouter([
 
 
 
+// ReactDOM.createRoot(document.getElementById('root')!).render(
+//   <React.StrictMode>
+//       <FieldTest />
+//   </React.StrictMode>,
+// )
 
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

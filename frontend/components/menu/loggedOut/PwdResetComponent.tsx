@@ -18,7 +18,7 @@ import {
   SaveIcon,
   RotateCcw,
 } from 'lucide-react'
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { getActions } from "@/frontend/lib/actions"
 
 

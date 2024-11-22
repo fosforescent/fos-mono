@@ -1,5 +1,5 @@
 
-import { AppState,FosReactOptions, FosRoute } from '@/frontend/types';
+import { AppState,FosReactOptions, FosPath } from '@/shared/types';
 import { FosRowsComponent } from './rows';
 import { RootScreenHead } from './head';
 import { DefaultBreadcrumbsComponent } from '../../breadcrumbs/breadcrumbs';
@@ -16,7 +16,7 @@ export function DefaultRootComponent({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) {
 

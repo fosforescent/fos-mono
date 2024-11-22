@@ -119,7 +119,7 @@ export const ProfilePasswordLogout = ({
 
 
 
-import { AppState, ContextType, FosReactOptions, FosRoute } from "@/frontend/types"
+import { AppState, ContextType, FosReactOptions, FosPath } from "@/shared/types"
 import { useProps } from "@/frontend/App"
 
 

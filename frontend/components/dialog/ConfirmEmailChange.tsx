@@ -20,7 +20,7 @@ import { api } from "../../api"
 
 
 import { jwtDecode } from "jwt-decode";
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 import { getActions } from "@/frontend/lib/actions"
 
 export const ConfirmEmailChange = ({

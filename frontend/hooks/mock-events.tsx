@@ -1,6 +1,6 @@
-import { AppState, MockEvent } from '../types';
+import { AppState, MockEvent } from '../../shared/types';
 
-export const mockEvents: MockEvent[] = [
+export const getMockEvents: (appState: AppState) => MockEvent[] = (appState) => [
   {
     type: 'updateData',
     payload: {
@@ -11,16 +11,19 @@ export const mockEvents: MockEvent[] = [
               document: {
                 content: 'Updated document content',
               },
+              description: {
+                content: 'Updated description content',
+              },
             },
             content: [],
           },
         },
-        route: [['node-1', 'node-2']],
+        route: [['todo', 'node-1']],
       },
       trellisData: {
-        focusRoute: [['node-1', 'node-2']],
+        focusRoute: [['todo', 'node-1']],
         focusChar: 5,
-        collapsedList: [['node-1', 'node-2']],
+        collapsedList: [],
         rowDepth: 2,
         dragInfo: {
           dragging: null,

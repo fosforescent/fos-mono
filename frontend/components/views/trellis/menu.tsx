@@ -24,7 +24,7 @@ import { Button } from "@/frontend/components/ui/button"
 import { CSS } from '@dnd-kit/utilities';
 
 import _, { update } from 'lodash'
-import { AppState, FosReactOptions, FosRoute } from '@/frontend/types'
+import { AppState, FosReactOptions, FosPath } from '@/shared/types'
 import { getNodeInfo } from '@/frontend/lib/utils'
 import { getNodeOperations } from '@/frontend/lib/nodeOperations'
 
@@ -40,10 +40,17 @@ export function DefaultMenuComponent({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) {
 
+
+  const setFosAndTrellisData = (state: AppState["data"]) => {
+    setData({
+      ...data,
+       data: state
+    })
+  }
 
 
   const { locked, getOptionInfo,
@@ -51,7 +58,7 @@ export function DefaultMenuComponent({
     nodeDescription, isRoot, childRoutes, isBase,
     nodeType, nodeId, disabled, depth, isCollapsed, 
     isTooDeep, hasChildren
-  } = getNodeInfo(nodeRoute, data)
+  } = getNodeInfo(nodeRoute, data.data)
   
   const { 
     zoom,
@@ -68,7 +75,7 @@ export function DefaultMenuComponent({
     addOption,
     
     suggestSteps,
-   } = getNodeOperations(options, data, setData, nodeRoute)
+   } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
   
    const { selectedIndex, nodeOptions, } = getOptionInfo()
   const [menuOpen, setMenuOpen] = React.useState(false)

@@ -5,10 +5,11 @@ import { Button } from "@/frontend/components/ui/button";
 
 
 
-import { AppState, FosNodesData, FosPath, FosReactOptions, FosRoute, } from "@/frontend/types";
+import { AppState, FosNodesData, FosReactOptions, FosPath, } from "@/shared/types";
 import { getActions } from "@/frontend/lib/actions";
-import { getNodeOperations } from "@/frontend/lib/nodeOperations";
-import { getNodeInfo } from "@/frontend/lib/utils";
+import { getNodeOperations } from "@/shared/nodeOperations";
+import { getExpressionInfo } from "@/shared/dag-implementation/expression";
+
 
 
 export const DefaultBreadcrumbComponent = ({ 
@@ -20,18 +21,28 @@ export const DefaultBreadcrumbComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 
 
     
+
+  const setFosAndTrellisData = (state: AppState["data"]) => {
+    setData({
+      ...data,
+       data: state
+    })
+  }
+
+
+
   const { locked, 
     hasFocus, focusChar, isDragging, draggingOver, 
     nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
     nodeType, nodeId, disabled, depth, isCollapsed, 
     isTooDeep, isOption, hasChildren, truncatedDescription
-  } = getNodeInfo(nodeRoute, data)
+  } = getExpressionInfo(nodeRoute, data.data)
   
   const { 
     suggestOption, 
@@ -48,7 +59,7 @@ export const DefaultBreadcrumbComponent = ({
     suggestSteps,
     toggleCollapse,
     zoom
-   } = getNodeOperations(options, data, setData, nodeRoute)
+   } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
  
 
 

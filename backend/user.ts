@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 
 import {prisma} from './prismaClient'
-import { InfoState, SubscriptionInfo, UserProfile } from '@/frontend/types'
+import { InfoState, SubscriptionInfo, UserProfile } from '@/shared/types'
 
 export const getUserProfile = async (req: Request, res: Response) => {
   console.log('user profile')

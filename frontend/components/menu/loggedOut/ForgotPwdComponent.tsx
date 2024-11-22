@@ -20,7 +20,7 @@ import {
 import _ from 'lodash'
 
 import { api } from "../../../api"
-import { AppState, FosReactOptions } from "@/frontend/types"
+import { AppState, FosReactOptions } from "@/shared/types"
 
 export const ForgotPwdComponent = ({
   setMessage,

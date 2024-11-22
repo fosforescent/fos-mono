@@ -2,7 +2,7 @@ import { BrainCircuit, Dices } from "lucide-react"
 
 import { Button } from "@/frontend/components/ui/button"
 import { suggestRecursive } from "../../lib/suggestRecursive"
-import { AppState, FosReactOptions, FosRoute } from "@/frontend/types"
+import { AppState, FosReactOptions, FosPath } from "@/shared/types"
 
 
 
@@ -17,7 +17,7 @@ const ResourceComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 
@@ -430,7 +430,7 @@ const ProbabilityRowComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 

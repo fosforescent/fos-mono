@@ -2,8 +2,6 @@ import { Request, Response, NextFunction } from 'express'
 import axios from 'axios'
 import {prisma} from './prismaClient'
 
-const BASE_URL = process.env.FOS_API_URL
-
 
 export const deleteAccount = async (req: Request, res: Response): Promise<Response> => {
   const authHeader = req.headers.authorization
@@ -13,11 +11,8 @@ export const deleteAccount = async (req: Request, res: Response): Promise<Respon
   }
 
   try {
-    // Replace with your actual 'verify JWT' endpoint
-    const url = `${BASE_URL}/user`
-    const response = await axios.delete(url, { headers: { Authorization: authHeader } })
 
-    if (response.data) {
+    
       // delete from prisma
       const username = (res as any).user.username as string // Replace with actual logic to extract claims
 
@@ -30,9 +25,8 @@ export const deleteAccount = async (req: Request, res: Response): Promise<Respon
       })
 
       return res.status(200).send('Account deleted')
-    } else {
-      return res.status(401).send('Error deleting account')
-    }
+    
+      
   } catch (error) {
     if ((error as any).response.status < 500 && (error as any).response.status >= 400) {
       console.error('Error deleting account', (error as any).response.statusText)

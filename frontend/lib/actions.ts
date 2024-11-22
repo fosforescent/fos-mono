@@ -1,6 +1,6 @@
 import { jwtDecode } from "jwt-decode"
 import { api } from "../api"
-import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, FosRoute, InfoState, SubscriptionInfo, UserProfile } from "../types"
+import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, InfoState, SubscriptionInfo, UserProfile } from "../../shared/types"
 import { diff } from "@n1ru4l/json-patch-plus"
 import { getNodeOperations } from "./nodeOperations"
 import { debounce, set } from "lodash"
@@ -39,18 +39,6 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     await publicApi().putError(error, appData.auth.email)
   }
 
-  const getRootInstruction = async () => {
-    const rootElem = appData.data.fosData.route[0]
-    return rootElem[0]
-  }
-
-  const setRootInstruction = async (rootInstruction: FosNodeId) => {
-    const rootElem = appData.data.fosData.route[0]
-    const newRootElem: FosPathElem = [rootInstruction, rootElem[1]]
-    const newRoute: FosRoute = [newRootElem, ...appData.data.fosData.route.slice(1)]
-    const newData: AppState["data"] = { ...appData.data, fosData: { ...appData.data.fosData, route: newRoute } }
-    setAppData({ ...appData, data: newData })
-  }
 
   const loggedIn = () => {
     return appData.auth.loggedIn
@@ -336,7 +324,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
   }
 
-  // const setDrag = async (draggingNode: FosRoute | null, draggingOverNode: FosRoute | null) => {
+  // const setDrag = async (draggingNode: FosPath | null, draggingOverNode: FosPath | null) => {
   //   setAppData({
   //       ...appData,
   //       data: {
@@ -367,8 +355,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   return {
     loadAppData,
     putError,
-    getRootInstruction,
-    setRootInstruction,
+    
     loggedIn,
     setDragInfo,
     getDragInfo,

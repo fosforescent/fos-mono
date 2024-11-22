@@ -1,0 +1,28 @@
+
+.inputDiv, .emptyInputDiv {
+  padding: .5rem;
+  box-sizing: border-box;
+  position: relative;
+  cursor: text;
+}
+
+
+
+[contenteditable].inputDiv {
+  outline: 0px solid transparent;
+}
+
+.inputDiv:focus {
+  outline: 0px solid transparent;
+
+}
+
+.emptyInputDiv::before {
+  padding: .5rem;
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  left: 0;
+  children: attr(data-placeholder);
+  z-index: 0;
+}

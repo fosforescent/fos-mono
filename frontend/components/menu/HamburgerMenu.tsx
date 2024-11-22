@@ -41,7 +41,7 @@ import {
 import { Account } from './Account'
 import { Textarea } from '@/frontend/components/ui/textarea'
 
-import { AppState, FosReactOptions } from '@/frontend/types'
+import { AppState, FosReactOptions } from '@/shared/types'
 import { getActions } from '@/frontend/lib/actions'
 import { NavLink } from "react-router-dom";
 import { cn } from '@/frontend/lib/utils'

@@ -6,16 +6,19 @@
 import { Delta } from "@n1ru4l/json-patch-plus";
 
 import { useToast } from "@/frontend/components/ui/use-toast";
-import { FosContextData, FosNodesData, FosTrail, TrellisSerializedData } from "./types";
+import { AppState, FosContextData, FosNodesData, FosPath, InfoState, TrellisSerializedData } from "../shared/types";
 
 
 
+export const getMaxDepth = () => {
+  return ( (window.innerWidth - 500) / 100)
+}
 
 
 const rootId = window.crypto.randomUUID()
 const startTaskId = window.crypto.randomUUID()
 
-export const defaultTrail: FosTrail = [["root", rootId] as [string, string]]
+export const defaultTrail: FosPath = [["root", rootId] as [string, string]]
 
 export const defaultFocus = {
   route: defaultTrail,
@@ -24,24 +27,13 @@ export const defaultFocus = {
 
 
 export const defaultNodes: FosNodesData = {
-  [rootId]: {
-    data: {
-      description: { 
-        content: "Fosforescent Root",
-      }
-
-    },
-    content: [
-      ["workflow", startTaskId]
-    ]
-  },
   [startTaskId]: {
     data: {
       description: { 
         content: "",
       }
     },
-    content: [
+    children: [
     ]
   }
 }
@@ -54,7 +46,7 @@ export const defaultNodesDemo: FosNodesData = {
         content: "Fosforescent Root",
       }
     },
-    content: [
+    children: [
       ["workflow", "startTask"]
     ]
   },
@@ -64,7 +56,7 @@ export const defaultNodesDemo: FosNodesData = {
         content: "Learn to use Fosforescent",
       }
     },
-    content: [
+    children: [
     ]
   }
 
@@ -77,7 +69,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "My Goals",
       }
     },
-    content: [
+    children: [
       ["workflow", "task1"],
       ["workflow", "task2"],
       ["workflow", "task3"],
@@ -93,7 +85,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 1a"
       }
     },
-    content: [
+    children: [
     ["workflow", "task1a_1"],
     ["workflow", "task1a_2"],
     ["workflow", "task1a_3"]
@@ -105,7 +97,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 1a.1"
       }
     },
-    content: [
+    children: [
     ]
   },
   task1a_2: {
@@ -114,7 +106,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 1a.2"
       }
     },
-    content: [
+    children: [
     ]
   },
   task1a_3: {
@@ -123,7 +115,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 1a.3"
       }
     },
-    content: [
+    children: [
     ]
   },
 
@@ -134,24 +126,30 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 2a"
       }
     },
-    content: [
-      ["workflow", "task2a_1"],
+    children: [
+      ["task2a_1", "option_for_task2"],
     ]
   },
-  task2a_1: {
+  option_for_task2: {
     data: {
       option: {
         selectedIndex: 0,
         defaultResolutionStrategy: "selected",
       },
+    }, 
+    children: []
+  },
+  task2a_1: {
+    data: {
+
       description: {
         content: "Task 2a.1"
       }
     },
-    content: [
-      ["option", "task2a_1a_1"],
-      ["option", "task2a_1a_2"],
-      ["option", "task2a_1a_3"],
+    children: [
+      ["task2a_1a_1", "unit"],
+      ["task2a_1a_2", "unit"],
+      ["task2a_1a_3", "unit"],
     ]
   },
   task2a_1a_1: {
@@ -160,7 +158,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 2a.1a.1"
       }
     },
-    content: [
+    children: [
     ]
   },
   task2a_1b_1: {
@@ -169,7 +167,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 2a.1b.1"
       }
     },
-    content: [
+    children: [
     ]
   },
   task2a_1c_1: {
@@ -178,7 +176,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 2a.1c.1"
       }
     },
-    content: [
+    children: [
     ]
   },
 
@@ -191,7 +189,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 3a"
       }
     },
-    content: [
+    children: [
     ["workflow", "task3a_1"],
     ["workflow", "task3a_2"],
     ["workflow", "task3a_3"]
@@ -203,7 +201,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 3a.1"
       }
     },
-    content: [
+    children: [
     ]
   },
   task3a_2: {
@@ -212,7 +210,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 3a.2"
       }
     },
-    content: [
+    children: [
     ]
   },
   task3a_3: {
@@ -221,7 +219,7 @@ export const defaultNodesTest: FosNodesData = {
         content: "Task 3a.3"
       }
     },
-    content: [
+    children: [
     ]
   },
 }
@@ -229,84 +227,37 @@ export const defaultNodesTest: FosNodesData = {
 export const defaultContext: FosContextData = {
   nodes: defaultNodes,
   route: defaultTrail,
-}
+  baseNodeContent: {
+    data: {
+      description: { 
+        content: "Fosforescent Root",
+      }
 
-
-export type InfoProfile = {
-  // profileInfo: {
-  //   [key: string]: any;
-  // }
-  profileInfo: {
-    name: string,
-  }
-  emailConfirmed: boolean,
-}
-
-export type SubscriptionInfo = {
-  subscriptionStatus: string,
-  apiCallsAvailable: number,
-  apiCallsUsed: number,
-  apiCallsTotal: number,
-}
-
-
-
-export type InfoState = {
-  profile?: InfoProfile
-  subscription?: SubscriptionInfo
-  cookies?: {
-    acceptRequiredCookies: boolean
-    acceptSharingWithThirdParties: boolean
+    },
+    children: [
+      ["workflow", startTaskId]
+    ]
+  },
+  baseNodeInstruction: {
+    data: {
+      description: { 
+        content: "Learn to use Fosforescent",
+      }
+    },
+    children: [
+    ]
   }
 }
 
 
 
-export type AppData = {
-  fosData: FosContextData,
-  trellisData: TrellisSerializedData
-}
 
 
 
-
-export type AuthState = {
-  username: string,
-  remember: boolean,
-  jwt?: string,
-  password?: string,
-  email: string,
-}
-
-
-
-
-export type DataState = {
-  synced: boolean,
-  stored: boolean,
-  appData: AppData,
-  locked: boolean
-  lastSyncTime: number
-  lastStoreTime: number
-  undoStack: Delta[],
-  redoStack: Delta[],
-  info: InfoState
-  theme: string
-  auth: AuthState
-  
-}
-
-
-
-
-
-
-
-export const initialInfoState = {
+export const initialInfoState: InfoState = {
   cookies: localStorage.getItem('cookiePrefs') ? JSON.parse(localStorage.getItem('cookiePrefs') || "") : undefined,
+  emailConfirmed: false,
 }
-
-
 
 
 export const initialAuthState = {
@@ -322,7 +273,7 @@ export const defaultTrellisData: TrellisSerializedData = {
   "focusRoute": [['root', rootId]],
   "focusChar": null,
   "collapsedList": [],
-  "rowDepth": 0,
+  "rowDepth": getMaxDepth(),
   
   "dragInfo": {
     "dragging": null,
@@ -330,24 +281,20 @@ export const defaultTrellisData: TrellisSerializedData = {
   }
 }
 
-export const initialDataState: DataState =  JSON.parse(localStorage.getItem("data") || "null") || {
-  synced: false,
-  stored: false,
-  appData: {
+
+declare const __FOS_API_URL__: string;
+
+
+export const initialDataState: AppState =  {
+
+  data: {
     fosData: defaultContext,
     trellisData: defaultTrellisData
   },
   auth: initialAuthState,
   info: initialInfoState,
   theme: JSON.parse(localStorage.getItem("theme") || "null") || "system",
-  locked: false,
-  lastSyncTime: 0,
-  lastStoreTime: 0,
-  undoStack: [],
-  redoStack: []
+  apiUrl: __FOS_API_URL__,
+  loaded: false
 }
-
-
-
-
 

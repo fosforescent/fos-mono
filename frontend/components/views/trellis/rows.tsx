@@ -11,7 +11,7 @@ import { ComboboxEditable } from '../../combobox/comboboxEditable';
 
 import { RadioGroup, RadioGroupItem } from "@/frontend/components/ui/radio-group"
 import { Label } from "@/frontend/components/ui/label"
-import { AppState, FosReactOptions, FosRoute } from '@/frontend/types';
+import { AppState, FosReactOptions, FosPath } from '@/shared/types';
 import { getDragItem, getNodeDescription, getNodeInfo } from '@/frontend/lib/utils';
 import { getActions } from '@/frontend/lib/actions';
 import { getNodeOperations } from '@/frontend/lib/nodeOperations';
@@ -30,12 +30,12 @@ export const FosRowsComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
   
 
-  const { nodeType, nodeChildren, isCollapsed, isBase } = getNodeInfo(nodeRoute, data)
+  const { nodeType, nodeChildren, isCollapsed, isBase } = getNodeInfo(nodeRoute, data.data)
   
 
   const [showMore, setShowMore] = React.useState(false)
@@ -106,12 +106,21 @@ const OptionRowsCombined = ( {
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 
   
-  const {  locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, getOptionInfo } = getNodeInfo(nodeRoute, data)
+
+  const setFosAndTrellisData = (state: AppState["data"]) => {
+    setData({
+      ...data,
+       data: state
+    })
+  }
+
+
+  const {  locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, getOptionInfo } = getNodeInfo(nodeRoute, data.data)
 
   const { selectedIndex, nodeOptions } = getOptionInfo()
   
@@ -127,17 +136,12 @@ const OptionRowsCombined = ( {
     keyUpEvents,
     keyPressEvents,
     addOption,
-   } = getNodeOperations(fosOptions, data, setData, nodeRoute)
+   } = getNodeOperations(fosOptions, data.data, setFosAndTrellisData, nodeRoute)
   
   
 
   
   
-
-
-
-
-
   // console.log('isRoot', isRoot, meta.trellisNode.getId())
   const handleChange = (value: string) => {
      setSelectedOption(parseInt(value))
@@ -183,13 +187,22 @@ const OptionRowsExpanded = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
   
  
   
-  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, isRoot, childRoutes, isBase } = getNodeInfo(nodeRoute, data)
+  const setFosAndTrellisData = (state: AppState["data"]) => {
+    setData({
+      ...data,
+       data: state
+    })
+  }
+
+
+
+  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, isRoot, childRoutes, isBase } = getNodeInfo(nodeRoute, data.data)
   
   const { selectedIndex, nodeOptions } = getOptionInfo()
 
@@ -206,7 +219,7 @@ const OptionRowsExpanded = ({
     addOption,
     
     addRowAsChild,
-   } = getNodeOperations(options, data, setData, nodeRoute)
+   } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
   
   
 
@@ -293,13 +306,20 @@ const TaskRows = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 
 
+  const setFosAndTrellisData = (state: AppState["data"]) => {
+    setData({
+      ...data,
+       data: state
+    })
+  }
 
-  const { getChildrenOfType, isRoot, isBase } = getNodeInfo(nodeRoute, data)
+
+  const { getChildrenOfType, isRoot, isBase } = getNodeInfo(nodeRoute, data.data)
   
   const { 
     suggestOption, 
@@ -316,7 +336,7 @@ const TaskRows = ({
     
     suggestSteps,
     addRowAsChild,
-  } = getNodeOperations(options, data, setData, nodeRoute)
+  } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
 
 
 

@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { ArrowUpToLine, ArrowDownToLine, FileJson } from "lucide-react";
 import { Button } from "@/frontend/components/ui/button";
 import { Progress } from "@/frontend/components/ui/progress";
-import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosReactOptions, FosRoute } from '../../types';
+import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosReactOptions, FosPath } from '../../../shared/types';
 
 const ResourceComponent = ({ 
   data,
@@ -13,7 +13,7 @@ const ResourceComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -170,7 +170,7 @@ export const exportNode = (nodeRoute: FosPath): FosContextData => {
   return nodeData
 }
 
-export const importNode = (data: FosContextData, nodeRoute: FosRoute, initialContextData: FosContextData): FosContextData => {
+export const importNode = (data: FosContextData, nodeRoute: FosPath, initialContextData: FosContextData): FosContextData => {
   
   // should we do it by the reference, or by the current operator?
   // should we require that it be an option node? 
@@ -432,7 +432,7 @@ const mergeNode = (oldId: string, oldData: FosContextData, newId: string, newDat
             ...oldNode.data,
             ...newNode.data
           },
-          content: [
+          children: [
             ...oldNode.content,
             ...newNode.content
           ]
@@ -447,7 +447,7 @@ const mergeNode = (oldId: string, oldData: FosContextData, newId: string, newDat
           ...oldRootNode.data,
           ...newRootNode.data
         },
-        content: [
+        children: [
           ...mergedRootContentNewOnly,
           ...mergedRootContentBoth,
           ...mergedRootContentOldOnly,

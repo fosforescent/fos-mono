@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
 
-import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosRoute,} from './types'
+import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosPath, InfoState,} from '../shared/types'
 import { useTraceUpdate } from './hooks/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
@@ -24,9 +24,8 @@ import { ErrorBoundary } from './components/error-boundary'
 import { useToast } from '@/frontend/components/ui/use-toast';
 import { jwtDecode } from 'jwt-decode';
 import { api } from './api'
-import { FosModule, fosDataModules, fosResourceModules, fosReportModules, fosNodeModules, fosModules } from './components/fos-modules/fosModules'
 
-import { defaultContext, defaultTrellisData } from './defaults'
+import { defaultContext, defaultTrellisData, initialDataState } from './defaults'
 
 import { Outlet, useOutletContext, useLoaderData, useNavigate } from 'react-router-dom'
 import { getActions } from './lib/actions'
@@ -34,14 +33,14 @@ import { diff } from '@n1ru4l/json-patch-plus'
 
 import { useLocation } from 'react-router-dom'
 import { set } from 'date-fns'
-import { mockEvents, applyMockEvent } from './hooks/mock-events';
+import { getMockEvents, applyMockEvent } from './hooks/mock-events';
 
 
 
-export const initialInfoState = {
+export const initialInfoState: InfoState = {
   cookies: localStorage.getItem('cookiePrefs') ? JSON.parse(localStorage.getItem('cookiePrefs') || "null") : undefined,
   emailConfirmed: false,
-  subscriptionSession: false,
+
 }
 
 
@@ -71,24 +70,6 @@ export const initialAuthState: AuthState = !parsedJwt ? {
 
 
 
-
-export const initialDataState: AppState =  JSON.parse(localStorage.getItem("data") || "null") || {
-  synced: false,
-  stored: false,
-  data: {
-    fosData: defaultContext,
-    trellisData: defaultTrellisData
-  },
-  locked: false,
-  lastSyncTime: 0,
-  lastStoreTime: 0,
-  undoStack: [],
-  redoStack: [],
-  auth: initialAuthState,
-  info: initialInfoState,
-  theme: JSON.parse(localStorage.getItem("theme") || "null") || "system",
-  loaded: false,
-}
 
 export default function App({
   
@@ -257,24 +238,14 @@ export default function App({
 
 
 
-  const [activeModule, setActiveModule] = useState<FosModule | undefined>(fosModules.workflow)
+  
 
-  const setActiveModuleWithLog = (module: FosModule | undefined) => {
-    // console.log('setActiveModule', module)
-    setActiveModule(module)
-  }
 
-  const optionsWithModule = {
-    ...(options || {}),
-    activeModule,
-    setActiveModule: setActiveModuleWithLog,
-  }
-
-  const global: FosReactGlobal = getGlobal(optionsWithModule || { activeModule: fosDataModules.description })
+  const global: FosReactGlobal = getGlobal(options)
 
   const [menuOpen, setMenuOpen] = useState<boolean>(emailConfirmationToken || passwordResetToken ? true : false)
 
-  const {  loadAppData, loggedIn, getRootInstruction, setRootInstruction } = getActions(options, appState, setAppState)
+  const {  loadAppData, loggedIn } = getActions(options, appState, setAppState)
 
   
 
@@ -288,21 +259,6 @@ export default function App({
       console.log('appState', appState, jwt)
       if (!appState.loaded){
         loadAppData()
-      }else{
-        if (location.pathname === '/'){
-          (async () => {
-            const rootInstruction = await getRootInstruction()
-            if (['todo'].includes(rootInstruction)){
-              navigate(`/${rootInstruction}`)
-            } 
-          })()
-        } else {
-          const locationInstruction = location.pathname.split('/')[0] || 'blank'
-          if (['todo'].includes(locationInstruction)){
-            setRootInstruction(locationInstruction )
-          }
-        }
-
       }
     }
   }, [jwt]);
@@ -387,9 +343,18 @@ export default function App({
 
   useEffect(() => {
     // Apply mock events for testing
-    mockEvents.forEach(event => {
-      setAppState(prevState => applyMockEvent(prevState, event));
-    });
+    const handler = () => {
+      getMockEvents(appState).forEach(event => {
+        setAppState(prevState => applyMockEvent(prevState, event));
+      });  
+    }
+
+    setTimeout(() => {
+      handler()
+    }, 10000)
+
+
+    return 
   }, []);
 
  
@@ -489,13 +454,7 @@ export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> =>
     ...( options && options?.canUndo ? { undo: options.undo } : {}),
     ...( options ? { toast: options.toast } : {}),
     ...( options ? { theme: options.theme } : {}),
-    ...( options ? { activeModule: options.activeModule || fosModules.todo } : { activeModule: fosModules.todo }),
-    ...( options ? { activeModuleRows: options.activeModuleRows || fosModules.todo } : { activeModuleRows: fosModules.todo }),
-    ...( options ? { setActiveModule: options.setActiveModule } : {}),
-    ...( options ? { setActiveModuleRows: options.setActiveModuleRows } : {}),
-    ...( { modules: [...(options.modules || []), ...Object.values({
-      ...fosModules,
-    })] } ),
+    
     ...( options ? { locked: options.locked } : { locked: false }),
   }
 
@@ -504,4 +463,8 @@ export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> =>
 
 export function useProps() {
   return useOutletContext<ContextType>();
+}
+
+export const getMaxDepth = () => {
+  return ( (window.innerWidth - 500) / 100)
 }

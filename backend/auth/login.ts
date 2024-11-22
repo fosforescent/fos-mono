@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 
 import {prisma} from '../prismaClient'
-import { InfoState, LoginResult } from '@/frontend/types'
+import { InfoState, LoginResult } from '@/shared/types'
 
 const JWT_SECRET = process.env.JWT_SECRET
 

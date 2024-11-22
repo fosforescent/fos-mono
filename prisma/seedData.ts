@@ -1,4 +1,4 @@
-import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/frontend/types";
+import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/shared/types";
 
 import { v4 as uuidv4 } from 'uuid';
 
@@ -22,11 +22,11 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
             content: "My Goals",
           }
         },
-        content: [
-          ["workflow",genId("task1")],
-          ["workflow", genId("task2")],
+        children: [
+          ["WORKFLOW",genId("task1")],
+          ["WORKFLOW", genId("task2")],
           ["todo", genId("task3")],
-          // ["workflow", "task4"],
+          // ["WORKFLOW", "task4"],
           // ["task5L", "task5R"]
         ]
     }
@@ -39,10 +39,10 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 1a"
             }
           },
-          content: [
-          ["workflow", genId("task1a_1")],
-          ["workflow", genId("task1a_2")],
-          ["workflow", genId("task1a_3")]
+          children: [
+          ["WORKFLOW", genId("task1a_1")],
+          ["WORKFLOW", genId("task1a_2")],
+          ["WORKFLOW", genId("task1a_3")]
           ]
         },
         [genId("task1a_1")]: {
@@ -51,7 +51,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 1a.1"
             }
           },
-          content: [
+          children: [
           ]
         },
         [genId("task1a_2")]: {
@@ -60,7 +60,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 1a.2"
             }
           },
-          content: [
+          children: [
           ]
         },
         [genId("task1a_3")]: {
@@ -69,7 +69,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 1a.3"
             }
           },
-          content: [
+          children: [
           ]
         },
       
@@ -80,8 +80,8 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 2a"
             }
           },
-          content: [
-            ["option", genId("task2a_1")],
+          children: [
+            [genId("task2a_1"), "CHOICE"],
           ]
         },
         [genId("task2a_1")]: {
@@ -94,10 +94,10 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 2a.1"
             }
           },
-          content: [
-            ["workflow", genId("task2a_1a_1")],
-            ["workflow", genId("task2a_1a_2")],
-            ["workflow", genId("task2a_1a_3")],
+          children: [
+            [genId("task2a_1a_1"), "SELECTED" ],
+            [genId("task2a_1a_2"), "NOTSELECTED" ],
+            [genId("task2a_1a_3"), "NOTSELECTED" ],
           ]
         },
         [genId("task2a_1a_1")]: {
@@ -106,7 +106,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 2a.1a.1"
             }
           },
-          content: [
+          children: [
           ]
         },
         [genId("task2a_1a_2")]: {
@@ -115,7 +115,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 2a.1b.1"
             }
           },
-          content: [
+          children: [
           ]
         },
         [genId("task2a_1a_3")]: {
@@ -124,7 +124,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Task 2a.1c.1"
             }
           },
-          content: [
+          children: [
           ]
         },
       
@@ -137,10 +137,10 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Todo 3a"
             }
           },
-          content: [
-          ["todo", genId("task3a_1")],
-          ["todo", genId("task3a_2")],
-          ["todo", genId("task3a_3")]
+          children: [
+          [genId("task3a_1"), "UNIT", ],
+          [genId("task3a_2"), "UNIT"],
+          [genId("task3a_3"), "UNIT"]
           ]
         },
         [genId("task3a_1")]: {
@@ -149,7 +149,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Todo 3a.1"
             }
           },
-          content: [
+          children: [
           ]
         },
         [genId("task3a_2")]: {
@@ -158,7 +158,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Todo 3a.2"
             }
           },
-          content: [
+          children: [
           ]
         },
         [genId("task3a_3")]: {
@@ -167,7 +167,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
               content: "Todo 3a.3"
             }
           },
-          content: [
+          children: [
           ]
         },
     }

@@ -1,16 +1,25 @@
 import { Active, Collision, DragEndEvent, DroppableContainer, Over } from "@dnd-kit/core"
-import { getNodeOperations } from "../lib/nodeOperations"
-import { AppState, FosReactOptions, FosRoute } from "../types"
+import { getNodeOperations } from "../../shared/nodeOperations"
+import { AppState, FosReactOptions, FosPath } from "../../shared/types"
 import { getActions } from "../lib/actions"
 import { ClientRect, Coordinates, DragOverEvent, DragStartEvent } from "@dnd-kit/core/dist/types"
-import { getDragItem, getNodeInfo } from "../lib/utils"
+
 
 
 
 import { Transform } from "@dnd-kit/utilities"
+import { getExpressionInfo } from "@/shared/dag-implementation/expression"
 
 
 export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState, setData: (newData: AppState) => void) => {
+
+
+  const setTrellisAndFosData = (state: AppState["data"]) => {
+    setData({
+      ...data,
+       data: state
+    })
+  }
 
   const actions = getActions(options, data, setData)
 
@@ -83,7 +92,7 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
       }
     
     
-      const { moveAboveRoute, moveBelowRoute, moveToTopChildOfRoute } = getNodeOperations(options, newData, setData, activeNode)
+      const { moveAboveRoute, moveBelowRoute, moveToTopChildOfRoute } = getNodeOperations(options, newData.data, setTrellisAndFosData, activeNode)
     
     
       if (dragInfo?.position === 'on' || dragInfo?.position === 'breadcrumb') {
@@ -117,7 +126,7 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
     // console.log('newContent', newContent)
     // const nodeOptionData = node.getOptionContent()
     
-    // const newContext = context.updateNodeOptionData(trail, { ...nodeOptionData, content: newContent })
+    // const newContext = context.updateNodeOptionData(trail, { ...nodeOptionData, children: newContent })
     
     // context.setNodes(newContext.data.nodes)
     
@@ -176,7 +185,7 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
   const getDragOverInfo = (over: Over | null, active: Active | null): {
     id: string;
     position: 'above' | 'below' | 'on' | 'breadcrumb';
-    nodeRoute: FosRoute;
+    nodeRoute: FosPath;
   } | null => {
 
   if (!over) {
@@ -245,15 +254,15 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
 
 
 
-  const getNodeDragInfo = (nodeRoute: FosRoute) => {
+  const getNodeDragInfo = (nodeRoute: FosPath) => {
 
 
     const { locked, getOptionInfo,
       hasFocus, focusChar, isDragging, draggingOver, 
-      nodeDescription, isRoot, childRoutes, isBase,
+      nodeDescription, isRoot, childRoutes, 
       nodeType, nodeId, disabled, depth, isCollapsed, 
-      isTooDeep
-    } = getNodeInfo(nodeRoute, data)
+      isTooDeep, getDragItem
+    } = getExpressionInfo(nodeRoute, data.data)
 
        
    const {
@@ -262,7 +271,7 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
    } = data.data.trellisData.dragInfo
 
 
-  const isChildOf = (argNodeRoute: FosRoute) => {
+  const isChildOf = (argNodeRoute: FosPath) => {
     const matches = argNodeRoute.every((argNodeElem, index) => {
       return argNodeElem[0] === nodeRoute[index]?.[0] && argNodeElem[1] === nodeRoute[index]?.[1]
     })
@@ -280,7 +289,7 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
     // transition,)
 
 
-    const dragItem = getDragItem(nodeRoute, false)
+    const dragItem = getDragItem(false)
 
 
     const isDropping = dragOverInfo && dragOverInfo.id === nodeItemId
@@ -369,7 +378,23 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
       disabled: isDraggingParent || disabled,
       data: { nodeRoute }
     }
-
+    const dropStyle = draggingOver ? {
+      // backgroundColor: 'rgba(230, 220, 200, .03)',
+    } : {}
+  
+    const dropOnRowStyle = draggingOver ? {
+      backgroundColor: 'rgba(230, 220, 200, .07)',
+      border: '1px solid rgba(230, 220, 200, .3)',
+      // transform: 'scale(1.05)',
+    } : {}
+  
+    
+    // console.log('isDragging', isDragging, draggingOver, draggingOn)
+  
+    const draggingRowStyle = isDragging ? {
+      backgroundColor: 'rgba(230, 220, 200, .03)',
+      opacity: '0.5',
+    } : {}
 
     return {
       getStyles,
@@ -385,8 +410,9 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
       dragging,      
       disabled,
       useDraggableArg,
-      useDroppableArg
-
+      useDroppableArg,
+      rowDroppingStyle: dropOnRowStyle,
+      rowDraggingStyle: draggingRowStyle,
       
     }
 

@@ -1,4 +1,4 @@
-import { FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodesData } from '@/frontend/types'
+import { FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodesData } from '@/shared/types'
 import { FosGroup, PrismaClient, User } from '@prisma/client'
 
 export const createNodes = async (prisma: PrismaClient, nodesData: FosNodesData) => {
@@ -36,7 +36,7 @@ export const createUser = async (prisma: PrismaClient, rootNodeId: FosNodeId,  u
                         create: {
                             id: rootNodeId ,
                             data: {
-                                content: userData.rootNodeContent || [],
+                                children: userData.rootNodeContent || [],
                                 data: userData.rootNodeData || {
                                     description: { content: `${userData.user_name} root node` },
                                 },
@@ -67,7 +67,7 @@ export const createGroup = async (prisma: PrismaClient, rootNodeId: FosNodeId, g
                 create: {
                     id: rootNodeId,
                     data: {
-                        content: groupData.rootNodeContent || [],
+                        children: groupData.rootNodeContent || [],
                         data: {
                             ...groupData.rootNodeData,
                             description: { content: `group ${groupData.groupId} root node`}
@@ -163,7 +163,7 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
         const nodeContent = userRootNode.data as FosNodeContent
         const newNodeData = {
             data: nodeContent.data,
-            content: [...nodeContent.content, ["group", group.rootNodeId]]
+            children: [...nodeContent.content, ["group", group.rootNodeId]]
         }
 
         await prisma.fosNode.update({
@@ -182,7 +182,7 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
         const nodeContent = groupRootNode.data as FosNodeContent
         const newNodeData = {
             data: nodeContent.data,
-            content: [...nodeContent.content, ["peer", userFosGroup.rootNodeId]]
+            children: [...nodeContent.content, ["peer", userFosGroup.rootNodeId]]
         }
 
         await prisma.fosNode.update({

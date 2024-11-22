@@ -2,7 +2,7 @@ import React from 'react';
 
 import { toast, useToast } from '@/frontend/components/ui/use-toast';
 import { api } from '../api';
-import { AppState, FosReactGlobal } from '../types';
+import { AppState, FosReactGlobal } from '../../shared/types';
 import { getActions } from '../lib/actions';
 
 export class ErrorBoundary extends React.Component {

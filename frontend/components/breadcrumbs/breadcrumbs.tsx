@@ -1,4 +1,4 @@
-import { AppState, FosReactOptions, FosRoute } from "@/frontend/types"
+import { AppState, FosReactOptions, FosPath } from "@/shared/types"
 import { DefaultBreadcrumbComponent } from "./breadcrumb"
 
 
@@ -15,7 +15,7 @@ export const DefaultBreadcrumbsComponent = ({
 } : {
   options: FosReactOptions
   data: AppState
-  nodeRoute: FosRoute
+  nodeRoute: FosPath
   setData: (state: AppState) => void
 }) => {
 
@@ -24,7 +24,7 @@ export const DefaultBreadcrumbsComponent = ({
     {nodeRoute.length > 1 && nodeRoute.map((item, index) => {
       
 
-      const breadcrumbNodeRoute: FosRoute = nodeRoute.slice(0, index + 1) as FosRoute
+      const breadcrumbNodeRoute: FosPath = nodeRoute.slice(0, index + 1) as FosPath
 
       
 

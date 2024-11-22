@@ -4,7 +4,7 @@ import {
   FosNodeContent,
   FosNodesData,
 
-} from "@/frontend/types";
+} from "@/shared/types";
 
 
 import { Pinecone } from '@pinecone-database/pinecone';
@@ -13,6 +13,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 import { User, FosNode, FosGroup, PrismaClient } from "@prisma/client";
 
 import { generateKeyPair, randomUUID } from "crypto";
+import { upsertSearchTerms } from "./search";
 
 export function hashNode(nodeData: FosNodeContent) {
   // Convert the FosNodeData object to a JSON string
@@ -72,7 +73,7 @@ export const dataIsEmpty = (data: FosContextData) => {
 
   const rootNodeId = getRootId(data);
   const rootNode = data.nodes[rootNodeId];
-  if (rootNode && rootNode.content.length < 2) {
+  if (rootNode && rootNode.children.length < 2) {
     if (rootNode.data.description?.content) {
       return false;
     }
@@ -175,7 +176,7 @@ export const generateBackupNodes = (userGroup: FosGroup) => {
 
   return {
     [userGroup.rootNodeId]: {
-      content: [["workflow", startTaskId]],
+      children: [["workflow", startTaskId]],
       data: {
         description: {
           content: "",
@@ -183,7 +184,7 @@ export const generateBackupNodes = (userGroup: FosGroup) => {
       },
     },
     [startTaskId]: {
-      content: [],
+      children: [],
       data: {
         description: {
           content: "",
@@ -216,9 +217,6 @@ export const storeCtxToDb = async (
     };
   });
 
-  // const groupIds = (await getAllMemberships(userGroup, [], prisma)).map(
-  //   (group) => group.id
-  // );
 
   for (const fNode of formattedNodes) {
     const node = await prisma.fosNode.findUnique({
@@ -355,7 +353,7 @@ export const storeCtxToDb = async (
 
 export const createUserGroup = async (prisma: PrismaClient) => {
   const rootNodeData: FosNodeContent = {
-    content: [],
+    children: [],
     data: {
       description: {
         content: "",
@@ -459,7 +457,7 @@ export const changeNodeIdForGroup = async (
 
   for (const node of nodes) {
     const nodeData = node.data as FosNodeContent;
-    const content = nodeData.content;
+    const content = nodeData.children;
 
     const newContent = content.map(([type, id]) => {
       return [type, id === oldId ? newId : id];
@@ -472,7 +470,7 @@ export const changeNodeIdForGroup = async (
       data: {
         data: {
           ...nodeData,
-          content: newContent,
+          children: newContent,
         },
       },
     });

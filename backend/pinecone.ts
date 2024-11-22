@@ -14,7 +14,7 @@ interface PineconeDocument {
 }
 
 // OpenAI embeddings adapter that implements LangChain's Embeddings interface
-class OpenAIEmbeddingsAdapter extends Embeddings {
+export class OpenAIEmbeddingsAdapter extends Embeddings {
   private client: OpenAI;
   
   constructor(params: EmbeddingsParams & { client: OpenAI }) {
