@@ -18,7 +18,7 @@ export const getMaxDepth = () => {
 const rootId = window.crypto.randomUUID()
 const startTaskId = window.crypto.randomUUID()
 
-export const defaultTrail: FosPath = [["root", rootId] as [string, string]]
+export const defaultTrail: FosPath = []
 
 export const defaultFocus = {
   route: defaultTrail,
@@ -235,7 +235,7 @@ export const defaultContext: FosContextData = {
 
     },
     children: [
-      ["workflow", startTaskId]
+      [startTaskId, "COMPLETION"]
     ]
   },
   baseNodeInstruction: {

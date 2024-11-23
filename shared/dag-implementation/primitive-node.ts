@@ -59,7 +59,9 @@ export const getChoiceTargetNode =  (store: FosStore) => generateConstructor(sto
   // [store.optionNotSelectedConstructor.getId(), ]
 ])
 
-export const getLinkActionNode = (store: FosStore) => generateConstructor(store, "LINK", 'Link Action Constructor', [])
+export const getCompleteFieldNode = (store: FosStore) => generateConstructor(store, "COMPLETION", 'Complete Field Constructor', [])
+
+export const getLinkActionNode = (store: FosStore) => generateConstructor(store, "LINKACTION", 'Link Action Constructor', [])
 export const getCreateActionNode = (store: FosStore) => generateConstructor(store, "CREATE", 'Create Action Constructor', [])
 export const getDeleteActionNode = (store: FosStore) => generateConstructor(store, "DELETE", 'Delete Action Constructor', [])
 
@@ -151,7 +153,18 @@ export const getOptionConstructor = (store: FosStore) => generateConstructor(sto
 export const getSearchQueryNode = (store: FosStore) => generateConstructor(store, "SEARCH", 'Search Query Constructor', [])
 export const getSearchResultsNode = (store: FosStore) => generateConstructor(store, "SEARCHRESULT", 'Search Result Constructor', [])
 
+export const getErrorNode = (store: FosStore) => generateConstructor(store, "ERROR", 'Error Constructor', [])
+export const getPeerNode = (store: FosStore) => generateConstructor(store, "PEER", 'Peer Constructor', [])
+export const getRevertChangeNode = (store: FosStore) => generateConstructor(store, "REVERT", 'Revert Change Constructor', [])
 
+export const getPublishNode = (store: FosStore) => generateConstructor(store, "PUBLISH", 'Publish Constructor', [])
+export const getAppNode = (store: FosStore) => generateConstructor(store, "APP", 'App Constructor', [])
+export const getSubscriptionNode = (store: FosStore) => generateConstructor(store, "SUBSCRIPTION", 'Subscription Constructor', [])
+export const getOneTimeBuyNode = (store: FosStore) => generateConstructor(store, "ONETIMEBUY", 'One Time Buy Constructor', [])
+export const getRecurringBuyNode = (store: FosStore) => generateConstructor(store, "RECURRINGBUY", 'Recurring Buy Constructor', [])
+export const getErrorInstructionNode = (store: FosStore) => generateConstructor(store, "ERROR", 'Error Constructor', [])
+export const getErrorTargetNode = (store: FosStore) => generateConstructor(store, "ERROR", 'Error Constructor', [])
+export const getConflictNode = (store: FosStore) => generateConstructor(store, "CONFLICT", 'Conflict Constructor', [])
 
 
 
@@ -167,6 +180,7 @@ export const generateConstructor = (store: FosStore, alias: string, description:
   }
 
   const newNode = store.create(nodeContent, alias)
+  if (!newNode) throw new Error('could not create node')
   return newNode
 }
 

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import {
+  AppState,
   FosContextData,
   FosNodeContent,
   FosNodesData,
@@ -7,7 +8,6 @@ import {
 } from "@/shared/types";
 
 
-import { Pinecone } from '@pinecone-database/pinecone';
 
 
 import { User, FosNode, FosGroup, PrismaClient } from "@prisma/client";
@@ -99,26 +99,21 @@ export const checkDataFormat = (data: FosContextData) => {
     throw new Error("no data.nodes");
   }
 
-  const rootId = data.route?.[0]?.[1] || "root";
 
-  const hasRoot = data.nodes[rootId];
 
-  if (!hasRoot && Object.keys(data.nodes).length > 0) {
-    console.log("data", data, rootId, data.nodes);
-    throw new Error("no data.nodes.root");
-  }
 };
 
 
 
 export const loadCtxFromDb = async (
   prisma: PrismaClient,
-  userGroup: FosGroup
-) => {
+  userGroup: FosGroup,
+  User: User
+): Promise<FosContextData> => {
   const existingData = userGroup.data as Partial<Omit<FosContextData, "nodes">>;
 
   const meta = {
-    route: [["root", userGroup.rootNodeId]],
+    route: [],
     ...(userGroup.data as Partial<Omit<FosContextData, "nodes">>),
   } as Omit<FosContextData, "nodes">;
 
@@ -164,11 +159,11 @@ export const loadCtxFromDb = async (
 
   // console.log("LOADING DATA FROM DB", meta, nodes);
 
-  return {
+  const result: FosContextData = {
     ...meta,
-    nodes:
-      Object.keys(nodes).length > 0 ? nodes : generateBackupNodes(userGroup),
-  };
+    nodes: Object.keys(nodes).length > 0 ? nodes : generateBackupNodes(userGroup),
+  }
+  return result;
 };
 
 export const generateBackupNodes = (userGroup: FosGroup) => {
@@ -498,7 +493,7 @@ export const updateRootNodeId = (
   if (!contextData.route) {
     return {
       ...contextData,
-      route: [["root", newRootId]],
+      route: [],
     };
   } else {
     const [head, ...tail] = contextData.route;
@@ -509,7 +504,7 @@ export const updateRootNodeId = (
 
     return {
       ...contextData,
-      route: [[head[0], newRootId], ...tail],
+      route: [head, ...tail],
     };
   }
 };

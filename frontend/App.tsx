@@ -50,15 +50,7 @@ const parsedJwt = JSON.parse(localStorage.getItem("auth") || "null")
 const decodedJwt =  parsedJwt ? jwtDecode(parsedJwt)  as { username: string, exp: number } : { username: "", exp: 0 }
 const parsedUsername = JSON.parse(localStorage.getItem("username") || "null")
 
-export const initialAuthState: AuthState = !parsedJwt ? {
-  username: decodedJwt.username,
-  remember: !!parsedUsername,
-  jwt: undefined,
-  email: decodedJwt.username,
-  jwtDecoded: decodedJwt,
-  password: "",
-  loggedIn: false,
-} : {
+export const initialAuthState: AuthState = parsedJwt ? {
   username: decodedJwt.username,
   remember: !!parsedUsername,
   jwt: parsedJwt.jwt,
@@ -66,6 +58,14 @@ export const initialAuthState: AuthState = !parsedJwt ? {
   email: decodedJwt.username,
   password: "",
   loggedIn: true,
+} : {
+  username: decodedJwt.username,
+  remember: !!parsedUsername,
+  jwt: undefined,
+  email: decodedJwt.username,
+  jwtDecoded: decodedJwt,
+  password: "",
+  loggedIn: false,
 }
 
 
@@ -104,18 +104,34 @@ export default function App({
 
 
 
-  if (appState.auth?.loggedIn && !jwt){
-   
-    // console.log('auth token',  localStorage.getItem('auth'), parsedJwt. appState  )
-    // throw new Error('logged out for some reason')
-  }
-
   useEffect(() => {
     if (appState.auth.loggedIn && !jwt){
       if (parsedJwt){
         setAppState({...appState, auth: { ...appState.auth, jwt: parsedJwt }})
       }
+      setAppState({
+        ...appState,
+        auth: {
+          ...appState.auth,
+          loggedIn: false,
+          jwt: undefined,
+        }
+      })
+  
+    } else if (!appState.auth.loggedIn && jwt){
+      setAppState({
+        ...appState,
+        auth: {
+          ...appState.auth,
+          loggedIn: true,
+          jwt: jwt,
+        }
+      })
     }
+
+    
+
+    
   }, [jwt, parsedJwt, appState.auth.loggedIn])
 
 
@@ -222,12 +238,6 @@ export default function App({
     // console.log('setting theme', theme, root)
   }, [theme])
 
-
-
-
-  if (appState.data.fosData.route.length < 1){
-    throw new Error('No route')
-  }
 
 
   // console.log('rerender web client main', appState.data, appState)

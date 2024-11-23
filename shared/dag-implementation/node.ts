@@ -10,20 +10,25 @@ import { FosStore } from './store'
 export class FosNode {
 
   primitiveTag: string | undefined = undefined
-  address: string
+  cid: string
   store: FosStore
   value: FosNodeContent
+  alias: string | undefined = undefined
   
   constructor(value: FosNodeContent, store: FosStore, alias?: string) {
     const address = store.insert(value, alias)
-    this.address = address
+    this.cid = address
     this.store = store
     this.value = value
+    this.alias = alias
   }
 
   getId(): string  {
-    return this.address
+    return this.cid
+  }
 
+  getAlias(): string | undefined {
+    return this.alias
   }
 
   getEdges(): FosPath {
@@ -62,15 +67,15 @@ export class FosNode {
   }
 
   addEdge(edgeType: string, target: string): FosNode {
-    return new FosNode({...this.value, children: [...this.getEdges(), [edgeType, target]] }, this.store)
+    return new FosNode({...this.value, children: [...this.getEdges(), [edgeType, target]] }, this.store, this.alias)
   }
 
   removeEdge(edgeType: string, target: string): FosNode {
-    return new FosNode({...this.value, children: this.getEdges().filter(item => item[0] == edgeType && item[1] === target) }, this.store)
+    return new FosNode({...this.value, children: this.getEdges().filter(item => item[0] == edgeType && item[1] === target) }, this.store, this.alias)
   }
 
   updateEdge(oldEdgeType: string, oldTarget: string, newEdgeType: string, newTarget: string): FosNode {
-    const updated =  new FosNode({...this.value, children: this.getEdges().map(item => item[0] === oldEdgeType && item[1] === oldTarget ? [newEdgeType, newTarget] : item) }, this.store)
+    const updated =  new FosNode({...this.value, children: this.getEdges().map(item => item[0] === oldEdgeType && item[1] === oldTarget ? [newEdgeType, newTarget] : item) }, this.store, this.alias)
     return updated
   }
 

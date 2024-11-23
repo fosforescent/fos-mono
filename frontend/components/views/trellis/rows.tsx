@@ -6,17 +6,19 @@ import { DragOverlay } from '@dnd-kit/core';
 import { BrainCircuit, CircleEllipsis, Wand } from "lucide-react";
 
 
-import { ComboboxEditable } from '../../combobox/comboboxEditable';
+
 
 
 import { RadioGroup, RadioGroupItem } from "@/frontend/components/ui/radio-group"
 import { Label } from "@/frontend/components/ui/label"
 import { AppState, FosReactOptions, FosPath } from '@/shared/types';
-import { getDragItem, getNodeDescription, getNodeInfo } from '@/frontend/lib/utils';
+
 import { getActions } from '@/frontend/lib/actions';
-import { getNodeOperations } from '@/frontend/lib/nodeOperations';
+import { getNodeOperations } from '@/shared/nodeOperations';
 import { get } from 'http';
 import { DefaultRowComponent } from './row';
+import { getExpressionInfo } from '@/shared/dag-implementation/expression';
+import { NodeRow } from '../../node/NodeRow';
 
 
 
@@ -35,7 +37,7 @@ export const FosRowsComponent = ({
 }) => {
   
 
-  const { nodeType, nodeChildren, isCollapsed, isBase } = getNodeInfo(nodeRoute, data.data)
+  const { nodeType, nodeChildren, isCollapsed, isBase, isRoot, isTodo, isWorkflow, isOption } = getExpressionInfo(nodeRoute, data.data)
   
 
   const [showMore, setShowMore] = React.useState(false)
@@ -68,31 +70,31 @@ export const FosRowsComponent = ({
 
   
 
-  return {
-    "workflow": <TaskRows 
+  if (isRoot) {
+    return <TaskRows 
       nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
-    />,
-    "option": (isCollapsed && !isBase) ? <OptionRowsCombined
+    />
+  }else if (isOption) {
+    return <OptionRowsCombined
       nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
-    /> : <OptionRowsExpanded
+    />
+  } else if (isWorkflow) {
+    return <TaskRows 
       nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
-    />,
-    "root": <TaskRows 
-      nodeRoute={nodeRoute}
-      options={options}
-      data={data}
-      setData={setData}
-    />,
-  }[nodeType] || <></>
+    />
+  } else {
+    throw new Error('node type rows not implemented')
+  }
+
 }
 
 
@@ -120,7 +122,7 @@ const OptionRowsCombined = ( {
   }
 
 
-  const {  locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, getOptionInfo } = getNodeInfo(nodeRoute, data.data)
+  const {  locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, getOptionInfo } = getExpressionInfo(nodeRoute, data.data)
 
   const { selectedIndex, nodeOptions } = getOptionInfo()
   
@@ -148,26 +150,12 @@ const OptionRowsCombined = ( {
   }
 
   return (<div className="flex flex-initial grow">
-    <ComboboxEditable 
-      className='w-full bg-transparent'
-      handleTextEdit={setFocusAndDescription}
-      handleChange={handleChange}
-      suggestOption={suggestOption}
-      hasFocus={hasFocus}
-      focusChar={focusChar}
-      deleteOption={deleteOption}
-      // deleteRow={deleteRow}
-      isDragging={isDragging}
-      draggingOver={draggingOver}
-      onKeyDown={keyDownEvents}
-      onKeyUp={keyUpEvents}
-      selectedIndex={selectedIndex}
-      values={nodeOptions}
-      locked={fosOptions.locked || false }
-      // defaultValue={selectedNodeDescription}
-      defaultValue={selectedIndex.toString()}
-      addOption={addOption}
-      />
+    <NodeRow 
+      data={data}
+      setData={setData}
+      options={fosOptions}
+      nodeRoute={nodeRoute}
+    />
 
   </div>)
 
@@ -202,7 +190,8 @@ const OptionRowsExpanded = ({
 
 
 
-  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, isRoot, childRoutes, isBase } = getNodeInfo(nodeRoute, data.data)
+  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, getDragItem,
+    draggingOver, nodeDescription, isRoot, childRoutes, isBase, children } = getExpressionInfo(nodeRoute, data.data)
   
   const { selectedIndex, nodeOptions } = getOptionInfo()
 
@@ -232,7 +221,7 @@ const OptionRowsExpanded = ({
 
    const canPrompt = options.canPromptGPT && options.promptGPT
 
-  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && getNodeDescription(childRoutes[0], data.data) === "")
+  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && children[0]?.getExpressionInfo().nodeDescription === "")
 
 
   return (    <div className="pl-6">
@@ -243,7 +232,7 @@ const OptionRowsExpanded = ({
 
     
 
-          const item = getDragItem(childRoute, false)
+          const item = getDragItem(false)
 
           
 
@@ -319,7 +308,7 @@ const TaskRows = ({
   }
 
 
-  const { getChildrenOfType, isRoot, isBase } = getNodeInfo(nodeRoute, data.data)
+  const { getChildrenOfType, isRoot, isBase, nodeDescription, children } = getExpressionInfo(nodeRoute, data.data)
   
   const { 
     suggestOption, 
@@ -347,7 +336,7 @@ const TaskRows = ({
 
   const activeChildRoutes = getChildrenOfType("workflow")
 
-  const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && getNodeDescription(activeChildRoutes[0], data.data) === "")
+  const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && children[0]?.getExpressionInfo().nodeDescription === "")
 
 
   // console.log('taskRows', activeChildRoutes, activeChildRoutes.length, rowsEmpty)
@@ -360,7 +349,7 @@ const TaskRows = ({
     <div>
   
         {activeChildRoutes.length > 0
-          ? activeChildRoutes.map((childRoute , i) => {
+          ? activeChildRoutes.map((childExpr , i) => {
   
       
             return (<div key={i} className={` `}>
@@ -368,7 +357,7 @@ const TaskRows = ({
               <div  className="flex w-full">
                 {(<DefaultRowComponent
   
-                  nodeRoute={childRoute}
+                  nodeRoute={childExpr.route}
                   options={options}
                   data={data}
                   setData={setData}

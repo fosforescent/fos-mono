@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from 'express'
 import { prisma } from '../prismaClient'
 import { createIndexIfNecessary, OpenAIEmbeddingsAdapter, pineconeIndexExists, semanticSearch } from '../pinecone'
-import { AppState, FosRoute } from '@/shared/types'
+import { AppState, FosPath, FosRoute } from '@/shared/types'
 import { FosStore } from '@/shared/dag-implementation/store'
-import { FosExpression } from '@/shared/dag-implementation/expression'
+import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression'
 import OpenAI from 'openai'
 import { Pinecone } from '@pinecone-database/pinecone'
 import { Document } from '@langchain/core/documents'
+import{ mutableMapExpressions, } from '@/shared/utils'
 
 // Initialize the client
 const openai = new OpenAI({
@@ -120,8 +121,7 @@ interface SearchResult {
 //   }
 // }
 export const executeSearch = async (
-  nodeRoute: FosRoute, 
-  context: AppState["data"],
+  expression: FosExpression,
   options: {
     limit?: number;
     minScore?: number;
@@ -129,9 +129,7 @@ export const executeSearch = async (
   } = {}
 ): Promise<SearchResult[]> => {
   try {
-    const store = new FosStore(context);
-    const expression = new FosExpression(store, nodeRoute);
-    const { nodeDescription } = expression.getExpressionInfo();
+    const { nodeDescription, nodeRoute } = expression.getExpressionInfo();
     
     if (!nodeDescription) {
       console.warn('No node description available for search');
@@ -155,7 +153,18 @@ export const executeSearch = async (
     );
 
     // Transform and filter results
-    return processSearchResults(searchResults, context, minScore);
+    const results =  processSearchResults(searchResults, expression.store.exportContext([]), minScore);
+
+
+    results.forEach(result => {
+      const { nodeId, score, description } = result;
+      console.log(`Node ID: ${nodeId}, Score: ${score}, Description: ${description}`);
+      // const searchResult = expression.store.createExpression(nodeRoute, )
+    });
+    
+    return results;
+
+
 
   } catch (error) {
     console.error('Error in executeSearch:', error);
@@ -204,7 +213,10 @@ export const searchQuery = async (req: Request, res: Response) => {
       });
     }
 
-    const results = await executeSearch(route, context, {
+    const store = new FosStore(context);
+    const expression = new FosExpression(store, route);
+
+    const results = await executeSearch(expression, {
       limit,
       minScore,
       excludeIds
@@ -227,17 +239,27 @@ export const upsertSearchTerms = async (context: AppState["data"]): Promise<bool
   try {
     await createIndexIfNecessary(process.env.PINECONE_INDEX!)
 
-    const items = Object.entries(context.fosData.nodes)
-      .filter(([_, node]) => node?.data.description?.content)
-      .map(([id, node]) => ({
-        metadata: {
-          id,
+    type UpsertObject = {
+      metadata: Record<string, any>;
+      text: string;
+    }
 
-          updatedAt: node.data.updated?.time,
-        },
-        text: node.data.description!.content
-      }));
+    const itemsMap = mutableMapExpressions<UpsertObject>(context, (resultMap, expression) => {
+      const { nodeId, nodeDescription, nodeRoute, nodeData } = expression.getExpressionInfo();
+      if (nodeDescription) {
+        resultMap.set(nodeRoute, {
+          metadata: {
+            id: nodeId,
+            route: nodeRoute,
+            updatedAt: nodeData.updated?.time,
+          },
+          text: nodeDescription
+        })
+      }
+    });
 
+    const items = [...itemsMap.values()];
+    
     if (items.length === 0) {
       console.warn('No valid items found to upsert');
       return false;

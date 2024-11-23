@@ -9,6 +9,8 @@ import { InputJsonValue, JsonObject } from '@prisma/client/runtime/library'
 import { FosStore } from '@/shared/dag-implementation/store'
 import { semanticSearch } from '../pinecone'
 import {  processAndUpsertDocuments, searchQuery, upsertSearchTerms } from './search'
+import { mutableMapExpressions } from '@/shared/utils'
+import { runActionsOnStore } from './runActions'
 
 
 
@@ -31,7 +33,7 @@ export const getUserData = async (req: Request, res: Response): Promise<Response
 
 
     // console.log('user', user)
-    const serverData = await loadCtxFromDb(prisma, user.fosGroup)
+    const serverData = await loadCtxFromDb(prisma, user.fosGroup, user)
 
     // console.log('serverData', serverData)
     
@@ -65,6 +67,7 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       }
     })
 
+
     if (!user) {
       console.log('User not found', user, prisma.user.findUnique, prisma.user, prisma)
       throw new Error('User not found')
@@ -77,8 +80,9 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       }
       
 
+      const trellisData = userData.trellisData as unknown as TrellisSerializedData
       // console.log('user', user)
-      const serverData = await loadCtxFromDb(prisma, user.fosGroup)
+      const serverData = await loadCtxFromDb(prisma, user.fosGroup, user)
 
       // console.log('serverData', serverData)
       
@@ -96,8 +100,16 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
   
       }
 
-      const userDataStore = new FosStore(userData)
 
+      const serverDataStore = new FosStore({ fosData: serverData, trellisData } )
+
+      serverDataStore.updateWithContext(userData)
+
+      runActionsOnStore(serverDataStore)
+
+      
+
+      
       const userDataWithNewRootNode = updateRootNodeId(userData.fosData, getRootId(serverData))
 
       // console.log('userData', userDataWithNewRootNode)
@@ -126,23 +138,22 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
 
       const nodes = userDataWithNewRootNode.nodes
 
-      // console.log('nodes', nodes, meta)
+
+
+
       await storeCtxToDb(prisma, user.fosGroup, meta, nodes)
 
 
       // console.log("stored")
 
-      const newServerData = await loadCtxFromDb(prisma, user.fosGroup)
+      const newServerData = await loadCtxFromDb(prisma, user.fosGroup, user)
 
       const userGroupData = user.fosGroup.data as { lastVectorUploadTime: number }
       
       if (userGroupData.lastVectorUploadTime < Date.now() - 1000 * 60 * 60) {
 
 
-        const result = await upsertSearchTerms({
-          fosData: newServerData,
-          trellisData: userData.trellisData
-        });
+        const result = await upsertSearchTerms({ fosData: newServerData, trellisData });
 
         if (result) {
           await prisma.fosGroup.update({
@@ -157,23 +168,8 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       }
     
 
-      for (const key of Object.keys(newServerData.nodes)) {
-        const result = userDataStore.getNodeByAddress(key)
-        if (key === userDataStore.searchQueryNode.getId()){
 
-          const results = searchQuery
-
-          const resultContent: FosNodeContent = {
-            data: {
-
-            },
-            children: []
-          }
-
-
-        }
-
-      }
+      // TODO: if target node is search query node
 
 
       const updatedUser = await prisma.user.update({

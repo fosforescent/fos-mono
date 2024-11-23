@@ -133,7 +133,7 @@ export const addToMockContext = (rootEntry: FosPathElem, nodes: FosNodesData) =>
       ...nodes,
       ...defaultNodesMinusTask2
     },
-    route: [["root", "root"]],
+    route: [],
     baseNodeContent: {
       data: {
         description: { 

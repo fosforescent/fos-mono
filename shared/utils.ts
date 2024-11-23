@@ -1,7 +1,7 @@
 import e from "cors"
-import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData } from "./types"
+import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute } from "./types"
 import { FosStore } from "./dag-implementation/store"
-import { getExpressionInfo } from "./dag-implementation/expression"
+import { FosExpression, getExpressionInfo } from "./dag-implementation/expression"
 
 
 
@@ -241,7 +241,6 @@ export const aggMap = (edges: [string, string][]): Map<string, string[]> => {
 
 
 
-
 type NodeOperation<T> = (
   node: FosNodeContent,
   nodeId: FosNodeId,
@@ -260,8 +259,9 @@ export function traverseNodes<T>(
   
   // Initialize parent map
   Object.entries(contextData.nodes).forEach(([nodeId, node]) => {
-    console.log('nodeId', nodeId)
+    console.log('leftId', nodeId, node)
     node.children.forEach(([leftId, rightId]) => {
+      console.log('leftId', leftId, rightId)
       // For each child, add this node as its parent
       if (!parentMap.has(leftId)) {
         parentMap.set(leftId, new Set())
@@ -353,4 +353,103 @@ export function traverseNodes<T>(
   return results
 }
 
-export default traverseNodes;
+
+
+
+type MutableExprOperation<T> = (
+  acc: Map<FosPath, T>,
+  expression: FosExpression,
+  childExpressions: FosExpression[]
+) => void
+
+export function mutableReduceToRouteMap<T>(
+  contextData: AppState["data"],
+  operation: MutableExprOperation<T>
+): Map<FosPath, T> {
+
+  const store = new FosStore(contextData)
+
+  const rootExpr = new FosExpression(store, [])
+
+  let resultMap = new Map()
+  const helper = (acc: Map<FosPath, T>, expr: FosExpression): void => {
+    const childExpressions = expr.getChildren()
+
+    const { nodeRoute } = expr.getExpressionInfo()
+
+    const operationResult = operation(acc, expr, childExpressions)
+
+
+    for (const childExpr of childExpressions) {
+      const { nodeRoute: childRoute } = childExpr.getExpressionInfo()
+      helper(acc, childExpr)
+    }
+  }
+
+  helper(resultMap, rootExpr)
+  
+  return resultMap
+}
+
+
+
+type ExprOperation<T> = (
+  expression: FosExpression,
+  childExpressions: FosExpression[]
+) => T
+
+export function reduceToRouteMap<T>(
+  contextData: AppState["data"],
+  operation: ExprOperation<T>
+): Map<FosPath, T> {
+
+  const resultMap = new Map<FosPath, T>()
+
+  const op = (acc: Map<FosPath, T>, expr: FosExpression, childExpressions: FosExpression[]) => {
+    const { nodeRoute } = expr.getExpressionInfo()
+    const operationResult = operation(expr, childExpressions)
+    resultMap.set(nodeRoute, operationResult)
+    return operationResult
+  }
+
+  return mutableReduceToRouteMap<T>(contextData, op)
+  
+}
+
+
+type SingleExprOperation<T> = (
+  expression: FosExpression,
+) => T
+
+export function mapExpressions<T>(
+  contextData: AppState["data"],
+  operation: SingleExprOperation<T>
+): Map<FosPath, T> {
+
+
+  const op = (expr: FosExpression, childExpressions: FosExpression[]) => {
+    return operation(expr)
+  }
+  return reduceToRouteMap(contextData, op)
+  
+}
+
+
+type SingleMutableExprOperation<T> = (
+  acc: Map<FosPath, T>,
+  expression: FosExpression,
+) => void
+
+export function mutableMapExpressions<T>(
+  contextData: AppState["data"],
+  operation: SingleMutableExprOperation<T>
+): Map<FosPath, T> {
+
+
+  const op = (acc: Map<FosPath, T>, expr: FosExpression, childExpressions: FosExpression[]) => {
+    operation(acc, expr)
+  }
+  return mutableReduceToRouteMap(contextData, op)
+  
+}
+

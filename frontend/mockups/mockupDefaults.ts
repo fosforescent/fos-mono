@@ -64,7 +64,7 @@ export const getMockupState = (ctx: FosContextData): AppState =>  ({
   },
   theme: "system",
   loaded: true,
-  apiUrl: "http://localhost:3000"
+  apiUrl: "http://localhost:4000"
 })
 
 

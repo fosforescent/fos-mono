@@ -1,3 +1,4 @@
+import { Delta, DiffOptions } from "@n1ru4l/json-patch-plus"
 import { getGlobal } from "../frontend/App"
 
 
@@ -35,9 +36,17 @@ export interface TrellisSerializedData {
 
 export type FosDataContent = {
   versionControl?: {
-     
+    delta: Delta,
+    branches: string[],
+    tags: string[],
   }
-  
+  error?: {
+    target: string;
+    instruction: string;
+    targetIsError: boolean;
+    instructionIsError: boolean;
+    message: string;
+  }
   duration?: {
     plannedMarginal: number;
     entries: {
@@ -177,6 +186,7 @@ export type FosContextData = {
   route: FosPath,
   baseNodeContent: FosNodeContent,
   baseNodeInstruction: FosNodeContent,
+  // aliasMap: { [key: string]: FosNodeId },
   // basePeers?: FosPeer[],
 }
 

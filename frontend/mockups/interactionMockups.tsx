@@ -35,19 +35,8 @@ export const FieldTest = () => {
 
 
 
-  return (
-    <SearchField 
-      data={startData}
-      setData={setDataCompare}
-      options={{}}
-      nodeRoute={[]}
-
-    />
-  )
-
-
   // return (
-  //   <NodeRow 
+  //   <SearchField 
   //     data={startData}
   //     setData={setDataCompare}
   //     options={{}}
@@ -55,6 +44,17 @@ export const FieldTest = () => {
 
   //   />
   // )
+
+
+  return (
+    <NodeRow 
+      data={startData}
+      setData={setDataCompare}
+      options={{}}
+      nodeRoute={[]}
+
+    />
+  )
 }
 
 
@@ -87,7 +87,7 @@ const SearchField = ({
     console.log('search click', data.data)
 
 
-    // const authedApi = api(data, setData).authed().postData(data.data)
+    const authedApi = api(data, setData).authed().postData(data.data)
 
   }
 

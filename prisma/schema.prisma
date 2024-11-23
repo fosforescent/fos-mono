@@ -109,8 +109,10 @@ model DataHistory {
 
 model FosGroup {
   id                     Int                      @id @default(autoincrement())
-  rootNode               FosNode                  @relation(fields: [rootNodeId], references: [id])
-  rootNodeId             String                   @db.Uuid
+  rootTargetNode         FosNode                  @relation(fields: [rootTargetNodeId], references: [id], name: "RootTargetNode")
+  rootTargetNodeId       String                   @db.Uuid
+  rootInstructionNode    FosNode                  @relation(fields: [rootInstructionNodeId], references: [id], name: "RootInstructionNode")
+  rootInstructionNodeId  String                   @db.Uuid
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @default(now())
   data                   Json                     @default("{}")
@@ -119,6 +121,8 @@ model FosGroup {
   publicKey              String
   DataHistory            DataHistory[]
   FosNodeGroupAccessLink FosNodeGroupAccessLink[]
+  FosNode                FosNode?                 @relation(fields: [fosNodeId], references: [id])
+  fosNodeId              String?                  @db.Uuid
 }
 
 model FosNodeGroupAccessLink {
@@ -136,8 +140,11 @@ model FosNode {
   data                   Json                     @default("{}")
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @default(now())
-  FosGroup               FosGroup[]
+  cid                    String
+  instructionOfGroup     FosGroup[]               @relation("RootTargetNode")
   FosNodeGroupAccessLink FosNodeGroupAccessLink[]
+  targetOfGroup          FosGroup[]               @relation("RootInstructionNode")
+  FosGroup               FosGroup[]
 }
 
 // model StripePayout {

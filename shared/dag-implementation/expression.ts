@@ -16,6 +16,7 @@ export class FosExpression {
 
   constructor(store: FosStore, route: FosPath) {
 
+    console.log('constructing expression', route)
     this.route = route
     this.store = store
     if (route.length !== 0) {
@@ -28,8 +29,16 @@ export class FosExpression {
       this.instructionNode = store.rootInstruction
       this.targetNode = store.rootTarget
     } else {
-      this.instructionNode = store.getNodeByAddress(lastElem[0])
-      this.targetNode = store.getNodeByAddress(lastElem[1])
+      const instructionNode = store.getNodeByAddress(lastElem[0])
+      if (!instructionNode){
+        throw new Error('Instruction node not found')
+      }
+      this.instructionNode = instructionNode
+      const targetNode = store.getNodeByAddress(lastElem[1])
+      if (!targetNode){
+        throw new Error('Target node not found')
+      }
+      this.targetNode = targetNode
     }
 
   }
@@ -336,6 +345,8 @@ export class FosExpression {
 
     const isBase = pathEqual(this.route, this.store.fosRoute)
 
+    const isSearch = nodeType === this.store.searchQueryNode.getId()
+
     return {
       ...expressionContent,
       childrenVisible,
@@ -346,6 +357,7 @@ export class FosExpression {
       nodeDescription: this.getDescription(),
       isRoot: this.isRoot(),
       isCollapsed,
+      isSearch,
       children,
       childRoutes,
       hasChildren,
@@ -388,6 +400,9 @@ export const getExpressionInfo = (nodeRoute: FosPath, state: AppState["data"]) =
 
   return expression.getExpressionInfo()
 }
+
+
+
 
 
 

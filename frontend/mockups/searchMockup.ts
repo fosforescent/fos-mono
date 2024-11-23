@@ -17,7 +17,7 @@ export const searchMockupContextStart: FosContextData = addToMockContext(["WORKF
         }
       },
       children: [
-        ["task2a_1", "SEARCHQUERY"], // holds context until triggered
+        ["SEARCHQUERY", "task2a_1"], // holds context until triggered
         // ["task2a_1", "optionNode"]
       ]
     },
@@ -39,7 +39,7 @@ export const searchMockupContextStart: FosContextData = addToMockContext(["WORKF
     task2a_1: {
       data: {
         description: {
-          content: "Task 2a.1"
+          content: "This is the search, please search is"
         },
         todo: {
           completed: false,
