@@ -6,15 +6,17 @@ import WorkflowMain from './components/views/trellis/main'
 import { FosSettingsPage }  from './components/settings'
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
-import TodoQueue from './components/views/Queue'
+import TodoQueue from './components/views/QueueLayout'
 
 
 import { PinBoard } from './components/home/Pins'
 import { InfoHome } from './components/info/Info'
 import { MarketBrowse } from './components/home/MarketBrowse'
-import QueueView from './components/views/Queue'
+import QueueView from './components/views/QueueLayout'
 import { FieldTest } from '@/frontend/mockups/interactionMockups'
 
+import './global.css'
+import './App.css'
 
 declare const __FOS_API_URL__: string;
 

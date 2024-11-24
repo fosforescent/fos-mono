@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import _, { merge } from 'lodash'
-import { checkDataFormat, getRootId, hashFosContextData, loadCtxFromDb,storeCtxToDb, updateRootNodeId, } from './util'
+import { checkDataFormat, loadCtxFromDb,storeCtxToDb,  } from './util'
 import { ReqWithClients } from '../clientManager'
 
 import { prisma } from '../prismaClient'
@@ -107,53 +107,15 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
 
       runActionsOnStore(serverDataStore)
 
-      
-
-      
-      const userDataWithNewRootNode = updateRootNodeId(userData.fosData, getRootId(serverData))
-
-      // console.log('userData', userDataWithNewRootNode)
-      // Object.keys(userDataWithNewRootNode.nodes).forEach((key) => {
-      //   console.log('key - userdata', key, userDataWithNewRootNode.nodes[key]?.content, userDataWithNewRootNode.nodes[key]?.data?.description)
-      // })
-      checkDataFormat(userDataWithNewRootNode)
-
-      const userDataWithAllNodes = {
-        ...userDataWithNewRootNode,
-        nodes: {
-          ...serverData.nodes,
-          ...userDataWithNewRootNode.nodes,
-        }
-      }
-
-      Object.keys(userDataWithNewRootNode.nodes).forEach((key) => {
-        console.log('key - mergeddata', key, userDataWithNewRootNode.nodes[key]?.children, userDataWithNewRootNode.nodes[key]?.data?.description)
-      })
-
-      const meta: Omit<FosContextData, "nodes"> = {
-        route: userDataWithNewRootNode.route,
-        baseNodeContent: userDataWithNewRootNode.baseNodeContent,
-        baseNodeInstruction: userDataWithNewRootNode.baseNodeInstruction,
-      }
-
-      const nodes = userDataWithNewRootNode.nodes
 
 
-
-
-      await storeCtxToDb(prisma, user.fosGroup, meta, nodes)
-
-
-      // console.log("stored")
-
-      const newServerData = await loadCtxFromDb(prisma, user.fosGroup, user)
 
       const userGroupData = user.fosGroup.data as { lastVectorUploadTime: number }
       
       if (userGroupData.lastVectorUploadTime < Date.now() - 1000 * 60 * 60) {
 
 
-        const result = await upsertSearchTerms({ fosData: newServerData, trellisData });
+        const result = await upsertSearchTerms(serverDataStore);
 
         if (result) {
           await prisma.fosGroup.update({
@@ -168,21 +130,19 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       }
     
 
+      await storeCtxToDb(prisma, user.fosGroup, serverDataStore )
 
-      // TODO: if target node is search query node
 
+      const updatedContext = serverDataStore.exportContext([])
 
       const updatedUser = await prisma.user.update({
         where: { user_name: username },
-        data: { data: userData.trellisData as unknown as JsonObject}
+        data: { data: serverDataStore.trellisData as unknown as JsonObject}
       })
 
       // console.log('newServerData', newServerData)
       return res.json({
-        data: { 
-          fosData: newServerData,
-          trellisData: user.data,
-        },
+        data: updatedContext,
         updated: true,
       })
 

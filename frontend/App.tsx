@@ -5,7 +5,6 @@ import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosRe
 import { useTraceUpdate } from './hooks/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
-import './global.css'
 
 
 
@@ -305,9 +304,7 @@ export default function App({
     if (newData.auth.jwt){
       localStorage.setItem('auth', JSON.stringify(newData.auth.jwt))
     }
-    if (newData.data.fosData.route.length < 1){
-      throw new Error('No route')
-    }
+
 
     const newActions =  getActions(options, newData, setAppState)
 
@@ -351,24 +348,24 @@ export default function App({
 
 
 
-  useEffect(() => {
-    // Apply mock events for testing
-    const handler = () => {
-      getMockEvents(appState).forEach(event => {
-        setAppState(prevState => applyMockEvent(prevState, event));
-      });  
-    }
+  // useEffect(() => {
+  //   // Apply mock events for testing
+  //   const handler = () => {
+  //     getMockEvents(appState).forEach(event => {
+  //       setAppState(prevState => applyMockEvent(prevState, event));
+  //     });  
+  //   }
 
-    setTimeout(() => {
-      handler()
-    }, 10000)
+  //   setTimeout(() => {
+  //     handler()
+  //   }, 10000)
 
 
-    return 
-  }, []);
+  //   return 
+  // }, []);
 
  
-  return (<><div className="App h-full bg-background" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden' }}>
+  return (<><div className="App h-full bg-background p-0 relative" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden', "minHeight": "100svh" }}>
       <div style={{textAlign: 'left', boxSizing: 'border-box'}} className='w-full'>
         <HamburgerMenu 
           emailConfirmationToken={emailConfirmationToken} 
@@ -391,8 +388,8 @@ export default function App({
           setMenuOpen={setMenuOpen}
           
           />
-        <div className="flex items-center justify-center h-full w-full" style={{overflowX: 'hidden' }}>
-        <></>
+        <div className=" h-full w-full p-0 m-0" >
+ 
         
         <Outlet context={{
           data: appState,

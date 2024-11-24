@@ -5,9 +5,11 @@ import svgr from 'vite-plugin-svgr'
 import dotenv from 'dotenv'
 import { libInjectCss } from 'vite-plugin-lib-inject-css'
 import { resolve } from 'path'
-import autoprefixer from "autoprefixer";
+
 import tailwindcss from "tailwindcss";
 import { builtinModules } from 'module';
+import tailwind from "tailwindcss";
+import autoprefixer from "autoprefixer";
 
 dotenv.config()
 
@@ -76,7 +78,7 @@ const getFrontendConfig = (): UserConfig => ({
     }
   ],
   css: {
-    postcss: './frontend/postcss.config.js',
+    postcss: './frontend/postcss.config.cjs',
     preprocessorOptions: {
       css: { javascriptEnabled: true }
     },

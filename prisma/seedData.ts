@@ -2,7 +2,15 @@ import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/share
 
 import { v4 as uuidv4 } from 'uuid';
 
-export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: FosNodeId, rootNodeContent: FosNodeContent } => {
+export type GeneratedResult = { 
+  nodesData: FosNodesData, 
+  rootTargetNodeId: FosNodeId, 
+  rootTargetNodeContent: FosNodeContent, 
+  rootInstructionNodeId: FosNodeId, 
+  rootInstructionNodeContent: FosNodeContent 
+}
+
+export const generateSeedContext = (): GeneratedResult  => {
 
 
     let ids: { [key: string] : string } = {
@@ -16,7 +24,7 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
         return ids[name]
     }    
 
-    const rootNodeContent: FosNodeContent = {
+    const rootTargetNodeContent: FosNodeContent = {
         data: {
           description: { 
             content: "My Goals",
@@ -25,10 +33,19 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
         children: [
           ["WORKFLOW",genId("task1")],
           ["WORKFLOW", genId("task2")],
-          ["todo", genId("task3")],
+          [genId("task3"), "COMPLETION"],
           // ["WORKFLOW", "task4"],
           // ["task5L", "task5R"]
         ]
+    }
+
+    const rootInstructionNodeContent: FosNodeContent = {
+      data: {
+        description: { 
+          content: "Root Instruction",
+        }
+      },
+      children: []
     }
 
     const nodesData: FosNodesData = {
@@ -138,9 +155,9 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
             }
           },
           children: [
-          [genId("task3a_1"), "UNIT", ],
-          [genId("task3a_2"), "UNIT"],
-          [genId("task3a_3"), "UNIT"]
+          [genId("task3a_1"), "COMPLETION", ],
+          [genId("task3a_2"), "COMPLETION"],
+          [genId("task3a_3"), "COMPLETION"]
           ]
         },
         [genId("task3a_1")]: {
@@ -170,14 +187,17 @@ export const generateSeedContext = (): { nodesData: FosNodesData, rootNodeId: Fo
           children: [
           ]
         },
+
     }
 
 
 
-    const context: { nodesData: FosNodesData, rootNodeId: FosNodeId, rootNodeContent: FosNodeContent } = {
+    const context: GeneratedResult = {
         nodesData: nodesData,
-        rootNodeId: genId("root"),
-        rootNodeContent
+        rootTargetNodeId: genId("root"),
+        rootTargetNodeContent,
+        rootInstructionNodeId: genId("rootInstruction"),
+        rootInstructionNodeContent
     }
 
     return context

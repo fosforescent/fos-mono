@@ -30,6 +30,9 @@ export interface TrellisSerializedData {
   collapsedList: FosPath[],
   rowDepth: number,
   dragInfo: DragInfo,
+  view: "Queue" | "Query" | "Tree" | "Focus",
+  activity: string,
+  mode: string,
 }
 
 
@@ -39,6 +42,10 @@ export type FosDataContent = {
     delta: Delta,
     branches: string[],
     tags: string[],
+  },
+  reversion?: {
+    reversionedToAddress: string,
+    nStepsBack: number,
   }
   error?: {
     target: string;
@@ -88,7 +95,8 @@ export type FosDataContent = {
 
   comment?: {
     content: string;
-    author: string;
+    authorID: string;
+    authorName: string;
     time: number;
     votes: {
       [key: string]: string;

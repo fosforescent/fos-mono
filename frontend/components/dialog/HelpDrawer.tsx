@@ -79,7 +79,7 @@ export const HelpDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
-      <DrawerTrigger className={`${open ? `p-7` : `absolute m-3 p-0 bottom-0 right-0`}`}><QuestionMarkCircledIcon width={24} height={24} /></DrawerTrigger>
+      <DrawerTrigger className={`${`absolute m-3 p-0 bottom-0 right-0`}`}><QuestionMarkCircledIcon width={24} height={24} /></DrawerTrigger>
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle className="text-center" aria-description='Shortcuts'>Shortcuts</DrawerTitle>

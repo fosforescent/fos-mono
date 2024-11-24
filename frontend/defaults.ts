@@ -274,7 +274,9 @@ export const defaultTrellisData: TrellisSerializedData = {
   "focusChar": null,
   "collapsedList": [],
   "rowDepth": getMaxDepth(),
-  
+  "activity": "todo",
+  "mode": "execute",
+  "view": "Queue",
   "dragInfo": {
     "dragging": null,
     "dragOverInfo": null

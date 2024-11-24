@@ -15,7 +15,7 @@ export const getMockEvents: (appState: AppState) => MockEvent[] = (appState) => 
                 content: 'Updated description content',
               },
             },
-            content: [],
+            children: [],
           },
         },
         route: [['todo', 'node-1']],

@@ -1,8 +1,8 @@
 import { jwtDecode } from "jwt-decode"
 import { api } from "../api"
-import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, InfoState, SubscriptionInfo, UserProfile } from "../../shared/types"
+import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, InfoState, SubscriptionInfo, TrellisSerializedData, UserProfile } from "../../shared/types"
 import { diff } from "@n1ru4l/json-patch-plus"
-import { getNodeOperations } from "./nodeOperations"
+import { getNodeOperations } from "../../shared/nodeOperations"
 import { debounce, set } from "lodash"
 
 
@@ -324,6 +324,43 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
   }
 
+  const setRoute = async (route: FosPath) => {
+    setAppData({
+      ...appData,
+      data: {
+        ...appData.data,
+        fosData: {
+          ...appData.data.fosData,
+          route: route
+        }
+      }
+    })
+
+  }
+
+  const setViewActivityMode = async (
+    view: TrellisSerializedData["view"], 
+    activity: TrellisSerializedData["activity"],
+    mode: TrellisSerializedData["mode"]
+  ) => {
+    setAppData({
+      ...appData,
+      data: {
+        ...appData.data,
+        trellisData: {
+          ...appData.data.trellisData,
+          activity: activity,
+          view: view,
+          mode: mode
+        }
+      }
+    })
+
+  }
+
+
+
+
   // const setDrag = async (draggingNode: FosPath | null, draggingOverNode: FosPath | null) => {
   //   setAppData({
   //       ...appData,
@@ -355,7 +392,8 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   return {
     loadAppData,
     putError,
-    
+    setRoute,
+    setViewActivityMode,
     loggedIn,
     setDragInfo,
     getDragInfo,

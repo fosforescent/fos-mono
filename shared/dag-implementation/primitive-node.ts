@@ -10,7 +10,7 @@ export const getTerminalNode = (store: FosStore) => {
     data: {},
     children: []
   }, "TERMINAL")
-  console.log('terminalNode', terminalNode)
+  // console.log('terminalNode', terminalNode)
   return terminalNode
 }
 
@@ -20,7 +20,7 @@ export const getUnitNode = (store: FosStore) => {
     data: {},
     children: [[terminalNode.getId(), terminalNode.getId()]]
 }, "UNIT")
-  console.log('unitNode', unitNode)
+  // console.log('unitNode', unitNode)
   return unitNode
 }
 
@@ -59,6 +59,7 @@ export const getChoiceTargetNode =  (store: FosStore) => generateConstructor(sto
   // [store.optionNotSelectedConstructor.getId(), ]
 ])
 
+export const getTimeIntervalNode = (store: FosStore) => generateConstructor(store, "TIMEINTERVAL", 'Time Interval Constructor', [])
 export const getCompleteFieldNode = (store: FosStore) => generateConstructor(store, "COMPLETION", 'Complete Field Constructor', [])
 
 export const getLinkActionNode = (store: FosStore) => generateConstructor(store, "LINKACTION", 'Link Action Constructor', [])
@@ -98,6 +99,10 @@ export const getBusinessNameFieldNode = (store: FosStore) => generateConstructor
 
 export const getPaymentFieldNode = (store: FosStore) => generateConstructor(store, "PAYMENT", 'Payment Field Constructor', [])
 export const getBidFieldNode = (store: FosStore) => generateConstructor(store, "BID", 'Bid Field Constructor', [])
+export const getMarketServiceListingNode = (store: FosStore) => generateConstructor(store, "MARKETSERVICE", 'Market Listing Constructor', [])
+
+export const getOfferFieldNode = (store: FosStore) => generateConstructor(store, "OFFER", 'Offer Field Constructor', [])
+export const getMarketRequestListingNode = (store: FosStore) => generateConstructor(store, "MARKETREQUEST", 'Market Request Listing Constructor', [])
 
 export const getInvoiceFieldNode = (store: FosStore) => generateConstructor(store, "INVOICE", 'Invoice Field Constructor', [])
 export const getInvoiceCommentFieldNode = (store: FosStore) => generateConstructor(store, "INVOICECOMMENT", 'Invoice Comment Field Constructor', [])
@@ -150,7 +155,7 @@ export const getMiddleNameFieldNode = (store: FosStore) => generateConstructor(s
 export const getOptionConstructor = (store: FosStore) => generateConstructor(store, "OPTION", 'Option Constructor', [])
 
 
-export const getSearchQueryNode = (store: FosStore) => generateConstructor(store, "SEARCH", 'Search Query Constructor', [])
+export const getSearchQueryNode = (store: FosStore) => generateConstructor(store, "SEARCHQUERY", 'Search Query Constructor', [])
 export const getSearchResultsNode = (store: FosStore) => generateConstructor(store, "SEARCHRESULT", 'Search Result Constructor', [])
 
 export const getErrorNode = (store: FosStore) => generateConstructor(store, "ERROR", 'Error Constructor', [])

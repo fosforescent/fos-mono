@@ -8,12 +8,13 @@ import {
 } from "@/shared/types";
 
 
-
+import { validate as isUuid } from "uuid";
 
 import { User, FosNode, FosGroup, PrismaClient } from "@prisma/client";
 
 import { generateKeyPair, randomUUID } from "crypto";
 import { upsertSearchTerms } from "./search";
+import { FosStore } from "@/shared/dag-implementation/store";
 
 export function hashNode(nodeData: FosNodeContent) {
   // Convert the FosNodeData object to a JSON string
@@ -39,49 +40,6 @@ export function generateNewId(data: FosContextData) {
   const newId = randomUUID();
   return newId;
 }
-
-export function hashFosContextData(fosContextData: FosContextData) {
-  // Convert the FosContextData object to a JSON string
-  // console.log('keys', Object.keys(fosContextData.nodes))
-  const objectWithRelevantData = {
-    nodes: Object.keys(fosContextData.nodes || {}).reduce((acc, key) => {
-      const nodeData = fosContextData.nodes[key];
-      // if (!nodeData.mergeNode) {
-      //   delete nodeData.mergeNode
-      // }
-      const returnVal = {
-        ...acc,
-        [key]: nodeData,
-      };
-      return returnVal;
-    }, {}),
-    route: fosContextData.route,
-  };
-
-  const dataString = JSON.stringify(objectWithRelevantData);
-
-  // Create a SHA-256 hash from the JSON string
-  const hash = crypto.createHash("sha256").update(dataString).digest("hex");
-
-  return hash;
-}
-
-export const dataIsEmpty = (data: FosContextData) => {
-  if (!data.nodes) {
-    return true;
-  }
-
-  const rootNodeId = getRootId(data);
-  const rootNode = data.nodes[rootNodeId];
-  if (rootNode && rootNode.children.length < 2) {
-    if (rootNode.data.description?.content) {
-      return false;
-    }
-    return true;
-  } else {
-    return false;
-  }
-};
 
 export const checkDataFormat = (data: FosContextData) => {
   // console.log("Checking data", data);
@@ -112,9 +70,24 @@ export const loadCtxFromDb = async (
 ): Promise<FosContextData> => {
   const existingData = userGroup.data as Partial<Omit<FosContextData, "nodes">>;
 
+
+  const baseTargetNode = await prisma.fosNode.findUnique({
+    where: {
+      id: userGroup.rootTargetNodeId,
+    },
+  });
+
+  const baseNodeInstruction = await prisma.fosNode.findUnique({
+    where: {
+      id: userGroup.rootInstructionNodeId,
+    },
+  });
+
   const meta = {
     route: [],
     ...(userGroup.data as Partial<Omit<FosContextData, "nodes">>),
+    baseNodeContent: baseTargetNode?.data as FosNodeContent,
+    baseNodeInstruction: baseNodeInstruction?.data as FosNodeContent
   } as Omit<FosContextData, "nodes">;
 
   if (!userGroup) {
@@ -125,22 +98,24 @@ export const loadCtxFromDb = async (
   //   (group) => group.id
   // );
 
-  const nodeModels = await prisma.fosNode.findMany({
-    where: {
-      FosNodeGroupAccessLink: {
-        some: {
-          fosGroupId: {
-            // in: groupIds,
-            in: [userGroup.id],
-          },
-        },
-      },
-    },
-  });
+  const nodeModels = await prisma.fosNode.findMany()
+ 
+  // const nodeModels = await prisma.fosNode.findMany({
+  //   where: {
+  //     FosNodeGroupAccessLink: {
+  //       some: {
+  //         fosGroupId: {
+  //           // in: groupIds,
+  //           in: [userGroup.id],
+  //         },
+  //       },
+  //     },
+  //   },
+  // });
 
   const rootNodeModel = await prisma.fosNode.findUnique({
     where: {
-      id: userGroup.rootNodeId,
+      id: userGroup.rootTargetNodeId,
     },
   });
 
@@ -170,7 +145,7 @@ export const generateBackupNodes = (userGroup: FosGroup) => {
   const startTaskId = randomUUID();
 
   return {
-    [userGroup.rootNodeId]: {
+    [userGroup.rootTargetNodeId]: {
       children: [["workflow", startTaskId]],
       data: {
         description: {
@@ -192,125 +167,127 @@ export const generateBackupNodes = (userGroup: FosGroup) => {
 export const storeCtxToDb = async (
   prisma: PrismaClient,
   userGroup: FosGroup,
-  meta: Omit<FosContextData, "nodes">,
-  nodes: FosNodesData
+  store: FosStore,
 ) => {
   // console.log("STORE CTX TO DB", meta, nodes);
+  
 
-  if (!meta.route) {
-    throw new Error("no trail");
-  }
+  let cidsLeft = new Set(store.table.keys())
+  let nodeObjects: {
+    content: FosNodeContent,
+    uuid: string, 
+    cid: string,
+  }[] = []
+  store.aliasMap.keys().forEach((key) => {
+    if (isUuid(key)) {
+      const cid = store.aliasMap.get(key);
+      if (!cid) {
+        throw new Error("no cid found for alias");
+      }
+      const nodeContent = store.table.get(cid);
+      if (!nodeContent) {
+        throw new Error("no node content found for cid");
+      }
+      nodeObjects.push({
+        content: nodeContent,
+        uuid: key,
+        cid: cid
+      })
+      cidsLeft.delete(cid)
+    }
+  })
 
-  if (!Object.keys(nodes).length) {
-    throw new Error("no nodes");
-  }
-
-  const formattedNodes = Object.keys(nodes).map((key: string) => {
-    return {
-      id: key,
-      data: nodes[key],
-    };
-  });
 
 
-  for (const fNode of formattedNodes) {
+  for (const fNode of nodeObjects) {
     const node = await prisma.fosNode.findUnique({
       where: {
-        id: fNode.id,
+        id: fNode.uuid,
       },
     });
 
-    // console.log("NODE", node?.id, fNode.id, fNode.data);
+    if(!node){
+      throw new Error("no node found")
+    }
 
-    if (node) {
-      const nodeLink = await prisma.fosNodeGroupAccessLink.findFirst({
-        where: {
-          fosNodeId: node.id,
-          fosGroupId: {
-            // in: groupIds,
-            in: [userGroup.id],
-          },
-        },
-      });
 
-      const updatedTimestamp = fNode.data?.data.updated?.time
-        ? new Date(fNode.data?.data.updated?.time)
-        : new Date(0);
+    const updatedTimestamp = fNode.content?.data.updated?.time
+      ? new Date(fNode.content?.data.updated?.time)
+      : new Date(0);
+    const isNewer = updatedTimestamp > node.updatedAt;
 
-      const hasPermission = !!nodeLink || userGroup.rootNodeId === node.id;
-      const isNewer = updatedTimestamp > node.updatedAt;
+    const hasPermission = true;
 
-      if (hasPermission) {
-        if (isNewer) {
-          await prisma.fosNode.upsert({
-            where: { id: fNode.id },
-            update: { data: fNode.data },
-            create: { id: fNode.id, data: fNode.data },
-          });
-        }
-      } else {
-        console.log(
-          "PERMISSION ERROR",
-          fNode.id,
-          "link",
-          nodeLink,
-          !!nodeLink,
-          "groupIds",
-          // groupIds,
-          fNode.data,
-          userGroup.rootNodeId
-        );
 
-        throw new Error(
-          "no permission to update node --- how did this end up in client? "
-        );
-
-        // await prisma.fosNode.create({
-        //   data: {
-        //     id: fNode.id,
-        //     data: fNode.data,
-        //     FosNodeGroupAccessLink: {
-        //       create: groupIds.map((groupId) => {
-        //         return {
-        //           fosGroupId: groupId
-        //         }
-        //       })
-        //     }
-        //   }
-        // })
+    if (hasPermission) {
+      if (isNewer) {
+        await prisma.fosNode.upsert({
+          where: { id: fNode.uuid },
+          update: { data: fNode.content },
+          create: { id: fNode.uuid, data: fNode.content, cid: fNode.cid },
+        });
       }
     } else {
+      console.log(
+        "PERMISSION ERROR",
+        fNode.uuid,
+        "link",
+        "groupIds",
+        // groupIds,
+        fNode,
+        userGroup.rootTargetNodeId
+      );
+
+      throw new Error(
+        "no permission to update node --- how did this end up in client? "
+      );
 
 
+    }
+  } 
+  
+  
+  for (const cid of cidsLeft) {
+
+    const nodeContent = store.table.get(cid);
+
+    const found = await prisma.fosNode.findMany({
+      where: {
+        cid: cid,
+      },
+    });
+
+    if (found.length === 0) {
       await prisma.fosNode.create({
         data: {
-          id: fNode.id,
-          data: fNode.data,
-          FosNodeGroupAccessLink: {
-            create: [userGroup.id].map((groupId) => {
-              return {
-                fosGroupId: groupId,
-              };
-            }),
-          },
+          cid: cid,
+          data: nodeContent,
         },
       });
+    };
 
-      // await changeNodeIdForGroup(prisma, userGroup, fNode.id, newId)
-    }
   }
 
-  const rootNodeId = meta.route?.[0]?.[1];
-  console.log("rootNodeId", rootNodeId);
-  console.log("nodes", nodes);
+  const meta: Partial<Omit<FosContextData, "nodes">> = {
+    route: store.fosRoute,
+    baseNodeContent: store.rootTarget.getContent(),
+    baseNodeInstruction: store.rootInstruction.getContent(),
+  };
 
-  const updatedGroup = await prisma.fosGroup.update({
-    where: { id: userGroup.id },
+  const updatedGroupNode = await prisma.fosNode.update({
+    where: { id: userGroup.rootTargetNodeId },
     data: {
-      data: meta,
-      rootNodeId: rootNodeId,
+      data: store.rootTarget.getContent(),
     },
   });
+
+  const updatedGroupInstructionNode = await prisma.fosNode.update({
+    where: { id: userGroup.rootInstructionNodeId },
+    data: {
+      data: store.rootInstruction.getContent(),
+    },
+  });
+
 };
 
 // export const getAllMemberships = async (
@@ -347,7 +324,7 @@ export const storeCtxToDb = async (
 // };
 
 export const createUserGroup = async (prisma: PrismaClient) => {
-  const rootNodeData: FosNodeContent = {
+  const rootTargetNodeData: FosNodeContent = {
     children: [],
     data: {
       description: {
@@ -355,10 +332,24 @@ export const createUserGroup = async (prisma: PrismaClient) => {
       },
     },
   };
-
-  const rootNode = await prisma.fosNode.create({
+  const rootInstructionNodeData: FosNodeContent = {
+    children: [],
     data: {
-      data: rootNodeData,
+      description: {
+        content: "",
+      },
+    },
+  };
+  const rootTargetNode = await prisma.fosNode.create({
+    data: {
+      data: rootTargetNodeData,
+      cid: hashNodeContent(rootTargetNodeData),
+    },
+  });
+  const rootInstructionNode = await prisma.fosNode.create({
+    data: {
+      data: rootInstructionNodeData,
+      cid: hashNodeContent(rootInstructionNodeData),
     },
   });
 
@@ -396,7 +387,8 @@ export const createUserGroup = async (prisma: PrismaClient) => {
 
   const group = await prisma.fosGroup.create({
     data: {
-      rootNodeId: rootNode.id,
+      rootTargetNodeId: rootTargetNode.id,
+      rootInstructionNodeId: rootInstructionNode.id,
       privateKey,
       publicKey,
     },
@@ -405,18 +397,7 @@ export const createUserGroup = async (prisma: PrismaClient) => {
   return group;
 };
 
-export const getRootId = (data: FosContextData) => {
-  if (!data.route) {
-    throw new Error("!data.trail");
-  }
-  const rootElem = data.route?.[0];
 
-  if (!rootElem) {
-    throw new Error("!rootElem");
-  }
-
-  return rootElem[1];
-};
 
 export const getGroupNodes = async (
   prisma: PrismaClient,
@@ -469,42 +450,5 @@ export const changeNodeIdForGroup = async (
         },
       },
     });
-  }
-};
-
-export const updateRootNodeId = (
-  contextData: FosContextData,
-  newRootId: string
-): FosContextData => {
-  const currentRootId = getRootId(contextData);
-  if (currentRootId === newRootId) {
-    return contextData;
-  }
-
-  const rootNodeData = contextData.nodes[currentRootId];
-
-  if (!rootNodeData) {
-    throw new Error("no root node in context data");
-  }
-
-  contextData.nodes[newRootId] = rootNodeData;
-  delete contextData.nodes[currentRootId];
-
-  if (!contextData.route) {
-    return {
-      ...contextData,
-      route: [],
-    };
-  } else {
-    const [head, ...tail] = contextData.route;
-
-    if(!head) {
-      throw new Error("improperly formatted trail in context data");
-    }
-
-    return {
-      ...contextData,
-      route: [head, ...tail],
-    };
   }
 };

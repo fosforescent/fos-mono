@@ -137,10 +137,10 @@ model FosNodeGroupAccessLink {
 
 model FosNode {
   id                     String                   @id @default(uuid()) @db.Uuid
+  cid                    String
   data                   Json                     @default("{}")
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @default(now())
-  cid                    String
   instructionOfGroup     FosGroup[]               @relation("RootTargetNode")
   FosNodeGroupAccessLink FosNodeGroupAccessLink[]
   targetOfGroup          FosGroup[]               @relation("RootInstructionNode")

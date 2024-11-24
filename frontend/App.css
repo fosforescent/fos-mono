@@ -3,10 +3,14 @@ html {
   overflow-x: hidden;
 
 }
+ */
 
 body {
   min-height: 100vh;
   max-width: 100%;
   box-sizing: border-box;
 }
- */
+
+#root {
+  min-height: 100vh;
+}

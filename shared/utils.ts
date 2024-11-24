@@ -2,6 +2,7 @@ import e from "cors"
 import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute } from "./types"
 import { FosStore } from "./dag-implementation/store"
 import { FosExpression, getExpressionInfo } from "./dag-implementation/expression"
+import { FosNode } from "./dag-implementation/node"
 
 
 
@@ -251,108 +252,92 @@ export function traverseNodes<T>(
   contextData: FosContextData,
   operation: NodeOperation<T>
 ): Map<FosNodeId, T> {
-  const results = new Map<FosNodeId, T>()
-  const visited = new Set<FosNodeId>()
 
-  // Build map of nodes to their parents
-  const parentMap = new Map<FosNodeId, Set<FosNodeId>>()
-  
-  // Initialize parent map
-  Object.entries(contextData.nodes).forEach(([nodeId, node]) => {
-    console.log('leftId', nodeId, node)
-    node.children.forEach(([leftId, rightId]) => {
-      console.log('leftId', leftId, rightId)
-      // For each child, add this node as its parent
-      if (!parentMap.has(leftId)) {
-        parentMap.set(leftId, new Set())
+  const resultMap = new Map()
+
+  const {  nodes, baseNodeContent, baseNodeInstruction } = contextData
+  const helper = (nodeContent: FosNodeContent, nodeId: FosNodeId, nodes: FosNodesData) => {
+
+    // if node is empty, do operation and set in result map
+    const hasChildren = nodeContent.children.length > 0
+    if (!hasChildren){
+      const result = operation(nodeContent, nodeId, new Map())
+      resultMap.set(nodeId, result)
+    } else {
+      // else do operation on children first and then do it on self.
+      // if any children are empty, do operation on them and set in result map
+      const childResults = new Map()
+      
+      
+      for (const elem of nodeContent.children){
+
+        const resultElem = elem.map((nodeId) => {
+
+          const childResultFromMap = resultMap.get(nodeId)
+          if (childResultFromMap){
+            childResults.set(nodeId, childResultFromMap)
+            return nodeId
+          } else {
+            const childNode = nodes[nodeId]
+            if (!childNode){
+              return "ERROR"
+            }
+            const childResult = helper(childNode, nodeId, nodes)
+            resultMap.set(nodeId, childResult)
+            childResults.set(nodeId, childResult)
+            return nodeId
+    
+          }
+
+        })
       }
-      if (!parentMap.has(rightId)) {
-        parentMap.set(rightId, new Set())
-      }
-      parentMap.get(leftId)!.add(nodeId)
-      parentMap.get(rightId)!.add(nodeId)
-    })
-  })
+      const result = operation(nodeContent, nodeId, childResults)
+      resultMap.set(nodeId, result)
 
-  // Get nodes with no parents (root nodes)
-  const rootNodes = new Set(Object.keys(contextData.nodes))
-  parentMap.forEach((_, childId) => {
-    rootNodes.delete(childId)
-  })
-
-  // Get nodes with no children (leaf nodes)
-  const leafNodes = new Set<FosNodeId>()
-  Object.entries(contextData.nodes).forEach(([nodeId, node]) => {
-    if (node.children.length === 0) {
-      leafNodes.add(nodeId)
     }
-  })
 
-  // Process nodes in order
-  const processingQueue: FosNodeId[] = [...leafNodes]
-  const processedNodes = new Set<FosNodeId>()
-  
-  while (processingQueue.length > 0) {
-    const nodeId = processingQueue.shift()!
-    const node = contextData.nodes[nodeId]
-    
-    if (!node) continue
-    
-    // Get results from all children
-    const childResults = new Map<FosNodeId, T>()
-    node.children.forEach(([leftId, rightId]) => {
-      if (results.has(leftId)) {
-        childResults.set(leftId, results.get(leftId)!)
-      }
-      if (results.has(rightId)) {
-        childResults.set(rightId, results.get(rightId)!)
-      }
-    })
-
-    // Process current node
-    const result = operation(node, nodeId, childResults)
-    results.set(nodeId, result)
-    processedNodes.add(nodeId)
-
-    // Add parents to queue if all their children are processed
-    const parents = parentMap.get(nodeId) || new Set()
-    parents.forEach(parentId => {
-      const parentNode = contextData.nodes[parentId]
-      if (!parentNode) return
-
-      // Check if all children of this parent are processed
-      const allChildrenProcessed = parentNode.children.every(([leftId, rightId]) => 
-        (!contextData.nodes[leftId] || processedNodes.has(leftId)) &&
-        (!contextData.nodes[rightId] || processedNodes.has(rightId))
-      )
-
-      if (allChildrenProcessed && !processedNodes.has(parentId) && !processingQueue.includes(parentId)) {
-        processingQueue.push(parentId)
-      }
-    })
   }
-
-  // Process any remaining root nodes that weren't handled
-  rootNodes.forEach(nodeId => {
-    if (!processedNodes.has(nodeId) && contextData.nodes[nodeId]) {
-      const node = contextData.nodes[nodeId]
-      const childResults = new Map<FosNodeId, T>()
-      node.children.forEach(([leftId, rightId]) => {
-        if (results.has(leftId)) {
-          childResults.set(leftId, results.get(leftId)!)
-        }
-        if (results.has(rightId)) {
-          childResults.set(rightId, results.get(rightId)!)
-        }
-      })
-      const result = operation(node, nodeId, childResults)
-      results.set(nodeId, result)
-    }
-  })
-
-  return results
+  helper(baseNodeContent, "ROOTTARGET", nodes)
+  helper(baseNodeInstruction, "ROOTINSTRUCTION", nodes)
+  return resultMap
 }
 
+
+
+export const mutableReduceToRouteMapFromExpression = <T>(
+  expression: FosExpression,
+  operation: MutableExprOperation<T>
+): Map<FosPath, T> => {
+  let resultMap = new Map()
+  const helper = (acc: Map<FosPath, T>, expr: FosExpression): void => {
+
+    const { nodeRoute } = expr.getExpressionInfo()
+
+    // Check for repeated pairs in the route
+    for (let i = 0; i < nodeRoute.length; i++) {
+      for (let j = i + 1; j < nodeRoute.length; j++) {
+        if (nodeRoute[i]?.[0] === nodeRoute[j]?.[0] && 
+            nodeRoute[i]?.[1] === nodeRoute[j]?.[1]) {
+          // Found a cycle, stop traversing this path
+          return
+        }
+      }
+    }
+
+    const childExpressions = expr.getChildren()
+
+    operation(acc, expr, childExpressions)
+
+    for (const childExpr of childExpressions) {
+      const { nodeRoute: childRoute } = childExpr.getExpressionInfo()
+      helper(acc, childExpr)
+    }
+  }
+
+  helper(resultMap, expression)
+  
+  return resultMap
+}
 
 
 
@@ -371,24 +356,10 @@ export function mutableReduceToRouteMap<T>(
 
   const rootExpr = new FosExpression(store, [])
 
-  let resultMap = new Map()
-  const helper = (acc: Map<FosPath, T>, expr: FosExpression): void => {
-    const childExpressions = expr.getChildren()
+  const result = mutableReduceToRouteMapFromExpression<T>(rootExpr, operation)
 
-    const { nodeRoute } = expr.getExpressionInfo()
-
-    const operationResult = operation(acc, expr, childExpressions)
-
-
-    for (const childExpr of childExpressions) {
-      const { nodeRoute: childRoute } = childExpr.getExpressionInfo()
-      helper(acc, childExpr)
-    }
-  }
-
-  helper(resultMap, rootExpr)
+  return result
   
-  return resultMap
 }
 
 
@@ -453,3 +424,19 @@ export function mutableMapExpressions<T>(
   
 }
 
+export const getGroupFromRoute = (route: FosPath, store: FosStore): FosNode => {
+
+  const groupFieldNode = store.groupFieldNode
+  if (route[0]?.[0] === groupFieldNode.getId()){
+    const addr = route[0][1]
+    const groupNode = store.getNodeByAddress(route[0][1])
+    if (!groupNode){
+      throw new Error('Group node not found')
+    }
+    return groupNode
+  } else {
+      return store.rootTarget   
+  }
+
+
+}

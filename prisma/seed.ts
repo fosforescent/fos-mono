@@ -43,18 +43,18 @@ async function main() {
     } 
   }
 
-  const group0 = await createGroup(prisma, uuidv4(), { groupId: 0, rootNodeData: publicGroupData, description: 'Everyone Group' })
-  const group1 = await createGroup(prisma, uuidv4(), { groupId: 1 })  
-  const group2 = await createGroup(prisma, uuidv4(), { groupId: 2 })
+  const group0 = await createGroup(prisma, uuidv4(), uuidv4(), { groupId: 0, rootNodeData: publicGroupData, description: 'Everyone Group' })
+  const group1 = await createGroup(prisma, uuidv4(), uuidv4(), { groupId: 1 })  
+  const group2 = await createGroup(prisma, uuidv4(), uuidv4(), { groupId: 2 })
 
   attachUserToGroup(prisma, dn0, group0)
-  attachUserToGroup(prisma, dn0, group2)
   attachUserToGroup(prisma, dn1, group0)
   attachUserToGroup(prisma, dn2, group0)
   attachUserToGroup(prisma, dn3, group0)
   attachUserToGroup(prisma, dn4, group0)
-  attachUserToGroup(prisma, dn4, group1)
   attachUserToGroup(prisma, dn5, group0)
+  attachUserToGroup(prisma, dn0, group2)
+  attachUserToGroup(prisma, dn4, group1)
   attachUserToGroup(prisma, dn5, group1)
   attachUserToGroup(prisma, dn5, group2)
 

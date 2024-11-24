@@ -1,6 +1,6 @@
 import { Button } from "@/frontend/components/ui/button"
 import { useProps } from "@/frontend/App"
-import { getNodeInfo, getNodesOfTypeForPath } from "@/frontend/lib/utils"
+
 import { AppState, FosReactGlobal, FosPath } from "@/shared/types"
 import { CheckSquare, Inbox, MessageSquare } from "lucide-react"
 

@@ -1,6 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 module.exports =  {
   darkMode: "class",
+
+  content: [
+    "./frontend/**/*.{js,ts,jsx,tsx}",
+    // "./**/*.{js,ts,jsx,tsx}"
+  ],
   children: [
 
     './**/*.{ts,tsx}',
@@ -19,6 +24,7 @@ module.exports =  {
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
   			background: 'hsl(var(--background))',
+        // "bg-background": 'hsl(var(--bg-background))',
   			foreground: 'hsl(var(--foreground))',
   			primary: {
   				DEFAULT: 'hsl(var(--primary))',

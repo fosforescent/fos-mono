@@ -18,7 +18,7 @@ import { getNodeOperations } from '@/shared/nodeOperations';
 import { get } from 'http';
 import { DefaultRowComponent } from './row';
 import { getExpressionInfo } from '@/shared/dag-implementation/expression';
-import { NodeRow } from '../../node/NodeRow';
+import { NodeRow } from '../../node/ExpressionRow';
 
 
 

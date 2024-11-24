@@ -30,7 +30,7 @@ import { AppState } from '@/shared/types'
 import { getNodeOperations } from '@/frontend/lib/nodeOperations'
 import { getDragItem, getNodeInfo } from '@/frontend/lib/utils'
 import { FosRowsComponent } from './rows'
-import { RowBody } from '../../node/NodeRow'
+import { RowBody } from '../../node/ExpressionRow'
 import { getDragAndDropHandlers } from '../../drag-drop'
 
 

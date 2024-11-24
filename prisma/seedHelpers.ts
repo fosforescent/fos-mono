@@ -1,78 +1,125 @@
 import { FosContextData, FosDataContent, FosNodeContent, FosNodeId, FosNodesData } from '@/shared/types'
 import { FosGroup, PrismaClient, User } from '@prisma/client'
+import { GeneratedResult } from './seedData'
+import { hashContent } from '@/shared/dag-implementation/store'
 
 export const createNodes = async (prisma: PrismaClient, nodesData: FosNodesData) => {
     for (const [key, value] of Object.entries(nodesData)) {
         await prisma.fosNode.upsert({
         where: { id: key },
-        update: {},
+        update: {
+          data: value,
+          cid: hashContent(value),
+        },
         create: {
             id: key,
             data: value,
+            cid: hashContent(value),
         },
         })
     }
 }
 
-export const createUser = async (prisma: PrismaClient, rootNodeId: FosNodeId,  userData: {
+export const createUser = async (prisma: PrismaClient, rootTargetNodeId: FosNodeId, rootInstructionNodeId: FosNodeId,  userData: {
     user_name: string,
-    rootNodeContent?: [string, string][],
-    rootNodeData?: FosDataContent,
+    rootTargetNodeContent?: [string, string][],
+    rootTargetNodeData?: FosDataContent,
+    rootInstructionNodeContent?: [string, string][],
+    rootInstructionNodeData?: FosDataContent,
     description?: string
 }) => {
-    const user = await prisma.user.upsert({
-        where: { user_name: userData.user_name },
-        update: {},
-        create: {
-            user_name: userData.user_name,
-            password: '$2b$10$rj7HD6..PmPz4nD2Y98T1uPkAacf74.5SF1UDKA7M3QzQwPbdaiW.',
-            accepted_terms: (new Date()).toISOString(),
-            api_calls_available: 200,
-            subscription_status: 'active',
-            approved: true,
-            fosGroup: {
-                create: {
-                    rootNode:{
-                        create: {
-                            id: rootNodeId ,
-                            data: {
-                                children: userData.rootNodeContent || [],
-                                data: userData.rootNodeData || {
-                                    description: { content: `${userData.user_name} root node` },
-                                },
-                            }
-                        }
-                    },
-                    data: {},
-                    privateKey: 'privateKey',
-                    publicKey: 'publicKey',
-                }
-            }
-        },
-    })
-    return user
+  console.log('userData', userData.rootTargetNodeContent)
+
+  const targetContent = {
+    children: userData.rootTargetNodeContent || [],
+    data: userData.rootTargetNodeData || {
+        description: { content: `${userData.user_name} root node` },
+    },
+  }
+
+  const instructionContent = {
+    children: userData.rootInstructionNodeContent || [],
+    data: userData?.rootInstructionNodeData || {
+        description: { content: `${userData.user_name} root instruction node` },
+    },
+  }
+
+  const user = await prisma.user.upsert({
+      where: { user_name: userData.user_name },
+      update: {},
+      create: {
+          user_name: userData.user_name,
+          password: '$2b$10$rj7HD6..PmPz4nD2Y98T1uPkAacf74.5SF1UDKA7M3QzQwPbdaiW.',
+          accepted_terms: (new Date()).toISOString(),
+          api_calls_available: 200,
+          subscription_status: 'active',
+          approved: true,
+          fosGroup: {
+              create: {
+                  rootTargetNode:{
+                      create: {
+                          id: rootTargetNodeId ,
+                          cid: hashContent(targetContent),
+                          data: targetContent
+                      }
+                  },
+                  rootInstructionNode: {
+                      create: {
+                          id: rootInstructionNodeId,
+                          data: instructionContent,
+                          cid: hashContent(instructionContent)
+                      }
+                  },
+                  data: {},
+                  privateKey: 'privateKey',
+                  publicKey: 'publicKey',
+              }
+          }
+      },
+  })
+  return user
 }
 
-export const createGroup = async (prisma: PrismaClient, rootNodeId: FosNodeId, groupData: {
+export const createGroup = async (prisma: PrismaClient, rootTargetNodeId: FosNodeId, rootInstructionNodeId: FosNodeId, groupData: {
     groupId?: number
     rootNodeContent?: [string, string][],
     rootNodeData?: FosDataContent,
     description?: string
 }) => {
+
+
+  const targetContent = {
+    children: groupData.rootNodeContent || [],
+    data: {
+        ...groupData.rootNodeData,
+        description: { content: `group ${groupData.groupId} root node`}
+    },
+  }
+
+  const instructionContent = {
+    children: [],
+    data: {
+        description: { content: `group ${groupData.groupId} root instruction node` },
+    },
+  }
+
+
     const group = await prisma.fosGroup.upsert({
         where: { id: 0 },
         update: {},
         create: {
-            rootNode:{
+            rootTargetNode:{
                 create: {
-                    id: rootNodeId,
-                    data: {
-                        children: groupData.rootNodeContent || [],
-                        data: {
-                            ...groupData.rootNodeData,
-                            description: { content: `group ${groupData.groupId} root node`}
-                        },
-                    }
+                    id: rootTargetNodeId,
+                    cid: hashContent(targetContent),
+                    data: targetContent
+                }
+            },
+            rootInstructionNode: {
+                create: {
+                    id: rootInstructionNodeId,
+                    cid: hashContent(instructionContent),
+                    data: instructionContent
                 }
             },
             data: {},
@@ -83,14 +130,16 @@ export const createGroup = async (prisma: PrismaClient, rootNodeId: FosNodeId, g
     return group
 }
 
-export const createUserWithNodes = async (prisma: PrismaClient, userData: { user_name: string }, generated: { nodesData: FosNodesData, rootNodeId: FosNodeId, rootNodeContent: FosNodeContent }) => {
-    const { nodesData, rootNodeId, rootNodeContent } = generated    
+export const createUserWithNodes = async (prisma: PrismaClient, userData: { user_name: string }, generated: GeneratedResult) => {
 
-    await createNodes(prisma, nodesData)
+  
+    await createNodes(prisma, generated.nodesData)
 
-    const user = await createUser(prisma, rootNodeId, { ...userData, 
-        rootNodeContent: rootNodeContent.content,
-        rootNodeData: rootNodeContent.data,
+    const user = await createUser(prisma, generated.rootTargetNodeId, generated.rootInstructionNodeId, { ...userData, 
+        rootTargetNodeContent: generated.rootTargetNodeContent.children,
+        rootTargetNodeData: generated.rootInstructionNodeContent.data,
+        rootInstructionNodeContent: generated.rootInstructionNodeContent.children,
+        rootInstructionNodeData: generated.rootInstructionNodeContent.data,
     })
 
     const userGroup = await prisma.fosGroup.findFirst({
@@ -101,7 +150,7 @@ export const createUserWithNodes = async (prisma: PrismaClient, userData: { user
         throw new Error('User fos group not found')
     }
 
-    await linkNodesToGroup(prisma, userGroup, nodesData)
+    await linkNodesToGroup(prisma, userGroup, generated.nodesData)
     return user
 }
 
@@ -119,14 +168,14 @@ export const linkNodesToGroup = async (prisma: PrismaClient, group: FosGroup, no
 }
 
 
-export const createGroupWithNodes = async (prisma: PrismaClient, groupData: { groupId?: number }, generated: { nodesData: FosNodesData, rootNodeId: FosNodeId, rootNodeContent: FosNodeContent }) => {
-    const { nodesData, rootNodeId, rootNodeContent } = generated    
+export const createGroupWithNodes = async (prisma: PrismaClient, groupData: { groupId?: number }, generated: GeneratedResult) => {
 
-    await createNodes(prisma, nodesData)
+  
+    await createNodes(prisma, generated.nodesData)
 
-    const group = await createGroup(prisma, rootNodeId, { ...groupData, 
-        rootNodeContent: rootNodeContent.content,
-        rootNodeData: rootNodeContent.data,
+    const group = await createGroup(prisma, generated.rootTargetNodeId, generated.rootInstructionNodeId, { ...groupData, 
+        rootNodeContent: generated.rootTargetNodeContent.children,
+        rootNodeData: generated.rootInstructionNodeContent.data,
     })
     return group
 }
@@ -135,14 +184,14 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
 
     const userFosGroup = await prisma.fosGroup.findFirst({
         where: { id: user.fosGroupId },
-        include: { rootNode: true }
+        include: { rootTargetNode: true, rootInstructionNode: true }
     })
     if (!userFosGroup) {
         throw new Error('User fos group not found')
     }
 
     const userRootNode = await prisma.fosNode.findFirst({
-        where: { id: userFosGroup?.rootNode.id },
+        where: { id: userFosGroup?.rootTargetNode.id },
     })
     
     if(!userRootNode) {
@@ -154,16 +203,20 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
 
     const groupUserNodeAccessLink = await prisma.fosNodeGroupAccessLink.create({
         data: {
-            fosNodeId: group.rootNodeId,
+            fosNodeId: group.rootTargetNodeId,
             fosGroupId: userFosGroup.id,
         }
     })
 
     if (userRootNode?.data) {
         const nodeContent = userRootNode.data as FosNodeContent
+        if (!nodeContent.children) {
+          console.log('nodeContent', nodeContent)
+          throw new Error('User root node has no children')
+        }       
         const newNodeData = {
             data: nodeContent.data,
-            children: [...nodeContent.content, ["group", group.rootNodeId]]
+            children: [...nodeContent.children, ["GROUP", group.rootTargetNodeId]]
         }
 
         await prisma.fosNode.update({
@@ -175,14 +228,18 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
     }
 
     const groupRootNode = await prisma.fosNode.findFirst({
-        where: { id: group.rootNodeId },
+        where: { id: group.rootTargetNodeId },
     })
 
     if (groupRootNode?.data) {
         const nodeContent = groupRootNode.data as FosNodeContent
+        if (!nodeContent.children) {
+          console.log('nodeContent', nodeContent)
+          throw new Error('User root node has no children')
+        }       
         const newNodeData = {
             data: nodeContent.data,
-            children: [...nodeContent.content, ["peer", userFosGroup.rootNodeId]]
+            children: [...nodeContent.children, ["PEER", userFosGroup.rootTargetNodeId]]
         }
 
         await prisma.fosNode.update({
@@ -194,3 +251,21 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
     }
 
 }
+
+const addUserCommentToGroup = async (prisma: PrismaClient, user: User, group: FosGroup, comment: string) => {
+
+
+
+}
+
+const addTodoToGroup = async (prisma: PrismaClient, user: User, group: FosGroup, todo: string) => {
+
+
+}
+
+const addWorkflowToGroup = async (prisma: PrismaClient, user: User, group: FosGroup, workflow: string) => {
+
+
+
+}
+

@@ -235,7 +235,7 @@ export const searchQuery = async (req: Request, res: Response) => {
   }
 }
 
-export const upsertSearchTerms = async (context: AppState["data"]): Promise<boolean> => {
+export const upsertSearchTerms = async (store: FosStore): Promise<boolean> => {
   try {
     await createIndexIfNecessary(process.env.PINECONE_INDEX!)
 
@@ -244,7 +244,7 @@ export const upsertSearchTerms = async (context: AppState["data"]): Promise<bool
       text: string;
     }
 
-    const itemsMap = mutableMapExpressions<UpsertObject>(context, (resultMap, expression) => {
+    const itemsMap = mutableMapExpressions<UpsertObject>(store.exportContext([]), (resultMap, expression) => {
       const { nodeId, nodeDescription, nodeRoute, nodeData } = expression.getExpressionInfo();
       if (nodeDescription) {
         resultMap.set(nodeRoute, {

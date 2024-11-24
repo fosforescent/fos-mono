@@ -7,10 +7,11 @@ import {  pathEqual } from "../../shared/utils"
 import React from "react"
 import { diff } from "@n1ru4l/json-patch-plus"
 import { Button } from "../components/ui/button"
-import { NodeRow } from "../components/node/NodeRow"
+import { NodeRow } from "../components/node/ExpressionRow"
 import { getExpressionInfo } from "@/shared/dag-implementation/expression"
 import { api } from "../api"
 import { searchMockupContextStart } from "./searchMockup"
+import { FosStore } from "@/shared/dag-implementation/store"
 
 
 export const FieldTest = () => {
@@ -29,25 +30,15 @@ export const FieldTest = () => {
     const resultDiff = diff({left: endData, right: newData})
     if (resultDiff){
       console.log('diff', resultDiff)
+      console.trace()
       throw new Error('diff found')
     }
   }
 
 
 
-  // return (
-  //   <SearchField 
-  //     data={startData}
-  //     setData={setDataCompare}
-  //     options={{}}
-  //     nodeRoute={[]}
-
-  //   />
-  // )
-
-
   return (
-    <NodeRow 
+    <SearchField 
       data={startData}
       setData={setDataCompare}
       options={{}}
@@ -55,6 +46,17 @@ export const FieldTest = () => {
 
     />
   )
+
+
+  // return (
+  //   <NodeRow 
+  //     data={startData}
+  //     setData={setDataCompare}
+  //     options={{}}
+  //     nodeRoute={[]}
+
+  //   />
+  // )
 }
 
 
@@ -74,7 +76,7 @@ const SearchField = ({
 }) => {
 
 
-  const [searchResults, setSearchResults] = React.useState<JSX.Element>()
+  const [searchResults, setSearchResults] = React.useState<string>()
 
 
 
@@ -87,7 +89,14 @@ const SearchField = ({
     console.log('search click', data.data)
 
 
-    const authedApi = api(data, setData).authed().postData(data.data)
+    api(data, setData).authed().postData(data.data).then((response) => {
+      console.log('search response', response)
+      if(!response){
+        throw new Error('no response')
+      }
+      const newStore = new FosStore(response)
+      setSearchResults(JSON.stringify(response))
+    })
 
   }
 
