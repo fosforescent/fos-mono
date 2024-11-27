@@ -228,11 +228,6 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   }
 
   const loadAppData = async () => {
-    if (!appData.auth.loggedIn) {
-      throw new Error('Trying to load data without being logged in')
-    }
-    
-  
         
     const initialFosAndTrellisData = await authedApi().getData()
       .catch((error: Error) => {

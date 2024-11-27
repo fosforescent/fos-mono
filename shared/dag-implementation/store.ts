@@ -3,184 +3,28 @@ import { FosNode,} from './node'
 
 
 import { 
-  getNameFieldNode, 
-  getPreviousVersionNode, 
-  getStringFieldNode, 
-  getTerminalNode, 
-  getUnitNode, 
-  getDescriptionFieldNode, 
-  getFieldFieldNode,
-  getChoiceTargetNode,
-  getLinkFieldNode,
-  getLinkActionNode,
-  getCopyActionNode,
-  getInputActionNode,
-  getCompleteActionNode,
-  getCancelActionNode,
-  getOptionNotSelectedConstructor,
-  getOptionSelectedConstructor,
-  getWorkflowInstructionNode,
-  getRootInstructionNode,
-  getCommentInstructionNode,
-  getDocumentInstructionNode,
-  getRoleFieldNode,
-  getNumberFieldNode,
-  getTimeFieldNode,
-  getDateFieldNode,
-  getDurationFieldNode,
-  getInvoiceLineFieldNode,
-  getInvoiceCommentFieldNode,
-  getInvoiceFieldNode,
-  getPaymentFieldNode,
-  getTransactionFieldNode,
-  getActionFieldNode,
-  getApprovalFieldNode,
-  getVoteFieldNode,
-  // getExpressionFieldNode,
-  getContactFieldNode,
-  getEmailFieldNode,
-  getPhoneFieldNode,
-  getAddressFieldNode,
-  // getFirstNameFieldNode,
-  // getLastNameFieldNode,
-  // getMiddleNameFieldNode,
-  getBusinessFieldNode,
-  getBusinessNameFieldNode,
-  // getInvoiceNode,
-  // getDocumentFieldNode,
-  // getPaymentNode,
-  // getNo,
-  getPersonFieldNode,
-  getGroupFieldNode,
-  getCurrencyFieldNode,
-  getPriceFieldNode,
-  getListFieldNode,
-  getBooleanFieldNode,
-  getTagFieldNode,
-  getLabelFieldNode,
-  getComboFieldNode,
-  getExpressionFieldNode,
-  getFirstNameFieldNode,
-  getLastNameFieldNode,
-  getMiddleNameFieldNode,
-  getSearchQueryNode,
-  getSearchResultsNode,
-  getErrorNode,
-  getPeerNode,
-  getRevertChangeNode,
-  getErrorTargetNode,
-  getErrorInstructionNode,
-  getConflictNode,
-  getCompleteFieldNode,
-  getPublishNode,
-  getAppNode,
-  getOneTimeBuyNode,
-  getSubscriptionNode,
-  getRecurringBuyNode,
-  getMarketRequestListingNode,
-  getOfferFieldNode,
-  getMarketServiceListingNode,
-  getTimeIntervalNode,
-
-
+  constructPrimitiveAliases,
+  PrimitiveAliases
 
 } from './primitive-node'
 
 import { AppState, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, TrellisSerializedData } from '../types'
 
 import { sha3_256 } from 'js-sha3'
-import { th } from 'date-fns/locale'
+
 import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
-import { store } from '../../../old/fos-repl-2/src/lang/store'
-import { off } from 'process'
+
+
 
 
 export class FosStore {
   table: Map<string, FosNodeContent> = new Map()
 
 
-  voidNode: FosNode
-  unitNode: FosNode
-  // nameNode: FosNode
-  previousVersionNode: FosNode
-  // allOfNode: FosNode
-  fieldFieldNode: FosNode
-  stringFieldNode: FosNode
-  descriptionFieldNode: FosNode
-  choiceTargetNode: FosNode
-  linkFieldNode: FosNode
-  groupFieldNode: FosNode
-  // inputFieldNode: FosNode
-  roleFieldNode: FosNode
-  personFieldNode: FosNode
-  linkActionNode: FosNode
-  copyActionNode: FosNode
-  inputActionNode: FosNode
-  completeActionNode: FosNode
-  cancelActionNode: FosNode
-  // choiceFieldNode: FosNode
-  // taskFieldNode: FosNode
-  comboFieldNode: FosNode
-  labelFieldNode: FosNode
-  numberFieldNode: FosNode
-  booleanFieldNode: FosNode
-  listFieldNode: FosNode
-  // optionFieldNode: FosNode
-  completeFieldNode: FosNode
-  approvalFieldNode: FosNode
-  voteFieldNode: FosNode
-  workflowFieldNode: FosNode 
-  expressionFieldNode: FosNode
-  contactFieldNode: FosNode
-  emailFieldNode: FosNode
-  phoneFieldNode: FosNode
-  addressFieldNode: FosNode
-  nameFieldNode: FosNode
-  firstNameFieldNode: FosNode
-  lastNameFieldNode: FosNode
-  middleNameFieldNode: FosNode
-  businessFieldNode: FosNode
-  businessNameFieldNode: FosNode
-  dateFieldNode: FosNode
-  timeFieldNode: FosNode
-  durationFieldNode: FosNode
-  invoiceLineFieldNode: FosNode
-  commentConstructorNode: FosNode
-  timeIntervaleNode: FosNode
+  
 
-  invoiceCommentsFieldNode: FosNode
-  priceFieldNode: FosNode
-  currencyFieldNode: FosNode
-  invoiceNode: FosNode
-  documentFieldNode: FosNode
-  paymentNode: FosNode
-  transactionNode: FosNode
-  actionNode: FosNode
-  optionSelectedConstructor: FosNode
-  optionNotSelectedConstructor: FosNode
-  tagFieldNode: FosNode
-  optionConstructor: FosNode
-  searchQueryNode: FosNode
-  searchResultsNode: FosNode
-  errorNode: FosNode
-  // errorTarget: FosNode
-  // errorInstruction: FosNode
-  peerNode: FosNode
-  marketServiceNode: FosNode
-  marketRequestNode: FosNode
-  offerNode: FosNode
-
-
-  revertNode: FosNode
-  publishNode: FosNode
-  appNode: FosNode
-  oneTimeBuyNode: FosNode
-  subscriptionNode: FosNode
-  recurringBuyNode: FosNode
-  conflictNode: FosNode
-
-  rootsHistory: string[] = [];
+  rootsHistory: FosPathElem[] = [];
 
 
   trellisData: TrellisSerializedData = {
@@ -210,91 +54,15 @@ export class FosStore {
 
   version = 0
 
-
+  primitive: PrimitiveAliases
   private hashCache = new WeakMap<FosNodeContent, string>();
 
-  constructor(fosCtxData?: AppState["data"]) {
-    const voidNode = getTerminalNode(this)
-    this.voidNode = voidNode
+  updateCtxCallback: ((data: AppState["data"]) => void) | null;
 
-    this.unitNode = getUnitNode(this)
-    // this.nameNode = getNameNode(this)
-    // this.allOfNode = getAllOfNode(this)
-    this.previousVersionNode = getPreviousVersionNode(this)
-    this.fieldFieldNode = getFieldFieldNode(this)
-    this.stringFieldNode = getStringFieldNode(this)
-    this.descriptionFieldNode = getDescriptionFieldNode(this)
-    this.choiceTargetNode = getChoiceTargetNode(this)
-    this.linkFieldNode = getLinkFieldNode(this)
-    this.linkActionNode = getLinkActionNode(this)
-    this.copyActionNode = getCopyActionNode(this)
-    this.inputActionNode = getInputActionNode(this)
-    this.completeActionNode = getCompleteActionNode(this)
-    this.cancelActionNode = getCancelActionNode(this)
-    this.roleFieldNode = getRoleFieldNode(this)
-    this.numberFieldNode = getNumberFieldNode(this)
-    this.timeFieldNode = getTimeFieldNode(this)
-    this.dateFieldNode = getDateFieldNode(this)
-    this.durationFieldNode = getDurationFieldNode(this)
-    this.invoiceLineFieldNode = getInvoiceLineFieldNode(this)
-    this.completeFieldNode = getCompleteFieldNode(this)
-    this.invoiceCommentsFieldNode = getInvoiceCommentFieldNode(this)
-    this.invoiceNode = getInvoiceFieldNode(this)
-    this.paymentNode = getPaymentFieldNode(this)
-    this.transactionNode = getTransactionFieldNode(this)
-    this.actionNode = getActionFieldNode(this)
-    this.approvalFieldNode = getApprovalFieldNode(this)
-    this.voteFieldNode = getVoteFieldNode(this)
-    this.expressionFieldNode = getExpressionFieldNode(this)
-    this.contactFieldNode = getContactFieldNode(this)
-    this.emailFieldNode = getEmailFieldNode(this)
-    this.phoneFieldNode = getPhoneFieldNode(this)
-    this.addressFieldNode = getAddressFieldNode(this)
-    this.firstNameFieldNode = getFirstNameFieldNode(this)
-    this.lastNameFieldNode = getLastNameFieldNode(this)
-    this.middleNameFieldNode = getMiddleNameFieldNode(this)
-    this.businessFieldNode = getBusinessFieldNode(this)
-    this.businessNameFieldNode = getBusinessNameFieldNode(this)
-    this.workflowFieldNode = getWorkflowInstructionNode(this)
-    this.comboFieldNode = getComboFieldNode(this)
-    this.labelFieldNode = getLabelFieldNode(this)
-    this.numberFieldNode = getNumberFieldNode(this)
-    this.booleanFieldNode = getBooleanFieldNode(this)
-    this.listFieldNode = getListFieldNode(this)
-    // this.optionFieldNode = getOptionFieldNode(this)
-    this.priceFieldNode = getPriceFieldNode(this)
-    this.currencyFieldNode = getCurrencyFieldNode(this)
-    this.groupFieldNode = getGroupFieldNode(this)
-    this.commentConstructorNode = getCommentInstructionNode(this)
-    this.timeIntervaleNode = getTimeIntervalNode(this)
-    
-    this.personFieldNode = getPersonFieldNode(this)
-    this.nameFieldNode = getNameFieldNode(this)
-    this.documentFieldNode = getDocumentInstructionNode(this)
-    this.optionSelectedConstructor = getOptionSelectedConstructor(this)
-    this.optionNotSelectedConstructor = getOptionNotSelectedConstructor(this)
-    this.optionConstructor = getOptionNotSelectedConstructor(this)
-    this.tagFieldNode = getTagFieldNode(this)
-
-    this.searchQueryNode = getSearchQueryNode(this)
-    this.searchResultsNode = getSearchResultsNode(this)
-
-    this.errorNode = getErrorNode(this)
-    // this.errorTarget = getErrorTargetNode(this)
-    // this.errorInstruction = getErrorInstructionNode(this)
-    this.peerNode = getPeerNode(this)
-
-    this.revertNode = getRevertChangeNode(this)
-    this.publishNode = getPublishNode(this)
-    this.appNode = getAppNode(this)
-    this.oneTimeBuyNode = getOneTimeBuyNode(this)
-    this.subscriptionNode = getSubscriptionNode(this)
-    this.recurringBuyNode = getRecurringBuyNode(this)
-    this.conflictNode = getConflictNode(this)
-
-    this.marketRequestNode  = getMarketRequestListingNode(this)
-    this.offerNode = getOfferFieldNode(this)
-    this.marketServiceNode = getMarketServiceListingNode(this)
+ 
+  constructor({ fosCtxData, mutationCallback }: { fosCtxData?: AppState["data"], mutationCallback?: (data: AppState["data"]) => void } = {}) {
+    this.primitive = constructPrimitiveAliases(this)
+    this.updateCtxCallback = mutationCallback || null
 
     if (fosCtxData){
 
@@ -332,8 +100,8 @@ export class FosStore {
       this.rootTarget = thisRootTargetNode
 
     } else {
-      this.rootInstruction = getTerminalNode(this)
-      this.rootTarget = getTerminalNode(this)
+      this.rootInstruction = this.primitive.voidNode
+      this.rootTarget = this.primitive.voidNode
     }
     
   }
@@ -400,7 +168,7 @@ export class FosStore {
             children: []
           }
           const newErrorTargetAddress = this.insert(newErrorTargetContent)
-          const newElem: FosPathElem = [this.errorNode.getId(), newErrorTargetAddress]
+          const newElem: FosPathElem = [this.primitive.errorNode.getId(), newErrorTargetAddress]
           return newElem
 
 
@@ -419,7 +187,7 @@ export class FosStore {
             children: []
           }
           const newErrorTargetAddress = this.insert(newErrorTargetContent)
-          const newElem: FosPathElem = [this.errorNode.getId(), newErrorTargetAddress]
+          const newElem: FosPathElem = [this.primitive.errorNode.getId(), newErrorTargetAddress]
           return newElem
 
         } else if (!this.checkAddress(item[1])) {
@@ -436,7 +204,7 @@ export class FosStore {
             children: []
           }
           const newErrorTargetAddress = this.insert(newErrorTargetContent)
-          const newElem: FosPathElem = [this.errorNode.getId(), newErrorTargetAddress]
+          const newElem: FosPathElem = [this.primitive.errorNode.getId(), newErrorTargetAddress]
           return newElem
         }
 
@@ -458,7 +226,7 @@ export class FosStore {
           children: []
         }
         const newErrorTargetAddress = this.insert(newErrorTargetContent)
-        const newElem: FosPathElem = [this.errorNode.getId(), newErrorTargetAddress]
+        const newElem: FosPathElem = [this.primitive.errorNode.getId(), newErrorTargetAddress]
         return newElem
       // throw new Error(`inserting array that has malformed edges`)
       }
@@ -530,14 +298,14 @@ export class FosStore {
     // determine if prev Cid exists in current node content prevList
     // if it does, then we need to just need to insert the new content and update the alias
     
-    const currPrevItem = nodeContent.children.find((item) => item[0] === this.previousVersionNode.getId())
+    const currPrevItem = nodeContent.children.find((item) => item[0] === this.primitive.previousVersion.getId())
     if (!currPrevItem){
       console.log('currPrevItem not found', nodeContent, tentativeCid, storeNodeContent, prevCid)
       //resolve with conflict
       return this.getConflictNodeContent(nodeContent, tentativeCid, storeNodeContent, prevCid, alias)
     }
 
-    const storePrevItem = storeNodeContent.children.find((item) => item[0] === this.previousVersionNode.getId())
+    const storePrevItem = storeNodeContent.children.find((item) => item[0] === this.primitive.previousVersion.getId())
     if (!storePrevItem){
       //resolve with conflict
       return this.getConflictNodeContent(nodeContent, tentativeCid, storeNodeContent, prevCid, alias)
@@ -668,8 +436,8 @@ export class FosStore {
   getConflictNodeContent (content: FosNodeContent, currId: string, existingContent: FosNodeContent, existingId: string, alias: string ): FosNodeContent {
     this.table.set(currId, content)
 
-    const newElemForCurrent: FosPathElem = [this.conflictNode.getId(), currId]
-    const newElemForExisting: FosPathElem = [this.conflictNode.getId(), existingId]
+    const newElemForCurrent: FosPathElem = [this.primitive.conflictNode.getId(), currId]
+    const newElemForExisting: FosPathElem = [this.primitive.conflictNode.getId(), existingId]
 
 
     const conflictNodeConent: FosNodeContent = {
@@ -695,7 +463,7 @@ export class FosStore {
     }
 
     
-    const newElem: FosPathElem = [this.previousVersionNode.getId(), oldNodeCid]
+    const newElem: FosPathElem = [this.primitive.previousVersion.getId(), oldNodeCid]
     const newContent: FosNodeContent = {
       data: {
         ...content.data,
@@ -705,7 +473,7 @@ export class FosStore {
           tags: [],
         }
       },
-      children: [newElem, ...content.children.filter((item) => item[0] !== this.previousVersionNode.getId())]
+      children: [newElem, ...content.children.filter((item) => item[0] !== this.primitive.previousVersion.getId())]
     }
     return newContent
   }
@@ -730,7 +498,7 @@ export class FosStore {
       children: []
     }
     const newErrorTargetAddress = this.insert(newErrorTargetContent)
-    const newElem: FosPathElem = [this.errorNode.getId(), newErrorTargetAddress]
+    const newElem: FosPathElem = [this.primitive.errorNode.getId(), newErrorTargetAddress]
     const newContent = {
       ...content,
       children: [newElem, ...content.children]
@@ -746,7 +514,7 @@ export class FosStore {
       if (!currentContent){
         throw new Error(`node ${cid} not found`)
       }
-      const prevItem = currentContent.children.find((item) => item[0] === this.previousVersionNode.getId())
+      const prevItem = currentContent.children.find((item) => item[0] === this.primitive.previousVersion.getId())
       if (!prevItem){
         return []
       }else{
@@ -865,10 +633,30 @@ export class FosStore {
   }
 
 
+  insertRoute(route: FosPath): void {
+    throw new Error("Method not implemented.")
+  }
+
+  deleteRoute(route: FosPath): void {
+    throw new Error("Method not implemented.")
+  }
+
+  checkRoute(route: FosPath): boolean {
+
+    throw new Error("Method not implemented.")
+  }
+
+  pickRoute(route: FosPath): boolean {
+
+    throw new Error("Method not implemented.")
+  }
+
+
 
   query(query: FosNode): FosNode[] {
     /**
      * TODO: change this to return nodes that are part of the subgraph starting from the current root (or another root if specified)
+     * TODO: change this to watch for cycles
      * 
      * query should return any nodes that have at least the same edges as the query, where the unit node is a wildcard. 
      * So this means that if the query has an edge to a different target, we need to go into that target and compare it to the 
@@ -911,10 +699,10 @@ export class FosStore {
     if(patternCid === entryCid){
       return []
     }
-    if(patternCid === this.unitNode.getId()){
+    if(patternCid === this.primitive.unit.getId()){
       return [entry]
     }
-    if(patternCid === this.voidNode.getId()){
+    if(patternCid === this.primitive.voidNode.getId()){
       throw new Error(`pattern expecte void --- pattern ${pattern} does not match entry ${entry}`, { cause: { patternFailed: true } })
     }
 
@@ -928,7 +716,7 @@ export class FosStore {
           throw new Error(`pattern ${patternKey} has ${patternValues.length} entries, but node ${patternKey} has ${nodeMap.get(patternKey)?.length} entries.  Cannot resolve pattern`, { cause: { patternFailed: true } })
         }else{
           patternValues.forEach((patternValue, index) => {
-            if (patternValue === this.unitNode.getId()){
+            if (patternValue === this.primitive.unit.getId()){
               const entryNode = this.getNodeByAddress(entryTargetsForKey[index] as string)
               if (!entryNode){
                 throw new Error(`node ${entryTargetsForKey[index]} not found`)
@@ -1001,20 +789,20 @@ export class FosStore {
     const predicateCid = predicate.getId()
     const objectCid = predicate.getId()
 
-    if (subjectCid === this.voidNode.getId()) {
+    if (subjectCid === this.primitive.voidNode.getId()) {
       const nodesToTest = this.query(object)
       const result = nodesToTest.filter((nodeToTest) => {
-        const thisUnitNode = this.getNodeByAddress(this.unitNode.getId() as string)
+        const thisUnitNode = this.getNodeByAddress(this.primitive.unit.getId() as string)
         if (!thisUnitNode){
-          throw new Error(`node ${this.unitNode.getId()} not found`)
+          throw new Error(`node ${this.primitive.unit.getId()} not found`)
         }
         const test = this.queryTriple(thisUnitNode, predicate, nodeToTest)
         return test.length === 0
       })
       return result.map((node) => [subject, predicate, node] as [FosNode, FosNode, FosNode])
-    } else if (predicateCid === this.voidNode.getId()) {
+    } else if (predicateCid === this.primitive.voidNode.getId()) {
       throw new Error('not implemented')
-    } else if (objectCid === this.voidNode.getId()) {
+    } else if (objectCid === this.primitive.voidNode.getId()) {
       throw new Error('not implemented')
     } else {
       throw new Error('not a negative query')
@@ -1024,10 +812,12 @@ export class FosStore {
 
   updateWithContext(context: AppState["data"]) {
 
-    const otherStore = new FosStore(context)
+    const otherStore = new FosStore({ fosCtxData: context})
     this.updateFromStore(otherStore)
     const newContext = this.exportContext(otherStore.fosRoute)
-
+    // if (this.updateCtxCallback){
+    //   this.updateCtxCallback(newContext)
+    // }
     return newContext
   }
 
@@ -1142,6 +932,7 @@ export class FosStore {
   }
     
 
+  
   
   
 }  

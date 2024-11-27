@@ -17,8 +17,9 @@ import { getActions } from '@/frontend/lib/actions';
 import { getNodeOperations } from '@/shared/nodeOperations';
 import { get } from 'http';
 import { DefaultRowComponent } from './row';
-import { getExpressionInfo } from '@/shared/dag-implementation/expression';
-import { NodeRow } from '../../node/ExpressionRow';
+import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression';
+import { ExpressionRow } from '../../expression/ExpressionRow';
+import { FosStore } from '@/shared/dag-implementation/store';
 
 
 
@@ -150,7 +151,7 @@ const OptionRowsCombined = ( {
   }
 
   return (<div className="flex flex-initial grow">
-    <NodeRow 
+    <ExpressionRow 
       data={data}
       setData={setData}
       options={fosOptions}
@@ -191,7 +192,7 @@ const OptionRowsExpanded = ({
 
 
   const { getOptionInfo, locked, hasFocus, focusChar, isDragging, getDragItem,
-    draggingOver, nodeDescription, isRoot, childRoutes, isBase, children } = getExpressionInfo(nodeRoute, data.data)
+    draggingOver, nodeDescription, isRoot, childRoutes, isBase, getChildren } = getExpressionInfo(nodeRoute, data.data)
   
   const { selectedIndex, nodeOptions } = getOptionInfo()
 
@@ -219,7 +220,9 @@ const OptionRowsExpanded = ({
  }
 
 
-   const canPrompt = options.canPromptGPT && options.promptGPT
+  const children = getChildren()
+
+  const canPrompt = options.canPromptGPT && options.promptGPT
 
   const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && children[0]?.getExpressionInfo().nodeDescription === "")
 
@@ -308,7 +311,13 @@ const TaskRows = ({
   }
 
 
-  const { getChildrenOfType, isRoot, isBase, nodeDescription, children } = getExpressionInfo(nodeRoute, data.data)
+  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData })
+
+  const expression = new FosExpression(store, nodeRoute)
+
+  const { getChildrenOfType, isRoot, isBase, nodeDescription, getChildren } = expression.getExpressionInfo()
+  
+  const children = getChildren()
   
   const { 
     suggestOption, 
@@ -334,7 +343,7 @@ const TaskRows = ({
 
 
 
-  const activeChildRoutes = getChildrenOfType("workflow")
+  const activeChildRoutes = expression.getChildrenOfType(expression.store.primitive.workflowField)
 
   const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && children[0]?.getExpressionInfo().nodeDescription === "")
 

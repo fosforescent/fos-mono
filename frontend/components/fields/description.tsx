@@ -3,7 +3,7 @@ import { PenBox, PlaySquare } from "lucide-react"
 
 
 import { FosReactOptions } from "../../../shared/types"
-import { InputDiv } from "./inputDiv"
+import { InputDiv } from "../elements/inputDiv"
 
 import { AppState, FosPath } from "@/shared/types"
 import _ from "lodash"

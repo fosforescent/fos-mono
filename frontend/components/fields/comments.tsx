@@ -2,7 +2,7 @@
 import { MessagesSquare, PenBox, Wand } from "lucide-react"
 
 
-import { InputDiv } from "./inputDiv"
+import { InputDiv } from "../elements/inputDiv"
 
 import _ from 'lodash'
 

@@ -27,11 +27,13 @@ import _, { update } from 'lodash'
 import { FosReactOptions, FosPath, TrellisSerializedData } from '../../../../shared/types'
 
 import { AppState } from '@/shared/types'
-import { getNodeOperations } from '@/frontend/lib/nodeOperations'
-import { getDragItem, getNodeInfo } from '@/frontend/lib/utils'
+import { getNodeOperations } from '@/shared/nodeOperations'
+
 import { FosRowsComponent } from './rows'
-import { RowBody } from '../../node/ExpressionRow'
+import { ExpressionRow } from '../../expression/ExpressionRow'
 import { getDragAndDropHandlers } from '../../drag-drop'
+import { FosStore } from '@/shared/dag-implementation/store'
+import { FosExpression } from '@/shared/dag-implementation/expression'
 
 
 
@@ -58,12 +60,18 @@ export const DefaultRowComponent = ({
   }
 
 
+  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData })
+
+  const expression = new FosExpression(store, nodeRoute)
+
+
+
   const { locked, getOptionInfo,
     hasFocus, focusChar, isDragging, draggingOver, 
     nodeDescription, isRoot, childRoutes, isBase,
     nodeType, nodeId, disabled, depth, isCollapsed, 
     isTooDeep
-  } = getNodeInfo(nodeRoute, data.data)
+  } = expression.getExpressionInfo()
   
   const { 
     suggestOption, 
@@ -119,7 +127,7 @@ export const DefaultRowComponent = ({
       ref={setDropNodeRef} 
       className={``}>
 
-      <RowBody
+      <ExpressionRow
         data={data}
         nodeRoute={nodeRoute}
         setData={setData}

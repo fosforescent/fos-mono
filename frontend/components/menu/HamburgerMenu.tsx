@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 
 import { buttonVariants, Button } from "@/frontend/components/ui/button"
 
-import LogoUrl from "../../assets/logo3-bare.png"
+import { logo } from "../../assets"
 
 import { Input } from "@/frontend/components/ui/input"
 
@@ -46,6 +46,8 @@ import { getActions } from '@/frontend/lib/actions'
 import { NavLink } from "react-router-dom";
 import { cn } from '@/frontend/lib/utils'
 import { LoginRegister } from './loggedOut'
+import { TopButtons } from './TopButtons'
+
 
 
 const HamburgerMenu = ({
@@ -122,7 +124,7 @@ const HamburgerMenu = ({
     })
   }
 
-  const [accordionValue, setAccordionValue] = useState(loggedIn() ? "": "account")
+  const [accordionValue, setAccordionValue] = useState(loggedIn() ? "nav": "account")
 
 
   useEffect(() => {
@@ -143,9 +145,14 @@ const HamburgerMenu = ({
       <div className={`flex pl-1`}>
         
       <div className={`px-3`}>
-        <img src={LogoUrl} alt="Fosforescent" className="h-7" /></div>
+        <img src={logo.logo} alt="Fosforescent" className="h-7" /></div>
               Fosforescent
-        {/* {<TopButtons />}  */}
+        {<TopButtons 
+          data={appState}
+          setData={setData}
+          nodeRoute={appState.data.fosData.route}
+          options={options}
+        />} 
       </div>
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
@@ -155,15 +162,28 @@ const HamburgerMenu = ({
               Fos
             </SheetHeader> */}
             <SheetTitle className={`flex flex-row`}>
-              <div className={`px-3`}><img src={LogoUrl} alt="Fosforescent" className="h-7" /></div>
+              <div className={`px-3`}><img src={logo.logo} alt="Fosforescent" className="h-7" /></div>
               Fosforescent
             </SheetTitle>
             <SheetDescription className="hidden">Menu</SheetDescription>
 
             <hr  className={`my-5`} />
+            <div className={`py-1`}>
 
+              <Input type="search" placeholder="Search" className="w-full" />
+            </div>
+
+            <hr  className={`my-5`} />
       
-            {loggedIn() && (<div className="grow h-full">
+    
+            
+            <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue} collapsible>
+
+
+              <AccordionItem value="nav">
+                <AccordionTrigger>Nav </AccordionTrigger>
+                <AccordionContent>
+                {loggedIn() && (<div className="grow h-full">
               <nav className="p-4 space-y-2 flex flex-col justify-center h-full">
                 <Button
                   asChild
@@ -183,7 +203,7 @@ const HamburgerMenu = ({
                   >
                     Inbox
                   </NavLink>
-                </Button>     
+                </Button>
                 <Button
                   asChild
                   variant="ghost"
@@ -191,7 +211,7 @@ const HamburgerMenu = ({
                   onClick={() => setMenuOpen(false)}
                 >
                   <NavLink
-                    to="/workflow"
+                    to="/agora"
                     className={({ isActive }) =>
                       cn(
                         "w-full",
@@ -200,9 +220,10 @@ const HamburgerMenu = ({
                     }
                     end
                   >
-                    Workflows
+                    Agora
                   </NavLink>
-                </Button>
+                </Button>  
+
                 <Button
                   asChild
                   variant="ghost"
@@ -229,7 +250,7 @@ const HamburgerMenu = ({
                   onClick={() => setMenuOpen(false)}
                 >
                   <NavLink
-                    to="/group"
+                    to="/folders"
                     className={({ isActive }) =>
                       cn(
                         "w-full",
@@ -238,9 +259,28 @@ const HamburgerMenu = ({
                     }
                     end
                   >
-                    Groups
+                    Folders
                   </NavLink>
                 </Button>
+                {/* <Button
+                  asChild
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavLink
+                    to="/search"
+                    className={({ isActive }) =>
+                      cn(
+                        "w-full",
+                        isActive && "bg-accent text-accent-foreground"
+                      )
+                    }
+                    end
+                  >
+                    Search
+                  </NavLink>
+                </Button> */}
                 <Button
                   asChild
                   variant="ghost"
@@ -282,10 +322,8 @@ const HamburgerMenu = ({
               </nav>
 
             </div>)}
-            
-            <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue} collapsible>
-
-
+                </AccordionContent>
+              </AccordionItem>
               <AccordionItem value="account">
                 <AccordionTrigger>Account </AccordionTrigger>
                 <AccordionContent>

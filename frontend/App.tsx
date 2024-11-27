@@ -247,8 +247,6 @@ export default function App({
 
 
 
-  
-
 
   const global: FosReactGlobal = getGlobal(options)
 
@@ -276,20 +274,51 @@ export default function App({
 
 
 
-  // useEffect(() => {
+  const [currentActivity, setCurrentActivity] = useState("")
+  const [currentView, setCurrentView] = useState("")
 
-  //   if (loggedIn()){
-  //     if (location.pathname === '/'){
-  //       navigate('')
-  //     } else {
-  //       setAppState({...appState, })
-  //     }
+  useEffect(() => {
+
+    if (loggedIn()){
+      if (location.pathname === '/'){
+        navigate('')
+      } else if (location.pathname === '/inbox'){
+        setCurrentActivity('inbox')
+        setCurrentView("Queue")
+        setAppState({...appState, })
+      } else if (location.pathname === '/agora'){
+        setCurrentActivity('inbox')
+        setCurrentView("Queue")
+        setAppState({...appState, })
+      } else if (location.pathname === '/market'){
+        setCurrentActivity('inbox')
+        setCurrentView("Query")
+        setAppState({...appState, })
+      } else if (location.pathname === '/search'){
+        setCurrentActivity('inbox')
+        setCurrentView("Query")
+        setAppState({...appState, })
+      } else if (location.pathname === '/folders'){
+        setCurrentActivity('inbox')
+        setCurrentView("Tree")
+        setAppState({...appState, })
+      } else if (location.pathname === '/info'){
+        setCurrentActivity('inbox')
+        setCurrentView("Queue")
+        setAppState({...appState, })
+      } else if (location.pathname === '/settings'){
+        setCurrentActivity('inbox')
+        setCurrentView("Settings")
+        setAppState({...appState, })
+      }
   
-  //   }
+    } else {
+
+    }
 
 
 
-  // }, [location.pathname])
+  }, [location.pathname])
 
 
   const setAppStateWithEffects = (newData: AppState) => {

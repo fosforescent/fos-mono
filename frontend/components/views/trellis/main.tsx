@@ -41,14 +41,14 @@ import { getActions } from '../../../lib/actions'
 
 import { DefaultRootComponent } from './root'
 import { useProps } from '@/frontend/App';
-import { getNodeOperations } from '@/frontend/lib/nodeOperations';
+
 import { getDragAndDropHandlers } from '../../drag-drop';
 
 
 
 
 // eslint-disable-next-line @typescript-eslint/ban-types
-export function MainView (){
+export function TreeView (){
 
 
   const { 
@@ -124,5 +124,4 @@ export function MainView (){
 }
 
 
-export default MainView
 

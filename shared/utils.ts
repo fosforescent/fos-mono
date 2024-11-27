@@ -352,7 +352,7 @@ export function mutableReduceToRouteMap<T>(
   operation: MutableExprOperation<T>
 ): Map<FosPath, T> {
 
-  const store = new FosStore(contextData)
+  const store = new FosStore({ fosCtxData: contextData })
 
   const rootExpr = new FosExpression(store, [])
 
@@ -426,7 +426,11 @@ export function mutableMapExpressions<T>(
 
 export const getGroupFromRoute = (route: FosPath, store: FosStore): FosNode => {
 
-  const groupFieldNode = store.groupFieldNode
+  /**
+   * TODO: Update to use multiple nested groups
+   */
+
+  const groupFieldNode = store.primitive.groupField
   if (route[0]?.[0] === groupFieldNode.getId()){
     const addr = route[0][1]
     const groupNode = store.getNodeByAddress(route[0][1])

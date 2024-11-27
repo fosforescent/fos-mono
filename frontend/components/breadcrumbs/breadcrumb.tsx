@@ -54,8 +54,6 @@ export const DefaultBreadcrumbComponent = ({
     keyDownEvents,
     keyUpEvents,
     keyPressEvents,
-    addOption,
-    toggleOptionCollapse,
     suggestSteps,
     toggleCollapse,
     zoom

@@ -1,5 +1,6 @@
 
-import { AppState, DragInfo, FosPath, FosRoute, TrellisSerializedData } from "../types";
+import { getExpressionActions } from "../expressionActions";
+import { AppState, DragInfo, FosDataContent, FosNodeContent, FosPath, FosRoute, TrellisSerializedData } from "../types";
 import { getGroupFromRoute, mutableReduceToRouteMapFromExpression, pathEqual } from "../utils";
 import { FosNode } from "./node";
 import { FosStore } from "./store";
@@ -52,8 +53,8 @@ export class FosExpression {
   }
 
   isTodo(): boolean {
-    const leftSideWorkflow = this.instructionNode.getId() === this.store.workflowFieldNode.getId()
-    const rightSideChoice = this.targetNode.getId() === this.store.choiceTargetNode.getId()
+    const leftSideWorkflow = this.instructionNode.getId() === this.store.primitive.workflowField.getId()
+    const rightSideChoice = this.targetNode.getId() === this.store.primitive.choiceTarget.getId()
  
 
 
@@ -62,13 +63,13 @@ export class FosExpression {
 
   
   isWorkflow(): boolean {
-    const isTask = this.store.workflowFieldNode.getId() === this.instructionNode.getId()
+    const isTask = this.store.primitive.workflowField.getId() === this.instructionNode.getId()
     return isTask
   }
 
   isOption(): boolean {
     // alternatively... is workflow whose instruction is a choice
-    const isOption = this.store.optionConstructor.getId() === this.targetNode.getId()
+    const isOption = this.store.primitive.optionConstructor.getId() === this.targetNode.getId()
     return isOption
   }
 
@@ -77,12 +78,12 @@ export class FosExpression {
   }
 
   isChoice(): boolean {
-    const isChoice = this.store.choiceTargetNode.getId() === this.targetNode.getId()
+    const isChoice = this.store.primitive.choiceTarget.getId() === this.targetNode.getId()
     return isChoice
   }
 
   isDocument(): boolean {
-    const isDocument = this.store.documentFieldNode.getId() === this.instructionNode.getId()
+    const isDocument = this.store.primitive.documentField.getId() === this.instructionNode.getId()
     return isDocument      
   }
 
@@ -289,15 +290,45 @@ export class FosExpression {
 
   }
 
+  updateTargetContent(newContent: FosNodeContent) {
+    const thisEdge = this.route[this.route.length - 1]
+    
+    const newTarget = this.store.create(newContent)
 
-  getChildrenOfType(type: string) {
+    if (!thisEdge){
+      this.store.setRootTarget(newTarget)
+    }
+
+    
+    this.targetNode = newTarget
+  }
+
+  getChildrenOfType(typeNode: FosNode) {
     //(type: FosNodeId) => getChildrenToShow(state, nodeRoute, type)
-    return this.getChildren().filter((child) => child.instructionNode.getId() === type)
+    return this.getChildren().filter((child) => {
+      const childInstructionNode = child.instructionNode
+      const nodesMatch = this.store.matchPattern(typeNode, childInstructionNode)
+      const hasMatch = nodesMatch.length > 0
+      return hasMatch
+    })
   }
 
   getNodesOfType() {
     const ctxData = this.store.exportContext(this.route)
     return getNodesOfTypeForPath(ctxData, this.route)
+
+  }
+
+  applyPattern(instruction: FosNode, target: FosNode){
+
+  }
+
+  queryPattern(instruction: FosNode, target: FosNode){
+
+
+  }
+
+  removePattern(instruction: FosNode, target: FosNode){
 
   }
 
@@ -360,6 +391,17 @@ export class FosExpression {
     return values
   }  
 
+  getActions() {
+    const ctxCallback = this.store.updateCtxCallback
+    if (ctxCallback){
+      return getExpressionActions(this, ctxCallback)
+    }
+
+    throw new Error('Store does not have updateCtxCallback')
+  }
+
+
+
   getExpressionInfo() {
 
     const nodeType = this.instructionNode.getId()
@@ -381,11 +423,11 @@ export class FosExpression {
   
     const nodeContent = this.instructionNode.getContent()
 
-    const isComment = nodeType === this.store.commentConstructorNode.getId()
+    const isComment = nodeType === this.store.primitive.commentConstructor.getId()
 
-    const isGroup = nodeType === this.store.groupFieldNode.getId()
-    const isMarketRequest = nodeType === this.store.marketRequestNode.getId()
-    const isMarketService = nodeType === this.store.marketServiceNode.getId()
+    const isGroup = nodeType === this.store.primitive.groupField.getId()
+    const isMarketRequest = nodeType === this.store.primitive.marketRequestNode.getId()
+    const isMarketService = nodeType === this.store.primitive.marketServiceNode.getId()
   
     const nodeData = nodeContent.data
     const nodeChildren = nodeContent.children
@@ -398,21 +440,21 @@ export class FosExpression {
 
     const isBase = pathEqual(this.route, this.store.fosRoute)
 
-    const isSearch = nodeType === this.store.searchQueryNode.getId()
-    const isSearchResults = nodeType === this.store.searchResultsNode.getId()
+    const isSearch = nodeType === this.store.primitive.searchQueryNode.getId()
+    const isSearchResults = nodeType === this.store.primitive.searchResultsNode.getId()
 
-    const isLastNameField = nodeType === this.store.lastNameFieldNode.getId()
-    const isFirstNameField = nodeType === this.store.firstNameFieldNode.getId()
-    const isEmailField = nodeType === this.store.emailFieldNode.getId()
+    const isLastNameField = nodeType === this.store.primitive.lastNameField.getId()
+    const isFirstNameField = nodeType === this.store.primitive.firstNameField.getId()
+    const isEmailField = nodeType === this.store.primitive.emailField.getId()
 
-    const isDocument = nodeType === this.store.documentFieldNode.getId()
-    const isOption = nodeType === this.store.optionConstructor.getId()
-    const isChoice = nodeId === this.store.choiceTargetNode.getId()
+    const isDocument = nodeType === this.store.primitive.documentField.getId()
+    const isOption = nodeType === this.store.primitive.optionConstructor.getId()
+    const isChoice = nodeId === this.store.primitive.choiceTarget.getId()
 
-    const isConflict = nodeType === this.store.conflictNode.getId()
-    const isError = nodeType === this.store.errorNode.getId()
+    const isConflict = nodeType === this.store.primitive.conflictNode.getId()
+    const isError = nodeType === this.store.primitive.errorNode.getId()
 
-    const isContact = nodeType === this.store.contactFieldNode.getId()
+    const isContact = nodeType === this.store.primitive.contactField.getId()
 
     const isEditing = false
 
@@ -440,6 +482,40 @@ export class FosExpression {
     const getAllTodos = () => {
       return this.getFullTreeOfType('todo')
     }
+
+    const matchesPrimPattern = (instructionPattern: FosNode, targetPattern: FosNode) => {
+      throw new Error('Method not implemented')
+    }
+
+    const setPrimPatternValues = (instructionPattern: FosNode, targetPattern: FosNode, inputInstructionNodes: FosNode[], inputTargetNodes: FosNode[]) => {
+      throw new Error('Method not implemented')
+    }
+
+    const deletePrimPatternValues = (instructionPattern: FosNode, targetPattern: FosNode) => {
+      throw new Error('Method not implemented') 
+    }
+
+    const evaluateExpression = () => {
+      throw new Error('Method not implemented')
+    }
+
+    const searchPatternRecursive = (instruction: FosNode, target: FosNode): FosExpression[] => {
+      throw new Error('Method not implemented')
+    }
+
+    const createChildExpressionUnderTarget = (instruction: FosNode, target: FosNode) => {
+      throw new Error('Method not implemented')
+
+    }
+
+    const createChildExpressionUnderInstruction = (instruction: FosNode, target: FosNode) => {
+      throw new Error('Method not implemented')
+    }
+
+    const queryAvailableActionsForPrimitivePattern = (instruction: FosNode, target: FosNode) => {
+
+    }
+
 
 
     const currentGroup = getGroupFromRoute(this.route, this.store)
@@ -516,7 +592,7 @@ export class FosExpression {
 
 export const getExpressionInfo = (nodeRoute: FosPath, state: AppState["data"]) => {
 
-  const store = new FosStore(state)  
+  const store = new FosStore({ fosCtxData: state})  
   const expression = new FosExpression(store, nodeRoute)
 
   return expression.getExpressionInfo()
@@ -525,7 +601,7 @@ export const getExpressionInfo = (nodeRoute: FosPath, state: AppState["data"]) =
 
 export const getFullTreeOfType = (appData: AppState["data"], nodeRoute: FosPath, type: string) => {
 
-  const store = new FosStore(appData)
+  const store = new FosStore({ fosCtxData: appData})
   const expression = new FosExpression(store, nodeRoute)
   return expression.getFullTreeOfType(type)
 
@@ -579,6 +655,11 @@ export const getNodesOfTypeForPath = (appData: AppState["data"], nodeRoute: FosP
     return nodeType === 'FIELD'
   })
 
+  const pins = () => childRoutes.filter((childRoute) => {
+    const { nodeType } = getExpressionInfo(childRoute, appData)
+    return nodeType === 'PIN'
+  })
+
   return {
     workflows,
     todos,
@@ -588,6 +669,7 @@ export const getNodesOfTypeForPath = (appData: AppState["data"], nodeRoute: FosP
     marketRequest,
     marketService,
     field,
+    pins
 
   }
 

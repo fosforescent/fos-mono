@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 
-import WorkflowMain from './components/views/trellis/main'
+import { TreeView } from './components/views/trellis/main'
 import { FosSettingsPage }  from './components/settings'
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
@@ -17,6 +17,8 @@ import { FieldTest } from '@/frontend/mockups/interactionMockups'
 
 import './global.css'
 import './App.css'
+import { QueryView } from './components/views/QueryLayout'
+import { BrowseView } from './components/views/BrowseLayout'
 
 declare const __FOS_API_URL__: string;
 
@@ -52,61 +54,78 @@ const router = createBrowserRouter([
       {
         index: true,
         // loader data
-        element: <QueueView />,
-        // loader: async () => {
-        //   return {
-        //     route: [["getPins", "myRootId"]],
-        //   }
-        // }
+        element: <BrowseView />,
+        loader: async () => {
+          return {
+            route: [],
+          }
+        }
 
       },
-      // {
-      //   // Route should be [["root", "myRootId"]]
-      //   // Should route to queue view.. 
-      //   // how to route there?  Just set app state in app based on routes? 
-      //   path: "inbox",
-      //   element: <Todos />,
-      //   loader: async () => {
-      //     return {
-      //       route: [["getTodos", "myRootId"]],
-      //     }
-      //   }
-      // },
-      // {
-      //   path: "market",
-      //   // Route should be [["root", "myRootId"], ["group", "everyoneRootid"], ["browse", "{filters? workflow}"]]
-      //   // browsing services... anything workflows published to everyone
-      //   // so this is filtering based on workflows 
-      //   children: [
-      //     {
-      //       index: true,
-      //       element: <MarketBrowse />,
-      //       loader: async () => {
-      //         return {
-      //           route: [["root", "myRootId"], ["group", "everyoneRootid"]],
-      //         }
-      //       },
+      {
+        // Route should be [["root", "myRootId"]]
+        // Should route to queue view.. 
+        // how to route there?  Just set app state in app based on routes? 
+        path: "inbox",
+        element: <QueueView />,
+        loader: async () => {
+          return {
+            route: [],
+          }
+        }
+      },
+      {
+        path: "market",
+        // Route should be [["root", "myRootId"], ["group", "everyoneRootid"], ["browse", "{filters? workflow}"]]
+        // browsing services... anything workflows published to everyone
+        // so this is filtering based on workflows 
+        children: [
+          {
+            index: true,
+            element: <BrowseView />,
+            loader: async () => {
+              return {
+                route: [["group", "everyoneRootid"]],
+              }
+            },
     
-      //     },
-      //   ]
-      // },
-      // {
-      //   path: "agora",
-      //   // Route should be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? comments}"]]
-      //   // Route could also be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? none}"]]
-      //   children: [
-      //     {
-      //       index: true,
-      //       element: <MarketBrowse />,
-      //       loader: async () => {
-      //         return {
-      //           route: [["root", "myRootId"], ["group", "everyoneRootid"]],
-      //         }
-      //       },
+          },
+        ]
+      },
+      {
+        path: "agora",
+        // Route should be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? comments}"]]
+        // Route could also be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? none}"]]
+        children: [
+          {
+            index: true,
+            element: <QueueView />,
+            loader: async () => {
+              return {
+                route: [["group", "everyoneRootid"]],
+              }
+            },
     
-      //     },
-      //   ]
-      // },
+          },
+        ]
+      },
+      {
+        path: "folders",
+        // Route should be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? comments}"]]
+        // Route could also be [["root", "myRootId"], ["group", "everyoneRootid"], ["queue", "{filters? none}"]]
+        children: [
+          {
+            index: true,
+            element: <TreeView />,
+            loader: async () => {
+              return {
+                route: [],
+              }
+            },
+    
+          },
+        ]
+      },
       // {
       //   path: "groups",
       //   // Route should be [["root", "myrootid"], ["browse", "{filters? group}"]]
@@ -126,24 +145,56 @@ const router = createBrowserRouter([
       //   ]
       // },
       // ,
+      {
+        path: "search",
+        // Route should be [["root", "myrootid"]] // "browse", "{filters? none}"
+        // browsing groups... upon clicking, 
+        // route would go to [["root", "myrootid"], ["group", "groupRootId"]] /// "queue", "{filters? comments}"
+        children: [
+          {
+            index: true,
+            element: <QueryView />,
+            loader: async () => {
+              return {
+                route: [],
+              }
+            },
+    
+          },
+        ]
+      },
       // {
-      //   path: "search",
-      //   // Route should be [["root", "myrootid"]] // "browse", "{filters? none}"
-      //   // browsing groups... upon clicking, 
-      //   // route would go to [["root", "myrootid"], ["group", "groupRootId"]] /// "queue", "{filters? comments}"
+      //   // Route should be [["root", "myrootid"]  // Routed to browse view
+      //   path: "info",
       //   children: [
       //     {
       //       index: true,
-      //       element: <Browse />,
-      //       loader: async () => {
-      //         return {
-      //           route: [["root", "myRootId"]],
-      //         }
-      //       },
+      //       element: <BrowseView />,
+      //       // loader: async () => {
+      //       //   return {
+      //       //     route: [["root", "myRootId"]],
+      //       //   }
+      //       // },
     
       //     },
       //   ]
       // },
+      {
+        // Route should be [["root", "myrootid"]  // Routed to browse view
+        path: "info",
+        children: [
+          {
+            index: true,
+            element: <BrowseView />,
+            // loader: async () => {
+            //   return {
+            //     route: [["root", "myRootId"]],
+            //   }
+            // },
+    
+          },
+        ]
+      },
       {
         // Route should be [["root", "myrootid"]  // Routed to browse view
         path: "settings",
@@ -160,6 +211,7 @@ const router = createBrowserRouter([
           },
         ]
       },
+
     ]
   }
 ], {

@@ -227,12 +227,12 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
         })
     }
 
-    const groupRootNode = await prisma.fosNode.findFirst({
-        where: { id: group.rootTargetNodeId },
+    const groupRootInstructionNode = await prisma.fosNode.findFirst({
+        where: { id: group.rootInstructionNodeId },
     })
 
-    if (groupRootNode?.data) {
-        const nodeContent = groupRootNode.data as FosNodeContent
+    if (groupRootInstructionNode?.data) {
+        const nodeContent = groupRootInstructionNode.data as FosNodeContent
         if (!nodeContent.children) {
           console.log('nodeContent', nodeContent)
           throw new Error('User root node has no children')
@@ -243,7 +243,7 @@ export const attachUserToGroup = async (prisma: PrismaClient, user: User, group:
         }
 
         await prisma.fosNode.update({
-            where: { id: groupRootNode?.id },
+            where: { id: groupRootInstructionNode?.id },
             data: {
                 data: newNodeData
             }

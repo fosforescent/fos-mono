@@ -17,3 +17,8 @@ export const documents = {
 }
 
 
+export const logo = {
+  logo: new URL('./assets/logo3-bare.png', import.meta.url).href,
+  
+}
+

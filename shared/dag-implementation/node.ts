@@ -3,6 +3,8 @@ import { Duration, NodeData, Probability, Cost, CostAllocation } from './node-da
 
 import { FosNodeContent, FosPath, FosPathElem } from '../types'
 import { FosStore } from './store'
+import { FosExpression } from './expression'
+import { Key } from 'lucide-react'
 
 
 
@@ -65,9 +67,9 @@ export class FosNode {
   }
 
   prevList(): FosNode[] {
-    const previousVersionNode = this.store.previousVersionNode
+    const previousVersionNodeId = this.store.primitive.previousVersion.getId()
     const prevNodes: FosNode[] = this.value.children.reduce((acc: FosNode[], [edgeType, target]: FosPathElem) => {
-      if (edgeType === "prev") {
+      if (edgeType === previousVersionNodeId) {
         const node: FosNode | null = this.store.getNodeByAddress(target)
         if (!node){
           throw new Error("Node not found")
@@ -134,7 +136,7 @@ export class FosNode {
   }
 
   getPeers(): FosNode[] {
-    const peers = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.peerNode.getId())
+    const peers = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
     return peers.map(([edgeType, target]) => {
       const node = this.store.getNodeByAddress(target)
       if (!node) {
@@ -163,7 +165,7 @@ export class FosNode {
       children: []
     }
     const newNode = new FosNode(newCommentData, this.store)
-    const thisNewNode = this.addEdge(this.store.commentConstructorNode.getId(), newNode.getId())
+    const thisNewNode = this.addEdge(this.store.primitive.commentConstructor.getId(), newNode.getId())
     return [thisNewNode, newNode]
   }
 
@@ -182,12 +184,12 @@ export class FosNode {
       children: []
     }
     const newNode = new FosNode(newTodoData, this.store)
-    const thisNewNode = this.addEdge(newNode.getId(), this.store.completeFieldNode.getId())
+    const thisNewNode = this.addEdge(newNode.getId(), this.store.primitive.completeField.getId())
     return [thisNewNode, newNode]
   }
 
   getComments(): FosNode[] {
-    const comments = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.commentConstructorNode.getId())
+    const comments = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.commentConstructor.getId())
     return comments.map(([edgeType, target]) => {
       const node = this.store.getNodeByAddress(target)
       if (!node) {
@@ -197,12 +199,69 @@ export class FosNode {
     })
   }
 
+  addExpression(expression: FosExpression): FosNode {
+    return this.addEdge(expression.instructionNode.getId(), expression.targetNode.getId())
+  }
 
+  removeExpression(expression: FosExpression): FosNode {
+    return this.removeEdge(expression.instructionNode.getId(), expression.targetNode.getId())
+  }
+
+  updateExpression(oldExpression: FosExpression, newExpression: FosExpression): FosNode {
+    return this.updateEdge(oldExpression.instructionNode.getId(), oldExpression.targetNode.getId(), newExpression.instructionNode.getId(), newExpression.targetNode.getId())
+  }
+
+  getExprOfType(instructionType: FosNode, targetType: FosNode, route: FosPath): FosExpression[] | null {
+    const exprs = this.getEdges().filter(([edgeType, target]) => {
+      const instructionNode = this.store.getNodeByAddress(edgeType)
+      if (!instructionNode) {
+        throw new Error("Instructinon Node not found")
+      }
+      const targetNode = this.store.getNodeByAddress(target)
+      if (!targetNode) {
+        throw new Error("Target Node not found")
+      }
+      const instructionMatch = this.store.matchPattern( instructionType, instructionNode )
+      const targetMatch = this.store.matchPattern( targetType, targetNode )
+      return instructionMatch.length > 0 && targetMatch.length > 0
+    })
+    if (exprs.length === 0) {
+      return null
+    }
+    const expressions = exprs.map(([edgeType, targetType]) => {
+
+      return new FosExpression(this.store, [...route, [edgeType, targetType]])
+    })
+
+    return expressions
+  }
+  
+
+  isGroupInstructionNode(): boolean {
+    const peerEdges = this.value.children.filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
+
+    const hasPeerEdges = peerEdges.length > 0
+    return hasPeerEdges
+
+  }
 
 
   delete(): void {
     this.store.remove(this)
   }
+
+
+
+  isPrimitive(): [string, FosNode] | null {
+    const result: [string, FosNode] | null = Object.entries(this.store.primitive).find(([key, primitive], number) => {
+      if (primitive.getId() === this.getId()) {
+        return true 
+      }
+    }) || null
+
+    return result
+  }
+
 
 
 

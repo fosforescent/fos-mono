@@ -101,7 +101,7 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       }
 
 
-      const serverDataStore = new FosStore({ fosData: serverData, trellisData } )
+      const serverDataStore = new FosStore({ fosCtxData: { fosData: serverData, trellisData } })
 
       serverDataStore.updateWithContext(userData)
 

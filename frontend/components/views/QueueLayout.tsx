@@ -33,13 +33,13 @@ import { getActions } from '@/frontend/lib/actions';
 import { DefaultBreadcrumbsComponent } from '../breadcrumbs/breadcrumbs';
 import { getDragAndDropHandlers } from '../drag-drop';
 
-import { NodeCard } from '../node/ExpressionRow';
+import { NodeCard } from '../expression/ExpressionRow';
 import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression';
 import { getGroupFieldNode } from '@/shared/dag-implementation/primitive-node';
 import { getGroupFromRoute } from '@/shared/utils';
 import { FosStore } from '@/shared/dag-implementation/store';
-import { NodeActiviyInput } from '../node/ExpressionInput';
-import { ExpressionCard } from '../node/ExpressionCard';
+import { NodeActiviyInput } from '../expression/ExpressionInput';
+import { ExpressionCard } from '../expression/ExpressionCard';
 
 
 
@@ -67,7 +67,7 @@ const QueueView = () => {
   
   console.log('queueview', route, data)
 
-  const store = new FosStore(data.data)
+  const store = new FosStore({ fosCtxData: data.data})
 
   const expression = new FosExpression(store, route)
 

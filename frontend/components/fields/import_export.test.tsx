@@ -1,4 +1,4 @@
-import { importNode, exportNode } from '../fos-modules/import_export';
+import { importNode, exportNode } from '../actions/import_export';
 
 
 describe('ImportExport', () => {

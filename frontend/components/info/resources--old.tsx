@@ -1,5 +1,5 @@
 import { Boxes, BrainCircuit, PlusCircle } from 'lucide-react'
-import { FosDataModule, FosModuleProps } from '../fos-modules/fosModules'
+import { FosDataModule, FosModuleProps } from '../actions/fosModules'
 import { suggestRecursive } from '../../lib/suggestRecursive'
 import { SelectionPath, IFosNode } from "@/fos-js"
 import { Button } from '/components/ui/button'

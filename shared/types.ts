@@ -30,7 +30,7 @@ export interface TrellisSerializedData {
   collapsedList: FosPath[],
   rowDepth: number,
   dragInfo: DragInfo,
-  view: "Queue" | "Query" | "Tree" | "Focus",
+  view: "Queue" | "Query" | "Tree" | "Focus" | "Settings",
   activity: string,
   mode: string,
 }
@@ -139,6 +139,7 @@ export type FosDataContent = {
   }
   todo?: {
     completed: boolean;
+    time: number;
   }
   reactClient?:{
     collapsed: boolean;

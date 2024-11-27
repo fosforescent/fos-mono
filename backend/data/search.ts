@@ -213,7 +213,7 @@ export const searchQuery = async (req: Request, res: Response) => {
       });
     }
 
-    const store = new FosStore(context);
+    const store = new FosStore({ fosCtxData: context });
     const expression = new FosExpression(store, route);
 
     const results = await executeSearch(expression, {

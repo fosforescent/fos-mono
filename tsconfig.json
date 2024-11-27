@@ -37,13 +37,10 @@
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx",
-    "../../**/*.ts",
+    "**/*.tsx",    
     "declarations.d.ts",
     "lib/**/*.d.ts",
     "lib/dnd/multi-backend.js",
-    "./../../syc/react-trellis/dist/types/index.d.ts", 
-    "./../../syc/react-trellis/dist/types/**/*",
     "../vite.config.ts", "vite.config.mts", "frontend/tailwind.config.cjs", "frontend/postcss.config.cjs"  ],
   "exclude": [
     "node_modules",

@@ -7,17 +7,21 @@ import {  pathEqual } from "../../shared/utils"
 import React from "react"
 import { diff } from "@n1ru4l/json-patch-plus"
 import { Button } from "../components/ui/button"
-import { NodeRow } from "../components/node/ExpressionRow"
-import { getExpressionInfo } from "@/shared/dag-implementation/expression"
+import { ExpressionRow } from "../components/expression/ExpressionRow"
+import { FosExpression, getExpressionInfo } from "@/shared/dag-implementation/expression"
 import { api } from "../api"
 import { searchMockupContextStart } from "./searchMockup"
 import { FosStore } from "@/shared/dag-implementation/store"
+import { ExpressionFields } from "../components/expression/ExpressionFields"
+import { DefaultBreadcrumbsComponent } from "../components/breadcrumbs/breadcrumbs"
+import { TopButtons } from "../components/menu/TopButtons"
+import TripleToggleSwitch from "../components/elements/tripleToggle"
 
 
 export const FieldTest = () => {
 
 
-  const [data, setData] = React.useState<AppState>()
+  // const [data, setData] = React.useState<AppState>()
 
 
   // const startData = getMockupState(optionMockupContextStart)
@@ -37,15 +41,40 @@ export const FieldTest = () => {
 
 
 
-  return (
-    <SearchField 
+
+  return (<>
+
+    <TopButtons 
+      data={startData}
+      setData={setDataCompare}
+      options={{}}
+      nodeRoute={[]}
+    />
+    <DefaultBreadcrumbsComponent
+      data={startData}
+      setData={setDataCompare}
+      options={{}}
+      nodeRoute={[]}
+    />
+    <FieldsetWrapper 
       data={startData}
       setData={setDataCompare}
       options={{}}
       nodeRoute={[]}
 
     />
-  )
+  </>)
+
+
+  // return (
+  //   <SearchField 
+  //     data={startData}
+  //     setData={setDataCompare}
+  //     options={{}}
+  //     nodeRoute={[]}
+
+  //   />
+  // )
 
 
   // return (
@@ -57,6 +86,38 @@ export const FieldTest = () => {
 
   //   />
   // )
+}
+
+const FieldsetWrapper = ({ 
+  data,
+  setData,
+  options,
+  nodeRoute,
+  ...props
+} : {
+  options: FosReactOptions
+  data: AppState
+  nodeRoute: FosPath
+  setData: (state: AppState) => void
+}) => {
+
+  const setFosAndTrellisData = (state: AppState["data"]) => {
+    setData({ ...data, data: state })
+  }
+
+
+
+  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData })
+
+  const expression = new FosExpression(store, nodeRoute)
+
+  return (<div>
+    <ExpressionFields
+      expression={expression}
+      depthToShow={1}
+    />
+  </div>)
+
 }
 
 
@@ -94,7 +155,7 @@ const SearchField = ({
       if(!response){
         throw new Error('no response')
       }
-      const newStore = new FosStore(response)
+      const newStore = new FosStore({ fosCtxData: response })
       setSearchResults(JSON.stringify(response))
     })
 

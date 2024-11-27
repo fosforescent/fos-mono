@@ -1,7 +1,7 @@
 import React, { useMemo } from "react"
 import { Option, Wand } from "lucide-react"
 
-import { InputDiv } from "../fields/inputDiv"
+import { InputDiv } from "../elements/inputDiv"
 import { ComboboxEditable } from "../combobox/comboboxEditable"
 import _, { set } from 'lodash'
 import { AppState, FosReactOptions, FosPath } from "@/shared/types"

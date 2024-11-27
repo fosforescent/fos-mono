@@ -11,7 +11,7 @@ import { get } from "http"
 
 
 
-export const QueryView = () => {
+export const BrowseView = () => {
 
 
 

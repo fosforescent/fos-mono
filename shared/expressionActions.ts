@@ -1,6 +1,7 @@
 import exp from "constants";
 import { FosExpression } from "./dag-implementation/expression";
 import { FosNode } from "./dag-implementation/node";
+import { AppState, FosReactOptions } from "./types";
 
 
 
@@ -10,19 +11,56 @@ import { FosNode } from "./dag-implementation/node";
 
 
 
+export const getExpressionActions = (expr: FosExpression, setAppData: (data: AppState["data"]) => void) => {
+
+  const addSearchQuery = (searchQuery: string) => {
+
+    addSearchQueryAction(expr, searchQuery)
+    const updatedContext: AppState["data"] = expr.store.exportContext([])
+    setAppData(updatedContext)
+  }
+
+  const completeTask = () => {
+    const currentTargetVal = expr.targetNode.value
+    expr.updateTargetContent({ 
+      data: {
+        ...currentTargetVal.data,
+        todo: {
+          completed: true,
+          time: Date.now()
+        },
+      },
+      children: expr.targetNode.value.children
+    })
+    
+    const updatedContext: AppState["data"] = expr.store.exportContext([])
+    setAppData(updatedContext)
+  }
 
 
+  return {
+    completeTask
+  }
+
+}
 
 
-
-const addSearchQuery = (expr: FosExpression, searchQuery: string) => {
+const addSearchQueryAction = (expr: FosExpression, searchQuery: string) => {
 
 
 
 
 }
 
+const replaceInstruction = (expr: FosExpression, instruction: FosNode) => {
 
+
+
+}
+
+const replaceTarget = (expr: FosExpression, target: FosNode) => {
+
+}
 
 
 
