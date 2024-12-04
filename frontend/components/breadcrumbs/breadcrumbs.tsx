@@ -52,7 +52,7 @@ export const DefaultBreadcrumbsComponent = ({
 
   const expression = new FosExpression(store, [])
 
-  const groups: FosExpression[] = expression.getChildrenOfType(store.primitive.groupField)
+  // const groups: FosExpression[] = expression.getChildrenMatchingPattern(store.primitive.groupField, store.primitive.unit)
 
   const isEveryoneGroup = true
 
@@ -70,14 +70,14 @@ export const DefaultBreadcrumbsComponent = ({
       <DropdownMenuTrigger className={`w-200`}>{groupDropdownIcon}</DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuGroup>
-          {groups.map((group: FosExpression) => {
+          {/* {groups.map((group: FosExpression) => {
 
             const id = group.targetNode.getUuid()
             const name = group.targetNode.value.data.group?.name || '<No name>'
 
             return <DropdownMenuItem key={id}>{name}</DropdownMenuItem>
 
-          })}
+          })} */}
 
         </DropdownMenuGroup>
       </DropdownMenuContent>

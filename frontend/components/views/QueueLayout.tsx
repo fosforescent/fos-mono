@@ -71,14 +71,6 @@ const QueueView = () => {
 
   const expression = new FosExpression(store, route)
 
-  const { 
-    getNodesOfType, getAllTodos, getAllComments, currentActivity
-  } = getExpressionInfo(route, data.data)
-
-
-  const routeNodes = getNodesOfType()
-
-
 
   const setCurrentView = () => {
 
@@ -88,15 +80,8 @@ const QueueView = () => {
 
   }
 
-  const itemsToShow = ((activity) => {
-    if (activity === "todo" ){
-      getAllTodos()
-    } else if (activity === "comment") {
-      getAllComments()
-    }
-  })(currentActivity)
 
-
+  const [routesToShow, setRoutesToShow] = useState<FosPath[]>([])
 
   /**
  * Depending on what is being focused on, the input at the bottom of the queue will change
@@ -110,13 +95,24 @@ const QueueView = () => {
  */
 
 
+
+
+  useEffect(() => {
+    const activity = data.data.trellisData.activity
+    expression.getAllDescendentsForActivity(data.data.trellisData.activity)
+
+
+    console.log("all Store nodes", store.table, store.aliasMap)
+
+
+    setRoutesToShow(expression.getAllDescendentsForActivity(activity))
+    
+  }, [data.data.trellisData.activity])
+
   const focusRoute = data.data.trellisData.focusRoute
 
 
   
-
-  const comments = routeNodes.comments()
-
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -194,18 +190,23 @@ const QueueView = () => {
                     style={{height: 'calc(100% - 30rem)'}}
 
           >
-          <ScrollArea id="scrolldiv" className="flex-1 p-0 w-screen "
+          <ScrollArea id="scrolldiv" className="flex-1 p-0 w-full"
                    style={{height: 'calc(100vh - 20rem)'}}
                    >
-            <div className="space-y-4">
-              {comments.map((commentRoute, i) => {
-                return (<ExpressionCard
+            
+              {routesToShow.map((routeToShow, i) => {
+                return (<div className="space-y-4 w-full p-4"><ExpressionCard
                   key={i}
-                  expression={new FosExpression(store, commentRoute)}
-                  />)
+                  data={data}
+                  setData={setData}
+                  options={options}
+                  nodeRoute={routeToShow}
+                  activity={data.data.trellisData.activity}
+                  expression={new FosExpression(store, routeToShow)}
+                  /></div>)
               })}
 
-            </div>
+            
           </ScrollArea>
 
               <QueueInput 

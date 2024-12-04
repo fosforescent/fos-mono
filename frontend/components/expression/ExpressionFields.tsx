@@ -20,15 +20,25 @@ import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/ex
 import { getDragAndDropHandlers } from '../drag-drop'
 import { VersionControlComponent } from '../fields/versionControl'
 
+
+
 export const ExpressionFields = ({
   depthToShow,
   mode,
   expression,
+  data,
+  setData,
+  options,
+  nodeRoute: route,
   ...props
 } : {
   depthToShow: number
   mode: ("read" | "write" | "execute")[]
   expression: FosExpression
+  options: FosReactGlobal
+  data: AppState
+  nodeRoute: FosPath
+  setData: (state: AppState) => void
 }) => {
 
 
@@ -37,6 +47,7 @@ export const ExpressionFields = ({
     nodeDescription, isRoot, childRoutes, 
      disabled, depth, isCollapsed, dragLabel,
     isTooDeep, isOption, hasChildren, 
+    
   } = expression.getExpressionInfo()
   
   const { 
@@ -89,6 +100,9 @@ export const ExpressionFields = ({
    * - turn into options
    */
   const hasList = false
+  const hasOptions = false
+  const hasVersions = false
+  const isTodo = false
   
 
   return (<div className="flex gap-2">

@@ -94,6 +94,22 @@ const ChoiceRowComponent = ({
     dropStyle
   } = getStyles(transform)
 
+  /**
+   * 
+   * 
+   * Actions: 
+   * - turn into option/choice
+   * - unwrap option/choice
+   * - add branch
+   * - suggest merge from branch
+   * - reply to message 
+   * - modify text
+   * - make payment
+   * - turn into list
+   * - unwrap from list
+   * - 
+   * 
+   */
 
   return (<>
    <div className="flex flex-initial grow" id={`${dragLabel}`}>
@@ -217,7 +233,7 @@ const ChoiceRowComponent = ({
             </span>
           </div>
         </div>)}
-  </>)
-}
 
+  </>
+  )
 

@@ -51,6 +51,8 @@ export class FosStore {
   cache = new Map<string, FosNode>()
 
   aliasMap = new Map<string, string>()
+  uuidMap = new Map<string, string>()
+  cidToUuidMap = new Map<string, string>()
 
   version = 0
 
@@ -105,6 +107,8 @@ export class FosStore {
     }
     
   }
+
+  
 
 
   getRootExpression(): FosExpression {
@@ -240,7 +244,8 @@ export class FosStore {
     const hasDiff = diff({ left: value, right: updatedValue })
     if (hasDiff){
       console.log('diff found', hasDiff)
-      throw new Error(`diff found between original and updated content`)
+      this.mutateAlias(alias as string, updatedValue, this.hash(updatedValue))
+      // throw new Error(`diff found between original and updated content`)
     }
 
     return new FosNode(updatedValue, this, alias)
@@ -258,6 +263,7 @@ export class FosStore {
     let newCid = this.hash(nodeContent)
     this.table.set(newCid, nodeContent)
     if (alias){
+      // console.log('alias found', this.aliasMap, alias, newCid, this.table.get(this.aliasMap.get(alias) as string))
       if (this.aliasMap.has(alias)){
         nodeContent = this.mutateAlias(alias, nodeContent, newCid)
         newCid = this.hash(nodeContent)      
@@ -273,10 +279,14 @@ export class FosStore {
 
   mutateAlias (alias: string, nodeContent: FosNodeContent, tentativeCid: string): FosNodeContent {
 
+    // console.log('alias found', this.aliasMap, alias, nodeContent, this.aliasMap.get(alias) as string, tentativeCid)
     const prevCid = this.aliasMap.get(alias)
     if (!prevCid){
-      throw new Error(`alias ${alias} not found`)
+      this.aliasMap.set(alias, tentativeCid)
+      return nodeContent
+      // throw new Error(`alias ${alias} not found`)
     }
+
 
     const thisStoreInstance = this.table.get(this.aliasMap.get(alias) as string)
     if(!thisStoreInstance){
@@ -300,6 +310,7 @@ export class FosStore {
     
     const currPrevItem = nodeContent.children.find((item) => item[0] === this.primitive.previousVersion.getId())
     if (!currPrevItem){
+      console.trace('currPrevItem not found', nodeContent, tentativeCid, storeNodeContent, prevCid)
       console.log('currPrevItem not found', nodeContent, tentativeCid, storeNodeContent, prevCid)
       //resolve with conflict
       return this.getConflictNodeContent(nodeContent, tentativeCid, storeNodeContent, prevCid, alias)
@@ -433,22 +444,22 @@ export class FosStore {
 
 
 
-  getConflictNodeContent (content: FosNodeContent, currId: string, existingContent: FosNodeContent, existingId: string, alias: string ): FosNodeContent {
-    this.table.set(currId, content)
+  // getConflictNodeContent (content: FosNodeContent, currId: string, existingContent: FosNodeContent, existingId: string, alias: string ): FosNodeContent {
+  //   this.table.set(currId, content)
 
-    const newElemForCurrent: FosPathElem = [this.primitive.conflictNode.getId(), currId]
-    const newElemForExisting: FosPathElem = [this.primitive.conflictNode.getId(), existingId]
+  //   const newElemForCurrent: FosPathElem = [this.primitive.conflictNode.getId(), currId]
+  //   const newElemForExisting: FosPathElem = [this.primitive.conflictNode.getId(), existingId]
 
 
-    const conflictNodeConent: FosNodeContent = {
-      data: {
+  //   const conflictNodeConent: FosNodeContent = {
+  //     data: {
 
-      },
-      children: [newElemForCurrent, newElemForExisting],
-    }
+  //     },
+  //     children: [newElemForCurrent, newElemForExisting],
+  //   }
 
-    return conflictNodeConent
-  }
+  //   return conflictNodeConent
+  // }
 
   addPrevNodeToContent (content: FosNodeContent, oldNodeCid: string): FosNodeContent {
     const oldNodeContent = this.table.get(oldNodeCid)
@@ -582,15 +593,10 @@ export class FosStore {
   }
 
   getNodeByAddress (address: string): FosNode | null{
-    // console.log('getNodeByAddress', address, this.checkAddress(address, true))
-    if (!this.checkAddress(address)) {
-      // return null
-      console.log('address was not found', address)
-      throw new Error(`address ${address} not found`)
-    }
+    // console.log('getNodeByAddress', address, this.checkAddress(address))
     if (this.cache.has(address)) return this.cache.get(address) as FosNode
     if (this.aliasMap.has(address)){
-      // console.log('alias found', address, this.aliasMap.get(address))    
+      console.log('alias found', address, this.aliasMap.get(address))    
       const aliasAddress = this.aliasMap.get(address)
       if (!aliasAddress){
         return null
@@ -609,6 +615,11 @@ export class FosStore {
       }
   
       return node  
+    }
+    if (!this.checkAddress(address)) {
+      // return null
+      console.log('address was not found', address, this.aliasMap, this.table, this.aliasMap.get(address))
+      throw new Error(`address ${address} not found`)
     }
     // console.log('queryNodeByAddress', address, this.cache.entries())
     // console.log('test1', this.cache.has(address))
@@ -690,14 +701,21 @@ export class FosStore {
   }
 
   matchPattern (pattern: FosNode, entry: FosNode): FosNode[] {
+
     const patternMap = aggMap(pattern.getEdges())
     const nodeMap = aggMap(entry.getEdges())
 
     const patternCid = pattern.getId()
     const entryCid = entry.getId()
 
-    if(patternCid === entryCid){
+    // console.log("match check", patternCid, entryCid)
+
+    if(patternCid === this.primitive.voidNode.getId()){
       return []
+    }
+
+    if(patternCid === entryCid){
+      return [entry]
     }
     if(patternCid === this.primitive.unit.getId()){
       return [entry]
@@ -740,6 +758,8 @@ export class FosStore {
         }
       }
     }
+    // console.log('matchPattern', pattern, entry, patternResult)
+    // console.trace()
     return patternResult
   }
 

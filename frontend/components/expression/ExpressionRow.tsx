@@ -16,19 +16,29 @@ import { Button } from '../ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import InputDiv from '../elements/inputDiv'
 import { Command, CommandEmpty, CommandGroup, CommandItem } from '../ui/command'
-import { getExpressionInfo } from '@/shared/dag-implementation/expression'
+import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression'
 import { getDragAndDropHandlers } from '../drag-drop'
+import { ExpressionFields } from './ExpressionFields'
+import { FosStore } from '@/shared/dag-implementation/store'
+
+
 
 export const ExpressionRow = ({ 
   data,
   setData,
   options,
   nodeRoute,
+  activity,
+  expression,
+  mode,
   ...props
 } : {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
+  activity: string
+  expression: FosExpression
+  mode: ("read" | "write" | "execute")[]
   setData: (state: AppState) => void
 }) => {
 
@@ -103,6 +113,7 @@ export const ExpressionRow = ({
   const textToDisplay = isOption ? getOptionInfo().getSelectedNodeInfo().nodeDescription : nodeDescription
 
 
+
   return (
     <div className="flex items-center">
   
@@ -123,7 +134,15 @@ export const ExpressionRow = ({
             }} />
             
       </div>
-
+      <ExpressionFields
+        nodeRoute={nodeRoute}
+        data={data}
+        setData={setData}
+        options={options}
+        depthToShow={1}
+        expression={expression}
+        mode={mode}
+        />
     
     <div className={`right-box grow flex`}>
      
@@ -135,35 +154,6 @@ export const ExpressionRow = ({
 
 
 
-const GroupRow = ({ 
-  data,
-  setData,
-  options,
-  nodeRoute: route,
-  ...props
-} : {
-  options: FosReactGlobal
-  data: AppState
-  nodeRoute: FosPath
-  setData: (state: AppState) => void
-}) => {
-
-
-  const { getGroupInfo } = getNodeInfo(route, data)
-
-  const { name, userProfiles,  } = getGroupInfo()
-
-  return (<div>
-      {name}
-      <div className={`flex flex-row w-full justify-around items-center`}>
-          <Button><MessageSquare /></Button>
-          <Button><CheckSquare /></Button>
-          <Button><Inbox /></Button>
-      </div>
-  </div>)
-
-
-}
 
 
 export const NodeCard = ({ 

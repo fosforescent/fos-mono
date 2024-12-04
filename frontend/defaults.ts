@@ -40,16 +40,16 @@ export const defaultNodes: FosNodesData = {
 
 
 export const defaultNodesDemo: FosNodesData = {
-  root: {
-    data: {
-      description: { 
-        content: "Fosforescent Root",
-      }
-    },
-    children: [
-      ["workflow", "startTask"]
-    ]
-  },
+  // root: {
+  //   data: {
+  //     description: { 
+  //       content: "Fosforescent Root",
+  //     }
+  //   },
+  //   children: [
+  //     ["startTask", "COMPLETION"]
+  //   ]
+  // },
   startTask: {
     data: {
       description: { 
@@ -63,20 +63,20 @@ export const defaultNodesDemo: FosNodesData = {
 }
 
 export const defaultNodesTest: FosNodesData = {
-  root: {
-    data: {
-      description: { 
-        content: "My Goals",
-      }
-    },
-    children: [
-      ["workflow", "task1"],
-      ["workflow", "task2"],
-      ["workflow", "task3"],
-      // ["workflow", "task4"],
-      // ["task5L", "task5R"]
-    ]
-  },
+  // root: {
+  //   data: {
+  //     description: { 
+  //       content: "My Goals",
+  //     }
+  //   },
+  //   children: [
+  //     ["workflow", "task1"],
+  //     ["workflow", "task2"],
+  //     ["workflow", "task3"],
+  //     // ["workflow", "task4"],
+  //     // ["task5L", "task5R"]
+  //   ]
+  // },
 
 
   task1: {
@@ -225,7 +225,7 @@ export const defaultNodesTest: FosNodesData = {
 }
 
 export const defaultContext: FosContextData = {
-  nodes: defaultNodes,
+  nodes: defaultNodesDemo,
   route: defaultTrail,
   baseNodeContent: {
     data: {
@@ -241,7 +241,7 @@ export const defaultContext: FosContextData = {
   baseNodeInstruction: {
     data: {
       description: { 
-        content: "Learn to use Fosforescent",
+        content: "Root Instuction Noded",
       }
     },
     children: [
@@ -277,6 +277,7 @@ export const defaultTrellisData: TrellisSerializedData = {
   "activity": "todo",
   "mode": "execute",
   "view": "Queue",
+
   "dragInfo": {
     "dragging": null,
     "dragOverInfo": null

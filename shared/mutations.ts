@@ -3,8 +3,6 @@ import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodeId, Fo
 import { getAncestorLeastUpSibling, getDownSibling,  getUpNode, getUpSibling } from "./utils"
 
 import { v4 as uuidv4 } from 'uuid';
-import { get } from "http";
-import { root } from "postcss";
 import { getExpressionInfo } from "./dag-implementation/expression";
 
 export const updateFosData = (currentAppData: AppState['data'], newFosData: FosContextData): AppState["data"] => {
@@ -185,11 +183,12 @@ export const removeNode = (currentAppData: AppState['data'], route: FosPath, ind
 
 
 export const generateId = (currentAppData: AppState['data'], newNodeContent: FosNodeContent ): FosNodeId => {
-    let newIdResult: FosNodeId = uuidv4();
-    while (currentAppData.fosData.nodes[newIdResult]){
-        newIdResult = generateId(currentAppData, newNodeContent)
-    }
-    return newIdResult;
+  let newIdResult: FosNodeId = uuidv4();
+  console.log('generateId', currentAppData, newNodeContent, newIdResult)
+  while (currentAppData.fosData.nodes[newIdResult]){
+      newIdResult = generateId(currentAppData, newNodeContent)
+  }
+  return newIdResult;
 }
 
 export const insertNewNode = (currentAppData: AppState['data'], newNodeContent: FosNodeContent): {newId: FosNodeId, newState: AppState["data"]} => {

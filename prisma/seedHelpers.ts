@@ -182,6 +182,9 @@ export const createGroupWithNodes = async (prisma: PrismaClient, groupData: { gr
 
 export const attachUserToGroup = async (prisma: PrismaClient, user: User, group: FosGroup) => {
 
+  
+
+
     const userFosGroup = await prisma.fosGroup.findFirst({
         where: { id: user.fosGroupId },
         include: { rootTargetNode: true, rootInstructionNode: true }

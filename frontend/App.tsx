@@ -285,31 +285,101 @@ export default function App({
       } else if (location.pathname === '/inbox'){
         setCurrentActivity('inbox')
         setCurrentView("Queue")
-        setAppState({...appState, })
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({...newState, })
       } else if (location.pathname === '/agora'){
         setCurrentActivity('inbox')
         setCurrentView("Queue")
-        setAppState({...appState, })
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({...newState, })
       } else if (location.pathname === '/market'){
         setCurrentActivity('inbox')
         setCurrentView("Query")
-        setAppState({...appState, })
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({...newState, })
       } else if (location.pathname === '/search'){
         setCurrentActivity('inbox')
         setCurrentView("Query")
-        setAppState({...appState, })
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({...newState, })
       } else if (location.pathname === '/folders'){
         setCurrentActivity('inbox')
         setCurrentView("Tree")
-        setAppState({...appState, })
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({...newState, })
       } else if (location.pathname === '/info'){
         setCurrentActivity('inbox')
         setCurrentView("Queue")
-        setAppState({...appState, })
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({...newState, })
       } else if (location.pathname === '/settings'){
         setCurrentActivity('inbox')
         setCurrentView("Settings")
-        setAppState({...appState, })
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({...newState, })
       }
   
     } else {
@@ -319,6 +389,10 @@ export default function App({
 
 
   }, [location.pathname])
+
+
+  useEffect(() => {
+  }, [currentActivity, currentView])
 
 
   const setAppStateWithEffects = (newData: AppState) => {

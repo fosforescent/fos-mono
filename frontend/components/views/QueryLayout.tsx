@@ -3,7 +3,7 @@ import { useProps } from "@/frontend/App"
 
 import { AppState, FosReactGlobal, FosPath } from "@/shared/types"
 import { CheckSquare, Inbox, MessageSquare } from "lucide-react"
-import { getExpressionActions } from "@/shared/expressionActions"
+import { getExpressionActions } from "@/shared/storeOperations"
 import { FosExpression, getExpressionInfo } from "@/shared/dag-implementation/expression"
 import { FosStore } from "@/shared/dag-implementation/store"
 import { ExpressionRow } from "../expression/ExpressionRow"
@@ -84,7 +84,7 @@ export const QueryView = () => {
 
         {pins().map((group, i) => {
 
-            return <ExpressionRow key={i} data={data} setData={setData} options={options} nodeRoute={group} />
+            return <ExpressionRow key={i} data={data} setData={setData} options={options} nodeRoute={group} mode={["read"]}/>
         })}
     </div>)
 }

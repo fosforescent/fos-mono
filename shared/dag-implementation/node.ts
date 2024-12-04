@@ -1,10 +1,11 @@
 import { Duration, NodeData, Probability, Cost, CostAllocation } from './node-data'
 
 
-import { FosNodeContent, FosPath, FosPathElem } from '../types'
+import { FosDataContent, FosNodeContent, FosPath, FosPathElem } from '../types'
 import { FosStore } from './store'
 import { FosExpression } from './expression'
 import { Key } from 'lucide-react'
+
 
 
 
@@ -262,7 +263,34 @@ export class FosNode {
     return result
   }
 
+  getData(): FosDataContent {
+    return this.value.data
+  }
 
+  
+  merge(nodeContent: FosNodeContent): FosNode {
+    throw new Error("Method not implemented.")
+  }
+
+
+  mutate(data: FosNodeContent): FosNode {
+    throw new Error("Method not implemented.")
+
+  }
+
+  followAllLinks(): FosNode {
+    throw new Error("Method not implemented.")
+  }
+
+  clone(): FosNode {
+    throw new Error("Method not implemented.")
+  }
+
+  addUuidAlias(): string {
+    throw new Error("Method not implemented.")
+  }
+
+  
 
 
 }

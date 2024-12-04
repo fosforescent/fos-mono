@@ -1,5 +1,6 @@
 
-import { getExpressionActions } from "../expressionActions";
+import exp from "constants";
+import { getExpressionActions } from "../storeOperations";
 import { AppState, DragInfo, FosDataContent, FosNodeContent, FosPath, FosRoute, TrellisSerializedData } from "../types";
 import { getGroupFromRoute, mutableReduceToRouteMapFromExpression, pathEqual } from "../utils";
 import { FosNode } from "./node";
@@ -52,15 +53,36 @@ export class FosExpression {
     return children
   }
 
-  isTodo(): boolean {
-    const leftSideWorkflow = this.instructionNode.getId() === this.store.primitive.workflowField.getId()
-    const rightSideChoice = this.targetNode.getId() === this.store.primitive.choiceTarget.getId()
- 
 
-
-    return leftSideWorkflow || rightSideChoice
+  
+  getInstructionChildren(): FosExpression[] {
+    const children = this.instructionNode.getEdges().map((edge) => {
+      return new FosExpression(this.store, [...this.route, edge])
+    })
+    return children
   }
 
+  isTodo(): boolean {
+
+    
+    const isTodo = this.matchesPattern(this.store.primitive.unit, this.store.primitive.completeField)
+
+
+    return isTodo
+  }
+
+
+  getTodoInfo() {
+    console.log('getTodoInfo', this.route, this.instructionNode, this.targetNode)
+
+    const todoDescription = this.instructionNode.getData().description?.content || ""
+    const todoChildren = this.getInstructionChildren()
+
+    return {
+      description: todoDescription,
+      children: todoChildren
+    }
+  }
   
   isWorkflow(): boolean {
     const isTask = this.store.primitive.workflowField.getId() === this.instructionNode.getId()
@@ -296,27 +318,82 @@ export class FosExpression {
     const newTarget = this.store.create(newContent)
 
     if (!thisEdge){
-      this.store.setRootTarget(newTarget)
+      throw new Error('Cannot update root node')
+      // this.store.setRootTarget(newTarget)
     }
 
     
     this.targetNode = newTarget
   }
 
-  getChildrenOfType(typeNode: FosNode) {
+  getChildrenMatchingPattern(typeNode: FosNode, targetNode: FosNode) {
     //(type: FosNodeId) => getChildrenToShow(state, nodeRoute, type)
     return this.getChildren().filter((child) => {
-      const childInstructionNode = child.instructionNode
-      const nodesMatch = this.store.matchPattern(typeNode, childInstructionNode)
-      const hasMatch = nodesMatch.length > 0
-      return hasMatch
+      const instructionNodesMatch = this.store.matchPattern(typeNode, child.instructionNode)
+      const hasInstructionMatch = instructionNodesMatch.length > 0
+      const targetNodesMatch = this.store.matchPattern(targetNode, child.targetNode)
+      const hasTargetMatch = targetNodesMatch.length > 0
+      return hasInstructionMatch && hasTargetMatch
     })
   }
 
-  getNodesOfType() {
-    const ctxData = this.store.exportContext(this.route)
-    return getNodesOfTypeForPath(ctxData, this.route)
+  getChildrenForActivity(activity: string) {
+    if (activity === 'comments'){
+      return this.getChildrenMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
+    }
+    if (activity === 'todo'){
+      return this.getChildrenMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
+    }
+    return []
+  }
 
+  getAllDescendentsForActivity(activity: string) {
+    console.log(this.route, activity)
+    if (activity === 'comments'){
+      return this.getAllDescendentsMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
+    }
+    if (activity === 'todo'){
+      return this.getAllDescendentsMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
+    }
+
+    return []
+
+  }
+
+  getAllDescendentsMatchingPattern(typeNode: FosNode, targetNode: FosNode) {
+
+    // console.log('getAllDescendentsMatchingPattern -- START', typeNode, targetNode)
+    const routeMap = mutableReduceToRouteMapFromExpression(this, (acc, expression) => {
+      // console.log('getAllDescendentsMatchingPattern - iter', expression.route, expression.instructionNode, expression.targetNode)
+
+      const instructionNodesMatch = this.store.matchPattern(typeNode, expression.instructionNode)
+      const hasInstructionMatch = instructionNodesMatch.length > 0
+
+      // console.log('getAllDescendentsMatchingPattern - hasInstructionMatch', hasInstructionMatch, instructionNodesMatch, typeNode, expression.instructionNode)
+
+      const targetNodesMatch = this.store.matchPattern(targetNode, expression.targetNode)
+      const hasTargetMatch = targetNodesMatch.length > 0
+
+      // console.log('getAllDescendentsMatchingPattern - hasTargetMatch', hasTargetMatch, targetNodesMatch, targetNode, expression.targetNode)
+      if (hasInstructionMatch && hasTargetMatch){
+        acc.set(expression.route, expression)
+      }
+      return acc
+    })
+
+
+    // console.log('routeMap', routeMap)
+    const routes = [...routeMap.keys()]
+    return routes
+    
+  }
+
+  matchesPattern(instructionPattern: FosNode, targetPattern: FosNode) {
+    const instructionNodesMatch = this.store.matchPattern(instructionPattern, this.instructionNode)
+    const hasInstructionMatch = instructionNodesMatch.length > 0
+    const targetNodesMatch = this.store.matchPattern(targetPattern, this.targetNode)
+    const hasTargetMatch = targetNodesMatch.length > 0
+    return hasInstructionMatch && hasTargetMatch
   }
 
   applyPattern(instruction: FosNode, target: FosNode){
@@ -363,33 +440,7 @@ export class FosExpression {
 
   }
 
-  getFullTreeOfType(type: string) {
-    const resultMap = mutableReduceToRouteMapFromExpression(this, (acc, expression) => {
-      const { 
-        isWorkflow, isTodo, isOption, isChoice, isComment, isDocument, isGroup, isMarketRequest, isMarketService
-      } = expression.getExpressionInfo()
-  
-      if (type === "todo" && isTodo){
-        acc.set(expression.route, expression)
-      } else if (type === "workflow" && isWorkflow){
-        acc.set(expression.route, expression)
-      } else if (type === "option" && isOption){
-        acc.set(expression.route, expression)
-      } else if (type === "choice" && isChoice){
-        acc.set(expression.route, expression)
-      } else if (type === "comment" && isComment){
-        acc.set(expression.route, expression)
-      }
-      
-      return acc
-    })
-
-    // const sortedEntryValues = [...resultMap.entries()].sort(([a], [b]) => a.length - b.length).map(([_, value]) => value)
-
-    const values = [...resultMap.values()]
-
-    return values
-  }  
+ 
 
   getActions() {
     const ctxCallback = this.store.updateCtxCallback
@@ -464,6 +515,14 @@ export class FosExpression {
     const currentView = this.store.trellisData.view
     const currentActivity = this.store.trellisData.activity
 
+    
+
+    if (this.route.length !== 0){
+
+      console.log ('GOTHERE - nodes', this.route, this.instructionNode, this.targetNode, this.store)
+      // throw new Error('Root node should not be rendered')
+    }
+
 
     const addComment = (content: string) => {
       const [newTarget, comment] = this.targetNode.addComment(content)
@@ -475,13 +534,6 @@ export class FosExpression {
       this.targetNode = newTarget
     }
 
-    const getAllComments = () => {
-      return this.getFullTreeOfType('comment')
-    }
-
-    const getAllTodos = () => {
-      return this.getFullTreeOfType('todo')
-    }
 
     const matchesPrimPattern = (instructionPattern: FosNode, targetPattern: FosNode) => {
       throw new Error('Method not implemented')
@@ -571,15 +623,14 @@ export class FosExpression {
       getDragItem: this.getDragItem.bind(this),
       getParentInfo: this.getParentInfo.bind(this),
       getOptionInfo: this.getOptionInfo.bind(this),
-      getChildrenOfType: this.getChildrenOfType.bind(this),
-      getNodesOfType: this.getNodesOfType.bind(this),
+      getChildrenMatchingPattern: this.getChildrenMatchingPattern.bind(this),
+      getChildrenForActivity: this.getChildrenForActivity.bind(this),
+      getAllDescendentsForActivity: this.getAllDescendentsForActivity.bind(this),
       getChildren: this.getChildren.bind(this),
       getGroupInfo: this.getGroupInfo.bind(this),
 
       addTodo,
       addComment,
-      getAllComments,
-      getAllTodos,
       truncatedDescription,
       isBase
   
@@ -599,78 +650,4 @@ export const getExpressionInfo = (nodeRoute: FosPath, state: AppState["data"]) =
 }
 
 
-export const getFullTreeOfType = (appData: AppState["data"], nodeRoute: FosPath, type: string) => {
 
-  const store = new FosStore({ fosCtxData: appData})
-  const expression = new FosExpression(store, nodeRoute)
-  return expression.getFullTreeOfType(type)
-
-}
-
-
-
-export const getNodesOfTypeForPath = (appData: AppState["data"], nodeRoute: FosPath) => {
-
-
-  // console.log('getNodesOfTypeForPath', nodeRoute, appData)
-  const { childRoutes } = getExpressionInfo(nodeRoute, appData)
-
-  const workflows = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'WORKFLOW' || nodeType === 'OPTION'
-  })
-
-  const todos = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'TODO' || nodeType === 'RACE' || nodeType === 'CHOICE'
-  })
-
-  const groups = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'GROUP'
-  })
-
-  const comments = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'COMMENT'
-  })
-
-  const documents = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'DOCUMENT'
-  })
-
-  const marketRequest = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'MARKETREQUEST'
-  })
-
-  const marketService = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'MARKETSERVICE'
-  })
-
-  const field = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'FIELD'
-  })
-
-  const pins = () => childRoutes.filter((childRoute) => {
-    const { nodeType } = getExpressionInfo(childRoute, appData)
-    return nodeType === 'PIN'
-  })
-
-  return {
-    workflows,
-    todos,
-    groups,
-    comments,
-    documents,
-    marketRequest,
-    marketService,
-    field,
-    pins
-
-  }
-
-}

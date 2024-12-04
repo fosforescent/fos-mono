@@ -4,6 +4,7 @@ import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, InfoState, 
 import { diff } from "@n1ru4l/json-patch-plus"
 import { getNodeOperations } from "../../shared/nodeOperations"
 import { debounce, set } from "lodash"
+import { FosStore } from "@/shared/dag-implementation/store"
 
 
 export const getActions = (options: FosReactOptions, appData: AppState, setAppData: (state: AppState) => void) => {
@@ -41,7 +42,8 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
 
   const loggedIn = () => {
-    return appData.auth.loggedIn
+    // return appData.auth.loggedIn
+    return localStorage.getItem('auth') ? true : false
   }
 
   const clearData = async () => {
@@ -159,9 +161,16 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
       const newlyAuthedState = { ...appData, auth: { ...appData.auth, jwt, email: jwtProps.username, remember, loggedIn: true } }
 
       console.log('newlyAuthedState', newlyAuthedState)
-  
+
+      if(!jwt){
+        throw new Error('no jwt')
+      }
+
+
       const newlyAuthedApi = api(newlyAuthedState, setAppData).authed()
         
+
+
       const initialFosAndTrellisData = await newlyAuthedApi.getData()
         .catch((error: Error) => {
           console.log('error', error)
@@ -169,19 +178,19 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         });
 
 
-        const actualTrellisData = Object.keys(initialFosAndTrellisData.trellisData).length > 0 ? initialFosAndTrellisData.trellisData : appData.data.trellisData
-        const actualData = { ...initialFosAndTrellisData, trellisData: actualTrellisData }
-    
-        if(!jwt){
-          throw new Error('no jwt')
-        }
+      const actualTrellisData = Object.keys(initialFosAndTrellisData.trellisData).length > 0 ? initialFosAndTrellisData.trellisData : appData.data.trellisData
+      const actualData = { ...initialFosAndTrellisData, trellisData: actualTrellisData }
+
+      const store = new FosStore({ fosCtxData: initialFosAndTrellisData })
+
+      const storeExportedData = store.exportContext([])
 
       const newAppState: AppState = {
         ...newlyAuthedState,
         info: {
           ...infoState,
         },
-        data: actualData,
+        data: storeExportedData,
         loaded: true
       }
 
@@ -229,6 +238,9 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
   const loadAppData = async () => {
         
+    // const store = new FosStore({ fosCtxData: appData.data })
+
+
     const initialFosAndTrellisData = await authedApi().getData()
       .catch((error: Error) => {
         console.log('error', error)
@@ -238,6 +250,8 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     const actualTrellisData = Object.keys(initialFosAndTrellisData.trellisData).length > 0 ? initialFosAndTrellisData.trellisData : appData.data.trellisData
     const actualData = { ...initialFosAndTrellisData, trellisData: actualTrellisData }
 
+    // store.updateWithContext(actualData)
+
     const initialProfileData = await authedApi().getProfile()
       .catch((error: Error) => {
         console.log('error', error)
@@ -246,10 +260,16 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
     // console.log('loaded Data', initialProfileData, initialFosAndTrellisData)
 
+    // const storeExportedData = store.exportContext([])
+
+    const store = new FosStore({ fosCtxData: initialFosAndTrellisData })
+
+    const storeExportedData = store.exportContext([])
+
     const newAppState: AppState = {
       ...appData,
       info: initialProfileData,
-      data: actualData,
+      data: storeExportedData,
       loaded: true
     }
       

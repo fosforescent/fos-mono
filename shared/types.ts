@@ -193,10 +193,8 @@ export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
 export type FosContextData = { 
   nodes: FosNodesData,
   route: FosPath,
-  baseNodeContent: FosNodeContent,
-  baseNodeInstruction: FosNodeContent,
-  // aliasMap: { [key: string]: FosNodeId },
-  // basePeers?: FosPeer[],
+  baseNodeTargetId: FosNodeId,
+  baseNodeInstructionId: FosNodeId,
 }
 
 

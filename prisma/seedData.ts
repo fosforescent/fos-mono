@@ -1,206 +1,51 @@
+import { FosStore } from "@/shared/dag-implementation/store";
 import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/shared/types";
 
 import { v4 as uuidv4 } from 'uuid';
 
-export type GeneratedResult = { 
-  nodesData: FosNodesData, 
-  rootTargetNodeId: FosNodeId, 
-  rootTargetNodeContent: FosNodeContent, 
-  rootInstructionNodeId: FosNodeId, 
-  rootInstructionNodeContent: FosNodeContent 
-}
+export type GeneratedResult = FosStore
 
 export const generateSeedContext = (): GeneratedResult  => {
 
 
-    let ids: { [key: string] : string } = {
+  const store = new FosStore()
 
-    }
-
-    const genId = (name: string) => {
-        if (ids[name] === undefined) {
-            ids[name] = uuidv4()
-        }
-        return ids[name]
-    }    
-
-    const rootTargetNodeContent: FosNodeContent = {
-        data: {
-          description: { 
-            content: "My Goals",
-          }
-        },
-        children: [
-          ["WORKFLOW",genId("task1")],
-          ["WORKFLOW", genId("task2")],
-          [genId("task3"), "COMPLETION"],
-          // ["WORKFLOW", "task4"],
-          // ["task5L", "task5R"]
-        ]
-    }
-
-    const rootInstructionNodeContent: FosNodeContent = {
-      data: {
-        description: { 
-          content: "Root Instruction",
-        }
-      },
-      children: []
-    }
-
-    const nodesData: FosNodesData = {
-        
-        [genId("task1")]: {
-          data: {
-            description: {
-              content: "Task 1a"
-            }
-          },
-          children: [
-          ["WORKFLOW", genId("task1a_1")],
-          ["WORKFLOW", genId("task1a_2")],
-          ["WORKFLOW", genId("task1a_3")]
-          ]
-        },
-        [genId("task1a_1")]: {
-          data: {
-            description: {
-              content: "Task 1a.1"
-            }
-          },
-          children: [
-          ]
-        },
-        [genId("task1a_2")]: {
-          data: {
-            description: {
-              content: "Task 1a.2"
-            }
-          },
-          children: [
-          ]
-        },
-        [genId("task1a_3")]: {
-          data: {
-            description: {
-              content: "Task 1a.3"
-            }
-          },
-          children: [
-          ]
-        },
-      
-        // Task 2
-        [genId("task2")]: {
-          data: {
-            description: {
-              content: "Task 2a"
-            }
-          },
-          children: [
-            [genId("task2a_1"), "CHOICE"],
-          ]
-        },
-        [genId("task2a_1")]: {
-          data: {
-            option: {
-              selectedIndex: 0,
-              defaultResolutionStrategy: "selected",
-            },
-            description: {
-              content: "Task 2a.1"
-            }
-          },
-          children: [
-            [genId("task2a_1a_1"), "SELECTED" ],
-            [genId("task2a_1a_2"), "NOTSELECTED" ],
-            [genId("task2a_1a_3"), "NOTSELECTED" ],
-          ]
-        },
-        [genId("task2a_1a_1")]: {
-          data: {
-            description: {
-              content: "Task 2a.1a.1"
-            }
-          },
-          children: [
-          ]
-        },
-        [genId("task2a_1a_2")]: {
-          data: {
-            description: {
-              content: "Task 2a.1b.1"
-            }
-          },
-          children: [
-          ]
-        },
-        [genId("task2a_1a_3")]: {
-          data: {
-            description: {
-              content: "Task 2a.1c.1"
-            }
-          },
-          children: [
-          ]
-        },
-      
-      
-        // Task 3
-      
-        [genId("task3")]: { 
-          data: {
-            description: {
-              content: "Todo 3a"
-            }
-          },
-          children: [
-          [genId("task3a_1"), "COMPLETION", ],
-          [genId("task3a_2"), "COMPLETION"],
-          [genId("task3a_3"), "COMPLETION"]
-          ]
-        },
-        [genId("task3a_1")]: {
-          data: {
-            description: {
-              content: "Todo 3a.1"
-            }
-          },
-          children: [
-          ]
-        },
-        [genId("task3a_2")]: {
-          data: {
-            description: {
-              content: "Todo 3a.2"
-            }
-          },
-          children: [
-          ]
-        },
-        [genId("task3a_3")]: {
-          data: {
-            description: {
-              content: "Todo 3a.3"
-            }
-          },
-          children: [
-          ]
-        },
-
-    }
+  const rootExpr = store.getRootExpression()
+  const thisLabel = thisId.slice(0, 8)
 
 
 
-    const context: GeneratedResult = {
-        nodesData: nodesData,
-        rootTargetNodeId: genId("root"),
-        rootTargetNodeContent,
-        rootInstructionNodeId: genId("rootInstruction"),
-        rootInstructionNodeContent
-    }
+  const todo1 = rootExpr.addTodo(`${thisLabel} Todo1`)
+  const todo2 = rootExpr.addTodo(`${thisLabel} Todo2`)
+  const todo2_1 = todo2.addTodoChild(`${thisLabel} Todo2.1`)
+  const todo2_2 = todo2.addTodoChild(`${thisLabel} Todo2.2`)
+  const todo2_3 = todo2.addTodoChild(`${thisLabel} Todo2.3`)
 
-    return context
+  const todo2_2_choiceA = todo2_2.addChoice(`${thisLabel}Todo2.2 a`)
+  const todo2_2_choiceB = todo2_2.addChoice(`${thisLabel}Todo2.2 b`)
+  const todo2_2_choiceC = todo2_2.addChoice(`${thisLabel}Todo2.2 c`)
+  
+  rootExpr.addComment(`${thisLabel} this is a comment!`)
+  rootExpr.addComment(`${thisLabel}this is another comment!`)
+
+
+  const workflow1 = rootExpr.addWorkflow(`${thisLabel} Workflow 1`)
+  const workflow1_1 = workflow1.addWorkflowChild(`${thisLabel}Workflow 1.1`)
+  const workflow1_2 = workflow1.addWorkflowChild(`${thisLabel}Workflow 1.2`)
+
+  const group1 = rootExpr.addGroup(`${thisLabel}Group 1`)
+
+  const document = rootExpr.addDocument(`${thisLabel} -Document 1`)
+  const document1_1 = document.addDocumentChild(`${thisLabel}Document 1.1`)
+  const document1_2 = document.addDocumentChild(`${thisLabel}Document 1.2`)
+
+  workflow1.registerMarketService(`${thisLabel} Market Service 1`)
+
+  todo2_3.registerMarketRequest(`${thisLabel}Market Request 1`)
+
+
+
+    return store
 
 
 }

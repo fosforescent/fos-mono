@@ -37,6 +37,7 @@ export function hashNodeContent(nodeData: FosNodeContent) {
 }
 
 export function generateNewId(data: FosContextData) {
+  console.log("Generating new id");
   const newId = randomUUID();
   return newId;
 }
