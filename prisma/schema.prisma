@@ -8,7 +8,7 @@ generator client {
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
-model User {
+model UserModel {
   id                               Int     @id @default(autoincrement())
   user_name                        String  @unique
   password                         String
@@ -24,32 +24,33 @@ model User {
   portal_session_id                String?
   // connect_session_id            String?
   // topup_checkout_session_id         String
-  subscription_checkout_session_id String?
+  subscription_checkout_session_id String? @unique
   stripe_connected_account_id      String? @unique
   stripe_connect_enabled           Boolean @default(false)
   stripe_connect_linked            Boolean @default(false)
 
-  stripe_customer_id            String?   @unique
-  subscription_status           String    @default("")
-  email_confirmation_token      String?   @unique
+  stripe_customer_id            String?                      @unique
+  subscription_status           String                       @default("")
+  email_confirmation_token      String?                      @unique
   email_confirmation_expiration DateTime?
-  password_reset_token          String?   @unique
+  password_reset_token          String?                      @unique
   password_reset_expiration     DateTime?
-  approved                      Boolean   @default(false)
+  approved                      Boolean                      @default(false)
   accepted_terms                DateTime
-  cookies                       Json      @default("{}")
-  data                          Json      @default("{}")
-  fosGroup                      FosGroup  @relation(fields: [fosGroupId], references: [id])
-  fosGroupId                    Int       @unique
-
+  cookies                       Json                         @default("{}")
+  data                          Json                         @default("{}")
+  // profile                       Json                    @default("{}")
+  fosNode                       FosNodeModel                 @relation(fields: [fosNodeId], references: [cid])
+  fosNodeId                     String                       @unique
   // platform_fees          PlatformFee[]
-  AuthEvent   UserEvent[]
-  ClientError ClientError[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @default(now())
+  AuthEvent                     UserEventModel[]
+  ClientError                   ClientErrorModel[]
+  createdAt                     DateTime                     @default(now())
+  updatedAt                     DateTime                     @default(now())
+  FosNodeUserAccessLink         FosNodeUserAccessLinkModel[]
 }
 
-model InboundEmail {
+model InboundEmailModel {
   id         Int      @id @default(autoincrement())
   from       String
   to         String
@@ -59,92 +60,63 @@ model InboundEmail {
   receivedAt DateTime @default(now())
 }
 
-model OutboundEmail {
-  id                      Int                       @id @default(autoincrement())
+model OutboundEmailModel {
+  id                      Int                            @id @default(autoincrement())
   from                    String
   to                      String
   templateAlias           String
   templateModel           Json
-  OutboundDeliveryAttempt OutboundDeliveryAttempt[]
+  OutboundDeliveryAttempt OutboundDeliveryAttemptModel[]
 }
 
-model OutboundDeliveryAttempt {
-  id        Int           @id @default(autoincrement())
+model OutboundDeliveryAttemptModel {
+  id        Int                @id @default(autoincrement())
   emailId   Int
-  timestamp DateTime      @default(now())
+  timestamp DateTime           @default(now())
   status    String
   reason    String?
-  email     OutboundEmail @relation(fields: [emailId], references: [id])
+  email     OutboundEmailModel @relation(fields: [emailId], references: [id])
 }
 
-model UserEvent {
-  id        Int      @id @default(autoincrement())
+model UserEventModel {
+  id        Int       @id @default(autoincrement())
   userId    Int
   eventType String
-  timestamp DateTime @default(now())
+  timestamp DateTime  @default(now())
   ipAddress String
   userAgent String
   location  String
   status    Boolean
   reason    String?
-  user      User     @relation(fields: [userId], references: [id])
+  user      UserModel @relation(fields: [userId], references: [id])
 }
 
-model ClientError {
-  id        Int      @id @default(autoincrement())
+model ClientErrorModel {
+  id        Int        @id @default(autoincrement())
   userId    Int?
-  timestamp DateTime @default(now())
+  timestamp DateTime   @default(now())
   error     Json
-  user      User?    @relation(fields: [userId], references: [id])
+  user      UserModel? @relation(fields: [userId], references: [id])
 }
 
-model DataHistory {
-  id        Int      @id @default(autoincrement())
-  group_id  Int
-  data      Json     @default("{}")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
-  group     FosGroup @relation(fields: [group_id], references: [id])
+model FosNodeUserAccessLinkModel {
+  id        Int          @id @default(autoincrement())
+  fosNodeId String       @db.Uuid
+  userId    Int
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @default(now())
+  fosNode   FosNodeModel @relation(fields: [fosNodeId], references: [cid])
+  fosGroup  UserModel    @relation(fields: [userId], references: [id])
 }
 
-model FosGroup {
-  id                     Int                      @id @default(autoincrement())
-  rootTargetNode         FosNode                  @relation(fields: [rootTargetNodeId], references: [id], name: "RootTargetNode")
-  rootTargetNodeId       String                   @db.Uuid
-  rootInstructionNode    FosNode                  @relation(fields: [rootInstructionNodeId], references: [id], name: "RootInstructionNode")
-  rootInstructionNodeId  String                   @db.Uuid
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @default(now())
-  data                   Json                     @default("{}")
-  user                   User?
-  privateKey             String
-  publicKey              String
-  DataHistory            DataHistory[]
-  FosNodeGroupAccessLink FosNodeGroupAccessLink[]
-  FosNode                FosNode?                 @relation(fields: [fosNodeId], references: [id])
-  fosNodeId              String?                  @db.Uuid
-}
-
-model FosNodeGroupAccessLink {
-  id         Int      @id @default(autoincrement())
-  fosNodeId  String   @db.Uuid
-  fosGroupId Int
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now())
-  fosNode    FosNode  @relation(fields: [fosNodeId], references: [id])
-  fosGroup   FosGroup @relation(fields: [fosGroupId], references: [id])
-}
-
-model FosNode {
-  id                     String                   @id @default(uuid()) @db.Uuid
-  cid                    String
-  data                   Json                     @default("{}")
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @default(now())
-  instructionOfGroup     FosGroup[]               @relation("RootTargetNode")
-  FosNodeGroupAccessLink FosNodeGroupAccessLink[]
-  targetOfGroup          FosGroup[]               @relation("RootInstructionNode")
-  FosGroup               FosGroup[]
+model FosNodeModel {
+  cid                   String                       @unique
+  data                  Json                         @default("{}")
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @default(now())
+  public                Boolean                      @default(false)
+  FosNodeUserAccessLink FosNodeUserAccessLinkModel[]
+  User                  UserModel?
 }
 
 // model StripePayout {

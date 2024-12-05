@@ -7,21 +7,18 @@ import { Button } from "@/frontend/components/ui/button";
 
 import { AppState, FosNodesData, FosReactOptions, FosPath, } from "@/shared/types";
 import { getActions } from "@/frontend/lib/actions";
-import { getNodeOperations } from "@/shared/nodeOperations";
-import { getExpressionInfo } from "@/shared/dag-implementation/expression";
+import { FosExpression } from "@/shared/dag-implementation/expression";
+
 
 
 
 export const DefaultBreadcrumbComponent = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
 

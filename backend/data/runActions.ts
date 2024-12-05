@@ -17,8 +17,7 @@ export const runActionsOnStore = (store: FosStore ) => {
 
   mutableMapExpressions(store.exportContext(store.fosRoute), (resultMap, expression) => {
 
-    const { isSearch } = expression.getExpressionInfo()
-    if ( isSearch ){
+    if ( expression.isSearch() ){
       // run search query on expression
       executeSearch(expression, {
         limit: 10,

@@ -1,191 +1,135 @@
 import e from "cors"
 import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute } from "./types"
 import { FosStore } from "./dag-implementation/store"
-import { FosExpression, getExpressionInfo } from "./dag-implementation/expression"
+import { FosExpression, } from "./dag-implementation/expression"
 import { FosNode } from "./dag-implementation/node"
 
 
 
 
-export const getDownNode = (nodeRoute: FosPath, appData: AppState["data"]): FosPath | null => {
-  const { nodeData, nodeContent, nodeChildren, getParentInfo, childRoutes, childrenVisible } = getExpressionInfo(nodeRoute, appData)
-  const { indexInParent, 
-    nodeContent: parentContent, 
-    nodeRoute: parentRoute, 
-    siblingRoutes,
-    childrenVisible: parentChildrenVisible 
-  } = getParentInfo()
+export const getDownNode = (expression: FosExpression): FosExpression | null => {
 
-  if (!parentChildrenVisible){
+  const parent = expression.getParent()
+  const children = parent.getChildren()  
+  
+  if (!parent.childrenVisible()){
     throw new Error('Parent is not visible')
   }
 
-  if (childRoutes.length > 0 && childrenVisible){
-    return childRoutes[0]!
+  if (children.length > 0 && expression.childrenVisible()){
+    return children[0]!
   }
-  const downSibling = getDownSibling(nodeRoute, appData)
+  const downSibling = getDownSibling(expression)
   // console.log('downSibling', downSibling)
   if (downSibling){
     return downSibling
   }else{
-    return getAncestorLeastDownSibling(nodeRoute, appData)
+    return getAncestorLeastDownSibling(expression)
   }
 
 }
 
-export const getAncestorLeastDownSibling = (nodeRoute: FosPath, appData: AppState["data"]): FosPath | null => {
-  const { getParentInfo } = getExpressionInfo(nodeRoute, appData)
-  const { 
-    nodeRoute: parentRoute, 
-    childrenVisible: parentChildrenVisible 
-  } = getParentInfo()
+export const getAncestorLeastDownSibling = (expression: FosExpression): FosExpression | null => {
 
-  console.log('leastDownSibling', parentRoute,)
-  if (parentRoute.length === 1){
+  const parent = expression.getParent()
+  
+  console.log('leastDownSibling', parent,)
+  if (parent.route.length === 1){
     return null
   }
-  const parentDownSibling = getDownSibling(parentRoute, appData)
+  const parentDownSibling = getDownSibling(parent)
   // console.log('parentDownSibling', parentDownSibling)
   if (parentDownSibling){
     return parentDownSibling
   } else {
-    return getAncestorLeastDownSibling(parentRoute, appData)
+    return getAncestorLeastDownSibling(parent)
   }
 }
 
-export const getAncestorLeastUpSibling = (nodeRoute: FosPath, appData: AppState["data"]): FosPath | null => {
-  const { getParentInfo } = getExpressionInfo(nodeRoute, appData)
-  const { 
-    nodeRoute: parentRoute, 
-    childrenVisible: parentChildrenVisible 
-  } = getParentInfo()
+export const getAncestorLeastUpSibling = (expression: FosExpression): FosExpression | null => {
 
-  if (parentRoute.length === 1){
+
+  const parent = expression.getParent()
+  
+  if (parent.route.length === 1){
     return null
   }
-  const parentUpSibling = getUpSibling(parentRoute, appData)
+  const parentUpSibling = getUpSibling(parent)
   if (parentUpSibling){
     return parentUpSibling
   } else {
-    return getAncestorLeastUpSibling(parentRoute, appData)
+    return getAncestorLeastUpSibling(parent)
   }
 }
 
 
-export const getUpSibling = (nodeRoute: FosPath, appData: AppState["data"]): FosPath | null => {
-  const { getParentInfo } = getExpressionInfo(nodeRoute, appData)
-  const { indexInParent, siblingRoutes } = getParentInfo()
+export const getUpSibling = (expression: FosExpression): FosExpression | null => {
+
+  const { indexInParent, parent } = expression.getParentInfo()
+  const siblings = parent.getChildren()
   if (indexInParent === 0){
     return null
   }
-  const newRoute = siblingRoutes[indexInParent - 1]
+  const newRoute = siblings[indexInParent - 1]
   if (!newRoute){
     return null
   }
   return newRoute
 }
 
-export const getDownSibling = (nodeRoute: FosPath, appData: AppState["data"]): FosPath | null => {
-  const { getParentInfo } = getExpressionInfo(nodeRoute, appData)
-  const { indexInParent, siblingRoutes } = getParentInfo()
+export const getDownSibling = (expression: FosExpression): FosExpression | null => {
+  
+  const { indexInParent, parent } = expression.getParentInfo()
+  const siblings = parent.getChildren()
 
   // console.log('downSibling - sibling routes', siblingRoutes, indexInParent, nodeRoute)
-  if (indexInParent === siblingRoutes.length - 1){
+  if (indexInParent === siblings.length - 1){
     return null
   }
-  const newRoute = siblingRoutes[indexInParent + 1]
-  if (!newRoute){
+  const newExpr = siblings[indexInParent + 1]
+  if (!newExpr){
     return null
   }
-  return newRoute
+  return newExpr
 }
 
 
 
-export const getDownmostDescendent = (nodeRoute: FosPath, appData: AppState["data"], depthLimit: number = -1): FosPath => {
+export const getDownmostDescendent = (expression: FosExpression, depthLimit: number = -1): FosExpression => {
   if (depthLimit === 0){
-    return nodeRoute
+    return expression
   }
-  const { hasChildren, childRoutes, childrenVisible } = getExpressionInfo(nodeRoute, appData)
+ 
+  const childRoutes = expression.childRoutes()
+  const hasChildren = expression.hasChildren()
+  const childrenVisible = expression.childrenVisible()
+
+  const children = expression.getChildren()
+  
   if (childrenVisible && hasChildren ){
-    return getDownmostDescendent(childRoutes[childRoutes.length - 1]!, appData, depthLimit - 1)
+    return getDownmostDescendent(children[children.length - 1]!, depthLimit - 1)
   } else {
-    return nodeRoute
+    return expression
   }
 }
 
 
-export const getUpNode = (nodeRoute: FosPath, appData: AppState["data"]): FosPath | null => {
-  const { nodeData, nodeContent, nodeChildren, getParentInfo } = getExpressionInfo(nodeRoute, appData)
-  const { indexInParent, nodeContent: parentContent, nodeRoute: parentRoute, siblingRoutes } = getParentInfo()
+export const getUpNode = (expression: FosExpression): FosExpression | null => {
+  
+  const { indexInParent, parent, siblingRoutes } = expression.getParentInfo()
+
+  const siblings = parent.getChildren()
 
   if (indexInParent > 0 ){
-    return getDownmostDescendent(siblingRoutes[indexInParent - 1]!, appData)
+    return getDownmostDescendent(siblings[indexInParent - 1]!)
   }else{
-    return parentRoute
+    return parent
   }
 }
 
 
 
-export const getChildrenToShow = (appData: AppState["data"], parentRoute: FosPath, parentType: FosNodeId) => {
-  console.log('getChildrenToShow', parentRoute, parentType)
-  const { childRoutes  } = getExpressionInfo(parentRoute, appData)
 
-  if (parentType === 'workflow'){
-    const routes = childRoutes.filter((childRoute) => {
-      const { nodeType } = getExpressionInfo(childRoute, appData)
-      return nodeType === 'workflow' || nodeType === 'option'
-    })
-    return routes
-  } else if (parentType === 'todo'){
-    const routes = childRoutes.filter((childRoute) => {
-      const { nodeType } = getExpressionInfo(childRoute, appData)
-      return nodeType === 'todo' || nodeType === 'race' || nodeType === 'choice'
-    })
-    return routes
-  } else {
-    const routes = childRoutes.filter((childRoute) => {
-      const { nodeType } = getExpressionInfo(childRoute, appData)
-      return nodeType === parentType
-    })
-    return routes
-  }
-
-}
-
-
-export const getAvailableTasks = (appData: AppState["data"], nodeRoute: FosPath): FosPath[] => {
-  const { nodeChildren, nodeType } = getExpressionInfo(nodeRoute, appData)
-  if (nodeType !== 'todo' && nodeType !== 'race' && nodeType !== 'choice'){
-    return []
-  }
-  const childTasks =  nodeChildren.filter(([childType, childId]) => childType === 'todo' || childType === 'race' || childType === 'choice')
-  
-  const thisRoute = nodeType === 'todo' || nodeType === 'choice' ? [nodeRoute] : []
-
-
-  const childTodos: FosPath[] = childTasks.reduce((acc: FosPath[], childElem: FosPathElem, index: number): FosPath[] => {
-    const [childType, childId] = childElem
-
-    if (childType === 'todo'){
-      const routes: FosPath[] = [...acc, ...getAvailableTasks(appData, [...nodeRoute, childElem])]
-      return routes
-    } else if (childType === 'race'){
-      const routes: FosPath[] = [...acc, ...getAvailableTasks(appData, [...nodeRoute, childElem])]
-      return routes
-    } else if (childType === 'choice'){
-      const routes: FosPath[] = [...acc, [...nodeRoute, childElem]]
-      return routes
-    } else {
-      return []
-    }
-  }, [] as FosPath[]).concat(thisRoute)
-
-  return childTodos
-
-
-}
 
 export const pathEqual = (path1: FosPath | null, path2: FosPath | null) => {
   if (!path1 || !path2){
@@ -242,66 +186,6 @@ export const aggMap = (edges: [string, string][]): Map<string, string[]> => {
 
 
 
-type NodeOperation<T> = (
-  node: FosNodeContent,
-  nodeId: FosNodeId,
-  childResults: Map<FosNodeId, T>
-) => T
-
-export function traverseNodes<T>(
-  contextData: FosContextData,
-  operation: NodeOperation<T>
-): Map<FosNodeId, T> {
-
-  const resultMap = new Map()
-
-  const {  nodes, baseNodeContent, baseNodeInstruction } = contextData
-  const helper = (nodeContent: FosNodeContent, nodeId: FosNodeId, nodes: FosNodesData) => {
-
-    // if node is empty, do operation and set in result map
-    const hasChildren = nodeContent.children.length > 0
-    if (!hasChildren){
-      const result = operation(nodeContent, nodeId, new Map())
-      resultMap.set(nodeId, result)
-    } else {
-      // else do operation on children first and then do it on self.
-      // if any children are empty, do operation on them and set in result map
-      const childResults = new Map()
-      
-      
-      for (const elem of nodeContent.children){
-
-        const resultElem = elem.map((nodeId) => {
-
-          const childResultFromMap = resultMap.get(nodeId)
-          if (childResultFromMap){
-            childResults.set(nodeId, childResultFromMap)
-            return nodeId
-          } else {
-            const childNode = nodes[nodeId]
-            if (!childNode){
-              return "ERROR"
-            }
-            const childResult = helper(childNode, nodeId, nodes)
-            resultMap.set(nodeId, childResult)
-            childResults.set(nodeId, childResult)
-            return nodeId
-    
-          }
-
-        })
-      }
-      const result = operation(nodeContent, nodeId, childResults)
-      resultMap.set(nodeId, result)
-
-    }
-
-  }
-  helper(baseNodeContent, "ROOTTARGET", nodes)
-  helper(baseNodeInstruction, "ROOTINSTRUCTION", nodes)
-  return resultMap
-}
-
 
 
 export const mutableReduceToRouteMapFromExpression = <T>(
@@ -311,7 +195,7 @@ export const mutableReduceToRouteMapFromExpression = <T>(
   let resultMap = new Map()
   const helper = (acc: Map<FosPath, T>, expr: FosExpression): void => {
 
-    const { nodeRoute } = expr.getExpressionInfo()
+    const  nodeRoute = expr.route
 
     // Check for repeated pairs in the route
     for (let i = 0; i < nodeRoute.length; i++) {
@@ -329,7 +213,7 @@ export const mutableReduceToRouteMapFromExpression = <T>(
     operation(acc, expr, childExpressions)
 
     for (const childExpr of childExpressions) {
-      const { nodeRoute: childRoute } = childExpr.getExpressionInfo()
+      
       helper(acc, childExpr)
     }
   }
@@ -377,7 +261,7 @@ export function reduceToRouteMap<T>(
   const resultMap = new Map<FosPath, T>()
 
   const op = (acc: Map<FosPath, T>, expr: FosExpression, childExpressions: FosExpression[]) => {
-    const { nodeRoute } = expr.getExpressionInfo()
+    const nodeRoute = expr.route
     const operationResult = operation(expr, childExpressions)
     resultMap.set(nodeRoute, operationResult)
     return operationResult

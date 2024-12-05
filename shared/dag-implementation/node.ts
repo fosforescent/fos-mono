@@ -18,12 +18,11 @@ export class FosNode {
   value: FosNodeContent
   alias: string | undefined = undefined
   
-  constructor(value: FosNodeContent, store: FosStore, alias?: string) {
-    const address = store.insert(value, alias)
+  constructor(value: FosNodeContent, store: FosStore) {
+    const address = store.insert(value)
     this.cid = address
     this.store = store
     this.value = value
-    this.alias = alias
   }
 
   getId(): string  {
@@ -34,7 +33,7 @@ export class FosNode {
     return this.alias
   }
 
-  getEdges(): FosPath {
+  getEdges(): FosPathElem[] {
     return this.value.children
   }
  
@@ -83,134 +82,8 @@ export class FosNode {
     return prevNodes
   }
 
-  addEdge(edgeType: string, target: string): FosNode {
-    return new FosNode({...this.value, children: [...this.getEdges(), [edgeType, target]] }, this.store, this.alias)
-  }
-
-  removeEdge(edgeType: string, target: string): FosNode {
-    return new FosNode({...this.value, children: this.getEdges().filter(item => item[0] == edgeType && item[1] === target) }, this.store, this.alias)
-  }
-
-  updateEdge(oldEdgeType: string, oldTarget: string, newEdgeType: string, newTarget: string): FosNode {
-    const updated =  new FosNode({...this.value, children: this.getEdges().map(item => item[0] === oldEdgeType && item[1] === oldTarget ? [newEdgeType, newTarget] : item) }, this.store, this.alias)
-    return updated
-  }
 
 
-  revertToPreviousVersion(n: number): FosNode {
-    const prevNodes = this.prevList()
-    if (prevNodes.length < n) {
-      throw new Error("Not enough previous versions")
-    }
-    const prevNode = prevNodes[n]
-    if (!prevNode) {
-      throw new Error("Previous node not found")
-    }
-    const newContent: FosNodeContent = {
-      data: {
-        ...prevNode.value.data,
-        updated: {
-          time: Date.now()
-        },
-        reversion: {
-          reversionedToAddress: prevNode.getId(),
-          nStepsBack: n
-        }
-      },
-      children: prevNode.getEdges()
-    }
-    const newNode = new FosNode(newContent, this.store, this.alias)
-    return newNode
-  }
-
-  orderEdges(orderArray: number[]): FosNode {
-    if (orderArray.length != this.getEdges().length) {
-      throw new Error("Order array length must match the number of edges")
-    }
-    const orderedEdges: FosPath = orderArray.map(i => this.getEdges()[i]).map((edge) =>{
-      if (edge === undefined) {
-        throw new Error("Edge not found")
-      }
-      return edge
-    })
-    return new FosNode({...this.value, children: orderedEdges }, this.store, this.alias)
-  }
-
-  getPeers(): FosNode[] {
-    const peers = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
-    return peers.map(([edgeType, target]) => {
-      const node = this.store.getNodeByAddress(target)
-      if (!node) {
-        throw new Error("Node not found")
-      }
-      return node
-    })
-
-  }
-
-  addComment(comment: string): [FosNode, FosNode] {
-    const newCommentData: FosNodeContent = {
-      data: {
-        ...this.value.data,
-        comment: {
-          content: comment,
-          authorID: this.store.rootTarget.getId(),
-          authorName: "Profile Not Created",
-          time: Date.now(),
-          votes: {}
-        },
-        updated: {
-          time: Date.now()
-        },
-      },
-      children: []
-    }
-    const newNode = new FosNode(newCommentData, this.store)
-    const thisNewNode = this.addEdge(this.store.primitive.commentConstructor.getId(), newNode.getId())
-    return [thisNewNode, newNode]
-  }
-
-
-  addTodo(description: string): [FosNode, FosNode] {
-    const newTodoData: FosNodeContent = {
-      data: {
-        ...this.value.data,
-        updated: {
-          time: Date.now()
-        },
-        description: {
-          content: description
-        },
-      },
-      children: []
-    }
-    const newNode = new FosNode(newTodoData, this.store)
-    const thisNewNode = this.addEdge(newNode.getId(), this.store.primitive.completeField.getId())
-    return [thisNewNode, newNode]
-  }
-
-  getComments(): FosNode[] {
-    const comments = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.commentConstructor.getId())
-    return comments.map(([edgeType, target]) => {
-      const node = this.store.getNodeByAddress(target)
-      if (!node) {
-        throw new Error("Node not found")
-      }
-      return node
-    })
-  }
-
-  addExpression(expression: FosExpression): FosNode {
-    return this.addEdge(expression.instructionNode.getId(), expression.targetNode.getId())
-  }
-
-  removeExpression(expression: FosExpression): FosNode {
-    return this.removeEdge(expression.instructionNode.getId(), expression.targetNode.getId())
-  }
-
-  updateExpression(oldExpression: FosExpression, newExpression: FosExpression): FosNode {
-    return this.updateEdge(oldExpression.instructionNode.getId(), oldExpression.targetNode.getId(), newExpression.instructionNode.getId(), newExpression.targetNode.getId())
-  }
 
   getExprOfType(instructionType: FosNode, targetType: FosNode, route: FosPath): FosExpression[] | null {
     const exprs = this.getEdges().filter(([edgeType, target]) => {
@@ -238,18 +111,13 @@ export class FosNode {
   }
   
 
-  isGroupInstructionNode(): boolean {
-    const peerEdges = this.value.children.filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
+  // isGroupInstructionNode(): boolean {
+  //   const peerEdges = this.value.children.filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
 
-    const hasPeerEdges = peerEdges.length > 0
-    return hasPeerEdges
+  //   const hasPeerEdges = peerEdges.length > 0
+  //   return hasPeerEdges
 
-  }
-
-
-  delete(): void {
-    this.store.remove(this)
-  }
+  // }
 
 
 
@@ -267,30 +135,203 @@ export class FosNode {
     return this.value.data
   }
 
+
+
+
+  followAllLinks(): FosNode {
+    throw new Error("Method not implemented.")
+  }
+
+
+
+  mutate(content: FosNodeContent): FosNode {
+    
+    
+    const newNode = new FosNode(content, this.store)
+    return newNode
+
+  }
+
+
+
+  addUuidAlias(): string {
+    throw new Error("Method not implemented.")
+  }
+
+
+
+  clone(): FosNode {
+    throw new Error("Method not implemented.")
+  }
   
   merge(nodeContent: FosNodeContent): FosNode {
     throw new Error("Method not implemented.")
   }
 
 
-  mutate(data: FosNodeContent): FosNode {
-    throw new Error("Method not implemented.")
+  delete(): void {
+    this.store.remove(this)
+  }
+
+  addEdge(edgeType: string, target: string, index: number = -1): FosNode {
+    if ( index < -1 || index > this.getEdges().length - 1) {
+      throw new Error("Index out of bounds")
+    }
+    if (index === -1) {
+      return this.mutate({...this.value, children: [...this.getEdges(), [edgeType, target]] })
+    } else {
+      const newEdges = [...this.getEdges()]
+      newEdges.splice(index, 0, [edgeType, target])
+      return this.mutate({...this.value, children: newEdges })
+    }
+  }
+
+  removeEdge(edgeType: string, target: string): FosNode {
+    return this.mutate({...this.value, children: this.getEdges().filter(item => item[0] == edgeType && item[1] === target) })
+  }
+
+  removeEdgeByIndex(index: number): FosNode {
+    if (index < 0 || index > this.getEdges().length - 1) {
+      throw new Error("Index out of bounds")
+    }
+    const newEdges = [...this.getEdges()]
+    newEdges.splice(index, 1)
+    return this.mutate({...this.value, children: newEdges })
+  }
+
+  updateEdge(oldEdgeType: string, oldTarget: string, newEdgeType: string, newTarget: string): FosNode {
+    const updated =  this.mutate({...this.value, children: this.getEdges().map(item => item[0] === oldEdgeType && item[1] === oldTarget ? [newEdgeType, newTarget] : item) })
+    return updated
+  }
+
+  orderEdges(orderArray: number[]): FosNode {
+    if (orderArray.length != this.getEdges().length) {
+      throw new Error("Order array length must match the number of edges")
+    }
+    const orderedEdges: FosPath = orderArray.map(i => this.getEdges()[i]).map((edge) =>{
+      if (edge === undefined) {
+        throw new Error("Edge not found")
+      }
+      return edge
+    })
+    return this.mutate({...this.value, children: orderedEdges })
+  }
+  addExpression(expression: FosExpression): FosNode {
+    return this.addEdge(expression.instructionNode.getId(), expression.targetNode.getId())
+  }
+
+  removeExpression(expression: FosExpression): FosNode {
+    return this.removeEdge(expression.instructionNode.getId(), expression.targetNode.getId())
+  }
+
+  updateExpression(oldExpression: FosExpression, newExpression: FosExpression): FosNode {
+    return this.updateEdge(oldExpression.instructionNode.getId(), oldExpression.targetNode.getId(), newExpression.instructionNode.getId(), newExpression.targetNode.getId())
+  }
+
+  updateData(data: FosDataContent): FosNode {
+    return this.mutate({...this.value, data: { ...this.value.data, ...data }  })
+  }
+
+
+  getAliasInfo(): {
+    target: FosNode,
+    instruction: FosNode,
+    branch: FosNode,
+    group: FosNode
+  } {
 
   }
 
-  followAllLinks(): FosNode {
-    throw new Error("Method not implemented.")
-  }
+  // revertToPreviousVersion(n: number): FosNode {
+  //   const prevNodes = this.prevList()
+  //   if (prevNodes.length < n) {
+  //     throw new Error("Not enough previous versions")
+  //   }
+  //   const prevNode = prevNodes[n]
+  //   if (!prevNode) {
+  //     throw new Error("Previous node not found")
+  //   }
+  //   const newContent: FosNodeContent = {
+  //     data: {
+  //       ...prevNode.value.data,
+  //       updated: {
+  //         time: Date.now()
+  //       },
+  //       reversion: {
+  //         reversionedToAddress: prevNode.getId(),
+  //         nStepsBack: n
+  //       }
+  //     },
+  //     children: prevNode.getEdges()
+  //   }
+  //   const newNode = new FosNode(newContent, this.store, this.alias)
+  //   return newNode
+  // }
 
-  clone(): FosNode {
-    throw new Error("Method not implemented.")
-  }
 
-  addUuidAlias(): string {
-    throw new Error("Method not implemented.")
-  }
+  // getPeers(): FosNode[] {
+  //   const peers = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
+  //   return peers.map(([edgeType, target]) => {
+  //     const node = this.store.getNodeByAddress(target)
+  //     if (!node) {
+  //       throw new Error("Node not found")
+  //     }
+  //     return node
+  //   })
 
-  
+  // }
+
+  // addComment(comment: string): [FosNode, FosNode] {
+  //   const newCommentData: FosNodeContent = {
+  //     data: {
+  //       ...this.value.data,
+  //       comment: {
+  //         content: comment,
+  //         authorID: this.store.rootTarget.getId(),
+  //         authorName: "Profile Not Created",
+  //         time: Date.now(),
+  //         votes: {}
+  //       },
+  //       updated: {
+  //         time: Date.now()
+  //       },
+  //     },
+  //     children: []
+  //   }
+  //   const newNode = new FosNode(newCommentData, this.store)
+  //   const thisNewNode = this.addEdge(this.store.primitive.commentConstructor.getId(), newNode.getId())
+  //   return [thisNewNode, newNode]
+  // }
+
+
+  // addTodo(description: string): [FosNode, FosNode] {
+  //   const newTodoData: FosNodeContent = {
+  //     data: {
+  //       ...this.value.data,
+  //       updated: {
+  //         time: Date.now()
+  //       },
+  //       description: {
+  //         content: description
+  //       },
+  //     },
+  //     children: []
+  //   }
+  //   const newNode = new FosNode(newTodoData, this.store)
+  //   const thisNewNode = this.addEdge(newNode.getId(), this.store.primitive.completeField.getId())
+  //   return [thisNewNode, newNode]
+  // }
+
+  // getComments(): FosNode[] {
+  //   const comments = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.commentConstructor.getId())
+  //   return comments.map(([edgeType, target]) => {
+  //     const node = this.store.getNodeByAddress(target)
+  //     if (!node) {
+  //       throw new Error("Node not found")
+  //     }
+  //     return node
+  //   })
+  // }
 
 
 }

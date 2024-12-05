@@ -1,11 +1,12 @@
 
 
 import { PrismaClient } from '@prisma/client'
-import { attachUserToGroup, createGroup, createUser, createUserWithNodes } from './seedHelpers'
+
 import { generateSeedContext } from './seedData'
 
 import { v4 as uuidv4 } from 'uuid';
 import { FosDataContent } from '@/shared/types';
+import { createSeedUser } from '@/backend/util';
 
 
 const prisma = new PrismaClient()
@@ -25,15 +26,18 @@ async function main() {
 
 
 
-  const dn0 = await createUserWithNodes(prisma, { user_name: 'dmn322@fosforescent.com' }, generateSeedContext())
-  const dn1 = await createUserWithNodes(prisma, { user_name: 'dmn322+1@fosforescent.com' }, generateSeedContext())
-  const dn2 = await createUserWithNodes(prisma, { user_name: 'dmn322+2@fosforescent.com' }, generateSeedContext())
-  const dn3 = await createUserWithNodes(prisma, { user_name: 'dmn322+3@fosforescent.com' }, generateSeedContext())
-  const dn4 = await createUserWithNodes(prisma, { user_name: 'dmn322+4@fosforescent.com' }, generateSeedContext())
-  const dn5 = await createUserWithNodes(prisma, { user_name: 'dmn322+5@fosforescent.com' }, generateSeedContext())
+  const us0 = await createSeedUser(prisma, generateSeedContext(), { username: 'dmn322@fosforescent.com' })
+  const us1 = await createSeedUser(prisma, generateSeedContext(), { username: 'dmn322+1@fosforescent.com' })
+  const us2 = await createSeedUser(prisma, generateSeedContext(), { username: 'dmn322+2@fosforescent.com' })
+  const us3 = await createSeedUser(prisma, generateSeedContext(), { username: 'dmn322+3@fosforescent.com' })
+  const us4 = await createSeedUser(prisma, generateSeedContext(), { username: 'dmn322+4@fosforescent.com' })
+  const us5 = await createSeedUser(prisma, generateSeedContext(), { username: 'dmn322+5@fosforescent.com' })
 
 
-  console.log({ dn0, dn1, dn2, dn3, dn4, dn5 })
+  const us0Root = us0.getRootExpression()
+
+  const newGroup = us0Root.addGroup("My first cool group")
+
 
   const publicGroupData: FosDataContent = {
     group: {
@@ -43,23 +47,12 @@ async function main() {
     } 
   }
 
-  const group0 = await createGroup(prisma, uuidv4(), uuidv4(), { groupId: 0, rootNodeData: publicGroupData, description: 'Everyone Group' })
-  const group1 = await createGroup(prisma, uuidv4(), uuidv4(), { groupId: 1 })  
-  const group2 = await createGroup(prisma, uuidv4(), uuidv4(), { groupId: 2 })
 
-  attachUserToGroup(prisma, dn0, group0)
-  attachUserToGroup(prisma, dn1, group0)
-  attachUserToGroup(prisma, dn2, group0)
-  attachUserToGroup(prisma, dn3, group0)
-  attachUserToGroup(prisma, dn4, group0)
-  attachUserToGroup(prisma, dn5, group0)
-  attachUserToGroup(prisma, dn0, group2)
-  attachUserToGroup(prisma, dn4, group1)
-  attachUserToGroup(prisma, dn5, group1)
-  attachUserToGroup(prisma, dn5, group2)
 
-  console.log({ group0, group1, group2 })
 
+
+
+  
 }
 main()
   .then(async () => {

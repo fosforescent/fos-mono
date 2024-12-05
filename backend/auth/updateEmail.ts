@@ -27,7 +27,7 @@ export const postUpdateEmail = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Email is required' })
   }
 
-  const user = await prisma.user.findUnique({
+  const user = await prisma.userModel.findUnique({
     where: { user_name: username }
   })
 
@@ -36,7 +36,7 @@ export const postUpdateEmail = async (req: Request, res: Response) => {
   }
   const { token, expiration } = generateLinkToken()
 
-  const newUser = await prisma.user.update({
+  const newUser = await prisma.userModel.update({
     where: { user_name: user.user_name },
     data: {
       user_name: email,

@@ -1,11 +1,10 @@
 import { AppState, FosReactOptions, FosPath } from "./types"
-import { getExpressionInfo } from "./dag-implementation/expression"
+import { FosExpression, getExpressionInfo } from "./dag-implementation/expression"
 
 
 export const suggestStepsRecursive = async <T, S>(
-    options: FosReactOptions,
-    nodeRoute: FosPath,
-    appState: AppState["data"],
+  expression: FosExpression,
+  options: FosReactOptions,
     {
       pattern, 
       parsePattern,

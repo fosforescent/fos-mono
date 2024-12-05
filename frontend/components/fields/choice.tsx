@@ -11,7 +11,7 @@ import { Command, CommandEmpty, CommandGroup, CommandItem } from "../ui/command"
 import { Button } from "../ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 import InputDiv from "../elements/inputDiv"
-import { getNodeOperations } from "@/shared/nodeOperations"
+
 import { getDragAndDropHandlers } from "../drag-drop"
 import { useDraggable, useDroppable } from "@dnd-kit/core"
 import { ExpressionFields } from "../expression/ExpressionFields"

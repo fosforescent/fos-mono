@@ -27,20 +27,18 @@ import _, { update } from 'lodash'
 import { AppState, FosReactOptions, FosPath } from '@/shared/types'
 import { getNodeInfo } from '@/frontend/lib/utils'
 import { getNodeOperations } from '@/frontend/lib/nodeOperations'
+import { FosExpression } from '@/shared/dag-implementation/expression'
 
 
 
 
 export function DefaultMenuComponent({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) {
 

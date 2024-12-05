@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { InboundEmail, OutboundEmail } from '@prisma/client'
+import { InboundEmailModel, OutboundEmailModel } from '@prisma/client'
 import { deliverInboundEmail } from './email'
 
 import {prisma} from '../prismaClient'
@@ -9,7 +9,7 @@ export const postContactMessage = async (req: Request, res: Response) => {
   try {
     const { message, email } = req.body
 
-    const inboundEmail = await prisma.inboundEmail.create({
+    const inboundEmail = await prisma.inboundEmailModel.create({
       data: {
         from: 'inbound@fosforescent.com',
         to: 'dmn322@gmail.com ',

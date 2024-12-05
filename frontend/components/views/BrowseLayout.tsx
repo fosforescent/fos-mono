@@ -4,7 +4,7 @@ import { useProps } from "@/frontend/App"
 import { AppState, FosReactGlobal, FosPath } from "@/shared/types"
 import { CheckSquare, Inbox, MessageSquare } from "lucide-react"
 import { getExpressionActions } from "@/shared/storeOperations"
-import { FosExpression, getExpressionInfo } from "@/shared/dag-implementation/expression"
+import { FosExpression } from "@/shared/dag-implementation/expression"
 import { FosStore } from "@/shared/dag-implementation/store"
 import { ExpressionRow } from "../expression/ExpressionRow"
 import { get } from "http"
@@ -70,10 +70,7 @@ export const BrowseView = () => {
   
     console.log('queueview', route, data)
   
-    const { 
-      getChildrenForActivity, currentActivity
-    } = expression.getExpressionInfo()
-  
+
   
     const routeNodeRoutes = expression.getAllDescendentsForActivity("pins")
   

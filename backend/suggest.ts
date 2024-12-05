@@ -10,7 +10,7 @@ export const getSuggest = async (req: Request, res: Response) => {
   const claims = (req as any).claims
   const username = claims.username
 
-  const user = await prisma.user.findUnique({
+  const user = await prisma.userModel.findUnique({
     where: { user_name: username }
   })
 
@@ -35,7 +35,7 @@ export const getSuggest = async (req: Request, res: Response) => {
 
   const responseJson = await response.json()
 
-  const updatedUser = await prisma.user.update({
+  const updatedUser = await prisma.userModel.update({
     where: { user_name: username },
     data: {
       api_calls_total: user.api_calls_total + 1,

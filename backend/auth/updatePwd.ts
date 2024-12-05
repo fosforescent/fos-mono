@@ -17,7 +17,7 @@ export const postUpdatePwd = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing required arguments' })
   }
 
-  const user = await prisma.user.findUnique({
+  const user = await prisma.userModel.findUnique({
     where: { user_name: username }
   })
 
@@ -36,7 +36,7 @@ export const postUpdatePwd = async (req: Request, res: Response) => {
 
   const hashedNewPassword = await hashPassword(newPassword)
 
-  await prisma.user.update({
+  await prisma.userModel.update({
     where: { user_name: user.user_name },
     data: {
       password: hashedNewPassword,

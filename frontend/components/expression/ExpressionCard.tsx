@@ -7,27 +7,19 @@ import { AppState, FosPath, FosReactOptions } from "@/shared/types"
 import { ExpressionFields } from "./ExpressionFields"
 
 export const ExpressionCard = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  activity,
   expression, 
   ...props
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
-  activity: string
   expression: FosExpression
   setData: (state: AppState) => void
 }) => {
 
   const [newMessage, setNewMessage] = React.useState("")
 
-  const { 
-    addComment, addTodo, currentActivity, isBase, 
-  } = expression.getExpressionInfo()
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

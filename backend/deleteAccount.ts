@@ -16,12 +16,8 @@ export const deleteAccount = async (req: Request, res: Response): Promise<Respon
       // delete from prisma
       const username = (res as any).user.username as string // Replace with actual logic to extract claims
 
-      const user = await prisma.user.delete({
+      const user = await prisma.userModel.delete({
         where: { user_name: username }
-      })
-
-      const dataHistory = await prisma.dataHistory.deleteMany({
-        where: { group_id: user.fosGroupId }
       })
 
       return res.status(200).send('Account deleted')

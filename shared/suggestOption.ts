@@ -2,13 +2,12 @@
 import { AppState, FosDataContent, FosPathElem, FosReactOptions, FosPath } from "./types";
 import { addChild, changeInstruction, updateNodeContent } from "./mutations";
 
-import { getExpressionInfo } from "./dag-implementation/expression";
+import { FosExpression } from "./dag-implementation/expression";
 
 
 export const suggestTaskOptions = async (
+  expression: FosExpression,
   options: FosReactOptions,
-  nodeRoute: FosPath,
-  appState: AppState["data"],
 ): Promise<AppState["data"]> => {
 
 

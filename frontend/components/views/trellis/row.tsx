@@ -27,7 +27,6 @@ import _, { update } from 'lodash'
 import { FosReactOptions, FosPath, TrellisSerializedData } from '../../../../shared/types'
 
 import { AppState } from '@/shared/types'
-import { getNodeOperations } from '@/shared/nodeOperations'
 
 import { FosRowsComponent } from './rows'
 import { ExpressionRow } from '../../expression/ExpressionRow'
@@ -39,54 +38,19 @@ import { FosExpression } from '@/shared/dag-implementation/expression'
 
 
 export const DefaultRowComponent = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
 
 
-  const setFosAndTrellisData = (state: AppState["data"]) => {
-    setData({
-      ...data,
-       data: state
-    })
-  }
-
-
-  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData })
-
-  const expression = new FosExpression(store, nodeRoute)
-
-
-
-  const { locked, getOptionInfo,
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription, isRoot, childRoutes, isBase,
-    nodeType, nodeId, disabled, depth, isCollapsed, 
-    isTooDeep
-  } = expression.getExpressionInfo()
   
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
-    deleteOption,
-    keyDownEvents,
-    keyUpEvents,
-    keyPressEvents,
-    addOption,
-    suggestSteps,
-  } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
-  
+
+
   const { 
     getNodeDragInfo 
   } = getDragAndDropHandlers(options, data, setData) 

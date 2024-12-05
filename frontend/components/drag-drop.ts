@@ -8,25 +8,18 @@ import { ClientRect, Coordinates, DragOverEvent, DragStartEvent } from "@dnd-kit
 
 
 import { Transform } from "@dnd-kit/utilities"
-import { getExpressionInfo } from "@/shared/dag-implementation/expression"
+import { FosExpression } from "@/shared/dag-implementation/expression"
 
 
-export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState, setData: (newData: AppState) => void) => {
+export const getDragAndDropHandlers = (expression: FosExpression, options: FosReactOptions, setData: (newData: AppState["data"]) => void) => {
 
 
-  const setTrellisAndFosData = (state: AppState["data"]) => {
-    setData({
-      ...data,
-       data: state
-    })
-  }
-
-  const actions = getActions(options, data, setData)
+ 
 
   const {
     dragging: draggingInfo,
     dragOverInfo: dragOverInfo,
-  } = actions.getDragInfo()
+  } = expression.getDragInfo()
 
   function handleDragEnd(event: DragEndEvent) {
     const {active, over} = event;
@@ -43,7 +36,7 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
       return
     }
     if(!active || !active.data.current){
-      actions.setDragInfo({
+      expression.setDragInfo({
         dragging: null,
         dragOverInfo: null
       });
@@ -80,9 +73,9 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
       const newData = {
         ...data,
         data: {
-          ...data.data,
+          ...data,
           trellisData: {
-            ...data.data.trellisData,
+            ...data.trellisData,
             dragInfo: {
               dragging: null,
               dragOverInfo: null
@@ -92,7 +85,7 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
       }
     
     
-      const { moveAboveRoute, moveBelowRoute, moveToTopChildOfRoute } = getNodeOperations(options, newData.data, setTrellisAndFosData, activeNode)
+      const { moveAboveRoute, moveBelowRoute, moveToTopChildOfRoute } = getNodeOperations(options, newdata, setTrellisAndFosData, activeNode)
     
     
       if (dragInfo?.position === 'on' || dragInfo?.position === 'breadcrumb') {
@@ -262,13 +255,13 @@ export const getDragAndDropHandlers = (options: FosReactOptions, data: AppState,
       nodeDescription, isRoot, childRoutes, 
       nodeType, nodeId, disabled, depth, isCollapsed, 
       isTooDeep, getDragItem
-    } = getExpressionInfo(nodeRoute, data.data)
+    } = getExpressionInfo(nodeRoute, data)
 
        
    const {
     dragging, 
     dragOverInfo,
-   } = data.data.trellisData.dragInfo
+   } = data.trellisData.dragInfo
 
 
   const isChildOf = (argNodeRoute: FosPath) => {

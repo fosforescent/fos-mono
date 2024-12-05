@@ -35,7 +35,7 @@ export const verifyJWTMiddleware = async (req: Request, res: Response, next: Nex
     (req as any).claims = decoded
 
     // Query user and make sure they're approved
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: (req as any).claims.username }
     })
 

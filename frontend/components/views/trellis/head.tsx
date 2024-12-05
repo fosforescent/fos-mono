@@ -7,17 +7,15 @@ import { Button } from '@/frontend/components/ui/button';
 
 
 import { AppState, FosReactOptions, FosPath,} from '@/shared/types';
+import { FosExpression } from '@/shared/dag-implementation/expression';
 
 export const RootScreenHead = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
 

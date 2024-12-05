@@ -20,15 +20,12 @@ import { FosNode } from "@/shared/dag-implementation/node"
 
 
 export const DefaultBreadcrumbsComponent = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
 
@@ -44,14 +41,8 @@ export const DefaultBreadcrumbsComponent = ({
     })
   }
 
-
-  const store = new FosStore({
-    fosCtxData: data.data,
-    mutationCallback: setFosAndTrellisData
-  })
-
-  const expression = new FosExpression(store, [])
-
+  
+  
   // const groups: FosExpression[] = expression.getChildrenMatchingPattern(store.primitive.groupField, store.primitive.unit)
 
   const isEveryoneGroup = true

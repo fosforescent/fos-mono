@@ -10,13 +10,12 @@ import { CaretSortIcon } from '@radix-ui/react-icons'
 import { AppState, FosReactGlobal, FosReactOptions, FosPath } from '@/shared/types'
 import { cn } from '@/frontend/lib/utils'
 
-import { getNodeOperations } from '@/shared/nodeOperations'
 import { Card, CardContent, CardFooter } from '../ui/card'
 import { Button } from '../ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import InputDiv from '../elements/inputDiv'
 import { Command, CommandEmpty, CommandGroup, CommandItem } from '../ui/command'
-import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression'
+import { FosExpression } from '@/shared/dag-implementation/expression'
 import { getDragAndDropHandlers } from '../drag-drop'
 import { ExpressionFields } from './ExpressionFields'
 import { FosStore } from '@/shared/dag-implementation/store'
@@ -24,21 +23,14 @@ import { FosStore } from '@/shared/dag-implementation/store'
 
 
 export const ExpressionRow = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  activity,
   expression,
-  mode,
+
   ...props
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
-  activity: string
   expression: FosExpression
-  mode: ("read" | "write" | "execute")[]
   setData: (state: AppState) => void
 }) => {
 

@@ -3,11 +3,16 @@ import { Input } from "../ui/input"
 import { Button } from "../ui/button"
 import { Send } from "lucide-react"
 import React from "react"
+import { AppState, FosReactGlobal } from "@/shared/types"
 
-export const NodeActiviyInput = ({ 
+export const NodeActiviyInput = ({
+  options,
+  setData,
   expression,
   ...props
 } : {
+  options: FosReactGlobal
+  setData: (state: AppState["data"]) => void
   expression: FosExpression
 }) => {
 
@@ -15,9 +20,7 @@ export const NodeActiviyInput = ({
 
   const [newMessage, setNewMessage] = React.useState("")
 
-  const { 
-    addComment, addTodo, currentActivity, isBase
-  } = expression.getExpressionInfo()
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault() 

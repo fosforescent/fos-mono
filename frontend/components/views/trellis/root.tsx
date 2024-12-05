@@ -4,19 +4,17 @@ import { FosRowsComponent } from './rows';
 import { RootScreenHead } from './head';
 import { DefaultBreadcrumbsComponent } from '../../breadcrumbs/breadcrumbs';
 import React from 'react';
+import { FosExpression } from '@/shared/dag-implementation/expression';
 
 
 
 export function DefaultRootComponent({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) {
 

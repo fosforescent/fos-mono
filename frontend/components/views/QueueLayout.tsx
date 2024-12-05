@@ -34,7 +34,7 @@ import { DefaultBreadcrumbsComponent } from '../breadcrumbs/breadcrumbs';
 import { getDragAndDropHandlers } from '../drag-drop';
 
 import { NodeCard } from '../expression/ExpressionRow';
-import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression';
+import { FosExpression } from '@/shared/dag-implementation/expression';
 import { getGroupFieldNode } from '@/shared/dag-implementation/primitive-node';
 import { getGroupFromRoute } from '@/shared/utils';
 import { FosStore } from '@/shared/dag-implementation/store';

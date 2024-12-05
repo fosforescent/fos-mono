@@ -6,12 +6,12 @@
 import { Delta } from "@n1ru4l/json-patch-plus";
 
 import { useToast } from "@/frontend/components/ui/use-toast";
-import { AppState, FosContextData, FosNodesData, FosPath, InfoState, TrellisSerializedData } from "../shared/types";
+import { AppState, FosContextData, FosNodesData, FosPath, InfoState, TrellisSerializedData } from "./types";
 
 
 
 export const getMaxDepth = () => {
-  return ( (window.innerWidth - 500) / 100)
+  return window ? ( (window?.innerWidth - 500) / 100) : 1
 }
 
 
@@ -40,16 +40,16 @@ export const defaultNodes: FosNodesData = {
 
 
 export const defaultNodesDemo: FosNodesData = {
-  // root: {
-  //   data: {
-  //     description: { 
-  //       content: "Fosforescent Root",
-  //     }
-  //   },
-  //   children: [
-  //     ["startTask", "COMPLETION"]
-  //   ]
-  // },
+  root: {
+    data: {
+      description: { 
+        content: "Fosforescent Root",
+      }
+    },
+    children: [
+      ["startTask", "COMPLETION"]
+    ]
+  },
   startTask: {
     data: {
       description: { 
@@ -227,26 +227,7 @@ export const defaultNodesTest: FosNodesData = {
 export const defaultContext: FosContextData = {
   nodes: defaultNodesDemo,
   route: defaultTrail,
-  baseNodeContent: {
-    data: {
-      description: { 
-        content: "Fosforescent Root",
-      }
-
-    },
-    children: [
-      [startTaskId, "COMPLETION"]
-    ]
-  },
-  baseNodeInstruction: {
-    data: {
-      description: { 
-        content: "Root Instuction Noded",
-      }
-    },
-    children: [
-    ]
-  }
+  rootNodeId: "root"
 }
 
 

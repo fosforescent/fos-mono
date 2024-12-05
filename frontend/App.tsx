@@ -24,7 +24,7 @@ import { useToast } from '@/frontend/components/ui/use-toast';
 import { jwtDecode } from 'jwt-decode';
 import { api } from './api'
 
-import { defaultContext, defaultTrellisData, initialDataState } from './defaults'
+import { defaultContext, defaultTrellisData, initialDataState } from '../shared/defaults'
 
 import { Outlet, useOutletContext, useLoaderData, useNavigate } from 'react-router-dom'
 import { getActions } from './lib/actions'

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { InboundEmail, OutboundEmail } from '@prisma/client'
+import { InboundEmailModel, OutboundEmailModel } from '@prisma/client'
 import { randomBytes } from 'crypto'
 
 import { Client as PostmarkClient } from 'postmark'
@@ -30,7 +30,7 @@ export const generateLinkToken = () => {
   }
 }
 
-export const deliverEmail = async (outboundEmail: OutboundEmail) => {
+export const deliverEmail = async (outboundEmail: OutboundEmailModel) => {
   await postmarkClient.sendEmailWithTemplate({
     From: outboundEmail.from,
     To: outboundEmail.to,
@@ -39,7 +39,7 @@ export const deliverEmail = async (outboundEmail: OutboundEmail) => {
   }, async (error, result) => {
     if (error) {
       console.error('Failed to send email:', error)
-      await prisma.outboundDeliveryAttempt.create({
+      await prisma.outboundDeliveryAttemptModel.create({
         data: {
           emailId: outboundEmail.id,
           status: 'fail',
@@ -49,7 +49,7 @@ export const deliverEmail = async (outboundEmail: OutboundEmail) => {
       })
     } else {
       console.log('Email sent:', result)
-      await prisma.outboundDeliveryAttempt.create({
+      await prisma.outboundDeliveryAttemptModel.create({
         data: {
           emailId: outboundEmail.id,
           status: 'success'
@@ -59,7 +59,7 @@ export const deliverEmail = async (outboundEmail: OutboundEmail) => {
   })
 }
 
-export const deliverInboundEmail = async (inboundEmail: InboundEmail) => {
+export const deliverInboundEmail = async (inboundEmail: InboundEmailModel) => {
   // Send to support email
   await postmarkClient.sendEmail({
     From: inboundEmail.from,
@@ -77,7 +77,7 @@ export const sendConfirmationEmail = async (email: string, token: string, client
   // Send password reset email
   const actionUrl = `http://www.fosforescent.com/?confirm-email-token=${token}`
 
-  const outboundEmail = await prisma.outboundEmail.create({
+  const outboundEmail = await prisma.outboundEmailModel.create({
     data: {
       from: 'auth@fosforescent.com',
       to: email,
@@ -100,7 +100,7 @@ export const sendPasswordResetEmail = async (email: string, token: string, clien
   // Send password reset email
   const actionUrl = `http://www.fosforescent.com/?reset-password-token=${token}`
 
-  const outboundEmail = await prisma.outboundEmail.create({
+  const outboundEmail = await prisma.outboundEmailModel.create({
     data: {
       from: 'auth@fosforescent.com',
       to: email,
@@ -122,7 +122,7 @@ export const sendPasswordResetEmail = async (email: string, token: string, clien
 export const sendUpdatePasswordEmail = async (email: string, clientDetails: ClientDetails) => {
   // Send password reset email
 
-  const outboundEmail = await prisma.outboundEmail.create({
+  const outboundEmail = await prisma.outboundEmailModel.create({
     data: {
       from: 'auth@fosforescent.com',
       to: email,
@@ -159,7 +159,7 @@ export const postEmailWebhook = async (req: Request, res: Response) => {
   const { From, To, Subject, TextBody, HtmlBody } = req.body
 
   try {
-    const inboundEmail = await prisma.inboundEmail.create({
+    const inboundEmail = await prisma.inboundEmailModel.create({
       data: {
         from: From,
         to: To,

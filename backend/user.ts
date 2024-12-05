@@ -9,7 +9,7 @@ export const getUserProfile = async (req: Request, res: Response) => {
     const claims = (req as any).claims
     const username = claims.username
 
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: username }
     })
 
@@ -63,7 +63,7 @@ export const postUserProfile = async (req: Request, res: Response) => {
 
     if (req.body.user_profile) {
       const userData = parseUserDataFromRequest(req)
-      const updatedUser = await prisma.user.update({
+      const updatedUser = await prisma.userModel.update({
           where: { user_name: username },
           data: {
             user_profile: userData.user_profile.profileInfo,
@@ -92,7 +92,7 @@ export const postUserProfile = async (req: Request, res: Response) => {
       return res.json(result)
     } else {
 
-      const user = await prisma.user.findUnique({
+      const user = await prisma.userModel.findUnique({
         where: { user_name: username }
       })
 

@@ -9,14 +9,13 @@ import { AppState, FosNodeContent, FosReactOptions, FosPath } from "../shared/ty
 
 import { getNodeOperations } from "./nodeOperations"
 import { updateFosData, updateNodeData } from "./mutations"
-import { getExpressionInfo } from "./dag-implementation/expression"
+import { FosExpression,  } from "./dag-implementation/expression"
 
 
 
 export const suggestStepsMagic = async (
+  expression: FosExpression,
   options: FosReactOptions,
-  nodeRoute: FosPath,
-  appState: AppState["data"],
   ): Promise<AppState["data"]> => {
 
   console.log('suggestMagic', nodeRoute)

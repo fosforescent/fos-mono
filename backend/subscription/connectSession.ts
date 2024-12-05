@@ -23,7 +23,7 @@ export const postCreateOrGetConnectAccount = async (req: Request, res: Response)
 
   try {
     // Check if user already has a connected account
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await prisma.userModel.findUnique({
       where: { user_name: username }
     })
 
@@ -65,7 +65,7 @@ export const postCreateOrGetConnectAccount = async (req: Request, res: Response)
     })
 
     // Save the connected account ID
-    await prisma.user.update({
+    await prisma.userModel.update({
       where: { user_name: username },
       data: { 
         stripe_connected_account_id: account.id,

@@ -3,7 +3,7 @@ import { prisma } from '../prismaClient'
 import { createIndexIfNecessary, OpenAIEmbeddingsAdapter, pineconeIndexExists, semanticSearch } from '../pinecone'
 import { AppState, FosPath, FosRoute } from '@/shared/types'
 import { FosStore } from '@/shared/dag-implementation/store'
-import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression'
+import { FosExpression } from '@/shared/dag-implementation/expression'
 import OpenAI from 'openai'
 import { Pinecone } from '@pinecone-database/pinecone'
 import { Document } from '@langchain/core/documents'
@@ -129,7 +129,8 @@ export const executeSearch = async (
   } = {}
 ): Promise<SearchResult[]> => {
   try {
-    const { nodeDescription, nodeRoute } = expression.getExpressionInfo();
+    
+    const nodeDescription = expression.getDescription();
     
     if (!nodeDescription) {
       console.warn('No node description available for search');
@@ -245,7 +246,14 @@ export const upsertSearchTerms = async (store: FosStore): Promise<boolean> => {
     }
 
     const itemsMap = mutableMapExpressions<UpsertObject>(store.exportContext([]), (resultMap, expression) => {
-      const { nodeId, nodeDescription, nodeRoute, nodeData } = expression.getExpressionInfo();
+
+
+      const nodeId = expression.targetNode.getId()
+      const nodeRoute = expression.route
+      const nodeDescription = expression.getDescription()
+      const nodeData = expression.targetNode.getData()
+
+
       if (nodeDescription) {
         resultMap.set(nodeRoute, {
           metadata: {

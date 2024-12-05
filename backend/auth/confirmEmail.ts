@@ -16,7 +16,7 @@ export const postConfirmEmail = async (req: Request, res: Response) => {
 
   try {
     console.log('token', token)
-    const emailConfirmationUser = await prisma.user.findUnique({
+    const emailConfirmationUser = await prisma.userModel.findUnique({
       where: {
         email_confirmation_token: token
       }
@@ -26,7 +26,7 @@ export const postConfirmEmail = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Token not found' })
     }
 
-    await prisma.user.update({
+    await prisma.userModel.update({
       where: { user_name: emailConfirmationUser.user_name },
       data: {
         email_confirmation_token: null,
@@ -46,7 +46,7 @@ export const postConfirmEmailInit = async (req: Request, res: Response) => {
   const username = claims.username
 
   try {
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: username }
     })
 
@@ -60,7 +60,7 @@ export const postConfirmEmailInit = async (req: Request, res: Response) => {
 
     // Generate a new confirmation token
     const { token: newToken, expiration: newExpiration } = generateLinkToken()
-    await prisma.user.update({
+    await prisma.userModel.update({
       data: {
         email_confirmation_token: newToken,
         email_confirmation_expiration: newExpiration // 24 hours from now

@@ -26,7 +26,7 @@ export const postLogin = async (req: Request, res: Response) => {
   }
 
   try {
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: credentials.username }
     })
 

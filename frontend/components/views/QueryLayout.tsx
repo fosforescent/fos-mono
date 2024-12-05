@@ -3,8 +3,8 @@ import { useProps } from "@/frontend/App"
 
 import { AppState, FosReactGlobal, FosPath } from "@/shared/types"
 import { CheckSquare, Inbox, MessageSquare } from "lucide-react"
-import { getExpressionActions } from "@/shared/storeOperations"
-import { FosExpression, getExpressionInfo } from "@/shared/dag-implementation/expression"
+
+import { FosExpression  } from "@/shared/dag-implementation/expression"
 import { FosStore } from "@/shared/dag-implementation/store"
 import { ExpressionRow } from "../expression/ExpressionRow"
 import { get } from "http"
@@ -65,26 +65,24 @@ export const QueryView = () => {
     const expression = new FosExpression(store, route)
   
 
-    const actions = getExpressionActions(expression, setFosAndTrellisData)
+    const activity = data.data.trellisData.activity
+    const actions = expression.getActions(setFosAndTrellisData)
 
   
     console.log('queueview', route, data)
   
-    const { 
-      getNodesOfType, getAllTodos, getAllComments, currentActivity
-    } = getExpressionInfo(route, data.data)
+
   
+    const routeNodes = expression.getAllDescendentsForActivity(activity)
   
-    const routeNodes = getNodesOfType()
-  
-    const { pins }  = getNodesOfType()
+    const pins  = expression.getAllDescendentsForActivity("pins")
 
 
     return (<div>
 
-        {pins().map((group, i) => {
+        {pins.map((group, i) => {
 
-            return <ExpressionRow key={i} data={data} setData={setData} options={options} nodeRoute={group} mode={["read"]}/>
+            return <ExpressionRow key={i} data={data} setData={setData} options={options} nodeRoute={group} mode={["read"]} activity={activity} expression={expression} />
         })}
     </div>)
 }

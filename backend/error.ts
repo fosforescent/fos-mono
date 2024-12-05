@@ -13,11 +13,11 @@ export const putError = async (req: Request, res: Response) => {
       clientDetails: (req as any).clientDetails
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: email }
     })
 
-    const errorObject = await prisma.clientError.create({
+    const errorObject = await prisma.clientErrorModel.create({
       data: {
         error,
         ...( email ? { 

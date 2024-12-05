@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import _, { merge } from 'lodash'
-import { checkDataFormat, loadCtxFromDb,storeCtxToDb,  } from './util'
+import { checkDataFormat, dbToStore, storeToDb,  } from '../util'
 import { ReqWithClients } from '../clientManager'
 
 import { prisma } from '../prismaClient'
@@ -20,10 +20,10 @@ export const getUserData = async (req: Request, res: Response): Promise<Response
     const claims = (req as any).claims
     const username = claims.username
 
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: username },
       include: {
-        fosGroup: true
+        fosNode: true
       }
     })
 
@@ -33,17 +33,14 @@ export const getUserData = async (req: Request, res: Response): Promise<Response
 
 
     // console.log('user', user)
-    const serverData = await loadCtxFromDb(prisma, user.fosGroup, user)
+    const serverStore = await dbToStore(prisma, user)
 
     // console.log('serverData', serverData)
     
-    checkDataFormat(serverData)
+    // checkDataFormat(serverStore)
 
     return res.json({
-      data: { 
-        fosData: serverData,
-        trellisData: user.data,
-      },
+      data: serverStore.exportContext([]),
       updated: false,
     })
 
@@ -60,16 +57,16 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
     const claims = (req as any).claims
     const username = claims.username
 
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: username },
       include: {
-        fosGroup: true
+        fosNode: true
       }
     })
 
 
     if (!user) {
-      console.log('User not found', user, prisma.user.findUnique, prisma.user, prisma)
+      console.log('User not found', user, prisma.userModel.findUnique, prisma.userModel, prisma)
       throw new Error('User not found')
     } else {
       const userData = req.body.data as { fosData: FosContextData, trellisData: TrellisSerializedData } 
@@ -82,26 +79,10 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
 
       const trellisData = userData.trellisData as unknown as TrellisSerializedData
       // console.log('user', user)
-      const serverData = await loadCtxFromDb(prisma, user.fosGroup, user)
+      const serverDataStore = await dbToStore(prisma, user)
 
       // console.log('serverData', serverData)
       
-      checkDataFormat(serverData)
-
-      if (!userData.fosData.nodes) {
-        console.log('userData.nodes is empty')
-        return res.json({
-          data: {
-            fosData: serverData,
-            trellisData: user.data,
-          },
-          updated: false,
-        })
-  
-      }
-
-
-      const serverDataStore = new FosStore({ fosCtxData: { fosData: serverData, trellisData } })
 
       serverDataStore.updateWithContext(userData)
 
@@ -110,7 +91,7 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
 
 
 
-      const userGroupData = user.fosGroup.data as { lastVectorUploadTime: number }
+      const userGroupData = user.fosNode.data as { lastVectorUploadTime: number }
       
       if (userGroupData.lastVectorUploadTime < Date.now() - 1000 * 60 * 60) {
 
@@ -118,10 +99,10 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
         const result = await upsertSearchTerms(serverDataStore);
 
         if (result) {
-          await prisma.fosGroup.update({
-            where: { id: user.fosGroup.id },
+          await prisma.fosNodeModel.update({
+            where: { cid: user.fosNode.cid },
             data: { data: {
-              ...(typeof user.fosGroup.data === 'object') ? user.fosGroup.data : {}, 
+              ...(typeof user.fosNode.data === 'object') ? user.fosNode.data : {}, 
               lastVectorUploadTime: Date.now() 
             } }
           })
@@ -130,15 +111,12 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       }
     
 
-      await storeCtxToDb(prisma, user.fosGroup, serverDataStore )
+      await storeToDb(prisma, user, serverDataStore )
 
 
       const updatedContext = serverDataStore.exportContext([])
 
-      const updatedUser = await prisma.user.update({
-        where: { user_name: username },
-        data: { data: serverDataStore.trellisData as unknown as JsonObject}
-      })
+
 
       // console.log('newServerData', newServerData)
       return res.json({
@@ -173,18 +151,11 @@ export const deleteUserData = async (req: Request, res: Response) => {
     const claims = (req as any).claims
     const username = claims.username
 
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: username }
     })
 
-    const userGroup = await prisma.fosGroup.findFirst({
-      where: {
-        id: user?.fosGroupId
-      }
-    })
 
-
-    
   
 
     if (!user) {
@@ -192,19 +163,19 @@ export const deleteUserData = async (req: Request, res: Response) => {
       return res
     }
 
-    const dataHistory = await prisma.dataHistory.findMany({
+    const dataHistory = await prisma.dataHistoryModel.findMany({
       where: {
-        group_id: userGroup?.id
+        user_id: user.id
       }
     })
 
-    const dataHistoryDelete = await prisma.dataHistory.deleteMany({
+    const dataHistoryDelete = await prisma.dataHistoryModel.deleteMany({
       where: {
-        group_id: userGroup?.id
+        user_id: user.id
       }
     })
 
-    const updatedUser = await prisma.user.update({
+    const updatedUser = await prisma.userModel.update({
       where: { user_name: username },
       data: { data: {} }
     })

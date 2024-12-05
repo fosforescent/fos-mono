@@ -24,7 +24,7 @@ export const postResetPwdUpdate = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Token and new password are required.' })
   }
 
-  const user = await prisma.user.findUnique({
+  const user = await prisma.userModel.findUnique({
     where: {
       password_reset_token: token,
       user_name: email
@@ -50,7 +50,7 @@ export const postResetPwdUpdate = async (req: Request, res: Response) => {
   //   return res.status(400).json({ message: "Password must be different from the previous password." });
   // }
 
-  await prisma.user.update({
+  await prisma.userModel.update({
     where: { user_name: user.user_name },
     data: {
       password: hashedNewPassword,
@@ -65,7 +65,7 @@ export const postResetPwdUpdate = async (req: Request, res: Response) => {
 export const postResetPwd = async (req: Request, res: Response) => {
   const { username } = req.body
 
-  const user = await prisma.user.findUnique({
+  const user = await prisma.userModel.findUnique({
     where: { user_name: username }
   })
 
@@ -77,7 +77,7 @@ export const postResetPwd = async (req: Request, res: Response) => {
 
   // Generate password reset token
   const { token, expiration } = generateLinkToken() // Ensure you have a generateToken function similar to the previous example
-  await prisma.user.update({
+  await prisma.userModel.update({
     data: {
       password_reset_token: token,
       password_reset_expiration: expiration

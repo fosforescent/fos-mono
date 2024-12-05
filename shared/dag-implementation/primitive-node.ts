@@ -183,7 +183,10 @@ export const getYearlyTriggerNode = (store: FosStore) => generateConstructor(sto
 
 export const getDelayTriggerNode = (store: FosStore) => generateConstructor(store, "DELAY", { description: { content : 'Delay Trigger Constructor' } }, [])
 
+export const getGroupShadowNode = (store: FosStore) => generateConstructor(store, "GROUPSHADOW", { description: { content : 'Group Shadow Constructor' } }, [])
 
+export const dereferenceAliasNode = (store: FosStore) => generateConstructor(store, "DEREFALIAS", { description: { content : 'Dereference Alias Node' } }, [])
+export const aliasConstructorNode =  (store: FosStore) => generateConstructor(store, "ALIAS", { description: { content : 'Alias Constructor Node' } }, [])
 
 export const generateConstructor = (
   store: FosStore, 
@@ -308,7 +311,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const pauseAction = getPauseActionNode(store)
   const resumeAction = getResumeActionNode(store)
 
-  
+  const groupShadowNode = getGroupShadowNode(store)
 
 
 
@@ -400,7 +403,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     stopAction,
     pauseAction,
     resumeAction,
-
+    groupShadowNode,
 
     // allOf: getAllOfNode(store),
   }
@@ -479,7 +482,7 @@ export type PrimitiveAliases = {
   recurringBuyNode: FosNode,
   conflictNode: FosNode,
   nameNode: FosNode,
-  
+  groupShadowNode: FosNode, 
 
   
 }

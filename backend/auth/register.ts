@@ -3,7 +3,8 @@ import bcrypt from 'bcrypt'
 import { generateLinkToken, sendConfirmationEmail } from '../email/email'
 
 import {prisma} from '../prismaClient'
-import { createUserGroup } from '../data/util'
+
+import { FosStore } from '@/shared/dag-implementation/store'
 
 export const hashPassword = async (password: string) => {
   return await bcrypt.hash(password, 10)
@@ -21,7 +22,7 @@ export const postRegister = async (req: Request, res: Response) => {
   }
 
   // Check if user already exists
-  const existingUser = await prisma.user.findUnique({
+  const existingUser = await prisma.userModel.findUnique({
     where: {
       user_name: username
     }
@@ -46,8 +47,8 @@ export const postRegister = async (req: Request, res: Response) => {
   // Create user
   try {
     const { token, expiration } = generateLinkToken()
-    const fosGroup = await createUserGroup(prisma)
-    const user = await prisma.user.create({
+    
+    const user = await prisma.userModel.create({
       data: {
         user_name: username,
         password: hashedPassword,
@@ -62,11 +63,7 @@ export const postRegister = async (req: Request, res: Response) => {
         api_calls_total: 0,
         approved: true,
         cookies,
-        fosGroup: {
-          connect: {
-            id: fosGroup.id
-          }
-        }
+        fosNodeId: (new FosStore()).rootNodeId,
       },
     })
 
@@ -89,19 +86,14 @@ export const deleteAccount = async (req: Request, res: Response) => {
   const username = claims.username
 
   try {
-    const user = await prisma.user.delete({
+    const user = await prisma.userModel.delete({
       where: {
         user_name: username
       }
     })
 
-    const appUserRoles = await prisma.appUserRole.deleteMany({
-      where: {
-        userId: user.id
-      }
-    })
 
-    const userEvents = await prisma.userEvent.deleteMany({
+    const userEvents = await prisma.userEventModel.deleteMany({
       where: {
         userId: user.id
       }
@@ -113,3 +105,5 @@ export const deleteAccount = async (req: Request, res: Response) => {
     res.status(500).send('Internal Server Error')
   }
 }
+
+

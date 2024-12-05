@@ -14,10 +14,10 @@ import { Label } from "@/frontend/components/ui/label"
 import { AppState, FosReactOptions, FosPath } from '@/shared/types';
 
 import { getActions } from '@/frontend/lib/actions';
-import { getNodeOperations } from '@/shared/nodeOperations';
+
 import { get } from 'http';
 import { DefaultRowComponent } from './row';
-import { FosExpression, getExpressionInfo } from '@/shared/dag-implementation/expression';
+import { FosExpression } from '@/shared/dag-implementation/expression';
 import { ExpressionRow } from '../../expression/ExpressionRow';
 import { FosStore } from '@/shared/dag-implementation/store';
 
@@ -25,33 +25,33 @@ import { FosStore } from '@/shared/dag-implementation/store';
 
 
 export const FosRowsComponent = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props  
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
   
 
-  const { nodeType, nodeChildren, isCollapsed, isBase, isRoot, isTodo, isWorkflow, isOption } = getExpressionInfo(nodeRoute, data.data)
+
+  
   
 
   const [showMore, setShowMore] = React.useState(false)
 
 
+  const nodeChildren = expression.getChildren()
 
 
-  const items = nodeChildren.map(([childType, childId], index) => {
+  const items = nodeChildren.map((childExpr, index) => {
+
 
 
     return {
-      id: `${childType}-${childId}`,
-      data: { nodeRoute: [...nodeRoute, [childType, childId]], breadcrumb: false },
+      id: `${childExpr.dragLabel()}`,
+      data: { nodeRoute: [...nodeRoute, [childExpr.nodeType(), childExpr.nodeId()]], breadcrumb: false },
       breadcrumb: false
     }
   })
@@ -71,26 +71,29 @@ export const FosRowsComponent = ({
 
   
 
-  if (isRoot) {
+  if (expression.isRoot()) {
     return <TaskRows 
       nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
+      expression={expression}
     />
-  }else if (isOption) {
+  }else if (expression.isOption()) {
     return <OptionRowsCombined
       nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
+      expression={expression}
     />
-  } else if (isWorkflow) {
+  } else if (expression.isWorkflow()) {
     return <TaskRows 
       nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
+      expression={expression}
     />
   } else {
     throw new Error('node type rows not implemented')
@@ -100,16 +103,13 @@ export const FosRowsComponent = ({
 
 
 
-const OptionRowsCombined = ( { 
-  data,
+const OptionRowsCombined = ({ 
   setData,
-  options: fosOptions,
-  nodeRoute,
-  ...props  
+  options,
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
 
@@ -122,24 +122,9 @@ const OptionRowsCombined = ( {
     })
   }
 
-
-  const {  locked, hasFocus, focusChar, isDragging, draggingOver, nodeDescription, getOptionInfo } = getExpressionInfo(nodeRoute, data.data)
-
-  const { selectedIndex, nodeOptions } = getOptionInfo()
   
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
-    
-    deleteOption,
-    keyDownEvents,
-    keyUpEvents,
-    keyPressEvents,
-    addOption,
-   } = getNodeOperations(fosOptions, data.data, setFosAndTrellisData, nodeRoute)
+
+  c
   
   
 
@@ -147,7 +132,7 @@ const OptionRowsCombined = ( {
   
   // console.log('isRoot', isRoot, meta.trellisNode.getId())
   const handleChange = (value: string) => {
-     setSelectedOption(parseInt(value))
+    expression.setSelectedOption(parseInt(value))
   }
 
   return (<div className="flex flex-initial grow">
@@ -156,6 +141,8 @@ const OptionRowsCombined = ( {
       setData={setData}
       options={fosOptions}
       nodeRoute={nodeRoute}
+      expression={expression}
+      
     />
 
   </div>)
@@ -168,15 +155,12 @@ const OptionRowsCombined = ( {
 
 
 const OptionRowsExpanded = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props  
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
   
@@ -290,15 +274,12 @@ const OptionRowsExpanded = ({
 
 
 const TaskRows = ({ 
-  data,
   setData,
   options,
-  nodeRoute,
-  ...props  
+  expression,
 } : {
   options: FosReactOptions
-  data: AppState
-  nodeRoute: FosPath
+  expression: FosExpression
   setData: (state: AppState) => void
 }) => {
 

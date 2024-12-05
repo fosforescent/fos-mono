@@ -39,7 +39,7 @@ export const postCreatePortalSession = async (req: Request, res: Response) => {
 
   try {
     // Fetch the user by username
-    const user = await prisma.user.findUnique({
+    const user = await prisma.userModel.findUnique({
       where: { user_name: username }
     })
 
@@ -55,7 +55,7 @@ export const postCreatePortalSession = async (req: Request, res: Response) => {
 
     // Optional: Update the user with the portal session ID in your database
     // This step is not typically necessary for portal sessions but is included for completeness
-    await prisma.user.update({
+    await prisma.userModel.update({
       where: { user_name: username },
       data: { portal_session_id: session.id } // Adjust according to your schema
     })

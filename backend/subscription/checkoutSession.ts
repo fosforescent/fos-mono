@@ -42,7 +42,7 @@ export const postCreateCheckoutSession = async (req: Request, res: Response) => 
     })
 
     // Optional: Save the session ID to your database
-    const user = await prisma.user.update({
+    const user = await prisma.userModel.update({
       where: { user_name: username },
       data: { subscription_checkout_session_id: session.id }
     })

@@ -143,7 +143,7 @@ export const postSubscriptionWebhook = async (req: Request, res: Response) => {
 
 async function handleAccountUpdated(account: Stripe.Account) {
   console.log('Account updated:', account.id)
-  await prisma.user.update({
+  await prisma.userModel.update({
     where: { stripe_connected_account_id: account.id },
     data: {
       stripe_account_enabled: account.charges_enabled,
@@ -155,7 +155,7 @@ async function handleAccountUpdated(account: Stripe.Account) {
 
 async function handleAccountAuthorized(account: Stripe.Account) {
   console.log('Account authorized:', account.id)
-  await prisma.user.update({
+  await prisma.userModel.update({
     where: { stripe_connected_account_id: account.id },
     data: {
       stripe_account_status: 'authorized',
@@ -166,7 +166,7 @@ async function handleAccountAuthorized(account: Stripe.Account) {
 
 async function handleAccountDeauthorized(account: Stripe.Account) {
   console.log('Account deauthorized:', account.id)
-  await prisma.user.update({
+  await prisma.userModel.update({
     where: { stripe_connected_account_id: account.id },
     data: {
       stripe_account_status: 'deauthorized',
@@ -179,7 +179,7 @@ async function handleAccountDeauthorized(account: Stripe.Account) {
 async function handleBankAccountCreated(bankAccount: Stripe.BankAccount) {
   console.log('Bank account created:', bankAccount.account)
   // Optionally track bank account details
-  await prisma.user.update({
+  await prisma.userModel.update({
     where: { stripe_connected_account_id: bankAccount.account as string },
     data: {
       has_bank_account: true,
@@ -229,7 +229,7 @@ async function handlePayoutPaid(payout: Stripe.Payout) {
 
 async function handleFailedCharge(charge: Stripe.Charge) {
   // Update user's payment status
-  await prisma.user.update({
+  await prisma.userModel.update({
     where: { stripe_connected_account_id: charge.account as string },
     data: {
       payment_status: 'failed',
@@ -242,7 +242,7 @@ async function handleFailedCharge(charge: Stripe.Charge) {
 async function handleSessionCompleted (session: Stripe.Checkout.Session) {
   // Example: Update user's subscription status based on session details
   console.log('Session completed', session.id, session)
-  const user = await prisma.user.update({
+  const user = await prisma.userModel.update({
     where: { subscription_checkout_session_id: session.id },
     data: { 
       subscription_status: 'active',
@@ -259,7 +259,7 @@ async function handleSessionCompleted (session: Stripe.Checkout.Session) {
 
 async function handleInvoicePaid (invoice: Stripe.Invoice) {
   // Example: Update user's subscription status or credits
-  const user = await prisma.user.update({
+  const user = await prisma.userModel.update({
     where: { stripe_customer_id: invoice.customer as string },
     data: { 
       subscription_status: 'active',
@@ -278,7 +278,7 @@ async function handleInvoicePaid (invoice: Stripe.Invoice) {
 
 async function handlePaymentFailed (invoice: Stripe.Invoice) {
   // Example: Mark subscription as inactive or payment as failed
-  const user = await prisma.user.update({
+  const user = await prisma.userModel.update({
     where: { stripe_customer_id: invoice.customer as string },
     data: { subscription_status: 'lapsed' }    
   })
