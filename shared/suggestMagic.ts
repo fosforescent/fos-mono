@@ -7,8 +7,7 @@ import { setCostInfo, getCostInfo } from "../frontend/components/fields/cost"
 import { setDurationInfo, getDurationInfo } from "../frontend/components/fields/duration"
 import { AppState, FosNodeContent, FosReactOptions, FosPath } from "../shared/types"
 
-import { getNodeOperations } from "./nodeOperations"
-import { updateFosData, updateNodeData } from "./mutations"
+
 import { FosExpression,  } from "./dag-implementation/expression"
 
 
@@ -16,9 +15,11 @@ import { FosExpression,  } from "./dag-implementation/expression"
 export const suggestStepsMagic = async (
   expression: FosExpression,
   options: FosReactOptions,
-  ): Promise<AppState["data"]> => {
+  ): Promise<AppStateLoaded["data"]> => {
 
-  console.log('suggestMagic', nodeRoute)
+
+  const nodeRoute = expression.route
+  const childRoutes = expression.childRoutes()
 
 
 
@@ -28,25 +29,27 @@ export const suggestStepsMagic = async (
 
   const pastRoutes: FosPath[] = nodeRoute.slice(2, -1).map((_, i) => nodeRoute.slice(0, i + 1)) as FosPath[]
 
-  const { getParentInfo, childRoutes } = getExpressionInfo(nodeRoute, appState)
 
+  
   const siblingDescriptions = childRoutes.map((childRoute) => {
-    const { nodeDescription } = getExpressionInfo(childRoute, appState)
-    return nodeDescription
+    const childExpression = new FosExpression(expression.store, childRoute)
+    return childExpression.getDescription()
   })
   
 
   const descriptions = pastRoutes.map((nodeRoute, index: number) => {
-    const { nodeDescription } = getExpressionInfo(nodeRoute, appState)
-    return nodeDescription
+    const nodeExpression = new FosExpression(expression.store, nodeRoute)
+    return nodeExpression.getDescription()
   })
 
   const [mainTask, ...contextTasks] = descriptions.slice().reverse()
 
-  const getChildTimes = async (lAppData: AppState["data"], lNodeRoute: FosPath, index: number, parentDescriptions: string[], gptOptions?: { temperature?: number | undefined; }): Promise<AppState["data"]> => {
+  const getChildTimes = async (lNodeRoute: FosPath, index: number, parentDescriptions: string[], gptOptions?: { temperature?: number | undefined; }): Promise<AppStateLoaded["data"]> => {
 
-
-    const { nodeDescription: lDesc, childRoutes: lChildRoutes, nodeData: lNodeData } = getExpressionInfo(lNodeRoute, lAppData)
+    const lExpression = new FosExpression(expression.store, lNodeRoute)
+    const lDesc = lExpression.getDescription()
+    const lChildRoutes = lExpression.childRoutes()
+    const lNodeData = lExpression.targetNode.getData()
 
     if (lChildRoutes.length === 0) {
           let systemPrompt: string;
@@ -92,12 +95,20 @@ export const suggestStepsMagic = async (
 
             const resultParsed = results[0]
 
+            const oldContent = lExpression.targetNode.getContent()
 
 
             switch (resourceName) {
               case 'duration':
-                const newContext = updateNodeData(lAppData, { duration: { plannedMarginal: parseTime(resultParsed), entries: [] } }, lNodeRoute)
-                return newContext
+                const newContent = {
+                  data: {
+                    ...oldContent.data,
+                    duration: { plannedMarginal: parseTime(resultParsed), entries: [] }
+                  },
+                  children: oldContent.children
+                }
+    
+                expression.updateTargetContent(newContent)
                 break;
 
             }
@@ -105,17 +116,14 @@ export const suggestStepsMagic = async (
 
         });
 
-        return lAppData
  
     } else {
 
 
         const keys: (keyof FosNodeContent['data'])[] = ["duration"]
 
-        let mAppData = lAppData
-
-        const lNodeInfo = getExpressionInfo(lNodeRoute, lAppData)
-
+        const lExpression = new FosExpression(expression.store, lNodeRoute)
+        
         keys.forEach(async (resourceName: keyof FosNodeContent['data']) => {
 
           if (!options.canPromptGPT || !options.promptGPT) {
@@ -123,21 +131,21 @@ export const suggestStepsMagic = async (
           }
 
 
-          for (const childRoute of lNodeInfo.childRoutes) {
+          for (const childExpr of lExpression.getChildren()) {
 
-            const lChildInfo = getExpressionInfo(childRoute, mAppData)
+
             
             let j = 0
-            for ( const grandchildRoute of lChildInfo.childRoutes) {
-              mAppData = await getChildTimes(mAppData, grandchildRoute, j, [...parentDescriptions, lNodeInfo.nodeDescription])
+            for ( const grandchildRoute of childExpr.childRoutes()) {
+              await getChildTimes(grandchildRoute, j, [...parentDescriptions, expression.getDescription()], gptOptions)
               j++
             }
           }
 
 
-          if (!lNodeInfo.nodeData?.[resourceName]){
+          if (!expression.targetNode.getData()[resourceName]){
 
-            const durationInfo = getDurationInfo(lNodeRoute, mAppData)
+            const durationInfo = getDurationInfo(lNodeRoute)
 
             let systemPrompt: string;
             let userPrompt: string;

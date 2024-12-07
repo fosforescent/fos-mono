@@ -145,11 +145,8 @@ export class FosNode {
 
 
   mutate(content: FosNodeContent): FosNode {
-    
-    
     const newNode = new FosNode(content, this.store)
     return newNode
-
   }
 
 
@@ -233,12 +230,102 @@ export class FosNode {
   }
 
 
-  getAliasInfo(): {
-    target: FosNode,
-    instruction: FosNode,
-    branch: FosNode,
-    group: FosNode
-  } {
+  getEdgeNodes(edge?: FosPathElem): [FosNode, FosNode] {
+    if (!edge) {
+      
+      throw new Error("Edge is not defined")
+    }
+    const [edgeType, target] = edge
+    const instructionNode = this.store.getNodeByAddress(edgeType)
+    if (!instructionNode) {
+      throw new Error("Instruction Node not found")
+    }
+    const targetNode = this.store.getNodeByAddress(target)
+    if (!targetNode) {
+      throw new Error("Target Node not found")
+    }
+    return [instructionNode, targetNode]
+  }
+
+  getAliasTarget() {
+    const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetConstructor.getId())
+    const [instructionNode, targetNode] = this.getEdgeNodes(target)
+    return targetNode
+  }
+
+  setAliasInfo(info: {
+    newTarget: FosNode,
+    newInstruction: FosNode
+  }): FosNode {
+
+    let hadTarget = false
+    let hadInstruction = false
+    
+
+    const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, target]) => {
+      if (edgeType === this.store.primitive.targetConstructor.getId()) {
+        hadTarget = true
+        const newEdge: FosPathElem = [edgeType, info.newTarget.getId()]
+        console.log("newEdge - target", newEdge)
+        return newEdge
+      }
+      if (edgeType === this.store.primitive.aliasInstructionConstructor.getId()) {
+        hadInstruction = true
+        const newEdge: FosPathElem = [edgeType, info.newInstruction.getId()]
+        console.log("newEdge - aliasInstruction", newEdge)
+        return newEdge
+      }
+
+      return [edgeType, target]
+    })
+
+    if (!hadTarget) {
+      throw new Error("Trying to set alias info on node without target")
+    }
+    if (!hadInstruction) {
+      throw new Error("Trying to set alias info on node without instruction")
+    }
+
+    const newContent: FosNodeContent = {
+      data: {
+        ...this.value.data,
+        updated: {
+          time: Date.now()
+        },
+      },
+      children: newEdges
+    }
+    return this.mutate(newContent)
+
+  }
+
+  getCommitNode(): FosNode {
+
+    let hadPrev = false
+    const newEdges: FosPathElem[] = this.getEdges().map((edge) => {
+
+      if (edge[0] === this.store.primitive.previousVersion.getId()) {
+        hadPrev = true
+        return [this.store.primitive.previousVersion.getId(), this.getId()]
+      }
+      return edge
+  
+    })
+    if (!hadPrev) {
+      throw new Error("Trying to create commit on node without history")
+    }
+
+    const newContent: FosNodeContent = {
+      data: {
+        ...this.value.data,
+        updated: {
+          time: Date.now()
+        },
+      },
+      children: newEdges
+    }
+
+    return this.mutate(newContent)
 
   }
 

@@ -102,7 +102,7 @@ interface SearchResult {
 
 
 
-// export const executeSearch = async (nodeRoute: FosRoute, context: AppState["data"]) => {
+// export const executeSearch = async (nodeRoute: FosRoute, context: AppStateLoaded["data"]) => {
 //   try {
 //     const store = new FosStore(context);
 //     const expression = new FosExpression(store, nodeRoute);
@@ -175,7 +175,7 @@ export const executeSearch = async (
 
 function processSearchResults(
   results: Document[],
-  context: AppState["data"],
+  context: AppStateLoaded["data"],
   minScore: number
 ): SearchResult[] {
   return results
@@ -283,7 +283,7 @@ export const upsertSearchTerms = async (store: FosStore): Promise<boolean> => {
   }
 }
 
-// export const upsertSearchTerms = async (context: AppState["data"]): Promise<boolean> => {
+// export const upsertSearchTerms = async (context: AppStateLoaded["data"]): Promise<boolean> => {
 //   try {
 //     await createIndexIfNecessary(process.env.PINECONE_INDEX!)
 

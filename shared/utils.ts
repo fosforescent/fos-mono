@@ -1,11 +1,44 @@
 import e from "cors"
-import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute } from "./types"
+import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute, TrellisSerializedData } from "./types"
 import { FosStore } from "./dag-implementation/store"
 import { FosExpression, } from "./dag-implementation/expression"
 import { FosNode } from "./dag-implementation/node"
+import { defaultTrellisData } from "./defaults"
 
 
 
+
+
+export const validateTrellisData = (data: unknown): TrellisSerializedData => {
+  if (typeof data !== "object" || data === null || data === undefined) {
+    throw new Error("Invalid data")
+  }
+  if (Object.keys(data).length === 0){
+    console.warn('Trellis Data was empty')
+    return defaultTrellisData
+  }
+
+  return {
+    ...defaultTrellisData, 
+    ...data
+  }
+}
+
+export const validateNodeData = (nodeContent: unknown): FosNodeContent => {
+  if (typeof nodeContent !== "object" || nodeContent === null || nodeContent === undefined) {
+    throw new Error("Invalid data")
+  }
+
+  return nodeContent
+}
+
+export const validateProfileData = (profileData: unknown): AppState["info"]["profile"] => {
+  if (typeof profileData !== "object" || profileData === null || profileData === undefined) {
+    throw new Error("Invalid data")
+  }
+
+  return profileData
+}
 
 export const getDownNode = (expression: FosExpression): FosExpression | null => {
 
@@ -232,7 +265,7 @@ type MutableExprOperation<T> = (
 ) => void
 
 export function mutableReduceToRouteMap<T>(
-  contextData: AppState["data"],
+  contextData: AppStateLoaded["data"],
   operation: MutableExprOperation<T>
 ): Map<FosPath, T> {
 
@@ -254,7 +287,7 @@ type ExprOperation<T> = (
 ) => T
 
 export function reduceToRouteMap<T>(
-  contextData: AppState["data"],
+  contextData: AppStateLoaded["data"],
   operation: ExprOperation<T>
 ): Map<FosPath, T> {
 
@@ -277,7 +310,7 @@ type SingleExprOperation<T> = (
 ) => T
 
 export function mapExpressions<T>(
-  contextData: AppState["data"],
+  contextData: AppStateLoaded["data"],
   operation: SingleExprOperation<T>
 ): Map<FosPath, T> {
 
@@ -296,7 +329,7 @@ type SingleMutableExprOperation<T> = (
 ) => void
 
 export function mutableMapExpressions<T>(
-  contextData: AppState["data"],
+  contextData: AppStateLoaded["data"],
   operation: SingleMutableExprOperation<T>
 ): Map<FosPath, T> {
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
 
-import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosPath, InfoState,} from '../shared/types'
+import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosPath, InfoState, AppStateInitial, AppStateLoaded,} from '../shared/types'
 import { useTraceUpdate } from './hooks/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
@@ -24,7 +24,7 @@ import { useToast } from '@/frontend/components/ui/use-toast';
 import { jwtDecode } from 'jwt-decode';
 import { api } from './api'
 
-import { defaultContext, defaultTrellisData, initialDataState } from '../shared/defaults'
+import {  defaultTrellisData } from '../shared/defaults'
 
 import { Outlet, useOutletContext, useLoaderData, useNavigate } from 'react-router-dom'
 import { getActions } from './lib/actions'
@@ -33,6 +33,7 @@ import { diff } from '@n1ru4l/json-patch-plus'
 import { useLocation } from 'react-router-dom'
 import { set } from 'date-fns'
 import { getMockEvents, applyMockEvent } from './hooks/mock-events';
+import { FosStore } from '@/shared/dag-implementation/store'
 
 
 
@@ -56,7 +57,6 @@ export const initialAuthState: AuthState = parsedJwt ? {
   jwtDecoded: decodedJwt,
   email: decodedJwt.username,
   password: "",
-  loggedIn: true,
 } : {
   username: decodedJwt.username,
   remember: !!parsedUsername,
@@ -64,9 +64,23 @@ export const initialAuthState: AuthState = parsedJwt ? {
   email: decodedJwt.username,
   jwtDecoded: decodedJwt,
   password: "",
-  loggedIn: false,
 }
 
+declare const __FOS_API_URL__: string;
+
+
+
+
+export const initialDataState: AppStateInitial =  {
+
+  data: null,
+  auth: initialAuthState,
+  info: initialInfoState,
+  theme: JSON.parse(localStorage.getItem("theme") || "null") || "system",
+  apiUrl: __FOS_API_URL__,
+  loaded: false,
+  loggedIn: !!parsedJwt,
+}
 
 
 
@@ -104,25 +118,25 @@ export default function App({
 
 
   useEffect(() => {
-    if (appState.auth.loggedIn && !jwt){
+    if (appState.loggedIn && !jwt){
       if (parsedJwt){
         setAppState({...appState, auth: { ...appState.auth, jwt: parsedJwt }})
       }
       setAppState({
         ...appState,
+        loggedIn: false,
         auth: {
           ...appState.auth,
-          loggedIn: false,
           jwt: undefined,
         }
       })
   
-    } else if (!appState.auth.loggedIn && jwt){
+    } else if (!appState.loggedIn && jwt){
       setAppState({
         ...appState,
+        loggedIn: false,
         auth: {
           ...appState.auth,
-          loggedIn: true,
           jwt: jwt,
         }
       })
@@ -131,7 +145,7 @@ export default function App({
     
 
     
-  }, [jwt, parsedJwt, appState.auth.loggedIn])
+  }, [jwt, parsedJwt, appState.loggedIn])
 
 
   const location = useLocation();
@@ -258,7 +272,7 @@ export default function App({
 
   
   useEffect(() => {
-    if (!jwt && !appState.auth.loggedIn) {
+    if (!jwt && !appState.loggedIn) {
   
       navigate('/')
       setMenuOpen(true)
@@ -279,7 +293,7 @@ export default function App({
 
   useEffect(() => {
 
-    if (loggedIn()){
+    if (loggedIn() && appState.loaded){
       if (location.pathname === '/'){
         navigate('')
       } else if (location.pathname === '/inbox'){
@@ -421,8 +435,11 @@ export default function App({
       let updatedWithServerData: AppState = newData
 
       if (dataDiff && appState.loaded){
+        if (!updatedWithServerData){
+          throw new Error('App loaded, but trying to save null data')
+        }
         // console.log('saving data')
-        await newActions.saveFosAndTrellisData(updatedWithServerData)
+        await newActions.saveFosAndTrellisData(updatedWithServerData as AppStateLoaded)
 
       }
 
@@ -494,7 +511,7 @@ export default function App({
         <div className=" h-full w-full p-0 m-0" >
  
         
-        <Outlet context={{
+        {appState.loaded && <Outlet context={{
           data: appState,
           setData: setAppStateWithEffects,
           options: global,
@@ -519,7 +536,7 @@ export default function App({
             emailConfirmationToken,
             passwordResetToken
           }
-        }} />
+        }} />}
         
         
         <TutorialDialog open={showTutorial} setOpen={setShowTutorial} />
@@ -578,3 +595,4 @@ export function useProps() {
 export const getMaxDepth = () => {
   return ( (window.innerWidth - 500) / 100)
 }
+

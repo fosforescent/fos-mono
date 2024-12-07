@@ -1,7 +1,6 @@
 import { Active, Collision, DragEndEvent, DroppableContainer, Over } from "@dnd-kit/core"
-import { getNodeOperations } from "../../shared/nodeOperations"
-import { AppState, FosReactOptions, FosPath } from "../../shared/types"
-import { getActions } from "../lib/actions"
+import { AppState, FosReactOptions, FosPath, AppStateLoaded } from "@/shared/types"
+
 import { ClientRect, Coordinates, DragOverEvent, DragStartEvent } from "@dnd-kit/core/dist/types"
 
 
@@ -11,7 +10,7 @@ import { Transform } from "@dnd-kit/utilities"
 import { FosExpression } from "@/shared/dag-implementation/expression"
 
 
-export const getDragAndDropHandlers = (expression: FosExpression, options: FosReactOptions, setData: (newData: AppState["data"]) => void) => {
+export const getDragAndDropHandlers = (expression: FosExpression, options: FosReactOptions, setData: (newData: AppStateLoaded["data"]) => void) => {
 
 
  
@@ -29,7 +28,7 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
     const dragInfo = dragOverInfo
     // console.log('dragInfo', dragOverInfo)
     if (!over || !over.data.current){
-      actions.setDragInfo({
+      expression.setDragInfo({
         dragging: draggingInfo,
         dragOverInfo: null
       });
@@ -45,7 +44,7 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
     }
     
     if (active.id === over?.id) {
-      actions.setDragInfo({
+      expression.setDragInfo({
         dragging: null,
         dragOverInfo: null
       });
@@ -66,7 +65,7 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
 
 
     
-    const resolveDrag = async (options: FosReactOptions, data: AppState, setData: (newData: AppState) => void) => {
+    const resolveDrag = async (options: FosReactOptions, data: AppStateLoaded["data"], setData: (newData: AppStateLoaded["data"]) => void) => {
 
 
   
@@ -85,15 +84,15 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
       }
     
     
-      const { moveAboveRoute, moveBelowRoute, moveToTopChildOfRoute } = getNodeOperations(options, newdata, setTrellisAndFosData, activeNode)
-    
+
+      
     
       if (dragInfo?.position === 'on' || dragInfo?.position === 'breadcrumb') {
-        await moveToTopChildOfRoute(overNode)
+        await expression.moveNodeIntoRoute(overNode)
       } else if (dragInfo?.position === 'above') {
-        await moveAboveRoute(overNode)
+        await expression.moveNodeAboveRoute(overNode)
       } else if (dragInfo?.position === 'below') {
-        await moveBelowRoute(overNode)
+        await expression.moveNodeBelowRoute(overNode)
       }
     
     
@@ -127,7 +126,7 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
 
 
   
-    resolveDrag(options, data, setData)
+    resolveDrag(options, expression.store.exportContext([]), setData)
   
   
   
@@ -144,7 +143,7 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
     console.log('drag start')
     const { active } = event;
     if (active && active.data.current) {
-      actions.setDragInfo({
+      expression.setDragInfo({
         dragOverInfo, 
         dragging: { 
           id: active.id.toString(), 
@@ -163,7 +162,7 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
     const dragInfo = getDragOverInfo(over, active);
     if (dragInfo) {
       if (dragInfo.id !== dragOverInfo?.id || dragInfo.position !== dragOverInfo?.position) {
-        actions.setDragInfo({
+        expression.setDragInfo({
           dragging: draggingInfo, 
           dragOverInfo: dragInfo
         });
@@ -250,18 +249,11 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
   const getNodeDragInfo = (nodeRoute: FosPath) => {
 
 
-    const { locked, getOptionInfo,
-      hasFocus, focusChar, isDragging, draggingOver, 
-      nodeDescription, isRoot, childRoutes, 
-      nodeType, nodeId, disabled, depth, isCollapsed, 
-      isTooDeep, getDragItem
-    } = getExpressionInfo(nodeRoute, data)
-
        
    const {
     dragging, 
     dragOverInfo,
-   } = data.trellisData.dragInfo
+   } = expression.getDragInfo()
 
 
   const isChildOf = (argNodeRoute: FosPath) => {
@@ -273,18 +265,13 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
 
   const isDraggingParent = !!(dragging && dragging.nodeRoute && isChildOf(dragging.nodeRoute))
 
-  const nodeItemId = `${nodeType}-${nodeId}`
-  const nodeItemIdMaybeParent = isDragging && isDraggingParent ? dragging.id : nodeItemId
+  const dragItem = expression.getDragItem(false)
+  const nodeItemId = dragItem?.id
+  const nodeItemIdMaybeParent = expression.isDragging() && isDraggingParent ? dragging.id : nodeItemId
 
     
 
-  // console.log('transformstyle', transform, CSS.Transform.toString(transform))
-    // transition,)
-
-
-    const dragItem = getDragItem(false)
-
-
+  // console.log('transformstyle', transform, CS
     const isDropping = dragOverInfo && dragOverInfo.id === nodeItemId
     // Saving this in case it turns out we need isOver
     // const isDropping = isOver && dragOverInfo && dragOverInfo.id === nodeItemId
@@ -305,7 +292,8 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
   
     const isNotDragging = dragging ? (dragging.id !== nodeItemId) : true
   
-  
+    const isDragging = expression.isDragging()
+    const disabled = expression.isDisabled()
 
 
     // console.log('isDropping', isDropping, dragOverInfo, nodeItemId, isOver, dragItem?.id, dragging?.id, isNotDragging, draggingOn, dragOverInfo?.position, draggingOn, dropOnStyle, draggingStyle, dragStyle)
@@ -368,14 +356,14 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
 
     const useDroppableArg = {
       id: nodeItemIdMaybeParent,
-      disabled: isDraggingParent || disabled,
+      disabled: isDraggingParent || expression.isDisabled(),
       data: { nodeRoute }
     }
-    const dropStyle = draggingOver ? {
+    const dropStyle = expression.isDraggingOver() ? {
       // backgroundColor: 'rgba(230, 220, 200, .03)',
     } : {}
   
-    const dropOnRowStyle = draggingOver ? {
+    const dropOnRowStyle = expression.isDraggingOver() ? {
       backgroundColor: 'rgba(230, 220, 200, .07)',
       border: '1px solid rgba(230, 220, 200, .3)',
       // transform: 'scale(1.05)',
@@ -384,7 +372,7 @@ export const getDragAndDropHandlers = (expression: FosExpression, options: FosRe
     
     // console.log('isDragging', isDragging, draggingOver, draggingOn)
   
-    const draggingRowStyle = isDragging ? {
+    const draggingRowStyle = expression.isDragging() ? {
       backgroundColor: 'rgba(230, 220, 200, .03)',
       opacity: '0.5',
     } : {}

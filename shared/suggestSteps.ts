@@ -1,6 +1,5 @@
 import { AppState, FosDataContent, FosReactOptions, FosPath } from "./types";
-import { addChild } from "./mutations";
-import { getNodeOperations } from "./nodeOperations";
+
 import { FosExpression } from "./dag-implementation/expression";
 
 
@@ -8,26 +7,30 @@ import { FosExpression } from "./dag-implementation/expression";
 export const suggestTaskSteps = async (
   expression: FosExpression,
   options: FosReactOptions,
-) => {
+): Promise<void> => {
   
 
+  const nodeRoute = expression.route
+
+  const childRoutes = expression.childRoutes()
+  
   if (!options.canPromptGPT || !options.promptGPT) {
     throw new Error('GPT not available')
   }
 
   const pastRoutes: FosPath[] = nodeRoute.slice(2, -1).map((_, i) => nodeRoute.slice(0, i + 1)) as FosPath[]
 
-  const { getParentInfo, childRoutes } = getExpressionInfo(nodeRoute, appState)
 
   const siblingDescriptions = childRoutes.map((childRoute) => {
-    const { nodeDescription } = getExpressionInfo(childRoute, appState)
-    return nodeDescription
+    const childExpression = new FosExpression(expression.store, childRoute)
+
+    return childExpression.getDescription()
   })
   
 
   const descriptions = pastRoutes.map((nodeRoute, index: number) => {
-    const { nodeDescription } = getExpressionInfo(nodeRoute, appState)
-    return nodeDescription
+    const nodeExpression = new FosExpression(expression.store, nodeRoute)
+    return nodeExpression.getDescription()
   })
 
   const [mainTask, ...contextTasks] = descriptions.slice().reverse()
@@ -110,18 +113,17 @@ export const suggestTaskSteps = async (
 
 
 
-  const { newState: stateWithChildren, childRoutes: generatedChildRoutes }  = newNodeItems.reduce((acc: { newState: AppState["data"], childRoutes: FosPath[] }, newNodeItem: Partial<FosDataContent>, i: number) => {
+  newNodeItems.forEach((childRoutes: FosPath[], newNodeItem: Partial<FosDataContent>, i: number) => {
 
-    
-    const newRow = { data: newNodeItem, children: []}
+    const nodeContent = {
+      data: newNodeItem,
+      children: []
+    }
 
-    const { newState: stateWithChild, childRoute }  = addChild(acc.newState, nodeRoute, "workflow", newRow , childRoutes.length + i)
-
-    return { newState: stateWithChild, childRoutes: [...acc.childRoutes, childRoute] }
-
-  }, { newState: appState, childRoutes: [] })
+    expression.addChild(expression.store.primitive.workflowField, nodeContent , childRoutes.length + i)
 
 
+  })
 
-  return stateWithChildren
+
 }

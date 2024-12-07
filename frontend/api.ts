@@ -1,6 +1,6 @@
 import React from "react"
 import { EventSourcePolyfill, Event } from 'event-source-polyfill'
-import { AppState, FosContextData, FosReactOptions, FosPath, InfoState, LoginResult, SubscriptionInfo } from "../shared/types"
+import { AppState, FosContextData, FosReactOptions, FosPath, InfoState, LoginResult, SubscriptionInfo, AppStateLoaded } from "../shared/types"
 // import { AppData, Profile } from "./components/app-state/index"
 
 
@@ -10,7 +10,7 @@ import { AppState, FosContextData, FosReactOptions, FosPath, InfoState, LoginRes
 export type Mode = "production" | "development" | "custom"
 
 
-const api = (appData: AppState, setAppData: (state: AppState) => void) => {
+const api = (appData: AppState , setAppData: (state: AppState) => void, options: FosReactOptions) => {
 
   const sycApiUrl = appData.apiUrl
 
@@ -19,13 +19,13 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
     localStorage.removeItem("auth")
     setAppData({
       ...appData,
+      loggedIn: false,
       auth: {
         username: "",
         remember: false,
         jwt: "",
         password: "",
         email: "",
-        loggedIn: false,
       }
     })
   }
@@ -34,13 +34,12 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
   const handleAuthError = (err: Error) => {
     console.log("handleAuthedApiError - 401", err)
     // localStorage.removeItem("auth")
-    
-    const newError = new Error("unauthorized", {
-      cause: 'unauthorized'
-    })
-    throw newError
+    options.toast?.({
+      title: "Session Expired",
+      description: "Please log in again",
+      duration: 10000
+     })
     logOut()
-
   }
 
   const handleAuthedApiError = (err: any) => {
@@ -348,14 +347,14 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
       return result
     }
 
-    const postData = async (data: AppState["data"]): Promise<AppState["data"] | null> => {
+    const postData = async (data: AppStateLoaded["data"]): Promise<AppStateLoaded["data"] | null> => {
       if (!jwt) {
         console.log("postData - no jwt")
         throw new Error("no jwt")
       }
 
       const url = `${sycApiUrl}/user/data`
-      const result: AppState["data"] | undefined | void = await fetch(url, {
+      const result: AppStateLoaded["data"] | undefined | void = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -364,7 +363,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
         body: JSON.stringify({ data: data, updatedTime: Date.now() }),
       })
       .then(handleAuthedApiJson)
-      .then((res: {data: AppState["data"]}) => {
+      .then((res: {data: AppStateLoaded["data"]}) => {
         if (!res) { return }
         // console.log("getProfile - success", res)
         return res.data
@@ -377,7 +376,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
       return result || null
     }
 
-    const getData = async (): Promise<AppState["data"]> => {
+    const getData = async (): Promise<AppStateLoaded["data"]> => {
       if (!jwt) {
         console.log("getData - no jwt")
         throw new Error("no jwt")
@@ -392,7 +391,7 @@ const api = (appData: AppState, setAppData: (state: AppState) => void) => {
         },
       })
       .then(handleAuthedApiJson)
-      .then((res: {data: AppState["data"] }) => {
+      .then((res: {data: AppStateLoaded["data"] }) => {
         if (!res) { return }
         // console.log("getdata - success", res)
         return res.data

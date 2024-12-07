@@ -8,7 +8,7 @@ import {
 
 } from './primitive-node'
 
-import { AppState, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, TrellisSerializedData } from '../types'
+import {  AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, TrellisSerializedData } from '../types'
 
 import { sha3_256 } from 'js-sha3'
 
@@ -16,7 +16,7 @@ import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
 
 
-import { v4 as uuidv4 } from 'uuid';
+
 
 
 
@@ -53,20 +53,36 @@ export class FosStore {
 
   // aliasMap = new Map<string, string>()
 
+  peers = new Map<string, FosStore>()
   
   version = 0
 
   primitive: PrimitiveAliases
   private hashCache = new WeakMap<FosNodeContent, string>();
 
-  updateCtxCallback: ((data: AppState["data"]) => void) | null;
+  updateCtxCallback: ((data: AppStateLoaded["data"]) => void) | null;
+  commitCallback: ((data: AppStateLoaded["data"]) => void) | null;
 
  
-  constructor({ fosCtxData, mutationCallback }: { fosCtxData?: AppState["data"], mutationCallback?: (data: AppState["data"]) => void } = {}) {
+  constructor({ 
+    fosCtxData, 
+    mutationCallback, 
+    commitCallback
+  }: { 
+    fosCtxData?: AppStateLoaded["data"], 
+    mutationCallback?: (data: AppStateLoaded["data"]) => void, 
+    commitCallback?: (data: AppStateLoaded["data"]) => void } = {}
+  ) {
     this.primitive = constructPrimitiveAliases(this)
     this.updateCtxCallback = mutationCallback || null
+    this.commitCallback = commitCallback || null
 
     if (fosCtxData){
+
+      const rootNodeContent = fosCtxData.fosData.nodes[fosCtxData.fosData.rootNodeId]
+      if (!rootNodeContent){
+        throw new Error(`root node ${fosCtxData.fosData.rootNodeId} not found --- bad data`)
+      }
 
       this.fosRoute = fosCtxData.fosData.route
       const existingCids = [...this.table.keys()]
@@ -97,8 +113,10 @@ export class FosStore {
       this.rootNodeId = fosCtxData.fosData.rootNodeId
 
     } else {
-      this.rootNodeId = this.primitive.voidNode.getId()
+
+      this.rootNodeId = this.primitive.startRootAlias.getId()
     }
+
     
   }
 
@@ -107,6 +125,26 @@ export class FosStore {
 
   getRootExpression(): FosExpression {
     return new FosExpression(this, [])
+  }
+
+  getRootNode(): FosNode {
+    const rootNode =  this.getNodeByAddress(this.rootNodeId)
+    if (!rootNode){
+      throw new Error(`root node ${this.rootNodeId} not found`)
+    }
+    return rootNode
+  }
+
+  setRootNode(node: FosNode): void {
+    this.rootNodeId = node.getId()
+    console.log('newRootNode', this.rootNodeId)
+    this.updateCtxCallback && this.updateCtxCallback(this.exportContext([]))
+  }
+
+  commit(): void {
+    const newRootNode = this.getRootNode().getCommitNode()
+    this.setRootNode(newRootNode)
+    this.commitCallback && this.commitCallback(this.exportContext([]))
   }
 
   hash (nodeContent: FosNodeContent): string {
@@ -125,6 +163,14 @@ export class FosStore {
     if (isNode){
       return address
     } else {
+      // for (const [peerId, peerStore] of this.peers.entries()){
+      //   const isNode = peerStore.provide !== undefined
+      //   if (isNode){
+      //     console.log('')
+      //     return address
+      //   }
+      // }
+
         return null
     }
 
@@ -132,7 +178,9 @@ export class FosStore {
 
 
 
-  create(value: FosNodeContent, aliass?: string): FosNode {
+
+
+  create(value: FosNodeContent, alias?: string): FosNode {
     
     const updatedChildren = value.children.map((item, index) => {
       if (Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && typeof item[1] === 'string') {
@@ -252,6 +300,7 @@ export class FosStore {
     return newCid
   }
 
+  
   // mutateAlias (alias: string, nodeContent: FosNodeContent, tentativeCid: string): FosNodeContent {
 
   //   // console.log('alias found', this.aliasMap, alias, nodeContent, this.aliasMap.get(alias) as string, tentativeCid)
@@ -534,15 +583,36 @@ export class FosStore {
     
   }
 
+  async provideNodeToPeer(nodeId: string): Promise<FosNode | null>{
+    const node = this.getNodeByAddress(nodeId)
+    if (!node){
+      return null
+    }
+    return node
+  }
 
-  exportContext(route: FosPath): AppState["data"] {
-    const nodes: AppState["data"]["fosData"]["nodes"] = {}
-    this.table.forEach((content, address) => {
-      const nodeFromAddress = this.getNodeByAddress(address)
-      if (!nodeFromAddress){
-        throw new Error(`node ${address} not found`)
-      }
+
+  exportContext(route: FosPath): AppStateLoaded["data"] {
+    const nodes: AppStateLoaded["data"]["fosData"]["nodes"] = {}
+    this.table.entries().forEach(([address, content]: [FosNodeId, FosNodeContent],  i) => {
+      // const nodeFromAddress = this.getNodeByAddress(address)
+      // if (!nodeFromAddress){
+      //   throw new Error(`node ${address} not found`)
+      // }
+      nodes[address] = content
     })
+
+    const rootContent = nodes[this.rootNodeId]
+    if (!rootContent){
+      console.log('rootNodeId', this.rootNodeId, nodes)
+
+      throw new Error(`root node not found --- exporting bad data`)
+    }
+
+    if (!this.rootNodeId){
+      throw new Error(`root node not found`)
+    }
+
     return {
       fosData: {
         nodes,
@@ -797,7 +867,7 @@ export class FosStore {
     }
   }
 
-  updateWithContext(context: AppState["data"]) {
+  updateWithContext(context: AppStateLoaded["data"]) {
 
     const otherStore = new FosStore({ fosCtxData: context})
     this.updateFromStore(otherStore)
@@ -848,8 +918,83 @@ export class FosStore {
 
 
   }
-    
 
+
+  addPeer (alias: string, peerStore: FosStore) {
+
+
+  }
+
+
+  addGroup (description: string): [FosStore, FosExpression] { 
+
+    const rootExpression = this.getRootExpression()
+    const thisAlias = rootExpression.targetNode.getData().alias?.id
+
+    if (!thisAlias){
+      throw new Error(`no alias found for current node`)
+    }
+
+    const rootTarget = rootExpression.targetNode.getAliasTarget()
+
+    const groupContentNode = this.create({
+      data: {
+        description: {
+          content: description
+        }
+      },
+      children: [
+      ]
+    })
+
+    const groupShadowNode = this.create({
+      data: {
+        description: {
+          content: `Shadow node for group: ${description}`
+        },
+        peers: {
+
+        }
+      },
+      children: [
+        [this.primitive.targetConstructor.getId(), groupContentNode.getId()]
+        
+      ]
+    })
+
+    const rootTargetWithShadow = rootTarget.addEdge(this.primitive.groupField.getId(), groupShadowNode.getId())
+
+
+    const groupStore = new FosStore()
+    groupStore.create(groupContentNode.value)
+    groupStore.create(groupShadowNode.value)
+
+    groupStore.addPeer(thisAlias, this)
+
+
+    const groupDefinitionNode = groupStore.create({
+      data: {
+        description: {
+          content: description
+        }
+      },
+      children: [
+        [this.primitive.targetConstructor.getId(), groupContentNode.getId()],
+        [this.primitive.peerNode.getId(), groupShadowNode.getId()]
+      ]
+    })
+
+
+    const groupDefinitionNodeClone = this.cloneNodeFromOtherStore(groupDefinitionNode)
+    const newRootTarget = rootTargetWithShadow.addEdge(this.primitive.groupField.getId(), groupDefinitionNodeClone.getId())
+
+    rootExpression.setTargetNode(newRootTarget)
+
+    const groupExpr = new FosExpression(this, [[this.primitive.groupField.getId(), groupDefinitionNode.getId()]])
+    
+    return [groupStore, groupExpr]
+
+  }
   
   
   

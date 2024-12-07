@@ -9,12 +9,9 @@ import {
 } from "@/shared/types";
 
 
-import { validate as isUuid } from "uuid";
 
 import { UserModel, FosNodeModel, PrismaClient } from "@prisma/client";
 
-import { generateKeyPair, randomUUID } from "crypto";
-import { upsertSearchTerms } from "./data/search";
 import { FosStore } from "@/shared/dag-implementation/store";
 import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
 
@@ -22,17 +19,14 @@ import { Prisma } from '@prisma/client';
 import { generateLinkToken } from "./email/email";
 import { hashPassword } from "./auth/register";
 import { defaultTrellisData } from "@/shared/defaults";
+import { validateNodeData, validateTrellisData } from "@/shared/utils";
+import { get } from "http";
 
 
 
 type UserWithNode = Prisma.UserModelGetPayload<{
   include: { fosNode: true };
 }>;
-// export function generateNewId(data: FosContextData) {
-//   console.log("Generating new id");
-//   const newId = randomUUID();
-//   return newId;
-// }
 
 
 export const checkDataFormat = (data: FosContextData) => {
@@ -53,28 +47,14 @@ export const checkDataFormat = (data: FosContextData) => {
 
 };
 
-export const validateTrellisDataFromStore = (data: unknown): TrellisSerializedData => {
 
-  return data
-}
-
-export const validateNodeDataFromStore = (nodeContent: unknown): FosNodeContent => {
-
-  return nodeContent
-}
-
-export const validateProfileDataFromStore = (profileData: unknown): AppState["info"]["profile"] => {
-
-  return profileData
-}
-
-export const validateTrellisDataToStore = (data: TrellisSerializedData): JsonObject => {
+export const validateTrellisDataToDB = (data: TrellisSerializedData): JsonObject => {
   return data as unknown as JsonObject
 }
-export const validateNodeDataToStore = (data: FosNodeContent): JsonObject => {
+export const validateNodeDataToDB = (data: FosNodeContent): JsonObject => {
   return data as unknown as JsonObject
 }
-export const validateProfileDataToStore = (data: AppState["info"]["profile"]): JsonObject => {
+export const validateProfileDataToDB = (data: AppState["info"]["profile"]): JsonObject => {
   return data as unknown as JsonObject
 }
 
@@ -86,14 +66,16 @@ export const dbToStore = async (
 ): Promise<FosStore> => {
   
 
-  const trellisData: TrellisSerializedData = validateTrellisDataFromStore(user.data)
+  const trellisData: TrellisSerializedData = validateTrellisData(user.data)
 
   const newStore = new FosStore()
 
 
+
+
   const getChildNodesHelper = async (node: FosNodeModel) => {
 
-    const nodeData: FosNodeContent = validateNodeDataFromStore(node.data)
+    const nodeData: FosNodeContent = validateNodeData(node.data)
     const allIds = new Set(nodeData.children.flat())
 
     if (allIds.size > 0) {
@@ -111,10 +93,11 @@ export const dbToStore = async (
         }
       })
 
-
-      for (const node of nodesToAdd) {
-        await getChildNodesHelper(node)
-      }
+      const childrenPromises: Promise<void>[] = nodesToAdd.map(n => {
+        const promise: Promise<void> = getChildNodesHelper(n)
+        return promise
+      })
+      await Promise.all(childrenPromises)
 
     }
 
@@ -122,16 +105,18 @@ export const dbToStore = async (
 
   }
 
-  const rootNode = newStore.getNodeByAddress(user.fosNode.cid)
   
-  getChildNodesHelper(user.fosNode)
-  newStore.rootNodeId = user.fosNode.cid
-  newStore.trellisData = trellisData
+  await getChildNodesHelper(user.fosNode)
 
+  const rootNodeId = newStore.create(validateNodeData(user.fosNode.data)).cid
+
+  newStore.rootNodeId = rootNodeId
+  newStore.trellisData = trellisData
 
   return newStore
 
 };
+
 
 export const storeToDb = async (
   prisma: PrismaClient,
@@ -166,7 +151,7 @@ export const storeToDb = async (
     } else {
       return [...acc, {
         cid: id,
-        data: validateNodeDataToStore(node),
+        data: validateNodeDataToDB(node),
         FosNodeUserAccessLink: {
           create: {
             userId: user.id
@@ -186,8 +171,13 @@ export const storeToDb = async (
   const updatedUser = await prisma.userModel.update({
     where: { user_name: user.user_name },
     data: { 
-      data: validateTrellisDataToStore(store.trellisData),
-      fosNodeId: store.rootNodeId
+      data: validateTrellisDataToDB(store.trellisData),
+      fosNodeId: store.rootNodeId,
+      FosNodeUserAccessLink: {
+        create: {
+          fosNodeId: store.rootNodeId
+        }
+      }
     }
   })
 
@@ -204,21 +194,58 @@ export const storeToDb = async (
 
 
 
-export const createSeedUser = async (prisma: PrismaClient, store: FosStore, userData: { username: string } & Partial<UserArgs> ): Promise<FosStore> => {
 
 
-  const password = "dent4567"
+export const createSeedUser = async (prisma: PrismaClient, store: FosStore, username: string,  userData: Partial<UserArgs> ): Promise<FosStore> => {
+
+
+  const password = "Dent4567"
 
   // Hash password
   const hashedPassword = await hashPassword(password) // You can adjust the salt rounds
 
-  // Create user
+  
+
+  const existingNodes = await prisma.fosNodeModel.findMany({
+  })
+
+  type ReduceResultArrayTerm = {
+    cid: string,
+    data: JsonObject,
+  }
+
+  const newEntries: ReduceResultArrayTerm[] = store.table.entries().reduce((acc: ReduceResultArrayTerm[], [id, node]: [string, FosNodeContent]) => {
+    if (id === store.rootNodeId) {
+      console.log("Root node", id)
+    }
+    if (existingNodes.find(n => n.cid === id)) {
+      return acc
+    } else {
+      return [...acc, {
+        cid: id,
+        data: validateNodeDataToDB(node),
+
+      }]  
+    }
+  }, [])
+
+
+  const nodes = await prisma.fosNodeModel.createMany({
+    data: newEntries
+  })
+
+  const rootNode = await prisma.fosNodeModel.findFirst({
+    where: {
+      cid: store.rootNodeId
+    }
+  })
+  
+  console.log("Root node", rootNode)
 
   const { token, expiration } = generateLinkToken()
   
   const user = await prisma.userModel.create({
     data: {
-      user_name: userData.username,
       password: hashedPassword,
       subscription_status: 'inactive',
       user_profile: {},
@@ -230,10 +257,25 @@ export const createSeedUser = async (prisma: PrismaClient, store: FosStore, user
       api_calls_used: 0,
       api_calls_total: 0,
       approved: true,
-      data: validateTrellisDataToStore(defaultTrellisData),
-      fosNodeId: (new FosStore()).rootNodeId,
-      ...userData
+      data: validateTrellisDataToDB(defaultTrellisData),
+      fosNodeId: store.rootNodeId,
+      ...userData,
+      user_name: username,
+      FosNodeUserAccessLink: {
+        create: {
+          fosNodeId: store.rootNodeId
+        }
+      }
     },
+  })
+
+  const links = await prisma.fosNodeUserAccessLinkModel.createMany({
+    data: newEntries.map(n => {
+      return {
+        fosNodeId: n.cid,
+        userId: user.id
+      }
+    })
   })
 
   return store

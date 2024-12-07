@@ -4,7 +4,7 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/frontend/components
 import { Input } from '@/frontend/components/ui/input';
 import { Button } from '@/frontend/components/ui/button';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
-import { AppState, FosReactGlobal, FosPath } from '@/shared/types';
+import { AppState, FosReactGlobal, FosPath, AppStateLoaded } from '@/shared/types';
 import { useProps } from '@/frontend/App';
 
 import {
@@ -33,13 +33,13 @@ import { getActions } from '@/frontend/lib/actions';
 import { DefaultBreadcrumbsComponent } from '../breadcrumbs/breadcrumbs';
 import { getDragAndDropHandlers } from '../drag-drop';
 
-import { NodeCard } from '../expression/ExpressionRow';
 import { FosExpression } from '@/shared/dag-implementation/expression';
 import { getGroupFieldNode } from '@/shared/dag-implementation/primitive-node';
 import { getGroupFromRoute } from '@/shared/utils';
 import { FosStore } from '@/shared/dag-implementation/store';
-import { NodeActiviyInput } from '../expression/ExpressionInput';
+import { ExpressionInput } from '../expression/ExpressionInput';
 import { ExpressionCard } from '../expression/ExpressionCard';
+
 
 
 
@@ -55,22 +55,38 @@ const QueueView = () => {
     ...props
   } : {
     options: FosReactGlobal
-    data: AppState
+    data: AppStateLoaded
     nodeRoute: FosPath
-    setData: (state: AppState) => void
+    setData: (state: AppStateLoaded) => void
   } = useProps()
 
-
-
-  const actions = getActions(options, data, setData)
-
   
-  console.log('queueview', route, data)
-
+  
+  
   const store = new FosStore({ fosCtxData: data.data})
 
   const expression = new FosExpression(store, route)
+  
+  
 
+  const expressionToUse = expression.isAlias() ? expression.getChildren().find((expr) => {
+    console.log('searching for alias child')
+    return expr.instructionNode.getId() === expression.store.primitive.targetConstructor.getId()
+  }) : expression
+
+  if (!expressionToUse) {
+    throw new Error('No expression to use')
+  }
+
+
+
+
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
+    setData({
+      ...data,
+      data: state
+    })
+  }
 
   const setCurrentView = () => {
 
@@ -99,13 +115,13 @@ const QueueView = () => {
 
   useEffect(() => {
     const activity = data.data.trellisData.activity
-    expression.getAllDescendentsForActivity(data.data.trellisData.activity)
+    expressionToUse.getAllDescendentsForActivity(data.data.trellisData.activity)
 
 
-    console.log("all Store nodes", store.table, store.aliasMap)
+    console.log("all Store nodes", store.table, store)
 
 
-    setRoutesToShow(expression.getAllDescendentsForActivity(activity))
+    setRoutesToShow(expressionToUse.getAllDescendentsForActivity(activity))
     
   }, [data.data.trellisData.activity])
 
@@ -145,7 +161,7 @@ const QueueView = () => {
     handleDragStart,
     handleDragEnd,
     handleDragOver,
-  } = getDragAndDropHandlers(options, data, setData)
+  } = getDragAndDropHandlers(expressionToUse, options, setFosAndTrellisData)
 
   
 
@@ -161,6 +177,12 @@ const QueueView = () => {
   }, [route]);
 
 
+
+  console.log('queueView', data, expressionToUse)
+  console.log('queueView --- expression', data, expressionToUse)
+
+
+
   return (
     <DndContext 
         sensors={sensors}
@@ -173,7 +195,7 @@ const QueueView = () => {
         data={data}
         setData={setData}
         options={options}
-        nodeRoute={route}
+        expression={expression}
         />
       <div className={`w-screen  flex flex-col flex-start`}
         style={{height: 'calc(100% - 6rem)'}}
@@ -200,8 +222,6 @@ const QueueView = () => {
                   data={data}
                   setData={setData}
                   options={options}
-                  nodeRoute={routeToShow}
-                  activity={data.data.trellisData.activity}
                   expression={new FosExpression(store, routeToShow)}
                   /></div>)
               })}
@@ -211,6 +231,9 @@ const QueueView = () => {
 
               <QueueInput 
                 expression={expression}
+                setData={setFosAndTrellisData}
+                options={options}
+                data={data}
                 // onAnimationEnd={handleAnimationEnd}
                 />
 
@@ -227,8 +250,14 @@ export default QueueView
 
 
 const QueueInput = ({ 
+  setData,
+  options,
+  data,
   expression
 } : {
+  setData: (state: AppStateLoaded["data"]) => void
+  options: FosReactGlobal
+  data: AppStateLoaded
   expression: FosExpression
 }) => {
 
@@ -269,8 +298,11 @@ const QueueInput = ({
 
 
 
-  return (<NodeActiviyInput
+  return (<ExpressionInput
     expression={expression}
+    setData={setData}
+    options={options}
+    data={data}
   />)
 
 }

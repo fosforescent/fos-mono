@@ -11,7 +11,7 @@ import { BrainCircuit, CircleEllipsis, Wand } from "lucide-react";
 
 import { RadioGroup, RadioGroupItem } from "@/frontend/components/ui/radio-group"
 import { Label } from "@/frontend/components/ui/label"
-import { AppState, FosReactOptions, FosPath } from '@/shared/types';
+import { FosReactOptions, FosPath, AppStateLoaded } from '@/shared/types';
 
 import { getActions } from '@/frontend/lib/actions';
 
@@ -20,18 +20,22 @@ import { DefaultRowComponent } from './row';
 import { FosExpression } from '@/shared/dag-implementation/expression';
 import { ExpressionRow } from '../../expression/ExpressionRow';
 import { FosStore } from '@/shared/dag-implementation/store';
+import { suggestTaskOptions } from '@/shared/suggestOption';
+import { suggestTaskSteps } from '@/shared/suggestSteps';
 
 
 
 
-export const FosRowsComponent = ({ 
+export const FosRowsComponent = ({
+  data,
   setData,
   options,
   expression,
 } : {
+  data: AppStateLoaded
   options: FosReactOptions
   expression: FosExpression
-  setData: (state: AppState) => void
+  setData: (state: AppStateLoaded) => void
 }) => {
   
 
@@ -47,11 +51,13 @@ export const FosRowsComponent = ({
 
   const items = nodeChildren.map((childExpr, index) => {
 
-
+    const nodeRoute = childExpr.route
+    const nodeType = childExpr.instructionNode.getId()
+    const nodeId = childExpr.targetNode.getId()
 
     return {
       id: `${childExpr.dragLabel()}`,
-      data: { nodeRoute: [...nodeRoute, [childExpr.nodeType(), childExpr.nodeId()]], breadcrumb: false },
+      data: { nodeRoute: [...nodeRoute, [nodeType, nodeId]], breadcrumb: false },
       breadcrumb: false
     }
   })
@@ -73,7 +79,6 @@ export const FosRowsComponent = ({
 
   if (expression.isRoot()) {
     return <TaskRows 
-      nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
@@ -81,7 +86,6 @@ export const FosRowsComponent = ({
     />
   }else if (expression.isOption()) {
     return <OptionRowsCombined
-      nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
@@ -89,7 +93,6 @@ export const FosRowsComponent = ({
     />
   } else if (expression.isWorkflow()) {
     return <TaskRows 
-      nodeRoute={nodeRoute}
       options={options}
       data={data}
       setData={setData}
@@ -103,19 +106,21 @@ export const FosRowsComponent = ({
 
 
 
-const OptionRowsCombined = ({ 
+const OptionRowsCombined = ({
+  data,
   setData,
   options,
   expression,
 } : {
+  data: AppStateLoaded
   options: FosReactOptions
   expression: FosExpression
-  setData: (state: AppState) => void
+  setData: (state: AppStateLoaded) => void
 }) => {
 
   
 
-  const setFosAndTrellisData = (state: AppState["data"]) => {
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
        data: state
@@ -124,9 +129,6 @@ const OptionRowsCombined = ({
 
   
 
-  c
-  
-  
 
   
   
@@ -136,13 +138,12 @@ const OptionRowsCombined = ({
   }
 
   return (<div className="flex flex-initial grow">
-    <ExpressionRow 
-      data={data}
+    <ExpressionRow    
       setData={setData}
-      options={fosOptions}
-      nodeRoute={nodeRoute}
+      options={options}
+      data={data}
       expression={expression}
-      
+    
     />
 
   </div>)
@@ -154,19 +155,21 @@ const OptionRowsCombined = ({
 
 
 
-const OptionRowsExpanded = ({ 
+const OptionRowsExpanded = ({
+  data,
   setData,
   options,
   expression,
 } : {
+  data: AppStateLoaded
   options: FosReactOptions
   expression: FosExpression
-  setData: (state: AppState) => void
+  setData: (state: AppStateLoaded) => void
 }) => {
   
  
   
-  const setFosAndTrellisData = (state: AppState["data"]) => {
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
        data: state
@@ -175,40 +178,25 @@ const OptionRowsExpanded = ({
 
 
 
-  const { getOptionInfo, locked, hasFocus, focusChar, isDragging, getDragItem,
-    draggingOver, nodeDescription, isRoot, childRoutes, isBase, getChildren } = getExpressionInfo(nodeRoute, data.data)
-  
-  const { selectedIndex, nodeOptions } = getOptionInfo()
 
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
-    deleteOption,
-    keyDownEvents,
-    keyUpEvents,
-    keyPressEvents,
-    addOption,
-    
-    addRowAsChild,
-   } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
-  
-  
 
 
   // console.log('isRoot', isRoot, meta.trellisNode.getId())
   const handleChange = (value: string) => {
-    setSelectedOption(parseInt(value))
- }
+    expression.setSelectedOption(parseInt(value))
+  }
 
 
-  const children = getChildren()
+  const children = expression.getChildren()
+  
+  const childRoutes = expression.childRoutes()
 
   const canPrompt = options.canPromptGPT && options.promptGPT
 
-  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && children[0]?.getExpressionInfo().nodeDescription === "")
+  const rowsEmpty = childRoutes.length === 0 || (childRoutes[0] && children[0]?.getDescription() === "")
+
+  const { selectedIndex } = expression.getOptionInfo()
+
 
 
   return (    <div className="pl-6">
@@ -219,9 +207,9 @@ const OptionRowsExpanded = ({
 
     
 
-          const item = getDragItem(false)
+          const item = expression.getDragItem(false)
 
-          
+          const childExpr = new FosExpression(expression.store, childRoute)
 
           return (<div key={i} className={` `}>
           {/* <RowComponent key={index} nodes={nodes} left={leftNode} right={rightNode} dragging={dragging} blank={false} updateRow={updateNodes} /> */}
@@ -232,7 +220,7 @@ const OptionRowsExpanded = ({
                 <RadioGroupItem value={`${i}`} className="flex-initial rounded-md" />
               </div>
               {(<DefaultRowComponent
-                nodeRoute={childRoute}
+                expression={childExpr}
                 options={options}
                 data={data}
                 setData={setData}
@@ -248,16 +236,16 @@ const OptionRowsExpanded = ({
       </RadioGroup>)
       }
   <div>
-    {isBase && <div className='py-1' key={`-1`}>
+    {expression.isBase() && <div className='py-1' key={`-1`}>
       <Button 
-        onClick={() => addRowAsChild()}
+        onClick={() => expression.addRowAsChild()}
         className={`bg-secondary/30 text-white-900 hover:bg-secondary/80 px-2 shadow-none`}
         // style={{padding: !isSmallWindow ? '15px 15px 15px 15px' : '31px 3px'}}
         >
         <PlusCircledIcon height={'1rem'} width={'1rem'}/>
       </Button>
-      {canPrompt && rowsEmpty && !isRoot && <Button
-        onClick={suggestOption}
+      {canPrompt && rowsEmpty && !expression.isRoot() && <Button
+        onClick={() => suggestTaskOptions(expression, options)}
         className={`bg-emerald-900 text-white-900 px-2 shadow-none`}
       >
         <BrainCircuit height={'1rem'} width={'1rem'}/>
@@ -273,60 +261,36 @@ const OptionRowsExpanded = ({
 
 
 
-const TaskRows = ({ 
+const TaskRows = ({
+  data,
   setData,
   options,
   expression,
 } : {
+  data: AppStateLoaded
   options: FosReactOptions
   expression: FosExpression
-  setData: (state: AppState) => void
+  setData: (state: AppStateLoaded) => void
 }) => {
 
 
-  const setFosAndTrellisData = (state: AppState["data"]) => {
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
        data: state
     })
   }
-
-
-  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData })
-
-  const expression = new FosExpression(store, nodeRoute)
-
-  const { getChildrenOfType, isRoot, isBase, nodeDescription, getChildren } = expression.getExpressionInfo()
   
-  const children = getChildren()
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
- 
-    deleteOption,
-    keyDownEvents,
-    keyUpEvents,
-    keyPressEvents,
-    addOption,
-    
-    suggestSteps,
-    addRowAsChild,
-  } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
-
-
+  const children = expression.getChildren()
 
 
   const canPrompt = options.canPromptGPT && options.promptGPT
 
 
 
-  const activeChildRoutes = expression.getChildrenOfType(expression.store.primitive.workflowField)
+  const activeChildRoutes = expression.childRoutes()
 
-  const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && children[0]?.getExpressionInfo().nodeDescription === "")
+  const rowsEmpty = activeChildRoutes.length === 0 || (activeChildRoutes[0] && children[0]?.getDescription() === "")
 
 
   // console.log('taskRows', activeChildRoutes, activeChildRoutes.length, rowsEmpty)
@@ -339,15 +303,15 @@ const TaskRows = ({
     <div>
   
         {activeChildRoutes.length > 0
-          ? activeChildRoutes.map((childExpr , i) => {
+          ? activeChildRoutes.map((childRoute , i) => {
   
-      
+            const childExpr = new FosExpression(expression.store, childRoute)
+
             return (<div key={i} className={` `}>
             {/* <RowComponent key={index} nodes={nodes} left={leftNode} right={rightNode} dragging={dragging} blank={false} updateRow={updateNodes} /> */}
               <div  className="flex w-full">
                 {(<DefaultRowComponent
-  
-                  nodeRoute={childExpr.route}
+                  expression={childExpr}  
                   options={options}
                   data={data}
                   setData={setData}
@@ -362,7 +326,7 @@ const TaskRows = ({
         })
         : <div className={`p-10`}>
           No workflows found            <span><Button 
-            onClick={() => addRowAsChild('workflow')}
+            onClick={() => expression.addRowAsChild(expression.store.primitive.workflowField)}
             className={`bg-secondary/30 text-white-900 hover:bg-secondary/80 px-2 shadow-none`}
             // style={{padding: !isSmallWindow ? '15px 15px 15px 15px' : '31px 3px'}}
             >
@@ -371,16 +335,16 @@ const TaskRows = ({
           </div>
         }
       <div>
-        {isBase && <div className='py-1' key={`-1`}>
+        {expression.isBase() && <div className='py-1' key={`-1`}>
           <Button 
-            onClick={() => addRowAsChild('workflow')}
+            onClick={() => expression.addRowAsChild(expression.store.primitive.workflowField)}
             className={`bg-secondary/30 text-white-900 hover:bg-secondary/80 px-2 shadow-none`}
             // style={{padding: !isSmallWindow ? '15px 15px 15px 15px' : '31px 3px'}}
             >
             <PlusCircledIcon height={'1rem'} width={'1rem'}/>
           </Button>
-          {canPrompt && rowsEmpty && !isRoot && <Button
-            onClick={() => suggestSteps()}
+          {canPrompt && rowsEmpty && !expression.isRoot() && <Button
+            onClick={() => suggestTaskSteps(expression, options)}
             className={`bg-emerald-900 text-white-900 px-2 shadow-none`}
           >
             <BrainCircuit height={'1rem'} width={'1rem'}/>

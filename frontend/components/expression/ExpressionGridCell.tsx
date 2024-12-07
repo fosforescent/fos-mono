@@ -7,7 +7,7 @@ import _, { get, has }  from 'lodash'
 import { ChevronDownCircleIcon, ChevronRightCircleIcon, ChevronLeftCircleIcon, DiscIcon, SendHorizonal, PlusIcon, BrainCircuit, CheckIcon, Trash2 } from 'lucide-react'
 
 import { CaretSortIcon } from '@radix-ui/react-icons'
-import { AppState, FosReactGlobal, FosReactOptions, FosPath } from '@/shared/types'
+import { AppState, FosReactGlobal, FosReactOptions, FosPath, AppStateLoaded } from '@/shared/types'
 import { cn } from '@/frontend/lib/utils'
 
 import { Card, CardContent, CardFooter } from '../ui/card'
@@ -26,15 +26,17 @@ export const ExpressionGridCell = ({
   setData,
   options,
   expression,
+  data,
   ...props
 } : {
   options: FosReactOptions
   expression: FosExpression
-  setData: (state: AppState) => void
+  data: AppStateLoaded
+  setData: (state: AppStateLoaded) => void
 }) => {
 
 
-  const setFosAndTrellisData = (state: AppState["data"]) => {
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
        data: state
@@ -56,12 +58,14 @@ export const ExpressionGridCell = ({
   const [open, setOpen] = React.useState(false)
 
 
+  const { selectedOption } = expression.getOptionInfo()
+
   const handleChange = (value: string) => {
-    setSelectedOption(parseInt(value))
+    expression.setSelectedOption(parseInt(value))
   }
 
   const handleDeleteOption = (value: string) => {
-    deleteOption()
+    expression.deleteOption()
   }
 
   const emptyMessage = "No options available"
@@ -70,15 +74,14 @@ export const ExpressionGridCell = ({
 
   const {
     getNodeDragInfo
-  } = getDragAndDropHandlers(options, data, setData)
-
-  const {
-    rowDraggingStyle,
-    rowDroppingStyle,
-  } = getNodeDragInfo(nodeRoute)
+  } = getDragAndDropHandlers(expression, options, setFosAndTrellisData)
 
 
-  const textToDisplay = isOption ? getOptionInfo().getSelectedNodeInfo().nodeDescription : nodeDescription
+  const selectedChild = expression.getSelectedChild()
+
+  const textToDisplay = expression.isOption() ? selectedChild.getDescription() : expression.getDescription()
+
+
 
 
 
@@ -89,7 +92,7 @@ export const ExpressionGridCell = ({
       <div className={`left-box cursor-pointer`} style={{
         width: '1rem'
         
-      }} onClick={zoom} >
+      }} onClick={expression.updateZoom} >
         
           {/* <MenuComponent 
             node={node} 
@@ -98,18 +101,17 @@ export const ExpressionGridCell = ({
             width={'1rem'}
             height={'1rem'}
             style={{
-              opacity: hasChildren ? 1 : .5
+              opacity: expression.hasChildren() ? 1 : .5
             }} />
             
       </div>
       <ExpressionFields
-        nodeRoute={nodeRoute}
         data={data}
         setData={setData}
         options={options}
         depthToShow={1}
         expression={expression}
-        mode={mode}
+        mode={["read"]}
         />
     
     <div className={`right-box grow flex`}>
@@ -122,48 +124,3 @@ export const ExpressionGridCell = ({
 
 
 
-
-
-export const NodeCard = ({ 
-    data,
-    setData,
-    options,
-    nodeRoute: route,
-    ...props
-  } : {
-    options: FosReactGlobal
-    data: AppState
-    nodeRoute: FosPath
-    setData: (state: AppState) => void
-  }) => {
-  
-    const setFosAndTrellisData = (state: AppState["data"]) => {
-      setData({
-        ...data,
-         data: state
-      })
-    }
-    
-    const { nodeDescription } = getExpressionInfo(route, data.data)
-  
-    const { zoom } = getNodeOperations(options, data.data, setFosAndTrellisData, route)
-    // const { getCommentInfo } = getNodeInfo(route, data)
-  
-    return (
-    <Card 
-      className={`transform transition-all duration-500 ${'translate-y-0 opacity-100'}`}
-      // onAnimationEnd={() => onAnimationEnd(message.id)}
-    >
-      <CardContent className="p-4">
-        // this should be the (readonly?) card for the type of node 
-        <div className="text-gray-800">{nodeDescription || "This Todo is empty"}</div>
-        {/* <div className="text-xs text-gray-500 mt-2">{message.timestamp}</div> */}
-      </CardContent>
-      <CardFooter className="flex items-center justify-between p-4">
-        <Button variant="default" size="sm">
-          <SendHorizonal />   
-        </Button>
-      </CardFooter>
-    </Card>
-    )
-  }

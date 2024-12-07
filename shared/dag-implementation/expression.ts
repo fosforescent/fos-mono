@@ -1,10 +1,9 @@
 
-import { ta } from "date-fns/locale"
-import { AppState, FosDataContent, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosReactGlobal } from "../types"
+import { AppState, AppStateLoaded, FosDataContent, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosReactGlobal } from "../types"
 import { getAncestorLeastUpSibling, getDownNode, getDownSibling, getGroupFromRoute, getUpNode, getUpSibling, mutableReduceToRouteMapFromExpression, pathEqual } from "../utils"
 import { FosNode } from "./node"
 import { FosStore } from "./store"
-import { QrCode } from "lucide-react"
+
 
 export class FosExpression {
   store: FosStore
@@ -19,16 +18,11 @@ export class FosExpression {
     const lastElem = route[route.length - 1]
 
     if (!lastElem) {
-      const rootNode = store.getNodeByAddress(store.rootNodeId)
+      const rootNode = store.getRootNode()
 
-      if (!rootNode) {
-        throw new Error('Root node not found')
-      }
+      this.instructionNode = store.primitive.aliasConstructor
+      this.targetNode = rootNode
 
-      const targetNode = rootNode.getAliasTarget()
-      const instructionNode = store.primitive.voidNode
-      this.instructionNode = instructionNode
-      this.targetNode = targetNode
     } else {
       const instructionNode = store.getNodeByAddress(lastElem[0])
       if (!instructionNode) {
@@ -83,6 +77,12 @@ export class FosExpression {
   //   }
   //   return child
   // }
+
+
+  getSelectedChild(): FosExpression {
+    throw new Error('Method not implemented')
+
+  }
 
   childRoutes(): FosPath[] {
     return this.targetNode.getEdges().map(childEdge => [...this.route, childEdge])
@@ -250,6 +250,17 @@ export class FosExpression {
     return this.matchesPattern(this.store.primitive.unit, this.store.primitive.completeField)
   }
 
+  isAlias(): boolean {
+    console.log('isAlias', this.instructionNode.getId(), this.store.primitive.aliasConstructor.getId())
+    const targetHasTargetEdge = this.targetNode.getEdges().some((edge) => {
+      console.log('edge', edge, this.store.primitive.targetConstructor.getId())
+      return edge[0] === this.store.primitive.targetConstructor.getId()
+    })
+    console.log('targetHasTargetEdge', targetHasTargetEdge)
+
+    return targetHasTargetEdge
+  }
+
   // Navigation Methods
   getParent(): FosExpression {
     if (this.hasParent()) {
@@ -397,6 +408,44 @@ export class FosExpression {
     }
   }
 
+
+  notifyParent() {
+
+    const { parent, indexInParent } = this.getParentInfo()
+
+    if (parent && parent.isRoot()) {
+
+      const currentRootNode = this.store.getRootNode()
+
+      const rootNodeWithNewTarget = currentRootNode.setAliasInfo({
+        newTarget: this.targetNode,
+        newInstruction: this.instructionNode
+      })
+
+      this.store.setRootNode(rootNodeWithNewTarget)
+
+
+    }else {
+
+      const parentContent = parent.targetNode.getContent()
+      const newChildren = parent.targetNode.getEdges().map((edge, i) => {
+        if (i === indexInParent) {
+          return this.pathElem()
+        }
+        return edge
+      })
+      const newParentTarget = parent.store.create({
+        data: parentContent.data,
+        children: newChildren
+      })
+  
+      parent.setTargetNode(newParentTarget)
+  
+    }
+
+
+  }
+
   // Parent Info Methods
   getParentInfo() {
     if (!this.hasParent()) {
@@ -410,6 +459,8 @@ export class FosExpression {
 
       this.equals(childExpr)
     )
+
+
 
     return {
       parent,
@@ -438,7 +489,7 @@ export class FosExpression {
     return this.store.trellisData.dragInfo
   }
 
-  setDragInfo(dragInfo: AppState['data']['trellisData']['dragInfo']) {
+  setDragInfo(dragInfo: AppStateLoaded['data']['trellisData']['dragInfo']) {
     this.store.trellisData.dragInfo = dragInfo
   }
 
@@ -458,11 +509,13 @@ export class FosExpression {
   setTargetNode(newTarget: FosNode) {
     this.route = [...this.route.slice(0, -1), [this.instructionNode.getId(), newTarget.getId()]]
     this.targetNode = newTarget
+    this.notifyParent()
   }
 
   setInstructionNode(newInstruction: FosNode) {
     this.route = [...this.route.slice(0, -1), [newInstruction.getId(), this.targetNode.getId()]]
     this.instructionNode = newInstruction
+    this.notifyParent()
   }
 
 
@@ -479,7 +532,7 @@ export class FosExpression {
   }
 
  
-  addOption () {
+  addOption (nodeContent: FosNodeContent, index: number) {
     throw new Error('Method not implemented')
 
   }
@@ -522,24 +575,95 @@ export class FosExpression {
     throw new Error('Method not implemented')
   }
 
-  addBranch(content: string): FosExpression {
-    throw new Error('Method not implemented')
-  }
+ 
 
   addChoice(content: string): FosExpression {
-    throw new Error('Method not implemented')
+    const currentInstructionNode = this.instructionNode
+
+    const newAlternative = this.store.create({
+      data: {
+        description: {
+          content
+        }
+      },
+      children: []
+    })
+
+    if (!this.isChoice()){
+      const newInstructionNode = this.store.create({
+        data: currentInstructionNode.getData(),
+        children: [
+          [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()],
+        ]
+      })
+      this.setInstructionNode(newInstructionNode)
+      const newExpr = new FosExpression(this.store, [...this.route, [newInstructionNode.getId(), this.store.primitive.choiceTarget.getId()]])
+      return newExpr
+  
+    } else {
+
+      const currentSelectedChild = this.targetNode.getEdges().findIndex((edge) => {
+        return edge[1] === this.store.primitive.optionSelectedConstructor.getId()
+      })      
+
+      const newChildren: FosPathElem[] = currentInstructionNode.getEdges().map((edge) => {
+        return [edge[0], this.store.primitive.optionNotSelectedConstructor.getId()]
+      })
+
+      newChildren.splice(currentSelectedChild, 0, [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()])
+
+      const newInstructionNode = this.store.create({
+        data: currentInstructionNode.getData(),
+        children: newChildren
+      })
+      this.setInstructionNode(newInstructionNode)
+      const newExpr = new FosExpression(this.store, [...this.route, [newInstructionNode.getId(), this.store.primitive.choiceTarget.getId()]])
+      return newExpr
+
+    }
+
+
   }
 
   addWorkflow(content: string): FosExpression {
-    throw new Error('Method not implemented')
+    const workflowConstructor = this.store.primitive.workflowField
+
+    const workflowTargetNode = this.store.create({
+      data: {
+        description: {
+          content
+        }
+      },
+      children: [        
+      ]
+    })
+
+    const newTarget = this.targetNode.addEdge(workflowConstructor.getId(), workflowTargetNode.getId())
+    this.setTargetNode(newTarget)
+    const newExpr = new FosExpression(this.store, [...this.route, [workflowConstructor.getId(), workflowTargetNode.getId()]])
+    return newExpr
+
   }
 
   addDocument(content: string): FosExpression {
-    throw new Error('Method not implemented')
-  }
 
-  addGroup(content: string): FosExpression {
-    throw new Error('Method not implemented')
+    
+    const documentConstructor = this.store.primitive.documentField
+    const documentTargetNode = this.store.create({
+      data: {
+        description: {
+          content
+        }
+      },
+      children: [
+        [this.store.primitive.targetConstructor.getId(), this.targetNode.getId()]
+      ]
+    })
+
+    const newTarget = this.targetNode.addEdge(documentConstructor.getId(), documentTargetNode.getId())
+    this.setTargetNode(newTarget)
+    const newExpr = new FosExpression(this.store, [...this.route, [documentConstructor.getId(), documentTargetNode.getId()]])
+    return newExpr
   }
 
   addMarketRequest(content: string): FosExpression {
@@ -550,16 +674,91 @@ export class FosExpression {
     throw new Error('Method not implemented')
   }
 
-  proposeChange(branch: FosExpression) {
-    throw new Error('Method not implemented')
+  proposeChange() {
+    if (this.instructionNode.getId() !== this.store.primitive.brachConstructorNode.getId()) {
+      throw new Error('Method only implemented for branch expressions')
+    }
+
+    this.setInstructionNode(this.store.primitive.proposalField)
+
   }
 
-  registerMarketService(service: string) {
-    throw new Error('Method not implemented')
+  addBranch(content: string): FosExpression {
+    const brachConstructor = this.store.primitive.brachConstructorNode
+
+    const target = this.targetNode.getAliasTarget()
+
+    const branchTargetNode = this.store.create({
+      data: {
+        description: {
+          content
+        }
+      },
+      children: [
+        [this.store.primitive.targetConstructor.getId(), target.getId()]
+      ]
+    })
+
+    const newRootTargetEdges = target.getEdges().concat([[brachConstructor.getId(), branchTargetNode.getId()]])
+
+    const newRootTarget = this.store.create({
+      data: this.targetNode.getData(),
+      children: newRootTargetEdges
+    })
+
+    this.setTargetNode(newRootTarget)
+
+
+    return new FosExpression(this.store, [[brachConstructor.getId(), branchTargetNode.getId()]])
+  }
+
+    
+
+  registerMarketService(service: string): FosExpression {
+
+    if (!this.isWorkflow()){
+      throw new Error('Method only implemented for workflow expressions')
+    }
+
+    const rootExpr = this.store.getRootExpression()
+    const marketServiceNode = this.store.create({
+      data: {
+        description: {
+          content: service
+        }
+      },
+      children: [
+        [this.store.primitive.targetConstructor.getId(), this.targetNode.getId()]
+      ]
+    })
+    const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketServiceNode.getId(), marketServiceNode.getId())
+    rootExpr.setTargetNode(newRootTarget)
+    const newExpr = new FosExpression(this.store, [[this.store.primitive.marketServiceNode.getId(), marketServiceNode.getId()]])
+    return newExpr
   }
 
   registerMarketRequest(request: string) {
-    throw new Error('Method not implemented')
+    if (!this.isTodo()){
+      throw new Error('Method only implemented for todo expressions')
+    }
+
+    const rootExpr = this.store.getRootExpression()
+    const marketRequestNode = this.store.create({
+      data: {
+        description: {
+          content: request
+        }
+      },
+      children: [
+        [this.store.primitive.targetConstructor.getId(), this.instructionNode.getId()]
+      ]
+    })
+    const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketRequestNode.getId(), marketRequestNode.getId())
+    rootExpr.setTargetNode(newRootTarget)
+    const newExpr = new FosExpression(this.store, [[this.store.primitive.marketRequestNode.getId(), marketRequestNode.getId()]])
+    return newExpr
+
+
   }
 
   applyPattern(instruction: FosNode, target: FosNode) {
@@ -653,12 +852,14 @@ export class FosExpression {
       children: []
     })
 
-    const newEdge = this.targetNode.addEdge(newTaskNode.getId(), this.store.primitive.completeField.getId())
+    const newTarget = this.targetNode.addEdge(newTaskNode.getId(), this.store.primitive.completeField.getId())
+    this.setTargetNode(newTarget)
     const newExpression = new FosExpression(this.store, [...this.route, [newTaskNode.getId(), this.store.primitive.completeField.getId()]])
     return newExpression
   }
 
-  addComment (comment: string ) {
+  addComment (comment: string) {
+
     const newCommentNode = this.store.create({
       data: {
         description: {
@@ -668,10 +869,17 @@ export class FosExpression {
           time: Date.now()
         },
       },
-      children: []
+      children: [
+      ]
     })
 
-    const newEdge = this.targetNode.addEdge(this.store.primitive.commentConstructor.getId(), newCommentNode.getId())
+    const rootExpr = this.store.getRootExpression()
+
+    const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.commentConstructor.getId(), newCommentNode.getId())
+
+    rootExpr.setTargetNode(newRootTarget)
+
+    const commentExpr = new FosExpression(this.store, [ [ this.store.primitive.commentConstructor.getId(), newCommentNode.getId() ]])
     
   }
 
@@ -869,8 +1077,8 @@ export class FosExpression {
   //   this.targetNode = newNode
   // }
   
-  updateZoom(route: FosPath){
-    this.store.fosRoute = route
+  updateZoom(){
+    this.store.fosRoute = this.route
   }
   
   addChild(newType: FosNode, newNodeContent: FosNodeContent, index: number = -1): FosExpression {
@@ -1176,10 +1384,10 @@ export class FosExpression {
 
   
 
-  async doAction(action: () => Promise<void>, setData: (state: AppState["data"]) => void) {
+  async doAction(action: () => Promise<void>, setData: (state: AppStateLoaded["data"]) => void) {
     action().then(() => {
       this.commit()
-      const updatedContext: AppState["data"] = this.store.exportContext([])
+      const updatedContext: AppStateLoaded["data"] = this.store.exportContext([])
       setData(updatedContext)
     })
   }
@@ -1435,7 +1643,7 @@ export class FosExpression {
   clone(): FosExpression {
     throw new Error('Method not implemented')
 
-    type CloneReturnVal = { newRows: [FosNodeId, FosNodeId][], newContext: AppState["data"] }
+    type CloneReturnVal = { newRows: [FosNodeId, FosNodeId][], newContext: AppStateLoaded["data"] }
     const { newRows, newContext }: CloneReturnVal  = nodeContent.children.reduce((acc: CloneReturnVal, childPathElem: FosPathElem) => {
         const {
             newId: newChildId,
@@ -1472,7 +1680,7 @@ export class FosExpression {
 
 
 
-    type InstReturnVal = { newRows: FosPathElem[], newContext: AppState["data"] }
+    type InstReturnVal = { newRows: FosPathElem[], newContext: AppStateLoaded["data"] }
 
 
 
@@ -1601,7 +1809,7 @@ export class FosExpression {
 
     const targetExpr = new FosExpression(this.store, attachToRoute)
 
-    targetExpr.attachChild(newTodoNode.getId(), this.store.primitive.completeField.getId(), -1 )
+    targetExpr.attachChild(newTodoNode, this.store.primitive.completeField, -1 )
 
     targetExpr
     

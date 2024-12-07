@@ -37,9 +37,10 @@ export const generateSeedContext = (): GeneratedResult  => {
 
 
 
-  const group1 = rootExpr.addGroup(`${thisLabel} Group 1`)
+  const [group1Store, group1Root] = store.addGroup(`${thisLabel} Group 1`)
 
-  const groupBranch1 = group1.addBranch(`${thisLabel} Group Branch 1`)
+
+  const groupBranch1 = group1Root.addBranch(`${thisLabel} Group Branch 1`)
 
 
   const document = rootExpr.addDocument(`${thisLabel} -Document 1`)
@@ -48,8 +49,8 @@ export const generateSeedContext = (): GeneratedResult  => {
 
 
 
-  const group_todo1 = group1.addTodo(`${thisLabel} Group Todo 1`)
-  const group_todo2 = group1.addTodo(`${thisLabel} Group Todo 2`)
+  const group_todo1 = group1Root.addTodo(`${thisLabel} Group Todo 1`)
+  const group_todo2 = group1Root.addTodo(`${thisLabel} Group Todo 2`)
   const group_todo2_1 = group_todo2.addTodo(`${thisLabel} Group Todo 2.1`)
   const group_todo2_2 = group_todo2.addTodo(`${thisLabel} Group Todo 2.2`)
   const group_todo2_3 = group_todo2.addTodo(`${thisLabel} Group Todo 2.3`)
@@ -58,20 +59,21 @@ export const generateSeedContext = (): GeneratedResult  => {
   const group_todo2_2_choiceB = group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 b`)
   const group_todo2_2_choiceC = group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 c`)
 
-  group1.addComment(`${thisLabel} Group Comment 1`)
-  group1.addComment(`${thisLabel} Group Comment 2`)
+  group1Root.addComment(`${thisLabel} Group Comment 1`)
+  group1Root.addComment(`${thisLabel} Group Comment 2`)
 
-  group1.addDocument(`${thisLabel} Group Document 1`)
-  group1.addDocument(`${thisLabel} Group Document 2`)
-  group1.addDocument(`${thisLabel} Group Document 3`)
-  group1.addDocument(`${thisLabel} Group Document 4`)
+  group1Root.addDocument(`${thisLabel} Group Document 1`)
+  group1Root.addDocument(`${thisLabel} Group Document 2`)
+  group1Root.addDocument(`${thisLabel} Group Document 3`)
+  group1Root.addDocument(`${thisLabel} Group Document 4`)
 
-  group1.proposeChange(groupBranch1)
+  groupBranch1.proposeChange()
 
   workflow1.registerMarketService(`${thisLabel} Market Service 1`)
 
   todo2_3.registerMarketRequest(`${thisLabel}Market Request 1`)
 
+  store.commit()
 
 
   return store

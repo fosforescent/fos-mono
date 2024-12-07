@@ -5,27 +5,29 @@ import { Button } from "@/frontend/components/ui/button";
 
 
 
-import { AppState, FosNodesData, FosReactOptions, FosPath, } from "@/shared/types";
+import { AppState, FosNodesData, FosReactOptions, FosPath, AppStateLoaded, } from "@/shared/types";
 import { getActions } from "@/frontend/lib/actions";
 import { FosExpression } from "@/shared/dag-implementation/expression";
 
 
 
 
-export const DefaultBreadcrumbComponent = ({ 
+export const DefaultBreadcrumbComponent = ({
+  data,
   setData,
   options,
   expression,
 } : {
+  data: AppStateLoaded
   options: FosReactOptions
   expression: FosExpression
-  setData: (state: AppState) => void
+  setData: (state: AppStateLoaded) => void
 }) => {
 
 
     
 
-  const setFosAndTrellisData = (state: AppState["data"]) => {
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
        data: state
@@ -34,29 +36,6 @@ export const DefaultBreadcrumbComponent = ({
 
 
 
-  const { locked, 
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
-    nodeType, nodeId, disabled, depth, isCollapsed, 
-    isTooDeep, isOption, hasChildren, truncatedDescription
-  } = getExpressionInfo(nodeRoute, data.data)
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow,
-    deleteOption,
-    keyDownEvents,
-    keyUpEvents,
-    keyPressEvents,
-    suggestSteps,
-    toggleCollapse,
-    zoom
-   } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
- 
-
 
   // console.log('breadcrumb', nodeId)
   const {
@@ -64,26 +43,30 @@ export const DefaultBreadcrumbComponent = ({
     setNodeRef,
     node: dndNode
    } = useDroppable({
-    id: `${nodeLabel}`,
-    data: { nodeRoute: nodeRoute, breadcrumb: true }
+    id: `${expression.expressionLabel()}`,
+    data: { nodeRoute: expression.route, breadcrumb: true }
   });
 
 
 
 
 
-  const displayString = (nodeRoute.length === 1) ? <HomeIcon height={'1rem'} width={'1rem'}/> :  truncatedDescription
+  const displayString = (expression.route.length === 1) ? <HomeIcon height={'1rem'} width={'1rem'}/> :  expression.truncatedDescription()
   // console.log('displayString', displayString)
 
 
 
-  const showChevron = nodeRoute.length !== data.data.fosData.route.length
+  const showChevron = expression.route.length !== data.data.fosData.route.length
 
   // console.log('breadcrumb', draggingOnThis, breadcrumbNode.getId(), dragOverInfo, dndNode, isOver)
 
+  const draggingOver = expression.isDraggingOver()
+
+  const zoom = () => expression.updateZoom()
+
 
   return (<div className={`${draggingOver ? "scale-110 py-2 p-0 " : `py-2 p-0`} flex flex-row items-center`}>
-    <Button key={nodeRoute.length - 1} onClick={zoom} variant="secondary" disabled={disabled} className={`px-1`}  ref={setNodeRef}>{displayString}</Button>
+    <Button key={expression.route.length - 1} onClick={zoom} variant="secondary" disabled={expression.isDisabled()} className={`px-1`}  ref={setNodeRef}>{displayString}</Button>
     {showChevron && <ChevronRight height={'1rem'} width={'1rem'}/>}
   </div>)
 }

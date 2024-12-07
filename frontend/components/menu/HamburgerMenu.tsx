@@ -147,7 +147,7 @@ const HamburgerMenu = ({
       <div className={`px-3`}>
         <img src={logo.logo} alt="Fosforescent" className="h-7" /></div>
               Fosforescent
-        {<TopButtons 
+        {appState.loaded && <TopButtons 
           data={appState}
           setData={setData}
           nodeRoute={appState.data.fosData.route}
@@ -157,7 +157,7 @@ const HamburgerMenu = ({
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger><Menu /></SheetTrigger>
-          <SheetContent className="md:min-w-[80%] sm:min-w-full flex flex-col justify-around" side={'left'} aria-description='Fos Menu'>
+          <SheetContent className="md:min-w-[80%] sm:min-w-full flex flex-col justify-start gap-5" side={'left'} aria-description='Fos Menu'>
             {/* <SheetHeader className="mb-10">
               Fos
             </SheetHeader> */}
@@ -167,20 +167,20 @@ const HamburgerMenu = ({
             </SheetTitle>
             <SheetDescription className="hidden">Menu</SheetDescription>
 
-            <hr  className={`my-5`} />
-            <div className={`py-1`}>
+            {appState.loaded && (<><hr  className={`my-5`} />
+              <div className={`py-1`}>
 
-              <Input type="search" placeholder="Search" className="w-full" />
-            </div>
+                <Input type="search" placeholder="Search" className="w-full" />
+              </div>
 
-            <hr  className={`my-5`} />
+            <hr  className={`my-5`} /></>)}
       
     
             
             <Accordion type="single" className="w-full" value={accordionValue} onValueChange={setAccordionValue} collapsible>
 
 
-              <AccordionItem value="nav">
+              {appState.loaded && <AccordionItem value="nav">
                 <AccordionTrigger>Nav </AccordionTrigger>
                 <AccordionContent>
                 {loggedIn() && (<div className="grow h-full">
@@ -323,7 +323,7 @@ const HamburgerMenu = ({
 
             </div>)}
                 </AccordionContent>
-              </AccordionItem>
+              </AccordionItem>}
               <AccordionItem value="account">
                 <AccordionTrigger>Account </AccordionTrigger>
                 <AccordionContent>

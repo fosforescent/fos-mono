@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 
-import { TreeView } from './components/views/trellis/main'
+import { TreeView } from './components/views/tree/TreeLayout'
 import { FosSettingsPage }  from './components/settings'
 
 import { createBrowserRouter, RouterProvider } from "react-router-dom"

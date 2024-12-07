@@ -52,7 +52,7 @@ export const QueryView = () => {
      * 
      */
 
-    const setFosAndTrellisData = (state: AppState["data"]) => {
+    const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
         setData({
           ...data,
           data: state

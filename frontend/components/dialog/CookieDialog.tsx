@@ -62,7 +62,10 @@ export function CookieDialog({
 
 
   const handleRejectAll = () => {
-    setCookieConsent(undefined)
+    setCookieConsent({
+      acceptRequiredCookies: false,
+      acceptSharingWithThirdParties: false
+    })
     setOpen(false)
   }
 

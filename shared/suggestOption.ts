@@ -1,6 +1,6 @@
 
 import { AppState, FosDataContent, FosPathElem, FosReactOptions, FosPath } from "./types";
-import { addChild, changeInstruction, updateNodeContent } from "./mutations";
+
 
 import { FosExpression } from "./dag-implementation/expression";
 
@@ -8,26 +8,33 @@ import { FosExpression } from "./dag-implementation/expression";
 export const suggestTaskOptions = async (
   expression: FosExpression,
   options: FosReactOptions,
-): Promise<AppState["data"]> => {
+): Promise<void> => {
 
 
   if (!options.canPromptGPT || !options.promptGPT) {
     throw new Error('GPT not available')
   }
 
+
+
+  const nodeRoute = expression.route
+  const childRoutes = expression.childRoutes()
+
+
+
   const pastRoutes: FosPath[] = nodeRoute.slice(2, -1).map((_, i) => nodeRoute.slice(0, i + 1)) as FosPath[]
 
-  const { getParentInfo, childRoutes, nodeType, nodeContent } = getExpressionInfo(nodeRoute, appState)
-
+  
+  
   const siblingDescriptions = childRoutes.map((childRoute) => {
-    const { nodeDescription } = getExpressionInfo(childRoute, appState)
-    return nodeDescription
+    const childExpression = new FosExpression(expression.store, childRoute)
+    return childExpression.getDescription()
   })
   
 
   const optionDescriptions = pastRoutes.map((nodeRoute, index: number) => {
-    const { nodeDescription } = getExpressionInfo(nodeRoute, appState)
-    return nodeDescription
+    const nodeExpression = new FosExpression(expression.store, nodeRoute)
+    return nodeExpression.getDescription()
   })
 
   const [mainTask, ...contextTasks] = optionDescriptions.slice().reverse()
@@ -112,143 +119,24 @@ export const suggestTaskOptions = async (
 
 
 
+  alternatives.forEach((
+    alternative: {
+      description: string,
+      steps: string[]
+    }, i: number) => {
+      
 
+    alternative.steps.forEach((
+      astep: string,
+      i: number
+    ) => {
 
+      expression.addTodo(astep)
 
-  // Move node to task under option
+    })
 
-  
-  if (nodeType === "option"){
+  })
 
-    const {
-      newState: stateWithAlternatives,
-      childRoutes: generatedChildRoutes
-    } = alternatives.reduce((
-      acc: { newState: AppState["data"], childRoutes: FosPath[] }, 
-      alternative: {
-        description: string,
-        steps: string[]
-      }, i: number) => {
-        
-
-      const newRow = { data: {
-        description: {
-          content: alternative.description
-        },
-      }, children: []}
-
-      const { newState: stateWithChild, childRoute }  = addChild(acc.newState, nodeRoute, "option", newRow , i)
-
-      const childInfo = getExpressionInfo(childRoute, stateWithChild)
-
-      const optionRoute: FosPath = [...nodeRoute, ["option", childInfo.nodeId]]
-
-      const {
-        newState: stateWithAltSubsteps,
-        childRoutes: generatedStepRoutes
-      } = alternative.steps.reduce((
-        acc: { newState: AppState["data"], childRoutes: FosPath[] },
-        astep: string,
-        i: number
-      ) => {
-        const newNodeData: Partial<FosDataContent> = {
-          description: {
-            content: astep
-          }
-        }
-
-        const newRow = { data: newNodeData, children: []}
-        
-        const { newState: stateWithSubstep, childRoute } = addChild(acc.newState, optionRoute, "workflow", newRow , i)
-
-        return {
-          newState: stateWithSubstep, 
-          childRoutes: [...acc.childRoutes, childRoute]
-        }
-      }, {
-        newState: stateWithChild, childRoutes: []
-      })
-
-      return {
-        newState: stateWithAltSubsteps, childRoutes: [...acc.childRoutes, childRoute]
-      }
-    }, { newState: appState, childRoutes: [] })
-
-
-    return stateWithAlternatives
-
-  } else if (nodeType === "workflow") {
-    // turn workflow node into option node
-    // add alternatives as children
-    // including original task as first child
-    const { newState: stateWithChangedInstruction, newRoute } = changeInstruction(appState, nodeRoute, "option" )
-    const { newState: stateWithSelf, childRoute } = addChild(stateWithChangedInstruction, newRoute, "workflow", nodeContent, 0)
-    const childElem: FosPathElem = childRoute[childRoute.length - 1]!
-    if(!childElem){
-      throw new Error('childElem is undefined')
-    }
-    const stateWithBlankOption = updateNodeContent(stateWithSelf, { data: { description: { content: "" } }, children: [childElem] }, newRoute)
-   
-    const {
-      newState: stateWithAlternatives,
-      childRoutes: generatedChildRoutes
-    } = alternatives.reduce((
-      acc: { newState: AppState["data"], childRoutes: FosPath[] }, 
-      alternative: {
-        description: string,
-        steps: string[]
-      }, i: number) => {
-        
-
-      const newRow = { data: {
-        description: {
-          content: alternative.description
-        },
-      }, children: []}
-
-      const { newState: stateWithChild, childRoute }  = addChild(acc.newState, nodeRoute, "option", newRow , i)
-
-      const childInfo = getExpressionInfo(childRoute, stateWithChild)
-
-      const optionRoute: FosPath = [...nodeRoute, ["option", childInfo.nodeId]]
-
-      const {
-        newState: stateWithAltSubsteps,
-        childRoutes: generatedStepRoutes
-      } = alternative.steps.reduce((
-        acc: { newState: AppState["data"], childRoutes: FosPath[] },
-        astep: string,
-        i: number
-      ) => {
-        const newNodeData: Partial<FosDataContent> = {
-          description: {
-            content: astep
-          }
-        }
-
-        const newRow = { data: newNodeData, children: []}
-        
-        const { newState: stateWithSubstep, childRoute } = addChild(acc.newState, newRoute, "workflow", newRow , i)
-
-        return {
-          newState: stateWithSubstep, 
-          childRoutes: [...acc.childRoutes, childRoute]
-        }
-      }, {
-        newState: stateWithChild, childRoutes: []
-      })
-
-      return {
-        newState: stateWithAltSubsteps, childRoutes: [...acc.childRoutes, childRoute]
-      }
-    }, { newState: stateWithBlankOption, childRoutes: [] })
-    
-
-    return stateWithAlternatives
-
-  } else {
-    throw new Error(`Method not implemented for type ${nodeType}.`);
-  }
 
 
 }

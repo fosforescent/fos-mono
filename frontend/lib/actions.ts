@@ -1,10 +1,11 @@
 import { jwtDecode } from "jwt-decode"
 import { api } from "../api"
-import { AppState, FosNodeId, FosPath, FosPathElem, FosReactOptions, InfoState, SubscriptionInfo, TrellisSerializedData, UserProfile } from "../../shared/types"
+import { AppState, AppStateInitial, AppStateLoaded,  FosNodeId, FosPath, FosPathElem, FosReactOptions, InfoState,  SubscriptionInfo, TrellisSerializedData, UserProfile } from "../../shared/types"
 import { diff } from "@n1ru4l/json-patch-plus"
-import { getNodeOperations } from "../../shared/nodeOperations"
+
 import { debounce, set } from "lodash"
 import { FosStore } from "@/shared/dag-implementation/store"
+import { validateTrellisData } from "@/shared/utils"
 
 
 export const getActions = (options: FosReactOptions, appData: AppState, setAppData: (state: AppState) => void) => {
@@ -14,11 +15,11 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     throw new Error('apiUrl not found')
   }
 
-  const apiObj = api(appData, setAppData)
+  const apiObj = api(appData, setAppData, options)
 
   const authedApi = () => {
     if (!appData.auth.jwt) {
-      if (appData.auth.loggedIn){
+      if (appData.loggedIn){
         // hacky fix for weird issue of jwt missing in state, probably relate to stale appData
         const jwt = JSON.parse(localStorage.getItem('auth') || 'null')
         if (jwt){
@@ -171,21 +172,21 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         
 
 
-      const initialFosAndTrellisData = await newlyAuthedApi.getData()
+      const initialFosAndTrellisData: AppStateLoaded["data"] = await newlyAuthedApi.getData()
         .catch((error: Error) => {
           console.log('error', error)
           throw error
         });
 
 
-      const actualTrellisData = Object.keys(initialFosAndTrellisData.trellisData).length > 0 ? initialFosAndTrellisData.trellisData : appData.data.trellisData
+      const actualTrellisData = validateTrellisData(initialFosAndTrellisData.trellisData)
       const actualData = { ...initialFosAndTrellisData, trellisData: actualTrellisData }
 
       const store = new FosStore({ fosCtxData: initialFosAndTrellisData })
 
       const storeExportedData = store.exportContext([])
 
-      const newAppState: AppState = {
+      const newAppState: AppStateLoaded = {
         ...newlyAuthedState,
         info: {
           ...infoState,
@@ -225,8 +226,9 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
           info: newInfo })
   }
   const logOut = async () => {
-      const loggedOutState = await publicApi().logOut().then(() => {
-          return { ...appData, auth: { ...appData.auth, jwt: undefined, loggedIn: false }, loaded: false }
+      const loggedOutState: AppStateInitial = await publicApi().logOut().then(() => {
+          const result: AppStateInitial = { ...appData, loggedIn: false, auth: { ...appData.auth, jwt: undefined }, loaded: false, data: null }
+          return result
         }).catch((error: Error) => {
           console.log('error', error)
           throw error
@@ -247,7 +249,7 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         throw error
     });
 
-    const actualTrellisData = Object.keys(initialFosAndTrellisData.trellisData).length > 0 ? initialFosAndTrellisData.trellisData : appData.data.trellisData
+    const actualTrellisData = validateTrellisData(initialFosAndTrellisData.trellisData)
     const actualData = { ...initialFosAndTrellisData, trellisData: actualTrellisData }
 
     // store.updateWithContext(actualData)
@@ -277,9 +279,9 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     
   }
 
-  const saveFosAndTrellisData = debounce(async (newData: AppState): Promise<void> => {
+  const saveFosAndTrellisData = debounce(async (newData: AppStateLoaded): Promise<void> => {
 
-    const data: AppState["data"] | null | undefined = await authedApi().postData(newData.data).catch((error: Error) => {
+    const data: AppStateLoaded["data"] | null | undefined = await authedApi().postData(newData.data).catch((error: Error) => {
       console.log('error', error)
       throw error
     });
@@ -318,10 +320,17 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
 
   const getDragInfo = () => {
+    if (!appData.loaded){
+      throw new Error('Trying to get drag info on unloaded data')
+    }
+
     return appData.data.trellisData.dragInfo
   }
 
-  const setDragInfo = async (dragInfo: AppState['data']['trellisData']['dragInfo']) => {
+  const setDragInfo = async (dragInfo: AppStateLoaded['data']['trellisData']['dragInfo']) => {
+    if (!appData.loaded){
+      throw new Error('Trying to set drag info on unloaded data')
+    }
 
     setAppData({
       ...appData,
@@ -340,6 +349,11 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   }
 
   const setRoute = async (route: FosPath) => {
+    if (!appData.loaded){
+      throw new Error('Trying to set Route on unloaded data')
+    }
+
+
     setAppData({
       ...appData,
       data: {
@@ -358,6 +372,11 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
     activity: TrellisSerializedData["activity"],
     mode: TrellisSerializedData["mode"]
   ) => {
+
+    if (!appData.loaded){
+      throw new Error('Trying to set view activity mode on unloaded data')
+    }
+
     setAppData({
       ...appData,
       data: {
@@ -444,47 +463,47 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
 
 
 
-export const getServerStateData = (appState: AppState) => 
-  (newData: AppState['data'] | null): AppState => {
+// export const getServerStateData = (appState: AppState) => 
+//   (newData: AppState['data'] | null): AppState => {
 
-    if (!newData){
-      return appState
-    }
+//     if (!newData){
+//       return appState
+//     }
 
-  const newState: AppState = { 
-    ...appState, 
-    data: newData,
-  }
-  return newState
-}
+//   const newState: AppStateLoaded = { 
+//     ...appState, 
+//     data: newData,
+//   }
+//   return newState
+// }
 
 
 
-export const getServerStateProfile = (appState: AppState, jwt: string) => (newProfile: InfoState): AppState => {
+// export const getServerStateProfile = (appState: AppState, jwt: string) => (newProfile: InfoState): AppState => {
     
   
-    const jwtProps = jwtDecode<{ username: string, exp: number}>(jwt)
+//     const jwtProps = jwtDecode<{ username: string, exp: number}>(jwt)
   
-      const newInfoState: InfoState = { 
-        profile: newProfile.profile,
-        subscription: newProfile.subscription,
-        emailConfirmed: newProfile.emailConfirmed,
-        cookies: newProfile.cookies || appState.info.cookies
-      }
+//       const newInfoState: InfoState = { 
+//         profile: newProfile.profile,
+//         subscription: newProfile.subscription,
+//         emailConfirmed: newProfile.emailConfirmed,
+//         cookies: newProfile.cookies || appState.info.cookies
+//       }
   
-    const newState: AppState = { 
-      ...appState, 
-      auth: { 
-        ...appState.auth, 
-        jwt, 
-        email: jwtProps.username,
-        password: undefined 
-      },
-      info: newInfoState,
+//     const newState: AppState = { 
+//       ...appState, 
+//       auth: { 
+//         ...appState.auth, 
+//         jwt, 
+//         email: jwtProps.username,
+//         password: undefined 
+//       },
+//       info: newInfoState,
   
-    }
-    return newState
-  }
+//     }
+//     return newState
+//   }
   
   
 const checkInfoFormat = (info: InfoState) => {

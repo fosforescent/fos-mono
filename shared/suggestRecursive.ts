@@ -1,5 +1,5 @@
 import { AppState, FosReactOptions, FosPath } from "./types"
-import { FosExpression, getExpressionInfo } from "./dag-implementation/expression"
+import { FosExpression } from "./dag-implementation/expression"
 
 
 export const suggestStepsRecursive = async <T, S>(
@@ -17,16 +17,16 @@ export const suggestStepsRecursive = async <T, S>(
       checkResourceInfo
     } : {
       pattern: RegExp,
-      parsePattern: (appData: AppState["data"], nodeRoute: FosPath, response: string) => S,
+      parsePattern: (appData: AppStateLoaded["data"], nodeRoute: FosPath, response: string) => S,
       systemPromptBase: string,
-      getUserPromptBase: (appData: AppState["data"], nodeRoute: FosPath, nodeDescription: string, parentDescriptions: string[]) => string,
+      getUserPromptBase: (appData: AppStateLoaded["data"], nodeRoute: FosPath, nodeDescription: string, parentDescriptions: string[]) => string,
       systemPromptRecursive: string,
-      getUserPromptRecursive: (appData: AppState["data"], nodeRoute: FosPath, nodeDescription: string, parentDescriptions: string[]) => string,
-      getResourceInfo: (appData: AppState["data"], nodeRoute: FosPath) => T,
-      updateResourceInfo: (appData: AppState["data"], nodeRoute: FosPath,  resourceInfo: S) => AppState["data"],
-      checkResourceInfo: (appData: AppState["data"], nodeRoute: FosPath) => boolean
+      getUserPromptRecursive: (appData: AppStateLoaded["data"], nodeRoute: FosPath, nodeDescription: string, parentDescriptions: string[]) => string,
+      getResourceInfo: (appData: AppStateLoaded["data"], nodeRoute: FosPath) => T,
+      updateResourceInfo: (appData: AppStateLoaded["data"], nodeRoute: FosPath,  resourceInfo: S) => AppStateLoaded["data"],
+      checkResourceInfo: (appData: AppStateLoaded["data"], nodeRoute: FosPath) => boolean
     }
-  ): Promise<AppState["data"]> => {
+  ): Promise<AppStateLoaded["data"]> => {
 
     if (!options.canPromptGPT || !options.promptGPT) {
       throw new Error('GPT not available')
@@ -50,7 +50,7 @@ export const suggestStepsRecursive = async <T, S>(
     const [mainTask, ...contextTasks] = descriptions.slice().reverse()
 
 
-  const getChildTimes = async (localAppData: AppState["data"], localNodeRoute:FosPath,  index: number, parentDescriptions: string[]): Promise<AppState["data"]> => {
+  const getChildTimes = async (localAppData: AppStateLoaded["data"], localNodeRoute:FosPath,  index: number, parentDescriptions: string[]): Promise<AppStateLoaded["data"]> => {
 
     
     const { childRoutes, nodeDescription } = getExpressionInfo(localNodeRoute, localAppData)

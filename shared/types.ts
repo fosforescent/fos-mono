@@ -38,11 +38,14 @@ export interface TrellisSerializedData {
 
 
 export type FosDataContent = {
+  alias?: {
+    id: string;
+  }
   versionControl?: {
     delta: Delta,
     branches: string[],
     tags: string[],
-  },
+  }
   reversion?: {
     reversionedToAddress: string,
     nStepsBack: number,
@@ -232,19 +235,30 @@ export type InfoState = {
 }
 
 
-export type AppState = {
+export type AppStateInitial = {
+  apiUrl: string
+  info: InfoState
+  theme: string
+  auth: AuthState
+  data:  null
+  loaded: false
+  loggedIn: boolean
+}
+
+export type AppStateLoaded = {
   apiUrl: string
   info: InfoState
   theme: string
   auth: AuthState
   data:  { fosData: FosContextData, trellisData: TrellisSerializedData }
-  loaded: boolean
+  loaded: true
+  loggedIn: boolean
 }
 
+export type AppState = AppStateInitial | AppStateLoaded
 
 
 export type AuthState = {
-  loggedIn: boolean,
   username: string,
   remember: boolean,
   jwt?: string,
@@ -284,8 +298,8 @@ export type LoginResult = {
 
 
 export type ContextType = { 
-  data: AppState, 
-  setData: (data: AppState) => void, 
+  data: AppStateLoaded, 
+  setData: (data: AppStateLoaded) => void, 
   options: FosReactOptions,
   nodeRoute: FosPath,
   dialogueProps: {

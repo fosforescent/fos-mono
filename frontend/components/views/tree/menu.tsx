@@ -25,25 +25,26 @@ import { CSS } from '@dnd-kit/utilities';
 
 import _, { update } from 'lodash'
 import { AppState, FosReactOptions, FosPath } from '@/shared/types'
-import { getNodeInfo } from '@/frontend/lib/utils'
-import { getNodeOperations } from '@/frontend/lib/nodeOperations'
+
 import { FosExpression } from '@/shared/dag-implementation/expression'
 
 
 
 
-export function DefaultMenuComponent({ 
+export function DefaultMenuComponent({
+  data,
   setData,
   options,
   expression,
 } : {
+  data: AppState
   options: FosReactOptions
   expression: FosExpression
   setData: (state: AppState) => void
 }) {
 
 
-  const setFosAndTrellisData = (state: AppState["data"]) => {
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
        data: state
@@ -51,31 +52,8 @@ export function DefaultMenuComponent({
   }
 
 
-  const { locked, getOptionInfo,
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription, isRoot, childRoutes, isBase,
-    nodeType, nodeId, disabled, depth, isCollapsed, 
-    isTooDeep, hasChildren
-  } = getNodeInfo(nodeRoute, data.data)
   
-  const { 
-    zoom,
-    snip, 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
-    deleteOption,
-    keyDownEvents,
-    keyUpEvents,
-    keyPressEvents,
-    addOption,
-    
-    suggestSteps,
-   } = getNodeOperations(options, data.data, setFosAndTrellisData, nodeRoute)
-  
-   const { selectedIndex, nodeOptions, } = getOptionInfo()
+   const { selectedIndex, nodeOptions, } = expression.getOptionInfo()
   const [menuOpen, setMenuOpen] = React.useState(false)
 
 
@@ -84,7 +62,7 @@ export function DefaultMenuComponent({
   }
   
   const onClick = () => {
-    zoom()
+    expression.updateZoom()
     setMenuOpen(false)
   }
 
@@ -96,7 +74,7 @@ export function DefaultMenuComponent({
   // }
 
   const snipNode = () => {
-    snip()
+    expression.snipNode()
     setMenuOpen(false)
   }
 
@@ -118,7 +96,7 @@ export function DefaultMenuComponent({
                     {/* <Button variant={"secondary"} className='bg-emerald-900'><QuestionMarkCircledIcon /></Button> */}
                     {/* <Button variant={"secondary"} className='bg-emerald-900'><PlayIcon /></Button> */}
                     <Button variant={"destructive"} onClick={snipNode}><ComponentNoneIcon /></Button>
-                    <Button variant={"destructive"} onClick={deleteRow}><TrashIcon /></Button>
+                    <Button variant={"destructive"} onClick={expression.removeNode}><TrashIcon /></Button>
                   </div>
   
   
@@ -133,7 +111,7 @@ export function DefaultMenuComponent({
           onClick={onClick}
           >
         <DiscIcon  style={{
-          opacity: hasChildren ? 1 : .5
+          opacity: expression.hasChildren() ? 1 : .5
         }} />
         </Button>
  

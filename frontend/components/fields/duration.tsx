@@ -392,7 +392,7 @@ type DurationInfo = {
   marginal: number
 }
 
-export const getDurationInfo = (nodeRoute: FosPath, appState: AppState["data"]): DurationInfo => {
+export const getDurationInfo = (nodeRoute: FosPath, appState: AppStateLoaded["data"]): DurationInfo => {
 
 
     

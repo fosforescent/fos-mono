@@ -1,4 +1,4 @@
-import { AppState, FosReactOptions, FosPath } from "@/shared/types"
+import { AppState, FosReactOptions, FosPath, AppStateLoaded } from "@/shared/types"
 import { DefaultBreadcrumbComponent } from "./breadcrumb"
 import { FosStore } from "@/shared/dag-implementation/store"
 import { FosExpression } from "@/shared/dag-implementation/expression"
@@ -19,14 +19,16 @@ import { Globe2, Home, Users } from "lucide-react"
 import { FosNode } from "@/shared/dag-implementation/node"
 
 
-export const DefaultBreadcrumbsComponent = ({ 
+export const DefaultBreadcrumbsComponent = ({
+  data,
   setData,
   options,
   expression,
 } : {
+  data: AppStateLoaded
   options: FosReactOptions
   expression: FosExpression
-  setData: (state: AppState) => void
+  setData: (state: AppStateLoaded) => void
 }) => {
 
 
@@ -34,7 +36,7 @@ export const DefaultBreadcrumbsComponent = ({
 
   // if route is long, just slice the first and last 
 
-  const setFosAndTrellisData = (state: AppState["data"]) => {
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
       data: state
@@ -47,7 +49,7 @@ export const DefaultBreadcrumbsComponent = ({
 
   const isEveryoneGroup = true
 
-  const groupDropdownIcon = nodeRoute.length === 0 
+  const groupDropdownIcon = expression.route.length === 0 
     ? <Home />
     : (isEveryoneGroup) 
       ? <Globe2 />
@@ -73,11 +75,11 @@ export const DefaultBreadcrumbsComponent = ({
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-    {nodeRoute.map((item, index) => {
+    {expression.route.map((item, index) => {
       
 
-      const breadcrumbNodeRoute: FosPath = nodeRoute.slice(0, index + 1) as FosPath
-
+      const breadcrumbNodeRoute: FosPath = expression.route.slice(0, index + 1) as FosPath
+      const breadCrumbExpression = new FosExpression(new FosStore({ fosCtxData: data.data}), breadcrumbNodeRoute)
 
       return (<div>
 
@@ -86,8 +88,8 @@ export const DefaultBreadcrumbsComponent = ({
         key={index} 
         data={data}
         setData={setData}
-        nodeRoute={breadcrumbNodeRoute}
         options={options}
+        expression={breadCrumbExpression}
           /></div>)
     })}
 </div>)

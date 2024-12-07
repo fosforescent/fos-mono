@@ -32,14 +32,16 @@ import { CaretSortIcon, PlusCircledIcon } from "@radix-ui/react-icons"
 //   images
 // } from '@/assets'
 
-import AddRowUrl from "../../assets/tutorial/AddRow.gif"
-import CollapsingUrl from "../../assets/tutorial/Collapsing.gif"
-import GenerateUrl from "../../assets/tutorial/Generate.gif"
-import MovingUrl from "../../assets/tutorial/Moving.gif"
-import OptionsUrl from "../../assets/tutorial/Options.gif"
-import UndoRedoUrl from "../../assets/tutorial/UndoRedo.gif"
-import MessageUrl from "../../assets/tutorial/Message.gif"
-import ZoomUrl from "../../assets/tutorial/Zoom.gif"
+import {
+  images
+} from "@/frontend/assets"
+// import CollapsingUrl from "../../assets/tutorial/Collapsing.gif"
+// import GenerateUrl from "../../assets/tutorial/Generate.gif"
+// import MovingUrl from "../../assets/tutorial/Moving.gif"
+// import OptionsUrl from "../../assets/tutorial/Options.gif"
+// import UndoRedoUrl from "../../assets/tutorial/UndoRedo.gif"
+// import MessageUrl from "../../assets/tutorial/Message.gif"
+// import ZoomUrl from "../../assets/tutorial/Zoom.gif"
 
 
 export function TutorialDialog({
@@ -68,7 +70,7 @@ export function TutorialDialog({
               </CardHeader>
               <CardContent>
                 <div className="py-3">
-                  <img src={AddRowUrl} alt="Gif showing adding row" />
+                  <img src={images.addRowGif} alt="Gif showing adding row" />
                 </div>
                 <div className="py-3">
                   Either click the <PlusCircledIcon className="inline" /> button or press the return key at the end of a line.  To delete, simply delete all the text in the input and press backspace one more time.
@@ -83,7 +85,7 @@ export function TutorialDialog({
               </CardHeader>
               <CardContent>
                 <div className="py-3">
-                  <img src={ZoomUrl} alt="Gif showing adding row" />
+                  <img src={images.zoomGif} alt="Gif showing zooming" />
                 </div>
                 <div className="py-3">
                   Click the <Disc className="inline" size="1rem" /> button or press the return key at the end of a line.
@@ -99,7 +101,7 @@ export function TutorialDialog({
               <CardContent>
               <h2>Collapsing</h2>
                 <div className="py-3">
-                  <img src={CollapsingUrl} alt="Gif showing adding row" />
+                  <img src={images.collapsingGif} alt="Gif showing collapsing" />
                 </div>
                 <div className="py-3">
                   Click the <ChevronDownCircle className="inline" /> button to collapse the nested tasks.
@@ -114,7 +116,7 @@ export function TutorialDialog({
               </CardHeader>
               <CardContent>
                 <div className="py-3">
-                  <img src={OptionsUrl} alt="Gif showing adding row" />
+                  <img src={images.optionsGif} alt="Gif showing options" />
                 </div>
                 <div className="py-3">
                   Add a new option by clicking the <CaretSortIcon className="inline" /> button and then the <Plus className="inline" size="1rem"/> button at the bottom, or pressing Alt + Enter.  To delete an option, click the 
@@ -129,7 +131,7 @@ export function TutorialDialog({
               </CardHeader>
               <CardContent>
                 <div className="py-3">
-                  <img src={MovingUrl} alt="Gif showing adding row" />
+                  <img src={images.movingGif} alt="Gif showing moving" />
                 </div>
                 <div className="py-3">
                   Ctrl + Alt + Left moves a task up one level, Ctrl + Alt + right moves a task down one level.  You can also drag and drop tasks onto each other to move them.
@@ -144,7 +146,7 @@ export function TutorialDialog({
               </CardHeader>
               <CardContent>
                 <div className="py-3">
-                  <img src={UndoRedoUrl} alt="Gif showing adding row" />
+                  <img src={images.undoRedoGif} alt="Gif showing undo and redo" />
                 </div>
                 <div className="py-3">
                   Use Ctrl + Z to undo and Ctrl + Shift + Z to redo, or click the <Undo2 className="inline" /> and <Redo2 className="inline" /> buttons.
@@ -159,7 +161,7 @@ export function TutorialDialog({
               </CardHeader>
               <CardContent>
                 <div className="py-3">
-                  <img src={GenerateUrl} alt="Gif showing adding row" />
+                  <img src={images.generateGif} alt="Gif showing generating suggestions" />
                 </div>
                 <div className="py-3">
                   Click the Advanced Menu option <Plus className="inline" /> and then the Suggest button <BrainCircuit className="inline" />.  This will generate a new task based on the current task.
@@ -174,7 +176,7 @@ export function TutorialDialog({
               </CardHeader>
               <CardContent>
                 <div className="py-3">
-                  <img src={MessageUrl} alt="Gif showing adding row" />
+                  <img src={images.messageGif} alt="Gif showing messages" />
                 </div>
                 <div className="py-3">
                   If you have any concerns or feedback, don&apos;t hesitate to drop a line.  Open the Hamburger Menu <Menu className="inline" /> and then go down to the Contact section and send a message.

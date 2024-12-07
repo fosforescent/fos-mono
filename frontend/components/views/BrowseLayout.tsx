@@ -1,9 +1,9 @@
 import { Button } from "@/frontend/components/ui/button"
 import { useProps } from "@/frontend/App"
 
-import { AppState, FosReactGlobal, FosPath } from "@/shared/types"
+import { AppState, FosReactGlobal, FosPath, AppStateLoaded } from "@/shared/types"
 import { CheckSquare, Inbox, MessageSquare } from "lucide-react"
-import { getExpressionActions } from "@/shared/storeOperations"
+
 import { FosExpression } from "@/shared/dag-implementation/expression"
 import { FosStore } from "@/shared/dag-implementation/store"
 import { ExpressionRow } from "../expression/ExpressionRow"
@@ -24,9 +24,9 @@ export const BrowseView = () => {
         ...props
       } : {
         options: FosReactGlobal
-        data: AppState
+        data: AppStateLoaded
         nodeRoute: FosPath
-        setData: (state: AppState) => void
+        setData: (state: AppStateLoaded) => void
       } = useProps()
     
 
@@ -51,7 +51,7 @@ export const BrowseView = () => {
      * 
      */
 
-    const setFosAndTrellisData = (state: AppState["data"]) => {
+    const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
         setData({
           ...data,
           data: state
@@ -65,7 +65,7 @@ export const BrowseView = () => {
   
     const activity = data.data.trellisData.activity
 
-    const actions = getExpressionActions(expression, setFosAndTrellisData)
+    // const actions = expression.getOp(expression, setFosAndTrellisData)
 
   
     console.log('queueview', route, data)
@@ -80,7 +80,7 @@ export const BrowseView = () => {
 
         {routeNodeRoutes.map((exprRoute, i) => {
             const childExpr = new FosExpression(store, exprRoute)
-            return <ExpressionGridCell key={i} data={data} setData={setData} options={options} nodeRoute={exprRoute} mode={["read"]} expression={childExpr} activity={activity} />
+            return <ExpressionGridCell key={i} setData={setData} options={options} expression={childExpr} data={data} />
         })}
     </div>)
 }

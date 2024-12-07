@@ -3,6 +3,7 @@ import { FosDataContent, FosNodeContent, FosPathElem } from "../types"
 import { FosNode } from "./node"
 import { FosStore } from "./store"
 
+import { v4 as uuidv4 } from 'uuid';
 
 
 
@@ -33,6 +34,34 @@ export const getAllOfNode = (store: FosStore) => {
   })
   return allOfNode
 }
+
+
+export const getStartRootAlias = (store: FosStore): FosNode => {
+  const rootTarget = getTerminalNode(store)
+  const rootInstruction = getRootInstructionNode(store)
+  const targetConstructor = getTargetConstructorNode(store)
+  const instructionConstructor = getAliasInstructionConstructorNode(store)
+  const prevConstructor = getPreviousVersionNode(store)
+  const terminal = getTerminalNode(store)
+
+  const newUuid = uuidv4()
+
+  const aliasNode = store.create({
+    data: {
+      alias: {
+        id: newUuid,
+      }
+    },
+    children: [
+      [targetConstructor.getId(), rootTarget.getId()],
+      [instructionConstructor.getId(), rootInstruction.getId()],
+      [prevConstructor.getId(), terminal.getId()]
+    ]
+  })
+  // console.log('aliasNode', aliasNode.getId(), store.getNodeByAddress(aliasNode.getId()))
+  return aliasNode
+}
+
 
 export const getPreviousVersionNode = (store: FosStore) => generateConstructor(store, "PREV", { description: { content : 'Previous Version Constructor' } }, [])
 export const getFieldFieldNode = (store: FosStore) => generateConstructor(store, "FIELD", { description: { content : 'Field Field Constructor' } }, [])
@@ -185,8 +214,14 @@ export const getDelayTriggerNode = (store: FosStore) => generateConstructor(stor
 
 export const getGroupShadowNode = (store: FosStore) => generateConstructor(store, "GROUPSHADOW", { description: { content : 'Group Shadow Constructor' } }, [])
 
-export const dereferenceAliasNode = (store: FosStore) => generateConstructor(store, "DEREFALIAS", { description: { content : 'Dereference Alias Node' } }, [])
-export const aliasConstructorNode =  (store: FosStore) => generateConstructor(store, "ALIAS", { description: { content : 'Alias Constructor Node' } }, [])
+export const getDereferenceAliasActionNode = (store: FosStore) => generateConstructor(store, "DEREFALIAS", { description: { content : 'Dereference Alias Node' } }, [])
+export const getAliasConstructorNode =  (store: FosStore) => generateConstructor(store, "ALIAS", { description: { content : 'Alias Constructor Node' } }, [])
+export const getTargetConstructorNode =  (store: FosStore) => generateConstructor(store, "TARGET", { description: { content : 'Target Constructor Node' } }, [])
+export const getAliasInstructionConstructorNode = (store: FosStore) => generateConstructor(store, "ALIASINSTRUCTION", { description: { content : 'Alias Instruction Constructor Node' } }, [])
+
+export const getBrachConstructorNode = (store: FosStore) => generateConstructor(store, "BRANCH", { description: { content : 'Branch Constructor Node' } }, [])
+
+
 
 export const generateConstructor = (
   store: FosStore, 
@@ -312,7 +347,12 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const resumeAction = getResumeActionNode(store)
 
   const groupShadowNode = getGroupShadowNode(store)
-
+  const aliasConstructor = getAliasConstructorNode(store)
+  const targetConstructor = getTargetConstructorNode(store)
+  const aliasInstructionConstructor = getAliasInstructionConstructorNode(store)
+  const dereferenceAlias = getDereferenceAliasActionNode(store)
+  const startRootAlias = getStartRootAlias(store)
+  const brachConstructorNode = getBrachConstructorNode(store)
 
 
   return {
@@ -404,7 +444,13 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     pauseAction,
     resumeAction,
     groupShadowNode,
-
+    aliasConstructor,
+    targetConstructor,
+    aliasInstructionConstructor,
+    dereferenceAlias,
+    getStartRootAlias,
+    startRootAlias,
+    brachConstructorNode,
     // allOf: getAllOfNode(store),
   }
 
@@ -483,6 +529,12 @@ export type PrimitiveAliases = {
   conflictNode: FosNode,
   nameNode: FosNode,
   groupShadowNode: FosNode, 
-
+  aliasConstructor: FosNode,
+  targetConstructor: FosNode,
+  aliasInstructionConstructor: FosNode,
+  dereferenceAlias: FosNode,
+  startRootAlias: FosNode,
+  brachConstructorNode: FosNode,
+  proposalField: FosNode,
   
 }

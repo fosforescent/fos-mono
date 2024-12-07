@@ -100,13 +100,13 @@ model ClientErrorModel {
 }
 
 model FosNodeUserAccessLinkModel {
-  id        Int          @id @default(autoincrement())
-  fosNodeId String       @db.Uuid
-  userId    Int
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @default(now())
-  fosNode   FosNodeModel @relation(fields: [fosNodeId], references: [cid])
-  fosGroup  UserModel    @relation(fields: [userId], references: [id])
+  id            Int          @id @default(autoincrement())
+  fosNodeId     String
+  userId        Int
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now())
+  fosTargetNode FosNodeModel @relation(fields: [fosNodeId], references: [cid])
+  fosGroup      UserModel    @relation(fields: [userId], references: [id])
 }
 
 model FosNodeModel {
