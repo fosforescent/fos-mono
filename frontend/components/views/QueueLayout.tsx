@@ -69,10 +69,11 @@ const QueueView = () => {
   
   
 
-  const expressionToUse = expression.isAlias() ? expression.getChildren().find((expr) => {
-    console.log('searching for alias child')
-    return expr.instructionNode.getId() === expression.store.primitive.targetConstructor.getId()
-  }) : expression
+  const expressionToUse = expression  
+  // .isAlias() ? expression.getChildren().find((expr) => {
+  //   // console.log('searching for alias child')
+  //   return expr.instructionNode.getId() === expression.store.primitive.targetConstructor.getId()
+  // }) : expression
 
   if (!expressionToUse) {
     throw new Error('No expression to use')
@@ -115,13 +116,13 @@ const QueueView = () => {
 
   useEffect(() => {
     const activity = data.data.trellisData.activity
-    expressionToUse.getAllDescendentsForActivity(data.data.trellisData.activity)
+    const routes = expressionToUse.getAllDescendentsForActivity(data.data.trellisData.activity)
 
 
-    console.log("all Store nodes", store.table, store)
+    console.log("all Store nodes", routes)
 
 
-    setRoutesToShow(expressionToUse.getAllDescendentsForActivity(activity))
+    setRoutesToShow(routes)
     
   }, [data.data.trellisData.activity])
 
@@ -178,8 +179,8 @@ const QueueView = () => {
 
 
 
-  console.log('queueView', data, expressionToUse)
-  console.log('queueView --- expression', data, expressionToUse)
+  // console.log('queueView', data, expressionToUse)
+  // console.log('queueView --- expression', data, expressionToUse)
 
 
 

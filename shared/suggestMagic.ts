@@ -131,7 +131,7 @@ export const suggestStepsMagic = async (
           }
 
 
-          for (const childExpr of lExpression.getChildren()) {
+          for (const childExpr of lExpression.getTargetChildren()) {
 
 
             

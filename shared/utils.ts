@@ -1,9 +1,10 @@
 import e from "cors"
-import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute, TrellisSerializedData } from "./types"
+import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute, TrellisSerializedData, AppStateLoaded } from "./types"
 import { FosStore } from "./dag-implementation/store"
 import { FosExpression, } from "./dag-implementation/expression"
 import { FosNode } from "./dag-implementation/node"
 import { defaultTrellisData } from "./defaults"
+import exp from "constants"
 
 
 
@@ -43,7 +44,7 @@ export const validateProfileData = (profileData: unknown): AppState["info"]["pro
 export const getDownNode = (expression: FosExpression): FosExpression | null => {
 
   const parent = expression.getParent()
-  const children = parent.getChildren()  
+  const children = parent.getTargetChildren()  
   
   if (!parent.childrenVisible()){
     throw new Error('Parent is not visible')
@@ -99,7 +100,7 @@ export const getAncestorLeastUpSibling = (expression: FosExpression): FosExpress
 export const getUpSibling = (expression: FosExpression): FosExpression | null => {
 
   const { indexInParent, parent } = expression.getParentInfo()
-  const siblings = parent.getChildren()
+  const siblings = parent.getTargetChildren()
   if (indexInParent === 0){
     return null
   }
@@ -113,7 +114,7 @@ export const getUpSibling = (expression: FosExpression): FosExpression | null =>
 export const getDownSibling = (expression: FosExpression): FosExpression | null => {
   
   const { indexInParent, parent } = expression.getParentInfo()
-  const siblings = parent.getChildren()
+  const siblings = parent.getTargetChildren()
 
   // console.log('downSibling - sibling routes', siblingRoutes, indexInParent, nodeRoute)
   if (indexInParent === siblings.length - 1){
@@ -137,7 +138,7 @@ export const getDownmostDescendent = (expression: FosExpression, depthLimit: num
   const hasChildren = expression.hasChildren()
   const childrenVisible = expression.childrenVisible()
 
-  const children = expression.getChildren()
+  const children = expression.getTargetChildren()
   
   if (childrenVisible && hasChildren ){
     return getDownmostDescendent(children[children.length - 1]!, depthLimit - 1)
@@ -151,7 +152,7 @@ export const getUpNode = (expression: FosExpression): FosExpression | null => {
   
   const { indexInParent, parent, siblingRoutes } = expression.getParentInfo()
 
-  const siblings = parent.getChildren()
+  const siblings = parent.getTargetChildren()
 
   if (indexInParent > 0 ){
     return getDownmostDescendent(siblings[indexInParent - 1]!)
@@ -236,19 +237,30 @@ export const mutableReduceToRouteMapFromExpression = <T>(
         if (nodeRoute[i]?.[0] === nodeRoute[j]?.[0] && 
             nodeRoute[i]?.[1] === nodeRoute[j]?.[1]) {
           // Found a cycle, stop traversing this path
+          // console.warn('Cycle detected in route', nodeRoute)
           return
         }
       }
     }
 
-    const childExpressions = expr.getChildren()
+    const childInstructionExpressions = expr.getInstructionChildren()
+
+    const childExpressions = expr.getTargetChildren()
+
+    for (const childExpr of childInstructionExpressions) {
+      helper(acc, childExpr)
+    }
+
+    operation(acc, expr, childInstructionExpressions)
+
+
+    for (const childExpr of childExpressions) {
+      helper(acc, childExpr)
+    }
+
 
     operation(acc, expr, childExpressions)
 
-    for (const childExpr of childExpressions) {
-      
-      helper(acc, childExpr)
-    }
   }
 
   helper(resultMap, expression)
@@ -356,7 +368,7 @@ export const getGroupFromRoute = (route: FosPath, store: FosStore): FosNode => {
     }
     return groupNode
   } else {
-      return store.rootTarget   
+      return store.getRootNode()   
   }
 
 

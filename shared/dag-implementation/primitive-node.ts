@@ -237,6 +237,19 @@ export const generateConstructor = (
   }
 
   const newNode = store.create(nodeContent, alias)
+
+  // if (alias === "TARGET") {
+  //   console.log("TARGET address",  newNode.getId())
+  // }
+  // if (alias === "ALIASINSTRUCTION") {
+  //   console.log("ALIASINSTRUCTION address",  newNode.getId())
+  // }
+  // if (alias === "PREV") {
+  //   console.log("PREV address",  newNode.getId())
+  // }
+
+
+
   if (!newNode) throw new Error('could not create node')
   return newNode
 }

@@ -91,6 +91,8 @@ export class FosStore {
       const allValidKeys = new Set([...existingCids, ...newKeys])
       // check all children first
       Object.keys(fosCtxData.fosData.nodes).forEach((key) => {
+
+
         const nodeContent = fosCtxData.fosData.nodes[key]!
         nodeContent.children.forEach((edge, index) => {
           if (!allValidKeys.has(edge[0])){
@@ -100,15 +102,16 @@ export class FosStore {
             throw new Error(`edge ${edge} has non-existent target nodes`)
           }
         })
-      })
-
-  
-      Object.keys(fosCtxData.fosData.nodes).forEach((key) => {
-        const nodeContent = fosCtxData.fosData.nodes[key]!
+        
         const cid = this.hash(nodeContent)
         this.table.set(cid, nodeContent)
-
+        if (key === "b3f17d6c4a0b8b5cee8a32d50d3af24c9bd665da316d4ec7824d03cc08e7d91c"){
+          const hasKey = allValidKeys.has(key)
+          const nodeContent = fosCtxData.fosData.nodes[key]!
+          console.log('key', key, hasKey, nodeContent, cid)
+        }
       })
+
 
       this.rootNodeId = fosCtxData.fosData.rootNodeId
 
@@ -188,6 +191,7 @@ export class FosStore {
   
 
         if (!this.checkAddress(item[0]) && !this.checkAddress(item[1])){
+          throw new Error (`edge ${item} has non-existent instruction and target nodes`)
 
           const newErrorTargetContent: FosNodeContent = {
             data: {
@@ -207,6 +211,7 @@ export class FosStore {
 
 
         } else if (!this.checkAddress(item[0])) {
+          throw new Error (`edge ${item} has non-existent instruction node`)
 
           const newErrorTargetContent: FosNodeContent = {
             data: {
@@ -225,6 +230,8 @@ export class FosStore {
           return newElem
 
         } else if (!this.checkAddress(item[1])) {
+          throw new Error (`edge ${item} has non-existent target node`)
+
           const newErrorTargetContent: FosNodeContent = {
             data: {
               error: {
@@ -246,7 +253,7 @@ export class FosStore {
         return item
 
       } else {
-
+        throw new Error(`inserting array that has malformed edges`)
         const newErrorTargetContent: FosNodeContent = {
           data: {
             error: {
@@ -1003,6 +1010,25 @@ export class FosStore {
 
 
 
+
+// Helper function to deeply sort object keys
+function normalizeObject(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(normalizeObject);
+  }
+
+  return Object.keys(obj)
+    .sort()
+    .reduce((result: any, key: string) => {
+      result[key] = normalizeObject(obj[key]);
+      return result;
+    }, {});
+}
+
 function sortEdges(edges: FosPathElem[]): FosPathElem[] {
   return edges.map(edge => [...edge].sort() as FosPathElem)
     .sort((a, b) => 
@@ -1015,11 +1041,12 @@ function sortEdges(edges: FosPathElem[]): FosPathElem[] {
 
 export function hashContent(content: FosNodeContent): string {
   const normalized = {
-    data: JSON.stringify(content.data),
+    data: JSON.stringify(normalizeObject(content.data)),
     children: sortEdges(content.children)
   }
   return sha3_256(JSON.stringify(normalized))
 }
+
 
 const aggMapContent = (content: FosNodeContent): Map<string, string[]> => {
   return aggMap(content.children)

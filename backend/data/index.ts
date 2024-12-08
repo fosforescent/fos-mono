@@ -156,24 +156,10 @@ export const deleteUserData = async (req: Request, res: Response) => {
     })
 
 
-  
-
     if (!user) {
       res.status(401).send('User not found')
       return res
     }
-
-    const dataHistory = await prisma.dataHistoryModel.findMany({
-      where: {
-        user_id: user.id
-      }
-    })
-
-    const dataHistoryDelete = await prisma.dataHistoryModel.deleteMany({
-      where: {
-        user_id: user.id
-      }
-    })
 
     const updatedUser = await prisma.userModel.update({
       where: { user_name: username },

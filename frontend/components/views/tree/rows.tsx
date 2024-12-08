@@ -46,7 +46,7 @@ export const FosRowsComponent = ({
   const [showMore, setShowMore] = React.useState(false)
 
 
-  const nodeChildren = expression.getChildren()
+  const nodeChildren = expression.getTargetChildren()
 
 
   const items = nodeChildren.map((childExpr, index) => {
@@ -187,7 +187,7 @@ const OptionRowsExpanded = ({
   }
 
 
-  const children = expression.getChildren()
+  const children = expression.getTargetChildren()
   
   const childRoutes = expression.childRoutes()
 
@@ -281,7 +281,7 @@ const TaskRows = ({
     })
   }
   
-  const children = expression.getChildren()
+  const children = expression.getTargetChildren()
 
 
   const canPrompt = options.canPromptGPT && options.promptGPT

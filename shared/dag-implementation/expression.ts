@@ -20,6 +20,10 @@ export class FosExpression {
     if (!lastElem) {
       const rootNode = store.getRootNode()
 
+      // const [instructionNode, targetNode] = rootNode.getAliasTargetNodes()
+      // this.instructionNode = instructionNode
+      // this.targetNode = targetNode
+      
       this.instructionNode = store.primitive.aliasConstructor
       this.targetNode = rootNode
 
@@ -36,6 +40,82 @@ export class FosExpression {
       this.targetNode = targetNode
     }
   }
+
+
+
+
+
+  update(newInstruction: FosNode, newTarget: FosNode): [FosExpression, ...FosExpression[]] {
+ 
+    if (!this.hasParent()) {
+
+      const currentRootNode = this.store.getRootNode()
+
+      const rootNodeWithNewTarget = currentRootNode.setAliasInfo({
+        newTarget: newTarget,
+        newInstruction: newInstruction,
+      })
+
+      // this.targetNode = newTarget
+      // this.instructionNode = newInstruction
+      // this.store.setRootNode(rootNodeWithNewTarget)
+      return [new FosExpression(this.store, [])]
+
+    } else {
+      const { parent } = this.getParentInfo() 
+
+
+      const parentContent = parent.targetNode.getContent()
+      const newChildren: FosPathElem[]  = parent.targetNode.getEdges().map((edge, i) => {
+        if (edge[0] === this.instructionNode.getId() && edge[1] === this.targetNode.getId()) {
+          return [newInstruction.getId(), newTarget.getId()]
+        }
+        return edge
+      })
+      const newParentTarget = parent.store.create({
+        data: parentContent.data,
+        children: newChildren
+      })
+  
+      const parentInstruction = parent.instructionNode.getContent()
+      const newInstructionChildren: FosPathElem[] = parent.instructionNode.getEdges().map((edge, i) => {
+        if (edge[0] === this.instructionNode.getId() && edge[1] === this.targetNode.getId()) {
+          return [newInstruction.getId(), newTarget.getId()]
+        }
+        return edge
+      })
+      const newParentInstruction = parent.store.create({
+        data: parentInstruction.data,
+        children: newInstructionChildren
+      })
+
+      const [newParentExpression, ...ancestors] = parent.update(newParentInstruction, newParentTarget)
+
+      const exists = newParentExpression.getTargetChildren().some((child) => {
+        const sameInstruction = child.targetNode.getId() === newTarget.getId()
+        const sameTarget = child.instructionNode.getId() === this.instructionNode.getId()
+        return sameInstruction && sameTarget
+      })
+      if (!exists){
+        throw new Error('Parent node does not contain this new child')
+      }
+      // this.instructionNode = newInstruction
+      // this.targetNode = newTarget
+      // this.route = [...newParentExpression.route, [newInstruction.getId(), this.targetNode.getId()]]
+      // this.store = newParentExpression.store
+      const newExpression = new FosExpression(newParentExpression.store, [...newParentExpression.route, [newInstruction.getId(), this.targetNode.getId()]])
+      if (newExpression.instructionNode.getEdges().length !== newInstruction.getEdges().length) {
+        throw new Error('Instruction node not updated correctly')
+      }
+
+      return [newExpression, newParentExpression, ...ancestors]
+  
+    }
+
+  }
+
+
+
 
   // Core Property Getters
   expressionType(): string {
@@ -251,14 +331,34 @@ export class FosExpression {
   }
 
   isAlias(): boolean {
-    console.log('isAlias', this.instructionNode.getId(), this.store.primitive.aliasConstructor.getId())
+
+    /**
+     * should we just check if it's using the alias constructor?  Rather than doing this structure check?
+     */
+
+    // console.log('isAlias', this.instructionNode.getId(), this.store.primitive.aliasConstructor.getId())
     const targetHasTargetEdge = this.targetNode.getEdges().some((edge) => {
-      console.log('edge', edge, this.store.primitive.targetConstructor.getId())
+      // console.log('edge', edge, this.store.primitive.targetConstructor.getId())
       return edge[0] === this.store.primitive.targetConstructor.getId()
     })
-    console.log('targetHasTargetEdge', targetHasTargetEdge)
+    // console.log('targetHasTargetEdge', targetHasTargetEdge)
+    const targetHasAliasInstruction = this.targetNode.getEdges().some((edge) => {
+      return edge[0] === this.store.primitive.aliasInstructionConstructor.getId()
+    })
 
     return targetHasTargetEdge
+  }
+
+  followAlias(): FosExpression {
+    if (!this.isAlias()) {
+      throw new Error('Expression is not an alias')
+    }
+
+    const [instructionNode, targetNode] = this.targetNode.getAliasTargetNodes()
+
+    return new FosExpression(this.store, [...this.route, [instructionNode.getId(), targetNode.getId()]])
+
+
   }
 
   // Navigation Methods
@@ -270,24 +370,33 @@ export class FosExpression {
     }
   }
 
-  getChildren(): FosExpression[] {
-    return this.targetNode.getEdges().map((edge) => {
+  getTargetChildren(index: number | null = null): FosExpression[] {
+    const children = this.targetNode.getEdges().map((edge) => {
       return new FosExpression(this.store, [...this.route, edge])
     })
-  }
-
-  getChildByIndex(index: number): FosExpression {
-    const edge = this.targetNode.getEdges()[index]
-    if (!edge) {
+    if (index === null) {
+      return children
+    }
+    const indexedChild = children.slice(index, index + 1)[0]
+    if (!indexedChild) {
       throw new Error('Child not found')
     }
-    return new FosExpression(this.store, [...this.route, edge])
+    return [indexedChild]
   }
 
-  getInstructionChildren(): FosExpression[] {
-    return this.instructionNode.getEdges().map((edge) => {
+
+  getInstructionChildren(index: number | null = null): FosExpression[] {
+    const children = this.instructionNode.getEdges().map((edge) => {
       return new FosExpression(this.store, [...this.route, edge])
     })
+    if (index === null) {
+      return children
+    }
+    const indexedChild = children.slice(index, index + 1)[0]
+    if (!indexedChild) {
+      throw new Error('Child not found')
+    }
+    return [indexedChild]
   }
 
   // Content Methods
@@ -309,8 +418,8 @@ export class FosExpression {
     return hasInstructionMatch && hasTargetMatch
   }
 
-  getChildrenMatchingPattern(typeNode: FosNode, targetNode: FosNode): FosExpression[] {
-    return this.getChildren().filter((child) => {
+  getTargetChildrenMatchingPattern(typeNode: FosNode, targetNode: FosNode): FosExpression[] {
+    return this.getTargetChildren().filter((child) => {
       const instructionNodesMatch = this.store.matchPattern(typeNode, child.instructionNode)
       const hasInstructionMatch = instructionNodesMatch.length > 0
       const targetNodesMatch = this.store.matchPattern(targetNode, child.targetNode)
@@ -319,12 +428,12 @@ export class FosExpression {
     })
   }
 
-  getChildrenForActivity(activity: string): FosExpression[] {
+  getTargetChildrenForActivity(activity: string): FosExpression[] {
     if (activity === 'comments') {
-      return this.getChildrenMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
+      return this.getTargetChildrenMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
     }
     if (activity === 'todo') {
-      return this.getChildrenMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
+      return this.getTargetChildrenMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
     }
     return []
   }
@@ -338,6 +447,10 @@ export class FosExpression {
       if (hasInstructionMatch && hasTargetMatch) {
         acc.set(expression.route, expression)
       }
+
+      console.log('allDescendentsMatchingPattern - instruction', hasInstructionMatch, expression.instructionNode, typeNode,  expression.instructionNode.getData().description?.content || expression.instructionNode.getId(), expression.route)
+      console.log('allDescendentsMatchingPattern - target', hasTargetMatch, expression.targetNode, targetNode, expression.targetNode.getData().description?.content || expression.targetNode.getId(), expression.route)
+      console.log('allDescendentsMatchingPattern - info', expression.route, this)
       return acc
     })
 
@@ -345,10 +458,12 @@ export class FosExpression {
   }
 
   getAllDescendentsForActivity(activity: string): FosPath[] {
+    console.log('getAllDescendentsForActivity', activity)
     if (activity === 'comments') {
       return this.getAllDescendentsMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
     }
     if (activity === 'todo') {
+      
       return this.getAllDescendentsMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
     }
     return []
@@ -357,7 +472,7 @@ export class FosExpression {
   // Option Related Methods
   getOptions() {
     if (this.isOption()) {
-      return this.getChildren().map((child, index) => ({
+      return this.getTargetChildren().map((child, index) => ({
         value: index.toString(),
         label: child.getDescription()
       }))
@@ -373,7 +488,7 @@ export class FosExpression {
 
     const selectedIndex = this.targetNode.getData().option?.selectedIndex || 0
     const nodeOptions = this.getOptions()
-    const nodeChildren = this.getChildren()
+    const nodeChildren = this.getTargetChildren()
 
     if (nodeChildren.length < 2) {
       throw new Error('Should not have less than 2 options')
@@ -385,7 +500,11 @@ export class FosExpression {
 
 
 
-    const selectedChildRoute: FosPath = this.getChildByIndex(selectedIndex).route
+    const selectedChildRoute: FosPath | undefined = this.getTargetChildren(selectedIndex)[0]?.route
+    if (!selectedChildRoute) {
+      throw new Error('selectedChildRoute not found')
+    }
+
     const isOptionChildCollapsed = this.store.trellisData.collapsedList.some((route) => 
       pathEqual(route, selectedChildRoute)
     )
@@ -409,43 +528,6 @@ export class FosExpression {
   }
 
 
-  notifyParent() {
-
-    const { parent, indexInParent } = this.getParentInfo()
-
-    if (parent && parent.isRoot()) {
-
-      const currentRootNode = this.store.getRootNode()
-
-      const rootNodeWithNewTarget = currentRootNode.setAliasInfo({
-        newTarget: this.targetNode,
-        newInstruction: this.instructionNode
-      })
-
-      this.store.setRootNode(rootNodeWithNewTarget)
-
-
-    }else {
-
-      const parentContent = parent.targetNode.getContent()
-      const newChildren = parent.targetNode.getEdges().map((edge, i) => {
-        if (i === indexInParent) {
-          return this.pathElem()
-        }
-        return edge
-      })
-      const newParentTarget = parent.store.create({
-        data: parentContent.data,
-        children: newChildren
-      })
-  
-      parent.setTargetNode(newParentTarget)
-  
-    }
-
-
-  }
-
   // Parent Info Methods
   getParentInfo() {
     if (!this.hasParent()) {
@@ -455,16 +537,30 @@ export class FosExpression {
     const parent = this.getParent()
 
     
-    const indexInParent = parent.getChildren().findIndex((childExpr) => 
+    const targetIndexInParent = parent.getTargetChildren().findIndex((childExpr) => 
 
       this.equals(childExpr)
     )
+
+    const instructionIndexInParent = parent.getInstructionChildren().findIndex((childExpr) => 
+
+      this.equals(childExpr)
+    )
+
+    if (targetIndexInParent === -1 && instructionIndexInParent === -1) {
+      throw new Error('Parent does not contain this child')
+    }
+
+    if (targetIndexInParent !== -1 && instructionIndexInParent !== -1) {
+      throw new Error('Edge duplicated in instruction and target')
+    }
 
 
 
     return {
       parent,
-      indexInParent,
+      targetIndexInParent,
+      instructionIndexInParent,
       siblingRoutes: parent.childRoutes
     }
   }
@@ -506,19 +602,6 @@ export class FosExpression {
   }
 
 
-  setTargetNode(newTarget: FosNode) {
-    this.route = [...this.route.slice(0, -1), [this.instructionNode.getId(), newTarget.getId()]]
-    this.targetNode = newTarget
-    this.notifyParent()
-  }
-
-  setInstructionNode(newInstruction: FosNode) {
-    this.route = [...this.route.slice(0, -1), [newInstruction.getId(), this.targetNode.getId()]]
-    this.instructionNode = newInstruction
-    this.notifyParent()
-  }
-
-
   // Content Modification Methods
   updateTargetContent(newContent: FosNodeContent) {
     const thisEdge = this.route[this.route.length - 1]
@@ -528,7 +611,7 @@ export class FosExpression {
       throw new Error('Cannot update root node')
     }
     
-    this.targetNode = newTarget
+    return this.update(this.instructionNode, newTarget)
   }
 
  
@@ -577,7 +660,7 @@ export class FosExpression {
 
  
 
-  addChoice(content: string): FosExpression {
+  addChoice(content: string): [FosExpression, FosExpression, ...FosExpression[]] {
     const currentInstructionNode = this.instructionNode
 
     const newAlternative = this.store.create({
@@ -590,17 +673,20 @@ export class FosExpression {
     })
 
     if (!this.isChoice()){
+      const newEdge: FosPathElem = [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()]
+
       const newInstructionNode = this.store.create({
         data: currentInstructionNode.getData(),
         children: [
-          [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()],
+          newEdge,
         ]
       })
-      this.setInstructionNode(newInstructionNode)
-      const newExpr = new FosExpression(this.store, [...this.route, [newInstructionNode.getId(), this.store.primitive.choiceTarget.getId()]])
-      return newExpr
+      const [newExpr, ...rest] = this.update(newInstructionNode, this.targetNode)
+      const newChoiceExpr = new FosExpression(newExpr.store, [...newExpr.route, newEdge])
+      return [newChoiceExpr, newExpr]
   
     } else {
+      const newEdge: FosPathElem = [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()]
 
       const currentSelectedChild = this.targetNode.getEdges().findIndex((edge) => {
         return edge[1] === this.store.primitive.optionSelectedConstructor.getId()
@@ -610,22 +696,23 @@ export class FosExpression {
         return [edge[0], this.store.primitive.optionNotSelectedConstructor.getId()]
       })
 
-      newChildren.splice(currentSelectedChild, 0, [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()])
+      newChildren.splice(currentSelectedChild, 0, newEdge)
 
       const newInstructionNode = this.store.create({
         data: currentInstructionNode.getData(),
         children: newChildren
       })
-      this.setInstructionNode(newInstructionNode)
-      const newExpr = new FosExpression(this.store, [...this.route, [newInstructionNode.getId(), this.store.primitive.choiceTarget.getId()]])
-      return newExpr
+      const [newExpression, ...rest] = this.update(newInstructionNode, this.targetNode)
+
+      const newChoiceExpr = new FosExpression(this.store, [...newExpression.route, [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()]])
+      return [newChoiceExpr, newExpression, ...rest]
 
     }
 
 
   }
 
-  addWorkflow(content: string): FosExpression {
+  addWorkflow(content: string): [FosExpression, FosExpression, ...FosExpression[]] {
     const workflowConstructor = this.store.primitive.workflowField
 
     const workflowTargetNode = this.store.create({
@@ -639,13 +726,13 @@ export class FosExpression {
     })
 
     const newTarget = this.targetNode.addEdge(workflowConstructor.getId(), workflowTargetNode.getId())
-    this.setTargetNode(newTarget)
-    const newExpr = new FosExpression(this.store, [...this.route, [workflowConstructor.getId(), workflowTargetNode.getId()]])
-    return newExpr
+    const [newThis, ...rest] = this.update(this.instructionNode, newTarget)
+    const newExpr = new FosExpression(newThis.store, [...newThis.route, [workflowConstructor.getId(), workflowTargetNode.getId()]])
+    return [newExpr, newThis, ...rest]
 
   }
 
-  addDocument(content: string): FosExpression {
+  addDocument(content: string): [FosExpression, FosExpression, ...FosExpression[]] {
 
     
     const documentConstructor = this.store.primitive.documentField
@@ -661,9 +748,9 @@ export class FosExpression {
     })
 
     const newTarget = this.targetNode.addEdge(documentConstructor.getId(), documentTargetNode.getId())
-    this.setTargetNode(newTarget)
-    const newExpr = new FosExpression(this.store, [...this.route, [documentConstructor.getId(), documentTargetNode.getId()]])
-    return newExpr
+    const [newThis, ...rest] = this.update(this.instructionNode, newTarget)
+    const newExpr = new FosExpression(newThis.store, [...newThis.route, [documentConstructor.getId(), documentTargetNode.getId()]])
+    return [newExpr, newThis, ...rest]
   }
 
   addMarketRequest(content: string): FosExpression {
@@ -679,14 +766,14 @@ export class FosExpression {
       throw new Error('Method only implemented for branch expressions')
     }
 
-    this.setInstructionNode(this.store.primitive.proposalField)
+    this.update(this.store.primitive.proposalField, this.targetNode)
 
   }
 
-  addBranch(content: string): FosExpression {
+  addBranch(content: string): [FosExpression, FosExpression, ...FosExpression[]] {
     const brachConstructor = this.store.primitive.brachConstructorNode
 
-    const target = this.targetNode.getAliasTarget()
+    const [_, target] = this.targetNode.getAliasTargetNodes()
 
     const branchTargetNode = this.store.create({
       data: {
@@ -706,10 +793,11 @@ export class FosExpression {
       children: newRootTargetEdges
     })
 
-    this.setTargetNode(newRootTarget)
+    const [newThis, ...rest] = this.update(this.instructionNode, newRootTarget)
 
 
-    return new FosExpression(this.store, [[brachConstructor.getId(), branchTargetNode.getId()]])
+    const newBranch = new FosExpression(newThis.store, [[brachConstructor.getId(), branchTargetNode.getId()]])
+    return [newBranch, newThis, ...rest]
   }
 
     
@@ -732,7 +820,7 @@ export class FosExpression {
       ]
     })
     const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketServiceNode.getId(), marketServiceNode.getId())
-    rootExpr.setTargetNode(newRootTarget)
+    rootExpr.update(rootExpr.instructionNode, newRootTarget)
     const newExpr = new FosExpression(this.store, [[this.store.primitive.marketServiceNode.getId(), marketServiceNode.getId()]])
     return newExpr
   }
@@ -754,7 +842,7 @@ export class FosExpression {
       ]
     })
     const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketRequestNode.getId(), marketRequestNode.getId())
-    rootExpr.setTargetNode(newRootTarget)
+    rootExpr.update(rootExpr.instructionNode, newRootTarget)
     const newExpr = new FosExpression(this.store, [[this.store.primitive.marketRequestNode.getId(), marketRequestNode.getId()]])
     return newExpr
 
@@ -786,7 +874,7 @@ export class FosExpression {
   }
 
   getOrMakeAlias(): FosNode {
-
+    throw new Error('Method not implemented')
   }
 
   setSearchQuery (searchQuery: string){
@@ -834,12 +922,15 @@ export class FosExpression {
           time: Date.now()
         },
       })
-    this.setTargetNode(newTarget)
+    this.update(this.instructionNode, newTarget)
   }
 
 
 
-  addTodo (description: string): FosExpression {
+  addTodo (description: string): [FosExpression, FosExpression, ...FosExpression[]]  {
+    if (this.isAlias()){
+      return this.followAlias().addTodo(description)
+    }
     const newTaskNode = this.store.create({
       data: {
         description: {
@@ -852,13 +943,19 @@ export class FosExpression {
       children: []
     })
 
-    const newTarget = this.targetNode.addEdge(newTaskNode.getId(), this.store.primitive.completeField.getId())
-    this.setTargetNode(newTarget)
-    const newExpression = new FosExpression(this.store, [...this.route, [newTaskNode.getId(), this.store.primitive.completeField.getId()]])
-    return newExpression
+    const newInstruction = this.instructionNode.addEdge(newTaskNode.getId(), this.store.primitive.completeField.getId())
+    const newInstructionChildLength = newInstruction.getEdges().length
+    const [newExpression, ...rest] = this.update(newInstruction ,this.targetNode)
+
+    const newChild = newExpression.getInstructionChildren()[newInstructionChildLength - 1]
+    if (!newChild) {
+      throw new Error('New child not found')
+    }
+  
+    return [newChild, newExpression, ...rest]
   }
 
-  addComment (comment: string) {
+  addComment (comment: string): [FosExpression, FosExpression, ...FosExpression[]]  {
 
     const newCommentNode = this.store.create({
       data: {
@@ -877,9 +974,11 @@ export class FosExpression {
 
     const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.commentConstructor.getId(), newCommentNode.getId())
 
-    rootExpr.setTargetNode(newRootTarget)
+    const [newThis, ...rest] = rootExpr.update(rootExpr.instructionNode, newRootTarget)
 
-    const commentExpr = new FosExpression(this.store, [ [ this.store.primitive.commentConstructor.getId(), newCommentNode.getId() ]])
+    const commentExpr = new FosExpression(newThis.store, [ [ newThis.store.primitive.commentConstructor.getId(), newCommentNode.getId() ]])
+
+    return [commentExpr, newThis, ...rest]
     
   }
 
@@ -1081,36 +1180,40 @@ export class FosExpression {
     this.store.fosRoute = this.route
   }
   
-  addChild(newType: FosNode, newNodeContent: FosNodeContent, index: number = -1): FosExpression {
+  addChild(newType: FosNode, newNodeContent: FosNodeContent, index: number = -1): [FosExpression, FosExpression, ...FosExpression[]] {
     const childTarget = this.store.create(newNodeContent)
     const newThisTarget = this.targetNode.addEdge(newType.getId(), childTarget.getId(), index) 
-    this.targetNode = newThisTarget
-    const child = this.getChildren().find((child) => pathEqual(child.route, [...this.route, [newType.getId(), childTarget.getId()]]))
+    const [newThis, ...rest] = this.update(this.instructionNode, newThisTarget)
+    const child = newThis.getTargetChildren().find((child) => pathEqual(child.route, [...newThis.route, [newType.getId(), childTarget.getId()]]))
     if (!child) {
       throw new Error('Child not found')
     }
-    return child
+    return [child, newThis, ...rest]
   }
   
-  attachChild(newRowType: FosNode, newRowId: FosNode, index: number = -1): FosExpression {
+  attachChild(newRowType: FosNode, newRowId: FosNode, index: number = -1): [FosExpression, FosExpression, ...FosExpression[]] {
     const newTarget = this.targetNode.addEdge(newRowType.getId(), newRowId.getId(), index)
-    this.setTargetNode(newTarget)
-    return new FosExpression(this.store, [...this.route, [newRowType.getId(), newRowId.getId()]])
+    const [newThis, ...rest] = this.update(this.instructionNode, newTarget)
+    const child = new FosExpression(newThis.store, [...newThis.route, [newRowType.getId(), newRowId.getId()]])
+    return [child, newThis, ...rest]
   }
   
-  attachSibling(newRowType: FosNode, newRowTarget: FosNode, position: number | string ) {
+  attachTargetSibling(newRowType: FosNode, newRowTarget: FosNode, position: number | string ) {
       // add option node to parent, put current node under it, and add new option
       
-      const { parent, indexInParent } = this.getParentInfo()
+      const { parent, targetIndexInParent } = this.getParentInfo()
+      if (targetIndexInParent === -1){
+          throw new Error('Node not found in parent')
+      }
       let index = 0
-      const parentChildren = parent.getChildren()
+      const parentChildren = parent.getTargetChildren()
       const parentRoute = parent.route
       if (typeof position === 'number'){
           index = position
       } else if (position === 'after'){
-          index = indexInParent + 1
+          index = targetIndexInParent + 1
       } else if (position === 'before'){
-          index = indexInParent
+          index = targetIndexInParent
       } else if (position === 'first'){
           index = 0
       } else if (position === 'last'){
@@ -1121,40 +1224,41 @@ export class FosExpression {
       return returnVal
   }
   
-  addSibling(newRowType: FosNode, newNodeContent: FosNodeContent, position: number | string ) {
+  addTargetSibling(newRowType: FosNode, newNodeContent: FosNodeContent, position: number | string ) {
     const newSiblingTarget = this.store.create(newNodeContent)
-    this.attachSibling(newRowType, newSiblingTarget, position)
+    this.attachTargetSibling(newRowType, newSiblingTarget, position)
     this.commit()
   }
   
   
-  removeNode(){
-    const { indexInParent, parent } = this.getParentInfo()
+  removeNode(): FosExpression[]{
+    const { targetIndexInParent, instructionIndexInParent, parent } = this.getParentInfo()
     this.moveFocusUp()
-    const newParentTarget = parent.targetNode.removeEdgeByIndex(indexInParent)
-    parent.targetNode = newParentTarget
+    if (targetIndexInParent !== -1){
+      const newTarget = parent.targetNode.removeEdgeByIndex(targetIndexInParent)
+      return parent.update(parent.instructionNode, newTarget)
+    }
+    if (instructionIndexInParent !== -1){
+      const newInstruction = parent.instructionNode.removeEdgeByIndex(instructionIndexInParent)
+      return parent.update(newInstruction, parent.targetNode)
+    }
+    throw new Error('Node not found in parent')
 
   }
   
   
 
-  
-  changeInstruction(newInstruction: FosNode) {
-    this.instructionNode = newInstruction
 
-    
-  }
   
-  
-  snipNode () {
+  snipNodeTarget () {
     
-    const { indexInParent, parent } = this.getParentInfo()
+    const { targetIndexInParent, parent } = this.getParentInfo()
 
     const parentContent = parent.targetNode.getContent()
     const parentChildren = parentContent.children
   
     const newParentRows: FosPathElem[] = parentContent.children.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
-      if (i !== indexInParent){
+      if (i !== targetIndexInParent){
         return [...acc, ...parentChildren]
       }
       return [...acc, child]
@@ -1166,26 +1270,26 @@ export class FosExpression {
     }
   
     const newParentTarget = parent.targetNode.mutate(newParentContent)
-    parent.targetNode = newParentTarget
+    parent.update(parent.instructionNode, newParentTarget)
     parent.commit()
   
   }
   
     
   
-  moveNodeAboveRoute ( targetRoute: FosPath) {
+  moveNodeAboveRoute (targetRoute: FosPath) {
     
 
 
     this.removeNode() 
 
     const targetExpression = new FosExpression(this.store, targetRoute)
-    const { parent: targetParent, indexInParent } = targetExpression.getParentInfo()
+    const { parent: targetParent, targetIndexInParent } = targetExpression.getParentInfo()
     
     const parentContent = targetParent.targetNode.getContent()
   
-    const newParentRows: FosPathElem[] = targetParent.getChildren().reduce((acc: FosPathElem[], child: FosExpression, i: number) => {
-      if (i === indexInParent){
+    const newParentRows: FosPathElem[] = targetParent.getTargetChildren().reduce((acc: FosPathElem[], child: FosExpression, i: number) => {
+      if (i === targetIndexInParent){
         const newElem: FosPathElem = this.pathElem()
         const newChildren: FosPathElem[] =  [...acc, newElem, child.pathElem()]
       }
@@ -1199,9 +1303,9 @@ export class FosExpression {
 
   
     const parentTargetNode = targetParent.targetNode.mutate(newParentContent)
-    targetParent.setTargetNode(parentTargetNode)
+    targetParent.update(targetParent.instructionNode, parentTargetNode)
   
-    const thisChildInParent = targetParent.getChildren().find((child) => pathEqual(child.route, [...targetParent.route, this.pathElem()]))
+    const thisChildInParent = targetParent.getTargetChildren().find((child) => pathEqual(child.route, [...targetParent.route, this.pathElem()]))
     
     thisChildInParent?.updateFocus(this.focusChar() || 0)
 
@@ -1211,13 +1315,13 @@ export class FosExpression {
 
     const targetExpression = new FosExpression(this.store, targetRoute)
 
-    const { indexInParent, parent } = targetExpression.getParentInfo()
+    const { targetIndexInParent, parent } = targetExpression.getParentInfo()
     this.removeNode() 
     const parentContent = parent.targetNode.getContent()
   
 
-    const newParentRows: FosPathElem[] = parent.getChildren().reduce((acc: FosPathElem[], child: FosExpression, i: number) => {
-      if (i === indexInParent){
+    const newParentRows: FosPathElem[] = parent.getTargetChildren().reduce((acc: FosPathElem[], child: FosExpression, i: number) => {
+      if (i === targetIndexInParent){
         const newElem: FosPathElem = this.pathElem()
         return [...acc, child.pathElem(), newElem]
       }
@@ -1230,9 +1334,9 @@ export class FosExpression {
     }
   
     const parentTargetNode = parent.targetNode.mutate(newParentContent)
-    parent.setTargetNode(parentTargetNode)
+    parent.update(parent.instructionNode, parentTargetNode)
     
-    const thisChildInParent = parent.getChildren().find((child) => pathEqual(child.route, [...parent.route, this.pathElem()]))
+    const thisChildInParent = parent.getTargetChildren().find((child) => pathEqual(child.route, [...parent.route, this.pathElem()]))
 
     if (!thisChildInParent){
         throw new Error('Child not found')
@@ -1270,11 +1374,11 @@ export class FosExpression {
     }
     
     const newTargetNode = targetExpression.targetNode.mutate(newParentContent)
-    targetExpression.setTargetNode(newTargetNode)
+    targetExpression.update(targetExpression.instructionNode, newTargetNode)
 
     this.removeNode()
 
-    const thisChildInParent = targetExpression.getChildren().find((child) => pathEqual(child.route, [...targetExpression.route, this.pathElem()]))
+    const thisChildInParent = targetExpression.getTargetChildren().find((child) => pathEqual(child.route, [...targetExpression.route, this.pathElem()]))
     if (!thisChildInParent){
         throw new Error('Child not found')
     }
@@ -1289,14 +1393,15 @@ export class FosExpression {
     const nodeContent = this.targetNode.getContent()
 
     const newTarget = this.targetNode.orderEdges(newOrder)
-    this.setTargetNode(newTarget)
+    const newExpr = this.update(this.instructionNode, newTarget)
+    return newExpr
   }
   
   moveLeft () {
     
     const { 
         parent,        
-        indexInParent, 
+        targetIndexInParent, 
         siblingRoutes
     } = this.getParentInfo()
   
@@ -1306,12 +1411,12 @@ export class FosExpression {
 
 
     siblingRoutes().forEach((siblingRoute: FosPath, i: number) => {
-      if (i < indexInParent + 1){
+      if (i < targetIndexInParent + 1){
           return
       } else {
-        console.log('siblingRoute', siblingRoute, this.route, i, indexInParent)
+        console.log('siblingRoute', siblingRoute, this.route, i, targetIndexInParent)
         throw new Error('Not implemented')
-        this.moveNodeIntoRoute(this.route, i - indexInParent + 1)
+        this.moveNodeIntoRoute(this.route, i - targetIndexInParent + 1)
       }
     })
 
@@ -1336,11 +1441,11 @@ export class FosExpression {
       console.log('upSiblingRoute', upSiblingExpr)
       if (upSiblingExpr) {
 
-        this.moveNodeIntoRoute(upSiblingExpr.route, upSiblingExpr.getChildren().length)
+        this.moveNodeIntoRoute(upSiblingExpr.route, upSiblingExpr.getTargetChildren().length)
         if (actualUpSiblingExpr){
             console.warn('this is a case that needs to be caught for better useability')
         }
-        const thisChildInParent = upSiblingExpr.getChildren().find((child) => pathEqual(child.route, [...upSiblingExpr.route, this.pathElem()]))        
+        const thisChildInParent = upSiblingExpr.getTargetChildren().find((child) => pathEqual(child.route, [...upSiblingExpr.route, this.pathElem()]))        
         if (!thisChildInParent){
             throw new Error('Child not found')
         }
@@ -1397,15 +1502,15 @@ export class FosExpression {
 
 
 
-  setDescription (description: string) {
+  setDescription (description: string): [FosExpression, ...FosExpression[]] {
   
     const newTarget = this.targetNode.updateData({
       description: {
         content: description
       }
     })
-    this.setTargetNode(newTarget)
-
+    const newExpr = this.update(this.instructionNode, newTarget)
+    return newExpr
   }
 
   setFocusAndDescription (description: string, focusChar: number) {
@@ -1413,15 +1518,15 @@ export class FosExpression {
     this.updateFocus(focusChar)
   }
 
-  setSelectedOption ( selectedOption: number) {
+  setSelectedOption ( selectedOption: number): [FosExpression, ...FosExpression[]] {
     const newTargetNode = this.targetNode.updateData({
         option: {
             defaultResolutionStrategy: 'selected',
             selectedIndex: selectedOption,
         }
     })
-    this.setTargetNode(newTargetNode)
-
+    const newExpression = this.update(this.instructionNode, newTargetNode)
+    return newExpression
   }
 
   
@@ -1480,14 +1585,15 @@ export class FosExpression {
   }
 
 
- addDownSibling () {
+ addDownSibling (): [FosExpression, ...FosExpression[]] {
 
-  const { indexInParent, parent } = this.getParentInfo()
-  const newChild = this.addChild( 
+  const { targetIndexInParent, parent } = this.getParentInfo()
+  const [newChild, ...rest] = this.addChild( 
         this.instructionNode, 
         {data: {description: {content: ""}}, children: []}, 
-    indexInParent + 1)
+    targetIndexInParent + 1)
     newChild.updateFocus(this.focusChar() || 0)
+    return [newChild, ...rest]
   }
 
 
@@ -1599,7 +1705,7 @@ export class FosExpression {
         console.log('deleteRow - comboboxEditable', this.getDescription(), this.route)
         if (this.hasFocus() && this.focusChar() === 0){
             if (!e.shiftKey){
-                this.snipNode()
+                this.snipNodeTarget()
             }else{
               this.removeNode()
             }
@@ -1685,7 +1791,7 @@ export class FosExpression {
 
 
 
-    const { newRows, newContext }  = this.nodeContent().children.reduce((acc: InstReturnVal, childPathElem: FosPathElem) => {
+    const { newRows, newContext }  = this.targetNode.getContent().children.reduce((acc: InstReturnVal, childPathElem: FosPathElem) => {
 
       const [childType, childId] = childPathElem
 
@@ -1811,7 +1917,7 @@ export class FosExpression {
 
     targetExpr.attachChild(newTodoNode, this.store.primitive.completeField, -1 )
 
-    targetExpr
+
     
 
   }

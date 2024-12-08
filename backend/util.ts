@@ -12,7 +12,7 @@ import {
 
 import { UserModel, FosNodeModel, PrismaClient } from "@prisma/client";
 
-import { FosStore } from "@/shared/dag-implementation/store";
+import { FosStore, hashContent } from "@/shared/dag-implementation/store";
 import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
 
 import { Prisma } from '@prisma/client';
@@ -21,6 +21,7 @@ import { hashPassword } from "./auth/register";
 import { defaultTrellisData } from "@/shared/defaults";
 import { validateNodeData, validateTrellisData } from "@/shared/utils";
 import { get } from "http";
+import { th } from "date-fns/locale";
 
 
 
@@ -68,9 +69,44 @@ export const dbToStore = async (
 
   const trellisData: TrellisSerializedData = validateTrellisData(user.data)
 
-  const newStore = new FosStore()
 
+  const nodesToAdd = await prisma.fosNodeModel.findMany({
+    where: {
+      FosNodeUserAccessLink: {
+        some: {
+          userId: user.id
+        }
+      }
+    }
+  })
 
+  const table = nodesToAdd.reduce((acc, node) => {
+
+    const hashed = hashContent(validateNodeData(node.data))
+    if (node.cid !== hashed) {
+      throw new Error ("Hashes don't match")
+    }
+
+    return {
+      ...acc,
+      [node.cid]: validateNodeData(node.data)
+    }
+  }, {} as FosNodesData)
+
+  const ctx: FosContextData = {
+    nodes: table,
+    route: [],
+    rootNodeId: user.fosNode.cid
+  }
+
+  
+
+  const newStore = new FosStore({fosCtxData: {
+    fosData: ctx,
+    trellisData: trellisData
+  }})
+
+  
 
 
   const getChildNodesHelper = async (node: FosNodeModel) => {
@@ -100,10 +136,11 @@ export const dbToStore = async (
       await Promise.all(childrenPromises)
 
     }
-
-    const newStoreNode = newStore.create(nodeData)
-
+    if (!newStore.table.has(node.cid)) {
+      const newStoreNode = newStore.create(nodeData)
+    }
   }
+
 
   
   await getChildNodesHelper(user.fosNode)
@@ -135,6 +172,13 @@ export const storeToDb = async (
     }
   })
 
+  existingNodes.forEach(n => {
+    const hashed = store.hash(validateNodeData(n.data))
+    if (n.cid === hashed) {
+      throw new Error ("Hashes don't match")
+    }
+  })
+
   type ReduceResultArrayTerm = {
     cid: string,
     data: JsonObject,
@@ -146,6 +190,10 @@ export const storeToDb = async (
   }
 
   const newEntries: ReduceResultArrayTerm[] = store.table.entries().reduce((acc: ReduceResultArrayTerm[], [id, node]: [string, FosNodeContent]) => {
+    if (id !== hashContent(node)) {
+      throw new Error("Hashes don't match")
+    }
+
     if (existingNodes.find(n => n.cid === id)) {
       return acc
     } else {
@@ -215,6 +263,10 @@ export const createSeedUser = async (prisma: PrismaClient, store: FosStore, user
   }
 
   const newEntries: ReduceResultArrayTerm[] = store.table.entries().reduce((acc: ReduceResultArrayTerm[], [id, node]: [string, FosNodeContent]) => {
+    if (id !== hashContent(node)) {
+      throw new Error("Hashes don't match")
+    }
+
     if (id === store.rootNodeId) {
       console.log("Root node", id)
     }

@@ -29,9 +29,7 @@ export class FosNode {
     return this.cid
   }
 
-  getAlias(): string | undefined {
-    return this.alias
-  }
+
 
   getEdges(): FosPathElem[] {
     return this.value.children
@@ -247,10 +245,25 @@ export class FosNode {
     return [instructionNode, targetNode]
   }
 
-  getAliasTarget() {
+  getAliasTargetNodes(): [FosNode, FosNode] {
     const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetConstructor.getId())
-    const [instructionNode, targetNode] = this.getEdgeNodes(target)
-    return targetNode
+    if (!target) {
+      throw new Error("Target not found")
+    }
+    const targetNode = this.store.getNodeByAddress(target[1])
+    if (!targetNode) {
+      throw new Error("Target Node not found")
+    }
+
+    const instruction = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.aliasInstructionConstructor.getId())
+    if (!instruction) {
+      throw new Error("Instruction not found")
+    }
+    const instructionNode = this.store.getNodeByAddress(instruction[1])
+    if (!instructionNode) {
+      throw new Error("Instruction Node not found")
+    }
+    return [instructionNode, targetNode]
   }
 
   setAliasInfo(info: {
