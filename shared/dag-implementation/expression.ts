@@ -56,9 +56,9 @@ export class FosExpression {
         newInstruction: newInstruction,
       })
 
-      // this.targetNode = newTarget
-      // this.instructionNode = newInstruction
-      // this.store.setRootNode(rootNodeWithNewTarget)
+      this.targetNode = newTarget
+      this.instructionNode = newInstruction
+      this.store.setRootNode(rootNodeWithNewTarget)
       return [new FosExpression(this.store, [])]
 
     } else {
@@ -99,10 +99,15 @@ export class FosExpression {
       if (!exists){
         throw new Error('Parent node does not contain this new child')
       }
-      // this.instructionNode = newInstruction
-      // this.targetNode = newTarget
-      // this.route = [...newParentExpression.route, [newInstruction.getId(), this.targetNode.getId()]]
-      // this.store = newParentExpression.store
+      this.instructionNode = newInstruction
+      this.targetNode = newTarget
+      this.route = [...newParentExpression.route, [newInstruction.getId(), this.targetNode.getId()]]
+
+      if (newParentExpression.store !== this.store) {
+        throw new Error('Store not updated correctly')
+      }
+
+      this.store = newParentExpression.store
       const newExpression = new FosExpression(newParentExpression.store, [...newParentExpression.route, [newInstruction.getId(), this.targetNode.getId()]])
       if (newExpression.instructionNode.getEdges().length !== newInstruction.getEdges().length) {
         throw new Error('Instruction node not updated correctly')

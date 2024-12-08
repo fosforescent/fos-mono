@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "prisma-reset",
+      "type": "shell",
+      "command": "npx",
+      "args": ["prisma", "db", "push", "--force-reset"],
+      "presentation": {
+        "reveal": "silent"
+      }
+    }
+  ]
+}

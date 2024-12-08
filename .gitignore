@@ -27,8 +27,10 @@ yarn-error.log*
 
 tsconfig.tsbuildinfo
 
-.vscode
-
+#VS Code
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 
 
 tfplan
@@ -103,8 +105,7 @@ __*
 
 *.iml
 
-# Vscode files
-.vscode
+
 
 # This is where the result of the go build goes
 /output*/
