@@ -14,13 +14,33 @@ export const generateSeedContext = (): GeneratedResult  => {
 
   const thisLabel = rootExpr.getShortLabel()
 
+  if (!rootExpr.isRoot()){
+    throw new Error('Root expression is not root')
+  }
+
+  if (!rootExpr.isAlias()){
+    throw new Error('Root expression is not alias')
+  }
+
+  const aliasRoot = rootExpr.followAlias()
+
+  if (aliasRoot.targetNode.getId() !== store.primitive.terminal.getId()){
+    throw new Error('Alias root is not terminal')
+  }
+
 
 
   const [todo1] = rootExpr.addTodo(`${thisLabel} Todo1`)
+
+  if (aliasRoot.targetNode.getId() !== store.primitive.terminal.getId()){
+    throw new Error('Alias root is not terminal')
+  }
+
+
   const [todo2] = rootExpr.addTodo(`${thisLabel} Todo2`)
-  const [todo2_1] = todo2.addTodo(`${thisLabel} Todo2.1`)
-  const [todo2_2] = todo2.addTodo(`${thisLabel} Todo2.2`)
-  const [todo2_3] = todo2.addTodo(`${thisLabel} Todo2.3`)
+  const [todo2_1] = todo2.addSubtask(`${thisLabel} Todo2.1`)
+  const [todo2_2] = todo2.addSubtask(`${thisLabel} Todo2.2`)
+  const [todo2_3] = todo2.addSubtask(`${thisLabel} Todo2.3`)
 
   const [todo2_2_choiceA] = todo2_2.addChoice(`${thisLabel}Todo2.2 a`)
   const [todo2_2_choiceB] = todo2_2.addChoice(`${thisLabel}Todo2.2 b`)
@@ -51,9 +71,9 @@ export const generateSeedContext = (): GeneratedResult  => {
 
   const [group_todo1] = group1Root.addTodo(`${thisLabel} Group Todo 1`)
   const [group_todo2] = group1Root.addTodo(`${thisLabel} Group Todo 2`)
-  const [group_todo2_1] = group_todo2.addTodo(`${thisLabel} Group Todo 2.1`)
-  const [group_todo2_2] = group_todo2.addTodo(`${thisLabel} Group Todo 2.2`)
-  const [group_todo2_3] = group_todo2.addTodo(`${thisLabel} Group Todo 2.3`)
+  const [group_todo2_1] = group_todo2.addSubtask(`${thisLabel} Group Todo 2.1`)
+  const [group_todo2_2] = group_todo2.addSubtask(`${thisLabel} Group Todo 2.2`)
+  const [group_todo2_3] = group_todo2.addSubtask(`${thisLabel} Group Todo 2.3`)
 
   const [group_todo2_2_choiceA] = group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 a`)
   const [group_todo2_2_choiceB] = group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 b`)

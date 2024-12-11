@@ -245,7 +245,7 @@ export class FosNode {
     return [instructionNode, targetNode]
   }
 
-  getAliasTargetNodes(): [FosNode, FosNode] {
+  getAliasTargetNodes(): { instruction: FosNode, target: FosNode, prev: FosNode } {
     const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetConstructor.getId())
     if (!target) {
       throw new Error("Target not found")
@@ -263,29 +263,46 @@ export class FosNode {
     if (!instructionNode) {
       throw new Error("Instruction Node not found")
     }
-    return [instructionNode, targetNode]
+
+    const prev = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.previousVersion.getId())
+    if (!prev) {
+      throw new Error("Previous not found")
+    }
+    const prevNode = this.store.getNodeByAddress(prev[1])
+    if (!prevNode) {
+      throw new Error("Previous Node not found")
+    }
+
+    return {instruction: instructionNode, target: targetNode, prev: prevNode}
   }
 
   setAliasInfo(info: {
-    newTarget: FosNode,
-    newInstruction: FosNode
+    target: FosNode,
+    instruction: FosNode,
+    prev: FosNode
   }): FosNode {
 
     let hadTarget = false
     let hadInstruction = false
+    let hadPrev = false
     
 
     const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, target]) => {
       if (edgeType === this.store.primitive.targetConstructor.getId()) {
         hadTarget = true
-        const newEdge: FosPathElem = [edgeType, info.newTarget.getId()]
+        const newEdge: FosPathElem = [edgeType, info.target.getId()]
         console.log("newEdge - target", newEdge)
         return newEdge
       }
       if (edgeType === this.store.primitive.aliasInstructionConstructor.getId()) {
         hadInstruction = true
-        const newEdge: FosPathElem = [edgeType, info.newInstruction.getId()]
+        const newEdge: FosPathElem = [edgeType, info.instruction.getId()]
         console.log("newEdge - aliasInstruction", newEdge)
+        return newEdge
+      }
+      if (edgeType === this.store.primitive.previousVersion.getId()) {
+        const newEdge: FosPathElem = [edgeType, info.prev.getId()]
+        console.log("newEdge - prev", newEdge)
         return newEdge
       }
 
@@ -404,23 +421,23 @@ export class FosNode {
   // }
 
 
-  // addTodo(description: string): [FosNode, FosNode] {
-  //   const newTodoData: FosNodeContent = {
-  //     data: {
-  //       ...this.value.data,
-  //       updated: {
-  //         time: Date.now()
-  //       },
-  //       description: {
-  //         content: description
-  //       },
-  //     },
-  //     children: []
-  //   }
-  //   const newNode = new FosNode(newTodoData, this.store)
-  //   const thisNewNode = this.addEdge(newNode.getId(), this.store.primitive.completeField.getId())
-  //   return [thisNewNode, newNode]
-  // }
+  addTodo(description: string): [FosNode, FosNode] {
+    const newTodoData: FosNodeContent = {
+      data: {
+        ...this.value.data,
+        updated: {
+          time: Date.now()
+        },
+        description: {
+          content: description
+        },
+      },
+      children: []
+    }
+    const newNode = new FosNode(newTodoData, this.store)
+    const thisNewNode = this.addEdge(newNode.getId(), this.store.primitive.completeField.getId())
+    return [thisNewNode, newNode]
+  }
 
   // getComments(): FosNode[] {
   //   const comments = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.commentConstructor.getId())

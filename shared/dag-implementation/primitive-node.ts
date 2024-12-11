@@ -78,7 +78,7 @@ export const getNameFieldNode = (store: FosStore) => generateConstructor(store, 
 
 
 export const getWorkflowInstructionNode = (store: FosStore) => generateConstructor(store, "WORKFLOW", { description: { content : 'Option Not Selected Constructor' } }, [])
-export const getRootInstructionNode = (store: FosStore) => generateConstructor(store, "ROOT", { description: { content : 'Option Not Selected Constructor' } }, [])
+export const getRootInstructionNode = (store: FosStore) => generateConstructor(store, "ROOT", { description: { content : 'Root Instruction Constructor' } }, [])
 export const getCommentInstructionNode = (store: FosStore) => generateConstructor(store, "COMMENT", { description: { content : 'Comment Constructor' } }, [])
 export const getDocumentInstructionNode = (store: FosStore) => generateConstructor(store, "DOCUMENT", { description: { content : 'Document Constructor' } }, [])
 
