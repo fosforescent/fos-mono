@@ -1,8 +1,11 @@
 
+import { Delta, diff, patch } from "@n1ru4l/json-patch-plus"
 import { AppState, AppStateLoaded, FosDataContent, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosReactGlobal } from "../types"
 import { getAncestorLeastUpSibling, getDownNode, getDownSibling, getGroupFromRoute, getUpNode, getUpSibling, mutableReduceToRouteMapFromExpression, pathEqual } from "../utils"
+
 import { FosNode } from "./node"
 import { FosStore } from "./store"
+
 
 
 export class FosExpression {
@@ -10,140 +13,128 @@ export class FosExpression {
   route: FosPath
   instructionNode: FosNode
   targetNode: FosNode
+  
+
 
   constructor(store: FosStore, route: FosPath) {
     this.route = route
     this.store = store
+
+
     
 
-    const lastElem = route[route.length - 1]
+    // const [instructionNode, targetNode] = rootNode.getAliasTargetNodes()
+    // this.instructionNode = instructionNode
+    // this.targetNode = targetNode
+    
 
-    if (!lastElem) {
-      const rootNode = store.getRootNode()
+    /**
+     * TODO: for each possible typeclass, apply the typeclass?
+     * ? / for each possible monad, wrap the monad?
+     * 
+     * // if wrap order doesn't matter, then does wrapping twice matter?
+     * // -- use a set?
+     * // pass set to next in chain with current removed, so there aren't repeats
+     * // when looped through all, start over on children
+     * 
+     * // OR
+     * 
+     * // just run through set and apply appropriate ones and don't traverse right away
+     * 
+     * 
+     */
 
-      // const [instructionNode, targetNode] = rootNode.getAliasTargetNodes()
-      // this.instructionNode = instructionNode
-      // this.targetNode = targetNode
-      
-      this.instructionNode = store.primitive.aliasConstructor
-      this.targetNode = rootNode
-
-      /**
-       * TODO: for each possible typeclass, apply the typeclass?
-       * ? / for each possible monad, wrap the monad?
-       * 
-       * // if wrap order doesn't matter, then does wrapping twice matter?
-       * // -- use a set?
-       * // pass set to next in chain with current removed, so there aren't repeats
-       * // when looped through all, start over on children
-       * 
-       * // OR
-       * 
-       * // just run through set and apply appropriate ones and don't traverse right away
-       * 
-       * 
-       */
-
-
+    if (route.length === 0) {
+      this.instructionNode = this.store.primitive.voidNode
+      this.targetNode = this.store.getRootNode()
     } else {
-      const instructionNode = store.getNodeByAddress(lastElem[0])
+      const pathElem = route[route.length - 1]
+
+      if (!pathElem) {
+        throw new Error('Path element not found')
+      }
+
+      const [instructionId, targetId] = pathElem
+      const instructionNode = this.store.getNodeByAddress(instructionId)
+
       if (!instructionNode) {
-        throw new Error('Instruction node not found')
+        throw new Error(`Instruction node not found for ${instructionId}`)
       }
-      this.instructionNode = instructionNode
-      const targetNode = store.getNodeByAddress(lastElem[1])
+
+      const targetNode = this.store.getNodeByAddress(targetId)
+
       if (!targetNode) {
-        throw new Error('Target node not found')
+        throw new Error(`Target node not found for ${targetId}`)
       }
-      this.targetNode = targetNode
+
+
+      this.instructionNode = instructionNode
+      this.targetNode = targetNode  
     }
+
+
+     
+
   }
 
+  getAvailableFunctions(thisExpr: FosExpression): ((context: FosExpression) => Promise<FosExpression | null>)[] {
+    /**
+     * That would mean context is constructed by filling in constructors 
+     * that exist in parent instruction
+     *  so... 
+     * if this node is edge of instruction of parent, 
+     * then context comes from instructoin only
+     * 
+     * if this node is edge of target in parent
+     * then context comes from instruction and target
+     * 
+     * add to the parent context:
+     * - any variables assigned in the instructoin
+     * - any "module imports"
+     *   - (incl IO)
+     * 
+     * if no parent, then just check in instruction
+     * 
+     * evaluate any children on instruction
+     * 
+     * run eval functions for current expr (left/right) pair
+     * 
+     */
+
+    const update = async (context: FosNode): Promise<FosNode | null> => {
+      // TODO: check to see if this shoudl be new target or new instruction
+      const [newInstruction, newTarget] = await this.update(this.instructionNode, this.targetNode)
+      return newTarget
+
+    }
 
 
 
 
-  update(newInstruction: FosNode, newTarget: FosNode): [FosExpression, ...FosExpression[]] {
- 
-    if (!this.hasParent()) {
+    return []
+  }
 
-      const currentRootNode = this.store.getRootNode()
+  async runFunctions(inputExpression: FosExpression): Promise<FosExpression> {
 
-      const rootNodeWithNewTarget = currentRootNode.setAliasInfo({
-        target: newTarget,
-        instruction: newInstruction,
-        prev: currentRootNode
-      })
 
-      this.targetNode = newTarget
-      this.instructionNode = newInstruction
-      this.store.setRootNode(rootNodeWithNewTarget)
-      return [new FosExpression(this.store, [])]
+    let newInputCtx: FosExpression = inputExpression
 
+    for (const runAvailableFunction of this.getAvailableFunctions(newInputCtx)){
+      const result = await runAvailableFunction(newInputCtx)
+      if (result){
+        newInputCtx = result
+      }
+
+    }
+    if (newInputCtx.equals(inputExpression)){
+      const thisParent = this.getParent()
+      if (thisParent){
+        return thisParent.runFunctions(newInputCtx)
+      } else {
+        return newInputCtx
+      }
     } else {
-      const { parent } = this.getParentInfo() 
-
-      let newParentExpression: FosExpression
-      let newAncestors: FosExpression[] = []
-      
-
-
-        
-        const parentContent = parent.targetNode.getContent()
-        const newChildren: FosPathElem[]  = parent.targetNode.getEdges().map((edge, i) => {
-          if (edge[0] === this.instructionNode.getId() && edge[1] === this.targetNode.getId()) {
-            return [newInstruction.getId(), newTarget.getId()]
-          }
-          return edge
-        })
-        const newParentTarget = parent.store.create({
-          data: parentContent.data,
-          children: newChildren
-        })
-    
-        const parentInstruction = parent.instructionNode.getContent()
-        const newInstructionChildren: FosPathElem[] = parent.instructionNode.getEdges().map((edge, i) => {
-          if (edge[0] === this.instructionNode.getId() && edge[1] === this.targetNode.getId()) {
-            return [newInstruction.getId(), newTarget.getId()]
-          }
-          return edge
-        })
-        const newParentInstruction = parent.store.create({
-          data: parentInstruction.data,
-          children: newInstructionChildren
-        })
-
-        const [thisNewParentExpression, ...ancestors] = parent.update(newParentInstruction, newParentTarget)
-        newParentExpression = thisNewParentExpression
-        newAncestors = ancestors 
-
-      
-
-      let exists = false
-
-      exists = newParentExpression.getTargetChildren().some((child) => {
-        const sameInstruction = child.targetNode.getId() === newTarget.getId()
-        const sameTarget = child.instructionNode.getId() === this.instructionNode.getId()
-        return sameInstruction && sameTarget
-      })
-      if (!exists){
-        throw new Error('Parent node does not contain this new child')
-      }
-      this.instructionNode = newInstruction
-      this.targetNode = newTarget
-      this.route = [...newParentExpression.route, [newInstruction.getId(), this.targetNode.getId()]]
-
-      if (newParentExpression.store !== this.store) {
-        throw new Error('Store not updated correctly')
-      }
-
-      this.store = newParentExpression.store
-      const newExpression = new FosExpression(newParentExpression.store, [...newParentExpression.route, [newInstruction.getId(), this.targetNode.getId()]])
-      if (newExpression.instructionNode.getEdges().length !== newInstruction.getEdges().length) {
-        throw new Error('Instruction node not updated correctly')
-      }
-
-      return [newExpression, newParentExpression, ...newAncestors]
+      return this.runFunctions(newInputCtx)
     }
 
   }
@@ -238,83 +229,7 @@ export class FosExpression {
     return getGroupFromRoute(this.route, this.store)
   }
 
-  // Type Check Methods
-  isRoot(): boolean {
-    return this.route.length === 0
-  }
-
-  hasParent(): boolean {
-    return this.route.length > 0
-  }
-
-  isWorkflow(): boolean {
-    return this.store.primitive.workflowField.getId() === this.instructionNode.getId()
-  }
-
-  isOption(): boolean {
-    return this.store.primitive.optionConstructor.getId() === this.targetNode.getId()
-  }
-
-  isChoice(): boolean {
-    return this.store.primitive.choiceTarget.getId() === this.targetNode.getId()
-  }
-
-  isDocument(): boolean {
-    return this.store.primitive.documentField.getId() === this.instructionNode.getId()
-  }
-
-  isComment(): boolean {
-    return this.expressionType() === this.store.primitive.commentConstructor.getId()
-  }
-
-  isGroup(): boolean {
-    return this.expressionType() === this.store.primitive.groupField.getId()
-  }
-
-  isMarketRequest(): boolean {
-    return this.expressionType() === this.store.primitive.marketRequestNode.getId()
-  }
-
-  isMarketService(): boolean {
-    return this.expressionType() === this.store.primitive.marketServiceNode.getId()
-  }
-
-  isSearch(): boolean {
-    return this.expressionType() === this.store.primitive.searchQueryNode.getId()
-  }
-
-  isSearchResults(): boolean {
-    return this.expressionType() === this.store.primitive.searchResultsNode.getId()
-  }
-
-  isLastNameField(): boolean {
-    return this.expressionType() === this.store.primitive.lastNameField.getId()
-  }
-
-  isFirstNameField(): boolean {
-    return this.expressionType() === this.store.primitive.firstNameField.getId()
-  }
-
-  isEmailField(): boolean {
-    return this.expressionType() === this.store.primitive.emailField.getId()
-  }
-
-  isConflict(): boolean {
-    return this.expressionType() === this.store.primitive.conflictNode.getId()
-  }
-
-  isError(): boolean {
-    return this.expressionType() === this.store.primitive.errorNode.getId()
-  }
-
-  isContact(): boolean {
-    return this.expressionType() === this.store.primitive.contactField.getId()
-  }
-
-  isBase(): boolean {
-    return pathEqual(this.route, this.store.fosRoute)
-  }
-
+ 
   equals(other: FosExpression): boolean {
     const instructionsEqual = this.instructionNode.getId() === other.instructionNode.getId()
     const targetsEqual = this.targetNode.getId() === other.targetNode.getId()
@@ -797,31 +712,7 @@ export class FosExpression {
     throw new Error('Method not implemented')
   }
 
-  proposeChange() {
-    if (this.instructionNode.getId() !== this.store.primitive.brachConstructorNode.getId()) {
-      throw new Error('Method only implemented for branch expressions')
-    }
 
-    this.update(this.store.primitive.proposalField, this.targetNode)
-
-  }
-
-  addBranch(content: string): [FosExpression, FosExpression, ...FosExpression[]] {
-
-
-    const brachConstructor = this.store.primitive.brachConstructorNode
-
-    const branchTargetNode = this.targetNode  // this.targetNode.clone() --- should do this?  Only for execution probably
-
-    const newRootTarget = this.targetNode.addEdge(brachConstructor.getId(), branchTargetNode.getId())
-
-    const [newThis, ...rest] = this.update(this.instructionNode, newRootTarget)
-
-    const newBranch = new FosExpression(newThis.store, [...this.route, [brachConstructor.getId(), branchTargetNode.getId()]])
-    return [newBranch, newThis, ...rest]
-  }
-
-    
 
   registerMarketService(service: string): FosExpression {
 
@@ -1743,190 +1634,12 @@ export class FosExpression {
         },
         children: []
     }
-    const childExpr  = this.addChild(newType, newNodeContent)
+    const [childExpr]  = this.addChild(newType, newNodeContent)
     // console.log('newState', newState, diff({left: appData, right: newState}))
     childExpr.updateFocus(0)
 
   }
 
-
-
-    
-  clone(): FosExpression {
-    throw new Error('Method not implemented')
-
-    type CloneReturnVal = { newRows: [FosNodeId, FosNodeId][], newContext: AppStateLoaded["data"] }
-    const { newRows, newContext }: CloneReturnVal  = nodeContent.children.reduce((acc: CloneReturnVal, childPathElem: FosPathElem) => {
-        const {
-            newId: newChildId,
-            newState: stateWithChild
-        } = cloneNode(acc.newContext, [...route, childPathElem])
-        const returnVal: CloneReturnVal = {
-            newRows: [...acc.newRows, [childPathElem[0], newChildId]],
-            newContext: stateWithChild
-        }
-        return returnVal
-    }, { newRows: [], newContext: currentAppData })
-
-
-    const newNodeContent: FosNodeContent = {
-        children: newRows,
-        data: {
-            ...nodeData,
-            description: {
-                content: `${nodeData.description?.content} (copy - ${new Date().toLocaleString()})`
-            },
-            updated: {
-                time: new Date().getTime(),
-            },
-        }
-    }
-    const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
-    return {
-        newId,
-        newState: stateWithNewNode
-    }
-  }
-
-  instantiateChildrenAndMapContent() {
-
-
-
-    type InstReturnVal = { newRows: FosPathElem[], newContext: AppStateLoaded["data"] }
-
-
-
-
-    const { newRows, newContext }  = this.targetNode.getContent().children.reduce((acc: InstReturnVal, childPathElem: FosPathElem) => {
-
-      const [childType, childId] = childPathElem
-
-
-      const {
-          newId: newChildId,
-          newState: stateWithChild,
-          newType: newChildType
-      } = this.evaluate(acc.newContext, [...route, childPathElem])
-      const returnVal: InstReturnVal = {
-          newRows: [...acc.newRows, [newChildType, newChildId]],
-          newContext: stateWithChild
-      }
-      return returnVal
-
-
-    }, { newRows: [], newContext: startAppData })
-
-
-    const newNodeContent: FosNodeContent = {
-      children: newRows,
-      data: {
-          ...nodeData,
-          description: {
-              content: `${nodeData.description?.content}`
-          },
-          updated: {
-              time: new Date().getTime(),
-          },
-      }
-    }
-    
-    const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
-    // const { newId, newState: stateWithNewNode } = insertNewNode(newContext, newNodeContent)
-
-    return { newId, newState: stateWithNewNode }
-  }
-
-
-
-  evaluate() {
-
-    if (this.isOption()){
-
-      const { resolutionStrategy, selectedIndex } = this.getOptionInfo()
-
-        if (resolutionStrategy === "selected") {
-
-          
-          throw new Error('Not implemented')
-
-          // return {
-          //     newId: selectedElem[1],
-          //     newType: selectedElem[0],
-          //     newState: startAppData
-          // }
-
-        } else if (resolutionStrategy === "race"){
-            
-        const { newId, newState: stateWithNewNode } = this.instantiateChildrenAndMapContent()
-
-            return {
-                newId,
-                newType: "race",
-                newState: stateWithNewNode
-            }
-    
-        
-        } else if (resolutionStrategy === "choice"){
-
-          const { newId, newState: stateWithNewNode } = this.instantiateChildrenAndMapContent()
-
-            return {
-                newId,
-                newType: "choice",
-                newState: stateWithNewNode
-            }
-
-        } else {
-            throw new Error("Invalid resolution strategy")
-        }
-
-
-    } else if (this.isTodo()) {
-
-
-      const { newId, newState: stateWithNewNode } = this.instantiateChildrenAndMapContent()
-
-
-        return {
-            newId: "void",
-            newType: newId,
-            newState: stateWithNewNode
-        }
-    } else if (this.isChoice()) {
-
-        const { newId, newState: stateWithNewNode } = this.instantiateChildrenAndMapContent()
-        return {
-            newId: "void",
-            newType: "newId",
-            newState: stateWithNewNode
-        }  
-
-    } else {
-        const { newId, newState: stateWithNewNode } = this.instantiateChildrenAndMapContent()
-
-        return {
-            newId,
-            newType: this.nodeType(),
-            newState: stateWithNewNode
-        }
-    }
-
-    
-  }
-    
-  
-  executeWorkflow(attachToRoute: FosPath): FosExpression {
-      
-    const newTodoNode = this.targetNode.clone()
-
-    const targetExpr = new FosExpression(this.store, attachToRoute)
-
-    targetExpr.attachChild(newTodoNode, this.store.primitive.completeField, -1 )
-
-
-    
-
-  }
 
 
 

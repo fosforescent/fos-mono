@@ -182,7 +182,7 @@ export type SelectionPath = {
 
 export type NodeAddress = `${string}-${string}-${string}-${string}-${string}`
 export type ContentId = string
-export type FosNodeId  = NodeAddress | ContentId
+export type FosNodeId  = ContentId
 
 
 
@@ -196,7 +196,7 @@ export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
 export type FosContextData = { 
   nodes: FosNodesData,
   route: FosPath,
-  rootNodeId: FosNodeId,
+  rootNodeId: NodeAddress,
 
 }
 

@@ -221,6 +221,18 @@ export const getAliasInstructionConstructorNode = (store: FosStore) => generateC
 
 export const getBrachConstructorNode = (store: FosStore) => generateConstructor(store, "BRANCH", { description: { content : 'Branch Constructor Node' } }, [])
 
+export const addChildAction = (store: FosStore) => generateConstructor(store, "ADDCHILD", { description: { content : 'Add Child Action Node' } }, [])
+export const removeChildAction = (store: FosStore) => generateConstructor(store, "REMOVECHILD", { description: { content : 'Remove Child Action Node' } }, [])
+
+export const addTodoAction = (store: FosStore) => generateConstructor(store, "ADDTODO", { description: { content : 'Add Todo Action Node' } }, [])
+export const addCommentAction = (store: FosStore) => generateConstructor(store, "ADDCOMMENT", { description: { content : 'Add Comment Action Node' } }, [])
+export const addDocumentAction = (store: FosStore) => generateConstructor(store, "ADDDOCUMENT", { description: { content : 'Add Document Action Node' } }, [])
+export const addWorkflowAction = (store: FosStore) => generateConstructor(store, "ADDWORKFLOW", { description: { content : 'Add Workflow Action Node' } }, [])
+
+export const addBranchAction = (store: FosStore) => generateConstructor(store, "ADDBRANCH", { description: { content : 'Add Branch Action Node' } }, [])
+export const proposeChangeAction = (store: FosStore) => generateConstructor(store, "PROPOSECHANGE", { description: { content : 'Propose Change Action Node' } }, [])
+
+
 
 
 export const generateConstructor = (

@@ -194,7 +194,7 @@ export default function App({
   // console.log('rerender', )
 
   // useTraceUpdate({ apiDataState, loggedIn, theme, promptGPT, canPromptGPT, toast, data })
-  const authedApi = appState.auth.jwt ? api(appState, setAppState).authed() : undefined
+  const authedApi = appState.auth.jwt ? api(appState, setAppState, options).authed() : undefined
 
   const promptGPT = React.useCallback(async (systemPrompt: string, userPrompt: string, options?: {
     temperature?: number,

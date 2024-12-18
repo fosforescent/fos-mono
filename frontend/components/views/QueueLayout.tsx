@@ -62,8 +62,16 @@ const QueueView = () => {
 
   
   
+
+  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
+    setData({
+      ...data,
+      data: state
+    })
+  }
+
   
-  const store = new FosStore({ fosCtxData: data.data})
+  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData})
 
   const expression = new FosExpression(store, route)
   
@@ -80,14 +88,6 @@ const QueueView = () => {
   }
 
 
-
-
-  const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
-    setData({
-      ...data,
-      data: state
-    })
-  }
 
   const setCurrentView = () => {
 

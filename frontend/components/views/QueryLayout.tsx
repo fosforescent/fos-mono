@@ -1,7 +1,7 @@
 import { Button } from "@/frontend/components/ui/button"
 import { useProps } from "@/frontend/App"
 
-import { AppState, FosReactGlobal, FosPath } from "@/shared/types"
+import { AppState, FosReactGlobal, FosPath, AppStateLoaded } from "@/shared/types"
 import { CheckSquare, Inbox, MessageSquare } from "lucide-react"
 
 import { FosExpression  } from "@/shared/dag-implementation/expression"
@@ -27,7 +27,7 @@ export const QueryView = () => {
         options: FosReactGlobal
         data: AppState
         nodeRoute: FosPath
-        setData: (state: AppState) => void
+        setData: (state: AppStateLoaded) => void
       } = useProps()
     
 
@@ -52,21 +52,22 @@ export const QueryView = () => {
      * 
      */
 
-    const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
-        setData({
-          ...data,
-          data: state
-        })
-    }
 
+    const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
+      setData({
+        ...data,
+        data: state
+      })
+    }
+  
     
-    const store = new FosStore({ fosCtxData: data.data})
+    const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData})
   
     const expression = new FosExpression(store, route)
   
 
     const activity = data.data.trellisData.activity
-    const actions = expression.getActions(setFosAndTrellisData)
+    // const actions = expression.getActions(setFosAndTrellisData)
 
   
     console.log('queueview', route, data)
@@ -82,7 +83,7 @@ export const QueryView = () => {
 
         {pins.map((group, i) => {
 
-            return <ExpressionRow key={i} data={data} setData={setData} options={options} nodeRoute={group} mode={["read"]} activity={activity} expression={expression} />
+            return <ExpressionRow key={i} data={data} setData={setData} options={options} expression={expression} />
         })}
     </div>)
 }

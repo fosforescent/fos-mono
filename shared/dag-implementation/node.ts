@@ -30,6 +30,58 @@ export class FosNode {
   }
 
 
+  mapTarget(instruction: FosNode, mapTarget: (currentTarget: FosNode) => FosNode): FosNode | null {
+
+    const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, target]) => {
+      if (edgeType === instruction.getId()) {
+        const targetNode = this.store.getNodeByAddress(target)
+        if (!targetNode) {
+          throw new Error("Target Node not found")
+        }
+        const newTarget = mapTarget(targetNode)
+        return [edgeType, newTarget.getId()]
+      }
+      return [edgeType, target]
+    })
+    const newContent: FosNodeContent = {
+      data: {
+        ...this.value.data,
+        updated: {
+          time: Date.now()
+        },
+      },
+      children: newEdges
+    }
+    return this.mutate(newContent)
+
+  }
+
+  mapInstruction(mapInstruction: (currentInstrucion: FosNode) => FosNode, target: FosNode): FosNode | null {
+      
+      const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, targetId]) => {
+        if (targetId === target.getId()) {
+          const instructionNode = this.store.getNodeByAddress(edgeType)
+          if (!instructionNode) {
+            throw new Error("Instruction Node not found")
+          }
+          const newInstruction = mapInstruction(instructionNode)
+          return [newInstruction.getId(), targetId]
+        }
+        return [edgeType, targetId]
+      })
+      const newContent: FosNodeContent = {
+        data: {
+          ...this.value.data,
+          updated: {
+            time: Date.now()
+          },
+        },
+        children: newEdges
+      }
+      return this.mutate(newContent)
+
+  }
+
 
   getEdges(): FosPathElem[] {
     return this.value.children

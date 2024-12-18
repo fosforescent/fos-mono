@@ -99,8 +99,6 @@ export function TreeView (){
   );
   
 
-  const store = new FosStore({ fosCtxData: data.data })
-  const expression = new FosExpression(store, route) 
 
   const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
@@ -108,6 +106,10 @@ export function TreeView (){
       data: state
     })
   }
+
+  
+  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData})
+  const expression = new FosExpression(store, route) 
 
   const {
     customCollisionDetection,
