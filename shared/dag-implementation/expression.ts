@@ -77,7 +77,7 @@ export class FosExpression {
 
   }
 
-  getAvailableFunctions(thisExpr: FosExpression): ((context: FosNode) => Promise<[FosNode, FosNode] | null>)[] {
+  getAvailableFunctions(): ((context: FosNode) => Promise<[FosNode, FosNode] | null>)[] {
     /**
      * That would mean context is constructed by filling in constructors 
      * that exist in parent instruction
@@ -107,16 +107,24 @@ export class FosExpression {
     return []
   }
 
-  async runFunctions(): Promise<FosExpression> {
+  async runFunctions(inputCtx: FosNode): Promise<FosExpression> {
 
-    for (const runAvailableFunction of this.getAvailableFunctions(newInputCtx)){
+    let newInputCtx: FosNode = inputCtx
+    for (const runAvailableFunction of this.getAvailableFunctions()){
       const result = await runAvailableFunction(newInputCtx)
       if (result){
-
+        /**
+         * run update on this with new instruction and target
+         * add update edge with target = new instruction and target
+         * when apply function runs, it should check to see if any of the children are "update"
+         * instructions.. if so, it should replace edge with new instruction and target, then
+         * add "update" edge to itself with new instruction and target (or otherwise )
+         * (update on this should call parent update where appropriate)
+         */
       }
-
+      this.runFunctions(updatedContext)
     }
-    if (newInputCtx.equals(context)){
+    if (newInputCtx.equals(inputCtx)){
       const thisParent = this.getParent()
       if (thisParent){
         return thisParent.runFunctions(newInputCtx)
