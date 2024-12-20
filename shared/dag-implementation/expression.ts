@@ -77,7 +77,7 @@ export class FosExpression {
 
   }
 
-  getAvailableFunctions(thisExpr: FosExpression): ((context: FosExpression) => Promise<FosExpression | null>)[] {
+  getAvailableFunctions(thisExpr: FosExpression): ((context: FosNode) => Promise<[FosNode, FosNode] | null>)[] {
     /**
      * That would mean context is constructed by filling in constructors 
      * that exist in parent instruction
@@ -101,32 +101,22 @@ export class FosExpression {
      * 
      */
 
-    const update = async (context: FosNode): Promise<FosNode | null> => {
-      // TODO: check to see if this shoudl be new target or new instruction
-      const [newInstruction, newTarget] = await this.update(this.instructionNode, this.targetNode)
-      return newTarget
-
-    }
-
 
 
 
     return []
   }
 
-  async runFunctions(inputExpression: FosExpression): Promise<FosExpression> {
-
-
-    let newInputCtx: FosExpression = inputExpression
+  async runFunctions(): Promise<FosExpression> {
 
     for (const runAvailableFunction of this.getAvailableFunctions(newInputCtx)){
       const result = await runAvailableFunction(newInputCtx)
       if (result){
-        newInputCtx = result
+
       }
 
     }
-    if (newInputCtx.equals(inputExpression)){
+    if (newInputCtx.equals(context)){
       const thisParent = this.getParent()
       if (thisParent){
         return thisParent.runFunctions(newInputCtx)
@@ -139,7 +129,9 @@ export class FosExpression {
 
   }
 
+  getContext(): FosCtx {
 
+  }
 
 
   // Core Property Getters
@@ -283,6 +275,82 @@ export class FosExpression {
   }
 
 
+  // Type Check Methods
+  isRoot(): boolean {
+    return this.route.length === 0
+  }
+
+  hasParent(): boolean {
+    return this.route.length > 0
+  }
+
+  isWorkflow(): boolean {
+    return this.store.primitive.workflowField.getId() === this.instructionNode.getId()
+  }
+
+  isOption(): boolean {
+    return this.store.primitive.optionConstructor.getId() === this.targetNode.getId()
+  }
+
+  isChoice(): boolean {
+    return this.store.primitive.choiceTarget.getId() === this.targetNode.getId()
+  }
+
+  isDocument(): boolean {
+    return this.store.primitive.documentField.getId() === this.instructionNode.getId()
+  }
+
+  isComment(): boolean {
+    return this.expressionType() === this.store.primitive.commentConstructor.getId()
+  }
+
+  isGroup(): boolean {
+    return this.expressionType() === this.store.primitive.groupField.getId()
+  }
+
+  isMarketRequest(): boolean {
+    return this.expressionType() === this.store.primitive.marketRequestNode.getId()
+  }
+
+  isMarketService(): boolean {
+    return this.expressionType() === this.store.primitive.marketServiceNode.getId()
+  }
+
+  isSearch(): boolean {
+    return this.expressionType() === this.store.primitive.searchQueryNode.getId()
+  }
+
+  isSearchResults(): boolean {
+    return this.expressionType() === this.store.primitive.searchResultsNode.getId()
+  }
+
+  isLastNameField(): boolean {
+    return this.expressionType() === this.store.primitive.lastNameField.getId()
+  }
+
+  isFirstNameField(): boolean {
+    return this.expressionType() === this.store.primitive.firstNameField.getId()
+  }
+
+  isEmailField(): boolean {
+    return this.expressionType() === this.store.primitive.emailField.getId()
+  }
+
+  isConflict(): boolean {
+    return this.expressionType() === this.store.primitive.conflictNode.getId()
+  }
+
+  isError(): boolean {
+    return this.expressionType() === this.store.primitive.errorNode.getId()
+  }
+
+  isContact(): boolean {
+    return this.expressionType() === this.store.primitive.contactField.getId()
+  }
+
+  isBase(): boolean {
+    return pathEqual(this.route, this.store.fosRoute)
+  }
   // Navigation Methods
   getParent(): FosExpression {
     if (this.hasParent()) {
@@ -563,6 +631,35 @@ export class FosExpression {
     }
     
     return this.update(this.instructionNode, newTarget)
+  }
+
+  addBranch(content: string): [FosExpression, FosExpression, ...FosExpression[]] {
+
+    const newTarget = this.store.create({
+      data: {
+        description: {
+          content
+        }
+      },
+      children: [
+        [this.store.primitive.targetConstructor.getId(), this.targetNode.getId()],
+        [this.store.primitive.previousVersion.getId(), this.store.primitive.voidNode.getId()]
+      ]
+    })
+
+    const contextFosExpression = 
+
+    this.runFunctions(this.store.primitive.brachConstructorNode.getId(), )
+    const brachConstructor = this.store.primitive.brachConstructorNode
+
+    const branchTargetNode = this.targetNode  // this.targetNode.clone() --- should do this?  Only for execution probably
+
+    const newRootTarget = this.targetNode.addEdge(brachConstructor.getId(), branchTargetNode.getId())
+
+    const [newThis, ...rest] = this.update(this.instructionNode, newRootTarget)
+
+    const newBranch = new FosExpression(newThis.store, [...this.route, [brachConstructor.getId(), branchTargetNode.getId()]])
+    return [newBranch, newThis, ...rest]
   }
 
  

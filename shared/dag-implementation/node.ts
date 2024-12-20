@@ -279,6 +279,9 @@ export class FosNode {
     return this.mutate({...this.value, data: { ...this.value.data, ...data }  })
   }
 
+  equals(node: FosNode): boolean {
+    return this.getId() === node.getId()
+  }
 
   getEdgeNodes(edge?: FosPathElem): [FosNode, FosNode] {
     if (!edge) {

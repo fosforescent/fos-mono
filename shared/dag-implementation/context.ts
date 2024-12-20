@@ -6,6 +6,11 @@ import { FosNode } from "./node";
 
 
 
+const apply = async (expression: FosExpression) => {
+
+
+}
+
 const addTask = async (expression: FosExpression) => {
   if (!expression.isTodo()){
       throw new Error('Not a todo')
@@ -15,7 +20,7 @@ const addTask = async (expression: FosExpression) => {
 }
 
 
-const update = (expression: FosExpression) => async (context: FosExpression): Promise<FosExpression | null> => {
+const update = async (context: FosExpression): Promise<FosExpression | null> => {
 
 
 
