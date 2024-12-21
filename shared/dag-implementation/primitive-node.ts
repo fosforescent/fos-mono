@@ -39,8 +39,8 @@ export const getAllOfNode = (store: FosStore) => {
 export const getStartRootAlias = (store: FosStore): FosNode => {
   const rootTarget = getTerminalNode(store)
   const rootInstruction = getRootInstructionNode(store)
-  const targetConstructor = getTargetConstructorNode(store)
-  const instructionConstructor = getAliasInstructionConstructorNode(store)
+  const targetConstructor = getTargetPointerConstructorNode(store)
+  const instructionConstructor = getInstructionPointerConstructorNode(store)
   const prevConstructor = getPreviousVersionNode(store)
   const terminal = getTerminalNode(store)
 
@@ -216,8 +216,8 @@ export const getGroupShadowNode = (store: FosStore) => generateConstructor(store
 
 export const getDereferenceAliasActionNode = (store: FosStore) => generateConstructor(store, "DEREFALIAS", { description: { content : 'Dereference Alias Node' } }, [])
 export const getAliasConstructorNode =  (store: FosStore) => generateConstructor(store, "ALIAS", { description: { content : 'Alias Constructor Node' } }, [])
-export const getTargetConstructorNode =  (store: FosStore) => generateConstructor(store, "TARGET", { description: { content : 'Target Constructor Node' } }, [])
-export const getAliasInstructionConstructorNode = (store: FosStore) => generateConstructor(store, "ALIASINSTRUCTION", { description: { content : 'Alias Instruction Constructor Node' } }, [])
+export const getTargetPointerConstructorNode =  (store: FosStore) => generateConstructor(store, "TARGETPOINTER", { description: { content : 'Target Constructor Node' } }, [])
+export const getInstructionPointerConstructorNode = (store: FosStore) => generateConstructor(store, "INSTRUCTIONPOINTER", { description: { content : 'Alias Instruction Constructor Node' } }, [])
 
 export const getBrachConstructorNode = (store: FosStore) => generateConstructor(store, "BRANCH", { description: { content : 'Branch Constructor Node' } }, [])
 
@@ -231,6 +231,17 @@ export const addWorkflowAction = (store: FosStore) => generateConstructor(store,
 
 export const addBranchAction = (store: FosStore) => generateConstructor(store, "ADDBRANCH", { description: { content : 'Add Branch Action Node' } }, [])
 export const proposeChangeAction = (store: FosStore) => generateConstructor(store, "PROPOSECHANGE", { description: { content : 'Propose Change Action Node' } }, [])
+
+export const registerMarketServiceAction = (store: FosStore) => generateConstructor(store, "REGISTERMARKETSERVICE", { description: { content : 'Register Market Service Action Node' } }, [])
+
+export const typeNode = (store: FosStore) => generateConstructor(store, "TYPE", { description: { content : 'Type Node' } }, [])
+export const pureActionNode = (store: FosStore) => generateConstructor(store, "PUREACTION", { description: { content : 'Pure Action Node' } }, [])
+export const bindActionNode = (store: FosStore) => generateConstructor(store, "BINDACTION", { description: { content : 'Bind Action Node' } }, [])
+
+
+export const getUpdateActionNode = (store: FosStore) => generateConstructor(store, "UPDATE", { description: { content : 'Update Action Node' } }, [])
+export const evalAction = (store: FosStore) => generateConstructor(store, "EVAL", { description: { content : 'Eval Action Node' } }, [])
+export const actionConstructor = (store: FosStore) => generateConstructor(store, "ACTION", { description: { content : 'Action Constructor Node' } }, [])
 
 
 
@@ -373,11 +384,15 @@ export const constructPrimitiveAliases = (store: FosStore) => {
 
   const groupShadowNode = getGroupShadowNode(store)
   const aliasConstructor = getAliasConstructorNode(store)
-  const targetConstructor = getTargetConstructorNode(store)
-  const aliasInstructionConstructor = getAliasInstructionConstructorNode(store)
+  const targetPointerConstructor = getTargetPointerConstructorNode(store)
+  const instructionPointerConstructor = getInstructionPointerConstructorNode(store)
   const dereferenceAlias = getDereferenceAliasActionNode(store)
   const startRootAlias = getStartRootAlias(store)
   const brachConstructorNode = getBrachConstructorNode(store)
+
+
+  const updateAction = getUpdateActionNode(store)
+
 
 
   return {
@@ -470,8 +485,8 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     resumeAction,
     groupShadowNode,
     aliasConstructor,
-    targetConstructor,
-    aliasInstructionConstructor,
+    targetPointerConstructor,
+    instructionPointerConstructor,
     dereferenceAlias,
     getStartRootAlias,
     startRootAlias,

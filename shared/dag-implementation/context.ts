@@ -1,17 +1,18 @@
 import { FosExpression } from "./expression";
 import { FosNode } from "./node";
+import { FosStore } from "./store";
 
 
 
 
 
 
-const apply = async (expression: FosExpression) => {
+const apply = async (context: FosNode, expression: FosExpression) => {
 
 
 }
 
-const addTask = async (expression: FosExpression) => {
+const addTask = async (context: FosNode, expression: FosExpression) => {
   if (!expression.isTodo()){
       throw new Error('Not a todo')
   }
@@ -20,108 +21,94 @@ const addTask = async (expression: FosExpression) => {
 }
 
 
-const update = async (context: FosExpression): Promise<FosExpression | null> => {
+
+
+const addChoice = async (context: FosNode, expression: FosExpression) => {
+  const currentInstructionNode = this.instructionNode
+
+  const newAlternative = this.store.create({
+    data: {
+      description: {
+        content
+      }
+    },
+    children: []
+  })
+
+
+  if (!this.isChoice()){
+    const newEdge: FosPathElem = [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()]
+
+    const newInstructionNode = this.store.create({
+      data: currentInstructionNode.getData(),
+      children: [
+        newEdge,
+      ]
+    })
+    const [newExpr, ...rest] = this.update(newInstructionNode, this.targetNode)
+    const newChoiceExpr = new FosExpression(newExpr.store, [...newExpr.route, newEdge])
+    return [newChoiceExpr, newExpr]
+
+  } else {
+    const newEdge: FosPathElem = [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()]
+
+    const currentSelectedChild = this.targetNode.getEdges().findIndex((edge) => {
+      return edge[1] === this.store.primitive.optionSelectedConstructor.getId()
+    })      
+
+    const newChildren: FosPathElem[] = currentInstructionNode.getEdges().map((edge) => {
+      return [edge[0], this.store.primitive.optionNotSelectedConstructor.getId()]
+    })
+
+    newChildren.splice(currentSelectedChild, 0, newEdge)
+
+    const newInstructionNode = this.store.create({
+      data: currentInstructionNode.getData(),
+      children: newChildren
+    })
+    const [newExpression, ...rest] = this.update(newInstructionNode, this.targetNode)
+
+    const newChoiceExpr = new FosExpression(this.store, [...newExpression.route, [newAlternative.getId(), this.store.primitive.optionSelectedConstructor.getId()]])
+    return [newChoiceExpr, newExpression, ...rest]
+
+  }
+}
+
+
+export const getAvailableFunctions = (expr: FosExpression):((context: FosNode, expr: FosExpression) => Promise<FosExpression | null>)[] => {
+  /**
+   * what does it mean to run "addTask" on something?
+   * - add edge to target and run "update"
+   * - this is a fine and normal operation
+   * - same wiht "setdescription" etc.
+   * 
+   * - however, as an arg they take a string etc. 
+   * - must be passed in as nodeData somehow
+   * 
+   * - add context node back?
+   * - or just use the target edges as context?
+   * - add "input" edge with description node?
+   * - add "addTask" edge with description node?
+   * 
+   * 
+   * 
+   * 
+   */
 
 
 
 
-
+  return []
 }
 
 
 
 
 
-const getPrimitiveActions = (expression: FosExpression) => {
-  const update = async (context: FosNode): Promise<FosNode | null> => {
-    // TODO: check to see if this shoudl be new target or new instruction
-    const [newInstruction, newTarget] = await this.update(this.instructionNode, this.targetNode)
-    return newTarget
-
-  }
-
-
-  const funcNodes = {
-    update
-  }
-}
 
 
 
-
-
-
-
-
-
-export class ActionPackBase {
-
-  
-
-  getFunctions(): {
-    matchPattern: (expr: FosExpression) => Promise<FosExpression>,
-    getResult: (expr: FosExpression) => Promise<FosExpression>
-  }[] {
-
-    throw new Error('Not implemented -- abstract')
-
-  }
-
-  isInstance(): boolean {
-    throw new Error('Not implemented -- abstract')
-  }
-
-
-
-
-}
-
-
-
-
-
-export const typeclassInstanceFromNode = (node: FosNode) => {
-
-  
-  const actionPackInstance =  class {
-    actions: Map<FosNode, (f: FosNode) => [FosNode]>
-
-    constructor() {
-      this.actions = new Map()
-    }
-
-    isInstance() {
-      throw new Error('Not implemented')
-    }
-
-
-
-  }
-  return actionPackInstance
-}
-
-export class AliasActionPack {
-
-  actions: Map<FosNode, (f: FosNode) => [FosNode]>
-
-  constructor(expression: FosExpression) {
-    this.actions = new Map()
-  }
-
-  isInstance(){
-
-
-
-  }
-
-
-  bindAlias() {
-
-
-  }
-
-
-  update(newInstruction: FosNode, newTarget: FosNode): [FosExpression, FosExpression, ...FosExpression[]] {
+  const update = async (newInstruction: FosNode, newTarget: FosNode): Promise<void> => {
     if (!this.isAlias()){
       throw new Error('Root expression is not alias')
     }
@@ -232,88 +219,8 @@ export class AliasActionPack {
 
   }
 
-  getPrevList() {
-
-  }
 
 
-  getBranches() {
-
-  }
-
- 
-
-  isAlias(): boolean {
-
-    /**
-     * should we just check if it's using the alias constructor?  Rather than doing this structure check?
-     */
-
-    // console.log('isAlias', this.instructionNode.getId(), this.store.primitive.aliasConstructor.getId())
-    const targetHasTargetEdge = this.targetNode.getEdges().some((edge) => {
-      // console.log('edge', edge, this.store.primitive.targetConstructor.getId())
-      return edge[0] === this.store.primitive.targetConstructor.getId()
-    })
-    // console.log('targetHasTargetEdge', targetHasTargetEdge)
-    const targetHasAliasInstruction = this.targetNode.getEdges().some((edge) => {
-      return edge[0] === this.store.primitive.aliasInstructionConstructor.getId()
-    })
-
-    return targetHasTargetEdge
-  }
-
-  followAlias(): FosExpression {
-    if (!this.isAlias()) {
-      throw new Error('Expression is not an alias')
-    }
-
-    const {
-      instruction: aliasInstruction,
-      target: aliasTarget
-    } = this.targetNode.getAliasTargetNodes()
-
-    return new FosExpression(this.store, [...this.route, [aliasInstruction.getId(), aliasTarget.getId()]])
-
-
-  }
-
-  updateAlias() {
-
-
-  }
-
-  getComponents() {
-
-
-  }
-
-  
-
-}
-
-
-
-export class RootActionPack extends ActionPackBase {
-
-
-  isRoot() {
-    const lastElem = route[route.length - 1]
-    
-    if (!lastElem) {
-      return true
-    }
-  }
-
-  getInstructionNode() {
-
-    this.instructionNode = store.primitive.aliasConstructor
-  }
-
-  getTargetNode() {
-    const rootNode = store.getRootNode()
-
-    this.targetNode = rootNode
-  }
 
   update() {
 
@@ -332,9 +239,6 @@ export class RootActionPack extends ActionPackBase {
       this.store.setRootNode(rootNodeWithNewTarget)
       return [new FosExpression(this.store, [])]
   }
-   
-
-}
 
 export class BaseFosActionPack {
 
@@ -438,7 +342,6 @@ export class TreeFosActionPack {
 
 
   update( newInstruction: FosNode, newTarget: FosNode): [FosExpression, FosExpression, ...FosExpression[]] {
-    this.typeclassChain.update
  
     if (!this.hasParent()) {
 
@@ -525,9 +428,6 @@ export class TreeFosActionPack {
 }
 
 
-
-
-export class BranchableFosTypeclass {
   proposeChange() {
     if (this.instructionNode.getId() !== this.store.primitive.brachConstructorNode.getId()) {
       throw new Error('Method only implemented for branch expressions')
@@ -537,14 +437,7 @@ export class BranchableFosTypeclass {
 
   }
 
-    
-  
-}
-
-
-export class GroupFosActionPack {
-
-  
+ 
 
   attachUserToGroup(groupStore: FosStore, userStore: FosStore) {
     
@@ -573,7 +466,6 @@ export class GroupFosActionPack {
     const groupPeerEntryExpr = groupExpr.attachChild(groupStore.primitive.peerNode, userGroupTargetNode)
 
   }
-}
 
 
 
@@ -820,18 +712,6 @@ export class GroupFosActionPack {
 // }
   
 
-// executeWorkflow(attachToRoute: FosPath): FosExpression {
-    
-//   const newTodoNode = this.targetNode.clone()
-
-//   const targetExpr = new FosExpression(this.store, attachToRoute)
-
-//   targetExpr.attachChild(newTodoNode, this.store.primitive.completeField, -1 )
-
-
-  
-
-// }
 
 
 async update(newInstruction: FosNode, newTarget: FosNode): Promise<[FosExpression | null, Delta]> {

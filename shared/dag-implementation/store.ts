@@ -8,7 +8,7 @@ import {
 
 } from './primitive-node'
 
-import {  AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, TrellisSerializedData } from '../types'
+import {  AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
 
 import { sha3_256 } from 'js-sha3'
 
@@ -45,7 +45,7 @@ export class FosStore {
 
   updatedTime = 0
   
-  rootNodeId: FosNodeId
+  rootNodeId: NodeAddress
 
   fosRoute: FosPath = []
 
@@ -117,7 +117,7 @@ export class FosStore {
 
     } else {
 
-      this.rootNodeId = this.primitive.startRootAlias.getId()
+      this.rootNodeId = this.primitive.startRootAlias.getAlias()
     }
 
     
@@ -138,11 +138,11 @@ export class FosStore {
     return rootNode
   }
 
-  setRootNode(node: FosNode): void {
-    this.rootNodeId = node.getId()
-    console.log('newRootNode', this.rootNodeId)
-    this.updateCtxCallback && this.updateCtxCallback(this.exportContext([]))
-  }
+  // setRootNode(node: FosNode): void {
+  //   this.rootNodeId = node.getId()
+  //   console.log('newRootNode', this.rootNodeId)
+  //   this.updateCtxCallback && this.updateCtxCallback(this.exportContext([]))
+  // }
 
   commit(): void {
     const newRootNode = this.getRootNode().getCommitNode()
