@@ -3,7 +3,7 @@ import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/share
 
 export type GeneratedResult = FosStore
 
-export const generateSeedContext = (): GeneratedResult  => {
+export const generateSeedContext = async (): Promise<GeneratedResult>  => {
 
 
   const store = new FosStore()
@@ -30,42 +30,42 @@ export const generateSeedContext = (): GeneratedResult  => {
 
 
 
-  const [todo1] = rootExpr.addTodo(`${thisLabel} Todo1`)
+  const [todo1] = await rootExpr.addTodo(`${thisLabel} Todo1`)
 
   if (aliasRoot.targetNode.getId() !== store.primitive.terminal.getId()){
     throw new Error('Alias root is not terminal')
   }
 
 
-  const [todo2] = rootExpr.addTodo(`${thisLabel} Todo2`)
-  const [todo2_1] = todo2.addSubtask(`${thisLabel} Todo2.1`)
-  const [todo2_2] = todo2.addSubtask(`${thisLabel} Todo2.2`)
-  const [todo2_3] = todo2.addSubtask(`${thisLabel} Todo2.3`)
+  const [todo2] = await rootExpr.addTodo(`${thisLabel} Todo2`)
+  const [todo2_1] = await todo2.addTodo(`${thisLabel} Todo2.1`)
+  const [todo2_2] = await todo2.addTodo(`${thisLabel} Todo2.2`)
+  const [todo2_3] = await todo2.addTodo(`${thisLabel} Todo2.3`)
 
-  const [todo2_2_choiceA] = todo2_2.addChoice(`${thisLabel}Todo2.2 a`)
-  const [todo2_2_choiceB] = todo2_2.addChoice(`${thisLabel}Todo2.2 b`)
-  const [todo2_2_choiceC] = todo2_2.addChoice(`${thisLabel}Todo2.2 c`)
+  const [todo2_2_choiceA] = await todo2_2.addChoice(`${thisLabel}Todo2.2 a`)
+  const [todo2_2_choiceB] = await todo2_2.addChoice(`${thisLabel}Todo2.2 b`)
+  const [todo2_2_choiceC] = await todo2_2.addChoice(`${thisLabel}Todo2.2 c`)
   
-  rootExpr.addComment(`${thisLabel} this is a comment!`)
-  rootExpr.addComment(`${thisLabel}this is another comment!`)
+  await rootExpr.addComment(`${thisLabel} this is a comment!`)
+  await rootExpr.addComment(`${thisLabel}this is another comment!`)
 
 
-  const [workflow1] = rootExpr.addWorkflow(`${thisLabel} Workflow 1`)
-  const [workflow1_1] = workflow1.addWorkflow(`${thisLabel}Workflow 1.1`)
-  const [workflow1_2] = workflow1.addWorkflow(`${thisLabel}Workflow 1.2`)
+  const [workflow1] = await rootExpr.addWorkflow(`${thisLabel} Workflow 1`)
+  const [workflow1_1] = await workflow1.addWorkflow(`${thisLabel}Workflow 1.1`)
+  const [workflow1_2] = await workflow1.addWorkflow(`${thisLabel}Workflow 1.2`)
 
 
 
 
-  const [group1Store, group1Root] = store.addGroup(`${thisLabel} Group 1`)
+  const [group1Store, group1Root] = await store.addGroup(`${thisLabel} Group 1`)
 
 
-  const [groupBranch1] = group1Root.addBranch(`${thisLabel} Group Branch 1`)
+  const [groupBranch1] = await group1Root.addBranch(`${thisLabel} Group Branch 1`)
 
 
-  const [document] = rootExpr.addDocument(`${thisLabel} -Document 1`)
-  const [document1_1] = document.addDocument(`${thisLabel}Document 1.1`)
-  const [document1_2] = document.addDocument(`${thisLabel}Document 1.2`)
+  const [document] = await rootExpr.addDocument(`${thisLabel} Document 1`)
+  const [document1_1] = await document.addDocument(`${thisLabel}Document 1.1`)
+  const [document1_2] = await document.addDocument(`${thisLabel}Document 1.2`)
 
 
 

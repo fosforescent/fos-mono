@@ -5,7 +5,7 @@ import { getAncestorLeastUpSibling, getDownNode, getDownSibling, getGroupFromRou
 
 import { FosNode } from "./node"
 import { FosStore } from "./store"
-import { getAvailableFunctions } from "./context"
+import { runAvailableFunctions } from "./context"
 
 
 
@@ -57,17 +57,25 @@ export class FosExpression {
 
   }
 
+
  
 
-  async runFunctions(context: FosNode): Promise<FosExpression> {
+  async runFunctions(context: FosNode): Promise<void> {
 
-    for (const runAvailableFunction of getAvailableFunctions(this)){
-      const result = await runAvailableFunction(context, this)
-      if (result){
-        return result
-      }
+    // Required bindings accrued from left
+    // (optional bindings accrued from left)
+    // internal bindings accrued from left
+
+
+    // bindings accrued from right
+    // bindings combined with 
+
+
+
+    const result = await runAvailableFunctions(this)
+    if (!result){ 
+      throw new Error('No function matched context and expression')
     }
-    throw new Error('No function matched context and expression')
   }
 
 
@@ -88,6 +96,13 @@ export class FosExpression {
     return this.expressionLabel()
   }
 
+  isUpdate(): boolean {
+    const leftIsUpdate = (this.instructionNode.getId() === this.store.primitive.updateAction.getId())
+    return leftIsUpdate
+  }
+
+
+  
   // instructionContent(): any {
   //   return this.instructionNode.getContent()
   // }
@@ -603,19 +618,25 @@ export class FosExpression {
 
 
   async update (instructionNode: FosNode, targetNode: FosNode): Promise<void> {
-    const contextNode = this.store.create({
-      data: {},
-      children: [
-        [this.store.primitive.instruction.getId(), targetNode.getId()],
-        [this.store.primitive.newInstructionConstructor.getId(), instructionNode.getId()],
-        [this.store.primitive.prevTargetConstructor.getId(), this.targetNode.getId()],
-        [this.store.primitive.prevInstructionConstructor.getId(), this.instructionNode.getId()]
-      ]
-    })
-    this.instructionNode = this.store.primitive.updateInstructionNode
-    this.targetNode = newTarget
-    const newExpr = await this.runFunctions()
-    const newInstructionNode = newExpr.instructionNode
+
+
+    // if this is alias...
+    // const newTargetNode = this.store.create({
+    //   data: {},
+    //   children: [
+    //     [this.store.primitive.targetPointerConstructor.getId(), targetNode.getId()],
+    //     [this.store.primitive.instructionPointerConstructor.getId(), instructionNode.getId()],
+    //     [this.store.primitive.previousVersion.getId(), this.targetNode.getId()],
+    //   ]
+    // })
+
+
+
+
+
+    const newInstructionNode = this.store.primitive.updateAction.getId()
+    this.targetNode = targetNode
+
     const newTargetNode = newExpr.targetNode
     const newRoute = newExpr.route
     this.instructionNode = newInstructionNode
@@ -634,6 +655,13 @@ export class FosExpression {
     }
     
     return this.update(this.instructionNode, newTarget)
+  }
+
+
+  getAction() {
+    // 
+
+
   }
 
   async addBranch(content: string): Promise<FosExpression> {
@@ -748,8 +776,10 @@ export class FosExpression {
       children: []
     })
 
-  
-
+    const newTarget = this.targetNode.addEdge(newAlternative.getId(), this.store.primitive.optionNotSelectedConstructor.getId())
+    await this.update(currentInstructionNode, newTarget)
+    const newExpr = new FosExpression(this.store, [...this.route, [newAlternative.getId(), this.store.primitive.optionNotSelectedConstructor.getId()]])
+    return newExpr
 
   }
 
@@ -897,7 +927,7 @@ export class FosExpression {
   }
 
 
-  addTodo (description: string): [FosExpression, FosExpression, ...FosExpression[]]  {
+  async addTodo (description: string): Promise<FosExpression>  {
     if (!this.isRoot() && !this.isWorkflow() && !this.isGroup()){
       throw new Error('Method only implemented for root expressions groups and workflows')
     }
@@ -907,9 +937,9 @@ export class FosExpression {
 
     const [newTarget, todoNode] = thisExpr.targetNode.addTodo(description)    
 
-    const [newThis, ...rest] = thisExpr.update(thisExpr.instructionNode, newTarget)
+    await thisExpr.update(thisExpr.instructionNode, newTarget)
 
-    const newThisTargetChildren = newThis.getTargetChildren()
+    const newThisTargetChildren = this.getTargetChildren()
 
     const todoExpr = newThisTargetChildren.find((child) => {
       return child.instructionNode.getId() === todoNode.getId()
@@ -917,14 +947,14 @@ export class FosExpression {
     if (!todoExpr) {
       throw new Error('Todo expression not found')
     }
-    return [todoExpr, newThis, ...rest]
+    return todoExpr
 
   }
 
 
 
 
-  addComment (comment: string): [FosExpression, FosExpression, ...FosExpression[]]  {
+  async addComment (comment: string): Promise<FosExpression>  {
 
     const newCommentNode = this.store.create({
       data: {
@@ -943,11 +973,11 @@ export class FosExpression {
 
     const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.commentConstructor.getId(), newCommentNode.getId())
 
-    const [newThis, ...rest] = rootExpr.update(rootExpr.instructionNode, newRootTarget)
+    await rootExpr.update(rootExpr.instructionNode, newRootTarget)
 
-    const commentExpr = new FosExpression(newThis.store, [ [ newThis.store.primitive.commentConstructor.getId(), newCommentNode.getId() ]])
+    const commentExpr = new FosExpression(this.store, [ [ this.store.primitive.commentConstructor.getId(), newCommentNode.getId() ]])
 
-    return [commentExpr, newThis, ...rest]
+    return commentExpr
     
   }
 
@@ -1140,7 +1170,7 @@ export class FosExpression {
   // }
   
   
-  updateFocus (focusChar: number){
+  async updateFocus (focusChar: number){
     this.store.trellisData.focusChar = focusChar
   }
   
@@ -1155,22 +1185,22 @@ export class FosExpression {
     this.store.fosRoute = this.route
   }
   
-  async addChild(newType: FosNode, newNodeContent: FosNodeContent, index: number = -1): [FosExpression, FosExpression, ...FosExpression[]] {
+  async addChild(newType: FosNode, newNodeContent: FosNodeContent, index: number = -1): Promise<FosExpression> {
     const childTarget = this.store.create(newNodeContent)
     const newThisTarget = this.targetNode.addEdge(newType.getId(), childTarget.getId(), index) 
     await this.update(this.instructionNode, newThisTarget)
-    const child = newThis.getTargetChildren().find((child) => pathEqual(child.route, [...newThis.route, [newType.getId(), childTarget.getId()]]))
+    const child = this.getTargetChildren().find((child) => pathEqual(child.route, [...this.route, [newType.getId(), childTarget.getId()]]))
     if (!child) {
       throw new Error('Child not found')
     }
-    return [child, newThis, ...rest]
+    return child
   }
   
-  async attachChild(newRowType: FosNode, newRowId: FosNode, index: number = -1): FosExpression {
-    const newTarget = this.targetNode.addEdge(newRowType.getId(), newRowId.getId(), index)
+  async attachChild(newRowType: FosNode, newRowTarget: FosNode, index: number = -1): Promise<void> {
+    const newTarget = this.targetNode.addEdge(newRowType.getId(), newRowTarget.getId(), index)
     await this.update(this.instructionNode, newTarget)
-    const child = new FosExpression(newThis.store, [...newThis.route, [newRowType.getId(), newRowId.getId()]])
-    return [child, newThis, ...rest]
+    const child = new FosExpression(this.store, [...this.route, [newRowType.getId(), newRowTarget.getId()]])
+
   }
   
   attachTargetSibling(newRowType: FosNode, newRowTarget: FosNode, position: number | string ) {
@@ -1206,7 +1236,7 @@ export class FosExpression {
   }
   
   
-  removeNode(): FosExpression[]{
+  async removeNode(): Promise<void>{
     const { targetIndexInParent, instructionIndexInParent, parent } = this.getParentInfo()
     this.moveFocusUp()
     if (targetIndexInParent !== -1){
@@ -1532,15 +1562,15 @@ export class FosExpression {
   }
 
 
- addDownSibling (): [FosExpression, ...FosExpression[]] {
+ async addDownSibling (): Promise<FosExpression> {
 
   const { targetIndexInParent, parent } = this.getParentInfo()
-  const [newChild, ...rest] = this.addChild( 
+  const newChild = await this.addChild( 
         this.instructionNode, 
         {data: {description: {content: ""}}, children: []}, 
     targetIndexInParent + 1)
-    newChild.updateFocus(this.focusChar() || 0)
-    return [newChild, ...rest]
+    await newChild.updateFocus(this.focusChar() || 0)
+    return newChild
   }
 
 
@@ -1667,7 +1697,7 @@ export class FosExpression {
   }
 
 
-  addRowAsChild (newType: FosNode = this.instructionNode) {
+  async addRowAsChild (newType: FosNode = this.instructionNode) {
         
     const newNodeContent: FosNodeContent = {
         data: {
@@ -1684,7 +1714,7 @@ export class FosExpression {
         },
         children: []
     }
-    const [childExpr]  = this.addChild(newType, newNodeContent)
+    const childExpr  = await this.addChild(newType, newNodeContent)
     // console.log('newState', newState, diff({left: appData, right: newState}))
     childExpr.updateFocus(0)
 

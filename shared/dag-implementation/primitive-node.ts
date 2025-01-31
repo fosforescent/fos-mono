@@ -237,11 +237,49 @@ export const registerMarketServiceAction = (store: FosStore) => generateConstruc
 export const typeNode = (store: FosStore) => generateConstructor(store, "TYPE", { description: { content : 'Type Node' } }, [])
 export const pureActionNode = (store: FosStore) => generateConstructor(store, "PUREACTION", { description: { content : 'Pure Action Node' } }, [])
 export const bindActionNode = (store: FosStore) => generateConstructor(store, "BINDACTION", { description: { content : 'Bind Action Node' } }, [])
-
+export const addChildActionNode = (store: FosStore) => generateConstructor(store, "ADDCHILD", { description: { content : 'Add Child Action Node' } }, [])
 
 export const getUpdateActionNode = (store: FosStore) => generateConstructor(store, "UPDATE", { description: { content : 'Update Action Node' } }, [])
 export const evalAction = (store: FosStore) => generateConstructor(store, "EVAL", { description: { content : 'Eval Action Node' } }, [])
 export const actionConstructor = (store: FosStore) => generateConstructor(store, "ACTION", { description: { content : 'Action Constructor Node' } }, [])
+export const getGetInstructionNodeAction = (store: FosStore) => generateConstructor(store, "GETINSTRUCTION", { description: { content : 'Get Instruction Node Action' } }, [])
+export const getGetTargetNodeAction = (store: FosStore) => generateConstructor(store, "GETTARGET", { description: { content : 'Get Target Node Action' } }, [])
+export const getIsInstanceAction = (store: FosStore) => generateConstructor(store, "ISINSTANCE", { description: { content : 'Is Instance Action' } }, [])
+export const createVariableAction = (store: FosStore) => generateConstructor(store, "CREATEVARIABLE", { description: { content : 'Create Variable Action' } }, [])
+
+
+
+export const groupTypeNode = (store: FosStore) => generateConstructor(store, "GROUPTYPE", { description: { content : 'Group Type Node' } }, [])
+export const todoTypeNode = (store: FosStore) => generateConstructor(store, "TODOTYPE", { description: { content : 'Todo Type Node' } }, [])
+export const commentTypeNode = (store: FosStore) => generateConstructor(store, "COMMENTTYPE", { description: { content : 'Comment Type Node' } }, [])
+export const documentTypeNode = (store: FosStore) => generateConstructor(store, "DOCUMENTTYPE", { description: { content : 'Document Type Node' } }, [])
+export const workflowTypeNode = (store: FosStore) => generateConstructor(store, "WORKFLOWTYPE", { description: { content : 'Workflow Type Node' } }, [])
+export const branchTypeNode = (store: FosStore) => generateConstructor(store, "BRANCHTYPE", { description: { content : 'Branch Type Node' } }, [])
+export const marketServiceTypeNode = (store: FosStore) => generateConstructor(store, "MARKETSERVICETYPE", { description: { content : 'Market Service Type Node' } }, [])
+export const marketRequestTypeNode = (store: FosStore) => generateConstructor(store, "MARKETREQUESTTYPE", { description: { content : 'Market Request Type Node' } }, [])
+export const invoiceTypeNode = (store: FosStore) => generateConstructor(store, "INVOICETYPE", { description: { content : 'Invoice Type Node' } }, [])
+export const receiptTypeNode = (store: FosStore) => generateConstructor(store, "RECEIPTTYPE", { description: { content : 'Receipt Type Node' } }, [])
+
+
+
+export const booleanTypeNode = (store: FosStore) => generateConstructor(store, "BOOLEANTYPE", { description: { content : 'Boolean Type Node' } }, [])
+export const falseConstructorNode = (store: FosStore) => generateConstructor(store, "FALSE", { description: { content : 'False Constructor Node' } }, [])
+export const trueConstructorNode = (store: FosStore) => generateConstructor(store, "TRUE", { description: { content : 'True Constructor Node' } }, [])
+
+
+export const updateInstructionNode = (store: FosStore) => generateConstructor(store, "UPDATEINSTRUCTION", { description: { content : 'Update Instruction Node' } }, [])
+
+
+
+
+export const createAliasNode = () => {
+
+  
+
+
+}
+
+
 
 
 
@@ -276,8 +314,6 @@ export const generateConstructor = (
   if (!newNode) throw new Error('could not create node')
   return newNode
 }
-
-
 
 
 
@@ -392,8 +428,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
 
 
   const updateAction = getUpdateActionNode(store)
-
-
+ 
 
   return {
     voidNode,
@@ -492,6 +527,8 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     startRootAlias,
     brachConstructorNode,
     // allOf: getAllOfNode(store),
+    updateAction,
+    
   }
 
 }
@@ -576,5 +613,13 @@ export type PrimitiveAliases = {
   startRootAlias: FosNode,
   brachConstructorNode: FosNode,
   proposalField: FosNode,
-  
+  targetPointerConstructor: FosNode,
+  instructionPointerConstructor: FosNode,
+  revisionField: FosNode,
+  projectField: FosNode,
+  periodicTrigger: FosNode,
+  requestTrigger: FosNode,
+  manualTrigger: FosNode,
+  dailyTrigger: FosNode,
+  updateAction: FosNode, 
 }

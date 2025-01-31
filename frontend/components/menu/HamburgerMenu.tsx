@@ -157,7 +157,11 @@ const HamburgerMenu = ({
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger><Menu /></SheetTrigger>
-          <SheetContent className="md:min-w-[80%] sm:min-w-full flex flex-col justify-start gap-5" side={'left'} aria-description='Fos Menu'>
+          <SheetContent 
+            className="md:min-w-[80%] sm:min-w-full flex flex-col justify-start gap-5 !border-none" 
+            side={'left'} 
+            aria-description='Fos Menu'
+          >
             {/* <SheetHeader className="mb-10">
               Fos
             </SheetHeader> */}

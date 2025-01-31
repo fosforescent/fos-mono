@@ -138,11 +138,11 @@ export class FosStore {
     return rootNode
   }
 
-  // setRootNode(node: FosNode): void {
-  //   this.rootNodeId = node.getId()
-  //   console.log('newRootNode', this.rootNodeId)
-  //   this.updateCtxCallback && this.updateCtxCallback(this.exportContext([]))
-  // }
+  setRootNode(node: FosNode): void {
+    this.rootNodeId = node.getId()
+    console.log('newRootNode', this.rootNodeId)
+    this.updateCtxCallback && this.updateCtxCallback(this.exportContext([]))
+  }
 
   commit(): void {
     const newRootNode = this.getRootNode().getCommitNode()

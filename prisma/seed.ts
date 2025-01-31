@@ -25,12 +25,12 @@ async function main() {
 
 
 
-  const us0 = await createSeedUser(prisma, generateSeedContext(), 'dmn322@fosforescent.com', {})
-  const us1 = await createSeedUser(prisma, generateSeedContext(), 'dmn322+1@fosforescent.com', {})
-  const us2 = await createSeedUser(prisma, generateSeedContext(), 'dmn322+2@fosforescent.com', {})
-  const us3 = await createSeedUser(prisma, generateSeedContext(), 'dmn322+3@fosforescent.com', {})
-  const us4 = await createSeedUser(prisma, generateSeedContext(), 'dmn322+4@fosforescent.com', {})
-  const us5 = await createSeedUser(prisma, generateSeedContext(), 'dmn322+5@fosforescent.com', {})
+  const us0 = await createSeedUser(prisma, await generateSeedContext(), 'dmn322@fosforescent.com', {})
+  const us1 = await createSeedUser(prisma, await generateSeedContext(), 'dmn322+1@fosforescent.com', {})
+  const us2 = await createSeedUser(prisma, await generateSeedContext(), 'dmn322+2@fosforescent.com', {})
+  const us3 = await createSeedUser(prisma, await generateSeedContext(), 'dmn322+3@fosforescent.com', {})
+  const us4 = await createSeedUser(prisma, await generateSeedContext(), 'dmn322+4@fosforescent.com', {})
+  const us5 = await createSeedUser(prisma, await generateSeedContext(), 'dmn322+5@fosforescent.com', {})
 
 
   const us0Root = us0.getRootExpression()

@@ -331,6 +331,53 @@ export class FosNode {
     return {instruction: instructionNode, target: targetNode, prev: prevNode}
   }
 
+  getUpdateNodes(): { instruction: FosNode, target: FosNode, prevInstruction: FosNode, prevTarget: FosNode } {
+
+    const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetConstructor.getId())
+    if (!target) {
+      throw new Error("Target not found")
+    }
+    const targetNode = this.store.getNodeByAddress(target[1])    
+    if (!targetNode) {
+      throw new Error("Target Node not found")
+    }
+
+    const instruction = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.aliasInstructionConstructor.getId())
+    if (!instruction) {
+      throw new Error("Instruction not found")
+    }
+
+    const instructionNode = this.store.getNodeByAddress(instruction[1])
+    if (!instructionNode) {
+      throw new Error("Instruction Node not found")
+    }
+
+    const prevInstruction = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.previousVersion.getId())
+    if (!prevInstruction) {
+      throw new Error("Previous Instruction not found")
+    }
+
+    const prevInstructionNode = this.store.getNodeByAddress(prevInstruction[1])    
+    if (!prevInstructionNode) {
+      throw new Error("Target Node not found")
+    }
+
+
+    const prevTarget = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.previousVersion.getId())
+    if (!prevTarget) {
+      throw new Error("Previous Target not found")
+    }
+
+    const prevTargetNode = this.store.getNodeByAddress(prevTarget[1])    
+    if (!prevTargetNode) {
+      throw new Error("Target Node not found")
+    }
+
+
+    return {instruction: instructionNode, target: targetNode, prevInstruction: prevInstructionNode, prevTarget: prevTargetNode}
+  }
+
+
   setAliasInfo(info: {
     target: FosNode,
     instruction: FosNode,
