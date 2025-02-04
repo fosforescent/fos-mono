@@ -13,7 +13,7 @@ build-frontend:
 
 
 run-dev:
-	npm run start
+	npm run dev
 
 run:
 	$(MAKE) run-dev

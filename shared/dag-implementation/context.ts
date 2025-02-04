@@ -26,7 +26,10 @@ export const runAvailableFunctions = async (expr: FosExpression): Promise<boolea
    */
 
   if (expr.isUpdate()){
-    if (){
+    const {
+
+    } = {}
+    if (false){
       const { parent }  = expr.getParentInfo()
       if (parent.isAlias()){
         /// parent.add next to alias, update target, then update parent
@@ -40,9 +43,16 @@ export const runAvailableFunctions = async (expr: FosExpression): Promise<boolea
 
   }
 
+  if (expr.isEval()){
+
+  }
+
+
 
   if (expr.isTodo()){
-    if ()
+    if (false){
+
+    }
 
   }
 

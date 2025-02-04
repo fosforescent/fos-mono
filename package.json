@@ -32,7 +32,7 @@
     "build:frontend": "npx vite build --mode frontend",
     "dev:frontend": "vite --mode frontend",
     "dev:backend": "npx nodemon --config backend/nodemon.json",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:combined\"",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "test": "npx jest",
     "test:ci": "npx jest --ci",
     "setup": "npx prisma generate",

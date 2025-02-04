@@ -17,9 +17,6 @@ import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
 
 
 
-
-
-
 export class FosStore {
   table: Map<string, FosNodeContent> = new Map()
 

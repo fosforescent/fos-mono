@@ -102,7 +102,7 @@ export class FosExpression {
   }
 
 
-  
+
   // instructionContent(): any {
   //   return this.instructionNode.getContent()
   // }
@@ -680,6 +680,7 @@ export class FosExpression {
 
 
     const brachConstructor = this.store.primitive.brachConstructorNode
+    const branchTargetNode = this.targetNode()
 
 
     const newTarget = this.targetNode.addEdge(brachConstructor.getId(), branchTargetNode.getId())
