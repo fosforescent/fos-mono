@@ -33,7 +33,7 @@ Fosforescent aims to be a new way to organize cooperative work and resources. It
 - **Personal Projects** - Plan weddings, renovations, or other complex tasks
 - **Community Initiatives** - Pool resources for neighborhood improvements
 - **Cooperative Businesses** - Manage distributed teams and shared ownership
-- **Decentralize Service Marketplace(s)** - Connect providers with requesters through structured workflows
+- **Decentralize Service Marketplace** - Eventually Fosforescent plans to connect providers with requesters through structured workflows and use platform fees to pay contributors for development of the platform
 
 ## Technical Foundation
 
@@ -43,7 +43,7 @@ Fosforescent combines concepts from:
 - Dependently typed functional languages
 - Distributed consensus systems
 
-The system uses cryptographic hashing to identify subgraphs, with nodes distributed via a DHT protocol. "Evaluation agent workers" read graphs and make asynchronous updates, broadcasting relevant changes to peers.
+The system uses cryptographic hashing to identify subgraphs.  In the future for the decentralized version, the plan is for nodes to be distributed via a DHT protocol. "Evaluation agent workers" read graphs and make asynchronous updates, broadcasting relevant changes to peers.
 
 ## Vision
 
@@ -61,4 +61,4 @@ I'm actively seeking contributors to help bring this vision to life! The project
 - Visual programming interfaces
 - Collaborative editing
 
-If you're interested in pushing the boundaries of how we organize work and collaboration, please consider joining our community. Check the [CONTRIBUTING.md](CONTRIBUTING.md) file for details on how to get started.
+If you're interested in helping push this project forward, please reach out at info@fosforescent.com
