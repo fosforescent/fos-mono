@@ -3,6 +3,11 @@
 
 dist
 
+infra/terraform-admin-key.json
+infra/terraform-*.tfstate
+infra/terraform-*.tfstate.backup
+
+
 # dependencies
 /node_modules
 /.pnp
