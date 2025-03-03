@@ -42,7 +42,7 @@ export class FosStore {
 
   updatedTime = 0
   
-  rootNodeId: NodeAddress
+  rootNodeId: FosNodeId
 
   fosRoute: FosPath = []
 
@@ -114,7 +114,11 @@ export class FosStore {
 
     } else {
 
-      this.rootNodeId = this.primitive.startRootAlias.getAlias()
+      const {
+        target
+      } = this.primitive.startRootAlias.dereferenceNodes()
+      
+      this.rootNodeId = target.getId()
     }
 
     
@@ -939,7 +943,7 @@ export class FosStore {
       throw new Error(`no alias found for current node`)
     }
 
-    const rootTarget = rootExpression.targetNode.getAliasTarget()
+    const { target: rootTarget } = rootExpression.targetNode.dereferenceNodes()
 
     const groupContentNode = this.create({
       data: {
@@ -961,7 +965,7 @@ export class FosStore {
         }
       },
       children: [
-        [this.primitive.targetConstructor.getId(), groupContentNode.getId()]
+        [this.primitive.targetPointerConstructor.getId(), groupContentNode.getId()]
         
       ]
     })
@@ -983,7 +987,7 @@ export class FosStore {
         }
       },
       children: [
-        [this.primitive.targetConstructor.getId(), groupContentNode.getId()],
+        [this.primitive.targetPointerConstructor.getId(), groupContentNode.getId()],
         [this.primitive.peerNode.getId(), groupShadowNode.getId()]
       ]
     })

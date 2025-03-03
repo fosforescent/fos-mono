@@ -300,40 +300,11 @@ export class FosNode {
     return [instructionNode, targetNode]
   }
 
-  getAliasTargetNodes(): { instruction: FosNode, target: FosNode, prev: FosNode } {
-    const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetConstructor.getId())
-    if (!target) {
-      throw new Error("Target not found")
-    }
-    const targetNode = this.store.getNodeByAddress(target[1])
-    if (!targetNode) {
-      throw new Error("Target Node not found")
-    }
+ 
 
-    const instruction = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.aliasInstructionConstructor.getId())
-    if (!instruction) {
-      throw new Error("Instruction not found")
-    }
-    const instructionNode = this.store.getNodeByAddress(instruction[1])
-    if (!instructionNode) {
-      throw new Error("Instruction Node not found")
-    }
+  dereferenceNodes(): { instruction: FosNode, target: FosNode, prevInstruction: FosNode, prevTarget: FosNode } {
 
-    const prev = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.previousVersion.getId())
-    if (!prev) {
-      throw new Error("Previous not found")
-    }
-    const prevNode = this.store.getNodeByAddress(prev[1])
-    if (!prevNode) {
-      throw new Error("Previous Node not found")
-    }
-
-    return {instruction: instructionNode, target: targetNode, prev: prevNode}
-  }
-
-  getUpdateNodes(): { instruction: FosNode, target: FosNode, prevInstruction: FosNode, prevTarget: FosNode } {
-
-    const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetConstructor.getId())
+    const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetPointerConstructor.getId())
     if (!target) {
       throw new Error("Target not found")
     }
@@ -342,7 +313,7 @@ export class FosNode {
       throw new Error("Target Node not found")
     }
 
-    const instruction = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.aliasInstructionConstructor.getId())
+    const instruction = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.instructionPointerConstructor.getId())
     if (!instruction) {
       throw new Error("Instruction not found")
     }
@@ -390,13 +361,13 @@ export class FosNode {
     
 
     const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, target]) => {
-      if (edgeType === this.store.primitive.targetConstructor.getId()) {
+      if (edgeType === this.store.primitive.targetPointerConstructor.getId()) {
         hadTarget = true
         const newEdge: FosPathElem = [edgeType, info.target.getId()]
         console.log("newEdge - target", newEdge)
         return newEdge
       }
-      if (edgeType === this.store.primitive.aliasInstructionConstructor.getId()) {
+      if (edgeType === this.store.primitive.instructionPointerConstructor.getId()) {
         hadInstruction = true
         const newEdge: FosPathElem = [edgeType, info.instruction.getId()]
         console.log("newEdge - aliasInstruction", newEdge)

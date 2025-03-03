@@ -269,6 +269,10 @@ export const trueConstructorNode = (store: FosStore) => generateConstructor(stor
 
 export const updateInstructionNode = (store: FosStore) => generateConstructor(store, "UPDATEINSTRUCTION", { description: { content : 'Update Instruction Node' } }, [])
 
+export const getPrevInstructionPointerConstructor = (store: FosStore) => generateConstructor(store, "PREVINSTPTR", { description: { content : 'Previous Instruction Pointer Constructor' } }, [])
+export const getPrevTargetPointerConstructor = (store: FosStore) => generateConstructor(store, "PREVTRGTPTR", { description: { content : 'Previous Target Pointer Constructor' } }, [])
+
+
 
 
 
@@ -314,7 +318,6 @@ export const generateConstructor = (
   if (!newNode) throw new Error('could not create node')
   return newNode
 }
-
 
 
 
@@ -428,6 +431,8 @@ export const constructPrimitiveAliases = (store: FosStore) => {
 
 
   const updateAction = getUpdateActionNode(store)
+  const prevInstructionPointerConstructor = getPrevInstructionPointerConstructor(store)
+  const prevTargetPointerConstructor = getPrevTargetPointerConstructor(store)
  
 
   return {
@@ -528,7 +533,8 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     brachConstructorNode,
     // allOf: getAllOfNode(store),
     updateAction,
-    
+    prevInstructionPointerConstructor,
+    prevTargetPointerConstructor
   }
 
 }
@@ -607,8 +613,6 @@ export type PrimitiveAliases = {
   nameNode: FosNode,
   groupShadowNode: FosNode, 
   aliasConstructor: FosNode,
-  targetConstructor: FosNode,
-  aliasInstructionConstructor: FosNode,
   dereferenceAlias: FosNode,
   startRootAlias: FosNode,
   brachConstructorNode: FosNode,
@@ -622,4 +626,6 @@ export type PrimitiveAliases = {
   manualTrigger: FosNode,
   dailyTrigger: FosNode,
   updateAction: FosNode, 
+  prevInstructionPointerConstructor: FosNode,
+  prevTargetPointerConstructor: FosNode,
 }

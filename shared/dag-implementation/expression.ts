@@ -251,12 +251,12 @@ export class FosExpression {
 
     // console.log('isAlias', this.instructionNode.getId(), this.store.primitive.aliasConstructor.getId())
     const targetHasTargetEdge = this.targetNode.getEdges().some((edge) => {
-      // console.log('edge', edge, this.store.primitive.targetConstructor.getId())
-      return edge[0] === this.store.primitive.targetConstructor.getId()
+      // console.log('edge', edge, this.store.primitive.targetPointerConstructor.getId())
+      return edge[0] === this.store.primitive.targetPointerConstructor.getId()
     })
     // console.log('targetHasTargetEdge', targetHasTargetEdge)
     const targetHasAliasInstruction = this.targetNode.getEdges().some((edge) => {
-      return edge[0] === this.store.primitive.aliasInstructionConstructor.getId()
+      return edge[0] === this.store.primitive.instructionPointerConstructor.getId()
     })
 
     return targetHasTargetEdge
@@ -272,11 +272,17 @@ export class FosExpression {
     const {
       instruction: aliasInstruction,
       target: aliasTarget
-    } = this.targetNode.getAliasTargetNodes()
+    } = this.targetNode.dereferenceNodes()
 
     return new FosExpression(this.store, [...this.route, [aliasInstruction.getId(), aliasTarget.getId()]])
 
 
+  }
+
+
+  isReference(): boolean {
+    const isAlias = this.isAlias()
+    return isAlias
   }
 
   isWorkflow(): boolean {
@@ -522,11 +528,11 @@ export class FosExpression {
     
     let thisParent: FosExpression = this.getParent()
 
-    if (thisParent.instructionNode.getId() === this.store.primitive.targetConstructor.getId()) {
+    if (thisParent.instructionNode.getId() === this.store.primitive.targetPointerConstructor.getId()) {
       const {
         instruction: aliasInstruction,
         target: aliasTarget
-      } = thisParent.targetNode.getAliasTargetNodes()
+      } = thisParent.targetNode.dereferenceNodes()
       thisParent = new FosExpression(this.store, [...thisParent.route.slice(-1), [aliasInstruction.getId(), aliasTarget.getId()]])
       
     }
@@ -538,15 +544,15 @@ export class FosExpression {
         const {
           instruction: aliasInstruction,
           target: aliasTarget
-        } = thisParent.targetNode.getAliasTargetNodes()
-        if (childExpr.instructionNode.getId() === this.store.primitive.aliasInstructionConstructor.getId()) {
+        } = thisParent.targetNode.dereferenceNodes()
+        if (childExpr.instructionNode.getId() === this.store.primitive.instructionPointerConstructor.getId()) {
           const isMatch = aliasInstruction.getId() === childExpr.targetNode.getId()
           if (!isMatch) {
             throw new Error('Alias parent does not contain alias instruction')
           }
           return isMatch && (oneWasFound = true)
         }
-        if (childExpr.instructionNode.getId() === this.store.primitive.targetConstructor.getId()) {
+        if (childExpr.instructionNode.getId() === this.store.primitive.targetPointerConstructor.getId()) {
           const isMatch = aliasTarget.getId() === childExpr.targetNode.getId()
           if (!isMatch) {
             throw new Error('Alias parent does not contain target node')
@@ -632,16 +638,24 @@ export class FosExpression {
 
 
 
+    const updateArgNode: FosNode = this.store.create({
+      data: {},
+      children: [
+        [this.store.primitive.prevInstructionPointerConstructor.getId(), this.instructionNode.getId()],
+        [this.store.primitive.prevTargetPointerConstructor.getId(), this.targetNode.getId()],
+        [this.store.primitive.instructionPointerConstructor.getId(), instructionNode.getId()],
+        [this.store.primitive.targetPointerConstructor.getId(), targetNode.getId()],
+
+      ]
+    })
+
+    const updateElem: FosPathElem = [this.store.primitive.updateAction.getId(), updateArgNode.getId()]
+    const newExpr = new FosExpression(this.store, [...this.route, updateElem])
 
 
-    const newInstructionNode = this.store.primitive.updateAction.getId()
-    this.targetNode = targetNode
-
-    const newTargetNode = newExpr.targetNode
-    const newRoute = newExpr.route
-    this.instructionNode = newInstructionNode
-    this.targetNode = newTargetNode
-    this.route = newRoute
+    this.instructionNode = newExpr.instructionNode
+    this.targetNode = newExpr.targetNode
+    this.route = newExpr.route
 
   }
 
@@ -654,9 +668,16 @@ export class FosExpression {
       throw new Error('Cannot update root node')
     }
     
-    return this.update(this.instructionNode, newTarget)
+    return this.setTargetNode(newTarget)
   }
 
+  setTargetNode(targetNode: FosNode) {
+    return this.update(this.instructionNode, targetNode)
+  }
+
+  setInstructionNode(instructionNode: FosNode) {
+    return this.update(instructionNode, this.targetNode)
+  }
 
   getAction() {
     // 
@@ -666,30 +687,25 @@ export class FosExpression {
 
   async addBranch(content: string): Promise<FosExpression> {
 
-    const contextNode = this.store.create({
-      data: {
-        description: {
-          content
-        }
-      },
+
+
+    const branchArgNode: FosNode = this.store.create({
+      data: {},
       children: [
-        [this.store.primitive.actionNode.getId(), this.store.primitive.pureAction.getId()],
-        [this.store.primitive.typeNode.getId(), this.store.primitive.brachConstructorNode.getId()]
+        [this.store.primitive.prevInstructionPointerConstructor.getId(), this.store.primitive.voidNode.getId()],
+        [this.store.primitive.prevTargetPointerConstructor.getId(), this.store.primitive.voidNode.getId()],
+        [this.store.primitive.instructionPointerConstructor.getId(), this.instructionNode.getId()],
+        [this.store.primitive.targetPointerConstructor.getId(),   this.targetNode.getId()],
+
       ]
     })
 
+    const updateElem: FosPathElem = [this.store.primitive.brachConstructorNode.getId(), branchArgNode.getId()]
+    const newExpr = new FosExpression(this.store, [...this.route, updateElem])
 
-    const brachConstructor = this.store.primitive.brachConstructorNode
-    const branchTargetNode = this.targetNode()
-
-
-    const newTarget = this.targetNode.addEdge(brachConstructor.getId(), branchTargetNode.getId())
-
-    await this.update(this.instructionNode, newTarget)
+    return newExpr
     
-      
-    const newBranch = new FosExpression(this.store, [...this.route, [brachConstructor.getId(), branchTargetNode.getId()]])
-    return newBranch
+
   }
 
   async setDescription (description: string): Promise<void> {
@@ -814,7 +830,7 @@ export class FosExpression {
         }
       },
       children: [
-        [this.store.primitive.targetConstructor.getId(), this.targetNode.getId()]
+        [this.store.primitive.targetPointerConstructor.getId(), this.targetNode.getId()]
       ]
     })
 
@@ -848,7 +864,7 @@ export class FosExpression {
         }
       },
       children: [
-        [this.store.primitive.targetConstructor.getId(), this.targetNode.getId()]
+        [this.store.primitive.targetPointerConstructor.getId(), this.targetNode.getId()]
       ]
     })
     const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketServiceNode.getId(), marketServiceNode.getId())
@@ -870,7 +886,7 @@ export class FosExpression {
         }
       },
       children: [
-        [this.store.primitive.targetConstructor.getId(), this.instructionNode.getId()]
+        [this.store.primitive.targetPointerConstructor.getId(), this.instructionNode.getId()]
       ]
     })
     const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketRequestNode.getId(), marketRequestNode.getId())

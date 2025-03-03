@@ -30,29 +30,29 @@ export const generateSeedContext = async (): Promise<GeneratedResult>  => {
 
 
 
-  const [todo1] = await rootExpr.addTodo(`${thisLabel} Todo1`)
+  const todo1 = await rootExpr.addTodo(`${thisLabel} Todo1`)
 
   if (aliasRoot.targetNode.getId() !== store.primitive.terminal.getId()){
     throw new Error('Alias root is not terminal')
   }
 
 
-  const [todo2] = await rootExpr.addTodo(`${thisLabel} Todo2`)
-  const [todo2_1] = await todo2.addTodo(`${thisLabel} Todo2.1`)
-  const [todo2_2] = await todo2.addTodo(`${thisLabel} Todo2.2`)
-  const [todo2_3] = await todo2.addTodo(`${thisLabel} Todo2.3`)
+  const todo2 = await rootExpr.addTodo(`${thisLabel} Todo2`)
+  const todo2_1 = await todo2.addTodo(`${thisLabel} Todo2.1`)
+  const todo2_2 = await todo2.addTodo(`${thisLabel} Todo2.2`)
+  const todo2_3 = await todo2.addTodo(`${thisLabel} Todo2.3`)
 
-  const [todo2_2_choiceA] = await todo2_2.addChoice(`${thisLabel}Todo2.2 a`)
-  const [todo2_2_choiceB] = await todo2_2.addChoice(`${thisLabel}Todo2.2 b`)
-  const [todo2_2_choiceC] = await todo2_2.addChoice(`${thisLabel}Todo2.2 c`)
+  const todo2_2_choiceA = await todo2_2.addChoice(`${thisLabel}Todo2.2 a`)
+  const todo2_2_choiceB = await todo2_2.addChoice(`${thisLabel}Todo2.2 b`)
+  const todo2_2_choiceC = await todo2_2.addChoice(`${thisLabel}Todo2.2 c`)
   
   await rootExpr.addComment(`${thisLabel} this is a comment!`)
   await rootExpr.addComment(`${thisLabel}this is another comment!`)
 
 
-  const [workflow1] = await rootExpr.addWorkflow(`${thisLabel} Workflow 1`)
-  const [workflow1_1] = await workflow1.addWorkflow(`${thisLabel}Workflow 1.1`)
-  const [workflow1_2] = await workflow1.addWorkflow(`${thisLabel}Workflow 1.2`)
+  const workflow1 = await rootExpr.addWorkflow(`${thisLabel} Workflow 1`)
+  const workflow1_1 = await workflow1.addWorkflow(`${thisLabel}Workflow 1.1`)
+  const workflow1_2 = await workflow1.addWorkflow(`${thisLabel}Workflow 1.2`)
 
 
 
@@ -60,40 +60,40 @@ export const generateSeedContext = async (): Promise<GeneratedResult>  => {
   const [group1Store, group1Root] = await store.addGroup(`${thisLabel} Group 1`)
 
 
-  const [groupBranch1] = await group1Root.addBranch(`${thisLabel} Group Branch 1`)
+  const groupBranch1 = await group1Root.addBranch(`${thisLabel} Group Branch 1`)
 
 
-  const [document] = await rootExpr.addDocument(`${thisLabel} Document 1`)
-  const [document1_1] = await document.addDocument(`${thisLabel}Document 1.1`)
-  const [document1_2] = await document.addDocument(`${thisLabel}Document 1.2`)
+  const document = await rootExpr.addDocument(`${thisLabel} Document 1`)
+  const document1_1 = await document.addDocument(`${thisLabel}Document 1.1`)
+  const document1_2 = await document.addDocument(`${thisLabel}Document 1.2`)
 
 
 
-  const [group_todo1] = group1Root.addTodo(`${thisLabel} Group Todo 1`)
-  const [group_todo2] = group1Root.addTodo(`${thisLabel} Group Todo 2`)
-  const [group_todo2_1] = group_todo2.addSubtask(`${thisLabel} Group Todo 2.1`)
-  const [group_todo2_2] = group_todo2.addSubtask(`${thisLabel} Group Todo 2.2`)
-  const [group_todo2_3] = group_todo2.addSubtask(`${thisLabel} Group Todo 2.3`)
+  const group_todo1 = await group1Root.addTodo(`${thisLabel} Group Todo 1`)
+  const group_todo2 = await group1Root.addTodo(`${thisLabel} Group Todo 2`)
+  const group_todo2_1 = await group_todo2.addTodo(`${thisLabel} Group Todo 2.1`)
+  const group_todo2_2 = await group_todo2.addTodo(`${thisLabel} Group Todo 2.2`)
+  const group_todo2_3 = await group_todo2.addTodo(`${thisLabel} Group Todo 2.3`)
 
-  const [group_todo2_2_choiceA] = group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 a`)
-  const [group_todo2_2_choiceB] = group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 b`)
-  const [group_todo2_2_choiceC] = group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 c`)
+  const group_todo2_2_choiceA = await group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 a`)
+  const group_todo2_2_choiceB = await group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 b`)
+  const group_todo2_2_choiceC = await group_todo2_2.addChoice(`${thisLabel} Group Todo2.2 c`)
 
-  group1Root.addComment(`${thisLabel} Group Comment 1`)
-  group1Root.addComment(`${thisLabel} Group Comment 2`)
+  await group1Root.addComment(`${thisLabel} Group Comment 1`)
+  await group1Root.addComment(`${thisLabel} Group Comment 2`)
 
-  group1Root.addDocument(`${thisLabel} Group Document 1`)
-  group1Root.addDocument(`${thisLabel} Group Document 2`)
-  group1Root.addDocument(`${thisLabel} Group Document 3`)
-  group1Root.addDocument(`${thisLabel} Group Document 4`)
+  await group1Root.addDocument(`${thisLabel} Group Document 1`)
+  await group1Root.addDocument(`${thisLabel} Group Document 2`)
+  await group1Root.addDocument(`${thisLabel} Group Document 3`)
+  await group1Root.addDocument(`${thisLabel} Group Document 4`)
 
-  groupBranch1.proposeChange()
+  // await groupBranch1.proposeChange()
 
-  workflow1.registerMarketService(`${thisLabel} Market Service 1`)
+  await workflow1.registerMarketService(`${thisLabel} Market Service 1`)
 
-  todo2_3.registerMarketRequest(`${thisLabel}Market Request 1`)
+  await todo2_3.registerMarketRequest(`${thisLabel}Market Request 1`)
 
-  store.commit()
+  await store.commit()
 
 
   return store

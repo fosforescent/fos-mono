@@ -17,9 +17,9 @@ const prisma = new PrismaClient()
 async function main() {
 
 
+  await prisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector;')
 
-
-
+  
 
 
 

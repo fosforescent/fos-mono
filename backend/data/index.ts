@@ -8,7 +8,7 @@ import { FosContextData, FosNodeContent, TrellisSerializedData } from '@/shared/
 import { InputJsonValue, JsonObject } from '@prisma/client/runtime/library'
 import { FosStore } from '@/shared/dag-implementation/store'
 import { semanticSearch } from '../pinecone'
-import {  processAndUpsertDocuments, searchQuery, upsertSearchTerms } from './search'
+// import {  processAndUpsertDocuments, searchQuery, upsertSearchTerms } from './search'
 import { mutableMapExpressions } from '@/shared/utils'
 import { runActionsOnStore } from './runActions'
 
@@ -96,17 +96,17 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       if (userGroupData.lastVectorUploadTime < Date.now() - 1000 * 60 * 60) {
 
 
-        const result = await upsertSearchTerms(serverDataStore);
+        // const result = await upsertSearchTerms(serverDataStore);
 
-        if (result) {
-          await prisma.fosNodeModel.update({
-            where: { cid: user.fosNode.cid },
-            data: { data: {
-              ...(typeof user.fosNode.data === 'object') ? user.fosNode.data : {}, 
-              lastVectorUploadTime: Date.now() 
-            } }
-          })
-        }
+        // if (result) {
+        //   await prisma.fosNodeModel.update({
+        //     where: { cid: user.fosNode.cid },
+        //     data: { data: {
+        //       ...(typeof user.fosNode.data === 'object') ? user.fosNode.data : {}, 
+        //       lastVectorUploadTime: Date.now() 
+        //     } }
+        //   })
+        // }
     
       }
     

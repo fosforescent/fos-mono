@@ -117,6 +117,20 @@ model FosNodeModel {
   public                Boolean                      @default(false)
   FosNodeUserAccessLink FosNodeUserAccessLinkModel[]
   User                  UserModel?
+  Vectors               NodeVectorModel[]
+}
+
+model NodeVectorModel {
+  id        Int                         @id @default(autoincrement())
+  content   String
+  embedding Unsupported("vector(1024)")
+  metadata  Json
+  createdAt DateTime                    @default(now())
+  updatedAt DateTime                    @updatedAt
+  nodeId    String
+  fosNode   FosNodeModel                @relation(fields: [nodeId], references: [cid])
+  @@index([embedding])  // Remove the Raw syntax for now
+
 }
 
 // model StripePayout {

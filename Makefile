@@ -44,7 +44,9 @@ publish:
 	npm publish --access public
 
 reset:
-	npx prisma db push --force-reset
+	npx prisma db execute "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	npx prisma db execute "CREATE EXTENSION IF NOT EXISTS vector;" 
+	npx prisma db push
 	npx prisma generate
 	npx prisma db seed
 

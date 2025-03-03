@@ -55,6 +55,7 @@
     "@emotion/styled": "^11.13.0",
     "@fosforescent/fosforescent-js": "^1.0.6",
     "@hookform/resolvers": "^3.9.0",
+    "@langchain/core": "^0.3.37",
     "@langchain/pinecone": "^0.1.2",
     "@n1ru4l/json-patch-plus": "^0.2.0",
     "@pinecone-database/pinecone": "^4.0.0",

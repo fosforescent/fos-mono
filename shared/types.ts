@@ -196,7 +196,7 @@ export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
 export type FosContextData = { 
   nodes: FosNodesData,
   route: FosPath,
-  rootNodeId: NodeAddress,
+  rootNodeId: FosNodeId,
 
 }
 
