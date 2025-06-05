@@ -12,18 +12,19 @@ const customJestConfig = {
     "@/(.*)": "<rootDir>/src/$1",
   },
   transform: {
-    '^.+\\.(ts|tsx)?$': 'ts-jest',
+    '^.+\\.(ts|tsx)?$': ['ts-jest', {
+      "babelConfig": true,
+    }],
     '^.+\\.(js|jsx)$': 'babel-jest',
   },
   testEnvironment: 'jest-environment-jsdom',
   preset: "ts-jest",
-  globals: {
-    'ts-jest': {
-      "babelConfig": true,
-    }
-  },
   testMatch: [
     '**/?(*.)+(spec|test).[jt]s?(x)', 
+  ],
+  testPathIgnorePatterns: [
+    'node_modules',
+    'e2e/'
   ],
 }
 module.exports = customJestConfig

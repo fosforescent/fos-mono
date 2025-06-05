@@ -10,6 +10,7 @@ import { HelpDrawer } from './components/dialog/HelpDrawer'
 
 
 import HamburgerMenu from './components/menu/HamburgerMenu'
+import { AuthLanding } from './components/AuthLanding'
 
 
 import { Toaster } from "@/frontend/components/ui/toaster"
@@ -193,6 +194,13 @@ export default function App({
 
   // console.log('rerender', )
 
+  const rawToast = useToast()
+
+  // First declare options with the basics
+  const options = {
+    toast: rawToast.toast,
+  }
+
   // useTraceUpdate({ apiDataState, loggedIn, theme, promptGPT, canPromptGPT, toast, data })
   const authedApi = appState.auth.jwt ? api(appState, setAppState, options).authed() : undefined
 
@@ -212,16 +220,11 @@ export default function App({
 
   const canPromptGPT = !!appState.auth.jwt && !!appState.info.subscription && (appState.info.subscription.apiCallsAvailable > appState.info.subscription.apiCallsUsed)
 
-
-  const rawToast = useToast()
-
-  const options = {
+  // Update options with the additional properties
+  Object.assign(options, {
     canPromptGPT,
     promptGPT,
-
-    toast: rawToast.toast,
-    // }
-  }
+  })
 
 
   
@@ -266,7 +269,7 @@ export default function App({
 
   const [menuOpen, setMenuOpen] = useState<boolean>(emailConfirmationToken || passwordResetToken ? true : false)
 
-  const {  loadAppData, loggedIn } = getActions(options, appState, setAppState)
+  const {  loadAppData, loggedIn, setViewActivityMode } = getActions(options, appState, setAppState)
 
   
 
@@ -297,8 +300,9 @@ export default function App({
       if (location.pathname === '/'){
         navigate('')
       } else if (location.pathname === '/inbox'){
-        setCurrentActivity('inbox')
+        setCurrentActivity('todo')
         setCurrentView("Queue")
+        setViewActivityMode("Queue", "todo", "default")
         const newState = {
           ...appState,
           data: {
@@ -487,31 +491,41 @@ export default function App({
  
   return (<><div className="App h-full bg-background p-0 relative" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden', "minHeight": "100svh" }}>
       <div style={{textAlign: 'left', boxSizing: 'border-box'}} className='w-full'>
-        <HamburgerMenu 
-          emailConfirmationToken={emailConfirmationToken} 
-          passwordResetToken={passwordResetToken}
-          setShowCookieConsent={setShowCookieConsent}
-          setShowTerms={setShowTerms}
-          setShowPrivacy={setShowPrivacy}
-          showCookieConsent={showCookieConsent}
-          showTerms={showTerms}
-          showPrivacy={showPrivacy}
-          showClearData={showClearData}
-          showDeleteAccount={showDeleteAccount}
-          setShowClearData={setShowClearData}
-          setShowDeleteAccount={setShowDeleteAccount}
-          setShowEmailConfirm={setShowEmailConfirm}
-          data={appState}
-          setData={setAppStateWithEffects}
-          options={global}
-          menuOpen={menuOpen}
-          setMenuOpen={setMenuOpen}
-          
-          />
+        {/* Only show hamburger menu when logged in */}
+        {appState.loggedIn && (
+          <HamburgerMenu 
+            emailConfirmationToken={emailConfirmationToken} 
+            passwordResetToken={passwordResetToken}
+            setShowCookieConsent={setShowCookieConsent}
+            setShowTerms={setShowTerms}
+            setShowPrivacy={setShowPrivacy}
+            showCookieConsent={showCookieConsent}
+            showTerms={showTerms}
+            showPrivacy={showPrivacy}
+            showClearData={showClearData}
+            showDeleteAccount={showDeleteAccount}
+            setShowClearData={setShowClearData}
+            setShowDeleteAccount={setShowDeleteAccount}
+            setShowEmailConfirm={setShowEmailConfirm}
+            data={appState}
+            setData={setAppStateWithEffects}
+            options={global}
+            menuOpen={menuOpen}
+            setMenuOpen={setMenuOpen}
+            
+            />
+        )}
         <div className=" h-full w-full p-0 m-0" >
  
-        
-        {appState.loaded && <Outlet context={{
+        {/* Show AuthLanding if not logged in, otherwise show main app */}
+        {!appState.loggedIn ? (
+          <AuthLanding 
+            data={appState}
+            setData={setAppStateWithEffects}
+            options={global}
+          />
+        ) : (
+          appState.loaded && <Outlet context={{
           data: appState,
           setData: setAppStateWithEffects,
           options: global,
@@ -536,7 +550,8 @@ export default function App({
             emailConfirmationToken,
             passwordResetToken
           }
-        }} />}
+        }} />
+        )}
         
         
         <TutorialDialog open={showTutorial} setOpen={setShowTutorial} />

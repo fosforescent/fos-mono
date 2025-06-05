@@ -26,42 +26,18 @@ export const runAvailableFunctions = async (expr: FosExpression): Promise<boolea
    */
 
   if (expr.isUpdate()){
-    const {
-
-    } = {}
-    if (false){
-      const { parent }  = expr.getParentInfo()
-      if (parent.isAlias()){
-        /// parent.add next to alias, update target, then update parent
-      } else if (parent.isVarBinding()){
-        // keep left the same, then update parent
-      }
-
+    const { parent }  = expr.getParentInfo()
+    if (parent.isAlias()){
+      /// parent.add next to alias, update target, then update parent
     }
-
-
-
   }
-
-  if (expr.isEval()){
-
-  }
-
-
 
   if (expr.isTodo()){
-    if (false){
-
-    }
-
+    // TODO: Implement todo handling
   }
 
-  const providedBindings = getTargetBindings(expr)
-  const awaitedBindings = getInstructionBindingSites(expr)
-  
-
-
-
+  // TODO: Implement function running logic
+  return false
 }
 
 
@@ -75,13 +51,14 @@ export const getVars = (expr: FosExpression): [FosNode, FosNode][] => {
    * e.g. "bindings" -> ("n")
    * 
    */
-  expr.getInstructionChildren()
+  const instructionChildren = expr.getInstructionChildren()
+  // TODO: Implement variable extraction logic
+  return []
 }
 
 export const applyVars = (expr: FosExpression): [FosNode, FosNode][] => {
-
-
-
+  // TODO: Implement variable application logic
+  return []
 }
 
 

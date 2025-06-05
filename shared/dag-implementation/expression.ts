@@ -459,8 +459,15 @@ export class FosExpression {
       return this.getAllDescendentsMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
     }
     if (activity === 'todo') {
-
       return this.getAllDescendentsMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
+    }
+    if (activity === 'all') {
+      // Return all descendant routes without filtering
+      const routeMap = mutableReduceToRouteMapFromExpression(this, (acc, expression) => {
+        acc.set(expression.route, expression)
+        return acc
+      })
+      return [...routeMap.keys()]
     }
     return []
   }

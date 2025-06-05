@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { CheckSquare, MessageSquare, PenSquare, Send, SendHorizonal, SendHorizonalIcon } from 'lucide-react';
+import { CheckSquare, MessageSquare, PenSquare, Send, SendHorizonal, SendHorizonalIcon, Filter } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/frontend/components/ui/card';
 import { Input } from '@/frontend/components/ui/input';
 import { Button } from '@/frontend/components/ui/button';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/frontend/components/ui/select';
 import { AppState, FosReactGlobal, FosPath, AppStateLoaded } from '@/shared/types';
 import { useProps } from '@/frontend/App';
 
@@ -99,6 +100,7 @@ const QueueView = () => {
 
 
   const [routesToShow, setRoutesToShow] = useState<FosPath[]>([])
+  const [currentFilter, setCurrentFilter] = useState<string>(data.data.trellisData.activity)
 
   /**
  * Depending on what is being focused on, the input at the bottom of the queue will change
@@ -115,15 +117,17 @@ const QueueView = () => {
 
 
   useEffect(() => {
-    const activity = data.data.trellisData.activity
-    const routes = expressionToUse.getAllDescendentsForActivity(data.data.trellisData.activity)
+    const routes = expressionToUse.getAllDescendentsForActivity(currentFilter)
 
-
-    console.log("all Store nodes", routes)
-
+    console.log("all Store nodes for filter", currentFilter, routes)
 
     setRoutesToShow(routes)
     
+  }, [currentFilter, data.data.trellisData.activity])
+
+  // Update filter when activity changes from external navigation
+  useEffect(() => {
+    setCurrentFilter(data.data.trellisData.activity)
   }, [data.data.trellisData.activity])
 
   const focusRoute = data.data.trellisData.focusRoute
@@ -202,12 +206,27 @@ const QueueView = () => {
         style={{height: 'calc(100% - 6rem)'}}
       >
 
-        <div className="flex flex-row w-screen border-b border-t p-4 w-full"
+        <div className="flex flex-row justify-between w-screen border-b border-t p-4 w-full"
         >
-          <Button ><CheckSquare /></Button>
-          <Button ><PenSquare /></Button>
-          <Button ><MessageSquare /></Button>
-
+          <div className="flex flex-row gap-2">
+            <Button ><CheckSquare /></Button>
+            <Button ><PenSquare /></Button>
+            <Button ><MessageSquare /></Button>
+          </div>
+          
+          <div className="flex flex-row items-center gap-2">
+            <Filter className="h-4 w-4" />
+            <Select value={currentFilter} onValueChange={setCurrentFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Filter by..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todo">Todos</SelectItem>
+                <SelectItem value="comments">Comments</SelectItem>
+                <SelectItem value="all">All Items</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
           <div className="p-4  w-full"
                     style={{height: 'calc(100% - 30rem)'}}
@@ -235,6 +254,7 @@ const QueueView = () => {
                 setData={setFosAndTrellisData}
                 options={options}
                 data={data}
+                currentFilter={currentFilter}
                 // onAnimationEnd={handleAnimationEnd}
                 />
 
@@ -254,12 +274,14 @@ const QueueInput = ({
   setData,
   options,
   data,
-  expression
+  expression,
+  currentFilter
 } : {
   setData: (state: AppStateLoaded["data"]) => void
   options: FosReactGlobal
   data: AppStateLoaded
   expression: FosExpression
+  currentFilter: string
 }) => {
 
 
@@ -304,6 +326,7 @@ const QueueInput = ({
     setData={setData}
     options={options}
     data={data}
+    currentFilter={currentFilter}
   />)
 
 }

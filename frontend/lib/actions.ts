@@ -159,7 +159,11 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         throw new Error('jwt username does not match email, login failed')
       }
 
-      const newlyAuthedState = { ...appData, auth: { ...appData.auth, jwt, email: jwtProps.username, remember, loggedIn: true } }
+      const newlyAuthedState = { 
+        ...appData, 
+        loggedIn: true,
+        auth: { ...appData.auth, jwt, email: jwtProps.username, remember } 
+      }
 
       console.log('newlyAuthedState', newlyAuthedState)
 
