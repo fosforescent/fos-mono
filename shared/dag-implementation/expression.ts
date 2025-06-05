@@ -689,7 +689,7 @@ export class FosExpression {
     } else {
 
       if (this.isAlias()) {
-        console.log('runUpdateRaw - base case alias', this.route, this.instructionNode.getId(), this.targetNode)
+        console.log('runUpdateRaw - base case alias', this.route, this.instructionNode.getId(), this.targetNode.getId())
         const {
           target,
           instruction,
@@ -719,7 +719,7 @@ export class FosExpression {
           newAliasInfo.getId(),
         )
 
-        parent.setTargetNode(newParentTarget)
+        parent.targetNode = newParentTarget
 
       } else {
 
@@ -1060,7 +1060,10 @@ export class FosExpression {
     await thisExpr.update(thisExpr.instructionNode, newTarget)
 
     console.log('addTodo - updated expression', thisExpr.instructionNode.getId(), thisExpr.targetNode.getId())
-    const newThisTargetChildren = this.getTargetChildren()
+    
+    // After update, the expression points to an updateAction, so we need to dereference it
+    const actualExpr = thisExpr.isAlias() ? thisExpr.followAlias() : thisExpr
+    const newThisTargetChildren = actualExpr.getTargetChildren()
 
     console.log('addTodo - newThisTargetChildren', newThisTargetChildren.map((child) => child.route))
     const todoExpr = newThisTargetChildren.find((child) => {

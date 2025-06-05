@@ -323,6 +323,8 @@ export class FosNode {
       throw new Error("Instruction Node not found")
     }
 
+
+
     // Look for prevTargetPointerConstructor first, then fallback to previousVersion
     const prevTarget = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.prevTargetPointerConstructor.getId())
     if (prevTarget) {

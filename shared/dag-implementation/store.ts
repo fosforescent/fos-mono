@@ -972,10 +972,12 @@ export class FosStore {
   addGroup(description: string): [FosStore, FosExpression] {
 
     const rootExpression = this.getRootExpression()
-    const thisAlias = rootExpression.targetNode.getData().alias?.id
+    // Use the original startRootAlias which should have the alias structure
+    const startRootAlias = this.primitive.startRootAlias
+    const thisAlias = startRootAlias.getData().alias?.id
 
     if (!thisAlias) {
-      throw new Error(`no alias found for current node`)
+      throw new Error(`no alias found in startRootAlias`)
     }
 
     const { target: rootTarget } = rootExpression.targetNode.dereferenceNodes()
