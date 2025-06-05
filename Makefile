@@ -44,11 +44,11 @@ publish:
 	npm publish --access public
 
 reset:
-	npx prisma db execute "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-	npx prisma db execute "CREATE EXTENSION IF NOT EXISTS vector;" 
-	npx prisma db push
-	npx prisma generate
-	npx prisma db seed
+	echo "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin
+	echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin 
+	npx prisma db push --schema=./prisma/schema.prisma
+	npx prisma generate --schema=./prisma/schema.prisma
+	npx prisma db seed --schema=./prisma/schema.prisma
 
 run-clean-backend:
 	make reset

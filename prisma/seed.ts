@@ -19,7 +19,7 @@ async function main() {
 
   await prisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector;')
 
-  
+
 
 
 
@@ -43,7 +43,7 @@ async function main() {
       id: "0",
       name: "Everyone",
       userProfiles: []
-    } 
+    }
   }
 
 
@@ -51,7 +51,7 @@ async function main() {
 
 
 
-  
+
 }
 main()
   .then(async () => {
