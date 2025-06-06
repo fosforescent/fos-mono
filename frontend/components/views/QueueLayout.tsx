@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { CheckSquare, MessageSquare, PenSquare, Send, SendHorizonal, SendHorizonalIcon, Filter } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/frontend/components/ui/card';
 import { Input } from '@/frontend/components/ui/input';
@@ -72,9 +72,15 @@ const QueueView = () => {
   }
 
   
-  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData})
+  const store = useMemo(() => 
+    new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData}), 
+    [data.data]
+  )
 
-  const expression = new FosExpression(store, route)
+  const expression = useMemo(() => 
+    new FosExpression(store, route), 
+    [store, route]
+  )
   
   
 
@@ -123,7 +129,7 @@ const QueueView = () => {
 
     setRoutesToShow(routes)
     
-  }, [currentFilter, data.data.trellisData.activity])
+  }, [currentFilter, data.data.trellisData.activity, data.data.fosData])
 
   // Update filter when activity changes from external navigation
   useEffect(() => {

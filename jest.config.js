@@ -9,7 +9,7 @@ const customJestConfig = {
   moduleNameMapper: {
     '\\.(less|scss)$': 'identity-obj-proxy',
     '\\.(css)$': 'jest-css-modules',
-    "@/(.*)": "<rootDir>/src/$1",
+    "@/(.*)": "<rootDir>/$1",
   },
   transform: {
     '^.+\\.(ts|tsx)?$': ['ts-jest', {
