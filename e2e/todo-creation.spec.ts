@@ -8,77 +8,65 @@ test.describe('Todo Creation', () => {
     // Take screenshot of initial state
     await page.screenshot({ path: 'auth-test-1-initial.png' });
     
-    // Try to find and interact with authentication
+    const testEmail = `test-${Date.now()}@example.com`;
+    const testPassword = 'TestPassword123';
+    
+    // First, try logging in with existing seed user
     const loginEmailInput = page.locator('input[type="email"]').or(page.locator('input[placeholder*="email"]'));
-    const loginPasswordInput = page.locator('input[type="password"]').or(page.locator('input[placeholder*="password"]'));
+    const loginPasswordInput = page.locator('input[type="password"]').first(); // Get first password field
     
     if (await loginEmailInput.isVisible({ timeout: 3000 })) {
-      console.log('Found login form, attempting to login...');
+      console.log('Found auth form, trying existing seed user first...');
       
       // Try with seed user credentials
       await loginEmailInput.fill('dmn322@fosforescent.com');
       await loginPasswordInput.fill('Dent4567');
       
       const loginButton = page.getByRole('button', { name: /sign in/i }).or(page.getByRole('button', { name: /login/i }));
-      await loginButton.click();
+      if (await loginButton.isVisible({ timeout: 2000 })) {
+        await loginButton.click();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(2000);
+      }
       
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(2000);
-      
-      // Take screenshot after login attempt
-      await page.screenshot({ path: 'auth-test-2-after-login.png' });
-      
-      // Check if login was successful by looking for main UI elements
+      // Check if login was successful
       const mainUI = page.locator('nav').or(page.locator('[data-testid="main-app"]')).or(page.locator('button').filter({ hasText: /inbox|queue|settings/i }));
       const loginSuccessful = await mainUI.isVisible({ timeout: 3000 });
-      console.log('Login successful:', loginSuccessful);
+      console.log('Seed user login successful:', loginSuccessful);
       
-      if (loginSuccessful) {
-        console.log('Login successful, skipping registration');
-      } else {
-        console.log('Login failed, will try registration');
-      }
-    }
-    
-    // If login failed, try registration
-    const mainUI = page.locator('nav').or(page.locator('[data-testid="main-app"]')).or(page.locator('button').filter({ hasText: /inbox|queue|settings/i }));
-    const alreadyAuthenticated = await mainUI.isVisible({ timeout: 1000 });
-    
-    if (!alreadyAuthenticated) {
-      const registerTab = page.getByRole('tab', { name: /register/i });
-      if (await registerTab.isVisible({ timeout: 2000 })) {
-      console.log('Trying registration...');
-      await registerTab.click();
-      
-      const registerEmail = page.locator('input[type="email"]').or(page.locator('input[placeholder*="email"]'));
-      const registerPassword = page.locator('input[type="password"]').or(page.locator('input[placeholder*="password"]'));
-      
-      await registerEmail.fill(`test-${Date.now()}@example.com`);
-      await registerPassword.fill('TestPassword123');
-      
-      // Try to handle terms checkbox more gracefully
-      const termsCheckbox = page.locator('input[type="checkbox"]');
-      if (await termsCheckbox.isVisible({ timeout: 2000 })) {
-        try {
-          // Try clicking the label instead of the checkbox
-          const termsLabel = page.locator('label').filter({ has: termsCheckbox });
-          if (await termsLabel.isVisible()) {
-            await termsLabel.click();
-          } else {
+      // If seed user login failed, try registration
+      if (!loginSuccessful) {
+        console.log('Seed user login failed, trying registration...');
+        
+        const registerTab = page.getByRole('tab', { name: /register/i });
+        if (await registerTab.isVisible({ timeout: 2000 })) {
+          await registerTab.click();
+          await page.waitForTimeout(1000);
+          
+          // Fill registration form
+          const registerEmail = page.locator('input[type="email"]');
+          const registerPassword = page.locator('#register-password').or(page.locator('input[placeholder*="Create a password"]'));
+          const confirmPassword = page.locator('#confirm-password').or(page.locator('input[placeholder*="Confirm"]'));
+          
+          await registerEmail.fill(testEmail);
+          await registerPassword.fill(testPassword);
+          if (await confirmPassword.isVisible({ timeout: 1000 })) {
+            await confirmPassword.fill(testPassword);
+          }
+          
+          // Handle terms checkbox
+          const termsCheckbox = page.locator('input[type="checkbox"]').first();
+          if (await termsCheckbox.isVisible({ timeout: 2000 })) {
             await termsCheckbox.click({ force: true });
           }
-        } catch (e) {
-          console.log('Terms checkbox click failed, continuing without it');
+          
+          const registerButton = page.getByRole('button', { name: /create account/i }).or(page.getByRole('button', { name: /register/i }));
+          if (await registerButton.isVisible({ timeout: 2000 })) {
+            await registerButton.click();
+            await page.waitForLoadState('networkidle');
+            await page.waitForTimeout(3000);
+          }
         }
-      }
-      
-      const registerButton = page.getByRole('button', { name: /create account/i }).or(page.getByRole('button', { name: /register/i }));
-      await registerButton.click();
-      
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(3000);
-      
-      await page.screenshot({ path: 'auth-test-3-after-register.png' });
       }
     }
     
@@ -145,16 +133,9 @@ test.describe('Todo Creation', () => {
         const todoTextInPage = pageContent?.includes(todoText);
         console.log(`Does page contain "${todoText}":`, todoTextInPage);
         
-        if (todoVisible) {
-          await expect(todoItem).toBeVisible();
-          console.log('SUCCESS: Todo was created and is visible!');
-        } else {
-          console.log('WARNING: Todo was submitted but not visible in UI');
-          // Check if input was cleared (indicates submission worked)
-          const inputValue = await todoInput.inputValue();
-          console.log('Input value after submission:', inputValue);
-          expect(inputValue).toBe(''); // Input should be cleared after successful submission
-        }
+        // REQUIRE that the todo appears in the UI - this test should fail if it doesn't
+        await expect(todoItem).toBeVisible();
+        console.log('SUCCESS: Todo was created and is visible!');
       } else {
         console.log('ERROR: No submit button found');
         await page.screenshot({ path: 'auth-test-error-no-submit.png' });

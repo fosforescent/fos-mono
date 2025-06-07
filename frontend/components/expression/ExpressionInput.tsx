@@ -16,7 +16,7 @@ export const ExpressionInput = ({
 } : {
   options: FosReactGlobal
   data: AppStateLoaded
-  setData: (state: AppStateLoaded["data"]) => void
+  setData: (state: AppStateLoaded) => void
   expression: FosExpression
   currentFilter?: string
 }) => {
@@ -38,9 +38,17 @@ export const ExpressionInput = ({
       await expression.addComment(newMessage)
     }
     
-    // Update the UI with the new data from the store
-    const updatedData = expression.store.exportContext(expression.route)
-    setData(updatedData)
+    // Update the UI with the new data from the store - export from root to get all data
+    const updatedData = expression.store.exportContext([])
+    console.log('ExpressionInput: updatedData after todo creation:', updatedData)
+    console.log('ExpressionInput: calling setData with:', {
+      ...data,
+      data: updatedData
+    })
+    setData({
+      ...data,
+      data: updatedData
+    })
     
     setNewMessage("")
   }

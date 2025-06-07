@@ -133,6 +133,15 @@ model NodeVectorModel {
 
 }
 
+
+model FosAppModel {
+
+}
+
+model ToolUseModel {
+  
+}
+
 // model StripePayout {
 //  id              Int      @id @default(autoincrement())
 //  payout_id       String   @unique
