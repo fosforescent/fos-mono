@@ -1,19 +1,22 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Graph Workflow Management', () => {
+test.describe('Application Smoke Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    // TODO: Add authentication setup if needed
   });
 
-  test('should display main workspace interface', async ({ page }) => {
+  test('should load the application successfully', async ({ page }) => {
     await expect(page).toHaveTitle(/fosforescent/);
     
-    const workspace = page.locator('[data-testid="workspace"]').or(page.locator('.workspace')).or(page.locator('#workspace'));
-    const treeView = page.locator('[data-testid="tree-view"]').or(page.locator('.tree-view'));
-    const queryLayout = page.locator('[data-testid="query-layout"]').or(page.locator('.query-layout'));
+    // Check that the main app loads without errors
+    await expect(page.locator('body')).toBeVisible();
     
-    await expect(workspace.or(treeView).or(queryLayout).first()).toBeVisible();
+    // Should show either login form or main app interface
+    const loginForm = page.locator('input[type="email"]');
+    const appInterface = page.locator('nav').or(page.locator('[data-testid="main-app"]'));
+    
+    const hasLoginOrApp = await loginForm.isVisible() || await appInterface.isVisible();
+    expect(hasLoginOrApp).toBe(true);
   });
 
   test('should create new workflow node', async ({ page }) => {

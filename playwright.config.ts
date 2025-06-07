@@ -27,16 +27,11 @@ export default defineConfig({
     },
   ],
 
-  webServer: [
-    {
-      command: 'npm run dev:backend',
-      port: 4000,
-      reuseExistingServer: !process.env.CI,
-    },
-    {
-      command: 'npm run dev:frontend',
-      port: 5173,
-      reuseExistingServer: !process.env.CI,
-    },
-  ],
+  // webServer disabled - using manual startup via make e2e-test
+  // webServer: {
+  //   command: 'npm run dev',
+  //   port: 5173,
+  //   reuseExistingServer: !process.env.CI,
+  //   timeout: 120 * 1000,
+  // },
 });

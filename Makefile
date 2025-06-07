@@ -34,6 +34,18 @@ format-fix:
 test:
 	npm run test
 
+e2e-test:
+	@echo "Starting servers and running e2e tests..."
+	npm run dev 2>&1 | tee server.log &
+	@echo "Waiting for servers to start..."
+	sleep 10
+	@echo "Running Playwright tests..."
+	npx playwright test; \
+	TEST_EXIT_CODE=$$?; \
+	echo "Stopping servers..."; \
+	pkill -f "npm run dev" || true; \
+	exit $$TEST_EXIT_CODE
+
 	
 check: 
 	make format

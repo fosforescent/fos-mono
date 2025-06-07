@@ -28,15 +28,20 @@ export const ExpressionInput = ({
 
   const activeFilter = currentFilter || expression.currentActivity()
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault() 
     const itemTypeToCreate = activeFilter === "all" ? selectedItemType : activeFilter
     
     if (itemTypeToCreate === "todo") {
-      expression.addTodo(newMessage)
+      await expression.addTodo(newMessage)
     } else if (itemTypeToCreate === "comments") {
-      expression.addComment(newMessage)
+      await expression.addComment(newMessage)
     }
+    
+    // Update the UI with the new data from the store
+    const updatedData = expression.store.exportContext(expression.route)
+    setData(updatedData)
+    
     setNewMessage("")
   }
 

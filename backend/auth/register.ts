@@ -4,7 +4,8 @@ import { generateLinkToken, sendConfirmationEmail } from '../email/email'
 
 import {prisma} from '../prismaClient'
 
-import { FosStore } from '@/shared/dag-implementation/store'
+import { FosStore, hashContent } from '@/shared/dag-implementation/store'
+import { validateNodeDataToDB } from '../util'
 
 export const hashPassword = async (password: string) => {
   return await bcrypt.hash(password, 10)
@@ -48,6 +49,35 @@ export const postRegister = async (req: Request, res: Response) => {
   try {
     const { token, expiration } = generateLinkToken()
     
+    // Create a new FosStore and insert its nodes into the database first
+    const newStore = new FosStore()
+    
+    // Get existing nodes to avoid duplicates
+    const existingNodes = await prisma.fosNodeModel.findMany({})
+    
+    // Prepare new nodes for insertion
+    const newEntries = Array.from(newStore.table.entries()).reduce((acc, [id, node]) => {
+      if (id !== hashContent(node)) {
+        throw new Error("Hashes don't match")
+      }
+      
+      if (existingNodes.find(n => n.cid === id)) {
+        return acc
+      } else {
+        return [...acc, {
+          cid: id,
+          data: validateNodeDataToDB(node),
+        }]
+      }
+    }, [] as Array<{cid: string, data: any}>)
+    
+    // Insert new nodes into database
+    if (newEntries.length > 0) {
+      await prisma.fosNodeModel.createMany({
+        data: newEntries
+      })
+    }
+    
     const user = await prisma.userModel.create({
       data: {
         user_name: username,
@@ -63,9 +93,24 @@ export const postRegister = async (req: Request, res: Response) => {
         api_calls_total: 0,
         approved: true,
         cookies,
-        fosNodeId: (new FosStore()).rootNodeId,
+        fosNodeId: newStore.rootNodeId,
+        FosNodeUserAccessLink: {
+          create: {
+            fosNodeId: newStore.rootNodeId
+          }
+        }
       },
     })
+    
+    // Create access links for all nodes in the store
+    if (newEntries.length > 0) {
+      await prisma.fosNodeUserAccessLinkModel.createMany({
+        data: newEntries.map(n => ({
+          fosNodeId: n.cid,
+          userId: user.id
+        }))
+      })
+    }
 
 
     // Omit sending password back in the response
