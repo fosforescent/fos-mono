@@ -12,8 +12,8 @@ test.describe('Authentication Flow', () => {
     await expect(page.getByRole('heading', { name: 'Fosforescent', exact: true })).toBeVisible();
     
     // Should be on login tab by default
-    await expect(page.locator('#login-email')).toBeVisible();
-    await expect(page.locator('#login-password')).toBeVisible();
+    await expect(page.locator('#username')).toBeVisible();
+    await expect(page.locator('#password')).toBeVisible();
   });
 
   test('should show registration form', async ({ page }) => {
@@ -42,7 +42,7 @@ test.describe('Authentication Flow', () => {
 
   test('should navigate between login and registration', async ({ page }) => {
     // Should start on login tab
-    await expect(page.locator('#login-email')).toBeVisible();
+    await expect(page.locator('#username')).toBeVisible();
     
     // Click on register tab
     await page.getByRole('tab', { name: /register/i }).click();
@@ -50,8 +50,8 @@ test.describe('Authentication Flow', () => {
     
     // Click back to login tab
     await page.getByRole('tab', { name: /sign in/i }).click();
-    await expect(page.locator('#login-email')).toBeVisible();
-    await expect(page.locator('#login-password')).toBeVisible();
+    await expect(page.locator('#username')).toBeVisible();
+    await expect(page.locator('#password')).toBeVisible();
   });
 
   test('should show forgot password flow', async ({ page }) => {
@@ -68,8 +68,8 @@ test.describe('Authentication Flow', () => {
 
   test('should successfully login with valid credentials', async ({ page }) => {
     // Fill in the login form with test user credentials
-    await page.fill('#login-email', 'dmn322@fosforescent.com');
-    await page.fill('#login-password', 'Dent4567');
+    await page.fill('#username', 'user1@fosforescent.com');
+    await page.fill('#password', 'user123');
     
     // Submit the form
     await page.getByRole('button', { name: /sign in/i }).click();

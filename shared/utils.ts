@@ -1,10 +1,8 @@
-import e from "cors"
 import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute, TrellisSerializedData, AppStateLoaded } from "./types"
 import { FosStore } from "./dag-implementation/store"
 import { FosExpression, } from "./dag-implementation/expression"
 import { FosNode } from "./dag-implementation/node"
 import { defaultTrellisData } from "./defaults"
-import exp from "constants"
 
 
 

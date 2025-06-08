@@ -1,20 +1,60 @@
 import { Page } from '@playwright/test';
 
-export async function loginWithTestUser(page: Page) {
+export async function loginWithTestUser(page: Page, userType: 'admin' | 'user' = 'user') {
   // Navigate to the app
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   // Check if we're already logged in by looking for authenticated content
-  const hasAuthenticatedContent = await page.locator('form input[placeholder*="todo"]').isVisible({ timeout: 2000 }).catch(() => false);
+  const hasAuthenticatedContent = await page.locator('[data-testid="authenticated-content"]').isVisible({ timeout: 2000 }).catch(() => false);
   
   if (hasAuthenticatedContent) {
     // Already logged in
     return;
   }
 
-  // Try to register a new user instead of login
-  await registerTestUser(page);
+  // Use seed users based on userType
+  const credentials = userType === 'admin' 
+    ? { email: 'admin@fosforescent.com', password: 'admin123' }
+    : { email: 'user1@fosforescent.com', password: 'user123' };
+
+  await loginWithCredentials(page, credentials.email, credentials.password);
+}
+
+export async function loginWithCredentials(page: Page, email: string, password: string) {
+  console.log('Logging in with:', email);
+  
+  // Make sure we're on the login tab
+  const signInTab = page.getByRole('tab', { name: /sign in/i });
+  if (await signInTab.isVisible({ timeout: 2000 })) {
+    await signInTab.click();
+    await page.waitForTimeout(500);
+  }
+
+  // Fill login form
+  await page.locator('#username').fill(email);
+  await page.locator('#password').fill(password);
+  
+  // Submit login
+  const signInButton = page.getByRole('button', { name: /sign in/i });
+  await signInButton.click();
+  
+  // Wait for login to process
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(2000);
+  
+  // Check if login was successful by looking for authenticated UI
+  const isLoggedIn = await page.locator('[data-testid="authenticated-content"]').or(
+    page.locator('text=Dashboard')
+  ).isVisible({ timeout: 5000 }).catch(() => false);
+  
+  if (!isLoggedIn) {
+    console.log('Login may have failed, checking page content...');
+    const pageContent = await page.locator('body').textContent();
+    console.log('Page content after login attempt:', pageContent?.substring(0, 300));
+  } else {
+    console.log('Login successful!');
+  }
 }
 
 export async function registerTestUser(page: Page) {

@@ -39,6 +39,7 @@ model UserModel {
   accepted_terms                DateTime
   cookies                       Json                         @default("{}")
   data                          Json                         @default("{}")
+  role                          String                       @default("user") // user, admin, superadmin
   // profile                       Json                    @default("{}")
   fosNode                       FosNodeModel                 @relation(fields: [fosNodeId], references: [cid])
   fosNodeId                     String                       @unique
@@ -48,6 +49,15 @@ model UserModel {
   createdAt                     DateTime                     @default(now())
   updatedAt                     DateTime                     @default(now())
   FosNodeUserAccessLink         FosNodeUserAccessLinkModel[]
+  UserMCPServerAccess           UserMCPServerAccessModel[]
+  ApiTokens                     ApiTokenModel[]
+  UserPrompts                   UserPromptModel[]
+  ToolUsesAsCaller              ToolUseModel[]                   @relation("ToolUseCallerUser")
+  ToolUsesAsTarget              ToolUseModel[]                   @relation("ToolUseTargetUser")
+  TokenBalance                  UserTokenBalanceModel?
+  TokenTransactions             TokenTransactionModel[]
+  TokenPurchases                TokenPurchaseModel[]
+  ToolBidSessions               ToolBidSessionModel[]
 }
 
 model InboundEmailModel {
@@ -135,11 +145,276 @@ model NodeVectorModel {
 
 
 model FosAppModel {
-
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
 }
 
 model ToolUseModel {
+  id                Int              @id @default(autoincrement())
+  toolUseId         String           @unique // Unique identifier for this tool invocation
+  callerUserId      Int              // User who called the tool (authenticated by their token)
+  targetUserId      Int?             // User whose MCP was called (optional, for user-to-user tool calls)
+  serverId          Int?             // MCP server where the tool was called
+  toolName          String           // Name of the tool that was called
+  toolDescription   String?          // Description of the tool
+  inputParameters   Json             @default("{}") // Parameters passed to the tool
+  outputResult      Json?            @default("{}") // Result returned by the tool
+  status            String           @default("pending") // pending, completed, failed, cancelled
+  duration          Int?             // Duration in milliseconds
+  errorMessage      String?          // Error message if the tool call failed
+  tokenCost         Int              @default(0) // Cost in tokens for this tool use
+  metadata          Json             @default("{}") // Additional metadata (IP, user agent, etc.)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  completedAt       DateTime?
   
+  // Relations
+  callerUser        UserModel        @relation("ToolUseCallerUser", fields: [callerUserId], references: [id], onDelete: Cascade)
+  targetUser        UserModel?       @relation("ToolUseTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  server            MCPServerModel?  @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  tokenTransactions TokenTransactionModel[]
+  chosenBidSession  ToolBidSessionModel? @relation("ChosenToolBidSession", fields: [toolUseId], references: [sessionId], map: "ToolUseModel_sessionId_fkey")
+  chosenBid         ToolBidModel?    @relation("ChosenToolBidModel", fields: [toolUseId], references: [bidId], map: "ToolUseModel_bidId_fkey")
+  
+  @@index([callerUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([serverId, createdAt])
+  @@index([toolName, createdAt])
+  @@index([status, createdAt])
+}
+
+model MCPServerModel {
+  id               Int                            @id @default(autoincrement())
+  name             String                         @unique
+  description      String?
+  endpoint         String
+  status           String                         @default("disconnected") // connected, disconnected, error
+  capabilities     Json                           @default("[]")
+  credentials      Json                           @default("{}")
+  lastPing         DateTime?
+  descriptionEmbedding Unsupported("vector(1024)")?
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+  
+  // Relations
+  UserAccess       UserMCPServerAccessModel[]
+  Tools            MCPToolModel[]
+  UserPrompts      UserPromptModel[]
+  ToolUses         ToolUseModel[]
+  ToolPricing      MCPToolPricingModel[]
+  ToolBids         ToolBidModel[]
+  
+  @@index([descriptionEmbedding])
+}
+
+model MCPToolModel {
+  id               Int                            @id @default(autoincrement())
+  serverId         Int
+  name             String
+  description      String?
+  inputSchema      Json                           @default("{}")
+  outputSchema     Json                           @default("{}")
+  descriptionEmbedding Unsupported("vector(1024)")?
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+  
+  // Relations
+  server           MCPServerModel                 @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  
+  @@unique([serverId, name])
+  @@index([descriptionEmbedding])
+}
+
+model UserMCPServerAccessModel {
+  id           Int            @id @default(autoincrement())
+  userId       Int
+  serverId     Int
+  role         String         @default("user") // user, admin, owner
+  credentials  Json           @default("{}")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  
+  // Relations
+  user         UserModel      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server       MCPServerModel @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, serverId])
+}
+
+model ApiTokenModel {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  name        String   // User-provided name for the token
+  token       String   @unique // The actual API token
+  hashedToken String   // Hashed version for secure storage
+  scopes      Json     @default("[]") // Array of scopes/permissions
+  lastUsed    DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        UserModel @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([token])
+  @@index([hashedToken])
+  @@index([userId, isActive])
+}
+
+model UserPromptModel {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  serverId      Int?     // Optional: which MCP server sent the prompt
+  promptId      String   @unique // Unique identifier for this prompt instance
+  title         String
+  message       String
+  promptType    String   @default("input") // input, confirmation, choice, etc.
+  options       Json?    @default("[]") // For choice prompts, array of options
+  inputSchema   Json?    @default("{}") // JSON schema for input validation
+  defaultValue  String?  // Default value for input prompts
+  response      String?  // User's response
+  status        String   @default("pending") // pending, responded, expired, cancelled
+  priority      String   @default("normal") // low, normal, high, urgent
+  expiresAt     DateTime? // Optional expiration time
+  respondedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  user          UserModel      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server        MCPServerModel? @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  
+  @@index([userId, status])
+  @@index([promptId])
+  @@index([status, expiresAt])
+}
+
+model UserTokenBalanceModel {
+  id                Int      @id @default(autoincrement())
+  userId            Int      @unique
+  availableTokens   Int      @default(0)     // Current available tokens
+  totalPurchased    Int      @default(0)     // Total tokens ever purchased
+  totalUsed         Int      @default(0)     // Total tokens ever used
+  subscriptionTokens Int     @default(0)     // Tokens from current subscription period
+  purchasedTokens   Int      @default(0)     // Tokens from one-time purchases/top-ups
+  lastResetAt       DateTime?                // Last subscription token reset
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  user              UserModel @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model TokenTransactionModel {
+  id                Int      @id @default(autoincrement())
+  transactionId     String   @unique         // Unique identifier for this transaction
+  userId            Int                      // User whose tokens were affected
+  toolUseId         String?                  // Associated tool use (for tool charges)
+  tokenPurchaseId   Int?                     // Associated token purchase (for credits)
+  type              String                   // debit, credit, subscription_grant, purchase
+  amount            Int                      // Number of tokens (positive for credits, negative for debits)
+  description       String                   // Human-readable description
+  balanceBefore     Int                      // Token balance before transaction
+  balanceAfter      Int                      // Token balance after transaction
+  metadata          Json     @default("{}")  // Additional transaction metadata
+  stripePaymentIntentId String?              // Associated Stripe payment
+  createdAt         DateTime @default(now())
+  
+  // Relations
+  user              UserModel      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  toolUse           ToolUseModel?  @relation(fields: [toolUseId], references: [toolUseId], onDelete: SetNull)
+  tokenPurchase     TokenPurchaseModel? @relation(fields: [tokenPurchaseId], references: [id], onDelete: SetNull)
+  
+  @@index([userId, createdAt])
+  @@index([toolUseId])
+  @@index([transactionId])
+  @@index([type, createdAt])
+}
+
+model TokenPurchaseModel {
+  id                     Int      @id @default(autoincrement())
+  purchaseId             String   @unique         // Unique identifier for this purchase
+  userId                 Int                      // User who purchased tokens
+  tokenAmount            Int                      // Number of tokens purchased
+  priceInCents           Int                      // Price paid in cents (USD)
+  pricePerTokenCents     Decimal  @db.Decimal(10,4) // Price per token in cents
+  status                 String   @default("pending") // pending, completed, failed, refunded
+  stripePaymentIntentId  String   @unique          // Stripe payment intent ID
+  stripeCheckoutSessionId String? @unique          // Stripe checkout session ID (if applicable)
+  metadata               Json     @default("{}")   // Additional purchase metadata
+  processedAt            DateTime?                 // When tokens were actually credited
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  
+  // Relations
+  user                   UserModel @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions           TokenTransactionModel[]
+  
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([stripePaymentIntentId])
+}
+
+model MCPToolPricingModel {
+  id                Int      @id @default(autoincrement())
+  serverId          Int                      // MCP server this pricing belongs to
+  toolName          String                   // Name of the tool
+  pricePerUseTokens Int      @default(0)     // Cost in tokens per tool use
+  isEnabled         Boolean  @default(true)  // Whether pricing is active
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  server            MCPServerModel @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  
+  @@unique([serverId, toolName])
+  @@index([serverId])
+  @@index([toolName])
+}
+
+model ToolBidSessionModel {
+  id                Int      @id @default(autoincrement())
+  sessionId         String   @unique         // Unique identifier for this bid session
+  userId            Int                      // User who requested bids
+  taskDescription   String                   // Description of the task needing tools
+  context           Json     @default("{}")  // Additional context for the task
+  createdAt         DateTime @default(now())
+  
+  // Relations
+  user              UserModel      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bids              ToolBidModel[]
+  chosenToolUse     ToolUseModel?  @relation("ChosenToolBidSession")
+  
+  @@index([userId, createdAt])
+  @@index([sessionId])
+}
+
+model ToolBidModel {
+  id                Int      @id @default(autoincrement())
+  bidId             String   @unique         // Unique identifier for this specific bid
+  sessionId         String                   // Which bid session this belongs to
+  serverId          Int                      // MCP server offering this tool
+  toolName          String                   // Name of the tool being bid
+  toolDescription   String?                  // Description of the tool
+  tokenCost         Int      @default(0)     // Cost in tokens for this tool
+  relevanceScore    Decimal? @db.Decimal(5,4) // How relevant this tool is to the task (0-1)
+  bidReason         String?                  // Why this tool was suggested
+  isChosen          Boolean  @default(false) // Whether this bid was actually chosen
+  chosenAt          DateTime?                // When this bid was chosen (if applicable)
+  createdAt         DateTime @default(now())
+  
+  // Relations
+  session           ToolBidSessionModel @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  server            MCPServerModel      @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  chosenToolUse     ToolUseModel?       @relation("ChosenToolBidModel")
+  
+  @@index([sessionId])
+  @@index([serverId, toolName])
+  @@index([isChosen, createdAt])
+  @@index([tokenCost])
 }
 
 // model StripePayout {

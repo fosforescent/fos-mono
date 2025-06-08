@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import Stripe from 'stripe'
 
 import {prisma} from '../prismaClient'
+import { tokenManager } from '../tokenManager'
 
 const JWT_SECRET = process.env.JWT_SECRET
 
@@ -240,8 +241,20 @@ async function handleFailedCharge(charge: Stripe.Charge) {
 }
   
 async function handleSessionCompleted (session: Stripe.Checkout.Session) {
-  // Example: Update user's subscription status based on session details
   console.log('Session completed', session.id, session)
+
+  // Check if this is a token purchase
+  if (session.metadata?.type === 'token_purchase') {
+    try {
+      await handleTokenPurchaseCompleted(session)
+      return
+    } catch (error) {
+      console.error('Error handling token purchase completion:', error)
+      return
+    }
+  }
+
+  // Handle subscription checkout
   const user = await prisma.userModel.update({
     where: { subscription_checkout_session_id: session.id },
     data: { 
@@ -255,6 +268,54 @@ async function handleSessionCompleted (session: Stripe.Checkout.Session) {
     return
   }
   console.log('Checkout session completed')
+}
+
+async function handleTokenPurchaseCompleted(session: Stripe.Checkout.Session) {
+  const { userId, tokenAmount, purchaseId } = session.metadata!
+  
+  console.log('Token purchase completed:', {
+    sessionId: session.id,
+    userId,
+    tokenAmount,
+    purchaseId
+  })
+
+  try {
+    // Update purchase record with payment intent
+    const purchase = await prisma.tokenPurchaseModel.update({
+      where: { stripeCheckoutSessionId: session.id },
+      data: {
+        stripePaymentIntentId: session.payment_intent as string,
+        status: 'completed',
+        processedAt: new Date()
+      }
+    })
+
+    // Credit tokens to user
+    await tokenManager.creditTokens(
+      parseInt(userId),
+      parseInt(tokenAmount),
+      `Token purchase: ${tokenAmount} tokens`,
+      'purchase',
+      purchase.id,
+      session.payment_intent as string,
+      {
+        sessionId: session.id,
+        priceInCents: purchase.priceInCents,
+        pricePerTokenCents: purchase.pricePerTokenCents.toString()
+      }
+    )
+
+    console.log('Token purchase processed successfully:', purchaseId)
+  } catch (error) {
+    console.error('Error processing token purchase:', error)
+    
+    // Mark purchase as failed
+    await prisma.tokenPurchaseModel.update({
+      where: { stripeCheckoutSessionId: session.id },
+      data: { status: 'failed' }
+    })
+  }
 }
 
 async function handleInvoicePaid (invoice: Stripe.Invoice) {

@@ -637,7 +637,7 @@ export class FosStore {
 
   exportContext(route: FosPath): AppStateLoaded["data"] {
     const nodes: AppStateLoaded["data"]["fosData"]["nodes"] = {}
-    this.table.entries().forEach(([address, content]: [FosNodeId, FosNodeContent], i) => {
+    Array.from(this.table.entries()).forEach(([address, content]: [FosNodeId, FosNodeContent], i) => {
       // const nodeFromAddress = this.getNodeByAddress(address)
       // if (!nodeFromAddress){
       //   throw new Error(`node ${address} not found`)
@@ -774,17 +774,17 @@ export class FosStore {
       return [entry]
     }
     if (patternCid === this.primitive.voidNode.getId()) {
-      throw new Error(`pattern expecte void --- pattern ${pattern} does not match entry ${entry}`, { cause: { patternFailed: true } })
+      throw new Error(`pattern expecte void --- pattern ${pattern} does not match entry ${entry}`)
     }
 
     const patternResult: FosNode[] = []
     for (const [patternKey, patternValues] of patternMap.entries()) {
       if (!nodeMap.has(patternKey)) {
-        throw new Error(`pattern ${patternKey} does not exist on node entry.  Cannot resolve pattern`, { cause: { patternFailed: true } })
+        throw new Error(`pattern ${patternKey} does not exist on node entry.  Cannot resolve pattern`)
       } else {
         const entryTargetsForKey = nodeMap.get(patternKey) as string[]
         if (patternValues.length !== entryTargetsForKey.length) {
-          throw new Error(`pattern ${patternKey} has ${patternValues.length} entries, but node ${patternKey} has ${nodeMap.get(patternKey)?.length} entries.  Cannot resolve pattern`, { cause: { patternFailed: true } })
+          throw new Error(`pattern ${patternKey} has ${patternValues.length} entries, but node ${patternKey} has ${nodeMap.get(patternKey)?.length} entries.  Cannot resolve pattern`)
         } else {
           patternValues.forEach((patternValue, index) => {
             if (patternValue === this.primitive.unit.getId()) {
@@ -932,7 +932,7 @@ export class FosStore {
     // check all children first
 
 
-    otherStore.table.keys().forEach((key) => {
+    Array.from(otherStore.table.keys()).forEach((key) => {
       const nodeContent = otherStore.table.get(key) as FosNodeContent
       const cid = this.hash(nodeContent)
       nodeContent.children.forEach((edge, index) => {
@@ -951,7 +951,7 @@ export class FosStore {
 
 
 
-    otherStore.table.entries().filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent], i) => {
+    Array.from(otherStore.table.entries()).filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent], i) => {
       if (this.insert(otherContent) !== otherAddress) {
         throw new Error(`stores mismatched`)
       }

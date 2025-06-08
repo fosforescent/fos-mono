@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": "../",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "paths": {
+      "@/*": ["./*"],
+      "@/backend/*": ["./backend/*"],
+      "@/shared/*": ["./shared/*"]
+    },
+    "types": ["jest", "node"],
+    "declaration": true,
+    "emitDeclarationOnly": false
+  },
+  "include": [
+    "./**/*",
+    "../shared/**/*",
+    "../prisma/schema.prisma"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../frontend",
+    "../e2e"
+  ],
+  "ts-node": {
+    "esm": true
+  }
+}
