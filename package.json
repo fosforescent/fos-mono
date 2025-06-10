@@ -64,6 +64,7 @@
     "**/*.css"
   ],
   "dependencies": {
+    "@n1ru4l/json-patch-plus": "^0.2.0",
     "@prisma/client": "^6.9.0"
   }
 }

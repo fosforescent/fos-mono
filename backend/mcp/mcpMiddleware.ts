@@ -328,6 +328,66 @@ class FosToolProvider implements MCPToolProvider {
           },
           required: ['bidId']
         }
+      },
+      {
+        name: 'agent_chat',
+        description: 'Chat with the ConsoleAgent and get intelligent tool suggestions',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            message: { 
+              type: 'string', 
+              description: 'User message or request' 
+            },
+            mode: {
+              type: 'string',
+              enum: ['auto', 'confirm', 'prompt'],
+              description: 'Execution mode: auto (execute best tool under threshold), confirm (ask yes/no), prompt (show all options)',
+              default: 'prompt'
+            },
+            maxTokens: {
+              type: 'number',
+              description: 'Maximum tokens to spend (for auto mode)',
+              default: 100
+            },
+            context: {
+              type: 'object',
+              description: 'Additional context for better tool selection'
+            }
+          },
+          required: ['message']
+        }
+      },
+      {
+        name: 'agent_execute_with_mode',
+        description: 'Execute tools with specific prompting behavior',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            taskDescription: { 
+              type: 'string', 
+              description: 'Description of task to accomplish' 
+            },
+            mode: {
+              type: 'string',
+              enum: ['auto', 'confirm', 'prompt'],
+              description: 'Execution mode'
+            },
+            maxTokens: {
+              type: 'number',
+              description: 'Maximum tokens to spend (for auto mode)'
+            },
+            selectedBidId: {
+              type: 'string',
+              description: 'Specific bid to execute (when user has chosen from prompts)'
+            },
+            parameters: {
+              type: 'object',
+              description: 'Parameters for the tool execution'
+            }
+          },
+          required: ['taskDescription', 'mode']
+        }
       }
     ]
   }
@@ -382,6 +442,14 @@ class FosToolProvider implements MCPToolProvider {
 
         case 'proxy_tool':
           result = await this.handleProxyTool(args)
+          break
+
+        case 'agent_chat':
+          result = await this.handleAgentChat(args)
+          break
+
+        case 'agent_execute_with_mode':
+          result = await this.handleAgentExecuteWithMode(args)
           break
 
         default:
@@ -880,6 +948,218 @@ class FosToolProvider implements MCPToolProvider {
           text: JSON.stringify({
             success: false,
             error: 'Failed to execute tool via proxy',
+            details: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }]
+      }
+    }
+  }
+
+  private async handleAgentChat(args: any) {
+    const userId = this.userContext.userId
+    
+    if (!userId) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            error: 'User context not available'
+          })
+        }]
+      }
+    }
+
+    const { message, mode = 'prompt', maxTokens = 100, context = {} } = args
+
+    if (!message) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            error: 'Message is required'
+          })
+        }]
+      }
+    }
+
+    try {
+      // Get available tools for this request
+      const bidSession = await toolBidManager.getBidsForTask(userId, message, context)
+      
+      let response: any = {
+        message: `I understand you want: "${message}".`,
+        sessionId: bidSession.sessionId,
+        availableTools: bidSession.bids.length,
+        mode
+      }
+
+      if (bidSession.bids.length === 0) {
+        response.message += ' Unfortunately, no suitable tools are currently available for this task.'
+        response.suggestion = 'Try rephrasing your request or check that MCP servers are connected.'
+      } else {
+        switch (mode) {
+          case 'auto':
+            // Auto mode: execute cheapest tool under threshold
+            const freeBids = bidSession.bids.filter(bid => bid.tokenCost === 0)
+            const affordableBids = bidSession.bids.filter(bid => bid.tokenCost <= maxTokens)
+            
+            const candidateBids = freeBids.length > 0 ? freeBids : affordableBids
+            
+            if (candidateBids.length > 0) {
+              const bestBid = candidateBids[0] // Already sorted by relevance then cost
+              
+              // Auto-execute the best tool
+              const toolResult = await this.handleProxyTool({
+                bidId: bestBid.bidId,
+                parameters: { query: message, ...context }
+              })
+              
+              response.autoExecuted = true
+              response.executedTool = {
+                name: bestBid.toolName,
+                cost: bestBid.tokenCost,
+                server: bestBid.serverName
+              }
+              response.result = toolResult
+            } else {
+              response.message += ` No affordable tools found within ${maxTokens} token limit.`
+              response.suggestion = 'Increase your maxTokens limit or use a different mode.'
+            }
+            break
+
+          case 'confirm':
+            // Confirm mode: suggest best tool and ask for confirmation
+            const bestTool = bidSession.bids[0]
+            response.message += ` I recommend using "${bestTool.toolName}" from ${bestTool.serverName}.`
+            response.recommendedTool = {
+              bidId: bestTool.bidId,
+              name: bestTool.toolName,
+              description: bestTool.toolDescription,
+              cost: bestTool.tokenCost,
+              server: bestTool.serverName,
+              reason: bestTool.bidReason
+            }
+            response.confirmation = {
+              question: `Execute "${bestTool.toolName}" for ${bestTool.tokenCost} tokens?`,
+              yesAction: {
+                tool: 'agent_execute_with_mode',
+                params: {
+                  taskDescription: message,
+                  mode: 'confirm',
+                  selectedBidId: bestTool.bidId,
+                  parameters: { query: message, ...context }
+                }
+              }
+            }
+            break
+
+          case 'prompt':
+          default:
+            // Prompt mode: show all options
+            response.message += ` Here are your options:`
+            response.toolOptions = bidSession.bids.slice(0, 5).map(bid => ({
+              bidId: bid.bidId,
+              name: bid.toolName,
+              description: bid.toolDescription,
+              cost: bid.tokenCost,
+              server: bid.serverName,
+              reason: bid.bidReason,
+              relevanceScore: bid.relevanceScore
+            }))
+            response.instruction = 'Use agent_execute_with_mode to execute your chosen tool.'
+            break
+        }
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(response)
+        }]
+      }
+
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            error: 'Failed to process agent chat',
+            details: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }]
+      }
+    }
+  }
+
+  private async handleAgentExecuteWithMode(args: any) {
+    const userId = this.userContext.userId
+    
+    if (!userId) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            error: 'User context not available'
+          })
+        }]
+      }
+    }
+
+    const { taskDescription, mode, maxTokens, selectedBidId, parameters = {} } = args
+
+    if (!taskDescription || !mode) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            error: 'taskDescription and mode are required'
+          })
+        }]
+      }
+    }
+
+    try {
+      if (selectedBidId) {
+        // Execute specific bid
+        const toolResult = await this.handleProxyTool({
+          bidId: selectedBidId,
+          parameters: { query: taskDescription, ...parameters }
+        })
+        
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: 'Tool executed successfully',
+              mode,
+              selectedBidId,
+              result: toolResult
+            })
+          }]
+        }
+      } else {
+        // Get new bids and execute according to mode
+        return await this.handleAgentChat({
+          message: taskDescription,
+          mode,
+          maxTokens,
+          context: parameters
+        })
+      }
+
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            error: 'Failed to execute tool with mode',
             details: error instanceof Error ? error.message : 'Unknown error'
           })
         }]

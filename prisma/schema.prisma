@@ -191,6 +191,7 @@ model MCPServerModel {
   status           String                         @default("disconnected") // connected, disconnected, error
   capabilities     Json                           @default("[]")
   credentials      Json                           @default("{}")
+  public           Boolean                        @default(false)
   lastPing         DateTime?
   descriptionEmbedding Unsupported("vector(1024)")?
   createdAt        DateTime                       @default(now())

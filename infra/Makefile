@@ -1,58 +1,28 @@
+.PHONY: up down restart logs backend
+
+# Load environment variables from parent .env file
 include ../.env
-export $(shell sed 's/=.*//' ../.env)
+export
 
-init:
-	terraform init
+# Start backend with proper environment
+backend:
+	docker compose --profile backend up
 
-init-reconfigure:
-	terraform init -reconfigure
+# Start backend in background
+backend-up:
+	docker compose --profile backend up -d
 
-init-upgrade:
-	terraform init -upgrade
+# Stop all services
+down:
+	docker compose down
 
-test:
-	echo $(TF_VAR_SSH_FINGERPRINT)
+# Restart backend
+restart:
+	docker compose --profile backend restart
 
-plan:
-	terraform plan
+# Show logs
+logs:
+	docker compose logs -f backend
 
-plan-cd:
-	terraform plan -no-color -out=tfplan
-
-refresh:
-	terraform refresh
-
-apply:
-	terraform apply
-	
-# apply-cd:
-# 	terraform apply -auto-approve -input=false -no-color tfplan
-
-apply-cd:
-	terraform apply -auto-approve -input=false -no-color 
-
-destroy: 
-	terraform destroy
-
-taint-all:
-	module=$1\
-	for resource in `terraform show -module-depth=1 | grep module.${module} | tr -d ':' | sed -e 's/module.${module}.//'`; do\
-		terraform taint -module ${module} ${resource}\
-	done
-
-taint:
-	exit 1
-	taint digitalocean_app.fos_app
-
-list: 
-	terraform state list
-
-setup-workspaces:
-	terraform workspace new dev
-	terraform workspace new prod
-
-workspace-dev:
-	terraform workspace select dev
-
-workspace-prod:
-	terraform workspace select prod
+# Clean restart
+clean-restart: down backend

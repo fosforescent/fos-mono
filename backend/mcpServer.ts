@@ -7,6 +7,7 @@ interface MCPServerCreateRequest {
   description?: string
   endpoint: string
   credentials?: object
+  public?: boolean
 }
 
 interface MCPServerUpdateRequest {
@@ -16,6 +17,7 @@ interface MCPServerUpdateRequest {
   status?: string
   credentials?: object
   capabilities?: string[]
+  public?: boolean
 }
 
 export const getMCPServers = async (req: Request, res: Response) => {
@@ -85,7 +87,7 @@ export const createMCPServer = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const { name, description, endpoint, credentials }: MCPServerCreateRequest = req.body
+    const { name, description, endpoint, credentials, public: isPublic }: MCPServerCreateRequest = req.body
 
     if (!name || !endpoint) {
       return res.status(400).json({ error: 'Name and endpoint are required' })
@@ -111,6 +113,7 @@ export const createMCPServer = async (req: Request, res: Response) => {
         endpoint,
         credentials: credentials || {},
         status: 'disconnected',
+        public: isPublic || false,
         descriptionEmbedding: descriptionEmbedding
       }
     })
@@ -137,7 +140,7 @@ export const updateMCPServer = async (req: Request, res: Response) => {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
     const serverId = parseInt(req.params.id)
-    const { name, description, endpoint, status, credentials, capabilities }: MCPServerUpdateRequest = req.body
+    const { name, description, endpoint, status, credentials, capabilities, public: isPublic }: MCPServerUpdateRequest = req.body
 
     // Check if server exists and belongs to user
     const existingServer = await prisma.mCPServerModel.findFirst({
@@ -173,6 +176,7 @@ export const updateMCPServer = async (req: Request, res: Response) => {
     if (status !== undefined) updateData.status = status
     if (credentials !== undefined) updateData.credentials = credentials
     if (capabilities !== undefined) updateData.capabilities = capabilities
+    if (isPublic !== undefined) updateData.public = isPublic
 
     const server = await prisma.mCPServerModel.update({
       where: { id: serverId },

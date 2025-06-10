@@ -19,6 +19,7 @@ import './global.css'
 import './App.css'
 import { QueryView } from './components/views/QueryLayout'
 import { BrowseView } from './components/views/BrowseLayout'
+import { DashboardRouter } from './components/DashboardRouter'
 
 declare const __FOS_API_URL__: string;
 
@@ -54,7 +55,7 @@ const router = createBrowserRouter([
       {
         index: true,
         // loader data
-        element: <BrowseView />,
+        element: <DashboardRouter />,
         loader: async () => {
           return {
             route: [],

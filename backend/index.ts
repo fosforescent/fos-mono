@@ -1,4 +1,5 @@
 import express, { application } from 'express'
+import http from 'http'
 
 import { verifyJWTMiddleware } from './verifyJwt'
 import { clientDetailsMiddleware } from './clientDetails'
@@ -108,7 +109,6 @@ import { MCPProxy } from './mcp/mcpProxy'
 import jwt from 'jsonwebtoken'
 import bodyparser from 'body-parser'
 
-const http = require('http');
 
 
 var jsonParser = bodyparser.json()

@@ -4,8 +4,6 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { addUserConnection } from './promptNotifications';
 import { prisma } from './prismaClient';
 
-var WSServer = require('ws').Server;
-
 // Create WebSocket server attached to HTTP server
 const wss = new WebSocketServer({ 
   noServer: true  // Important: we'll handle the upgrade ourselves

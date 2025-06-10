@@ -63,7 +63,9 @@ export const postLogin = async (req: Request, res: Response) => {
           // subscription_session: !!user.subscription_checkout_session_id,
         }, 
         emailConfirmed: !user.email_confirmation_token,
-        cookies: user.cookies as InfoState['cookies']
+        cookies: user.cookies as InfoState['cookies'],
+        approved: user.approved,
+        role: user.role
        }
       return res.json(result)
     } else {

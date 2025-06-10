@@ -127,3 +127,40 @@ Uses Prisma with PostgreSQL and pgvector extension:
 - The system supports both local and planned distributed operation via DHT
 - Vector embeddings are used for semantic search and AI integration
 - Authentication uses JWT with Stripe for payments/subscriptions
+
+## Directory CLAUDE.md Files
+
+Each major directory in this monorepo contains its own `CLAUDE.md` file with detailed documentation about that specific area. These files provide:
+
+- **Directory Summary**: Purpose and functionality of the directory
+- **Dependencies**: External and internal dependencies
+- **Data Inputs/Outputs**: What data flows in and out
+- **Events Handled**: What events the system responds to
+- **Data Transformations**: How data is processed
+- **Component Details**: Specific components and their responsibilities
+- **TODOs**: Current and future tasks for that directory
+
+### Important Reminders for Claude Code:
+
+1. **Always check directory CLAUDE.md files** when working in a specific area - they contain crucial context about that part of the system
+2. **Keep directory CLAUDE.md files up to date** when making changes to a directory's functionality
+3. **Use the TODOs sections** in directory CLAUDE.md files to track ongoing work and future improvements
+4. **Reference these files** when explaining code or making architectural decisions
+
+### Directory CLAUDE.md Locations:
+
+- `backend/auth/CLAUDE.md` - Authentication system
+- `backend/data/CLAUDE.md` - Data management and search
+- `backend/email/CLAUDE.md` - Email system
+- `backend/subscription/CLAUDE.md` - Payment and subscriptions
+- `docs/CLAUDE.md` - Documentation and architecture
+- `e2e/helpers/CLAUDE.md` - End-to-end test helpers
+- `frontend/components/*/CLAUDE.md` - UI component directories
+- `frontend/hooks/CLAUDE.md` - Custom React hooks
+- `frontend/jest/CLAUDE.md` - Test configuration
+- `frontend/lib/CLAUDE.md` - Frontend utilities
+- `prisma/CLAUDE.md` - Database schema and management
+- `shared/dag-implementation/CLAUDE.md` - Core graph system
+- `shared/evaluation/CLAUDE.md` - Expression evaluation
+- `shared/mock/CLAUDE.md` - Example workflows and test data
+- `infra/CLAUDE.md` - Infrastructure as code

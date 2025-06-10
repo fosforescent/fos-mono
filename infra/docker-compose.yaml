@@ -1,0 +1,98 @@
+services:
+  # PostgreSQL database with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: fos-postgres
+    env_file:
+      - ../.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fosdev}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5435}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../prisma/init_vector.sql:/docker-entrypoint-initdb.d/init_vector.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Fosforescent backend (development mode)
+  backend:
+    image: node:20-slim
+    container_name: fos-backend
+    env_file:
+      - ../.env
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-fosdev}?connection_limit=5
+      - JWT_SECRET=myjwtsecret
+      - PORT=${BACKEND_PORT:-4000}
+      - STRIPE_TOKEN=${STRIPE_TOKEN}
+      - STRIPE_SUBSCRIPTION_PRICE_ID=${STRIPE_SUBSCRIPTION_PRICE_ID}
+      - STRIPE_TOPUP_PRICE_ID=${STRIPE_TOPUP_PRICE_ID}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - POSTMARK_API_TOKEN=${POSTMARK_API_TOKEN}
+      - EMAIL_WEBHOOK_PASSWORD=${EMAIL_WEBHOOK_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NODE_ENV=${NODE_ENV:-development}
+    ports:
+      - "${BACKEND_PORT:-4000}:${BACKEND_PORT:-4000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../:/app
+      - /app/node_modules
+    working_dir: /app
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y openssl libssl-dev make && 
+        echo '=== Installing root dependencies...' &&
+        npm install &&
+        echo '=== Setting up Prisma...' &&
+        cd prisma && npm install && npx prisma generate &&
+        echo '=== Pushing database schema...' &&
+        npx prisma db push &&
+        echo '=== Seeding database...' &&
+        npx prisma db seed &&
+        echo '=== Installing backend dependencies...' &&
+        cd ../backend && npm install &&
+        echo '=== Starting backend server...' &&
+        cd ../ && npx tsx -r dotenv/config ./backend/index.ts
+      "
+    restart: unless-stopped
+    profiles:
+      - backend
+
+  # Frontend (optional, for full-stack testing)
+  frontend:
+    build:
+      context: ../
+      dockerfile: frontend/Dockerfile
+    container_name: fos-frontend
+    environment:
+      - VITE_FOS_API_URL=http://localhost:4000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../frontend:/app/frontend
+      - ../shared:/app/shared
+      - /app/frontend/node_modules
+    profiles:
+      - frontend
+    command: >
+      sh -c "
+        echo '<� Starting frontend development server...' &&
+        cd frontend && npm run dev -- --host 0.0.0.0
+      "
+
+volumes:
+  postgres_data:
+
+# Networks (optional, for custom networking)
+networks:
+  default:
+    name: fos-network

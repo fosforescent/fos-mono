@@ -33,6 +33,8 @@ export const getUserProfile = async (req: Request, res: Response) => {
         connectedAccountEnabled: !!user.stripe_connect_enabled,
         // subscription_session: !!updatedUser.subscription_checkout_session_id,
       },
+      approved: user.approved,
+      role: user.role
     }
     return res.json(result)
 
@@ -88,6 +90,8 @@ export const postUserProfile = async (req: Request, res: Response) => {
           connectedAccountEnabled: !!updatedUser.stripe_connect_enabled,
           // subscription_session: !!updatedUser.subscription_checkout_session_id,
         },
+        approved: updatedUser.approved,
+        role: updatedUser.role
       }
       return res.json(result)
     } else {

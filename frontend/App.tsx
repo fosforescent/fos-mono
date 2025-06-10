@@ -24,6 +24,7 @@ import { ErrorBoundary } from './components/error-boundary'
 import { useToast } from '@/frontend/components/ui/use-toast';
 import { jwtDecode } from 'jwt-decode';
 import { api } from './api'
+import { PendingApproval } from './components/admin/PendingApproval'
 
 import { defaultTrellisData } from '../shared/defaults'
 
@@ -276,7 +277,6 @@ export default function App({
 
   useEffect(() => {
     if (!jwt && !appState.loggedIn) {
-
       navigate('/')
       setMenuOpen(true)
     } else {
@@ -287,12 +287,48 @@ export default function App({
     }
   }, [jwt]);
 
+  // Check user approval status when app data is loaded
+  const [userApprovalChecked, setUserApprovalChecked] = useState(false)
+  
+  useEffect(() => {
+    if (appState.loggedIn && appState.loaded && !userApprovalChecked) {
+      setUserApprovalChecked(true)
+      // Approval status is available in appState.info.approved
+      if (appState.info?.approved === false) {
+        // User is not approved, don't navigate away from approval page
+        console.log('User not approved, showing pending approval')
+      }
+    }
+  }, [appState.loggedIn, appState.loaded, userApprovalChecked]);
+
 
 
 
 
   const [currentActivity, setCurrentActivity] = useState("")
   const [currentView, setCurrentView] = useState("")
+
+  // Handlers for PendingApproval component
+  const handleLogout = () => {
+    localStorage.removeItem('auth')
+    localStorage.removeItem('username')
+    setAppState({
+      ...appState,
+      loggedIn: false,
+      auth: {
+        ...appState.auth,
+        jwt: undefined
+      }
+    })
+    navigate('/')
+    setMenuOpen(true)
+  }
+
+  const handleRefreshApprovalStatus = async () => {
+    if (appState.loggedIn && appState.auth.jwt) {
+      await loadAppData()
+    }
+  }
 
   useEffect(() => {
 
@@ -537,12 +573,19 @@ export default function App({
       )}
       <div className=" h-full w-full p-0 m-0" >
 
-        {/* Show AuthLanding if not logged in, otherwise show main app */}
+        {/* Show AuthLanding if not logged in, PendingApproval if not approved, otherwise show main app */}
         {!appState.loggedIn ? (
           <AuthLanding
             data={appState}
             setData={setAppStateWithEffects}
             options={global}
+          />
+        ) : appState.loaded && appState.info?.approved === false ? (
+          <PendingApproval
+            userEmail={appState.auth?.email}
+            userName={appState.auth?.username}
+            onLogout={handleLogout}
+            onRefresh={handleRefreshApprovalStatus}
           />
         ) : (
           appState.loaded && <Outlet context={{

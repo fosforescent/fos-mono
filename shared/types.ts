@@ -232,6 +232,8 @@ export type InfoState = {
     acceptRequiredCookies: boolean
     acceptSharingWithThirdParties: boolean
   }
+  approved?: boolean
+  role?: string
 }
 
 

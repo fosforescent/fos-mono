@@ -8,15 +8,20 @@ RUN which node
 RUN node --version
 RUN echo $PATH
 
-# Copy package files
-COPY package*.json ./
-COPY prisma ./prisma/
+# Copy backend package files
+COPY backend/package*.json ./
+COPY backend/package-lock.json ./
+COPY backend/tsconfig*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies  
+RUN npm install
 
-# Copy the rest of your app's source code
-COPY . .
+# Copy shared code and prisma
+COPY shared/ ./shared/
+COPY prisma/ ./prisma/
+
+# Copy backend source code
+COPY backend/ ./
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -25,16 +30,8 @@ RUN apt-get update && apt-get install -y \
     make \
     && rm -rf /var/lib/apt/lists/*
 
-# More debugging
-RUN ls -la /usr/src/app/node_modules/.bin
-RUN ls -la /usr/src/app/node_modules/vite/bin
-RUN which npx
-
-# Try building without make first
-RUN node ./node_modules/vite/bin/vite.js build --mode backend
-
-# If that works, then try make
-# RUN make setup && make build-backend
+# Build backend with TypeScript (use tsc directly)
+RUN npx tsc
 
 
 
