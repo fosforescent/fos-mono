@@ -20,9 +20,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Fosforescent backend (development mode)
+  # Fosforescent backend (using Dockerfile)
   backend:
-    image: node:20-slim
+    build:
+      context: ../
+      dockerfile: backend/Dockerfile
     container_name: fos-backend
     env_file:
       - ../.env
@@ -37,63 +39,34 @@ services:
       - POSTMARK_API_TOKEN=${POSTMARK_API_TOKEN}
       - EMAIL_WEBHOOK_PASSWORD=${EMAIL_WEBHOOK_PASSWORD}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - NODE_ENV=${NODE_ENV:-development}
+      - NODE_ENV=${NODE_ENV:-production}
     ports:
-      - "${BACKEND_PORT:-4000}:${BACKEND_PORT:-4000}"
+      - "${BACKEND_PORT:-4000}:80"
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ../:/app
-      - /app/node_modules
-    working_dir: /app
-    command: >
-      sh -c "
-        apt-get update && apt-get install -y openssl libssl-dev make && 
-        echo '=== Installing root dependencies...' &&
-        npm install &&
-        echo '=== Setting up Prisma...' &&
-        cd prisma && npm install && npx prisma generate &&
-        echo '=== Pushing database schema...' &&
-        npx prisma db push &&
-        echo '=== Seeding database...' &&
-        npx prisma db seed &&
-        echo '=== Installing backend dependencies...' &&
-        cd ../backend && npm install &&
-        echo '=== Starting backend server...' &&
-        cd ../ && npx tsx -r dotenv/config ./backend/index.ts
-      "
     restart: unless-stopped
     profiles:
       - backend
 
-  # Frontend (for e2e testing)
+  # Frontend (using Dockerfile)
   frontend:
-    image: node:20-slim
+    build:
+      context: ../
+      dockerfile: frontend/Dockerfile
     container_name: fos-frontend
     env_file:
       - ../.env
     environment:
-      - VITE_FOS_API_URL=http://localhost:4000
+      - VITE_FOS_API_URL=http://backend:80
+      - NODE_ENV=${NODE_ENV:-production}
     ports:
-      - "5173:5173"
-    volumes:
-      - ../:/app
-      - /app/node_modules
-      - /app/frontend/node_modules
-    working_dir: /app
-    command: >
-      sh -c "
-        echo '=== Installing root dependencies...' &&
-        npm install &&
-        echo '=== Installing frontend dependencies...' &&
-        cd frontend && npm install &&
-        echo '=== Starting frontend development server...' &&
-        npm run dev -- --host 0.0.0.0
-      "
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
     profiles:
       - frontend
-      - e2e
 
 volumes:
   postgres_data:

@@ -1,5 +1,5 @@
 {
-  "name": "@fosforescent/backend", 
+  "name": "@fosforescent/backend",
   "version": "0.1.7",
   "type": "module",
   "scripts": {
@@ -42,10 +42,12 @@
     "openai": "^4.73.0",
     "postmark": "^4.0.5",
     "purify-ts": "^2.1.0",
+    "@fosforescent/prisma": "*",
     "remark": "^15.0.1",
     "remark-html": "^16.0.1",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.0",
+    "@fosforescent/shared": "*",
     "stripe": "^17.3.1",
     "ua-parser-js": "^1.0.39",
     "uuid": "^11.0.3",

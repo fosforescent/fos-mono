@@ -2,10 +2,12 @@
   "name": "@fosforescent/fos-mono",
   "version": "0.1.7",
   "scope": "@fosforescent",
+  "private": true,
   "workspaces": [
     "frontend",
     "backend",
-    "e2e"
+    "e2e",
+    "shared"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",

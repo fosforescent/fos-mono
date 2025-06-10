@@ -13,7 +13,9 @@ Fosforescent is a distributed, collaborative workflow system that combines human
 - **frontend/**: React/Vite SPA with TypeScript and Tailwind CSS
 - **shared/**: Core graph implementation and type definitions shared between frontend and backend
 - **prisma/**: Database schema and migrations
-- **infra/**: Terraform infrastructure configuration
+- **infra/**: Infrastructure configuration including Terraform, Docker Compose, and E2E tests
+- **cli/**: Command-line interface tools
+- **docs/**: Documentation and architecture guides
 
 ### Core Graph System
 The heart of Fosforescent is a content-addressable graph implementation in `shared/dag-implementation/`:
@@ -26,8 +28,9 @@ The heart of Fosforescent is a content-addressable graph implementation in `shar
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Radix UI components
 - **Backend**: Node.js, Express, Prisma, PostgreSQL with vector extension
 - **Database**: PostgreSQL with pgvector for embeddings
-- **Build**: Vite with separate frontend/backend builds
-- **Testing**: Jest with React Testing Library
+- **Build**: Vite with separate frontend/backend builds, Docker multi-stage builds
+- **Testing**: Jest with React Testing Library, Playwright for E2E testing
+- **Infrastructure**: Docker Compose, Terraform for cloud deployment
 
 ## Development Commands
 
@@ -73,10 +76,13 @@ make build-backend
 
 ### Testing and Quality
 ```bash
-# Run tests
+# Run unit tests
 npm run test
 # or
 make test
+
+# Run E2E tests (requires services to be running)
+cd infra && npm test
 
 # Linting
 npm run lint
@@ -99,11 +105,19 @@ npm run test-storybook
 
 ## Build Configuration
 
-The project uses Vite with mode-based configuration:
+The project uses multiple build systems:
+
+### Vite Configuration
 - `--mode frontend`: Builds React SPA
 - `--mode backend`: Builds Node.js server as CommonJS library
 - Backend externals are automatically excluded from frontend builds
 - Frontend files are excluded from backend builds
+
+### Docker Configuration
+- Multi-stage Dockerfiles for both frontend and backend
+- Frontend Dockerfile: Builds React app and serves via Node.js
+- Backend Dockerfile: Builds TypeScript and runs production server
+- Docker Compose: Orchestrates services with PostgreSQL database
 
 ## Database Schema
 
@@ -115,10 +129,15 @@ Uses Prisma with PostgreSQL and pgvector extension:
 
 ## Testing Strategy
 
-- Unit tests with Jest
-- React component tests with Testing Library
-- Storybook for component development and testing
-- Visual regression testing via Storybook test runner
+- **Unit Tests**: Jest with React Testing Library for component and logic testing
+- **Integration Tests**: Storybook for component development and testing
+- **E2E Tests**: Playwright tests located in `infra/e2e-tests/` covering:
+  - Authentication flows
+  - Dashboard functionality
+  - Console agent interactions
+  - Subscription and billing workflows
+  - Graph workflow operations
+- **Visual Regression**: Storybook test runner for UI consistency
 
 ## Development Notes
 
@@ -154,7 +173,8 @@ Each major directory in this monorepo contains its own `CLAUDE.md` file with det
 - `backend/email/CLAUDE.md` - Email system
 - `backend/subscription/CLAUDE.md` - Payment and subscriptions
 - `docs/CLAUDE.md` - Documentation and architecture
-- `e2e/helpers/CLAUDE.md` - End-to-end test helpers
+- `infra/helpers/CLAUDE.md` - End-to-end test helpers (moved from e2e/)
+- `infra/terraform/CLAUDE.md` - Terraform infrastructure configuration
 - `frontend/components/*/CLAUDE.md` - UI component directories
 - `frontend/hooks/CLAUDE.md` - Custom React hooks
 - `frontend/jest/CLAUDE.md` - Test configuration
@@ -163,4 +183,4 @@ Each major directory in this monorepo contains its own `CLAUDE.md` file with det
 - `shared/dag-implementation/CLAUDE.md` - Core graph system
 - `shared/evaluation/CLAUDE.md` - Expression evaluation
 - `shared/mock/CLAUDE.md` - Example workflows and test data
-- `infra/CLAUDE.md` - Infrastructure as code
+- `infra/CLAUDE.md` - Infrastructure, Docker, and E2E testing

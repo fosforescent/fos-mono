@@ -1,129 +1,114 @@
-# CLAUDE.md
+# Backend CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Directory Summary
+The backend directory contains the Node.js/Express API server that provides the core functionality for Fosforescent. It handles authentication, data management, graph operations, subscriptions, and serves as the bridge between the frontend and the database.
 
-## Project Overview
+## Key Components
 
-Fosforescent is a distributed, collaborative workflow system that combines human and AI inputs through a visual graph-based interface. It's built on a dependently typed functional dataflow language using term graph rewriting. The project is in early development stages.
+### Core API Files
+- `index.ts` - Main server entry point and Express app configuration
+- `auth/` - Authentication system (JWT, registration, login, password reset)
+- `data/` - Data management and search functionality
+- `subscription/` - Stripe payment and subscription handling
+- `email/` - Email service integration (Postmark)
+- `mcp/` - Model Context Protocol server and client implementations
 
-## Architecture
+### Graph System Integration
+- `embedding.ts` - Vector embedding generation for semantic search
+- Integration with `shared/dag-implementation/` for graph operations
+- `prismaClient.ts` - Database client configuration
 
-### Monorepo Structure
-- **backend/**: Node.js/Express API server with Prisma ORM and PostgreSQL
-- **frontend/**: React/Vite SPA with TypeScript and Tailwind CSS
-- **shared/**: Core graph implementation and type definitions shared between frontend and backend
-- **prisma/**: Database schema and migrations
-- **infra/**: Terraform infrastructure configuration
+### API Token & Billing
+- `apiTokens.ts` - API token management for external access
+- `tokenManager.ts` - Token balance and usage tracking
+- `toolBidManager.ts` - Tool bidding system for cost optimization
+- `toolUsage.ts` - Tool usage tracking and billing
 
-### Core Graph System
-The heart of Fosforescent is a content-addressable graph implementation in `shared/dag-implementation/`:
-- **FosNode**: Primary node implementation with cryptographic content addressing
-- **FosStore**: Graph storage and querying system
-- **FosExpression**: Expression evaluation system
-- **Channels**: Communication mechanism between nodes
+### Security & Middleware
+- `adminAuth.ts` - Admin authentication middleware
+- `apiTokenAuth.ts` - API token authentication
+- `verifyJwt.ts` - JWT verification utilities
+- `maxRequests.ts` - Rate limiting middleware
 
-### Key Technologies
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Radix UI components
-- **Backend**: Node.js, Express, Prisma, PostgreSQL with vector extension
-- **Database**: PostgreSQL with pgvector for embeddings
-- **Build**: Vite with separate frontend/backend builds
-- **Testing**: Jest with React Testing Library
+## Dependencies
 
-## Development Commands
+### External Dependencies
+- **Express**: Web framework for API endpoints
+- **Prisma**: ORM for database operations
+- **Stripe**: Payment processing
+- **Postmark**: Email service
+- **JWT**: Authentication tokens
+- **OpenAI**: AI model integration
+- **bcrypt**: Password hashing
 
-### Setup
-```bash
-npm install
-npx prisma generate
-```
+### Internal Dependencies
+- `shared/` - Core graph types and implementations
+- `prisma/` - Database schema and client
 
-### Database Management
-```bash
-# Reset database (drops all data)
-make reset
+## Data Inputs/Outputs
 
-# Run with clean database
-make run-clean-backend
-```
+### Input Sources
+- HTTP requests from frontend application
+- Webhook events from Stripe
+- Email webhook events from Postmark
+- Database queries via Prisma
+- AI model responses from OpenAI
 
-### Development
-```bash
-# Run both frontend and backend in development
-npm run dev
-# or
-make run-dev
+### Output Destinations
+- JSON API responses to frontend
+- Database writes via Prisma
+- Email sends via Postmark
+- Vector embeddings to database
+- WebSocket messages for real-time updates
 
-# Frontend only
-npm run dev:frontend
+## Events Handled
+- User authentication (login, register, password reset)
+- Graph node creation and updates
+- Search queries with vector similarity
+- Subscription management and billing
+- Tool execution and cost tracking
+- Admin operations and user management
 
-# Backend only  
-npm run dev:backend
-```
-
-### Building
-```bash
-# Build both frontend and backend
-npm run build:frontend
-npm run build:backend
-
-# Using Makefile
-make build-frontend
-make build-backend
-```
-
-### Testing and Quality
-```bash
-# Run tests
-npm run test
-# or
-make test
-
-# Linting
-npm run lint
-make format
-
-# Fix linting issues
-npm run lint:fix
-make format-fix
-
-# Full check (format + test + build)
-make check
-```
-
-### Storybook
-```bash
-npm run storybook
-npm run build-storybook
-npm run test-storybook
-```
+## Data Transformations
+- Password hashing with bcrypt
+- JWT token generation and verification
+- Vector embedding generation from text content
+- Stripe webhook event processing
+- Graph node serialization/deserialization
+- API response formatting and error handling
 
 ## Build Configuration
 
-The project uses Vite with mode-based configuration:
-- `--mode frontend`: Builds React SPA
-- `--mode backend`: Builds Node.js server as CommonJS library
-- Backend externals are automatically excluded from frontend builds
-- Frontend files are excluded from backend builds
+### Development
+- Uses `tsx` for TypeScript execution without compilation
+- `nodemon` for hot reloading during development
+- Environment variables loaded via `dotenv`
 
-## Database Schema
+### Production (Docker)
+- Multi-stage Docker build in `Dockerfile`
+- TypeScript compilation with `tsc`
+- Optimized Node.js runtime environment
+- Exposes port 80 for production deployment
 
-Uses Prisma with PostgreSQL and pgvector extension:
-- **UserModel**: User accounts with Stripe integration
-- **FosNodeModel**: Content-addressable graph nodes
-- **NodeVectorModel**: Vector embeddings for semantic search
-- Email and authentication event tracking
+### Environment Variables
+- `DATABASE_URL` - PostgreSQL connection string
+- `JWT_SECRET` - Secret for JWT token signing
+- `STRIPE_TOKEN` - Stripe API key
+- `OPENAI_API_KEY` - OpenAI API access
+- `POSTMARK_API_TOKEN` - Email service token
 
-## Testing Strategy
+## Testing
+- Unit tests with Jest framework
+- API endpoint testing
+- Database integration tests
+- Authentication flow testing
 
-- Unit tests with Jest
-- React component tests with Testing Library
-- Storybook for component development and testing
-- Visual regression testing via Storybook test runner
-
-## Development Notes
-
-- The graph system uses cryptographic hashing (CID) for content addressing
-- Nodes are immutable - mutations create new nodes
-- The system supports both local and planned distributed operation via DHT
-- Vector embeddings are used for semantic search and AI integration
-- Authentication uses JWT with Stripe for payments/subscriptions
+## TODOs
+- [ ] Implement comprehensive API documentation
+- [ ] Add more granular error handling
+- [ ] Optimize database queries with caching
+- [ ] Implement API versioning strategy
+- [ ] Add comprehensive logging system
+- [ ] Implement backup and recovery procedures
+- [ ] Add monitoring and health check endpoints
+- [ ] Optimize Docker build for faster deployments

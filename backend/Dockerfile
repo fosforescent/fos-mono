@@ -9,9 +9,9 @@ RUN node --version
 RUN echo $PATH
 
 # Copy backend package files
-COPY backend/package*.json ./
-COPY backend/package-lock.json ./
-COPY backend/tsconfig*.json ./
+COPY package*.json ./
+COPY package-lock.json ./
+COPY tsconfig*.json ./
 
 # Install dependencies  
 RUN npm install
@@ -21,7 +21,7 @@ COPY shared/ ./shared/
 COPY prisma/ ./prisma/
 
 # Copy backend source code
-COPY backend/ ./
+COPY / ./
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
