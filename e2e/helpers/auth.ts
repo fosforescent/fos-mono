@@ -1,5 +1,10 @@
 import { Page } from '@playwright/test';
 
+export async function login(page: Page, options: { isAdmin?: boolean } = {}) {
+  const userType = options.isAdmin ? 'admin' : 'user';
+  return await loginWithTestUser(page, userType);
+}
+
 export async function loginWithTestUser(page: Page, userType: 'admin' | 'user' = 'user') {
   // Navigate to the app
   await page.goto('/');
