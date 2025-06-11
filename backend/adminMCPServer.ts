@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { prisma } from './prismaClient'
 import { AdminRequest } from './adminAuth'
 import { generateMCPEmbedding } from './embedding'
+import { getRequiredParamAsInt, withValidation } from './utils/validation'
 
 interface AdminMCPServerRequest {
   name: string
@@ -166,8 +167,7 @@ export const createAdminMCPServer = async (req: AdminRequest, res: Response) => 
         description,
         endpoint,
         credentials: credentials || {},
-        capabilities: capabilities || [],
-        descriptionEmbedding
+        capabilities: capabilities || []
       },
       include: {
         UserAccess: true,
@@ -212,6 +212,9 @@ export const createAdminMCPServer = async (req: AdminRequest, res: Response) => 
 // Update MCP server (admin only)
 export const updateAdminMCPServer = async (req: AdminRequest, res: Response) => {
   try {
+    if (!req.params.id) {
+      return res.status(400).json({ error: 'Server ID is required' })
+    }
     const serverId = parseInt(req.params.id)
     const updateData: AdminUpdateMCPServerRequest = req.body
 
@@ -295,6 +298,9 @@ export const updateAdminMCPServer = async (req: AdminRequest, res: Response) => 
 // Delete MCP server (admin only)
 export const deleteAdminMCPServer = async (req: AdminRequest, res: Response) => {
   try {
+    if (!req.params.id) {
+      return res.status(400).json({ error: 'Server ID is required' })
+    }
     const serverId = parseInt(req.params.id)
 
     // Check if server exists
@@ -319,9 +325,8 @@ export const deleteAdminMCPServer = async (req: AdminRequest, res: Response) => 
 }
 
 // Get server access details (admin only)
-export const getAdminMCPServerAccess = async (req: AdminRequest, res: Response) => {
-  try {
-    const serverId = parseInt(req.params.id)
+export const getAdminMCPServerAccess = withValidation(async (req: AdminRequest, res: Response) => {
+  const serverId = getRequiredParamAsInt(req, 'id')
 
     const accessRecords = await prisma.userMCPServerAccessModel.findMany({
       where: { serverId },
@@ -338,17 +343,12 @@ export const getAdminMCPServerAccess = async (req: AdminRequest, res: Response) 
       orderBy: { createdAt: 'desc' }
     })
 
-    res.json({ access: accessRecords })
-  } catch (error) {
-    console.error('Error fetching admin MCP server access:', error)
-    res.status(500).json({ error: 'Failed to fetch server access records' })
-  }
-}
+  return res.json({ access: accessRecords })
+})
 
 // Grant server access to user (admin only)
-export const grantAdminMCPServerAccess = async (req: AdminRequest, res: Response) => {
-  try {
-    const serverId = parseInt(req.params.id)
+export const grantAdminMCPServerAccess = withValidation(async (req: AdminRequest, res: Response) => {
+  const serverId = getRequiredParamAsInt(req, 'id')
     const { userId, role = 'user' } = req.body
 
     if (!userId) {
@@ -398,18 +398,13 @@ export const grantAdminMCPServerAccess = async (req: AdminRequest, res: Response
       }
     })
 
-    res.json({ access: accessRecord })
-  } catch (error) {
-    console.error('Error granting admin MCP server access:', error)
-    res.status(500).json({ error: 'Failed to grant server access' })
-  }
-}
+  return res.json({ access: accessRecord })
+})
 
 // Revoke server access from user (admin only)
-export const revokeAdminMCPServerAccess = async (req: AdminRequest, res: Response) => {
-  try {
-    const serverId = parseInt(req.params.id)
-    const userId = parseInt(req.params.userId)
+export const revokeAdminMCPServerAccess = withValidation(async (req: AdminRequest, res: Response) => {
+  const serverId = getRequiredParamAsInt(req, 'id')
+  const userId = getRequiredParamAsInt(req, 'userId')
 
     // Check if access record exists
     const accessRecord = await prisma.userMCPServerAccessModel.findUnique({
@@ -435,17 +430,12 @@ export const revokeAdminMCPServerAccess = async (req: AdminRequest, res: Respons
       }
     })
 
-    res.json({ message: 'Server access revoked successfully' })
-  } catch (error) {
-    console.error('Error revoking admin MCP server access:', error)
-    res.status(500).json({ error: 'Failed to revoke server access' })
-  }
-}
+  return res.json({ message: 'Server access revoked successfully' })
+})
 
 // Make server globally accessible (admin only)
-export const makeServerGlobal = async (req: AdminRequest, res: Response) => {
-  try {
-    const serverId = parseInt(req.params.id)
+export const makeServerGlobal = withValidation(async (req: AdminRequest, res: Response) => {
+  const serverId = getRequiredParamAsInt(req, 'id')
 
     // Check if server exists
     const server = await prisma.mCPServerModel.findUnique({
@@ -489,17 +479,13 @@ export const makeServerGlobal = async (req: AdminRequest, res: Response) => {
       })
     }
 
-    res.json({ 
-      message: 'Server made globally accessible successfully',
-      usersGranted: usersToGrant.length,
-      totalUsers: allUsers.length,
-      alreadyHadAccess: existingAccess.length
-    })
-  } catch (error) {
-    console.error('Error making server global:', error)
-    res.status(500).json({ error: 'Failed to make server global' })
-  }
-}
+  return res.json({ 
+    message: 'Server made globally accessible successfully',
+    usersGranted: usersToGrant.length,
+    totalUsers: allUsers.length,
+    alreadyHadAccess: existingAccess.length
+  })
+})
 
 // Get all users (admin only)
 export const getAdminUsers = async (req: AdminRequest, res: Response) => {
@@ -523,7 +509,6 @@ export const getAdminUsers = async (req: AdminRequest, res: Response) => {
       select: {
         id: true,
         user_name: true,
-        email: true,
         role: true,
         approved: true,
         createdAt: true,
@@ -560,9 +545,8 @@ export const getAdminUsers = async (req: AdminRequest, res: Response) => {
 }
 
 // Update user role (admin only)
-export const updateUserRole = async (req: AdminRequest, res: Response) => {
-  try {
-    const userId = parseInt(req.params.userId)
+export const updateUserRole = withValidation(async (req: AdminRequest, res: Response) => {
+  const userId = getRequiredParamAsInt(req, 'userId')
     const { role, approved } = req.body
 
     // Validate role
@@ -599,7 +583,6 @@ export const updateUserRole = async (req: AdminRequest, res: Response) => {
       select: {
         id: true,
         user_name: true,
-        email: true,
         role: true,
         approved: true,
         createdAt: true,
@@ -612,12 +595,8 @@ export const updateUserRole = async (req: AdminRequest, res: Response) => {
       }
     })
 
-    res.json({ user: updatedUser })
-  } catch (error) {
-    console.error('Error updating user role:', error)
-    res.status(500).json({ error: 'Failed to update user role' })
-  }
-}
+  return res.json({ user: updatedUser })
+})
 
 // Get user statistics for admin dashboard
 export const getAdminUserStats = async (req: AdminRequest, res: Response) => {

@@ -1,7 +1,7 @@
-import { Button } from "@/frontend/components/ui/button"
-import { useProps } from "@/frontend/App"
-import { getNodeInfo, getNodesOfTypeForPath } from "@/frontend/lib/utils"
-import { AppState, FosReactGlobal, FosPath } from "@/shared/types"
+import { Button } from "@/components/ui/button"
+import { useProps } from "@/App"
+import { getNodeInfo, getNodesOfTypeForPath } from "@/lib/utils"
+import { AppState, FosReactGlobal, FosPath } from "@fosforescent/shared/types"
 import { CheckSquare, Inbox, MessageSquare } from "lucide-react"
 
 
@@ -57,27 +57,27 @@ export const MarketBrowse = () => {
      */
 
 
-    
-    const { 
+
+    const {
         data,
         setData,
         options,
         nodeRoute: route,
         ...props
-      } : {
+    }: {
         options: FosReactGlobal
         data: AppState
         nodeRoute: FosPath
         setData: (state: AppState) => void
-      } = useProps()
-    
-
-    
-    
-    
+    } = useProps()
 
 
-    const { groups }  = getNodesOfTypeForPath(data.data, route);
+
+
+
+
+
+    const { groups } = getNodesOfTypeForPath(data.data, route);
 
     console.log('groups', groups())
 
@@ -94,13 +94,13 @@ export const MarketBrowse = () => {
 }
 
 
-const MarketServiceRow = ({ 
+const MarketServiceRow = ({
     data,
     setData,
     options,
     nodeRoute: route,
     ...props
-    } : {
+}: {
     options: FosReactGlobal
     data: AppState
     nodeRoute: FosPath
@@ -110,7 +110,7 @@ const MarketServiceRow = ({
 
     const { getGroupInfo } = getNodeInfo(route, data)
 
-    const { name, userProfiles,  } = getGroupInfo()
+    const { name, userProfiles, } = getGroupInfo()
 
     return (<div>
         {name}
@@ -121,6 +121,6 @@ const MarketServiceRow = ({
         </div>
     </div>)
 
-    
+
 
 }

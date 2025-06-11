@@ -20,6 +20,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # Qdrant vector database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: fos-qdrant
+    env_file:
+      - ../.env
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Fosforescent backend (using Dockerfile)
   backend:
     build:
@@ -39,15 +59,17 @@ services:
       - POSTMARK_API_TOKEN=${POSTMARK_API_TOKEN}
       - EMAIL_WEBHOOK_PASSWORD=${EMAIL_WEBHOOK_PASSWORD}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "${BACKEND_PORT:-4000}:80"
     depends_on:
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
     restart: unless-stopped
-    profiles:
-      - backend
 
   # Frontend (using Dockerfile)
   frontend:
@@ -65,11 +87,10 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-    profiles:
-      - frontend
 
 volumes:
   postgres_data:
+  qdrant_data:
 
 # Networks (optional, for custom networking)
 networks:

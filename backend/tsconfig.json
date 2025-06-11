@@ -16,8 +16,8 @@
     "skipLibCheck": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
+    "noEmit": false,
+    "outDir": "./dist",
     "esModuleInterop": false,
     "allowSyntheticDefaultImports": true,
     "module": "esnext",
@@ -36,17 +36,21 @@
     "plugins": [{ "name": "typescript-plugin-css-modules" }]
   },
   "include": [
+    "*.ts",
     "**/*.ts",
-    "**/*.tsx",    
     "declarations.d.ts",
-    "lib/**/*.d.ts",
-    "lib/dnd/multi-backend.js",
-    "../vite.config.ts", "vite.config.mts", "frontend/tailwind.config.cjs", "frontend/postcss.config.cjs"  ],
+    "../shared/dag-implementation/store.ts",
+    "../shared/dag-implementation/channel.ts",
+    "../shared/dag-implementation/context.ts",
+    "../shared/dag-types.ts",
+    "../shared/defaults.ts",
+    "../shared/utils.ts"
+  ],
   "exclude": [
     "node_modules",
-    "src/components/fos-old/**/*",
-    "src/fos/old/**/*",
-    "src/lib/old/**/*",
-    "src/main"
+    "dist",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "vite.config.mts"
   ]
 }

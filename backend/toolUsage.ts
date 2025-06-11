@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { prisma } from './prismaClient'
+import { getRequiredParam, withValidation } from './utils/validation'
 import { getUserId } from './apiTokenAuth'
 
 interface GetToolUsageRequest {
@@ -243,72 +244,68 @@ export const getToolUsage = async (req: Request, res: Response) => {
 }
 
 // Get tool usage for a specific server (admin or server owner only)
-export const getServerToolUsage = async (req: Request, res: Response) => {
-  try {
-    const userId = await getUserId(req)
-    const { serverId } = req.params
-    const { limit = 50, offset = 0, status, toolName } = req.query
+export const getServerToolUsage = withValidation(async (req: Request, res: Response) => {
+  const userId = await getUserId(req)
+  const serverIdStr = getRequiredParam(req, 'serverId')
+  const serverId = parseInt(serverIdStr)
+  const { limit = 50, offset = 0, status, toolName } = req.query
 
-    // Check if user has access to this server
-    const serverAccess = await prisma.userMCPServerAccessModel.findFirst({
-      where: {
-        userId,
-        serverId: parseInt(serverId),
-        role: { in: ['admin', 'owner'] }
-      }
-    })
-
-    if (!serverAccess) {
-      return res.status(403).json({ error: 'Access denied to this server' })
+  // Check if user has access to this server
+  const serverAccess = await prisma.userMCPServerAccessModel.findFirst({
+    where: {
+      userId,
+      serverId,
+      role: { in: ['admin', 'owner'] }
     }
+  })
 
-    const where: any = { serverId: parseInt(serverId) }
-    
-    if (status) {
-      where.status = status
-    }
-    
-    if (toolName) {
-      where.toolName = { contains: toolName as string, mode: 'insensitive' }
-    }
+  if (!serverAccess) {
+    return res.status(403).json({ error: 'Access denied to this server' })
+  }
 
-    const toolUsages = await prisma.toolUseModel.findMany({
-      where,
-      include: {
-        callerUser: {
-          select: {
-            id: true,
-            user_name: true
-          }
-        },
-        targetUser: {
-          select: {
-            id: true,
-            user_name: true
-          }
+  const where: any = { serverId }
+  
+  if (status) {
+    where.status = status
+  }
+  
+  if (toolName) {
+    where.toolName = { contains: toolName as string, mode: 'insensitive' }
+  }
+
+  const toolUsages = await prisma.toolUseModel.findMany({
+    where,
+    include: {
+      callerUser: {
+        select: {
+          id: true,
+          user_name: true
         }
       },
-      orderBy: { createdAt: 'desc' },
-      skip: parseInt(offset.toString()),
-      take: parseInt(limit.toString())
-    })
-
-    const totalCount = await prisma.toolUseModel.count({ where })
-
-    res.json({
-      toolUsages,
-      pagination: {
-        total: totalCount,
-        limit: parseInt(limit.toString()),
-        offset: parseInt(offset.toString()),
-        hasMore: totalCount > parseInt(offset.toString()) + parseInt(limit.toString())
+      targetUser: {
+        select: {
+          id: true,
+          user_name: true
+        }
       }
-    })
-  } catch (error) {
-    console.error('Error fetching server tool usage:', error)
-    res.status(500).json({ error: 'Failed to fetch server tool usage' })
-  }
-}
+    },
+    orderBy: { createdAt: 'desc' },
+    skip: parseInt(offset.toString()),
+    take: parseInt(limit.toString())
+  })
+
+  const totalCount = await prisma.toolUseModel.count({ where })
+
+  return res.json({
+    toolUsages,
+    pagination: {
+      total: totalCount,
+      limit: parseInt(limit.toString()),
+      offset: parseInt(offset.toString()),
+      hasMore: totalCount > parseInt(offset.toString()) + parseInt(limit.toString())
+    }
+  })
+})
 
 // Cancel a pending tool usage (for cleanup/admin purposes)
 export const cancelToolUsage = async (req: Request, res: Response) => {

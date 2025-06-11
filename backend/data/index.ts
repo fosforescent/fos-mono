@@ -1,15 +1,15 @@
 import { Request, Response, NextFunction } from 'express'
 import _, { merge } from 'lodash'
-import { checkDataFormat, dbToStore, storeToDb,  } from '../util'
+import { checkDataFormat, dbToStore, storeToDb, } from '../util'
 import { ReqWithClients } from '../clientManager'
 
 import { prisma } from '../prismaClient'
-import { FosContextData, FosNodeContent, TrellisSerializedData } from '@/shared/types'
+import { FosContextData, FosNodeContent, TrellisSerializedData } from '@fosforescent/shared/types'
 import { InputJsonValue, JsonObject } from '@prisma/client/runtime/library'
-import { FosStore } from '@/shared/dag-implementation/store'
-import { semanticSearch } from '../pinecone'
+import { FosStore } from '@fosforescent/shared/dag-implementation/store'
+import { semanticSearch } from '../qdrant'
 // import {  processAndUpsertDocuments, searchQuery, upsertSearchTerms } from './search'
-import { mutableMapExpressions } from '@/shared/utils'
+import { mutableMapExpressions } from '@fosforescent/shared/utils'
 import { runActionsOnStore } from './runActions'
 
 
@@ -36,7 +36,7 @@ export const getUserData = async (req: Request, res: Response): Promise<Response
     const serverStore = await dbToStore(prisma, user)
 
     // console.log('serverData', serverData)
-    
+
     // checkDataFormat(serverStore)
 
     return res.json({
@@ -69,20 +69,20 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
       console.log('User not found', user, prisma.userModel.findUnique, prisma.userModel, prisma)
       throw new Error('User not found')
     } else {
-      const userData = req.body.data as { fosData: FosContextData, trellisData: TrellisSerializedData } 
+      const userData = req.body.data as { fosData: FosContextData, trellisData: TrellisSerializedData }
       const updatedTime = new Date(parseInt(req.body.updatedTime))
 
       if (!userData) {
         throw new Error('No data provided')
       }
-      
+
 
       const trellisData = userData.trellisData as unknown as TrellisSerializedData
       // console.log('user', user)
       const serverDataStore = await dbToStore(prisma, user)
 
       // console.log('serverData', serverData)
-      
+
 
       serverDataStore.updateWithContext(userData)
 
@@ -92,7 +92,7 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
 
 
       const userGroupData = user.fosNode.data as { lastVectorUploadTime: number }
-      
+
       if (userGroupData.lastVectorUploadTime < Date.now() - 1000 * 60 * 60) {
 
 
@@ -107,11 +107,11 @@ export const postUserDataPartial = async (req: Request, res: Response) => {
         //     } }
         //   })
         // }
-    
-      }
-    
 
-      await storeToDb(prisma, user, serverDataStore )
+      }
+
+
+      await storeToDb(prisma, user, serverDataStore)
 
 
       const updatedContext = serverDataStore.exportContext([])

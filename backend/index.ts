@@ -104,6 +104,7 @@ import { attachWs } from './ws'
 import { postCreateOrGetConnectAccount } from './subscription/connectSession'
 import { MCPExpressMiddleware } from './mcp/mcpMiddleware'
 import { MCPProxy } from './mcp/mcpProxy'
+import { initializeCollection } from './qdrant'
 
 
 import jwt from 'jsonwebtoken'
@@ -447,11 +448,19 @@ attachWs(server)
 // Start the server
 const PORT = process.env.PORT || 4000;
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);
   console.log(`MCP endpoint: ws://localhost:${PORT}/mcp`);
   console.log(`MCP HTTP endpoint: http://localhost:${PORT}/mcp/http`);
+  
+  // Initialize Qdrant collection
+  try {
+    await initializeCollection();
+    console.log('Qdrant collection initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize Qdrant collection:', error);
+  }
 });
 
 // Graceful shutdown

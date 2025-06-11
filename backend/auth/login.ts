@@ -2,8 +2,8 @@ import { Request, Response } from 'express'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 
-import {prisma} from '../prismaClient'
-import { InfoState, LoginResult } from '@/shared/types'
+import { prisma } from '../prismaClient'
+import { InfoState, LoginResult } from '@fosforescent/shared/types'
 
 const JWT_SECRET = process.env.JWT_SECRET
 
@@ -13,8 +13,8 @@ if (!JWT_SECRET) {
 }
 
 interface UserLogin {
-    username: string;
-    password: string;
+  username: string;
+  password: string;
 }
 
 export const postLogin = async (req: Request, res: Response) => {
@@ -48,10 +48,10 @@ export const postLogin = async (req: Request, res: Response) => {
 
       const token = jwt.sign(claims, JWT_SECRET)
 
-      const result: LoginResult = { 
-        access_token: token, 
+      const result: LoginResult = {
+        access_token: token,
         type: 'Bearer',
-        profile: user.user_profile as InfoState['profile'],           
+        profile: user.user_profile as InfoState['profile'],
         subscription: {
           apiCallsAvailable: user.api_calls_available,
           apiCallsUsed: user.api_calls_used,
@@ -61,12 +61,12 @@ export const postLogin = async (req: Request, res: Response) => {
           connectedAccountLinked: !!user.stripe_connect_linked,
           connectedAccountEnabled: !!user.stripe_connect_enabled,
           // subscription_session: !!user.subscription_checkout_session_id,
-        }, 
+        },
         emailConfirmed: !user.email_confirmation_token,
         cookies: user.cookies as InfoState['cookies'],
         approved: user.approved,
         role: user.role
-       }
+      }
       return res.json(result)
     } else {
       return res.status(401).json({ error: 'Wrong credentials' })

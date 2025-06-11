@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import { WebSocket, WebSocketServer } from 'ws'
 import { Server as HttpServer } from 'http'
 import { MCPServerInstance, MCPResourceProvider, MCPToolProvider, MCPPromptProvider } from './mcpServer'
+import { MCPTool } from './mcpTypes'
 import { prisma } from '../prismaClient'
 import { notifyUserOfPrompt } from '../promptNotifications'
 import { tokenManager } from '../tokenManager'
@@ -211,7 +212,7 @@ class FosToolProvider implements MCPToolProvider {
     this.userContext = { userId, serverId }
   }
 
-  async listTools() {
+  async listTools(): Promise<MCPTool[]> {
     return [
       {
         name: 'create_node',
@@ -904,7 +905,7 @@ class FosToolProvider implements MCPToolProvider {
       await this.recordToolUseStart(
         toolUseId, 
         bid.toolName, 
-        bid.toolDescription, 
+        bid.toolDescription ?? undefined, 
         parameters, 
         tokenCost
       )
@@ -1008,7 +1009,7 @@ class FosToolProvider implements MCPToolProvider {
             const candidateBids = freeBids.length > 0 ? freeBids : affordableBids
             
             if (candidateBids.length > 0) {
-              const bestBid = candidateBids[0] // Already sorted by relevance then cost
+              const bestBid = candidateBids[0]! // Already sorted by relevance then cost, array length checked above
               
               // Auto-execute the best tool
               const toolResult = await this.handleProxyTool({
@@ -1031,7 +1032,11 @@ class FosToolProvider implements MCPToolProvider {
 
           case 'confirm':
             // Confirm mode: suggest best tool and ask for confirmation
-            const bestTool = bidSession.bids[0]
+            if (bidSession.bids.length === 0) {
+              response.message += ' No tools available for this task.'
+              break
+            }
+            const bestTool = bidSession.bids[0]!
             response.message += ` I recommend using "${bestTool.toolName}" from ${bestTool.serverName}.`
             response.recommendedTool = {
               bidId: bestTool.bidId,

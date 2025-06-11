@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { prisma } from './prismaClient'
 import { generateMCPEmbedding, generateMCPEmbeddingsBatch, searchMCPServers, searchMCPTools } from './embedding'
+import { getRequiredParamAsInt } from './utils/validation'
 
 interface MCPServerCreateRequest {
   name: string
@@ -63,7 +64,7 @@ export const getMCPServer = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
+    const serverId = getRequiredParamAsInt(req, 'id')
 
     const server = await prisma.mCPServerModel.findFirst({
       where: { 
@@ -102,9 +103,6 @@ export const createMCPServer = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'MCP server with this name already exists' })
     }
 
-    // Generate embedding for description if provided
-    const descriptionEmbedding = await generateMCPEmbedding(description || null)
-
     // Create the server
     const server = await prisma.mCPServerModel.create({
       data: {
@@ -113,8 +111,7 @@ export const createMCPServer = async (req: Request, res: Response) => {
         endpoint,
         credentials: credentials || {},
         status: 'disconnected',
-        public: isPublic || false,
-        descriptionEmbedding: descriptionEmbedding
+        public: isPublic || false
       }
     })
 
@@ -139,7 +136,7 @@ export const updateMCPServer = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
+    const serverId = getRequiredParamAsInt(req, 'id')
     const { name, description, endpoint, status, credentials, capabilities, public: isPublic }: MCPServerUpdateRequest = req.body
 
     // Check if server exists and belongs to user
@@ -194,7 +191,7 @@ export const deleteMCPServer = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
+    const serverId = getRequiredParamAsInt(req, 'id')
 
     // Check if server exists and belongs to user
     const existingServer = await prisma.mCPServerModel.findFirst({
@@ -223,7 +220,7 @@ export const testMCPConnection = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
+    const serverId = getRequiredParamAsInt(req, 'id')
 
     // Check if server exists and belongs to user
     const server = await prisma.mCPServerModel.findFirst({
@@ -358,7 +355,7 @@ export const getMCPServerTools = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
+    const serverId = getRequiredParamAsInt(req, 'id')
 
     // Check if user has access to this server
     const access = await prisma.userMCPServerAccessModel.findFirst({
@@ -386,7 +383,7 @@ export const addMCPServerTool = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
+    const serverId = getRequiredParamAsInt(req, 'id')
     const { name, description, inputSchema, outputSchema } = req.body
 
     if (!name) {
@@ -411,17 +408,13 @@ export const addMCPServerTool = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Tool with this name already exists on this server' })
     }
 
-    // Generate embedding for description
-    const descriptionEmbedding = await generateMCPEmbedding(description || null)
-
     const tool = await prisma.mCPToolModel.create({
       data: {
         serverId,
         name,
         description: description || '',
         inputSchema: inputSchema || {},
-        outputSchema: outputSchema || {},
-        descriptionEmbedding: descriptionEmbedding
+        outputSchema: outputSchema || {}
       }
     })
 
@@ -437,8 +430,8 @@ export const updateMCPServerTool = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
-    const toolId = parseInt(req.params.toolId)
+    const serverId = getRequiredParamAsInt(req, 'id')
+    const toolId = getRequiredParamAsInt(req, 'toolId')
     const { name, description, inputSchema, outputSchema } = req.body
 
     // Check if user has admin access to this server
@@ -459,20 +452,11 @@ export const updateMCPServerTool = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Tool not found' })
     }
 
-    // Generate new embedding if description changed
-    let descriptionEmbedding = existingTool.descriptionEmbedding
-    if (description !== undefined && description !== existingTool.description) {
-      descriptionEmbedding = await generateMCPEmbedding(description || null)
-    }
-
     const updateData: any = {}
     if (name !== undefined) updateData.name = name
     if (description !== undefined) updateData.description = description
     if (inputSchema !== undefined) updateData.inputSchema = inputSchema
     if (outputSchema !== undefined) updateData.outputSchema = outputSchema
-    if (descriptionEmbedding !== existingTool.descriptionEmbedding) {
-      updateData.descriptionEmbedding = descriptionEmbedding
-    }
 
     const tool = await prisma.mCPToolModel.update({
       where: { id: toolId },
@@ -491,8 +475,8 @@ export const deleteMCPServerTool = async (req: Request, res: Response) => {
   try {
     const claims = (req as any).claims
     const userId = await getUserIdFromClaims(claims)
-    const serverId = parseInt(req.params.id)
-    const toolId = parseInt(req.params.toolId)
+    const serverId = getRequiredParamAsInt(req, 'id')
+    const toolId = getRequiredParamAsInt(req, 'toolId')
 
     // Check if user has admin access to this server
     const access = await prisma.userMCPServerAccessModel.findFirst({

@@ -1,27 +1,4 @@
 import { Delta, DiffOptions } from "@n1ru4l/json-patch-plus"
-import { getGlobal } from "../frontend/App"
-
-
-export type FosReactGlobal = ReturnType<typeof getGlobal>
-
-export type FosReactOptions = Partial<{
-  canPromptGPT: boolean,
-  promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number }) => Promise<{
-    choices: { message: { content: string, role: string }, finishReason: string }[]
-  }>,
-  toast: (toastOpts: {
-    title: string,
-    description: string,
-    duration: number
-  }) => void,
-  canUndo: boolean,
-  undo: () => void,
-  canRedo: boolean,
-  redo: () => void,
-
-  theme: "light" | "dark" | "system",
-  locked: boolean
-}>
 
 
 export interface TrellisSerializedData {
@@ -302,7 +279,24 @@ export type LoginResult = {
 export type ContextType = {
   data: AppStateLoaded,
   setData: (data: AppStateLoaded) => void,
-  options: FosReactOptions,
+  options: Partial<{
+    canPromptGPT: boolean,
+    promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number }) => Promise<{
+      choices: { message: { content: string, role: string }, finishReason: string }[]
+    }>,
+    toast: (toastOpts: {
+      title: string,
+      description: string,
+      duration: number
+    }) => void,
+    canUndo: boolean,
+    undo: () => void,
+    canRedo: boolean,
+    redo: () => void,
+
+    theme: "light" | "dark" | "system",
+    locked: boolean
+  }>,
   nodeRoute: FosPath,
   dialogueProps: {
     loading: boolean,

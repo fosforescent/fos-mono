@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from "react"
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -8,17 +8,17 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/frontend/components/ui/card"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@/frontend/components/ui/tabs"
+} from "@/components/ui/tabs"
 
-import { Checkbox } from "@/frontend/components/ui/checkbox"
+import { Checkbox } from "@/components/ui/checkbox"
 
 import {
   User,
@@ -39,20 +39,20 @@ import {
 
 import _ from 'lodash'
 
-import { AppState, FosReactOptions } from "@/shared/types"
-import { getActions } from "@/frontend/lib/actions"
+import { AppState, FosReactOptions } from "@fosforescent/shared/types"
+import { getActions } from "@/lib/actions"
 
 
 
 
-export const SettingsComponent = ({ 
+export const SettingsComponent = ({
   setMessage,
   setShowClearData,
   setShowEmailConfirm,
   data,
   setData,
   options
- } : { 
+}: {
   setMessage: (message: { messageType: string, message: string }) => void
   setShowClearData: (showClearData: boolean) => void
   setShowEmailConfirm: (showEmailConfirm: { open: boolean, email: string }) => void
@@ -65,14 +65,14 @@ export const SettingsComponent = ({
   const appState = data
   const setAppState = setData
 
-  const {   clearData, confirmEmailInit, confirmEmail, logOut} = getActions(options, data, setData)
+  const { clearData, confirmEmailInit, confirmEmail, logOut } = getActions(options, data, setData)
 
   const [isEditing, setIsEditing] = useState(false)
   const [advancedSettings, setAdvancedSettings] = useState(false)
   const [email, setEmail] = useState(appState.auth.email || '')
   const [isValid, setIsValid] = useState(true)
 
-  
+
 
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export const SettingsComponent = ({
 
 
   const emailConfirmed = appState.info.emailConfirmed
-  
+
 
   const handleResetData = () => {
     setShowClearData(true)
@@ -92,7 +92,7 @@ export const SettingsComponent = ({
     const emailRegex = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i
     const valid = emailRegex.test(email)
     setIsValid(valid)
-    if(!valid) {
+    if (!valid) {
       setMessage({ messageType: "fail", message: "Invalid email" })
     } else {
       setMessage({ messageType: "none", message: "" })
@@ -130,7 +130,7 @@ export const SettingsComponent = ({
       })
 
       setMessage({ messageType: "success", message: "Email updated.  Confirmation email sent" })
-    } 
+    }
     setIsEditing(false)
   }
 
@@ -140,48 +140,48 @@ export const SettingsComponent = ({
     <><CardContent className="space-y-2 pt-3">
       <div className="space-y-1">
         <Label htmlFor="email">Email {!emailConfirmed && "(not confirmed)"}</Label>
-        <Input 
-          name="email" 
-          id="email" 
+        <Input
+          name="email"
+          id="email"
           value={email}
           className={`${!emailConfirmed && "border-destructive"} text-base`}
           disabled={!isEditing}
           onChange={handleEmailChange} />
       </div>
-      {!emailConfirmed && (<Button 
-          className="bg-orange-900 text-white" 
-          onClick={handleEmailConfirmClick}>
-            Resend Email Confirmation
-        </Button>)}
+      {!emailConfirmed && (<Button
+        className="bg-orange-900 text-white"
+        onClick={handleEmailConfirmClick}>
+        Resend Email Confirmation
+      </Button>)}
     </CardContent>
-    <CardFooter>
-      <div className="flex justify-around w-full basis-full">
-        <div className="basis-1/3">
-          {isEditing 
-            ? (<Button className="bg-emerald-900 text-white" onClick={handleSaveButtonClick} title="Save Email" ><SaveIcon /></Button>)
-            : (<Button className="bg-blue-900 text-white" onClick={handleEditButtonClick} title="Edit Email" ><Edit2 /></Button>
-            )}
+      <CardFooter>
+        <div className="flex justify-around w-full basis-full">
+          <div className="basis-1/3">
+            {isEditing
+              ? (<Button className="bg-emerald-900 text-white" onClick={handleSaveButtonClick} title="Save Email" ><SaveIcon /></Button>)
+              : (<Button className="bg-blue-900 text-white" onClick={handleEditButtonClick} title="Edit Email" ><Edit2 /></Button>
+              )}
+          </div>
+
+          <div className="basis-1/3">
+            <Button onClick={() => setAdvancedSettings(!advancedSettings)} title="Advanced Settings"><ShieldQuestion /></Button>
+
+          </div>
         </div>
-        
-        <div className="basis-1/3">
-          <Button onClick={() => setAdvancedSettings(!advancedSettings)} title="Advanced Settings"><ShieldQuestion /></Button>
-        
+      </CardFooter>
+      {advancedSettings && <CardFooter>
+        <div className="flex justify-around w-full basis-full">
+          <div>
+            <Button variant="destructive" name="reset_data" onClick={handleResetData} title="Reset Data"><RotateCcw /></Button>
+            <br /><Label htmlFor="reset_data">Reset Data</Label>
+          </div>
         </div>
-      </div>
-    </CardFooter>
-    {advancedSettings && <CardFooter>
-      <div className="flex justify-around w-full basis-full">
-        <div>
-          <Button variant="destructive" name="reset_data" onClick={handleResetData} title="Reset Data"><RotateCcw /></Button>
-          <br /><Label htmlFor="reset_data">Reset Data</Label>
-        </div>
-      </div>
-    </CardFooter>}
+      </CardFooter>}
     </>
-  : <CardContent className="space-y-2 pt-3">
-    <div className="space-y-1">
-      Loading...
+    : <CardContent className="space-y-2 pt-3">
+      <div className="space-y-1">
+        Loading...
       </div>
-  </CardContent>)
+    </CardContent>)
 
 }

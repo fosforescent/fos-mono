@@ -6,7 +6,7 @@ Home page and dashboard components providing navigation, browsing, and overview 
 
 ### Dependencies
 - **React**: Component framework and hooks
-- **@/shared/types**: Shared type definitions
+- **@fosforescent/shared/types**: Shared type definitions
 - **../ui/\***: UI component library
 - **Navigation Libraries**: Likely routing and navigation utilities
 

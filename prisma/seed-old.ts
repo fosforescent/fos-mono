@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client'
 
 import { generateSeedContext } from './seedData'
 
-import { FosDataContent } from '@/shared/types';
+import { FosDataContent } from '@fosforescent/shared/types';
 import { createSeedUser } from '@/backend/util';
 
 

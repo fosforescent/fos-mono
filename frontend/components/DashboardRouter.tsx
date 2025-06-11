@@ -1,5 +1,5 @@
 import React from 'react'
-import { useProps } from '@/frontend/App'
+import { useProps } from '@/App'
 import { Dashboard } from './Dashboard'
 import { AdminDashboard } from './admin/AdminDashboard'
 

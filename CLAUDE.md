@@ -26,8 +26,9 @@ The heart of Fosforescent is a content-addressable graph implementation in `shar
 
 ### Key Technologies
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Radix UI components
-- **Backend**: Node.js, Express, Prisma, PostgreSQL with vector extension
-- **Database**: PostgreSQL with pgvector for embeddings
+- **Backend**: Node.js, Express, Prisma, PostgreSQL
+- **Vector Database**: Qdrant for semantic search and vector embeddings
+- **Database**: PostgreSQL for relational data, Qdrant for vector operations
 - **Build**: Vite with separate frontend/backend builds, Docker multi-stage builds
 - **Testing**: Jest with React Testing Library, Playwright for E2E testing
 - **Infrastructure**: Docker Compose, Terraform for cloud deployment
@@ -117,15 +118,18 @@ The project uses multiple build systems:
 - Multi-stage Dockerfiles for both frontend and backend
 - Frontend Dockerfile: Builds React app and serves via Node.js
 - Backend Dockerfile: Builds TypeScript and runs production server
-- Docker Compose: Orchestrates services with PostgreSQL database
+- Docker Compose: Orchestrates services with PostgreSQL and Qdrant databases
 
 ## Database Schema
 
-Uses Prisma with PostgreSQL and pgvector extension:
-- **UserModel**: User accounts with Stripe integration
-- **FosNodeModel**: Content-addressable graph nodes
-- **NodeVectorModel**: Vector embeddings for semantic search
-- Email and authentication event tracking
+Uses multiple database systems:
+- **PostgreSQL** (via Prisma): Relational data including user accounts, graph nodes, and metadata
+  - **UserModel**: User accounts with Stripe integration
+  - **FosNodeModel**: Content-addressable graph nodes
+  - Email and authentication event tracking
+- **Qdrant**: Vector database for semantic search and embeddings
+  - 3072-dimensional vectors using OpenAI text-embedding-3-large
+  - Automatic collection initialization and content indexing
 
 ## Testing Strategy
 
@@ -144,7 +148,7 @@ Uses Prisma with PostgreSQL and pgvector extension:
 - The graph system uses cryptographic hashing (CID) for content addressing
 - Nodes are immutable - mutations create new nodes
 - The system supports both local and planned distributed operation via DHT
-- Vector embeddings are used for semantic search and AI integration
+- Vector embeddings are stored in Qdrant for high-performance semantic search
 - Authentication uses JWT with Stripe for payments/subscriptions
 
 ## Directory CLAUDE.md Files

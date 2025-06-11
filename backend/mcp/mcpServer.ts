@@ -29,12 +29,12 @@ export interface MCPResourceProvider {
 
 export interface MCPToolProvider {
   listTools(): Promise<MCPTool[]>
-  callTool(name: string, arguments?: any): Promise<{ content: any[] }>
+  callTool(name: string, args?: any): Promise<{ content: any[] }>
 }
 
 export interface MCPPromptProvider {
   listPrompts(): Promise<MCPPrompt[]>
-  getPrompt(name: string, arguments?: any): Promise<{ description?: string; messages: MCPMessage[] }>
+  getPrompt(name: string, args?: any): Promise<{ description?: string; messages: MCPMessage[] }>
 }
 
 export class MCPServerInstance extends EventEmitter {
@@ -96,7 +96,7 @@ export class MCPServerInstance extends EventEmitter {
       console.error('MCP Server: Error handling message:', error)
       return JSON.stringify({
         jsonrpc: '2.0',
-        id: null,
+        id: 0,
         error: {
           code: MCP_ERROR_CODES.PARSE_ERROR,
           message: 'Parse error'

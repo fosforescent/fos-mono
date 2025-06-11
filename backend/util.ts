@@ -6,20 +6,20 @@ import {
   FosNodesData,
   TrellisSerializedData,
 
-} from "@/shared/types";
+} from "@fosforescent/shared/types";
 
 
 
 import { UserModel, FosNodeModel, PrismaClient } from "@prisma/client";
 
-import { FosStore, hashContent } from "@/shared/dag-implementation/store";
+import { FosStore, hashContent } from "@fosforescent/shared/dag-implementation/store";
 import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
 
 import { Prisma } from '@prisma/client';
 import { generateLinkToken } from "./email/email";
 import { hashPassword } from "./auth/register";
-import { defaultTrellisData } from "@/shared/defaults";
-import { validateNodeData, validateTrellisData } from "@/shared/utils";
+import { defaultTrellisData } from "@fosforescent/shared/defaults";
+import { validateNodeData, validateTrellisData } from "@fosforescent/shared/utils";
 import { get } from "http";
 import { th } from "date-fns/locale";
 

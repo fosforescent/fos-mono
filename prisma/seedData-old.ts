@@ -1,5 +1,5 @@
-import { FosStore } from "@/shared/dag-implementation/store";
-import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@/shared/types";
+import { FosStore } from "@fosforescent/shared/dag-implementation/store";
+import { FosContextData, FosNodeContent, FosNodeId, FosNodesData } from "@fosforescent/shared/types";
 
 export type GeneratedResult = FosStore
 

@@ -3,8 +3,8 @@ import { BrainCircuit, ChevronLeft, ChevronRight, Timer } from 'lucide-react';
 import React, { useEffect, useRef, useState, DetailedHTMLProps, HTMLAttributes } from 'react'
 
 import { SelectionPath, FosDataContent, FosReactOptions } from "../../../shared/types"
-import { Button } from '@/frontend/components/ui/button';
-import { AppState, FosPath } from '@/shared/types';
+import { Button } from '@/components/ui/button';
+import { AppState, FosPath } from '@fosforescent/shared/types';
 
 
 
@@ -28,7 +28,7 @@ const parseDurationFromMs = (time: number) => {
   return { years, months, weeks, days, hours, minutes, seconds, milliseconds };
 };
 
-const durationToMs = (time: {milliseconds?: number, seconds?: number, minutes?: number, hours?: number, days?: number, weeks?: number, months?: number, years?: number}) => {
+const durationToMs = (time: { milliseconds?: number, seconds?: number, minutes?: number, hours?: number, days?: number, weeks?: number, months?: number, years?: number }) => {
   // turn object into int number of milliseconds
   try {
     const milliseconds = time.milliseconds || 0
@@ -39,7 +39,7 @@ const durationToMs = (time: {milliseconds?: number, seconds?: number, minutes?: 
     const weeks = (time.weeks || 0) * 7 * 24 * 60 * 60 * 1000
     const months = (time.months || 0) * 30 * 24 * 60 * 60 * 1000
     const years = (time.years || 0) * 365 * 24 * 60 * 60 * 1000
-    return milliseconds + seconds + minutes + hours + days + weeks + months + years  
+    return milliseconds + seconds + minutes + hours + days + weeks + months + years
   } catch (e) {
     console.error('Error converting duration to ms', time, e)
     throw e
@@ -47,7 +47,7 @@ const durationToMs = (time: {milliseconds?: number, seconds?: number, minutes?: 
 }
 
 export const durationDisplay = (time: number) => {
-  
+
   const {
     years, months, weeks, days, hours, minutes, seconds, milliseconds
   } = parseDurationFromMs(time)
@@ -63,10 +63,10 @@ export const durationDisplay = (time: number) => {
     { label: 'Milliseconds', name: 'milliseconds', value: milliseconds }
   ];
 
-  
+
   const indexToUse = inputs.findIndex(({ value }) => value > 0)
-  const actualIndex = indexToUse > -1 
-    ? indexToUse > inputs.length - 2 ? indexToUse - 2 
+  const actualIndex = indexToUse > -1
+    ? indexToUse > inputs.length - 2 ? indexToUse - 2
       : indexToUse < 1 ? indexToUse : indexToUse - 1
     : 5
 
@@ -74,28 +74,28 @@ export const durationDisplay = (time: number) => {
 
   const timeString = inputsToUse.reduce((acc, { label, value, name }) => {
 
-    if(name === 'milliseconds'){
+    if (name === 'milliseconds') {
       return `.${(milliseconds / 1000).toFixed(3).slice(2)}`
-    } else if (name === 'seconds'){
+    } else if (name === 'seconds') {
       const secondsString = seconds < 10 ? `0${seconds}` : `${seconds}`
       return acc ? `${acc}:${secondsString}` : `${value}`
-    } else if (name === 'minutes'){
+    } else if (name === 'minutes') {
       const minutesString = minutes < 10 ? `0${minutes}` : `${minutes}`
       return acc ? `${acc}:${minutesString}` : `${value}`
-    } else if (name === 'hours'){
-      if (value <= 0 ){ return acc }
+    } else if (name === 'hours') {
+      if (value <= 0) { return acc }
       return acc ? `${acc} ${value}` : `${value}`
-    } else if (name === 'days'){
-      if (value <= 0 ){ return acc }
+    } else if (name === 'days') {
+      if (value <= 0) { return acc }
       return acc ? `${acc} ${value} d` : `${value} d`
-    } else if (name === 'weeks'){
-      if (value <= 0 ){ return acc }
+    } else if (name === 'weeks') {
+      if (value <= 0) { return acc }
       return acc ? `${acc} ${value} wk` : `${value} wk`
-    } else if (name === 'months'){
-      if (value <= 0 ){ return acc }
+    } else if (name === 'months') {
+      if (value <= 0) { return acc }
       return acc ? `${acc} ${value} mo` : `${value} mo`
-    } else if (name === 'years'){
-      if (value <= 0 ){ return acc }
+    } else if (name === 'years') {
+      if (value <= 0) { return acc }
       return acc ? `${acc} ${value} yr` : `${value} yr`
     }
 
@@ -108,16 +108,16 @@ export const durationDisplay = (time: number) => {
 
 
 
-export const DurationInput = ({ 
-  value: time, 
-  onUpdate, 
+export const DurationInput = ({
+  value: time,
+  onUpdate,
   disabled = false,
   ...props
-} : { 
-  value: number, 
+}: {
+  value: number,
   onUpdate: (value: number) => void,
-  disabled?: boolean,  
-} & Partial<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>> ) => {
+  disabled?: boolean,
+} & Partial<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>>) => {
 
 
 
@@ -142,8 +142,8 @@ export const DurationInput = ({
 
 
   const indexToUse = inputs.findIndex(({ value }) => value > 0)
-  const actualIndex = indexToUse > -1 
-    ? indexToUse > inputs.length - 2 ? indexToUse - 2 
+  const actualIndex = indexToUse > -1
+    ? indexToUse > inputs.length - 2 ? indexToUse - 2
       : indexToUse < 1 ? indexToUse : indexToUse - 1
     : 5
 
@@ -153,8 +153,8 @@ export const DurationInput = ({
 
   useEffect(() => {
     const indexToUse = inputs.findIndex(({ value }) => value > 0)
-    const actualIndex = indexToUse > -1 
-      ? indexToUse > inputs.length - 2 ? indexToUse - 2 
+    const actualIndex = indexToUse > -1
+      ? indexToUse > inputs.length - 2 ? indexToUse - 2
         : indexToUse < 1 ? indexToUse : indexToUse - 1
       : 5
     setStartIndex(actualIndex)
@@ -203,9 +203,9 @@ export const DurationInput = ({
 
 
   return (
-    <div className={`border-primary border rounded-md ${props.className || ''}`} style={{...(props.style || {}), ...{}}}>
+    <div className={`border-primary border rounded-md ${props.className || ''}`} style={{ ...(props.style || {}), ...{} }}>
       <div className='flex'>
-        {(visibleColumns < (inputs.length -1)) && <button onClick={handlePrev} disabled={startIndex === 0}>
+        {(visibleColumns < (inputs.length - 1)) && <button onClick={handlePrev} disabled={startIndex === 0}>
           <ChevronLeft className={`border-r ${startIndex <= 0 ? "text-primary/30" : ""}`} />
         </button>}
         <div ref={containerRef} style={{
@@ -243,13 +243,13 @@ export const DurationInput = ({
 
 
 
-const ResourceComponent = ({ 
+const ResourceComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: [string, string][]
@@ -267,20 +267,20 @@ const ResourceComponent = ({
   const handleDurationEdit = (value: DurationData) => {
     setDurationInfo(node.fosNode(), value)
   }
-  
+
   const handleMinDurationPath = async () => {
     node.fosNode().setPath(durationInfo.minPaths)
     // console.log('min path', durationInfo.minPaths)
 
   }
-  
+
   const handleMaxDurationPath = async () => {
     node.fosNode().setPath(durationInfo.maxPaths)
     // console.log('max path', durationInfo.maxPaths)
   }
-  
 
-  
+
+
 
 
   const systemPromptBase = `Take a deep breath.  Please respond only with a single valid JSON object with the optional keys "milliseconds", "seconds", "minutes", "hours", "days", "weeks", "months", or "years" and a number value`
@@ -306,15 +306,15 @@ const ResourceComponent = ({
       years?: number
     }
 
-  
-    
-    return { plannedMarginal: durationToMs(resultParsed), entries: [] } 
-  } 
+
+
+    return { plannedMarginal: durationToMs(resultParsed), entries: [] }
+  }
 
 
 
   const handleSuggestDuration = async () => {
-    if (options?.canPromptGPT && options?.promptGPT){
+    if (options?.canPromptGPT && options?.promptGPT) {
       try {
         await suggestRecursive(options.promptGPT, node.fosNode(), {
           systemPromptBase,
@@ -326,20 +326,20 @@ const ResourceComponent = ({
           getResourceInfo: getDurationInfo,
           setResourceInfo: setDurationInfo,
           checkResourceInfo: checkDurationInfo,
-        } )
-  
+        })
+
       } catch (err) {
         options?.toast && options.toast({
           title: 'Error',
           description: `No suggestions could be generated: ${err}`,
           duration: 5000,
         })
-  
+
       }
 
     } else {
       console.error('No authedApi')
-      const err =  new Error('No authedApi')
+      const err = new Error('No authedApi')
       err.cause = 'unauthorized'
       throw err
     }
@@ -351,7 +351,7 @@ const ResourceComponent = ({
     <div className='flex flex-row justify-center items-center mx-auto flex-wrap' style={{ maxWidth: '600px' }}>
       <div className='items-center justify-center gap-1 flex items-center' style={{ width: '250px' }}>
         <Button variant={"secondary"} className='bg-emerald-900 inline-block w-14' onClick={handleSuggestDuration} title="Get estimated duration"><BrainCircuit /></Button>
-        <DurationInput value={durationInfo.marginal} onUpdate={(value) => handleDurationEdit({ plannedMarginal: value, entries: []})} className='' style={{
+        <DurationInput value={durationInfo.marginal} onUpdate={(value) => handleDurationEdit({ plannedMarginal: value, entries: [] })} className='' style={{
           width: '195px',
           display: 'inline-block',
         }} />
@@ -395,12 +395,12 @@ type DurationInfo = {
 export const getDurationInfo = (nodeRoute: FosPath, appState: AppStateLoaded["data"]): DurationInfo => {
 
 
-    
+
   const children = thisNode.getChildren()
 
 
   const reduceTaskDurations = (acc: DurationInfo, child: IFosNode, i: number): DurationInfo => {
-        
+
     const childDurationInfo = getDurationInfo(child)
     const childId = child.getId()
 
@@ -409,8 +409,8 @@ export const getDurationInfo = (nodeRoute: FosPath, appState: AppStateLoaded["da
       max: acc.max + childDurationInfo.max,
       average: acc.average + childDurationInfo.average,
       current: acc.current + childDurationInfo.current,
-      minPaths: {...acc.minPaths, [childId]: childDurationInfo.minPaths},
-      maxPaths: {...acc.maxPaths, [childId]: childDurationInfo.maxPaths},
+      minPaths: { ...acc.minPaths, [childId]: childDurationInfo.minPaths },
+      maxPaths: { ...acc.maxPaths, [childId]: childDurationInfo.maxPaths },
       marginal: acc.marginal
     }
     return result
@@ -420,7 +420,7 @@ export const getDurationInfo = (nodeRoute: FosPath, appState: AppStateLoaded["da
 
     const childDurationInfo = getDurationInfo(child)
 
-    const newAvg = ( ( acc.average * i ) + childDurationInfo.average ) / ( i + 1 )
+    const newAvg = ((acc.average * i) + childDurationInfo.average) / (i + 1)
 
     const isSelected = (thisNode.getData().option?.selectedIndex || 0) === i
 
@@ -435,8 +435,8 @@ export const getDurationInfo = (nodeRoute: FosPath, appState: AppStateLoaded["da
       max: acc.max > childDurationInfo.max ? acc.max : childDurationInfo.max,
       average: newAvg,
       current: isSelected ? childDurationInfo.current : acc.current,
-      minPaths: isMin ? { [childId] : childDurationInfo.minPaths } : acc.minPaths,
-      maxPaths: isMax ? { [childId] : childDurationInfo.maxPaths } : acc.maxPaths,
+      minPaths: isMin ? { [childId]: childDurationInfo.minPaths } : acc.minPaths,
+      maxPaths: isMax ? { [childId]: childDurationInfo.maxPaths } : acc.maxPaths,
       marginal: acc.marginal
     }
 
@@ -451,7 +451,7 @@ export const getDurationInfo = (nodeRoute: FosPath, appState: AppStateLoaded["da
     option: reduceOptionDurations
   }[thisType]
 
-  if (!reduceFunction){
+  if (!reduceFunction) {
     throw new Error(`Unsupported node type ${thisType}`)
   }
 
@@ -479,14 +479,14 @@ export const getDurationInfo = (nodeRoute: FosPath, appState: AppStateLoaded["da
 export const setDurationInfo = (node: IFosNode, value: DurationData) => {
   const nodeData = node.getData()
 
-  if (value){
+  if (value) {
     node.setData({
       ...nodeData,
       duration: {
         ...nodeData.duration,
         ...(value || {})
-      } 
-    })  
+      }
+    })
   }
 
 }
@@ -498,13 +498,13 @@ export const checkDurationInfo = (node: IFosNode) => {
 
 
 
-const DurationRowComponent = ({ 
+const DurationRowComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: [string, string][]

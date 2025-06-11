@@ -1,9 +1,9 @@
-import { FosExpression } from "@/shared/dag-implementation/expression"
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression"
 import { Input } from "../ui/input"
 import { Button } from "../ui/button"
 import { Send } from "lucide-react"
 import React from "react"
-import { AppState, AppStateLoaded, FosReactGlobal } from "@/shared/types"
+import { AppState, AppStateLoaded, FosReactGlobal } from "@fosforescent/shared/types"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
 
 export const ExpressionInput = ({
@@ -13,7 +13,7 @@ export const ExpressionInput = ({
   data,
   currentFilter,
   ...props
-} : {
+}: {
   options: FosReactGlobal
   data: AppStateLoaded
   setData: (state: AppStateLoaded) => void
@@ -27,17 +27,17 @@ export const ExpressionInput = ({
   const [selectedItemType, setSelectedItemType] = React.useState("todo")
 
   const activeFilter = currentFilter || expression.currentActivity()
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault() 
+    e.preventDefault()
     const itemTypeToCreate = activeFilter === "all" ? selectedItemType : activeFilter
-    
+
     if (itemTypeToCreate === "todo") {
       await expression.addTodo(newMessage)
     } else if (itemTypeToCreate === "comments") {
       await expression.addComment(newMessage)
     }
-    
+
     // Update the UI with the new data from the store - export from root to get all data
     const updatedData = expression.store.exportContext([])
     console.log('ExpressionInput: updatedData after todo creation:', updatedData)
@@ -49,7 +49,7 @@ export const ExpressionInput = ({
       ...data,
       data: updatedData
     })
-    
+
     setNewMessage("")
   }
 

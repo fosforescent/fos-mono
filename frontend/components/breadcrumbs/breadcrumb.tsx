@@ -1,13 +1,13 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import { ChevronRight, HomeIcon } from "lucide-react";
-import { Button } from "@/frontend/components/ui/button";
+import { Button } from "@/components/ui/button";
 
 
 
-import { AppState, FosNodesData, FosReactOptions, FosPath, AppStateLoaded, } from "@/shared/types";
-import { getActions } from "@/frontend/lib/actions";
-import { FosExpression } from "@/shared/dag-implementation/expression";
+import { AppState, FosNodesData, FosReactOptions, FosPath, AppStateLoaded, } from "@fosforescent/shared/types";
+import { getActions } from "@/lib/actions";
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression";
 
 
 

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { Button } from '@/frontend/components/ui/button'
-import { Input } from '@/frontend/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/frontend/components/ui/card'
-import { Badge } from '@/frontend/components/ui/badge'
-import { Switch } from '@/frontend/components/ui/switch'
-import { Textarea } from '@/frontend/components/ui/textarea'
-import { ScrollArea } from '@/frontend/components/ui/scroll-area'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/frontend/components/ui/dialog'
-import { Label } from '@/frontend/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/frontend/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   Server, 
   Plus, 
@@ -26,7 +26,7 @@ import {
   Zap,
   Settings
 } from 'lucide-react'
-import { useToast } from '@/frontend/components/ui/use-toast'
+import { useToast } from '@/components/ui/use-toast'
 
 interface MCPServer {
   id: number

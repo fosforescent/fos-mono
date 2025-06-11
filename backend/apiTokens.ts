@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { prisma } from './prismaClient'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
+import { getRequiredParamAsInt, withValidation } from './utils/validation'
 
 interface CreateApiTokenRequest {
   name: string
@@ -147,15 +148,14 @@ export const createApiToken = async (req: Request, res: Response) => {
 }
 
 // Update an API token
-export const updateApiToken = async (req: Request, res: Response) => {
-  try {
-    const claims = (req as any).claims
-    const userId = await getUserIdFromClaims(claims)
-    const tokenId = parseInt(req.params.id)
-    const { name, scopes, isActive }: UpdateApiTokenRequest = req.body
+export const updateApiToken = withValidation(async (req: Request, res: Response) => {
+  const claims = (req as any).claims
+  const userId = await getUserIdFromClaims(claims)
+  const tokenId = getRequiredParamAsInt(req, 'id')
+  const { name, scopes, isActive }: UpdateApiTokenRequest = req.body
 
-    // Check if token exists and belongs to user
-    const existingToken = await prisma.apiTokenModel.findFirst({
+  // Check if token exists and belongs to user
+  const existingToken = await prisma.apiTokenModel.findFirst({
       where: { 
         id: tokenId,
         userId 
@@ -201,19 +201,14 @@ export const updateApiToken = async (req: Request, res: Response) => {
       }
     })
 
-    res.json({ token: updatedToken })
-  } catch (error) {
-    console.error('Error updating API token:', error)
-    res.status(500).json({ error: 'Failed to update API token' })
-  }
-}
+  return res.json({ token: updatedToken })
+})
 
 // Delete an API token
-export const deleteApiToken = async (req: Request, res: Response) => {
-  try {
-    const claims = (req as any).claims
-    const userId = await getUserIdFromClaims(claims)
-    const tokenId = parseInt(req.params.id)
+export const deleteApiToken = withValidation(async (req: Request, res: Response) => {
+  const claims = (req as any).claims
+  const userId = await getUserIdFromClaims(claims)
+  const tokenId = getRequiredParamAsInt(req, 'id')
 
     // Check if token exists and belongs to user
     const existingToken = await prisma.apiTokenModel.findFirst({
@@ -231,19 +226,14 @@ export const deleteApiToken = async (req: Request, res: Response) => {
       where: { id: tokenId }
     })
 
-    res.json({ message: 'API token deleted successfully' })
-  } catch (error) {
-    console.error('Error deleting API token:', error)
-    res.status(500).json({ error: 'Failed to delete API token' })
-  }
-}
+  return res.json({ message: 'API token deleted successfully' })
+})
 
 // Revoke an API token (set to inactive)
-export const revokeApiToken = async (req: Request, res: Response) => {
-  try {
-    const claims = (req as any).claims
-    const userId = await getUserIdFromClaims(claims)
-    const tokenId = parseInt(req.params.id)
+export const revokeApiToken = withValidation(async (req: Request, res: Response) => {
+  const claims = (req as any).claims
+  const userId = await getUserIdFromClaims(claims)
+  const tokenId = getRequiredParamAsInt(req, 'id')
 
     // Check if token exists and belongs to user
     const existingToken = await prisma.apiTokenModel.findFirst({
@@ -272,12 +262,8 @@ export const revokeApiToken = async (req: Request, res: Response) => {
       }
     })
 
-    res.json({ token: updatedToken, message: 'API token revoked successfully' })
-  } catch (error) {
-    console.error('Error revoking API token:', error)
-    res.status(500).json({ error: 'Failed to revoke API token' })
-  }
-}
+  return res.json({ token: updatedToken, message: 'API token revoked successfully' })
+})
 
 // Verify and authenticate an API token
 export async function authenticateApiToken(token: string): Promise<{ userId: number; scopes: string[] } | null> {

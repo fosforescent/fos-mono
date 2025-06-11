@@ -107,10 +107,10 @@ export class ToolBidManager {
             serverId: server.id,
             serverName: server.name,
             toolName: tool.name,
-            toolDescription: tool.description,
+            toolDescription: tool.description ?? undefined,
             tokenCost,
             relevanceScore,
-            bidReason: this.generateBidReason(taskDescription, tool.name, tool.description)
+            bidReason: this.generateBidReason(taskDescription, tool.name, tool.description ?? undefined)
           }
 
           bids.push(bid)
@@ -204,10 +204,10 @@ export class ToolBidManager {
         serverId: bid.serverId,
         serverName: bid.server.name,
         toolName: bid.toolName,
-        toolDescription: bid.toolDescription,
+        toolDescription: bid.toolDescription ?? undefined,
         tokenCost: bid.tokenCost,
         relevanceScore: bid.relevanceScore ? parseFloat(bid.relevanceScore.toString()) : undefined,
-        bidReason: bid.bidReason
+        bidReason: bid.bidReason ?? undefined
       })),
       createdAt: session.createdAt
     }
@@ -260,25 +260,48 @@ export class ToolBidManager {
           }
         },
         _count: {
-          bidId: true
-        },
-        _sum: {
-          isChosen: true
+          _all: true
         }
       })
+
+      // Get chosen counts per tool
+      const chosenToolStats = await tx.toolBidModel.groupBy({
+        by: ['serverId', 'toolName'],
+        where: {
+          isChosen: true,
+          session: {
+            userId,
+            createdAt: { gte: startDate }
+          }
+        },
+        _count: {
+          _all: true
+        }
+      })
+
+      // Create a map for quick lookup of chosen counts
+      const chosenCountMap = new Map(
+        chosenToolStats.map(stat => 
+          [`${stat.serverId}-${stat.toolName}`, stat._count._all]
+        )
+      )
 
       return {
         totalSessions,
         totalBids,
         chosenBids,
         choiceRate: totalBids > 0 ? (chosenBids / totalBids) * 100 : 0,
-        toolStats: toolStats.map(stat => ({
-          serverId: stat.serverId,
-          toolName: stat.toolName,
-          totalBids: stat._count.bidId,
-          chosenCount: stat._sum.isChosen || 0,
-          choiceRate: stat._count.bidId > 0 ? ((stat._sum.isChosen || 0) / stat._count.bidId) * 100 : 0
-        }))
+        toolStats: toolStats.map(stat => {
+          const totalBids = stat._count._all
+          const chosenCount = chosenCountMap.get(`${stat.serverId}-${stat.toolName}`) || 0
+          return {
+            serverId: stat.serverId,
+            toolName: stat.toolName,
+            totalBids,
+            chosenCount,
+            choiceRate: totalBids > 0 ? (chosenCount / totalBids) * 100 : 0
+          }
+        })
       }
     })
 

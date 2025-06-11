@@ -116,7 +116,7 @@ export const postSubscriptionWebhook = async (req: Request, res: Response) => {
       await handlePayoutPaid(paidPayout)
       break
     case 'payment_intent.succeeded':
-      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const paymentIntent = data.object as Stripe.PaymentIntent;
       if (paymentIntent.application_fee_amount) {
         await prisma.platformFee.create({
           data: {
@@ -130,7 +130,7 @@ export const postSubscriptionWebhook = async (req: Request, res: Response) => {
       break;
 
     case 'charge.failed':
-      const charge = event.data.object as Stripe.Charge;
+      const charge = data.object as Stripe.Charge;
       // Handle failed platform fee collection
       await handleFailedCharge(charge);
       break;
@@ -191,7 +191,7 @@ async function handleBankAccountCreated(bankAccount: Stripe.BankAccount) {
 
 async function handlePayoutCreated(payout: Stripe.Payout) {
   console.log('Payout created:', payout.id)
-  await prisma.payout.create({
+  await prisma.stripePayoutModel.create({
     data: {
       payout_id: payout.id,
       amount: payout.amount,
@@ -208,7 +208,7 @@ async function handlePayoutCreated(payout: Stripe.Payout) {
 
 async function handlePayoutFailed(payout: Stripe.Payout) {
   console.log('Payout failed:', payout.id)
-  await prisma.payout.update({
+  await prisma.stripePayoutModel.update({
     where: { payout_id: payout.id },
     data: {
       status: 'failed',
@@ -219,7 +219,7 @@ async function handlePayoutFailed(payout: Stripe.Payout) {
 
 async function handlePayoutPaid(payout: Stripe.Payout) {
   console.log('Payout paid:', payout.id)
-  await prisma.payout.update({
+  await prisma.stripePayoutModel.update({
     where: { payout_id: payout.id },
     data: {
       status: 'paid',
@@ -231,7 +231,7 @@ async function handlePayoutPaid(payout: Stripe.Payout) {
 async function handleFailedCharge(charge: Stripe.Charge) {
   // Update user's payment status
   await prisma.userModel.update({
-    where: { stripe_connected_account_id: charge.account as string },
+    where: { stripe_connected_account_id: charge.on_behalf_of as string },
     data: {
       payment_status: 'failed',
       last_payment_error: charge.failure_message
@@ -271,7 +271,12 @@ async function handleSessionCompleted (session: Stripe.Checkout.Session) {
 }
 
 async function handleTokenPurchaseCompleted(session: Stripe.Checkout.Session) {
-  const { userId, tokenAmount, purchaseId } = session.metadata!
+  if (!session.metadata?.userId || !session.metadata?.tokenAmount || !session.metadata?.purchaseId) {
+    console.error('Missing required metadata in token purchase session:', session.id)
+    return
+  }
+  
+  const { userId, tokenAmount, purchaseId } = session.metadata
   
   console.log('Token purchase completed:', {
     sessionId: session.id,

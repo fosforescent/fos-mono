@@ -5,8 +5,8 @@
 Tree-based hierarchical view components for displaying and interacting with graph structures in a collapsible tree format within the Fosforescent workflow system.
 
 ### Dependencies
-- **@/shared/dag-implementation/expression**: Core expression and graph system
-- **@/shared/types**: Shared type definitions
+- **@fosforescent/shared/dag-implementation/expression**: Core expression and graph system
+- **@fosforescent/shared/types**: Shared type definitions
 - **../ui/\***: UI component library
 - **React**: Component framework and hooks
 - **Tree Navigation Libraries**: Likely tree manipulation utilities

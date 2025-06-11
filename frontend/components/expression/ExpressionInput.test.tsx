@@ -2,13 +2,13 @@ import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { ExpressionInput } from './ExpressionInput'
-import { FosExpression } from '@/shared/dag-implementation/expression'
-import { FosStore } from '@/shared/dag-implementation/store'
-import { AppStateLoaded, FosReactGlobal } from '@/shared/types'
+import { FosExpression } from '@fosforescent/shared/dag-implementation/expression'
+import { FosStore } from '@fosforescent/shared/dag-implementation/store'
+import { AppStateLoaded, FosReactGlobal } from '@fosforescent/shared/types'
 
 // Mock the dependencies
-jest.mock('@/shared/dag-implementation/expression')
-jest.mock('@/shared/dag-implementation/store')
+jest.mock('@fosforescent/shared/dag-implementation/expression')
+jest.mock('@fosforescent/shared/dag-implementation/store')
 
 describe('ExpressionInput', () => {
   let mockExpression: jest.Mocked<FosExpression>
@@ -113,7 +113,7 @@ describe('ExpressionInput', () => {
 
     // Type in the input
     fireEvent.change(input, { target: { value: 'Test todo item' } })
-    
+
     // Submit the form
     fireEvent.click(submitButton)
 
@@ -141,7 +141,7 @@ describe('ExpressionInput', () => {
 
     // Type in the input
     fireEvent.change(input, { target: { value: 'Test comment' } })
-    
+
     // Submit the form
     fireEvent.click(submitButton)
 
@@ -185,7 +185,7 @@ describe('ExpressionInput', () => {
 
     // Type in the input
     fireEvent.change(input, { target: { value: 'Test todo with enter' } })
-    
+
     // Submit with enter key
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
@@ -207,7 +207,7 @@ describe('ExpressionInput', () => {
 
     const input = screen.getByPlaceholderText('Add a new todo...')
     const typeSelector = screen.getByRole('combobox')
-    
+
     // Initially should be set to todo
     expect(screen.getByText('Add Todo')).toBeInTheDocument()
 

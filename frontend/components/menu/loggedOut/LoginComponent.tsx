@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -7,17 +7,17 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/frontend/components/ui/card"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@/frontend/components/ui/tabs"
+} from "@/components/ui/tabs"
 
-import { Checkbox } from "@/frontend/components/ui/checkbox"
+import { Checkbox } from "@/components/ui/checkbox"
 
 import {
   User,
@@ -36,9 +36,9 @@ import {
 
 
 import _ from 'lodash'
-import { Form } from "@/frontend/components/ui/form"
-import { getActions } from "@/frontend/lib/actions"
-import { AppState, FosReactOptions } from "@/shared/types"
+import { Form } from "@/components/ui/form"
+import { getActions } from "@/lib/actions"
+import { AppState, FosReactOptions } from "@fosforescent/shared/types"
 import { useNavigate } from "react-router-dom"
 
 
@@ -59,31 +59,31 @@ export const LoginComponent = ({
   options: FosReactOptions
 }) => {
 
-  const {  logIn,  } = getActions(options, data, setData)
+  const { logIn, } = getActions(options, data, setData)
 
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  
+
 
   const [emailValid, setEmailValid] = useState(true)
 
   const [remember, setRemember] = useState(false)
 
-  const canSubmit = emailValid 
+  const canSubmit = emailValid
 
   const navigate = useNavigate()
 
 
   const handleLogin = () => {
     console.log('login, email', email, password);
-    
+
     logIn(email, password, remember).then(() => {
       // window.Fos.ws.
 
-      setMessage({ messageType: "success", message: "Logged In Successfully" })    
+      setMessage({ messageType: "success", message: "Logged In Successfully" })
       navigate("/")
-      
+
     }).catch((error: Error) => {
       console.log('login error', error)
       if (error.message === 'Failed to fetch') {
@@ -121,29 +121,29 @@ export const LoginComponent = ({
 
 
   return (<>
-  <form onSubmit={(e) => e.preventDefault()}>
-    <CardContent className="space-y-2 pt-3">
-      <div className="space-y-1">
-        {/* <Label htmlFor="name">Name</Label> */}
-        <Input id="username" placeholder="Email" onChange={handleEmailChange} className="text-base"/>
-      </div>
-      <div className="space-y-1">
-        {/* <Label htmlFor="username">Username</Label> */}
-        <Input id="password" placeholder="Password" onChange={handlePwdChange} type="password" className="text-base" />
-      </div>
-      <div>
-        <Button variant={"ghost"} onClick={handleForgotPassword}>Forgot Password?</Button>
-      </div>
-      <div className="pt-5 text-slate-500">
-          <Checkbox id="remember" name="remember" checked={remember} onClick={() => setRemember(!remember)}/>
+    <form onSubmit={(e) => e.preventDefault()}>
+      <CardContent className="space-y-2 pt-3">
+        <div className="space-y-1">
+          {/* <Label htmlFor="name">Name</Label> */}
+          <Input id="username" placeholder="Email" onChange={handleEmailChange} className="text-base" />
+        </div>
+        <div className="space-y-1">
+          {/* <Label htmlFor="username">Username</Label> */}
+          <Input id="password" placeholder="Password" onChange={handlePwdChange} type="password" className="text-base" />
+        </div>
+        <div>
+          <Button variant={"ghost"} onClick={handleForgotPassword}>Forgot Password?</Button>
+        </div>
+        <div className="pt-5 text-slate-500">
+          <Checkbox id="remember" name="remember" checked={remember} onClick={() => setRemember(!remember)} />
           <Label htmlFor="remember" className="ml-2">
             Remember Username
           </Label>
-      </div>
-    </CardContent>
-    <CardFooter className="flex justify-around">
-      <Button className="bg-emerald-900 text-white" onClick={handleLogin} disabled={!canSubmit} title="Login"><LogIn /></Button>
-      {/* <Button className="bg-emerald-900 bg-orange-900" ><ShieldQuestion /></Button> */}
-    </CardFooter>
-  </form></>)
+        </div>
+      </CardContent>
+      <CardFooter className="flex justify-around">
+        <Button className="bg-emerald-900 text-white" onClick={handleLogin} disabled={!canSubmit} title="Login"><LogIn /></Button>
+        {/* <Button className="bg-emerald-900 bg-orange-900" ><ShieldQuestion /></Button> */}
+      </CardFooter>
+    </form></>)
 }

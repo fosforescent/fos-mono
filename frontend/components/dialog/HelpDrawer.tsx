@@ -7,9 +7,9 @@ import {
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
-} from "@/frontend/components/ui/drawer"
+} from "@/components/ui/drawer"
 
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 
 import { 
   ChevronDownCircleIcon,
@@ -50,15 +50,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/frontend/components/ui/table"
+} from "@/components/ui/table"
 
 import {
   Card
-} from "@/frontend/components/ui/card"
+} from "@/components/ui/card"
 
 import {
   Badge 
-} from "@/frontend/components/ui/badge"
+} from "@/components/ui/badge"
 
 export const HelpDrawer = ({
   open,

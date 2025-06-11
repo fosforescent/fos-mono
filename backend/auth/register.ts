@@ -2,9 +2,9 @@ import { Request, Response } from 'express'
 import bcrypt from 'bcrypt'
 import { generateLinkToken, sendConfirmationEmail } from '../email/email'
 
-import {prisma} from '../prismaClient'
+import { prisma } from '../prismaClient'
 
-import { FosStore, hashContent } from '@/shared/dag-implementation/store'
+import { FosStore, hashContent } from '@fosforescent/shared/dag-implementation/store'
 import { validateNodeDataToDB } from '../util'
 
 export const hashPassword = async (password: string) => {
@@ -48,19 +48,19 @@ export const postRegister = async (req: Request, res: Response) => {
   // Create user
   try {
     const { token, expiration } = generateLinkToken()
-    
+
     // Create a new FosStore and insert its nodes into the database first
     const newStore = new FosStore()
-    
+
     // Get existing nodes to avoid duplicates
     const existingNodes = await prisma.fosNodeModel.findMany({})
-    
+
     // Prepare new nodes for insertion
     const newEntries = Array.from(newStore.table.entries()).reduce((acc, [id, node]) => {
       if (id !== hashContent(node)) {
         throw new Error("Hashes don't match")
       }
-      
+
       if (existingNodes.find(n => n.cid === id)) {
         return acc
       } else {
@@ -69,15 +69,15 @@ export const postRegister = async (req: Request, res: Response) => {
           data: validateNodeDataToDB(node),
         }]
       }
-    }, [] as Array<{cid: string, data: any}>)
-    
+    }, [] as Array<{ cid: string, data: any }>)
+
     // Insert new nodes into database
     if (newEntries.length > 0) {
       await prisma.fosNodeModel.createMany({
         data: newEntries
       })
     }
-    
+
     const user = await prisma.userModel.create({
       data: {
         user_name: username,
@@ -101,7 +101,7 @@ export const postRegister = async (req: Request, res: Response) => {
         }
       },
     })
-    
+
     // Create access links for all nodes in the store
     if (newEntries.length > 0) {
       await prisma.fosNodeUserAccessLinkModel.createMany({

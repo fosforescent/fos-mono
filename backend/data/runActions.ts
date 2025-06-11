@@ -1,6 +1,6 @@
-import { FosExpression } from "@/shared/dag-implementation/expression";
-import { FosStore } from "@/shared/dag-implementation/store";
-import { mutableMapExpressions } from "@/shared/utils";
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression";
+import { FosStore } from "@fosforescent/shared/dag-implementation/store";
+import { mutableMapExpressions } from "@fosforescent/shared/utils";
 import { executeSearch } from "./search";
 
 

@@ -6,7 +6,7 @@ Information display and management components for various data types including b
 
 ### Dependencies
 - **React**: Component framework and hooks
-- **@/shared/types**: Shared type definitions
+- **@fosforescent/shared/types**: Shared type definitions
 - **../ui/\***: UI component library for consistent styling
 - **External Libraries**: Likely calendar, chart, and media handling libraries
 

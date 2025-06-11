@@ -7,7 +7,7 @@ Utility library providing common functions, actions, and shared logic for the Fo
 ### Dependencies
 - **clsx**: Conditional CSS class name utilities
 - **class-variance-authority**: Type-safe CSS variant management
-- **@/shared/types**: Shared type definitions
+- **@fosforescent/shared/types**: Shared type definitions
 - **React**: Framework-specific utilities and patterns
 
 ### Data Inputs

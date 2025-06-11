@@ -1,28 +1,28 @@
-import { useProps } from "@/frontend/App"
-import { FosStore } from "@/shared/dag-implementation/store"
-import { AppStateLoaded, FosPath, FosReactGlobal } from "@/shared/types"
+import { useProps } from "@/App"
+import { FosStore } from "@fosforescent/shared/dag-implementation/store"
+import { AppStateLoaded, FosPath, FosReactGlobal } from "@fosforescent/shared/types"
 
 
 
 export const ReportsView = () => {
 
-  const { 
+  const {
     data,
     setData,
     options,
     nodeRoute: route,
     ...props
-  } : {
+  }: {
     options: FosReactGlobal
     data: AppStateLoaded
     nodeRoute: FosPath
     setData: (state: AppStateLoaded) => void
   } = useProps()
 
-  
 
 
-    
+
+
   const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
     setData({
       ...data,
@@ -30,8 +30,8 @@ export const ReportsView = () => {
     })
   }
 
-  
-  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData})
+
+  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData })
 
 
 
@@ -40,9 +40,9 @@ export const ReportsView = () => {
 
 
   return (
-      <div>
+    <div>
       <h1>Todo Execution View</h1>
-      </div>
+    </div>
   )
 
 }

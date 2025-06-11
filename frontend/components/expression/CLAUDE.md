@@ -5,8 +5,8 @@
 React components for displaying and interacting with graph expressions, including input forms, result displays, and grid layouts for the Fosforescent workflow system.
 
 ### Dependencies
-- **@/shared/dag-implementation/expression**: Core expression evaluation logic
-- **@/shared/types**: Shared type definitions (AppState, FosExpression, etc.)
+- **@fosforescent/shared/dag-implementation/expression**: Core expression evaluation logic
+- **@fosforescent/shared/types**: Shared type definitions (AppState, FosExpression, etc.)
 - **../ui/\***: Radix UI component library (Input, Button, Select, etc.)
 - **lucide-react**: Icon components (Send, etc.)
 - **react**: React hooks and component lifecycle

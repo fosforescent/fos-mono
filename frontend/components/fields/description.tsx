@@ -5,21 +5,21 @@ import { PenBox, PlaySquare } from "lucide-react"
 import { FosReactOptions } from "../../../shared/types"
 import { InputDiv } from "../elements/inputDiv"
 
-import { AppState, FosPath } from "@/shared/types"
+import { AppState, FosPath } from "@fosforescent/shared/types"
 import _ from "lodash"
-import { getNodeOperations } from "@/frontend/lib/nodeOperations"
-import { getNodeInfo } from "@/frontend/lib/utils"
-import { Button } from "@/frontend/components/ui/button"
+import { getNodeOperations } from "@/lib/nodeOperations"
+import { getNodeInfo } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 
 
-const ResourceComponent = ({ 
+const ResourceComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -27,20 +27,20 @@ const ResourceComponent = ({
 }) => {
 
 
-    
-  const { locked, 
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
-    nodeType, nodeId, disabled, depth, isCollapsed, 
+
+  const { locked,
+    hasFocus, focusChar, isDragging, draggingOver,
+    nodeDescription, isRoot, childRoutes, isBase, nodeLabel,
+    nodeType, nodeId, disabled, depth, isCollapsed,
     isTooDeep, isOption, hasChildren
   } = getNodeInfo(nodeRoute, data)
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
+
+  const {
+    suggestOption,
+    setFocus,
+    setSelectedOption,
+    setFocusAndDescription,
+    deleteRow,
     deleteOption,
     keyDownEvents,
     keyUpEvents,
@@ -50,22 +50,22 @@ const ResourceComponent = ({
     suggestSteps,
     toggleCollapse,
     zoom
-   } = getNodeOperations(options, data, setData, nodeRoute)
- 
+  } = getNodeOperations(options, data, setData, nodeRoute)
 
 
-   const thisShouldFocus = _.isEqual(data.data.trellisData.focusRoute, nodeRoute) 
+
+  const thisShouldFocus = _.isEqual(data.data.trellisData.focusRoute, nodeRoute)
 
 
   return (<div>
-    {<InputDiv 
-      
+    {<InputDiv
+
 
       disabled={locked}
       shouldFocus={hasFocus}
       placeholder={"Enter task description"}
       className="rounded-r-none w-full cursor-text grow"
-      value={nodeDescription} 
+      value={nodeDescription}
       style={{
         width: 'calc(100% - 1.25rem)',
         fontSize: '1rem',
@@ -73,9 +73,9 @@ const ResourceComponent = ({
         height: 'auto',
         border: '1px solid rgba(23, 20, 20, .3)',
       }}
-      
+
       onChange={setFocusAndDescription}
-      onClick={(e) => { /* console.log("here"); */ e.stopPropagation()}}
+      onClick={(e) => { /* console.log("here"); */ e.stopPropagation() }}
       // onKeyDown={}
       // onKeyUp={onKeyUp}
       focusChar={focusChar}

@@ -8,10 +8,10 @@ Handles user data management, graph operations, and semantic search functionalit
 - **express**: HTTP request/response handling
 - **lodash**: Data manipulation utilities
 - **@prisma/client**: Database ORM and client
-- **@/shared/dag-implementation/store**: Core graph store implementation
-- **@/shared/dag-implementation/expression**: Expression evaluation system
-- **@/shared/types**: Shared type definitions
-- **@/shared/utils**: Utility functions
+- **@fosforescent/shared/dag-implementation/store**: Core graph store implementation
+- **@fosforescent/shared/dag-implementation/expression**: Expression evaluation system
+- **@fosforescent/shared/types**: Shared type definitions
+- **@fosforescent/shared/utils**: Utility functions
 - **openai**: OpenAI API client for embeddings
 - **@langchain/core**: LangChain document and embeddings interfaces
 - **../util**: Data validation and transformation utilities

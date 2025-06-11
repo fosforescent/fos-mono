@@ -1,26 +1,26 @@
 import { BrainCircuit, DollarSign } from "lucide-react"
 
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import CurrencyInput from "react-currency-input-field"
 import * as SliderPrimitive from "@radix-ui/react-slider"
-import { cn } from "@/frontend/lib/utils"
+import { cn } from "@/lib/utils"
 
-import { AppState, FosDataContent, FosReactOptions, FosPath, SelectionPath } from "@/shared/types"
-import { getNodeInfo } from "@/frontend/lib/utils"
-import { getNodeOperations } from "@/frontend/lib/nodeOperations"
-
-
+import { AppState, FosDataContent, FosReactOptions, FosPath, SelectionPath } from "@fosforescent/shared/types"
+import { getNodeInfo } from "@/lib/utils"
+import { getNodeOperations } from "@/lib/nodeOperations"
 
 
 
 
-const ResourceComponent = ({ 
+
+
+const ResourceComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -30,19 +30,19 @@ const ResourceComponent = ({
 
 
 
-  const { locked, 
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription: thisDescription, isRoot, childRoutes, isBase, nodeLabel, 
-    nodeType, nodeId, disabled, depth, isCollapsed, 
-    isTooDeep, isOption, hasChildren, 
+  const { locked,
+    hasFocus, focusChar, isDragging, draggingOver,
+    nodeDescription: thisDescription, isRoot, childRoutes, isBase, nodeLabel,
+    nodeType, nodeId, disabled, depth, isCollapsed,
+    isTooDeep, isOption, hasChildren,
   } = getNodeInfo(nodeRoute, data)
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
+
+  const {
+    suggestOption,
+    setFocus,
+    setSelectedOption,
+    setFocusAndDescription,
+    deleteRow,
     deleteOption,
     keyDownEvents,
     keyUpEvents,
@@ -53,11 +53,11 @@ const ResourceComponent = ({
     toggleCollapse,
     zoom,
     suggestRecursive,
-   } = getNodeOperations(options, data, setData, nodeRoute)
+  } = getNodeOperations(options, data, setData, nodeRoute)
 
 
- 
-  
+
+
 
   const systemPromptBase = `Take a deep breath.  Please respond only with a single valid JSON object with the key "cost" and a number value`
   const getUserPromptBase = (appData: AppState, nodeRoute: FosPath, nodeDescription: string, parentDescriptions: string[]) => `How much does it cost to ${thisDescription} in the as a subtask of ${parentDescriptions.join(' subtask of the task ')}`
@@ -74,15 +74,15 @@ const ResourceComponent = ({
     const resultParsed = result as { cost: string }
 
     const budgetInfo = getCostInfo(lAppData, lNodeRoute).budget
-    
-    return { marginal: parseFloat(resultParsed.cost), budget: budgetInfo } 
-  } 
+
+    return { marginal: parseFloat(resultParsed.cost), budget: budgetInfo }
+  }
 
 
 
-    
+
   const handleSuggestCost = async <CostData, CostInfo>() => {
-    if (options?.canPromptGPT && options?.promptGPT){
+    if (options?.canPromptGPT && options?.promptGPT) {
       try {
         await suggestRecursive({
           systemPromptBase,
@@ -94,8 +94,8 @@ const ResourceComponent = ({
           getResourceInfo: getCostInfo,
           updateResourceInfo: setCostInfo,
           checkResourceInfo: checkCostInfo
-        } )
-  
+        })
+
       } catch (error) {
         console.error('error', error)
         options?.toast && options?.toast({
@@ -107,7 +107,7 @@ const ResourceComponent = ({
 
     } else {
       console.error('No authedApi')
-      const err =  new Error('No authedApi')
+      const err = new Error('No authedApi')
       err.cause = 'unauthorized'
       throw err
     }
@@ -118,41 +118,41 @@ const ResourceComponent = ({
     const costInfo = getCostInfo(data, nodeRoute)
     setCostInfo(options, data, setData, nodeRoute, { marginal: value, budget: costInfo.budget })
   }
-    
 
 
-  
+
+
   const handleMinCostPath = async () => {
     // const newContext = node.setPath({ [node.getNodeData().selectedOption]: costInfo.minPaths })
   }
-  
+
   const handleMaxCostPath = async () => {
     // const newContext = node.setPath({ [node.getNodeData().selectedOption]:  costInfo.maxPaths})
   }
-  
-  
-  
+
+
+
 
 
   return (<div className="flex flex-row flex-wrap items-center justify-center">
-  <div className='flex flex-row w-1/2 min-w-96 items-center justify-center flex-wrap'>
-    <CostInput value={costInfo.marginal} onChange={(value) => handleCostEdit(value)} handleSuggestCost={handleSuggestCost} />
-    <BudgetSlider value={costInfo.budget?.available} budgetInfo={costInfo.budget} step={1} bgValue={75} onChange={() => console.log("slider")}/>
-  </div>
-  <div className='flex flex-row justify-center items-center w-1/2 min-w-96'>
-    <div className='overflow-hidden w-1/2 text-center text-sm'><div className='mx-auto'> Curr: {costDisplay(costInfo.current)} </div><div> Avg: {costDisplay(costInfo.average)} </div></div>
-    <div className='overflow-hidden w-1/2 text-center'>
-      <Button variant={"secondary"} className='bg-emerald-900 p-1 text-xs mx-auto' onClick={handleMinCostPath} title="Set min cost path"> <div>Min: {costDisplay(costInfo.min)}</div> </Button>
-      <Button variant={"secondary"} className='bg-emerald-900 p-1 text-xs mx-auto' onClick={handleMaxCostPath} title="Set max cost path"> <div>Max: {costDisplay(costInfo.max)}</div> </Button>
+    <div className='flex flex-row w-1/2 min-w-96 items-center justify-center flex-wrap'>
+      <CostInput value={costInfo.marginal} onChange={(value) => handleCostEdit(value)} handleSuggestCost={handleSuggestCost} />
+      <BudgetSlider value={costInfo.budget?.available} budgetInfo={costInfo.budget} step={1} bgValue={75} onChange={() => console.log("slider")} />
     </div>
-  </div>
+    <div className='flex flex-row justify-center items-center w-1/2 min-w-96'>
+      <div className='overflow-hidden w-1/2 text-center text-sm'><div className='mx-auto'> Curr: {costDisplay(costInfo.current)} </div><div> Avg: {costDisplay(costInfo.average)} </div></div>
+      <div className='overflow-hidden w-1/2 text-center'>
+        <Button variant={"secondary"} className='bg-emerald-900 p-1 text-xs mx-auto' onClick={handleMinCostPath} title="Set min cost path"> <div>Min: {costDisplay(costInfo.min)}</div> </Button>
+        <Button variant={"secondary"} className='bg-emerald-900 p-1 text-xs mx-auto' onClick={handleMaxCostPath} title="Set max cost path"> <div>Max: {costDisplay(costInfo.max)}</div> </Button>
+      </div>
+    </div>
   </div>)
 }
 
 
 
-export const setCostInfo = (appData: AppState, nodeRoute: FosPath, options: FosReactOptions, setAppData: (appState: AppState) => void, { marginal, budget} : { marginal: number, budget?: { available: number } }) => {
-  const { nodeData }  = getNodeInfo(nodeRoute, appData)
+export const setCostInfo = (appData: AppState, nodeRoute: FosPath, options: FosReactOptions, setAppData: (appState: AppState) => void, { marginal, budget }: { marginal: number, budget?: { available: number } }) => {
+  const { nodeData } = getNodeInfo(nodeRoute, appData)
   const { setNodeData } = getNodeOperations(options, appData, setAppData, nodeRoute)
   const newCostData: FosDataContent["cost"] = {
     plannedMarginal: marginal,
@@ -170,16 +170,16 @@ export const getCostInfo = (appData: AppState, nodeRoute: FosPath): CostInfo => 
   // get selected option
 
   // for each child
-    // get min (+ marginal)
-    // get max (+ marginal)
-    // get avg (+ marginal)
-    // get current (+ marginal)
-    // get min paths
-    // get max paths
-  
+  // get min (+ marginal)
+  // get max (+ marginal)
+  // get avg (+ marginal)
+  // get current (+ marginal)
+  // get min paths
+  // get max paths
 
 
-    
+
+
   // const children = thisNode.getChildren(indexToGet)
 
   // const thisNodeOptionContent = thisNode.getOptionContent(indexToGet)
@@ -212,7 +212,7 @@ export const getCostInfo = (appData: AppState, nodeRoute: FosPath): CostInfo => 
   //     const childData = child.getNodeData()
   //     const childOptions = childData.options
 
-  
+
   //     let minOptionCost = Number.MAX_SAFE_INTEGER;
   //     let maxOptionCost = Number.MIN_SAFE_INTEGER;
   //     const minOptionPaths: SelectionPath = {};
@@ -251,7 +251,7 @@ export const getCostInfo = (appData: AppState, nodeRoute: FosPath): CostInfo => 
   //     marginal: thisNodeCost
   //   }
 
-    
+
   // }
 
 
@@ -284,7 +284,7 @@ type CostData = {
   }
 }
 
-const costDisplay = ( cost: number) => {
+const costDisplay = (cost: number) => {
 
   const costString = cost.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
@@ -292,13 +292,13 @@ const costDisplay = ( cost: number) => {
 }
 
 
-const CostInput = ({ 
-  value, 
-  onChange, 
-  handleSuggestCost 
-} : { 
-  value: number, 
-  onChange: (value: number | undefined) => void , 
+const CostInput = ({
+  value,
+  onChange,
+  handleSuggestCost
+}: {
+  value: number,
+  onChange: (value: number | undefined) => void,
   handleSuggestCost: () => Promise<void>
 }) => {
 
@@ -349,7 +349,7 @@ const BudgetSlider = (props: {
   bgValue: number
   budgetInfo?: {
     available?: number,
-  }, 
+  },
   costInfo?: {
     current: number,
     average: number,
@@ -357,17 +357,17 @@ const BudgetSlider = (props: {
     max: number,
   }
 }) => {
-  
+
   return (<div className="w-full align-middle py-5 flex-row flex flex-wrap justify-center item-center">
-    {props.value !== undefined 
-    && (<div className="min-w-20 grow-1 w-2/3"><SliderPrimitive.Root
+    {props.value !== undefined
+      && (<div className="min-w-20 grow-1 w-2/3"><SliderPrimitive.Root
         className={cn(
           "relative flex w-full touch-none select-none items-center",
         )}
         defaultValue={[props.value]}
         max={props.budgetInfo?.available}
         step={props.step}
-        
+
       >
         <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-gradient-to-r from-emerald-900 to-destructive via-70% via-emerald-900">
           <SliderPrimitive.Range className="absolute h-full bg-black/30" />
@@ -381,13 +381,13 @@ const BudgetSlider = (props: {
 }
 
 
-const CostRowComponent = ({ 
+const CostRowComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath

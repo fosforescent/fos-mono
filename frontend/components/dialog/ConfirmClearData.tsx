@@ -1,4 +1,4 @@
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,14 +9,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/frontend/components/ui/alert-dialog"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/alert-dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
-import { Switch } from "@/frontend/components/ui/switch"
+import { Switch } from "@/components/ui/switch"
 import { useEffect, useState } from "react"
-import { AppState, FosReactOptions } from "@/shared/types"
-import { getActions } from "@/frontend/lib/actions"
+import { AppState, FosReactOptions } from "@fosforescent/shared/types"
+import { getActions } from "@/lib/actions"
 
 
 

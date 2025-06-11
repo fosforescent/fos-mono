@@ -1,14 +1,14 @@
 import React, { useState } from 'react'
-import { Button } from '@/frontend/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/frontend/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/frontend/components/ui/tabs'
-import { Input } from '@/frontend/components/ui/input'
-import { Label } from '@/frontend/components/ui/label'
-import { Checkbox } from '@/frontend/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { LogIn, User, BookKey, DoorClosed } from 'lucide-react'
-import { useToast } from '@/frontend/components/ui/use-toast'
+import { useToast } from '@/components/ui/use-toast'
 import { getActions } from '../lib/actions'
-import { AppState, FosReactOptions } from '@/shared/types'
+import { AppState, FosReactOptions } from '@fosforescent/shared/types'
 
 interface AuthLandingProps {
   data: AppState
@@ -20,11 +20,11 @@ export const AuthLanding = ({ data, setData, options }: AuthLandingProps) => {
   const { logIn, registerUser } = getActions(options, data, setData)
   const { toast } = useToast()
   const [loginData, setLoginData] = useState({ username: '', password: '', remember: false })
-  const [registerData, setRegisterData] = useState({ 
-    username: '', 
-    password: '', 
-    confirmPassword: '', 
-    acceptTerms: false 
+  const [registerData, setRegisterData] = useState({
+    username: '',
+    password: '',
+    confirmPassword: '',
+    acceptTerms: false
   })
   const [isLoading, setIsLoading] = useState(false)
 
@@ -34,12 +34,12 @@ export const AuthLanding = ({ data, setData, options }: AuthLandingProps) => {
 
     try {
       await logIn(loginData.username, loginData.password, loginData.remember)
-      
+
       toast({
         title: 'Login successful',
         description: 'Welcome back!'
       })
-      
+
       // The logIn action will handle setting auth state and redirecting
     } catch (error: any) {
       console.log('Login error:', error)
@@ -78,12 +78,12 @@ export const AuthLanding = ({ data, setData, options }: AuthLandingProps) => {
 
     try {
       await registerUser(registerData.username, registerData.password, registerData.acceptTerms)
-      
+
       toast({
         title: 'Registration successful',
         description: 'Please check your email to confirm your account'
       })
-      
+
       // Could automatically switch to login tab
     } catch (error: any) {
       console.log('Registration error:', error)
@@ -187,8 +187,8 @@ export const AuthLanding = ({ data, setData, options }: AuthLandingProps) => {
                       />
                       <Label htmlFor="remember" className="text-sm">Remember me</Label>
                     </div>
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       className="w-full"
                       disabled={isLoading}
                     >
@@ -247,8 +247,8 @@ export const AuthLanding = ({ data, setData, options }: AuthLandingProps) => {
                         I accept the Terms & Conditions and Privacy Policy
                       </Label>
                     </div>
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       className="w-full"
                       disabled={isLoading}
                     >

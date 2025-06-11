@@ -13,7 +13,7 @@ import HamburgerMenu from './components/menu/HamburgerMenu'
 import { AuthLanding } from './components/AuthLanding'
 
 
-import { Toaster } from "@/frontend/components/ui/toaster"
+import { Toaster } from "@/components/ui/toaster"
 import { CookieDialog } from './components/dialog/CookieDialog'
 import { PrivacyPolicyDialog } from './components/dialog/PrivacyPolicyDialog'
 import { TermsDialog } from './components/dialog/TermsDialog'
@@ -21,8 +21,8 @@ import { ConfirmClearData } from './components/dialog/ConfirmClearData'
 import { ConfirmDeleteUser } from './components/dialog/ConfirmDeleteUser'
 import { ConfirmEmailChange } from './components/dialog/ConfirmEmailChange'
 import { ErrorBoundary } from './components/error-boundary'
-import { useToast } from '@/frontend/components/ui/use-toast';
-import { jwtDecode } from 'jwt-decode';
+import { useToast } from '@/components/ui/use-toast';
+import jwtDecode from 'jwt-decode';
 import { api } from './api'
 import { PendingApproval } from './components/admin/PendingApproval'
 
@@ -35,7 +35,7 @@ import { diff } from '@n1ru4l/json-patch-plus'
 import { useLocation } from 'react-router-dom'
 import { set } from 'date-fns'
 import { getMockEvents, applyMockEvent } from './hooks/mock-events';
-import { FosStore } from '@/shared/dag-implementation/store'
+import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 
 
 
@@ -289,7 +289,7 @@ export default function App({
 
   // Check user approval status when app data is loaded
   const [userApprovalChecked, setUserApprovalChecked] = useState(false)
-  
+
   useEffect(() => {
     if (appState.loggedIn && appState.loaded && !userApprovalChecked) {
       setUserApprovalChecked(true)

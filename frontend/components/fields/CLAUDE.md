@@ -5,9 +5,9 @@
 Specialized form field components for different data types in the Fosforescent workflow system, including todos, descriptions, costs, durations, file uploads, and various input types.
 
 ### Dependencies
-- **@/shared/dag-implementation/expression**: Core expression system
-- **@/shared/types**: Shared type definitions (FosExpression, AppState, etc.)
-- **@/shared/nodeOperations**: Node manipulation utilities
+- **@fosforescent/shared/dag-implementation/expression**: Core expression system
+- **@fosforescent/shared/types**: Shared type definitions (FosExpression, AppState, etc.)
+- **@fosforescent/shared/nodeOperations**: Node manipulation utilities
 - **../ui/\***: UI component library (Button, Popover, Command, etc.)
 - **../elements/inputDiv**: Custom input element
 - **../drag-drop**: Drag and drop functionality

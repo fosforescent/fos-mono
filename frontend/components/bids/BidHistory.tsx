@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { Button } from '@/frontend/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/frontend/components/ui/card'
-import { Badge } from '@/frontend/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/frontend/components/ui/tabs'
-import { ScrollArea } from '@/frontend/components/ui/scroll-area'
-import { Input } from '@/frontend/components/ui/input'
-import { Label } from '@/frontend/components/ui/label'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/frontend/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { 
   Target, 
   TrendingUp, 
@@ -22,7 +22,7 @@ import {
   PieChart,
   Activity
 } from 'lucide-react'
-import { useToast } from '@/frontend/components/ui/use-toast'
+import { useToast } from '@/components/ui/use-toast'
 
 interface ToolBid {
   id: number

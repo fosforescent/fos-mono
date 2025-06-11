@@ -28,6 +28,9 @@ model UserModel {
   stripe_connected_account_id      String? @unique
   stripe_connect_enabled           Boolean @default(false)
   stripe_connect_linked            Boolean @default(false)
+  stripe_account_enabled           Boolean @default(false)
+  stripe_payouts_enabled           Boolean @default(false)
+  stripe_account_status            String? @default("pending")
 
   stripe_customer_id            String?                      @unique
   subscription_status           String                       @default("")
@@ -40,6 +43,10 @@ model UserModel {
   cookies                       Json                         @default("{}")
   data                          Json                         @default("{}")
   role                          String                       @default("user") // user, admin, superadmin
+  payment_status                String?                      // Payment status for Stripe integration
+  last_payment_error            String?                      // Last payment error message
+  has_bank_account              Boolean?                     @default(false) // Whether user has connected bank account
+  last_bank_account_added       DateTime?                    // When last bank account was added
   // profile                       Json                    @default("{}")
   fosNode                       FosNodeModel                 @relation(fields: [fosNodeId], references: [cid])
   fosNodeId                     String                       @unique
@@ -58,6 +65,9 @@ model UserModel {
   TokenTransactions             TokenTransactionModel[]
   TokenPurchases                TokenPurchaseModel[]
   ToolBidSessions               ToolBidSessionModel[]
+  StripePayouts                 StripePayoutModel[]
+  PlatformFees                  PlatformFee[]
+  OwnedMCPServers               MCPServerModel[]               @relation("MCPServerOwner")
 }
 
 model InboundEmailModel {
@@ -127,21 +137,8 @@ model FosNodeModel {
   public                Boolean                      @default(false)
   FosNodeUserAccessLink FosNodeUserAccessLinkModel[]
   User                  UserModel?
-  Vectors               NodeVectorModel[]
 }
 
-model NodeVectorModel {
-  id        Int                         @id @default(autoincrement())
-  content   String
-  embedding Unsupported("vector(1024)")
-  metadata  Json
-  createdAt DateTime                    @default(now())
-  updatedAt DateTime                    @updatedAt
-  nodeId    String
-  fosNode   FosNodeModel                @relation(fields: [nodeId], references: [cid])
-  @@index([embedding])  // Remove the Raw syntax for now
-
-}
 
 
 model FosAppModel {
@@ -185,6 +182,7 @@ model ToolUseModel {
 
 model MCPServerModel {
   id               Int                            @id @default(autoincrement())
+  userId           Int?                           // Creator/owner of the server
   name             String                         @unique
   description      String?
   endpoint         String
@@ -193,19 +191,17 @@ model MCPServerModel {
   credentials      Json                           @default("{}")
   public           Boolean                        @default(false)
   lastPing         DateTime?
-  descriptionEmbedding Unsupported("vector(1024)")?
   createdAt        DateTime                       @default(now())
   updatedAt        DateTime                       @updatedAt
   
   // Relations
+  owner            UserModel?                     @relation("MCPServerOwner", fields: [userId], references: [id], onDelete: SetNull)
   UserAccess       UserMCPServerAccessModel[]
   Tools            MCPToolModel[]
   UserPrompts      UserPromptModel[]
   ToolUses         ToolUseModel[]
   ToolPricing      MCPToolPricingModel[]
   ToolBids         ToolBidModel[]
-  
-  @@index([descriptionEmbedding])
 }
 
 model MCPToolModel {
@@ -215,7 +211,6 @@ model MCPToolModel {
   description      String?
   inputSchema      Json                           @default("{}")
   outputSchema     Json                           @default("{}")
-  descriptionEmbedding Unsupported("vector(1024)")?
   createdAt        DateTime                       @default(now())
   updatedAt        DateTime                       @updatedAt
   
@@ -223,7 +218,6 @@ model MCPToolModel {
   server           MCPServerModel                 @relation(fields: [serverId], references: [id], onDelete: Cascade)
   
   @@unique([serverId, name])
-  @@index([descriptionEmbedding])
 }
 
 model UserMCPServerAccessModel {
@@ -343,7 +337,7 @@ model TokenPurchaseModel {
   priceInCents           Int                      // Price paid in cents (USD)
   pricePerTokenCents     Decimal  @db.Decimal(10,4) // Price per token in cents
   status                 String   @default("pending") // pending, completed, failed, refunded
-  stripePaymentIntentId  String   @unique          // Stripe payment intent ID
+  stripePaymentIntentId  String?  @unique          // Stripe payment intent ID
   stripeCheckoutSessionId String? @unique          // Stripe checkout session ID (if applicable)
   metadata               Json     @default("{}")   // Additional purchase metadata
   processedAt            DateTime?                 // When tokens were actually credited
@@ -418,26 +412,26 @@ model ToolBidModel {
   @@index([tokenCost])
 }
 
-// model StripePayout {
-//  id              Int      @id @default(autoincrement())
-//  payout_id       String   @unique
-//  amount          Int
-//  currency        String
-//  status          String
-//  failure_reason  String?
-//  arrival_date    DateTime?
-//  created_at      DateTime @default(now())
-//  updated_at      DateTime @updatedAt
-//  user            User     @relation(fields: [user_id], references: [id])
-//  user_id         Int
-//}
+model StripePayoutModel {
+  id              Int      @id @default(autoincrement())
+  payout_id       String   @unique
+  amount          Int
+  currency        String
+  status          String
+  failure_reason  String?
+  arrival_date    DateTime?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  user            UserModel @relation(fields: [user_id], references: [id])
+  user_id         Int
+}
 
-// model PlatformFee {
-//   id                  String   @id @default(uuid())
-//   amount              Int
-//   payment_intent_id   String   @unique
-//   connected_account_id String
-//   status              String   // 'collected', 'failed', 'pending'
-//   created_at          DateTime @default(now())
-//   user                User     @relation(fields: [connected_account_id], references: [stripe_connected_account_id])
-// }
+model PlatformFee {
+  id                  String   @id @default(uuid())
+  amount              Int
+  payment_intent_id   String   @unique
+  connected_account_id String
+  status              String   // 'collected', 'failed', 'pending'
+  created_at          DateTime @default(now())
+  user                UserModel     @relation(fields: [connected_account_id], references: [stripe_connected_account_id])
+}

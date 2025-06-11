@@ -1,11 +1,11 @@
-import { AppState, FosReactOptions, FosPath, AppStateLoaded } from "@/shared/types"
+import { AppState, FosReactOptions, FosPath, AppStateLoaded } from "@fosforescent/shared/types"
 import { DefaultBreadcrumbComponent } from "./breadcrumb"
-import { FosStore } from "@/shared/dag-implementation/store"
-import { FosExpression } from "@/shared/dag-implementation/expression"
+import { FosStore } from "@fosforescent/shared/dag-implementation/store"
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression"
 
 
 
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -16,7 +16,7 @@ import {
 
 } from "../ui/dropdown-menu"
 import { Globe2, Home, Users } from "lucide-react"
-import { FosNode } from "@/shared/dag-implementation/node"
+import { FosNode } from "@fosforescent/shared/dag-implementation/node"
 
 
 export const DefaultBreadcrumbsComponent = ({
@@ -24,7 +24,7 @@ export const DefaultBreadcrumbsComponent = ({
   setData,
   options,
   expression,
-} : {
+}: {
   data: AppStateLoaded
   options: FosReactOptions
   expression: FosExpression
@@ -43,15 +43,15 @@ export const DefaultBreadcrumbsComponent = ({
     })
   }
 
-  
-  
+
+
   // const groups: FosExpression[] = expression.getChildrenMatchingPattern(store.primitive.groupField, store.primitive.unit)
 
   const isEveryoneGroup = true
 
-  const groupDropdownIcon = expression.route.length === 0 
+  const groupDropdownIcon = expression.route.length === 0
     ? <Home />
-    : (isEveryoneGroup) 
+    : (isEveryoneGroup)
       ? <Globe2 />
       : <Users />
 
@@ -59,7 +59,7 @@ export const DefaultBreadcrumbsComponent = ({
 
 
   return (<div className='flex w-full px-2 items-center overflow-x-scroll no-scrollbar py-2'>
-        <DropdownMenu >
+    <DropdownMenu >
       <DropdownMenuTrigger className={`w-200`}>{groupDropdownIcon}</DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuGroup>
@@ -76,23 +76,23 @@ export const DefaultBreadcrumbsComponent = ({
       </DropdownMenuContent>
     </DropdownMenu>
     {expression.route.map((item, index) => {
-      
+
 
       const breadcrumbNodeRoute: FosPath = expression.route.slice(0, index + 1) as FosPath
-      const breadCrumbExpression = new FosExpression(new FosStore({ fosCtxData: data.data}), breadcrumbNodeRoute)
+      const breadCrumbExpression = new FosExpression(new FosStore({ fosCtxData: data.data }), breadcrumbNodeRoute)
 
       return (<div>
 
 
-      <DefaultBreadcrumbComponent 
-        key={index} 
-        data={data}
-        setData={setData}
-        options={options}
-        expression={breadCrumbExpression}
-          /></div>)
+        <DefaultBreadcrumbComponent
+          key={index}
+          data={data}
+          setData={setData}
+          options={options}
+          expression={breadCrumbExpression}
+        /></div>)
     })}
-</div>)
+  </div>)
 
 }
 

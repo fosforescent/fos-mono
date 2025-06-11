@@ -13,7 +13,7 @@ import { PinBoard } from './components/home/Pins'
 import { InfoHome } from './components/info/Info'
 import { MarketBrowse } from './components/home/MarketBrowse'
 import QueueView from './components/views/QueueLayout'
-import { FieldTest } from '@/frontend/mockups/interactionMockups'
+import { FieldTest } from '@/mockups/interactionMockups'
 
 import './global.css'
 import './App.css'

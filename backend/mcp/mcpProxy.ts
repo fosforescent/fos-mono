@@ -61,6 +61,10 @@ export class MCPProxyResourceProvider implements MCPResourceProvider {
     }
 
     const [, serverName, originalUri] = match
+    
+    if (!originalUri) {
+      throw new Error(`Invalid MCP URI format: ${uri}`)
+    }
 
     // Find the server by name
     const server = await prisma.mCPServerModel.findFirst({

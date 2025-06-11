@@ -14,7 +14,8 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `mcp/` - Model Context Protocol server and client implementations
 
 ### Graph System Integration
-- `embedding.ts` - Vector embedding generation for semantic search
+- `qdrant.ts` - Qdrant vector database integration for semantic search  
+- `embedding.ts` - Vector embedding generation using OpenAI
 - Integration with `shared/dag-implementation/` for graph operations
 - `prismaClient.ts` - Database client configuration
 
@@ -29,16 +30,18 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `apiTokenAuth.ts` - API token authentication
 - `verifyJwt.ts` - JWT verification utilities
 - `maxRequests.ts` - Rate limiting middleware
+- `utils/validation.ts` - Parameter validation utilities for type safety
 
 ## Dependencies
 
 ### External Dependencies
-- **Express**: Web framework for API endpoints
+- **Express 4.x**: Web framework for API endpoints (compatible types)
 - **Prisma**: ORM for database operations
-- **Stripe**: Payment processing
+- **Qdrant**: Vector database for semantic search
+- **Stripe**: Payment processing (API version 2024-10-28.acacia)
 - **Postmark**: Email service
 - **JWT**: Authentication tokens
-- **OpenAI**: AI model integration
+- **OpenAI**: AI model integration and embeddings
 - **bcrypt**: Password hashing
 
 ### Internal Dependencies
@@ -58,7 +61,7 @@ The backend directory contains the Node.js/Express API server that provides the 
 - JSON API responses to frontend
 - Database writes via Prisma
 - Email sends via Postmark
-- Vector embeddings to database
+- Vector embeddings to Qdrant database
 - WebSocket messages for real-time updates
 
 ## Events Handled
@@ -94,8 +97,11 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `DATABASE_URL` - PostgreSQL connection string
 - `JWT_SECRET` - Secret for JWT token signing
 - `STRIPE_TOKEN` - Stripe API key
-- `OPENAI_API_KEY` - OpenAI API access
+- `STRIPE_WEBHOOK_SECRET` - Stripe webhook verification
+- `OPENAI_API_KEY` - OpenAI API access for embeddings
 - `POSTMARK_API_TOKEN` - Email service token
+- `QDRANT_URL` - Qdrant vector database URL (default: http://localhost:6333)
+- `QDRANT_API_KEY` - Qdrant API key (optional for local development)
 
 ## Testing
 - Unit tests with Jest framework
@@ -103,12 +109,36 @@ The backend directory contains the Node.js/Express API server that provides the 
 - Database integration tests
 - Authentication flow testing
 
+## Build Status
+- ✅ **Frontend: Building successfully**
+- ✅ **Backend: Building successfully with ZERO TypeScript errors** 
+- ✅ Fixed Express 4.x type compatibility issues
+- ✅ Migrated from pgvector to Qdrant for vector search
+- ✅ Added comprehensive parameter validation utilities
+- ✅ Fixed all MCP (Model Context Protocol) type issues
+- ✅ Added missing Stripe database fields and relationships
+
 ## TODOs
+
+### Infrastructure & Deployment
+- [ ] Optimize Docker build for faster deployments (currently npm install is slow)
+- [ ] Add monitoring and health check endpoints
+- [ ] Implement backup and recovery procedures
+- [ ] Add Qdrant collection monitoring and health checks
+
+### Development & Quality
 - [ ] Implement comprehensive API documentation
-- [ ] Add more granular error handling
+- [ ] Add comprehensive logging system
 - [ ] Optimize database queries with caching
 - [ ] Implement API versioning strategy
-- [ ] Add comprehensive logging system
-- [ ] Implement backup and recovery procedures
-- [ ] Add monitoring and health check endpoints
-- [ ] Optimize Docker build for faster deployments
+- [ ] Add batch processing optimization for large vector operations
+
+### Completed Recently
+- [x] **Added Qdrant server to docker-compose and injected via env vars into the logic**
+- [x] **Integrated Qdrant client with automatic collection initialization**
+- [x] **Migrated semantic search from PostgreSQL to Qdrant vector database**
+- [x] **Updated data processing pipeline to use Qdrant batch operations**
+- [x] Fixed all TypeScript compilation errors (100+ → 0)
+- [x] Implemented parameter validation utility pattern
+- [x] Fixed Express middleware type compatibility
+- [x] Added missing database schema fields for Stripe integration

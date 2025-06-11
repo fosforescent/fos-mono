@@ -8,8 +8,8 @@ Handles user authentication, registration, and account management functionality.
 - **express**: HTTP request/response handling
 - **bcrypt**: Password hashing and verification
 - **jsonwebtoken**: JWT token generation and verification
-- **@/shared/types**: Shared type definitions (InfoState, LoginResult)
-- **@/shared/dag-implementation/store**: Graph store initialization for new users
+- **@fosforescent/shared/types**: Shared type definitions (InfoState, LoginResult)
+- **@fosforescent/shared/dag-implementation/store**: Graph store initialization for new users
 - **../prismaClient**: Database access layer
 - **../email/email**: Email confirmation services
 - **../util**: Data validation utilities

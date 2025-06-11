@@ -1,17 +1,17 @@
-import { FosExpression } from "@/shared/dag-implementation/expression"
-import { FosStore } from "@/shared/dag-implementation/store"
-import { AppState, AppStateLoaded, FosPath, FosReactGlobal } from "@/shared/types"
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression"
+import { FosStore } from "@fosforescent/shared/dag-implementation/store"
+import { AppState, AppStateLoaded, FosPath, FosReactGlobal } from "@fosforescent/shared/types"
 import { useDraggable, useDroppable } from "@dnd-kit/core"
 import { getDragAndDropHandlers } from "../drag-drop"
 
 
-export const TopButtons = ({ 
+export const TopButtons = ({
   data,
   setData,
   options,
   nodeRoute: route,
   ...props
-} : {
+}: {
   options: FosReactGlobal
   data: AppStateLoaded
   nodeRoute: FosPath
@@ -40,7 +40,7 @@ export const TopButtons = ({
   const { getNodeDragInfo } = getDragAndDropHandlers(expression, options, setFosAndTrellisData)
 
   const { useDraggableArg, useDroppableArg } = getNodeDragInfo(expression.route)
-  
+
   const {
     attributes,
     listeners,
@@ -63,7 +63,7 @@ export const TopButtons = ({
 
 
   return (<div>
-    
+
 
   </div>)
 
