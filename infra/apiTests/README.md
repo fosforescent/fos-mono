@@ -13,7 +13,23 @@ This directory contains API tests for the Fosforescent backend. The tests are or
 - `auth-flow.http` - REST client file for authentication tests
 - `auth-flow.test.js` - Automated test script
 
+### WebSocket Testing
+- `websocket-flow.http` - REST client file with WebSocket connection instructions
+- `websocket-flow.test.js` - Automated WebSocket connection tests
+- `mcp-protocol.test.js` - MCP (Model Context Protocol) specific tests
+
 ## Setup
+
+### Prerequisites
+Make sure the backend is running:
+```bash
+# From the root directory
+cd backend
+npm run dev
+# OR with Docker
+cd infra
+docker-compose up backend
+```
 
 ### Environment Variables
 Create a `.env.test` file with:
@@ -36,9 +52,27 @@ TEST_EMAIL=test@fosforescent.com
 
 ### Node.js Test Scripts
 ```bash
-cd apiTests
-npm install
-node auth-flow.test.js
+# From the infra directory
+npm run test:api        # Run auth flow tests
+npm run test:api:auth   # Same as above
+npm run test:api:ws     # Run WebSocket connection tests
+npm run test:api:mcp    # Run MCP protocol tests
+npm run test:api:all    # Run all API tests
+```
+
+### WebSocket Testing Tools
+Install wscat for manual WebSocket testing:
+```bash
+npm install -g wscat
+```
+
+Manual WebSocket testing:
+```bash
+# Test normal WebSocket (replace TOKEN with actual JWT)
+wscat -c "ws://localhost:4000/TOKEN"
+
+# Test MCP WebSocket
+wscat -c "ws://localhost:4000/mcp"
 ```
 
 ## Test Scenarios
@@ -50,6 +84,20 @@ node auth-flow.test.js
 4. Use JWT token for protected endpoints
 5. Test token expiration
 6. Test password reset flow
+
+### WebSocket Connections
+1. Normal WebSocket connection with JWT authentication
+2. Connection error handling (invalid tokens, missing tokens)
+3. Basic message sending and receiving
+4. Connection cleanup and close handling
+
+### MCP Protocol Testing
+1. WebSocket connection to MCP endpoint
+2. MCP protocol initialization
+3. Resource listing and management
+4. Tool discovery and invocation
+5. Prompt template listing
+6. Error handling and protocol compliance
 
 ### Protected Endpoints
 1. Get user data

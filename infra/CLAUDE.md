@@ -12,10 +12,16 @@ The infra directory contains infrastructure configuration, deployment tools, and
 - Development and production service profiles
 
 ### End-to-End Testing
-- `e2e-tests/` - Playwright test suites (moved from root `/e2e/`)
+- `e2e-tests/` - Playwright test suites for full browser testing
 - `helpers/` - Test helper functions and utilities
 - `playwright.config.ts` - Playwright configuration
 - `test-results/` - Test execution results and artifacts
+
+### API Testing
+- `apiTests/` - API integration tests for backend endpoints
+- `auth-flow.http` - REST client file for manual API testing
+- `auth-flow.postman_collection.json` - Postman collection
+- `auth-flow.test.js` - Automated Node.js test script
 
 ### Terraform Infrastructure
 - `terraform/` - Infrastructure as Code for cloud deployment
@@ -150,7 +156,7 @@ docker-compose down -v
 
 ### E2E Testing
 ```bash
-# Run all tests
+# Run all Playwright tests
 npm test
 
 # Run specific test file
@@ -161,6 +167,21 @@ npx playwright test --ui
 
 # Generate test report
 npx playwright show-report
+```
+
+### API Testing
+```bash
+# Run authentication flow tests
+npm run test:api
+
+# Test WebSocket connections
+npm run test:api:ws
+
+# Test MCP protocol
+npm run test:api:mcp
+
+# Run all API tests
+npm run test:api:all
 ```
 
 ### Terraform Operations
@@ -183,3 +204,4 @@ terraform destroy
 - [ ] Optimize E2E test execution time
 - [ ] Implement test parallelization across environments
 - [ ] Add performance testing with load scenarios
+- [ ] **Add MCP server that exposes a webhook API for long-running tasks** - Create an MCP server that exposes APIs for asynchronous input and sends messages to upstream servers. The upstream server can go offline and reconnect while still checking on task status

@@ -9,6 +9,9 @@
     "test:with-servers": "cd .. && make e2e-test",
     "test:api": "node apiTests/auth-flow.test.js",
     "test:api:auth": "node apiTests/auth-flow.test.js",
+    "test:api:ws": "node apiTests/websocket-flow.test.js",
+    "test:api:mcp": "node apiTests/mcp-protocol.test.js",
+    "test:api:all": "npm run test:api && npm run test:api:ws && npm run test:api:mcp",
     "install-browsers": "playwright install",
     "setup": "npm install && npm run install-browsers",
     "db:generate": "cd prisma && prisma generate",
@@ -48,6 +51,7 @@
     "prisma": "^6.9.0",
     "tsx": "^4.19.2",
     "bcrypt": "^5.1.1",
-    "@types/bcrypt": "^5.0.2"
+    "@types/bcrypt": "^5.0.2",
+    "ws": "^8.14.2"
   }
 }
