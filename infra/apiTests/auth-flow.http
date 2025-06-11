@@ -1,0 +1,146 @@
+### Authentication Flow Test Suite
+### Base URL
+@baseUrl = http://localhost:4000
+@timestamp = {{$datetime 'YYYYMMDDHHmmss'}}
+@testUsername = testuser_{{timestamp}}
+@testPassword = TestPass123
+@testEmail = test+{{timestamp}}@fosforescent.com
+
+### Variables (will be set during flow)
+# @authToken = 
+# @userId = 
+
+### 1. Health Check
+GET {{baseUrl}}/
+Accept: application/json
+
+###
+
+### 2. Check if username is available
+POST {{baseUrl}}/auth/check-username
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}"
+}
+
+###
+
+### 3. Register new user
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}",
+  "password": "{{testPassword}}",
+  "accepted_terms": true,
+  "cookies": {}
+}
+
+###
+
+### 4. Login with new user credentials
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}",
+  "password": "{{testPassword}}"
+}
+
+###
+
+### 5. Verify JWT token (replace {{authToken}} with token from login response)
+GET {{baseUrl}}/auth/verify-jwt
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### 6. Get user profile (protected endpoint)
+GET {{baseUrl}}/user/profile
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### 7. Get user data (protected endpoint)
+GET {{baseUrl}}/user/data
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### 8. Test invalid login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}",
+  "password": "WrongPassword123"
+}
+
+###
+
+### 9. Test missing credentials
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "",
+  "password": ""
+}
+
+###
+
+### 10. Test weak password registration
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}_weak",
+  "password": "weak",
+  "accepted_terms": true,
+  "cookies": {}
+}
+
+###
+
+### 11. Test duplicate username registration
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}",
+  "password": "{{testPassword}}",
+  "accepted_terms": true,
+  "cookies": {}
+}
+
+###
+
+### 12. Test registration without accepting terms
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}_terms",
+  "password": "{{testPassword}}",
+  "accepted_terms": false,
+  "cookies": {}
+}
+
+###
+
+### 13. Test protected endpoint without token
+GET {{baseUrl}}/user/profile
+Accept: application/json
+
+###
+
+### 14. Test protected endpoint with invalid token
+GET {{baseUrl}}/user/profile
+Authorization: Bearer invalid.jwt.token
+Accept: application/json
+
+###

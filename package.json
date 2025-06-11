@@ -5,9 +5,8 @@
   "private": true,
   "workspaces": [
     "frontend",
-    "backend",
+    "backend", 
     "shared",
-    "prisma",
     "infra"
   ],
   "scripts": {

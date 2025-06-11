@@ -10,7 +10,7 @@ RUN echo $PATH
 
 # Copy entire workspace for dependency resolution
 COPY package*.json ./
-COPY prisma/ ./prisma/
+COPY infra/prisma/ ./prisma/
 COPY shared/ ./shared/
 COPY backend/ ./backend/
 COPY frontend/package*.json ./frontend/

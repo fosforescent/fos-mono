@@ -12,11 +12,11 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "db:seed": "tsx ../prisma/seed.ts"
+    "db:seed": "tsx ../infra/prisma/seed.ts"
   },
   "dependencies": {
     "@fosforescent/fosforescent-js": "^1.0.6",
-    "@fosforescent/prisma": "*",
+    "@fosforescent/infra": "*",
     "@fosforescent/shared": "*",
     "@langchain/core": "^0.3.37",
     "@prisma/client": "^6.8.2",

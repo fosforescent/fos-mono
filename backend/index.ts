@@ -104,7 +104,7 @@ import { attachWs } from './ws'
 import { postCreateOrGetConnectAccount } from './subscription/connectSession'
 import { MCPExpressMiddleware } from './mcp/mcpMiddleware'
 import { MCPProxy } from './mcp/mcpProxy'
-import { initializeCollection } from './qdrant'
+import { initializeCollection } from '@fosforescent/infra/qdrant'
 
 
 import jwt from 'jsonwebtoken'

@@ -7,7 +7,7 @@ import OpenAI from 'openai';
 import { Document } from '@langchain/core/documents';
 import { mutableMapExpressions } from '@fosforescent/shared/utils';
 import { Embeddings, EmbeddingsParams } from '@langchain/core/embeddings';
-import { semanticSearch as qdrantSemanticSearch, upsertDocument, batchUpsertDocuments } from '../qdrant';
+import { semanticSearch as qdrantSemanticSearch, upsertDocument, batchUpsertDocuments } from '@fosforescent/infra/qdrant';
 
 // Initialize OpenAI client
 const openai = new OpenAI({

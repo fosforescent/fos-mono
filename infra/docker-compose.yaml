@@ -13,12 +13,15 @@ services:
       - "${POSTGRES_PORT:-5435}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../prisma/init_vector.sql:/docker-entrypoint-initdb.d/init_vector.sql
+      - ./prisma/init_vector.sql:/docker-entrypoint-initdb.d/init_vector.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    profiles:
+      - db-only
+      - full
 
   # Qdrant vector database
   qdrant:
@@ -35,10 +38,15 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6333/health || exit 1"]
+      test:
+        - CMD-SHELL
+        - bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - db-only
+      - full
 
   # Fosforescent backend (using Dockerfile)
   backend:
@@ -70,6 +78,8 @@ services:
       qdrant:
         condition: service_healthy
     restart: unless-stopped
+    profiles:
+      - full
 
   # Frontend (using Dockerfile)
   frontend:
@@ -87,6 +97,8 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    profiles:
+      - full
 
 volumes:
   postgres_data:
