@@ -180,6 +180,9 @@ npm run test:api:ws
 # Test MCP protocol
 npm run test:api:mcp
 
+# Test Temporal MCP server
+npm run test:api:temporal
+
 # Run all API tests
 npm run test:api:all
 ```
@@ -204,4 +207,7 @@ terraform destroy
 - [ ] Optimize E2E test execution time
 - [ ] Implement test parallelization across environments
 - [ ] Add performance testing with load scenarios
-- [ ] **Add MCP server that exposes a webhook API for long-running tasks** - Create an MCP server that exposes APIs for asynchronous input and sends messages to upstream servers. The upstream server can go offline and reconnect while still checking on task status
+- [x] **Add MCP server that exposes a webhook API for long-running tasks** - ✅ COMPLETED: Created Temporal MCP server (`backend/mcp/temporalMcpServer.ts`) that provides tools for task submission, monitoring, cancellation, and webhook notifications. Supports offline/reconnect scenarios with persistent task storage and status tracking.
+- [ ] **Integrate Temporal MCP server with actual Temporal.io workflows** - Replace simulated task execution with real Temporal workflow orchestration
+- [ ] **Implement webhook HTTP delivery system** - Add actual HTTP webhook delivery for task completion notifications
+- [ ] **Add database persistence for tasks** - Store task data in PostgreSQL instead of in-memory storage

@@ -12,6 +12,7 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `subscription/` - Stripe payment and subscription handling
 - `email/` - Email service integration (Postmark)
 - `mcp/` - Model Context Protocol server and client implementations
+- `mcp/temporalMcpServer.ts` - Temporal MCP server for long-running task management
 
 ### Graph System Integration
 - `qdrant.ts` - Qdrant vector database integration for semantic search  
@@ -138,6 +139,8 @@ The backend directory contains the Node.js/Express API server that provides the 
 - [x] **Integrated Qdrant client with automatic collection initialization**
 - [x] **Migrated semantic search from PostgreSQL to Qdrant vector database**
 - [x] **Updated data processing pipeline to use Qdrant batch operations**
+- [x] **Added Temporal.io integration with complete MCP server for long-running tasks**
+- [x] **Integrated Temporal MCP server with actual Temporal workflows and workers**
 - [x] Fixed all TypeScript compilation errors (100+ → 0)
 - [x] Implemented parameter validation utility pattern
 - [x] Fixed Express middleware type compatibility

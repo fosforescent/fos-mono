@@ -8,6 +8,7 @@ import { notifyUserOfPrompt } from '../promptNotifications'
 import { tokenManager } from '../tokenManager'
 import { toolBidManager } from '../toolBidManager'
 import { getUserId } from '../apiTokenAuth'
+import { temporalMcpServer } from './temporalMcpServer'
 
 export interface MCPMiddlewareOptions {
   path?: string
@@ -45,6 +46,11 @@ export class MCPExpressMiddleware {
 
     // Add prompt providers
     this.mcpServer.addPromptProvider(new FosPromptProvider())
+
+    // Add Temporal MCP server for long-running tasks
+    this.mcpServer.addToolProvider(new TemporalToolProvider())
+    this.mcpServer.addResourceProvider(new TemporalResourceProvider())
+    this.mcpServer.addPromptProvider(new TemporalPromptProvider())
   }
 
   // Attach WebSocket server for MCP connections
@@ -1235,6 +1241,165 @@ class FosPromptProvider implements MCPPromptProvider {
 
       default:
         throw new Error(`Prompt not found: ${name}`)
+    }
+  }
+}
+
+// Temporal Tool Provider for long-running tasks
+class TemporalToolProvider implements MCPToolProvider {
+  private userId?: number
+
+  setUserContext(userId: number, serverId?: number) {
+    this.userId = userId
+  }
+
+  async listTools() {
+    return temporalMcpServer.getTools()
+  }
+
+  async callTool(name: string, arguments_: any) {
+    if (!this.userId) {
+      throw new Error('User authentication required for temporal tools')
+    }
+
+    try {
+      const result = await temporalMcpServer.executeTool(name, arguments_, this.userId.toString())
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            tool: name,
+            result
+          })
+        }]
+      }
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: false,
+            tool: name,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }]
+      }
+    }
+  }
+}
+
+// Temporal Resource Provider
+class TemporalResourceProvider implements MCPResourceProvider {
+  async listResources() {
+    return temporalMcpServer.getResources()
+  }
+
+  async readResource(uri: string) {
+    try {
+      const content = await temporalMcpServer.getResource(uri)
+      
+      return {
+        contents: [{
+          uri,
+          mimeType: 'application/json',
+          text: JSON.stringify(content, null, 2)
+        }]
+      }
+    } catch (error) {
+      throw new Error(`Failed to read resource ${uri}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  async subscribeToResource(uri: string) {
+    // In a real implementation, this would set up subscriptions for resource changes
+    console.log(`Subscribed to temporal resource: ${uri}`)
+    return true
+  }
+
+  async unsubscribeFromResource(uri: string) {
+    console.log(`Unsubscribed from temporal resource: ${uri}`)
+    return true
+  }
+}
+
+// Temporal Prompt Provider
+class TemporalPromptProvider implements MCPPromptProvider {
+  async listPrompts() {
+    return temporalMcpServer.getPrompts()
+  }
+
+  async getPrompt(name: string, args?: any) {
+    switch (name) {
+      case 'task_submission_wizard':
+        return {
+          description: 'Interactive wizard for submitting complex temporal tasks',
+          messages: [
+            {
+              role: 'user' as const,
+              content: {
+                type: 'text' as const,
+                text: `Please help me submit a ${args?.workflow_type || 'long-running'} task. I need guidance on:
+1. Task configuration parameters
+2. Input data requirements
+3. Expected output format
+4. Retry and error handling settings
+5. Webhook notification setup
+
+What information do you need from me to configure this task properly?`
+              }
+            }
+          ]
+        }
+
+      case 'task_monitoring_dashboard':
+        const userFilter = args?.user_id ? ` for user ${args.user_id}` : ''
+        return {
+          description: 'Generate a monitoring dashboard for active temporal tasks',
+          messages: [
+            {
+              role: 'user' as const,
+              content: {
+                type: 'text' as const,
+                text: `Please create a monitoring dashboard${userFilter} showing:
+1. Current task status summary
+2. Active running tasks with progress
+3. Recent completed/failed tasks
+4. Performance metrics and trends
+5. Alerts for failed or stuck tasks
+6. Resource utilization statistics
+
+Use the temporal://tasks and temporal://metrics resources to gather this information.`
+              }
+            }
+          ]
+        }
+
+      case 'task_failure_analysis':
+        return {
+          description: 'Analyze failed tasks and suggest remediation steps',
+          messages: [
+            {
+              role: 'user' as const,
+              content: {
+                type: 'text' as const,
+                text: `Please analyze the failed task ${args?.task_id} and provide:
+1. Root cause analysis of the failure
+2. Error pattern identification
+3. Suggested remediation steps
+4. Prevention strategies for similar failures
+5. Recommendations for retry configuration
+6. Input validation improvements
+
+Use the get_task_status tool to retrieve detailed task information for analysis.`
+              }
+            }
+          ]
+        }
+
+      default:
+        throw new Error(`Temporal prompt not found: ${name}`)
     }
   }
 }

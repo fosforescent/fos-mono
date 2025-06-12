@@ -1,7 +1,7 @@
 MAKE=make
 
-include ./.env
-export $(shell sed 's/=.*//' ./.env)
+include ../.env
+export $(shell sed 's/=.*//' ../.env)
 
 build-backend:
 	which node

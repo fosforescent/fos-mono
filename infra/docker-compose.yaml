@@ -48,6 +48,94 @@ services:
       - db-only
       - full
 
+  # Temporal database (separate from main app database)
+  temporal-postgres:
+    image: postgres:13
+    container_name: temporal-postgres
+    environment:
+      POSTGRES_DB: temporal
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    ports:
+      - "5433:5432"
+    volumes:
+      - temporal_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - temporal
+      - full
+
+  # Temporal server
+  temporal:
+    image: temporalio/auto-setup:1.22.4
+    container_name: temporal
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=temporal-postgres
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"   # gRPC port
+      - "8233:8233"   # HTTP API port
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "workflow", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - temporal
+      - full
+
+  # Temporal UI
+  temporal-ui:
+    image: temporalio/ui:2.21.3
+    container_name: temporal-ui
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    ports:
+      - "8080:8080"
+    profiles:
+      - temporal
+      - full
+
+  # Temporal Worker (for executing workflows)
+  temporal-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.temporal-worker
+    container_name: temporal-worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      - TEMPORAL_SERVER_HOST=temporal:7233
+      - NODE_ENV=development
+    volumes:
+      - ../backend:/app
+      - /app/node_modules
+    profiles:
+      - temporal
+      - full
+
   # Fosforescent backend (using Dockerfile)
   backend:
     build:
@@ -69,6 +157,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - TEMPORAL_SERVER_HOST=temporal:7233
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "${BACKEND_PORT:-4000}:80"
@@ -103,6 +192,7 @@ services:
 volumes:
   postgres_data:
   qdrant_data:
+  temporal_data:
 
 # Networks (optional, for custom networking)
 networks:

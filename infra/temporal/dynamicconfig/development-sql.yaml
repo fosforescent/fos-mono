@@ -1,0 +1,41 @@
+# Temporal dynamic configuration for development
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
+
+frontend.enableUpdateWorkflowExecution:
+  - value: true
+    constraints: {}
+
+frontend.enableUpdateWorkflowExecutionAsyncAccepted:
+  - value: true
+    constraints: {}
+
+# Enable workflow update feature
+frontend.enableWorkflowUpdate:
+  - value: true
+    constraints: {}
+
+# Reduce memory usage in development
+system.maxWorkflowRetentionTTL:
+  - value: "72h"
+    constraints: {}
+
+# Enable debugging features
+system.enableActivityLocalDispatchByDomain:
+  - value: true
+    constraints: {}
+
+# Reduce worker requirements for development
+matching.numTaskqueueReadPartitions:
+  - value: 1
+    constraints: {}
+
+matching.numTaskqueueWritePartitions:
+  - value: 1
+    constraints: {}
+
+# Allow more permissive CORS for local development
+frontend.cors.allowOrigins:
+  - value: "*"
+    constraints: {}

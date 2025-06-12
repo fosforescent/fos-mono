@@ -17,6 +17,7 @@ This directory contains API tests for the Fosforescent backend. The tests are or
 - `websocket-flow.http` - REST client file with WebSocket connection instructions
 - `websocket-flow.test.js` - Automated WebSocket connection tests
 - `mcp-protocol.test.js` - MCP (Model Context Protocol) specific tests
+- `temporal-mcp.test.js` - Temporal MCP server tests for long-running tasks
 
 ## Setup
 
@@ -57,6 +58,7 @@ npm run test:api        # Run auth flow tests
 npm run test:api:auth   # Same as above
 npm run test:api:ws     # Run WebSocket connection tests
 npm run test:api:mcp    # Run MCP protocol tests
+npm run test:api:temporal # Run Temporal MCP server tests
 npm run test:api:all    # Run all API tests
 ```
 
@@ -98,6 +100,15 @@ wscat -c "ws://localhost:4000/mcp"
 4. Tool discovery and invocation
 5. Prompt template listing
 6. Error handling and protocol compliance
+
+### Temporal MCP Server Testing
+1. Long-running task submission and management
+2. Task status monitoring and progress tracking
+3. Workflow type discovery and configuration
+4. Task cancellation and retry mechanisms
+5. Webhook notification system testing
+6. Resource access for task metrics and monitoring
+7. Interactive prompt templates for task management
 
 ### Protected Endpoints
 1. Get user data
