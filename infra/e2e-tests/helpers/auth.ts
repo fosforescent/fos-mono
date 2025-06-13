@@ -37,8 +37,8 @@ export async function loginWithCredentials(page: Page, email: string, password: 
   }
 
   // Fill login form
-  await page.locator('#username').fill(email);
-  await page.locator('#password').fill(password);
+  await page.locator('#login-email').fill(email);
+  await page.locator('#login-password').fill(password);
   
   // Submit login
   const signInButton = page.getByRole('button', { name: /sign in/i });

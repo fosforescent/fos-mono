@@ -27,4 +27,4 @@ const customJestConfig = {
     'e2e/'
   ],
 }
-module.exports = customJestConfig
+export default customJestConfig

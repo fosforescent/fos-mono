@@ -11,9 +11,13 @@ test.describe('Authentication Flow', () => {
     // Check for main heading (use exact match to avoid conflicts)
     await expect(page.getByRole('heading', { name: 'Fosforescent', exact: true })).toBeVisible();
     
-    // Should be on login tab by default
-    await expect(page.locator('#username')).toBeVisible();
-    await expect(page.locator('#password')).toBeVisible();
+    // Click on Sign In tab to show login form
+    await page.getByRole('tab', { name: /sign in/i }).click();
+    await page.waitForTimeout(500);
+    
+    // Should show login form after clicking Sign In tab
+    await expect(page.locator('#login-email')).toBeVisible();
+    await expect(page.locator('#login-password')).toBeVisible();
   });
 
   test('should show registration form', async ({ page }) => {
@@ -41,8 +45,12 @@ test.describe('Authentication Flow', () => {
   });
 
   test('should navigate between login and registration', async ({ page }) => {
-    // Should start on login tab
-    await expect(page.locator('#username')).toBeVisible();
+    // Click on Sign In tab first
+    await page.getByRole('tab', { name: /sign in/i }).click();
+    await page.waitForTimeout(500);
+    
+    // Should show login form
+    await expect(page.locator('#login-email')).toBeVisible();
     
     // Click on register tab
     await page.getByRole('tab', { name: /register/i }).click();
@@ -50,12 +58,16 @@ test.describe('Authentication Flow', () => {
     
     // Click back to login tab
     await page.getByRole('tab', { name: /sign in/i }).click();
-    await expect(page.locator('#username')).toBeVisible();
-    await expect(page.locator('#password')).toBeVisible();
+    await expect(page.locator('#login-email')).toBeVisible();
+    await expect(page.locator('#login-password')).toBeVisible();
   });
 
   test('should show forgot password flow', async ({ page }) => {
-    // Should be on login tab by default, look for forgot password button
+    // Click on Sign In tab first
+    await page.getByRole('tab', { name: /sign in/i }).click();
+    await page.waitForTimeout(500);
+    
+    // Look for forgot password button
     const forgotPasswordButton = page.getByRole('button', { name: /forgot.*password/i });
     await expect(forgotPasswordButton).toBeVisible();
     
@@ -67,9 +79,13 @@ test.describe('Authentication Flow', () => {
   });
 
   test('should successfully login with valid credentials', async ({ page }) => {
+    // Click on Sign In tab first
+    await page.getByRole('tab', { name: /sign in/i }).click();
+    await page.waitForTimeout(500);
+    
     // Fill in the login form with test user credentials
-    await page.fill('#username', 'user1@fosforescent.com');
-    await page.fill('#password', 'user123');
+    await page.fill('#login-email', 'user1@fosforescent.com');
+    await page.fill('#login-password', 'user123');
     
     // Submit the form
     await page.getByRole('button', { name: /sign in/i }).click();

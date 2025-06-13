@@ -1,4 +1,4 @@
 /* eslint no-undef: 0 */
-module.exports = {
+export default {
   presets: ['@babel/preset-typescript'],
 }

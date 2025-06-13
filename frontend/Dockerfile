@@ -6,7 +6,6 @@ WORKDIR /usr/src/app
 # Copy workspace dependencies first  
 COPY package*.json ./
 COPY shared/ ./shared/
-COPY prisma/ ./prisma/
 COPY frontend/ ./frontend/
 
 # Install workspace dependencies

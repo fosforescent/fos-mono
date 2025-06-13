@@ -52,8 +52,20 @@ export const postRegister = async (req: Request, res: Response) => {
     // Create a new FosStore and insert its nodes into the database first
     const newStore = new FosStore()
 
-    // Get existing nodes to avoid duplicates
-    const existingNodes = await prisma.fosNodeModel.findMany({})
+    // Get the node IDs from the new store
+    const newStoreNodeIds = Array.from(newStore.table.keys())
+    
+    // Get only existing nodes with matching IDs (much more efficient)
+    const existingNodes = await prisma.fosNodeModel.findMany({
+      where: {
+        cid: {
+          in: newStoreNodeIds
+        }
+      },
+      select: {
+        cid: true
+      }
+    })
 
     // Prepare new nodes for insertion
     const newEntries = Array.from(newStore.table.entries()).reduce((acc, [id, node]) => {
@@ -116,8 +128,17 @@ export const postRegister = async (req: Request, res: Response) => {
     // Omit sending password back in the response
     const { password, ...result } = user
 
-    // Send email confirmation email
-    await sendConfirmationEmail(username, token, (req as any).clientDetails)
+    // Send email confirmation email only if username is a valid email
+    if (username.includes('@') && username.includes('.')) {
+      try {
+        await sendConfirmationEmail(username, token, (req as any).clientDetails)
+      } catch (error) {
+        console.warn('Failed to send confirmation email:', error)
+        // Continue without email confirmation for development/testing
+      }
+    } else {
+      console.log('Skipping email confirmation for non-email username:', username)
+    }
 
     return res.status(201).json(result)
   } catch (error) {

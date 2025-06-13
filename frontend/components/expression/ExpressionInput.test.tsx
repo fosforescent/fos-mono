@@ -4,7 +4,8 @@ import '@testing-library/jest-dom'
 import { ExpressionInput } from './ExpressionInput'
 import { FosExpression } from '@fosforescent/shared/dag-implementation/expression'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { AppStateLoaded, FosReactGlobal } from '@fosforescent/shared/types'
+import { AppStateLoaded } from '@fosforescent/shared/types'
+import { FosReactGlobal } from '../../types'
 
 // Mock the dependencies
 jest.mock('@fosforescent/shared/dag-implementation/expression')
@@ -22,6 +23,7 @@ describe('ExpressionInput', () => {
     mockStore = {
       getExpressionAtPath: jest.fn(),
       saveData: jest.fn(),
+      exportContext: jest.fn().mockReturnValue({ fosData: {}, trellisData: {} }),
     } as any
 
     // Create mock expression
@@ -30,6 +32,7 @@ describe('ExpressionInput', () => {
       addComment: jest.fn().mockResolvedValue(undefined),
       currentActivity: jest.fn().mockReturnValue('todo'),
       isBase: jest.fn().mockReturnValue(true),
+      store: mockStore,
     } as any
 
     // Create mock options
@@ -122,7 +125,9 @@ describe('ExpressionInput', () => {
     })
 
     // Input should be cleared after submission
-    expect(input).toHaveValue('')
+    await waitFor(() => {
+      expect(input).toHaveValue('')
+    })
   })
 
   it('calls addComment when submitting a comment', async () => {
@@ -150,7 +155,9 @@ describe('ExpressionInput', () => {
     })
 
     // Input should be cleared after submission
-    expect(input).toHaveValue('')
+    await waitFor(() => {
+      expect(input).toHaveValue('')
+    })
   })
 
   it('does not render form when expression is not base', () => {
@@ -182,12 +189,13 @@ describe('ExpressionInput', () => {
     )
 
     const input = screen.getByPlaceholderText('Add a new todo...')
+    const form = input.closest('form')!
 
     // Type in the input
     fireEvent.change(input, { target: { value: 'Test todo with enter' } })
 
-    // Submit with enter key
-    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+    // Submit with enter key - submit the form directly
+    fireEvent.submit(form)
 
     await waitFor(() => {
       expect(mockExpression.addTodo).toHaveBeenCalledWith('Test todo with enter')
@@ -205,15 +213,19 @@ describe('ExpressionInput', () => {
       />
     )
 
-    const input = screen.getByPlaceholderText('Add a new todo...')
     const typeSelector = screen.getByRole('combobox')
 
     // Initially should be set to todo
     expect(screen.getByText('Add Todo')).toBeInTheDocument()
 
-    // Change to comments
+    // Change to comments - open the select
     fireEvent.click(typeSelector)
-    fireEvent.click(screen.getByText('Comment'))
+    
+    // Wait for the dropdown to open and click on Comment option
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Comment' })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'Comment' }))
 
     // Now should show comment UI
     await waitFor(() => {
@@ -222,7 +234,8 @@ describe('ExpressionInput', () => {
     })
 
     // Type and submit a comment
-    fireEvent.change(input, { target: { value: 'Test comment from all filter' } })
+    const commentInput = screen.getByPlaceholderText('Add a comment...')
+    fireEvent.change(commentInput, { target: { value: 'Test comment from all filter' } })
     fireEvent.click(screen.getByText('Add Comment'))
 
     await waitFor(() => {

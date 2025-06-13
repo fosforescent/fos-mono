@@ -2,8 +2,9 @@ import { FosExpression } from "@fosforescent/shared/dag-implementation/expressio
 import { Input } from "../ui/input"
 import { Button } from "../ui/button"
 import { Send } from "lucide-react"
-import React from "react"
-import { AppState, AppStateLoaded, FosReactGlobal } from "@fosforescent/shared/types"
+import React, { useState } from "react"
+import { AppState, AppStateLoaded } from "@fosforescent/shared/types"
+import { FosReactGlobal } from "../../types"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
 
 export const ExpressionInput = ({
@@ -23,8 +24,8 @@ export const ExpressionInput = ({
 
 
 
-  const [newMessage, setNewMessage] = React.useState("")
-  const [selectedItemType, setSelectedItemType] = React.useState("todo")
+  const [newMessage, setNewMessage] = useState("")
+  const [selectedItemType, setSelectedItemType] = useState("todo")
 
   const activeFilter = currentFilter || expression.currentActivity()
 
