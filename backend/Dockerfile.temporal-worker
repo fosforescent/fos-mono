@@ -1,22 +1,38 @@
-# Temporal Worker Dockerfile
-FROM node:18-alpine
+# Build stage
+FROM node:20-slim as build
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Copy package files
+# Add debugging steps
+RUN which node
+RUN node --version
+RUN echo $PATH
+
+# Copy entire workspace for dependency resolution
 COPY package*.json ./
+COPY infra/ ./infra/
+COPY shared/ ./shared/
+COPY backend/ ./backend/
+COPY frontend/package*.json ./frontend/
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies from workspace root
+RUN npm install --legacy-peer-deps --workspaces
 
-# Copy source code
-COPY . .
+# Generate Prisma client
+RUN cd infra && npx prisma generate
 
-# Build TypeScript
-RUN npm run build
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    openssl \
+    libssl-dev \
+    make \
+    && rm -rf /var/lib/apt/lists/*
 
-# Expose any debugging ports if needed
-EXPOSE 9090
+# Set environment for development mode
+ENV NODE_ENV=development \
+    PORT=80
 
-# Start the Temporal worker
-CMD ["node", "dist/temporal/worker.js"]
+WORKDIR /usr/src/app
+
+EXPOSE 80
+CMD ["node", "-r", "dotenv/config", "./backend/dist/backend/temporal/worker.js"]

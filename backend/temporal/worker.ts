@@ -7,7 +7,7 @@
 
 import { Worker } from '@temporalio/worker'
 import { config } from 'dotenv'
-import * as activities from './activities'
+import * as activities from './activities.js'
 
 // Load environment variables
 config()

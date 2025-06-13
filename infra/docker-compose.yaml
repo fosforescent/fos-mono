@@ -1,7 +1,7 @@
 services:
   # PostgreSQL database with pgvector extension
   postgres:
-    image: pgvector/pgvector:pg15
+    image: postgres:15
     container_name: fos-postgres
     env_file:
       - ../.env
@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
-      - "${POSTGRES_PORT:-5435}:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./prisma/init_vector.sql:/docker-entrypoint-initdb.d/init_vector.sql
@@ -21,6 +21,7 @@ services:
       retries: 5
     profiles:
       - db-only
+      - backend
       - full
 
   # Qdrant vector database
@@ -46,27 +47,29 @@ services:
       retries: 5
     profiles:
       - db-only
+      - backend
       - full
 
-  # Temporal database (separate from main app database)
+
+  # Temporal PostgreSQL database
   temporal-postgres:
-    image: postgres:13
+    image: postgres:15
     container_name: temporal-postgres
     environment:
       POSTGRES_DB: temporal
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: temporal
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
-      - temporal_data:/var/lib/postgresql/data
+      - temporal_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U temporal"]
       interval: 5s
       timeout: 5s
       retries: 5
     profiles:
-      - temporal
+      - backend
       - full
 
   # Temporal server
@@ -79,8 +82,10 @@ services:
     environment:
       - DB=postgresql
       - DB_PORT=5432
+      - POSTGRES_HOST=temporal-postgres
       - POSTGRES_USER=temporal
       - POSTGRES_PWD=temporal
+      - POSTGRES_DB=temporal
       - POSTGRES_SEEDS=temporal-postgres
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
     ports:
@@ -94,7 +99,7 @@ services:
       timeout: 5s
       retries: 5
     profiles:
-      - temporal
+      - backend
       - full
 
   # Temporal UI
@@ -110,14 +115,14 @@ services:
     ports:
       - "8080:8080"
     profiles:
-      - temporal
+      - backend
       - full
 
   # Temporal Worker (for executing workflows)
   temporal-worker:
     build:
-      context: ../backend
-      dockerfile: Dockerfile.temporal-worker
+      context: ../
+      dockerfile: backend/Dockerfile.temporal-worker
     container_name: temporal-worker
     depends_on:
       temporal:
@@ -133,7 +138,7 @@ services:
       - ../backend:/app
       - /app/node_modules
     profiles:
-      - temporal
+      - backend
       - full
 
   # Fosforescent backend (using Dockerfile)
@@ -145,9 +150,9 @@ services:
     env_file:
       - ../.env
     environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-fosdev}?connection_limit=5
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5433/${POSTGRES_DB:-fosdev}?connection_limit=5
       - JWT_SECRET=myjwtsecret
-      - PORT=${BACKEND_PORT:-4000}
+      - PORT=80
       - STRIPE_TOKEN=${STRIPE_TOKEN}
       - STRIPE_SUBSCRIPTION_PRICE_ID=${STRIPE_SUBSCRIPTION_PRICE_ID}
       - STRIPE_TOPUP_PRICE_ID=${STRIPE_TOPUP_PRICE_ID}
@@ -168,6 +173,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     profiles:
+      - backend
       - full
 
   # Frontend (using Dockerfile)
@@ -193,6 +199,7 @@ volumes:
   postgres_data:
   qdrant_data:
   temporal_data:
+  temporal_postgres_data:
 
 # Networks (optional, for custom networking)
 networks:

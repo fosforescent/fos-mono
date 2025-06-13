@@ -188,3 +188,19 @@ Each major directory in this monorepo contains its own `CLAUDE.md` file with det
 - `shared/evaluation/CLAUDE.md` - Expression evaluation
 - `shared/mock/CLAUDE.md` - Example workflows and test data
 - `infra/CLAUDE.md` - Infrastructure, Docker, and E2E testing
+
+## Dev Tips
+
+- Use the makefile commands to run docker compose so the env vars are loaded.
+- When working with Docker Compose and project builds, prefer using Makefile commands to standardize environment setup and ensure consistent configuration
+- Create Docker Compose commands in the Makefile to abstract away complex docker and environment configurations
+- Ensure environment variables are properly loaded and managed through the Makefile for docker compose commands
+- Consider adding docker compose commands to the Makefile for:
+  - Starting services
+  - Stopping services
+  - Rebuilding services
+  - Cleaning up containers and volumes
+  - Running specific service builds
+- Use environment-specific docker compose files or override files to manage different deployment scenarios
+- Add error handling and logging to docker compose commands in the Makefile
+- Create commands that combine multiple steps like build+start or stop+clean

@@ -10,13 +10,16 @@ RUN echo $PATH
 
 # Copy entire workspace for dependency resolution
 COPY package*.json ./
-COPY infra/prisma/ ./prisma/
+COPY infra/ ./infra/
 COPY shared/ ./shared/
 COPY backend/ ./backend/
 COPY frontend/package*.json ./frontend/
 
 # Install dependencies from workspace root
-RUN npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps --workspaces
+
+# Generate Prisma client
+RUN cd infra && npx prisma generate
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \

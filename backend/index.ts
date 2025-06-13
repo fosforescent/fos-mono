@@ -446,9 +446,9 @@ mcpMiddleware.attachToServer(server, '/mcp');
 attachWs(server)
 
 // Start the server
-const PORT = process.env.PORT || 4000;
+const PORT = parseInt(process.env.PORT || '4000', 10);
 
-server.listen(PORT, async () => {
+server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);
   console.log(`MCP endpoint: ws://localhost:${PORT}/mcp`);

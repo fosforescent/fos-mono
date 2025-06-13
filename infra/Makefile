@@ -6,14 +6,29 @@ export $(shell sed 's/=.*//' ./../.env)
 build-backend:
 	which node
 	node --version
-	npm run build:backend
+	cd .. && npm run build:backend
 
 build-frontend:
-	npm run build:frontend
+	cd .. && npm run build:frontend
 
+# Build temporal worker container
+build-temporal-worker:
+	bash -c 'set -a && source ../.env && set +a && docker compose build temporal-worker'
+
+# Build temporal worker with no cache
+build-temporal-worker-clean:
+	bash -c 'set -a && source ../.env && set +a && docker compose build temporal-worker --no-cache'
+
+# Restart temporal worker
+restart-temporal-worker:
+	bash -c 'set -a && source ../.env && set +a && docker compose restart temporal-worker'
+
+# Show temporal worker logs
+logs-temporal-worker:
+	docker compose logs -f temporal-worker
 
 run-dev:
-	npm run dev
+	cd .. && npm run dev
 
 run:
 	$(MAKE) run-dev
@@ -95,35 +110,36 @@ dockertest:
 
 # Load environment variables from parent .env file
 include ../.env
-export
+export $(shell sed 's/=.*//' ../.env)
 
 # Start backend with proper environment
 backend:
-	docker compose --profile backend up
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile backend up'
 
 # Start backend in background
 backend-up:
-	docker compose --profile backend up -d
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile backend up --remove-orphans -d'
 
 # Start frontend
 frontend:
-	docker compose --profile frontend up
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile frontend up'
 
 # Start frontend in background
 frontend-up:
-	docker compose --profile frontend up -d
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile frontend up -d'
 
 # Start both backend and frontend for e2e testing
 e2e-up:
-	docker compose up -d
+	bash -c 'set -a && source ../.env && set +a && docker compose up -d'
 
 # Stop all services
 down:
-	docker compose down
+	set -a && . ../.env && set +a && docker compose down --remove-orphans
+	docker ps
 
 # Restart backend
 restart:
-	docker compose --profile backend restart
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile backend restart'
 
 # Show logs
 logs:
