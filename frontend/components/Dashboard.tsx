@@ -29,6 +29,8 @@ import { ConsoleAgent } from './console/ConsoleAgent'
 import { MCPServerManager } from './mcp/MCPServerManager'
 import { NotificationArea } from './notifications/NotificationArea'
 import { SubscriptionDashboard } from './subscription/SubscriptionDashboard'
+import { CustomerRequestQueue } from './queue/CustomerRequestQueue'
+import { ServiceManagement } from './provider/ServiceManagement'
 
 interface DashboardStats {
   tokens: {
@@ -159,7 +161,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-10">
           <TabsTrigger value="overview">
             <LayoutDashboard className="h-4 w-4 mr-2" />
             Overview
@@ -167,6 +169,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <TabsTrigger value="console">
             <MessageSquare className="h-4 w-4 mr-2" />
             Console
+          </TabsTrigger>
+          <TabsTrigger value="customer-requests">
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Requests
+          </TabsTrigger>
+          <TabsTrigger value="services">
+            <DollarSign className="h-4 w-4 mr-2" />
+            Services
           </TabsTrigger>
           <TabsTrigger value="tokens">
             <Coins className="h-4 w-4 mr-2" />
@@ -375,6 +385,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <TabsContent value="console">
           <ConsoleAgent apiUrl={apiUrl} />
+        </TabsContent>
+
+        <TabsContent value="customer-requests">
+          <CustomerRequestQueue apiUrl={apiUrl} />
+        </TabsContent>
+
+        <TabsContent value="services">
+          <ServiceManagement apiUrl={apiUrl} />
         </TabsContent>
 
         <TabsContent value="tokens">

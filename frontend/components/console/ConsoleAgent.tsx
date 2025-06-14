@@ -7,20 +7,30 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Terminal, Send, Bot, User, Settings, Zap, Cog, CheckCircle, AlertCircle } from 'lucide-react'
+import { Terminal, Send, Bot, User, Settings, Zap, Cog, CheckCircle, AlertCircle, Volume2 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import { VoiceInput } from '../voice/VoiceInput'
+import { VoiceNote } from '../voice/VoiceNote'
 
 type AgentMode = 'auto' | 'confirm' | 'prompt'
 
+interface VoiceNoteData {
+  audioBlob: Blob
+  duration: number
+  transcription?: string
+  audioUrl?: string
+}
+
 interface Message {
   id: string
-  type: 'user' | 'agent' | 'system' | 'tool' | 'confirmation' | 'options'
+  type: 'user' | 'agent' | 'system' | 'tool' | 'confirmation' | 'options' | 'voice_input'
   content: string
   timestamp: Date
   toolName?: string
   cost?: number
   mode?: AgentMode
   data?: any // For storing structured response data
+  voiceNote?: VoiceNoteData // For voice messages
 }
 
 interface ToolOption {
@@ -67,13 +77,24 @@ interface ConsoleAgentProps {
   onToolExecution?: (toolName: string, params: any) => void
   defaultMode?: AgentMode
   defaultMaxTokens?: number
+  // NEW: Support for customer mode and service requests
+  consoleMode?: 'standard' | 'customer_request'
+  uiVariant?: 'dashboard' | 'customer'
+  onServiceRequestGenerated?: (request: any) => void
+  welcomeMessage?: string
+  enableVoiceInput?: boolean
 }
 
 export const ConsoleAgent: React.FC<ConsoleAgentProps> = ({ 
   apiUrl = '/api', 
   onToolExecution,
   defaultMode = 'prompt',
-  defaultMaxTokens = 100 
+  defaultMaxTokens = 100,
+  consoleMode = 'standard',
+  uiVariant = 'dashboard',
+  onServiceRequestGenerated,
+  welcomeMessage,
+  enableVoiceInput = true
 }) => {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -97,7 +118,10 @@ export const ConsoleAgent: React.FC<ConsoleAgentProps> = ({
     // Initialize connection
     connectToMCPServer()
     // Add welcome message
-    addSystemMessage(`ConsoleAgent ready! Mode: ${mode}, Max tokens: ${maxTokens}`)
+    const defaultWelcome = consoleMode === 'customer_request' 
+      ? "Hi! I'm here to help you find the right service provider. You can speak or type to describe what you need."
+      : `ConsoleAgent ready! Mode: ${mode}, Max tokens: ${maxTokens}`
+    addSystemMessage(welcomeMessage || defaultWelcome)
   }, [])
 
   useEffect(() => {
@@ -151,7 +175,7 @@ export const ConsoleAgent: React.FC<ConsoleAgentProps> = ({
     return JSON.parse(result.content[0].text)
   }
 
-  const addMessage = (type: Message['type'], content: string, toolName?: string, cost?: number, data?: any) => {
+  const addMessage = (type: Message['type'], content: string, toolName?: string, cost?: number, data?: any, voiceNote?: VoiceNoteData) => {
     const message: Message = {
       id: Date.now().toString(),
       type,
@@ -160,13 +184,64 @@ export const ConsoleAgent: React.FC<ConsoleAgentProps> = ({
       toolName,
       cost,
       mode,
-      data
+      data,
+      voiceNote
     }
     setMessages(prev => [...prev, message])
   }
 
   const addSystemMessage = (content: string) => {
     addMessage('system', content)
+  }
+
+  const handleVoiceNoteSubmit = async (voiceNote: VoiceNoteData) => {
+    // Add voice message to console
+    const content = voiceNote.transcription || '[Processing voice input...]'
+    addMessage('voice_input', content, undefined, undefined, undefined, voiceNote)
+
+    setIsLoading(true)
+
+    try {
+      // Process based on console mode
+      if (consoleMode === 'customer_request' && voiceNote.transcription) {
+        await generateServiceRequest(voiceNote.transcription, voiceNote)
+      } else if (voiceNote.transcription) {
+        await handleChatMessage(voiceNote.transcription)
+      }
+    } catch (error) {
+      addMessage('system', `Error processing voice input: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const generateServiceRequest = async (description: string, voiceNote?: VoiceNoteData) => {
+    // AI agent processes voice/text to create structured service request
+    try {
+      const serviceRequest = await callMCPTool('generate_service_request', {
+        description,
+        voiceNote: voiceNote ? {
+          duration: voiceNote.duration,
+          transcription: voiceNote.transcription
+        } : undefined,
+        mode: 'request_generation'
+      })
+
+      // Show generated request for customer approval
+      addMessage('agent', 
+        `I've created a service request based on your description. Here's what I understood:\n\n${JSON.stringify(serviceRequest, null, 2)}\n\nWould you like me to send this to service providers?`,
+        undefined,
+        undefined,
+        { serviceRequest, requiresApproval: true }
+      )
+
+      if (onServiceRequestGenerated) {
+        onServiceRequestGenerated(serviceRequest)
+      }
+    } catch (error) {
+      // Fallback to regular chat if service request generation fails
+      await handleChatMessage(description)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -419,6 +494,7 @@ You can also chat naturally and the agent will find appropriate tools based on y
       case 'system': return <Settings className="h-4 w-4" />
       case 'confirmation': return <AlertCircle className="h-4 w-4" />
       case 'options': return <CheckCircle className="h-4 w-4" />
+      case 'voice_input': return <Volume2 className="h-4 w-4" />
     }
   }
 
@@ -438,13 +514,19 @@ You can also chat naturally and the agent will find appropriate tools based on y
     }
   }
 
+  const containerClass = uiVariant === 'customer' 
+    ? "h-[600px] flex flex-col border-blue-200 bg-gradient-to-br from-blue-50 to-white"
+    : "h-[600px] flex flex-col"
+
+  const headerTitle = consoleMode === 'customer_request' ? 'Service Request Assistant' : 'Console Agent'
+
   return (
-    <Card className="h-[600px] flex flex-col">
+    <Card className={containerClass}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="h-5 w-5" />
-            <CardTitle>Console Agent</CardTitle>
+            <CardTitle>{headerTitle}</CardTitle>
           </div>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
@@ -478,6 +560,7 @@ You can also chat naturally and the agent will find appropriate tools based on y
                   message.type === 'user' ? 'bg-blue-100' :
                   message.type === 'agent' ? 'bg-green-100' :
                   message.type === 'tool' ? 'bg-purple-100' :
+                  message.type === 'voice_input' ? 'bg-orange-100' :
                   'bg-gray-100'
                 }`}>
                   {getMessageIcon(message.type)}
@@ -504,6 +587,22 @@ You can also chat naturally and the agent will find appropriate tools based on y
                   <div className="text-sm whitespace-pre-wrap">
                     {message.content}
                   </div>
+
+                  {/* Render voice note if present */}
+                  {message.voiceNote && (
+                    <div className="mt-2">
+                      <VoiceNote
+                        audioUrl={message.voiceNote.audioUrl!}
+                        duration={message.voiceNote.duration}
+                        transcription={message.voiceNote.transcription ? {
+                          text: message.voiceNote.transcription,
+                          confidence: 0.8
+                        } : undefined}
+                        showTranscription={true}
+                        className="border-none shadow-sm"
+                      />
+                    </div>
+                  )}
                   
                   {/* Render interactive elements for different message types */}
                   {message.type === 'confirmation' && message.data && (
@@ -609,27 +708,68 @@ You can also chat naturally and the agent will find appropriate tools based on y
           </div>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-4">
-          <div className="flex gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type a message or /help for commands..."
+        {enableVoiceInput ? (
+          <div className="p-4">
+            <VoiceInput
+              onVoiceNoteSubmit={handleVoiceNoteSubmit}
+              onTextSubmit={async (text) => {
+                setInput('')
+                addMessage('user', text)
+                setIsLoading(true)
+                try {
+                  if (text.startsWith('/')) {
+                    await handleToolCommand(text)
+                  } else {
+                    if (consoleMode === 'customer_request') {
+                      await generateServiceRequest(text)
+                    } else {
+                      await handleChatMessage(text)
+                    }
+                  }
+                } catch (error) {
+                  addMessage('system', `Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+                } finally {
+                  setIsLoading(false)
+                }
+              }}
+              placeholder={consoleMode === 'customer_request' 
+                ? "Describe what service you need..."
+                : "Type a message or /help for commands..."
+              }
               disabled={isLoading || connectionStatus !== 'connected'}
-              className="flex-1"
+              apiUrl={apiUrl}
+              className="space-y-2"
             />
-            <Button 
-              type="submit" 
-              disabled={isLoading || !input.trim() || connectionStatus !== 'connected'}
-              size="icon"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            <div className="text-xs text-muted-foreground mt-2">
+              {consoleMode === 'customer_request' 
+                ? "Describe your project needs in detail for better service matching"
+                : `Commands: /tools, /use <tool>, /help | Mode: ${mode}${mode === 'auto' ? ` (≤${maxTokens}t)` : ''}`
+              }
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Commands: /tools, /use &lt;tool&gt;, /help | Mode: {mode}{mode === 'auto' ? ` (≤${maxTokens}t)` : ''}
-          </div>
-        </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-4">
+            <div className="flex gap-2">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type a message or /help for commands..."
+                disabled={isLoading || connectionStatus !== 'connected'}
+                className="flex-1"
+              />
+              <Button 
+                type="submit" 
+                disabled={isLoading || !input.trim() || connectionStatus !== 'connected'}
+                size="icon"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="text-xs text-muted-foreground mt-2">
+              Commands: /tools, /use &lt;tool&gt;, /help | Mode: {mode}{mode === 'auto' ? ` (≤${maxTokens}t)` : ''}
+            </div>
+          </form>
+        )}
       </CardContent>
     </Card>
   )

@@ -31,6 +31,10 @@ model UserModel {
   stripe_account_enabled           Boolean @default(false)
   stripe_payouts_enabled           Boolean @default(false)
   stripe_account_status            String? @default("pending")
+  
+  // NEW: Service provider capabilities
+  is_service_provider              Boolean @default(true)  // Default existing users to providers
+  service_provider_verified        Boolean @default(false)
 
   stripe_customer_id            String?                      @unique
   subscription_status           String                       @default("")
@@ -68,6 +72,8 @@ model UserModel {
   StripePayouts                 StripePayoutModel[]
   PlatformFees                  PlatformFee[]
   OwnedMCPServers               MCPServerModel[]               @relation("MCPServerOwner")
+  ProvidedServices              MCPToolModel[]                 @relation("ServiceProvider")
+  VoiceNotes                    VoiceNoteModel[]               @relation("VoiceNoteOwner")
 }
 
 model InboundEmailModel {
@@ -214,10 +220,20 @@ model MCPToolModel {
   createdAt        DateTime                       @default(now())
   updatedAt        DateTime                       @updatedAt
   
+  // NEW: Support for human services
+  serviceType      String                         @default("ai_tool") // "ai_tool" | "human_service"
+  providerId       Int?                           // User ID for human service providers
+  pricing          Json?                          @default("{}")  // Service pricing information
+  timeline         Json?                          @default("{}")  // Service timeline estimates
+  isActive         Boolean                        @default(true)  // Whether service is available
+  
   // Relations
   server           MCPServerModel                 @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  provider         UserModel?                     @relation("ServiceProvider", fields: [providerId], references: [id], onDelete: SetNull)
   
   @@unique([serverId, name])
+  @@index([serviceType, isActive])
+  @@index([providerId, isActive])
 }
 
 model UserMCPServerAccessModel {
@@ -378,6 +394,10 @@ model ToolBidSessionModel {
   context           Json     @default("{}")  // Additional context for the task
   createdAt         DateTime @default(now())
   
+  // NEW: Support for service requests
+  requestType       String   @default("tool_selection") // "tool_selection" | "service_request"
+  voiceNotes        Json     @default("[]")  // Array of voice note objects for service requests
+  
   // Relations
   user              UserModel      @relation(fields: [userId], references: [id], onDelete: Cascade)
   bids              ToolBidModel[]
@@ -385,21 +405,26 @@ model ToolBidSessionModel {
   
   @@index([userId, createdAt])
   @@index([sessionId])
+  @@index([requestType, createdAt])
 }
 
 model ToolBidModel {
   id                Int      @id @default(autoincrement())
   bidId             String   @unique         // Unique identifier for this specific bid
   sessionId         String                   // Which bid session this belongs to
-  serverId          Int                      // MCP server offering this tool
-  toolName          String                   // Name of the tool being bid
-  toolDescription   String?                  // Description of the tool
-  tokenCost         Int      @default(0)     // Cost in tokens for this tool
+  serverId          Int                      // MCP server offering this tool OR human provider ID
+  toolName          String                   // Name of the tool being bid OR service name
+  toolDescription   String?                  // Description of the tool OR service
+  tokenCost         Int      @default(0)     // Cost in tokens for this tool OR dollar cost (normalized)
   relevanceScore    Decimal? @db.Decimal(5,4) // How relevant this tool is to the task (0-1)
   bidReason         String?                  // Why this tool was suggested
   isChosen          Boolean  @default(false) // Whether this bid was actually chosen
   chosenAt          DateTime?                // When this bid was chosen (if applicable)
   createdAt         DateTime @default(now())
+  
+  // NEW: Support for human service bids
+  bidType           String   @default("ai_tool") // "ai_tool" | "human_service"
+  serviceDetails    Json?    @default("{}")  // For human services: timeline, pricing details, etc.
   
   // Relations
   session           ToolBidSessionModel @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
@@ -410,6 +435,7 @@ model ToolBidModel {
   @@index([serverId, toolName])
   @@index([isChosen, createdAt])
   @@index([tokenCost])
+  @@index([bidType, createdAt])
 }
 
 model StripePayoutModel {
@@ -434,4 +460,24 @@ model PlatformFee {
   status              String   // 'collected', 'failed', 'pending'
   created_at          DateTime @default(now())
   user                UserModel     @relation(fields: [connected_account_id], references: [stripe_connected_account_id])
+}
+
+model VoiceNoteModel {
+  id               String   @id @default(uuid())
+  userId           Int?                      // User who created the voice note (null for anonymous)
+  sessionToken     String?                  // For anonymous users
+  audioFileUrl     String                   // URL to the audio file
+  fileName         String                   // Original filename
+  fileSize         Int                      // File size in bytes
+  duration         Int                      // Duration in seconds
+  mimeType         String                   // audio/webm, audio/mp4, etc.
+  transcription    Json?    @default("{}")  // { text, confidence, language, processingTime }
+  createdAt        DateTime @default(now())
+  processedAt      DateTime?                // When transcription was completed
+  
+  // Relations
+  user             UserModel? @relation("VoiceNoteOwner", fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId, createdAt])
+  @@index([sessionToken, createdAt])
 }
