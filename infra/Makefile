@@ -112,6 +112,17 @@ dockertest:
 include ../.env
 export $(shell sed 's/=.*//' ../.env)
 
+
+# Start backend with proper environment
+all-up:
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full up'
+
+
+# Start backend with proper environment
+all-down:
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full down'
+
+
 # Start backend with proper environment
 backend:
 	bash -c 'set -a && source ../.env && set +a && docker compose --profile backend up'
@@ -152,6 +163,11 @@ logs-frontend:
 # Show all logs
 logs-all:
 	docker compose logs -f
+
+# Show all logs
+logs-show:
+	docker compose logs
+
 
 # Clean restart
 clean-restart: down backend

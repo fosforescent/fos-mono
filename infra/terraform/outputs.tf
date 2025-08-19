@@ -1,33 +1,79 @@
-# output "db_info" {
-#   sensitive = true
+# SQS Queue outputs
+output "inbox_queue_url" {
+  description = "URL of the inbox SQS queue"
+  value       = aws_sqs_queue.inbox_queue.url
+}
 
-#   value = {
-#     username = google_sql_user.fos_user.name
-#     password = random_password.db_password.result
-#     host     = google_sql_database_instance.postgres_cluster.private_ip_address
-#     port     = "5432" # GCP PostgreSQL default port
-#     dbname   = google_sql_database.fos_db.name
-#     url      = "postgresql://${google_sql_user.fos_user.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres_cluster.private_ip_address}:5432/${google_sql_database.fos_db.name}?connection_limit=5"
+output "outbox_queue_url" {
+  description = "URL of the outbox SQS queue"
+  value       = aws_sqs_queue.outbox_queue.url
+}
 
-#     # Additional useful information
-#     public_ip_address = google_sql_database_instance.postgres_cluster.public_ip_address
-#     connection_name   = google_sql_database_instance.postgres_cluster.connection_name
+output "inbox_queue_arn" {
+  description = "ARN of the inbox SQS queue"
+  value       = aws_sqs_queue.inbox_queue.arn
+}
 
-#     # For development/testing with public IP (if enabled)
-#     public_url = "postgresql://${google_sql_user.fos_user.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres_cluster.public_ip_address}:5432/${google_sql_database.fos_db.name}?connection_limit=5"
-#   }
-# }
+output "outbox_queue_arn" {
+  description = "ARN of the outbox SQS queue"
+  value       = aws_sqs_queue.outbox_queue.arn
+}
 
-# # # Optional: Separate output for Secret Manager reference
-# # output "db_password_secret" {
-# #   value = google_secret_manager_secret.db_password.name
-# # }
+output "event_services_role_arn" {
+  description = "ARN of the IAM role for event services"
+  value       = aws_iam_role.event_services_role.arn
+}
 
-# # Optional: Output for Cloud SQL instance connection name
-# output "instance_connection_name" {
-#   value       = google_sql_database_instance.postgres_cluster.connection_name
-#   description = "The connection name of the instance to be used in connection strings"
-# }
-# output "nameservers" {
-#   value = google_dns_managed_zone.fos.name_servers
-# }
+# IAM User outputs
+output "backend_user_arn" {
+  description = "ARN of the backend service IAM user"
+  value       = aws_iam_user.fos_backend_user.arn
+}
+
+output "event_services_user_arn" {
+  description = "ARN of the event services IAM user" 
+  value       = aws_iam_user.fos_event_services_user.arn
+}
+
+# AWS Credentials for Backend Service (sensitive)
+output "backend_aws_access_key_id" {
+  description = "AWS Access Key ID for backend service"
+  value       = aws_iam_access_key.fos_backend_access_key.id
+  sensitive   = true
+}
+
+output "backend_aws_secret_access_key" {
+  description = "AWS Secret Access Key for backend service"
+  value       = aws_iam_access_key.fos_backend_access_key.secret
+  sensitive   = true
+}
+
+# AWS Credentials for Event Services (sensitive)
+output "event_services_aws_access_key_id" {
+  description = "AWS Access Key ID for event services"
+  value       = aws_iam_access_key.fos_event_services_access_key.id
+  sensitive   = true
+}
+
+output "event_services_aws_secret_access_key" {
+  description = "AWS Secret Access Key for event services"
+  value       = aws_iam_access_key.fos_event_services_access_key.secret
+  sensitive   = true
+}
+
+# SSM Parameter names for accessing credentials
+output "backend_credentials_ssm_paths" {
+  description = "SSM Parameter paths for backend credentials"
+  value = {
+    access_key_id     = aws_ssm_parameter.backend_access_key_id.name
+    secret_access_key = aws_ssm_parameter.backend_secret_access_key.name
+  }
+}
+
+output "event_services_credentials_ssm_paths" {
+  description = "SSM Parameter paths for event services credentials"
+  value = {
+    access_key_id     = aws_ssm_parameter.event_services_access_key_id.name
+    secret_access_key = aws_ssm_parameter.event_services_secret_access_key.name
+  }
+}

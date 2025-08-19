@@ -1,37 +1,18 @@
 
-variable "DO_TOKEN" {
-  type = string
+variable "aws_region" {
+  type        = string
+  description = "AWS region for resources"
+  default     = "us-east-1"
 }
 
 variable "CLOUDFLARE_TOKEN" {
-  type = string
-}
-
-variable "SSH_FINGERPRINT" {
-  type = string
-}
-
-variable "ovh_application_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "ovh_application_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "ovh_consumer_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "ovh_project_id" {
   type        = string
-  description = "Your OVH Public Cloud Project ID"
+  description = "Cloudflare API token"
+  sensitive   = true
 }
 
-variable "ovh_region" {
-  type    = string
-  default = "GRA" # Gravelines, France - or choose another region
+variable "environment" {
+  type        = string
+  description = "Environment name (dev, staging, prod)"
+  default     = "dev"
 }

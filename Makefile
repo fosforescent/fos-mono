@@ -12,12 +12,17 @@ build-frontend:
 	npm run build:frontend
 
 
-run-dev:
-	npm run dev
-
 run:
-	$(MAKE) run-dev
+	cd infra && $(MAKE) all-up
 	
+stop:
+	cd infra && $(MAKE) all-down
+	cd infra && docker system prune -f
+
+logs: 
+	cd infra && $(MAKE) logs-show
+
+
 setup:
 	npm install
 	npm run e2e-setup

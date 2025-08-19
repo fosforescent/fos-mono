@@ -10,12 +10,11 @@ import {
 
 import { AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
 
-import sha3 from 'js-sha3'
+import { sha3_256 } from 'js-sha3'
 
 import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
 import { runAvailableFunctions } from './context'
-
 
 
 export class FosStore {
@@ -671,7 +670,7 @@ export class FosStore {
     if (this.cache.has(address)) return this.cache.get(address) as FosNode
     if (!this.checkAddress(address)) {
       // return null
-      console.log('address was not found', address, this.table)
+      // console.log('address was not found', address, this.table)
       throw new Error(`address ${address} not found`)
     }
     // console.log('queryNodeByAddress', address, this.cache.entries())
@@ -1082,7 +1081,7 @@ export function hashContent(content: FosNodeContent): string {
     data: JSON.stringify(normalizeObject(content.data)),
     children: sortEdges(content.children)
   }
-  return sha3.sha3_256(JSON.stringify(normalized))
+  return sha3_256(JSON.stringify(normalized))
 }
 
 
