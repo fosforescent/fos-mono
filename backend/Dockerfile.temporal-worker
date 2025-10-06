@@ -35,4 +35,4 @@ ENV NODE_ENV=development \
 WORKDIR /usr/src/app
 
 EXPOSE 80
-CMD ["node", "-r", "dotenv/config", "./backend/dist/backend/temporal/worker.js"]
+CMD ["npx", "tsx", "./backend/temporal/worker.ts"]

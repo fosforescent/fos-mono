@@ -1,11 +1,11 @@
 -- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Create temporal user first (if it doesn't exist)
+-- Create temporal user first (if it doesn't exist) with CREATEDB permission
 DO $$
 BEGIN
    IF NOT EXISTS (SELECT FROM pg_catalog.pg_user WHERE usename = 'temporal') THEN
-      CREATE USER temporal WITH PASSWORD 'temporal';
+      CREATE USER temporal WITH PASSWORD 'temporal' CREATEDB;
    END IF;
 END
 $$;

@@ -14,7 +14,13 @@ build-frontend:
 
 run:
 	cd infra && $(MAKE) all-up
-	
+
+run-build:
+	cd infra && $(MAKE) all-up-build
+
+run-build-nocache:
+	cd infra && $(MAKE) all-up-build-nocache
+
 stop:
 	cd infra && $(MAKE) all-down
 	cd infra && docker system prune -f

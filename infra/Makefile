@@ -83,6 +83,11 @@ publish:
 prepare-db:
 	echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin
 
+# Initialize database with migrations (safe for existing DBs)
+db-init:
+	@echo "Running Prisma migrations..."
+	cd .. && npx prisma migrate deploy --schema=./prisma/schema.prisma
+
 reset:
 	echo "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin
 	echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin 
@@ -117,6 +122,12 @@ export $(shell sed 's/=.*//' ../.env)
 all-up:
 	bash -c 'set -a && source ../.env && set +a && docker compose --profile full up'
 
+all-up-build-nocache:
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full build --no-cache '
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full up'
+
+all-up-build:
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full up --build '
 
 # Start backend with proper environment
 all-down:

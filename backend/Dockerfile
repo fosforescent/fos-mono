@@ -35,4 +35,4 @@ ENV NODE_ENV=development \
 WORKDIR /usr/src/app
 
 EXPOSE 80
-CMD ["npx", "tsx", "-r", "dotenv/config", "./backend/index.ts"]
+CMD sh -c "cd infra && npx prisma migrate deploy --schema=./prisma/schema.prisma && cd .. && npx tsx ./backend/index.ts"

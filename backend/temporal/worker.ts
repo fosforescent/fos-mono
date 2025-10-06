@@ -5,9 +5,15 @@
  * for long-running tasks submitted via the MCP server.
  */
 
-import { Worker } from '@temporalio/worker'
+import { Worker, NativeConnection } from '@temporalio/worker'
 import { config } from 'dotenv'
 import * as activities from './activities.js'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+
+// ESM equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 // Load environment variables
 config()
@@ -20,31 +26,50 @@ async function run() {
   console.log(`📍 Temporal Server: ${TEMPORAL_SERVER_HOST}`)
   console.log(`📋 Task Queue: ${TASK_QUEUE}`)
 
-  try {
-    // Create and start the worker
-    const worker = await Worker.create({
-      workflowsPath: require.resolve('./workflows'),
-      activities,
-      taskQueue: TASK_QUEUE,
-      maxConcurrentActivityTaskExecutions: 10,
-      maxConcurrentWorkflowTaskExecutions: 5,
-      // Note: Connection config may vary by Temporal version
-      // Optional: Add worker identity and build ID
-      identity: `fosforescent-worker-${process.env.HOSTNAME || 'local'}-${Date.now()}`,
-      buildId: process.env.GIT_COMMIT || 'development',
-    })
+  const maxRetries = 30
+  const retryDelay = 2000 // 2 seconds
 
-    console.log('✅ Temporal Worker created successfully')
-    console.log(`🔄 Worker Identity: ${worker.options.identity}`)
-    console.log(`🏗️  Build ID: ${worker.options.buildId}`)
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 Connection attempt ${attempt}/${maxRetries}...`)
 
-    // Start the worker
-    console.log('▶️  Starting worker...')
-    await worker.run()
+      // Connect to Temporal server
+      const connection = await NativeConnection.connect({
+        address: TEMPORAL_SERVER_HOST,
+      })
 
-  } catch (error) {
-    console.error('❌ Worker failed to start:', error)
-    process.exit(1)
+      // Create and start the worker
+      const worker = await Worker.create({
+        connection,
+        workflowsPath: join(__dirname, 'workflows'),
+        activities,
+        taskQueue: TASK_QUEUE,
+        maxConcurrentActivityTaskExecutions: 10,
+        maxConcurrentWorkflowTaskExecutions: 5,
+        // Note: Connection config may vary by Temporal version
+        // Optional: Add worker identity and build ID
+        identity: `fosforescent-worker-${process.env.HOSTNAME || 'local'}-${Date.now()}`,
+        buildId: process.env.GIT_COMMIT || 'development',
+      })
+
+      console.log('✅ Temporal Worker created successfully')
+      console.log(`🔄 Worker Identity: ${worker.options.identity}`)
+      console.log(`🏗️  Build ID: ${worker.options.buildId}`)
+
+      // Start the worker
+      console.log('▶️  Starting worker...')
+      await worker.run()
+      break // Success, exit retry loop
+
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error('❌ Worker failed to start after max retries:', error)
+        process.exit(1)
+      }
+
+      console.log(`⏳ Connection failed, retrying in ${retryDelay/1000}s... (${error})`)
+      await new Promise(resolve => setTimeout(resolve, retryDelay))
+    }
   }
 }
 
