@@ -140,6 +140,7 @@ const apiRoutes = express.Router()
 // Define your list of allowed origins
 const allowedOrigins = [
   'localhost',
+  'frontend',
   'fosforescent.com',
   'fos-prod.pages.dev',
   'www.fosforescent.com',
@@ -147,6 +148,7 @@ const allowedOrigins = [
   /^.*\.fosforescent\.com$/,
   /^.*\.fos-mono.pages\.dev$/,
   /^localhost\:[0-9]+$/,
+  /^frontend\:[0-9]+$/,
 
 ]
 

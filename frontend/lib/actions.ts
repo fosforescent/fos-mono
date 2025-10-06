@@ -114,10 +114,13 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
         acceptRequiredCookies: false,
         acceptSharingWithThirdParties: false,
       }).catch((error: Error) => {
-        console.log('error', error)
+        console.log('error registering', error)
         throw error
       });
-      console.log('registerUser', result)
+      console.log('registerUser success', result)
+
+      // Automatically log in after successful registration
+      await logIn(email, password, false)
     }
   }
   const resetPassword = async (email: string, password: string, token: string) => {

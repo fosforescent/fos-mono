@@ -122,6 +122,15 @@ export $(shell sed 's/=.*//' ../.env)
 all-up:
 	bash -c 'set -a && source ../.env && set +a && docker compose --profile full up'
 
+# Start all services with smoke test
+all-up-with-smoke:
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full-with-smoke up'
+
+# Build and run with smoke test (full rebuild)
+all-up-build-smoke:
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full-with-smoke build'
+	bash -c 'set -a && source ../.env && set +a && docker compose --profile full-with-smoke up'
+
 all-up-build-nocache:
 	bash -c 'set -a && source ../.env && set +a && docker compose --profile full build --no-cache '
 	bash -c 'set -a && source ../.env && set +a && docker compose --profile full up'

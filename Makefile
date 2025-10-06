@@ -15,6 +15,12 @@ build-frontend:
 run:
 	cd infra && $(MAKE) all-up
 
+run-with-smoke:
+	cd infra && $(MAKE) all-up-with-smoke
+
+run-build-smoke:
+	cd infra && $(MAKE) all-up-build-smoke
+
 run-build:
 	cd infra && $(MAKE) all-up-build
 
@@ -25,8 +31,17 @@ stop:
 	cd infra && $(MAKE) all-down
 	cd infra && docker system prune -f
 
-logs: 
+logs:
 	cd infra && $(MAKE) logs-show
+
+logs-follow:
+	cd infra && $(MAKE) logs-all
+
+logs-backend:
+	cd infra && $(MAKE) logs
+
+logs-frontend:
+	cd infra && $(MAKE) logs-frontend
 
 
 setup:
@@ -45,6 +60,10 @@ format-fix:
 
 test:
 	npm run test
+
+smoke-test:
+	@echo "🧪 Running smoke test..."
+	cd infra && npm run test:smoke
 
 e2e-test:
 	@echo "Setting up e2e tests with hybrid docker-compose + local frontend..."

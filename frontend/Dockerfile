@@ -3,13 +3,17 @@ FROM node:20-slim as build
 
 WORKDIR /usr/src/app
 
-# Copy workspace dependencies first  
+# Copy workspace dependencies first
 COPY package*.json ./
 COPY shared/ ./shared/
 COPY frontend/ ./frontend/
 
 # Install workspace dependencies
 RUN npm install
+
+# Build argument for API URL (passed from docker-compose)
+ARG VITE_FOS_API_URL=http://localhost:4000
+ARG VITE_BASE_URL=http://localhost:5173
 
 # Build the frontend directly
 WORKDIR /usr/src/app/frontend

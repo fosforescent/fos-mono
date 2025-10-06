@@ -23,6 +23,7 @@ services:
       - db-only
       - backend
       - full
+      - full-with-smoke
 
   # Qdrant vector database
   qdrant:
@@ -49,6 +50,7 @@ services:
       - db-only
       - backend
       - full
+      - full-with-smoke
 
   # Temporal server
   temporal:
@@ -81,6 +83,7 @@ services:
     profiles:
       - backend
       - full
+      - full-with-smoke
 
   # Temporal UI
   temporal-ui:
@@ -97,6 +100,7 @@ services:
     profiles:
       - backend
       - full
+      - full-with-smoke
 
   # Temporal Worker (for executing workflows)
   temporal-worker:
@@ -121,6 +125,7 @@ services:
     profiles:
       - backend
       - full
+      - full-with-smoke
 
   # Fosforescent backend (using Dockerfile)
   backend:
@@ -156,17 +161,19 @@ services:
     profiles:
       - backend
       - full
+      - full-with-smoke
 
   # Frontend (using Dockerfile)
   frontend:
     build:
       context: ../
       dockerfile: frontend/Dockerfile
+      # Note: Not passing VITE_FOS_API_URL so it defaults to localhost:4000 for browser access
+      # Smoke test runs inside Docker so it can use backend:80 directly
     container_name: fos-frontend
     env_file:
       - ../.env
     environment:
-      - VITE_FOS_API_URL=http://localhost:4000
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "5173:80"
@@ -175,6 +182,39 @@ services:
     restart: unless-stopped
     profiles:
       - full
+      - full-with-smoke
+
+  # Smoke test - runs once to ensure test user exists
+  smoke-test:
+    image: mcr.microsoft.com/playwright:v1.52.0-jammy
+    container_name: fos-smoke-test
+    working_dir: /app/infra
+    volumes:
+      - ../:/app
+    network_mode: host  # Use host network to access localhost:5173 and localhost:4000
+    env_file:
+      - ../.env
+    environment:
+      - SMOKE_TEST_EMAIL=${SMOKE_TEST_EMAIL:-user1@fosforescent.com}
+      - SMOKE_TEST_PASSWORD=${SMOKE_TEST_PASSWORD:-user123}
+      - PLAYWRIGHT_BASE_URL=http://localhost:5173
+    command: >
+      sh -c "
+        echo '🧪 Waiting for frontend to be ready...' &&
+        timeout 60 sh -c 'until wget -q -O- http://localhost:5173 > /dev/null 2>&1; do echo \"Frontend not ready yet...\"; sleep 2; done' &&
+        echo '✅ Frontend is ready!' &&
+        echo '🧪 Installing dependencies...' &&
+        cd /app && npm install --silent &&
+        echo '🧪 Running smoke test...' &&
+        cd /app/infra && npx playwright test e2e-tests/smoke.spec.ts --project=chromium
+      "
+    depends_on:
+      - frontend
+      - backend
+    profiles:
+      - smoke
+      - full-with-smoke
+    restart: "no"
 
 volumes:
   postgres_data:

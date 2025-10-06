@@ -12,9 +12,11 @@ export const hashPassword = async (password: string) => {
 }
 
 export const postRegister = async (req: Request, res: Response) => {
+  console.log('🔵 POST /auth/register received:', { username: req.body.username, hasPassword: !!req.body.password, accepted_terms: req.body.accepted_terms })
   const { username, password, accepted_terms, cookies } = req.body
 
   if (!username || !password) {
+    console.log('❌ Missing username or password:', { username, hasPassword: !!password })
     return res.status(400).json({ error: 'Missing username or password' })
   }
 

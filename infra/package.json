@@ -12,6 +12,7 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "test:ui": "playwright test --ui",
+    "test:smoke": "playwright test e2e-tests/smoke.spec.ts",
     "test:with-servers": "cd .. && make e2e-test",
     "test:api": "node apiTests/auth-flow.test.cjs",
     "test:api:auth": "node apiTests/auth-flow.test.cjs",
