@@ -7,9 +7,12 @@ import { executeSearch } from "./search";
 export const runActionsOnStore = (store: FosStore ) => {
 
   /**
-   * e.g. 
-   * SEARCHQUERY --- run x function
-   * BLAHBLAH --- run y function
+   * Action types that can be evaluated:
+   * SEARCHQUERY - run search query
+   * CREATEGROUP - create a new group
+   * CREATEDM - create a DM between users
+   * ADDMEMBERTOGROUP - add member to group
+   * SENDGROUPMESSAGE - send message to group
    */
 
   const rootExpression = new FosExpression(store, [])

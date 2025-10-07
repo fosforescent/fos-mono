@@ -14,6 +14,7 @@ import { InfoHome } from './components/info/Info'
 import { MarketBrowse } from './components/home/MarketBrowse'
 import QueueView from './components/views/QueueLayout'
 import { FieldTest } from '@/mockups/interactionMockups'
+import { GroupsBrowse } from './components/home/GroupsBrowse'
 
 import './global.css'
 import './App.css'
@@ -127,25 +128,24 @@ const router = createBrowserRouter([
           },
         ]
       },
-      // {
-      //   path: "groups",
-      //   // Route should be [["root", "myrootid"], ["browse", "{filters? group}"]]
-      //   // browsing groups... upon clicking, 
-      //   // route would go to [["root", "myrootid"], ["group", "groupRootId"], ["queue", "{filters? comments}"]]
-      //   children: [
-      //     {
-      //       index: true,
-      //       element: <GroupsBrowse />,
-      //       loader: async () => {
-      //         return {
-      //           route: [["root", "myRootId"]],
-      //         }
-      //       },
-    
-      //     },
-      //   ]
-      // },
-      // ,
+      {
+        path: "groups",
+        // Route should be [["root", "myrootid"], ["browse", "{filters? group}"]]
+        // browsing groups... upon clicking,
+        // route would go to [["root", "myrootid"], ["group", "groupRootId"], ["queue", "{filters? comments}"]]
+        children: [
+          {
+            index: true,
+            element: <GroupsBrowse apiUrl={apiUrl} />,
+            loader: async () => {
+              return {
+                route: [["root", "myRootId"]],
+              }
+            },
+
+          },
+        ]
+      },
       {
         path: "search",
         // Route should be [["root", "myrootid"]] // "browse", "{filters? none}"

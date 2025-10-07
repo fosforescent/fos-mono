@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 
 import { WebSocketServer, WebSocket } from 'ws';
 import { addUserConnection } from './promptNotifications';
+import { addGroupConnection } from './groupEvents';
 import { prisma } from './prismaClient';
 
 // Create WebSocket server attached to HTTP server
@@ -67,12 +68,16 @@ export const attachWs = (server: any) => {
 
         // Register this connection for prompt notifications
         addUserConnection(user.id, ws);
-        
+
+        // Register this connection for group events
+        addGroupConnection(user.id, user.fosNodeId, ws);
+
         // Send immediate confirmation
-        ws.send(JSON.stringify({ 
+        ws.send(JSON.stringify({
         type: 'connection_established',
         user: decodedToken,
-        userId: user.id
+        userId: user.id,
+        fosNodeId: user.fosNodeId
         }));
 
         ws.on('message', (message) => {

@@ -236,6 +236,13 @@ export const proposeChangeAction = (store: FosStore) => generateConstructor(stor
 
 export const registerMarketServiceAction = (store: FosStore) => generateConstructor(store, "REGISTERMARKETSERVICE", { description: { content: 'Register Market Service Action Node' } }, [])
 
+// Group actions
+export const createGroupAction = (store: FosStore) => generateConstructor(store, "CREATEGROUP", { description: { content: 'Create Group Action Node' } }, [])
+export const addMemberToGroupAction = (store: FosStore) => generateConstructor(store, "ADDMEMBERTOGROUP", { description: { content: 'Add Member To Group Action Node' } }, [])
+export const removeMemberFromGroupAction = (store: FosStore) => generateConstructor(store, "REMOVEMEMBERFROMGROUP", { description: { content: 'Remove Member From Group Action Node' } }, [])
+export const createDMAction = (store: FosStore) => generateConstructor(store, "CREATEDM", { description: { content: 'Create DM Action Node' } }, [])
+export const sendGroupMessageAction = (store: FosStore) => generateConstructor(store, "SENDGROUPMESSAGE", { description: { content: 'Send Group Message Action Node' } }, [])
+
 export const typeNode = (store: FosStore) => generateConstructor(store, "TYPE", { description: { content: 'Type Node' } }, [])
 export const pureActionNode = (store: FosStore) => generateConstructor(store, "PUREACTION", { description: { content: 'Pure Action Node' } }, [])
 export const bindActionNode = (store: FosStore) => generateConstructor(store, "BINDACTION", { description: { content: 'Bind Action Node' } }, [])
@@ -443,6 +450,12 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const prevInstructionPointerConstructor = getPrevInstructionPointerConstructor(store)
   const prevTargetPointerConstructor = getPrevTargetPointerConstructor(store)
 
+  // Group actions
+  const createGroupActionNode = createGroupAction(store)
+  const addMemberToGroupActionNode = addMemberToGroupAction(store)
+  const removeMemberFromGroupActionNode = removeMemberFromGroupAction(store)
+  const createDMActionNode = createDMAction(store)
+  const sendGroupMessageActionNode = sendGroupMessageAction(store)
 
   return {
     voidNode,
@@ -544,7 +557,13 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     updateAction,
     prevInstructionPointerConstructor,
     prevTargetPointerConstructor,
-    rootInstructionNode
+    rootInstructionNode,
+    // Group actions
+    createGroupActionNode,
+    addMemberToGroupActionNode,
+    removeMemberFromGroupActionNode,
+    createDMActionNode,
+    sendGroupMessageActionNode
 
   }
 
@@ -640,4 +659,10 @@ export type PrimitiveAliases = {
   prevInstructionPointerConstructor: FosNode,
   prevTargetPointerConstructor: FosNode,
   rootInstructionNode: FosNode,
+  // Group actions
+  createGroupActionNode: FosNode,
+  addMemberToGroupActionNode: FosNode,
+  removeMemberFromGroupActionNode: FosNode,
+  createDMActionNode: FosNode,
+  sendGroupMessageActionNode: FosNode,
 }

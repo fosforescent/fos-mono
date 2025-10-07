@@ -1129,8 +1129,178 @@ export class FosExpression {
   }
 
 
+  /**
+   * Create a new group node
+   */
+  async createGroup(name: string, description?: string, visibility: 'public' | 'private' = 'private'): Promise<FosExpression> {
+    const { v4: uuidv4 } = await import('uuid')
+    const personFieldCid = this.store.primitive.personField.getId()
+
+    const groupNode = this.store.create({
+      data: {
+        group: {
+          id: uuidv4(),
+          name,
+          visibility,
+          userProfiles: [this.targetNode.getId()],
+          createdBy: this.targetNode.getId()
+        },
+        description: description ? { content: description } : undefined
+      },
+      children: [
+        [personFieldCid, this.targetNode.getId()] // Creator is first member
+      ]
+    })
+
+    const newTarget = this.targetNode.addEdge(this.store.primitive.groupField.getId(), groupNode.getId())
+    await this.update(this.instructionNode, newTarget)
+
+    const actualExpr = this.isAlias() ? this.followAlias() : this
+    const newTargetChildren = actualExpr.getTargetChildren()
+    const groupExpr = newTargetChildren.find((child) =>
+      child.instructionNode.getId() === groupNode.getId()
+    )
+
+    if (!groupExpr) {
+      throw new Error('Group expression not found')
+    }
+
+    return groupExpr
+  }
+
+  /**
+   * Create a DM (direct message) group between current user and target user
+   */
+  async createDM(targetUserNodeCid: string): Promise<FosExpression> {
+    const { v4: uuidv4 } = await import('uuid')
+    const personFieldCid = this.store.primitive.personField.getId()
+
+    // Check if DM already exists - DMs are groups with exactly 2 members
+    const existingDM = this.getTargetChildren().find((child) => {
+      const groupData = child.targetNode.getData().group
+      if (!groupData) return false
+      const profiles = groupData.userProfiles || []
+      return profiles.length === 2 && profiles.includes(this.targetNode.getId()) && profiles.includes(targetUserNodeCid)
+    })
+
+    if (existingDM) {
+      return existingDM
+    }
+
+    // Create new DM node
+    const dmNode = this.store.create({
+      data: {
+        group: {
+          id: uuidv4(),
+          name: 'Direct Message',
+          userProfiles: [this.targetNode.getId(), targetUserNodeCid]
+        }
+      },
+      children: [
+        [personFieldCid, this.targetNode.getId()],
+        [personFieldCid, targetUserNodeCid]
+      ]
+    })
+
+    const newTarget = this.targetNode.addEdge(this.store.primitive.groupField.getId(), dmNode.getId())
+    await this.update(this.instructionNode, newTarget)
+
+    const actualExpr = this.isAlias() ? this.followAlias() : this
+    const newTargetChildren = actualExpr.getTargetChildren()
+    const dmExpr = newTargetChildren.find((child) =>
+      child.instructionNode.getId() === dmNode.getId()
+    )
+
+    if (!dmExpr) {
+      throw new Error('DM expression not found')
+    }
+
+    return dmExpr
+  }
+
+  /**
+   * Add a member to a group (adds PERSON_FIELD child)
+   */
+  async addMemberToGroup(memberNodeCid: string): Promise<FosExpression> {
+    if (!this.isGroup()) {
+      throw new Error('Can only add members to group expressions')
+    }
+
+    const personFieldCid = this.store.primitive.personField.getId()
+
+    // Check if member already exists
+    const existingMembers = this.targetNode.getEdges()
+      .filter(([inst, _]) => inst === personFieldCid)
+      .map(([_, target]) => target)
+
+    if (existingMembers.includes(memberNodeCid)) {
+      return this // Member already in group
+    }
+
+    const newTarget = this.targetNode.addEdge(personFieldCid, memberNodeCid)
+
+    // Update group data
+    const groupData = this.targetNode.getData().group
+    if (groupData) {
+      const updatedGroupData = {
+        ...groupData,
+        userProfiles: [...(groupData.userProfiles || []), memberNodeCid]
+      }
+      const updatedTarget = this.store.create({
+        data: {
+          ...newTarget.getData(),
+          group: updatedGroupData
+        },
+        children: newTarget.getEdges()
+      })
+
+      await this.update(this.instructionNode, updatedTarget)
+    } else {
+      await this.update(this.instructionNode, newTarget)
+    }
+
+    return this.isAlias() ? this.followAlias() : this
+  }
+
+  /**
+   * Send a message to a group (adds COMMENT_FIELD child)
+   */
+  async sendGroupMessage(message: string, authorCid: string, authorName: string): Promise<FosExpression> {
+    if (!this.isGroup()) {
+      throw new Error('Can only send messages to group expressions')
+    }
+
+    const commentNode = this.store.create({
+      data: {
+        comment: {
+          content: message,
+          authorID: authorCid,
+          authorName: authorName,
+          time: Date.now(),
+          votes: {}
+        }
+      },
+      children: []
+    })
+
+    const newTarget = this.targetNode.addEdge(this.store.primitive.commentConstructor.getId(), commentNode.getId())
+    await this.update(this.instructionNode, newTarget)
+
+    const actualExpr = this.isAlias() ? this.followAlias() : this
+    const newTargetChildren = actualExpr.getTargetChildren()
+    const messageExpr = newTargetChildren.find((child) =>
+      child.instructionNode.getId() === commentNode.getId()
+    )
+
+    if (!messageExpr) {
+      throw new Error('Message expression not found')
+    }
+
+    return messageExpr
+  }
+
   inviteToGroup(expr: FosExpression, groupTarget: FosNode) {
-    throw new Error('Method not implemented')
+    throw new Error('Method not implemented - use addMemberToGroup instead')
   }
 
 

@@ -15,9 +15,6 @@ export interface TrellisSerializedData {
 
 
 export type FosDataContent = {
-  alias?: {
-    id: string;
-  }
   versionControl?: {
     delta: Delta,
     branches: string[],
@@ -103,11 +100,16 @@ export type FosDataContent = {
 
     }
   }
+  alias?: {
+    id: string;
+    previous?: string; // CID of previous node this alias pointed to
+  }
   group?: {
     id: string;
     name: string;
     userProfiles: string[];
-
+    visibility?: 'public' | 'private';
+    createdBy?: string;
   }
   market?: {
     sellerProfile: string;

@@ -52,7 +52,7 @@ model UserModel {
   has_bank_account              Boolean?                     @default(false) // Whether user has connected bank account
   last_bank_account_added       DateTime?                    // When last bank account was added
   // profile                       Json                    @default("{}")
-  fosNode                       FosNodeModel                 @relation(fields: [fosNodeId], references: [cid])
+  fosNode                       FosNodeModel                 @relation("UserFosNode", fields: [fosNodeId], references: [cid])
   fosNodeId                     String                       @unique
   // platform_fees          PlatformFee[]
   AuthEvent                     UserEventModel[]
@@ -142,10 +142,8 @@ model FosNodeModel {
   updatedAt             DateTime                     @default(now())
   public                Boolean                      @default(false)
   FosNodeUserAccessLink FosNodeUserAccessLinkModel[]
-  User                  UserModel?
+  User                  UserModel?                   @relation("UserFosNode")
 }
-
-
 
 model FosAppModel {
   id        Int      @id @default(autoincrement())

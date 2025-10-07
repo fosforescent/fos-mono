@@ -100,10 +100,15 @@ prepare-db:
 
 reset:
 	echo "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin
-	echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin 
+	echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --schema=./prisma/schema.prisma --stdin
 	npx prisma db push --schema=./prisma/schema.prisma
 	npx prisma generate --schema=./prisma/schema.prisma
 	npx prisma db seed --schema=./prisma/schema.prisma
+
+reset-docker:
+	cd infra && bash -c 'set -a && source ../.env && set +a && echo "DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector;" | docker compose exec -T postgres psql -U $$POSTGRES_USER -d $$POSTGRES_DB'
+	cd infra && bash -c 'set -a && source ../.env && set +a && docker compose exec backend npx prisma db push --schema=infra/prisma/schema.prisma --accept-data-loss'
+	cd infra && bash -c 'set -a && source ../.env && set +a && docker compose exec backend npx tsx infra/prisma/seed.ts'
 
 run-clean-backend:
 	make reset

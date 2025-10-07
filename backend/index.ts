@@ -95,6 +95,19 @@ import { config } from 'dotenv'
 import { getUserProfile, postUserProfile } from './user'
 import { putError } from './error'
 import { maxRequests } from './maxRequests'
+import {
+  queryUserByEmail,
+  queryUserByDisplayName,
+  getUserGroups,
+  findOrCreateDM,
+  createGroup,
+  addUserToGroup,
+  browsePublicGroups
+} from './group'
+import {
+  sendMessageToGroup,
+  getGroupMessages
+} from './groupMessages'
 // import { clientManagerMiddleware } from './clientManager'
 
 
@@ -283,6 +296,19 @@ protectedRoutes.post('/subscription/portal-session', postCreatePortalSession)
 protectedRoutes.get('/user/profile', getUserProfile)
 protectedRoutes.post('/user/profile', postUserProfile)
 protectedRoutes.delete('/user', deleteAccount)
+
+// Group routes
+protectedRoutes.get('/groups/search/email', queryUserByEmail)
+protectedRoutes.get('/groups/search/name', queryUserByDisplayName)
+protectedRoutes.get('/groups', getUserGroups)
+protectedRoutes.get('/groups/public', browsePublicGroups)
+protectedRoutes.post('/groups', createGroup)
+protectedRoutes.post('/groups/dm', findOrCreateDM)
+protectedRoutes.post('/groups/:groupCid/members', addUserToGroup)
+
+// Group messages routes
+protectedRoutes.get('/groups/:groupCid/messages', getGroupMessages)
+protectedRoutes.post('/groups/:groupCid/messages', sendMessageToGroup)
 
 // MCP Server routes
 protectedRoutes.get('/mcp/servers', getMCPServers)

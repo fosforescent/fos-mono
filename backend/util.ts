@@ -216,13 +216,10 @@ export const storeToDb = async (
     data: newEntries
   })
 
-
-
   const updatedUser = await prisma.userModel.update({
     where: { user_name: user.user_name },
     data: {
       data: validateTrellisDataToDB(store.trellisData),
-      fosNodeId: store.rootNodeId,
       FosNodeUserAccessLink: {
         create: {
           fosNodeId: store.rootNodeId

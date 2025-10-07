@@ -92,6 +92,27 @@ export const postRegister = async (req: Request, res: Response) => {
       })
     }
 
+    // Create an alias node for the user's root node
+    const { v4: uuidv4 } = await import('uuid')
+    const aliasId = uuidv4()
+    const aliasData = {
+      alias: {
+        id: aliasId
+      }
+    }
+    const aliasContent = {
+      data: aliasData,
+      children: [[newStore.rootNodeId, newStore.rootNodeId]] as [string, string][]
+    }
+    const aliasCid = hashContent(aliasContent)
+
+    await prisma.fosNodeModel.create({
+      data: {
+        cid: aliasCid,
+        data: aliasData
+      }
+    })
+
     const user = await prisma.userModel.create({
       data: {
         user_name: username,
@@ -107,10 +128,10 @@ export const postRegister = async (req: Request, res: Response) => {
         api_calls_total: 0,
         approved: true,
         cookies,
-        fosNodeId: newStore.rootNodeId,
+        fosNodeId: aliasCid,
         FosNodeUserAccessLink: {
           create: {
-            fosNodeId: newStore.rootNodeId
+            fosNodeId: aliasCid
           }
         }
       },
