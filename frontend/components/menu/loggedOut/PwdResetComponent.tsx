@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from "react"
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -8,9 +8,9 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/frontend/components/ui/card"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 
 
@@ -18,8 +18,8 @@ import {
   SaveIcon,
   RotateCcw,
 } from 'lucide-react'
-import { AppState, FosReactOptions } from "@/shared/types"
-import { getActions } from "@/frontend/lib/actions"
+import { AppState, FosReactOptions } from "@fosforescent/shared/types"
+import { getActions } from "@/lib/actions"
 
 
 export const PwdResetComponent = ({
@@ -39,21 +39,21 @@ export const PwdResetComponent = ({
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  
+
 
   const [confirm, setConfirm] = useState('')
   const [pwdsMatch, setPwdsMatch] = useState(true)
   const [pwdValid, setPwdValid] = useState(true)
   const canSubmit = pwdValid && pwdsMatch
-  
 
-  const {  resetPassword,  } = getActions(options, data, setData)
+
+  const { resetPassword, } = getActions(options, data, setData)
 
   // console.log('passwordResetToken', passwordResetToken)
 
   const handleResetRequest = () => {
     resetPassword(email, password, passwordResetToken).then(() => {
-      setMessage({ messageType: "success", message: "Password reset successfully" }) 
+      setMessage({ messageType: "success", message: "Password reset successfully" })
       window.history.replaceState({}, document.title, window.location.pathname);
     }).catch((error: Error) => {
       setMessage({ messageType: "fail", message: error.message })
@@ -91,24 +91,24 @@ export const PwdResetComponent = ({
   return (
     <>
       <form onSubmit={(e) => e.preventDefault()}>
-    <CardContent className="space-y-2 pt-3">
-      <div className="space-y-1">
-        {/* <Label htmlFor="current">Email</Label> */}
-        <Input id="current" type="text" value={email} onChange={handleEmailChange} placeholder="Email" className="text-base"/>
-      </div>
-      <div className="space-y-1">
-        {/* <Label htmlFor="new-pass">New password</Label> */}
-        <Input id="new-pass" type="password" value={password} onChange={handlePwdChange} placeholder="New Password" className="text-base" />
-      </div>
-      <div className="space-y-1">
-        {/* <Label htmlFor="confirm-pass">Confirm new password</Label> */}
-        <Input id="confirm-pass" type="password" value={confirm} onChange={checkSame} placeholder="Confirm New Password" className="text-base" />
-      </div>
-    </CardContent>
-    <CardFooter className="flex justify-around">
-    <Button className="bg-emerald-900 text-white" onClick={handleResetRequest} disabled={!canSubmit} title="Reset Password"><SaveIcon /></Button>
-    </CardFooter>
-    </form>
-  </>
+        <CardContent className="space-y-2 pt-3">
+          <div className="space-y-1">
+            {/* <Label htmlFor="current">Email</Label> */}
+            <Input id="current" type="text" value={email} onChange={handleEmailChange} placeholder="Email" className="text-base" />
+          </div>
+          <div className="space-y-1">
+            {/* <Label htmlFor="new-pass">New password</Label> */}
+            <Input id="new-pass" type="password" value={password} onChange={handlePwdChange} placeholder="New Password" className="text-base" />
+          </div>
+          <div className="space-y-1">
+            {/* <Label htmlFor="confirm-pass">Confirm new password</Label> */}
+            <Input id="confirm-pass" type="password" value={confirm} onChange={checkSame} placeholder="Confirm New Password" className="text-base" />
+          </div>
+        </CardContent>
+        <CardFooter className="flex justify-around">
+          <Button className="bg-emerald-900 text-white" onClick={handleResetRequest} disabled={!canSubmit} title="Reset Password"><SaveIcon /></Button>
+        </CardFooter>
+      </form>
+    </>
   )
 }

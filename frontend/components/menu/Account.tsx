@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react"
 
-import { Skeleton } from "@/frontend/components/ui/skeleton"
+import { Skeleton } from "@/components/ui/skeleton"
 
 
 
 import { LoginRegister } from "./loggedOut"
-import { AppState, FosReactOptions } from "@/shared/types"
-import { getActions } from "@/frontend/lib/actions"
-import { Button } from "@/frontend/components/ui/button"
+import { AppState, FosReactOptions } from "@fosforescent/shared/types"
+import { getActions } from "@/lib/actions"
+import { Button } from "@/components/ui/button"
 import { LogOut } from "lucide-react"
 
 export function Account({
@@ -22,13 +22,13 @@ export function Account({
   setData,
   options,
   setAccordionValue
-} : {
+}: {
   passwordResetToken?: string,
   emailConfirmationToken?: string,
-  setShowTerms: (showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void}) => void
+  setShowTerms: (showTerms: { open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void }) => void
   setShowEmailConfirm: (showEmailConfirm: { open: boolean, email: string }) => void
   setShowClearData: (showClearData: boolean) => void
-  setShowPrivacy: (showPrivacy: {open: boolean, fromRegisterForm: boolean, }) => void
+  setShowPrivacy: (showPrivacy: { open: boolean, fromRegisterForm: boolean, }) => void
   setShowCookies: (showCookies: boolean) => void
   data: AppState,
   setData: (data: AppState) => void,
@@ -43,35 +43,35 @@ export function Account({
   const [loading, setLoading] = useState(false)
 
 
-  
+
   const handleLogoutClick = () => {
     logOut()
   }
 
 
   return (<div>
-    {loading 
+    {loading
       ? <div>
         <Skeleton className="h-300 w-full" />
       </div>
-      : <div className="w-full">{loggedIn() 
+      : <div className="w-full">{loggedIn()
         ? (<div className="basis-1/3">
           {/* <Label htmlFor="reset_data">Log Out</Label> */}
           <Button variant="destructive" title="Log Out" onClick={handleLogoutClick} ><LogOut /></Button>
         </div>)
-        : <LoginRegister 
-          passwordResetToken={passwordResetToken} 
-          emailConfirmationToken={emailConfirmationToken} 
+        : <LoginRegister
+          passwordResetToken={passwordResetToken}
+          emailConfirmationToken={emailConfirmationToken}
           setLoading={setLoading}
-          setShowTerms={setShowTerms} 
+          setShowTerms={setShowTerms}
           setShowPrivacy={setShowPrivacy}
           setAccordionValue={setAccordionValue}
           data={data}
           setData={setData}
           options={options}
-          />}</div>
+        />}</div>
     }
-    
+
   </div>)
 }
 

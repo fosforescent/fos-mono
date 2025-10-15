@@ -17,7 +17,7 @@ export class FosNode {
   store: FosStore
   value: FosNodeContent
   alias: string | undefined = undefined
-  
+
   constructor(value: FosNodeContent, store: FosStore) {
     const address = store.insert(value)
     this.cid = address
@@ -25,7 +25,7 @@ export class FosNode {
     this.value = value
   }
 
-  getId(): string  {
+  getId(): string {
     return this.cid
   }
 
@@ -57,28 +57,28 @@ export class FosNode {
   }
 
   mapInstruction(mapInstruction: (currentInstrucion: FosNode) => FosNode, target: FosNode): FosNode | null {
-      
-      const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, targetId]) => {
-        if (targetId === target.getId()) {
-          const instructionNode = this.store.getNodeByAddress(edgeType)
-          if (!instructionNode) {
-            throw new Error("Instruction Node not found")
-          }
-          const newInstruction = mapInstruction(instructionNode)
-          return [newInstruction.getId(), targetId]
+
+    const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, targetId]) => {
+      if (targetId === target.getId()) {
+        const instructionNode = this.store.getNodeByAddress(edgeType)
+        if (!instructionNode) {
+          throw new Error("Instruction Node not found")
         }
-        return [edgeType, targetId]
-      })
-      const newContent: FosNodeContent = {
-        data: {
-          ...this.value.data,
-          updated: {
-            time: Date.now()
-          },
-        },
-        children: newEdges
+        const newInstruction = mapInstruction(instructionNode)
+        return [newInstruction.getId(), targetId]
       }
-      return this.mutate(newContent)
+      return [edgeType, targetId]
+    })
+    const newContent: FosNodeContent = {
+      data: {
+        ...this.value.data,
+        updated: {
+          time: Date.now()
+        },
+      },
+      children: newEdges
+    }
+    return this.mutate(newContent)
 
   }
 
@@ -86,7 +86,7 @@ export class FosNode {
   getEdges(): FosPathElem[] {
     return this.value.children
   }
- 
+
   getContent(): FosNodeContent {
     /**
      * make sure we never accidentally mutate the value
@@ -95,7 +95,7 @@ export class FosNode {
     return nodeContent
 
   }
- 
+
 
   printTree(): void {
     throw new Error("Method not implemented.")
@@ -106,7 +106,7 @@ export class FosNode {
     return JSON.stringify(this.value)
   }
 
- 
+
   isDone(): boolean {
     throw new Error("Method not implemented.")
   }
@@ -121,7 +121,7 @@ export class FosNode {
     const prevNodes: FosNode[] = this.value.children.reduce((acc: FosNode[], [edgeType, target]: FosPathElem) => {
       if (edgeType === previousVersionNodeId) {
         const node: FosNode | null = this.store.getNodeByAddress(target)
-        if (!node){
+        if (!node) {
           throw new Error("Node not found")
         }
         return [...acc, node]
@@ -145,8 +145,8 @@ export class FosNode {
       if (!targetNode) {
         throw new Error("Target Node not found")
       }
-      const instructionMatch = this.store.matchPattern( instructionType, instructionNode )
-      const targetMatch = this.store.matchPattern( targetType, targetNode )
+      const instructionMatch = this.store.matchPattern(instructionType, instructionNode)
+      const targetMatch = this.store.matchPattern(targetType, targetNode)
       return instructionMatch.length > 0 && targetMatch.length > 0
     })
     if (exprs.length === 0) {
@@ -159,7 +159,7 @@ export class FosNode {
 
     return expressions
   }
-  
+
 
   // isGroupInstructionNode(): boolean {
   //   const peerEdges = this.value.children.filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
@@ -174,7 +174,7 @@ export class FosNode {
   isPrimitive(): [string, FosNode] | null {
     const result: [string, FosNode] | null = Object.entries(this.store.primitive).find(([key, primitive], number) => {
       if (primitive.getId() === this.getId()) {
-        return true 
+        return true
       }
     }) || null
 
@@ -210,7 +210,7 @@ export class FosNode {
   clone(): FosNode {
     throw new Error("Method not implemented.")
   }
-  
+
   merge(nodeContent: FosNodeContent): FosNode {
     throw new Error("Method not implemented.")
   }
@@ -221,20 +221,20 @@ export class FosNode {
   }
 
   addEdge(edgeType: string, target: string, index: number = -1): FosNode {
-    if ( index < -1 || index > this.getEdges().length - 1) {
+    if (index < -1 || index > this.getEdges().length - 1) {
       throw new Error("Index out of bounds")
     }
     if (index === -1) {
-      return this.mutate({...this.value, children: [...this.getEdges(), [edgeType, target]] })
+      return this.mutate({ ...this.value, children: [...this.getEdges(), [edgeType, target]] })
     } else {
       const newEdges = [...this.getEdges()]
       newEdges.splice(index, 0, [edgeType, target])
-      return this.mutate({...this.value, children: newEdges })
+      return this.mutate({ ...this.value, children: newEdges })
     }
   }
 
   removeEdge(edgeType: string, target: string): FosNode {
-    return this.mutate({...this.value, children: this.getEdges().filter(item => item[0] == edgeType && item[1] === target) })
+    return this.mutate({ ...this.value, children: this.getEdges().filter(item => item[0] == edgeType && item[1] === target) })
   }
 
   removeEdgeByIndex(index: number): FosNode {
@@ -243,11 +243,11 @@ export class FosNode {
     }
     const newEdges = [...this.getEdges()]
     newEdges.splice(index, 1)
-    return this.mutate({...this.value, children: newEdges })
+    return this.mutate({ ...this.value, children: newEdges })
   }
 
   updateEdge(oldEdgeType: string, oldTarget: string, newEdgeType: string, newTarget: string): FosNode {
-    const updated =  this.mutate({...this.value, children: this.getEdges().map(item => item[0] === oldEdgeType && item[1] === oldTarget ? [newEdgeType, newTarget] : item) })
+    const updated = this.mutate({ ...this.value, children: this.getEdges().map(item => item[0] === oldEdgeType && item[1] === oldTarget ? [newEdgeType, newTarget] : item) })
     return updated
   }
 
@@ -255,13 +255,13 @@ export class FosNode {
     if (orderArray.length != this.getEdges().length) {
       throw new Error("Order array length must match the number of edges")
     }
-    const orderedEdges: FosPath = orderArray.map(i => this.getEdges()[i]).map((edge) =>{
+    const orderedEdges: FosPath = orderArray.map(i => this.getEdges()[i]).map((edge) => {
       if (edge === undefined) {
         throw new Error("Edge not found")
       }
       return edge
     })
-    return this.mutate({...this.value, children: orderedEdges })
+    return this.mutate({ ...this.value, children: orderedEdges })
   }
   addExpression(expression: FosExpression): FosNode {
     return this.addEdge(expression.instructionNode.getId(), expression.targetNode.getId())
@@ -276,7 +276,7 @@ export class FosNode {
   }
 
   updateData(data: FosDataContent): FosNode {
-    return this.mutate({...this.value, data: { ...this.value.data, ...data }  })
+    return this.mutate({ ...this.value, data: { ...this.value.data, ...data } })
   }
 
   equals(node: FosNode): boolean {
@@ -285,7 +285,7 @@ export class FosNode {
 
   getEdgeNodes(edge?: FosPathElem): [FosNode, FosNode] {
     if (!edge) {
-      
+
       throw new Error("Edge is not defined")
     }
     const [edgeType, target] = edge
@@ -300,15 +300,15 @@ export class FosNode {
     return [instructionNode, targetNode]
   }
 
- 
 
-  dereferenceNodes(): { instruction: FosNode, target: FosNode, prevInstruction: FosNode, prevTarget: FosNode } {
+
+  dereferenceNodes(): { instruction: FosNode, target: FosNode, prev: FosNode } {
 
     const target = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.targetPointerConstructor.getId())
     if (!target) {
       throw new Error("Target not found")
     }
-    const targetNode = this.store.getNodeByAddress(target[1])    
+    const targetNode = this.store.getNodeByAddress(target[1])
     if (!targetNode) {
       throw new Error("Target Node not found")
     }
@@ -323,29 +323,31 @@ export class FosNode {
       throw new Error("Instruction Node not found")
     }
 
-    const prevInstruction = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.previousVersion.getId())
-    if (!prevInstruction) {
-      throw new Error("Previous Instruction not found")
+
+
+    // Look for prevTargetPointerConstructor first, then fallback to previousVersion
+    const prevTarget = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.prevTargetPointerConstructor.getId())
+    if (prevTarget) {
+      const prevTargetNode = this.store.getNodeByAddress(prevTarget[1])
+      if (prevTargetNode) {
+        return { instruction: instructionNode, target: targetNode, prev: prevTargetNode }
+      }
     }
 
-    const prevInstructionNode = this.store.getNodeByAddress(prevInstruction[1])    
-    if (!prevInstructionNode) {
-      throw new Error("Target Node not found")
+    const prev = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.previousVersion.getId())
+    if (!prev) {
+      throw new Error("Previous Node not found")
+    }
+
+    const prevNode = this.store.getNodeByAddress(prev[1])
+    if (!prevNode) {
+      throw new Error("Previous Node not found")
     }
 
 
-    const prevTarget = this.getEdges().find(([edgeType, target]) => edgeType === this.store.primitive.previousVersion.getId())
-    if (!prevTarget) {
-      throw new Error("Previous Target not found")
-    }
-
-    const prevTargetNode = this.store.getNodeByAddress(prevTarget[1])    
-    if (!prevTargetNode) {
-      throw new Error("Target Node not found")
-    }
 
 
-    return {instruction: instructionNode, target: targetNode, prevInstruction: prevInstructionNode, prevTarget: prevTargetNode}
+    return { instruction: instructionNode, target: targetNode, prev: prevNode }
   }
 
 
@@ -358,7 +360,7 @@ export class FosNode {
     let hadTarget = false
     let hadInstruction = false
     let hadPrev = false
-    
+
 
     const newEdges: FosPathElem[] = this.getEdges().map(([edgeType, target]) => {
       if (edgeType === this.store.primitive.targetPointerConstructor.getId()) {
@@ -412,7 +414,7 @@ export class FosNode {
         return [this.store.primitive.previousVersion.getId(), this.getId()]
       }
       return edge
-  
+
     })
     if (!hadPrev) {
       throw new Error("Trying to create commit on node without history")

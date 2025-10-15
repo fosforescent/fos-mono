@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { AppState, FosPath, FosRoute } from '@/shared/types';
-import { FosStore } from '@/shared/dag-implementation/store';
-import { FosExpression } from '@/shared/dag-implementation/expression';
+import { AppState, FosPath, FosRoute } from '@fosforescent/shared/types';
+import { FosStore } from '@fosforescent/shared/dag-implementation/store';
+import { FosExpression } from '@fosforescent/shared/dag-implementation/expression';
 import OpenAI from 'openai';
 import { Document } from '@langchain/core/documents';
-import { mutableMapExpressions } from '@/shared/utils';
+import { mutableMapExpressions } from '@fosforescent/shared/utils';
 import { Embeddings, EmbeddingsParams } from '@langchain/core/embeddings';
+import { semanticSearch as qdrantSemanticSearch, upsertDocument, batchUpsertDocuments } from '@fosforescent/infra/qdrant';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -87,45 +88,15 @@ export async function processAndStoreDocuments(
   try {
     if (docs.length === 0) return 0;
 
-    const texts = docs.map(doc => doc.text);
-    const embeddings = await getBatchEmbeddings(texts);
+    // Use batch upsert to Qdrant
+    await batchUpsertDocuments(docs.map(doc => ({
+      nodeId: doc.nodeId,
+      content: doc.text,
+      metadata: doc.metadata || {}
+    })));
 
-
-    // Store embeddings in database
-    for (let i = 0; i < docs.length; i++) {
-
-      const thisDoc = docs[i];
-
-
-      if (!thisDoc) {
-        console.warn('No document found for embedding:', i);
-        continue;
-      } else {
-
-        await prisma.nodeVectorModel.upsert({
-          where: {
-            nodeId_content: {
-              nodeId: thisDoc.nodeId,
-              content: thisDoc.text
-            }
-          },
-          update: {
-            embedding: embeddings[i],
-            metadata: thisDoc.metadata || {},
-            updatedAt: new Date()
-          },
-          create: {
-            nodeId: thisDoc.nodeId,
-            content: thisDoc.text,
-            embedding: embeddings[i],
-            metadata: thisDoc.metadata || {}
-          }
-        });
-
-      }
-    }
-
-    return embeddings.length;
+    console.log(`Successfully upserted ${docs.length} documents to Qdrant`);
+    return docs.length;
   } catch (error) {
     console.error('Error in processAndStoreDocuments:', error);
     throw error;
@@ -139,7 +110,7 @@ interface SearchResult {
   metadata: Record<string, any>;
 }
 
-// Execute semantic search using PostgreSQL vector similarity
+// Execute semantic search using Qdrant vector similarity
 export async function semanticSearch(
   query: string,
   options: {
@@ -155,36 +126,21 @@ export async function semanticSearch(
       minScore = 0.7
     } = options;
 
-    // Get embedding for query
-    const queryEmbedding = await embeddingsAdapter.embedQuery(query);
+    // Use Qdrant semantic search
+    const searchResults = await qdrantSemanticSearch(query, k, minScore);
 
-    // Build the SQL query with filters
-    let excludeClause = '';
-    if (excludeIds.length > 0) {
-      excludeClause = `AND "nodeId" NOT IN (${excludeIds.map(id => `'${id}'`).join(',')})`;
-    }
-
-    // Execute raw SQL query for vector similarity search
-    const results = await prisma.$queryRaw`
-      SELECT 
-        "nodeId" as id,
-        content,
-        metadata,
-        1 - (embedding <=> ${queryEmbedding}::vector) as score
-      FROM "NodeVectorModel"
-      WHERE 1 - (embedding <=> ${queryEmbedding}::vector) >= ${minScore}
-      ${excludeClause ? excludeClause : ''}
-      ORDER BY embedding <=> ${queryEmbedding}::vector
-      LIMIT ${k}
-    `;
+    // Filter out excluded IDs if specified
+    const filteredResults = excludeIds.length > 0 
+      ? searchResults.filter(result => !excludeIds.includes(result.nodeId))
+      : searchResults;
 
     // Convert results to Document format
-    return (results as any[]).map(row => new Document({
-      pageContent: row.content,
+    return filteredResults.map(result => new Document({
+      pageContent: result.content,
       metadata: {
-        ...row.metadata,
-        id: row.id,
-        score: row.score
+        ...result.metadata,
+        id: result.nodeId,
+        score: result.score
       }
     }));
   } catch (error) {

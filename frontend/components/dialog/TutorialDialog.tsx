@@ -1,4 +1,4 @@
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -7,24 +7,24 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/frontend/components/ui/dialog"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
-import { Switch } from "@/frontend/components/ui/switch"
+import { Switch } from "@/components/ui/switch"
 import { useEffect, useState } from "react"
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@/frontend/components/ui/tabs"
+} from "@/components/ui/tabs"
 
 import {
   Card,
   CardContent,
   CardHeader
-} from "@/frontend/components/ui/card"
+} from "@/components/ui/card"
 import { BrainCircuit, ChevronDownCircle, Circle, Disc, Menu, Plus, Redo2, Undo2 } from "lucide-react"
 import { CaretSortIcon, PlusCircledIcon } from "@radix-ui/react-icons"
 
@@ -34,7 +34,7 @@ import { CaretSortIcon, PlusCircledIcon } from "@radix-ui/react-icons"
 
 import {
   images
-} from "@/frontend/assets"
+} from "@/assets"
 // import CollapsingUrl from "../../assets/tutorial/Collapsing.gif"
 // import GenerateUrl from "../../assets/tutorial/Generate.gif"
 // import MovingUrl from "../../assets/tutorial/Moving.gif"

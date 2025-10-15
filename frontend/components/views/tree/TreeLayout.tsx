@@ -1,18 +1,18 @@
 import React, { ReactElement, useEffect, useState } from 'react'
 
 import { HomeIcon } from '@radix-ui/react-icons'
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   closestCorners,
   pointerWithin,
-  DndContext, 
-  DragEndEvent, 
-  DragOverEvent, 
+  DndContext,
+  DragEndEvent,
+  DragOverEvent,
   DragOverlay,
   DragStartEvent,
   KeyboardSensor,
   PointerSensor,
-  TouchSensor, 
+  TouchSensor,
   useSensor,
   useSensors,
   ClientRect,
@@ -36,15 +36,15 @@ import {
 
 import { DroppableContainersMap } from '@dnd-kit/core/dist/store/constructors';
 
-import { AppState, FosNodeContent,  FosReactGlobal,  FosReactOptions, FosPath, AppStateLoaded } from '../../../../shared/types'
+import { AppState, FosNodeContent, FosReactGlobal, FosReactOptions, FosPath, AppStateLoaded } from '../../../../shared/types'
 import { getActions } from '../../../lib/actions'
 
 
-import { useProps } from '@/frontend/App';
+import { useProps } from '@/App';
 
 import { getDragAndDropHandlers } from '../../drag-drop';
-import { FosExpression } from '@/shared/dag-implementation/expression';
-import { FosStore } from '@/shared/dag-implementation/store';
+import { FosExpression } from '@fosforescent/shared/dag-implementation/expression';
+import { FosStore } from '@fosforescent/shared/dag-implementation/store';
 import { DefaultBreadcrumbsComponent } from '../../breadcrumbs/breadcrumbs';
 import { FosRowsComponent } from './rows';
 
@@ -52,23 +52,23 @@ import { FosRowsComponent } from './rows';
 
 
 // eslint-disable-next-line @typescript-eslint/ban-types
-export function TreeView (){
+export function TreeView() {
 
 
-  const { 
+  const {
     data,
     setData,
     options,
     nodeRoute: route,
     ...props
-  } : {
+  }: {
     options: FosReactGlobal
     data: AppStateLoaded
     nodeRoute: FosPath
     setData: (state: AppStateLoaded) => void
   } = useProps()
 
-  
+
 
 
   const sensors = useSensors(
@@ -86,7 +86,7 @@ export function TreeView (){
       onActivation: (event) => {
         // console.log('test1')
       },
-    }), 
+    }),
     useSensor(TouchSensor, {
       activationConstraint: {
         delay: 250,
@@ -97,7 +97,7 @@ export function TreeView (){
       }
     })
   );
-  
+
 
 
   const setFosAndTrellisData = (state: AppStateLoaded["data"]) => {
@@ -107,9 +107,9 @@ export function TreeView (){
     })
   }
 
-  
-  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData})
-  const expression = new FosExpression(store, route) 
+
+  const store = new FosStore({ fosCtxData: data.data, mutationCallback: setFosAndTrellisData })
+  const expression = new FosExpression(store, route)
 
   const {
     customCollisionDetection,
@@ -126,26 +126,26 @@ export function TreeView (){
 
 
   return (
-    <DndContext 
-        sensors={sensors}
-        collisionDetection={customCollisionDetection}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
-      >
+    <DndContext
+      sensors={sensors}
+      collisionDetection={customCollisionDetection}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+    >
       <div className={`w-full trellis-root `} >
-      <div className={` bg-background/50 text-primary`}>
-      <DefaultBreadcrumbsComponent 
-        data={data}
-        setData={setData}
-        options={options}
-        expression={expression}
-        />
-      
-      <div className="w-full">
-        <div>
-          <div className={`border-b border-t`}>
-            {/* <div> 
+        <div className={` bg-background/50 text-primary`}>
+          <DefaultBreadcrumbsComponent
+            data={data}
+            setData={setData}
+            options={options}
+            expression={expression}
+          />
+
+          <div className="w-full">
+            <div>
+              <div className={`border-b border-t`}>
+                {/* <div> 
               <input 
                 className="w-full p-2"
                 type="text" 
@@ -156,34 +156,34 @@ export function TreeView (){
             </div>
           </div>
           <div> */}
-            <div>
-              <div>
-                <div className={`flex-row flex w-full px-1 bg-card border`}>
+                <div>
+                  <div>
+                    <div className={`flex-row flex w-full px-1 bg-card border`}>
 
-                  <div className={`px-0 flex-grow overflow-x-hidden transition-all duration-500 ${showAllActions ? 'w-none' : ''}`}>
-                    {/* <RootScreenHead nodeRoute={nodeRoute} options={options} data={data} setData={setData} /> */}
+                      <div className={`px-0 flex-grow overflow-x-hidden transition-all duration-500 ${showAllActions ? 'w-none' : ''}`}>
+                        {/* <RootScreenHead nodeRoute={nodeRoute} options={options} data={data} setData={setData} /> */}
+                      </div>
+
+                    </div>
                   </div>
-
                 </div>
+                {/* <AddOption /> */}
               </div>
-            </div>
-              {/* <AddOption /> */}
-          </div>
-          <div>
-            {<FosRowsComponent 
-              data={data}
-              setData={setData}
-              options={options}
-              expression={expression}
-            />}
-          </div>
+              <div>
+                {<FosRowsComponent
+                  data={data}
+                  setData={setData}
+                  options={options}
+                  expression={expression}
+                />}
+              </div>
 
-        {/* {node.data.duration && <GanttComponent root={node} />} */}
-        {/* <DataComponent node={node} trail={trail} forceUpdate={forceUpdate} /> */}
-        {/* {node.data.cost && <CostComponent root={node} forceUpdate={forceUpdate} />} */}
+              {/* {node.data.duration && <GanttComponent root={node} />} */}
+              {/* <DataComponent node={node} trail={trail} forceUpdate={forceUpdate} /> */}
+              {/* {node.data.cost && <CostComponent root={node} forceUpdate={forceUpdate} />} */}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
       </div>
     </DndContext>
   )

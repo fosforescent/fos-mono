@@ -1,27 +1,28 @@
 import { assert, aggMap, } from '../utils'
-import { FosNode,} from './node'
+import { FosNode, } from './node'
 
 
-import { 
+import {
   constructPrimitiveAliases,
   PrimitiveAliases
 
 } from './primitive-node'
 
-import {  AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
+import { AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
 
-import { sha3_256 } from 'js-sha3'
+import jsSha3 from 'js-sha3'
+const { sha3_256 } = jsSha3
 
 import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
-
+import { runAvailableFunctions } from './context'
 
 
 export class FosStore {
   table: Map<string, FosNodeContent> = new Map()
 
 
-  
+
 
   rootsHistory: FosPathElem[] = [];
 
@@ -41,7 +42,7 @@ export class FosStore {
   }
 
   updatedTime = 0
-  
+
   rootNodeId: FosNodeId
 
   fosRoute: FosPath = []
@@ -51,7 +52,9 @@ export class FosStore {
   // aliasMap = new Map<string, string>()
 
   peers = new Map<string, FosStore>()
-  
+
+  workers: FosExpression[] = []
+
   version = 0
 
   primitive: PrimitiveAliases
@@ -60,24 +63,25 @@ export class FosStore {
   updateCtxCallback: ((data: AppStateLoaded["data"]) => void) | null;
   commitCallback: ((data: AppStateLoaded["data"]) => void) | null;
 
- 
-  constructor({ 
-    fosCtxData, 
-    mutationCallback, 
+
+  constructor({
+    fosCtxData,
+    mutationCallback,
     commitCallback
-  }: { 
-    fosCtxData?: AppStateLoaded["data"], 
-    mutationCallback?: (data: AppStateLoaded["data"]) => void, 
-    commitCallback?: (data: AppStateLoaded["data"]) => void } = {}
+  }: {
+    fosCtxData?: AppStateLoaded["data"],
+    mutationCallback?: (data: AppStateLoaded["data"]) => void,
+    commitCallback?: (data: AppStateLoaded["data"]) => void
+  } = {}
   ) {
     this.primitive = constructPrimitiveAliases(this)
     this.updateCtxCallback = mutationCallback || null
     this.commitCallback = commitCallback || null
 
-    if (fosCtxData){
+    if (fosCtxData) {
 
       const rootNodeContent = fosCtxData.fosData.nodes[fosCtxData.fosData.rootNodeId]
-      if (!rootNodeContent){
+      if (!rootNodeContent) {
         throw new Error(`root node ${fosCtxData.fosData.rootNodeId} not found --- bad data`)
       }
 
@@ -92,17 +96,17 @@ export class FosStore {
 
         const nodeContent = fosCtxData.fosData.nodes[key]!
         nodeContent.children.forEach((edge, index) => {
-          if (!allValidKeys.has(edge[0])){
+          if (!allValidKeys.has(edge[0])) {
             throw new Error(`edge ${edge} has non-existent instruction node`)
           }
-          if(!allValidKeys.has(edge[1])){
+          if (!allValidKeys.has(edge[1])) {
             throw new Error(`edge ${edge} has non-existent target nodes`)
           }
         })
-        
+
         const cid = this.hash(nodeContent)
         this.table.set(cid, nodeContent)
-        if (key === "b3f17d6c4a0b8b5cee8a32d50d3af24c9bd665da316d4ec7824d03cc08e7d91c"){
+        if (key === "b3f17d6c4a0b8b5cee8a32d50d3af24c9bd665da316d4ec7824d03cc08e7d91c") {
           const hasKey = allValidKeys.has(key)
           const nodeContent = fosCtxData.fosData.nodes[key]!
           console.log('key', key, hasKey, nodeContent, cid)
@@ -114,33 +118,64 @@ export class FosStore {
 
     } else {
 
-      const {
-        target
-      } = this.primitive.startRootAlias.dereferenceNodes()
-      
-      this.rootNodeId = target.getId()
+      // const {
+      //   target
+      // } = this.primitive.startRootAlias.dereferenceNodes()
+
+      this.rootNodeId = this.primitive.startRootAlias.getId()
     }
 
-    
+
   }
 
-  
+
+  // run(expr: FosExpression): Promise<FosExpression> {
+  //   // console.log('run expr', expr)
+  //   const taskPromise = new Promise<FosExpression>((resolve, reject) => {
+  //     const result = runAvailableFunctions(expr)
+  //     this.workers.push(taskPromise)
+  //   })
+  //   this.workers.push(taskPromise)
+  //   return taskPromise
+  // }
 
 
   getRootExpression(): FosExpression {
+
+    // const {
+    //   target
+    // } = this.primitive.startRootAlias.dereferenceNodes()
+
+    const rootInstruction = this.primitive.aliasConstructor.getId()
+    const rootTarget = this.rootNodeId
+
     return new FosExpression(this, [])
   }
 
   getRootNode(): FosNode {
-    const rootNode =  this.getNodeByAddress(this.rootNodeId)
-    if (!rootNode){
+    const rootNode = this.getNodeByAddress(this.rootNodeId)
+    if (!rootNode) {
       throw new Error(`root node ${this.rootNodeId} not found`)
     }
     return rootNode
   }
 
-  setRootNode(node: FosNode): void {
-    this.rootNodeId = node.getId()
+  setRootNode(newTarget: FosNode): void {
+
+    const prevRoot = this.getRootNode()
+    const {
+      instruction,
+    } = prevRoot.dereferenceNodes()
+
+    const newRootAlias = this.create({
+      data: {},
+      children: [
+        [this.primitive.targetPointerConstructor.getId(), newTarget.getId()],
+        [this.primitive.instructionPointerConstructor.getId(), instruction.getId()],
+        [this.primitive.previousVersion.getId(), prevRoot.getId()]
+      ]
+    })
+    this.rootNodeId = newRootAlias.getId()
     console.log('newRootNode', this.rootNodeId)
     this.updateCtxCallback && this.updateCtxCallback(this.exportContext([]))
   }
@@ -151,20 +186,20 @@ export class FosStore {
     this.commitCallback && this.commitCallback(this.exportContext([]))
   }
 
-  hash (nodeContent: FosNodeContent): string {
-    if (this.hashCache.has(nodeContent)){
+  hash(nodeContent: FosNodeContent): string {
+    if (this.hashCache.has(nodeContent)) {
       return this.hashCache.get(nodeContent) as string
-    }else {
+    } else {
       const hash = hashContent(nodeContent)
       return hash
-  
+
     }
   }
 
-  checkAddress (address: string): string | null {
+  checkAddress(address: string): string | null {
     // console.log('checkAddress', address, [...this.table.keys()], [...this.externalData.keys()], this.table.get(address) !== undefined, this.externalData.get(address) !== undefined)
     const isNode = this.table.get(address) !== undefined
-    if (isNode){
+    if (isNode) {
       return address
     } else {
       // for (const [peerId, peerStore] of this.peers.entries()){
@@ -175,7 +210,7 @@ export class FosStore {
       //   }
       // }
 
-        return null
+      return null
     }
 
   }
@@ -185,14 +220,14 @@ export class FosStore {
 
 
   create(value: FosNodeContent, alias?: string): FosNode {
-    
+
     const updatedChildren = value.children.map((item, index) => {
       if (Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && typeof item[1] === 'string') {
 
-  
 
-        if (!this.checkAddress(item[0]) && !this.checkAddress(item[1])){
-          throw new Error (`edge ${item} has non-existent instruction and target nodes`)
+
+        if (!this.checkAddress(item[0]) && !this.checkAddress(item[1])) {
+          throw new Error(`edge ${item} has non-existent instruction and target nodes`)
 
           const newErrorTargetContent: FosNodeContent = {
             data: {
@@ -212,7 +247,7 @@ export class FosStore {
 
 
         } else if (!this.checkAddress(item[0])) {
-          throw new Error (`edge ${item} has non-existent instruction node`)
+          throw new Error(`edge ${item} has non-existent instruction node`)
 
           const newErrorTargetContent: FosNodeContent = {
             data: {
@@ -231,7 +266,7 @@ export class FosStore {
           return newElem
 
         } else if (!this.checkAddress(item[1])) {
-          throw new Error (`edge ${item} has non-existent target node`)
+          throw new Error(`edge ${item} has non-existent target node`)
 
           const newErrorTargetContent: FosNodeContent = {
             data: {
@@ -270,7 +305,7 @@ export class FosStore {
         const newErrorTargetAddress = this.insert(newErrorTargetContent)
         const newElem: FosPathElem = [this.primitive.errorNode.getId(), newErrorTargetAddress]
         return newElem
-      // throw new Error(`inserting array that has malformed edges`)
+        // throw new Error(`inserting array that has malformed edges`)
       }
     })
     const updatedValue: FosNodeContent = {
@@ -289,12 +324,12 @@ export class FosStore {
     return new FosNode(updatedValue, this)
   }
 
-  insert (nodeContent: FosNodeContent, alias?: string): string {
+  insert(nodeContent: FosNodeContent, alias?: string): string {
     // console.log('insert regular starting', nodeContent)
-    nodeContent.children.map((edge, index) => {      
+    nodeContent.children.map((edge, index) => {
       // console.log('edge', edge)
       assert(!!this.checkAddress(edge[0]), `node ${edge[0]} not found at index ${index}`)
-      assert(!!this.checkAddress(edge[1]) , `node ${edge[1]} not found at index ${index}`)
+      assert(!!this.checkAddress(edge[1]), `node ${edge[1]} not found at index ${index}`)
       return [this.checkAddress(edge[0]), this.checkAddress(edge[1])]
     })
 
@@ -308,7 +343,7 @@ export class FosStore {
     return newCid
   }
 
-  
+
   // mutateAlias (alias: string, nodeContent: FosNodeContent, tentativeCid: string): FosNodeContent {
 
   //   // console.log('alias found', this.aliasMap, alias, nodeContent, this.aliasMap.get(alias) as string, tentativeCid)
@@ -339,7 +374,7 @@ export class FosStore {
   //   } 
   //   // determine if prev Cid exists in current node content prevList
   //   // if it does, then we need to just need to insert the new content and update the alias
-    
+
   //   const currPrevItem = nodeContent.children.find((item) => item[0] === this.primitive.previousVersion.getId())
   //   if (!currPrevItem){
   //     console.trace('currPrevItem not found', nodeContent, tentativeCid, storeNodeContent, prevCid)
@@ -360,7 +395,7 @@ export class FosStore {
   //     return nodeContent
   //   }
 
-    
+
   //   const storePrevList = this.getPrevList(storePrevItem[1])
 
   //   if (storePrevList.includes(tentativeCid)){
@@ -368,7 +403,7 @@ export class FosStore {
   //     return storeNodeContent
   //   }
 
-  
+
 
   //   const removeSharedSuffix = <T>(arr1: T[], arr2: T[]): [T[], T[], T[]] => {
   //     let suffixLen = 0;
@@ -385,10 +420,10 @@ export class FosStore {
   //       arr1.slice(arr1.length - suffixLen)
   //     ];
   //   }
-    
+
   //   const [storePrevListNoSuffix, currPrevListNoSuffix, suffix] = removeSharedSuffix<string>(storePrevList, currPrevList)
 
-  
+
   //   const storeStateInfo: {
   //     nodeContent: FosNodeContent,
   //     backwardDeltas: Delta[],
@@ -458,7 +493,7 @@ export class FosStore {
   //   const finalState2: FosNodeContent = [...incomingStateInfo.forwardDeltas, ...storeStateInfo.forwardDeltas].reduce((acc: FosNodeContent, delta) => {
   //     return patch({ left: acc, delta })
   //   }, incomingStateInfo.nodeContent)
- 
+
   //   const hasFinalDiff = diff({ left: finalState1, right: finalState2 })
 
   //   if (hasFinalDiff){
@@ -471,7 +506,7 @@ export class FosStore {
 
 
 
-    
+
   // }
 
 
@@ -493,19 +528,19 @@ export class FosStore {
   //   return conflictNodeConent
   // }
 
-  addPrevNodeToContent (content: FosNodeContent, oldNodeCid: string): FosNodeContent {
+  addPrevNodeToContent(content: FosNodeContent, oldNodeCid: string): FosNodeContent {
     const oldNodeContent = this.table.get(oldNodeCid)
-    
+
 
     /**
      * reversed diff should allow us to apply diff to newest content and move backwards
      */
     const diffToPrev = diff({ left: content, right: oldNodeContent })
-    if (!diffToPrev){
+    if (!diffToPrev) {
       throw new Error(`no diff found between ${oldNodeCid} and ${content}`)
     }
 
-    
+
     const newElem: FosPathElem = [this.primitive.previousVersion.getId(), oldNodeCid]
     const newContent: FosNodeContent = {
       data: {
@@ -527,7 +562,7 @@ export class FosStore {
 
   // }
 
-  addErrorNodeToContent (content: FosNodeContent, item: any, instruction: string, target: string, instructionIsError: boolean, targetIsError: boolean, message: string): FosNodeContent {
+  addErrorNodeToContent(content: FosNodeContent, item: any, instruction: string, target: string, instructionIsError: boolean, targetIsError: boolean, message: string): FosNodeContent {
     const newErrorTargetContent: FosNodeContent = {
       data: {
         error: {
@@ -550,17 +585,17 @@ export class FosStore {
 
   }
 
-  getPrevList (cid: FosNodeId): FosNodeId[] {
+  getPrevList(cid: FosNodeId): FosNodeId[] {
 
     const helper = (cid: FosNodeId): FosNodeId[] => {
       const currentContent = this.table.get(cid)
-      if (!currentContent){
+      if (!currentContent) {
         throw new Error(`node ${cid} not found`)
       }
       const prevItem = currentContent.children.find((item) => item[0] === this.primitive.previousVersion.getId())
-      if (!prevItem){
+      if (!prevItem) {
         return []
-      }else{
+      } else {
         return [...helper(prevItem[1]), prevItem[1]] as FosNodeId[]
       }
     }
@@ -572,7 +607,7 @@ export class FosStore {
 
 
 
-  remove (node: FosNode): void {
+  remove(node: FosNode): void {
 
     /**
      * TODO: determine if edges reference this
@@ -583,17 +618,17 @@ export class FosStore {
     this.table.has(cid) && this.table.delete(cid)
     this.cache.has(cid) && this.cache.delete(cid)
 
-    
+
     /**
      * TODO: delete all edges that point to this address, 
      * notify interpreter? 
     */
-    
+
   }
 
-  async provideNodeToPeer(nodeId: string): Promise<FosNode | null>{
+  async provideNodeToPeer(nodeId: string): Promise<FosNode | null> {
     const node = this.getNodeByAddress(nodeId)
-    if (!node){
+    if (!node) {
       return null
     }
     return node
@@ -602,7 +637,7 @@ export class FosStore {
 
   exportContext(route: FosPath): AppStateLoaded["data"] {
     const nodes: AppStateLoaded["data"]["fosData"]["nodes"] = {}
-    this.table.entries().forEach(([address, content]: [FosNodeId, FosNodeContent],  i) => {
+    Array.from(this.table.entries()).forEach(([address, content]: [FosNodeId, FosNodeContent], i) => {
       // const nodeFromAddress = this.getNodeByAddress(address)
       // if (!nodeFromAddress){
       //   throw new Error(`node ${address} not found`)
@@ -611,13 +646,13 @@ export class FosStore {
     })
 
     const rootContent = nodes[this.rootNodeId]
-    if (!rootContent){
+    if (!rootContent) {
       console.log('rootNodeId', this.rootNodeId, nodes)
 
       throw new Error(`root node not found --- exporting bad data`)
     }
 
-    if (!this.rootNodeId){
+    if (!this.rootNodeId) {
       throw new Error(`root node not found`)
     }
 
@@ -631,12 +666,12 @@ export class FosStore {
     }
   }
 
-  getNodeByAddress (address: string): FosNode | null{
+  getNodeByAddress(address: string): FosNode | null {
     // console.log('getNodeByAddress', address, this.checkAddress(address))
     if (this.cache.has(address)) return this.cache.get(address) as FosNode
     if (!this.checkAddress(address)) {
       // return null
-      console.log('address was not found', address, this.table)
+      // console.log('address was not found', address, this.table)
       throw new Error(`address ${address} not found`)
     }
     // console.log('queryNodeByAddress', address, this.cache.entries())
@@ -652,10 +687,10 @@ export class FosStore {
 
 
 
-  
+
   getContent(node: FosNode): FosNodeContent {
     const maybeContent = this.table.get(node.getId())
-    if (!maybeContent){
+    if (!maybeContent) {
       throw new Error(`node ${node.getId()} not found`)
     }
     return maybeContent
@@ -703,13 +738,13 @@ export class FosStore {
       this.create(entryvalue)
       try {
         const thisNode = this.getNodeByAddress(entrykey)
-        if (!thisNode){
+        if (!thisNode) {
           throw new Error(`node ${entrykey} not found`)
         }
         const matches = this.matchPattern(query, thisNode)
         result.push(thisNode)
-      }catch (e: any) {
-        if (!e.cause?.patternFailed){
+      } catch (e: any) {
+        if (!e.cause?.patternFailed) {
           throw e
         }
         // console.log('query failed', e)
@@ -718,7 +753,7 @@ export class FosStore {
     return result
   }
 
-  matchPattern (pattern: FosNode, entry: FosNode): FosNode[] {
+  matchPattern(pattern: FosNode, entry: FosNode): FosNode[] {
 
     const patternMap = aggMap(pattern.getEdges())
     const nodeMap = aggMap(entry.getEdges())
@@ -728,44 +763,44 @@ export class FosStore {
 
     // console.log("match check", patternCid, entryCid)
 
-    if(patternCid === this.primitive.voidNode.getId()){
+    if (patternCid === this.primitive.voidNode.getId()) {
       return []
     }
 
-    if(patternCid === entryCid){
+    if (patternCid === entryCid) {
       return [entry]
     }
-    if(patternCid === this.primitive.unit.getId()){
+    if (patternCid === this.primitive.unit.getId()) {
       return [entry]
     }
-    if(patternCid === this.primitive.voidNode.getId()){
-      throw new Error(`pattern expecte void --- pattern ${pattern} does not match entry ${entry}`, { cause: { patternFailed: true } })
+    if (patternCid === this.primitive.voidNode.getId()) {
+      throw new Error(`pattern expecte void --- pattern ${pattern} does not match entry ${entry}`)
     }
 
     const patternResult: FosNode[] = []
     for (const [patternKey, patternValues] of patternMap.entries()) {
       if (!nodeMap.has(patternKey)) {
-        throw new Error(`pattern ${patternKey} does not exist on node entry.  Cannot resolve pattern`, { cause: { patternFailed: true } })
-      }else {
+        throw new Error(`pattern ${patternKey} does not exist on node entry.  Cannot resolve pattern`)
+      } else {
         const entryTargetsForKey = nodeMap.get(patternKey) as string[]
-        if( patternValues.length !== entryTargetsForKey.length){
-          throw new Error(`pattern ${patternKey} has ${patternValues.length} entries, but node ${patternKey} has ${nodeMap.get(patternKey)?.length} entries.  Cannot resolve pattern`, { cause: { patternFailed: true } })
-        }else{
+        if (patternValues.length !== entryTargetsForKey.length) {
+          throw new Error(`pattern ${patternKey} has ${patternValues.length} entries, but node ${patternKey} has ${nodeMap.get(patternKey)?.length} entries.  Cannot resolve pattern`)
+        } else {
           patternValues.forEach((patternValue, index) => {
-            if (patternValue === this.primitive.unit.getId()){
+            if (patternValue === this.primitive.unit.getId()) {
               const entryNode = this.getNodeByAddress(entryTargetsForKey[index] as string)
-              if (!entryNode){
+              if (!entryNode) {
                 throw new Error(`node ${entryTargetsForKey[index]} not found`)
               }
               patternResult.push(entryNode)
-            } else if (entryTargetsForKey[index] !== patternValue){
+            } else if (entryTargetsForKey[index] !== patternValue) {
               // TODO: figure out what do here
               const patternNode = this.getNodeByAddress(patternValue)
-              if (!patternNode){
+              if (!patternNode) {
                 throw new Error(`node ${patternValue} not found`)
               }
               const thisNode = this.getNodeByAddress(entryTargetsForKey[index] as string)
-              if (!thisNode){
+              if (!thisNode) {
                 throw new Error(`node ${entryTargetsForKey[index]} not found`)
               }
 
@@ -788,13 +823,13 @@ export class FosStore {
       const edgeMatches = subjectMatch.getEdges().filter(([predicateKey, objectKey]) => {
         try {
           const thisNode = this.getNodeByAddress(predicateKey)
-          if (!thisNode){
+          if (!thisNode) {
             throw new Error(`node ${predicateKey} not found`)
           }
           this.matchPattern(predicate, thisNode)
           return true
         } catch (e: any) {
-          if (!e.cause?.patternFailed){
+          if (!e.cause?.patternFailed) {
             throw e
           }
           return false
@@ -803,13 +838,13 @@ export class FosStore {
       const allMatches = edgeMatches.filter(([predicateKey, objectKey]) => {
         try {
           const thisNode = this.getNodeByAddress(objectKey)
-          if (!thisNode){
+          if (!thisNode) {
             throw new Error(`node ${objectKey} not found`)
           }
           this.matchPattern(object, thisNode)
           return true
-        } catch (e : any) {
-          if (!e.cause?.patternFailed){
+        } catch (e: any) {
+          if (!e.cause?.patternFailed) {
             throw e
           }
           return false
@@ -831,7 +866,7 @@ export class FosStore {
       const nodesToTest = this.query(object)
       const result = nodesToTest.filter((nodeToTest) => {
         const thisUnitNode = this.getNodeByAddress(this.primitive.unit.getId() as string)
-        if (!thisUnitNode){
+        if (!thisUnitNode) {
           throw new Error(`node ${this.primitive.unit.getId()} not found`)
         }
         const test = this.queryTriple(thisUnitNode, predicate, nodeToTest)
@@ -849,19 +884,19 @@ export class FosStore {
 
   cloneNodeFromOtherStore(otherStoreNode: FosNode): FosNode {
     const otherStoreChildren = otherStoreNode.getEdges()
-    if (otherStoreChildren.length === 0){
+    if (otherStoreChildren.length === 0) {
       return this.create(otherStoreNode.value)
     } else {
       const nodeData = otherStoreNode.value.data
       const otherStore = otherStoreNode.store
       const thisStoreEdges: FosPathElem[] = otherStoreNode.value.children.map(([childInstuction, childTarget]: FosPathElem): FosPathElem => {
         const childInstuctionNode = otherStore.getNodeByAddress(childInstuction)
-        if (!childInstuctionNode){
-          throw new Error ("child instruction node from other store not found")
+        if (!childInstuctionNode) {
+          throw new Error("child instruction node from other store not found")
         }
         const childTargetNode = otherStore.getNodeByAddress(childTarget)
-        if (!childTargetNode){
-          throw new Error ("child target node from other store not found")
+        if (!childTargetNode) {
+          throw new Error("child target node from other store not found")
         }
         const thisStoreInstruction = this.cloneNodeFromOtherStore(childInstuctionNode)
         const thisStoreTarget = this.cloneNodeFromOtherStore(childTargetNode)
@@ -877,7 +912,7 @@ export class FosStore {
 
   updateWithContext(context: AppStateLoaded["data"]) {
 
-    const otherStore = new FosStore({ fosCtxData: context})
+    const otherStore = new FosStore({ fosCtxData: context })
     this.updateFromStore(otherStore)
     const newContext = this.exportContext(otherStore.fosRoute)
     // if (this.updateCtxCallback){
@@ -897,14 +932,14 @@ export class FosStore {
     // check all children first
 
 
-    otherStore.table.keys().forEach((key) => {
+    Array.from(otherStore.table.keys()).forEach((key) => {
       const nodeContent = otherStore.table.get(key) as FosNodeContent
       const cid = this.hash(nodeContent)
       nodeContent.children.forEach((edge, index) => {
-        if (!allValidKeys.has(edge[0])){
+        if (!allValidKeys.has(edge[0])) {
           throw new Error(`edge ${edge} has non-existent instruction node`)
         }
-        if(!allValidKeys.has(edge[1])){
+        if (!allValidKeys.has(edge[1])) {
           throw new Error(`edge ${edge} has non-existent target nodes`)
         }
       })
@@ -912,12 +947,12 @@ export class FosStore {
     })
 
     this.table = new Map([...otherStore.table, ...this.table])
-    
 
 
 
-    otherStore.table.entries().filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent],i) => {
-      if (this.insert(otherContent) !== otherAddress){
+
+    Array.from(otherStore.table.entries()).filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent], i) => {
+      if (this.insert(otherContent) !== otherAddress) {
         throw new Error(`stores mismatched`)
       }
     })
@@ -928,19 +963,21 @@ export class FosStore {
   }
 
 
-  addPeer (alias: string, peerStore: FosStore) {
+  addPeer(alias: string, peerStore: FosStore) {
 
 
   }
 
 
-  addGroup (description: string): [FosStore, FosExpression] { 
+  addGroup(description: string): [FosStore, FosExpression] {
 
     const rootExpression = this.getRootExpression()
-    const thisAlias = rootExpression.targetNode.getData().alias?.id
+    // Use the original startRootAlias which should have the alias structure
+    const startRootAlias = this.primitive.startRootAlias
+    const thisAlias = startRootAlias.getData().alias?.id
 
-    if (!thisAlias){
-      throw new Error(`no alias found for current node`)
+    if (!thisAlias) {
+      throw new Error(`no alias found in startRootAlias`)
     }
 
     const { target: rootTarget } = rootExpression.targetNode.dereferenceNodes()
@@ -966,7 +1003,7 @@ export class FosStore {
       },
       children: [
         [this.primitive.targetPointerConstructor.getId(), groupContentNode.getId()]
-        
+
       ]
     })
 
@@ -999,14 +1036,14 @@ export class FosStore {
     rootExpression.setTargetNode(newRootTarget)
 
     const groupExpr = new FosExpression(this, [[this.primitive.groupField.getId(), groupDefinitionNode.getId()]])
-    
+
     return [groupStore, groupExpr]
 
   }
-  
-  
-  
-}  
+
+
+
+}
 
 
 
@@ -1032,11 +1069,11 @@ function normalizeObject(obj: any): any {
 
 function sortEdges(edges: FosPathElem[]): FosPathElem[] {
   return edges.map(edge => [...edge].sort() as FosPathElem)
-    .sort((a, b) => 
-      a[0] < b[0] ? -1 : 
-      a[0] > b[0] ? 1 : 
-      a[1] < b[1] ? -1 : 
-      a[1] > b[1] ? 1 : 0
+    .sort((a, b) =>
+      a[0] < b[0] ? -1 :
+        a[0] > b[0] ? 1 :
+          a[1] < b[1] ? -1 :
+            a[1] > b[1] ? 1 : 0
     )
 }
 

@@ -1,19 +1,19 @@
 
 import React, { useEffect, useState } from "react"
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
 
-} from "@/frontend/components/ui/card"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@/frontend/components/ui/tabs"
+} from "@/components/ui/tabs"
 
 
 import {
@@ -26,14 +26,14 @@ import {
   Coins
 } from 'lucide-react'
 
-import { Alert, AlertDescription, AlertTitle } from "@/frontend/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 
 import { SettingsComponent } from "./EmailSettings"
 import { Premium } from "./Premium"
 import { Password } from "./Password"
 
-import { getActions } from "@/frontend/lib/actions"
+import { getActions } from "@/lib/actions"
 
 export const ProfilePasswordLogout = ({
   emailConfirmationToken,
@@ -44,7 +44,7 @@ export const ProfilePasswordLogout = ({
   data,
   setData,
   options
-} : {
+}: {
   emailConfirmationToken?: string
   setLoading: (loading: boolean) => void
   setShowClearData: (showClearData: boolean) => void
@@ -55,17 +55,17 @@ export const ProfilePasswordLogout = ({
   options: FosReactOptions
 }) => {
 
-  
-  const { confirmEmail } = getActions(options, data, setData)
-  
 
-  const [tab, setTab] = useState(emailConfirmationToken ? "settings": "settings");
+  const { confirmEmail } = getActions(options, data, setData)
+
+
+  const [tab, setTab] = useState(emailConfirmationToken ? "settings" : "settings");
 
   const onTabChange = (value: string) => {
     setTab(value);
   }
 
-  const [message, setMessage] = useState<{ messageType: string, message: string }>({messageType: "none", message: ""})
+  const [message, setMessage] = useState<{ messageType: string, message: string }>({ messageType: "none", message: "" })
 
 
   useEffect(() => {
@@ -75,30 +75,30 @@ export const ProfilePasswordLogout = ({
       }
       confirmEmail(emailConfirmationToken).then(() => {
         setTab("settings")
-        setMessage({messageType: "success", message: "Email Successfully Confirmed!"})
+        setMessage({ messageType: "success", message: "Email Successfully Confirmed!" })
         window.location.href = window.location.origin + window.location.pathname;
         setTimeout(() => {
-          setMessage({messageType: "none", message: ""})
+          setMessage({ messageType: "none", message: "" })
         }, 5000)
       })
     }
-  }, [emailConfirmationToken]) 
-  
+  }, [emailConfirmationToken])
+
 
   return (
     <Tabs value={tab} onValueChange={onTabChange} className="w-full">
       <TabsList className="flex w-full justify-around">
         {/* <TabsTrigger value="account"><User /></TabsTrigger> */}
-        <TabsTrigger value="settings"><Settings /></TabsTrigger>
-        <TabsTrigger value="premium"><Coins /></TabsTrigger>
-        <TabsTrigger value="password"><KeyRound /></TabsTrigger>
-        </TabsList>
-        <Card>
+        <TabsTrigger value="settings" aria-label="Settings"><Settings /></TabsTrigger>
+        <TabsTrigger value="premium" aria-label="Premium"><Coins /></TabsTrigger>
+        <TabsTrigger value="password" aria-label="Password"><KeyRound /></TabsTrigger>
+      </TabsList>
+      <Card>
         {message.messageType === "fail" && <Alert variant="destructive">
-          <AlertDescription>{message.message}</AlertDescription>          
+          <AlertDescription>{message.message}</AlertDescription>
         </Alert>}
         {message.messageType === "success" && <Alert className={`emerald-900`}>
-          <AlertDescription>{message.message}</AlertDescription>          
+          <AlertDescription>{message.message}</AlertDescription>
         </Alert>}
 
         <TabsContent value="settings">
@@ -119,23 +119,23 @@ export const ProfilePasswordLogout = ({
 
 
 
-import { AppState, ContextType, FosReactOptions, FosPath } from "@/shared/types"
-import { useProps } from "@/frontend/App"
+import { AppState, ContextType, FosReactOptions, FosPath } from "@fosforescent/shared/types"
+import { useProps } from "@/App"
 
 
 export const FosSettingsPage = () => {
-  
-  const {  
+
+  const {
     data,
     setData,
     options,
     dialogueProps,
     tokens
-  } : ContextType = useProps()
+  }: ContextType = useProps()
 
 
   return (<div className='flex w-full px-2 items-center overflow-x-scroll no-scrollbar'>
-    <ProfilePasswordLogout 
+    <ProfilePasswordLogout
       emailConfirmationToken={tokens.emailConfirmationToken}
       setShowClearData={dialogueProps.setShowClearData}
       setShowEmailConfirm={dialogueProps.setShowEmailConfirm}
@@ -144,8 +144,8 @@ export const FosSettingsPage = () => {
       data={data}
       setData={setData}
       options={options}
-        />
-</div>)
+    />
+  </div>)
 
 }
 

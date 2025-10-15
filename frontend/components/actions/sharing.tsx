@@ -1,26 +1,26 @@
 
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Globe, Users2, Lock } from "lucide-react"
 
 import { CheckSquare, Wand } from "lucide-react"
 
 import { FosReactOptions } from "../../../shared/types"
 
-import { ComboboxEditableTask }  from "../combobox/comboboxEditableTask"
+import { ComboboxEditableTask } from "../combobox/comboboxEditableTask"
 import _ from 'lodash'
-import { AppState } from "@/shared/types"
-import { getNodeInfo } from "@/frontend/lib/utils"
-import { getNodeOperations } from "@/frontend/lib/nodeOperations"
+import { AppState } from "@fosforescent/shared/types"
+import { getNodeInfo } from "@/lib/utils"
+import { getNodeOperations } from "@/lib/nodeOperations"
 
 
 
-const ResourceComponent = ({ 
+const ResourceComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: [string, string][]
@@ -28,20 +28,20 @@ const ResourceComponent = ({
 }) => {
 
 
-  const { selectedIndex, nodeOptions, locked, 
-    hasFocus, focusChar, isDragging, draggingOver, 
+  const { selectedIndex, nodeOptions, locked,
+    hasFocus, focusChar, isDragging, draggingOver,
     nodeDescription, isRoot, childRoutes, isBase,
-    nodeType, nodeId, disabled, depth, isCollapsed, 
+    nodeType, nodeId, disabled, depth, isCollapsed,
     isTooDeep, isOption, hasChildren
   } = getNodeInfo(nodeRoute, data)
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
-    getFocus, 
+
+  const {
+    suggestOption,
+    setFocus,
+    setSelectedOption,
+    setFocusAndDescription,
+    deleteRow,
+    getFocus,
     deleteOption,
     keyDownEvents,
     keyUpEvents,
@@ -53,8 +53,8 @@ const ResourceComponent = ({
     addRow,
     toggleCollapse,
     zoom
-   } = getNodeOperations(options, data, setData, nodeRoute)
- 
+  } = getNodeOperations(options, data, setData, nodeRoute)
+
 
   // console.log('moduleKey', moduleKey)
 

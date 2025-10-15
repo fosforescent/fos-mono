@@ -6,17 +6,17 @@ import { InputDiv } from "../elements/inputDiv"
 
 import _ from 'lodash'
 
-import { getNodeOperations } from "@/frontend/lib/nodeOperations"
-import { AppState, FosReactOptions, FosPath } from "@/shared/types"
-import { getNodeInfo } from "@/frontend/lib/utils"
+import { getNodeOperations } from "@/lib/nodeOperations"
+import { AppState, FosReactOptions, FosPath } from "@fosforescent/shared/types"
+import { getNodeInfo } from "@/lib/utils"
 
-const ResourceComponent = ({ 
+const ResourceComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -24,20 +24,20 @@ const ResourceComponent = ({
 }) => {
 
 
-    
-  const {  locked, 
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
-    nodeType, nodeId, disabled, depth, isCollapsed, 
-    isTooDeep, isOption, hasChildren, 
+
+  const { locked,
+    hasFocus, focusChar, isDragging, draggingOver,
+    nodeDescription, isRoot, childRoutes, isBase, nodeLabel,
+    nodeType, nodeId, disabled, depth, isCollapsed,
+    isTooDeep, isOption, hasChildren,
   } = getNodeInfo(nodeRoute, data)
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
+
+  const {
+    suggestOption,
+    setFocus,
+    setSelectedOption,
+    setFocusAndDescription,
+    deleteRow,
     deleteOption,
     keyDownEvents,
     keyUpEvents,
@@ -47,27 +47,27 @@ const ResourceComponent = ({
     suggestSteps,
     toggleCollapse,
     zoom
-   } = getNodeOperations(options, data, setData, nodeRoute)
+  } = getNodeOperations(options, data, setData, nodeRoute)
 
   return (<div className={`grid grid-cols-[1fr,2rem] items-center`}>
-    {    <InputDiv
-          disabled={locked}
-          shouldFocus={hasFocus}
-          placeholder={"Enter task description"}
-          className="rounded-r-none w-full cursor-text grow"
-          value={nodeDescription} 
-          style={{
-            width: 'calc(100% - 1.25rem)',
-            fontSize: '1rem',
-            fontWeight: 'normal',
-            height: 'auto',
-            border: '1px solid rgba(23, 20, 20, .3)',
-          }}
-          onChange={setFocusAndDescription}
-          onClick={(e) => { /* console.log("here"); */ e.stopPropagation()}}
-          // onKeyDown={}
-          // onKeyUp={onKeyUp}
-          focusChar={focusChar}
+    {<InputDiv
+      disabled={locked}
+      shouldFocus={hasFocus}
+      placeholder={"Enter task description"}
+      className="rounded-r-none w-full cursor-text grow"
+      value={nodeDescription}
+      style={{
+        width: 'calc(100% - 1.25rem)',
+        fontSize: '1rem',
+        fontWeight: 'normal',
+        height: 'auto',
+        border: '1px solid rgba(23, 20, 20, .3)',
+      }}
+      onChange={setFocusAndDescription}
+      onClick={(e) => { /* console.log("here"); */ e.stopPropagation() }}
+      // onKeyDown={}
+      // onKeyUp={onKeyUp}
+      focusChar={focusChar}
     />}
 
   </div>)
@@ -76,13 +76,13 @@ const ResourceComponent = ({
 
 
 
-const CommentRowComponent = ({ 
+const CommentRowComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -90,20 +90,20 @@ const CommentRowComponent = ({
 }) => {
 
 
-    
-  const { locked, 
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
-    nodeType, nodeId, disabled, depth, isCollapsed, 
-    isTooDeep, isOption, hasChildren, 
+
+  const { locked,
+    hasFocus, focusChar, isDragging, draggingOver,
+    nodeDescription, isRoot, childRoutes, isBase, nodeLabel,
+    nodeType, nodeId, disabled, depth, isCollapsed,
+    isTooDeep, isOption, hasChildren,
   } = getNodeInfo(nodeRoute, data)
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
+
+  const {
+    suggestOption,
+    setFocus,
+    setSelectedOption,
+    setFocusAndDescription,
+    deleteRow,
     deleteOption,
     keyDownEvents,
     keyUpEvents,
@@ -113,7 +113,7 @@ const CommentRowComponent = ({
     suggestSteps,
     toggleCollapse,
     zoom
-   } = getNodeOperations(options, data, setData, nodeRoute)
+  } = getNodeOperations(options, data, setData, nodeRoute)
 
 
   const canPrompt = options?.canPromptGPT && options?.promptGPT

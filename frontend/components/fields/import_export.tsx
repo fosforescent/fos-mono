@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ArrowUpToLine, ArrowDownToLine, FileJson } from "lucide-react";
-import { Button } from "@/frontend/components/ui/button";
-import { Progress } from "@/frontend/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { AppState, FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosReactOptions, FosPath } from '../../../shared/types';
 
 const ResourceComponent = ({ 

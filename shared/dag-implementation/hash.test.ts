@@ -1,4 +1,4 @@
-import { sha3_256 } from "js-sha3"
+import * as sha3 from "js-sha3"
 import { FosDataContent, FosNodeContent, FosPathElem } from "../types"
 import { hashContent } from "./store"
 

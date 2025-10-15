@@ -1,10 +1,8 @@
-import e from "cors"
 import { FosNodesData,  AppState, FosPath, FosPathElem, FosNodeId, FosNodeContent, FosContextData, FosRoute, TrellisSerializedData, AppStateLoaded } from "./types"
 import { FosStore } from "./dag-implementation/store"
 import { FosExpression, } from "./dag-implementation/expression"
 import { FosNode } from "./dag-implementation/node"
 import { defaultTrellisData } from "./defaults"
-import exp from "constants"
 
 
 
@@ -30,7 +28,7 @@ export const validateNodeData = (nodeContent: unknown): FosNodeContent => {
     throw new Error("Invalid data")
   }
 
-  return nodeContent
+  return nodeContent as FosNodeContent
 }
 
 export const validateProfileData = (profileData: unknown): AppState["info"]["profile"] => {
@@ -38,7 +36,7 @@ export const validateProfileData = (profileData: unknown): AppState["info"]["pro
     throw new Error("Invalid data")
   }
 
-  return profileData
+  return profileData as AppState["info"]["profile"]
 }
 
 export const getDownNode = (expression: FosExpression): FosExpression | null => {
@@ -99,12 +97,12 @@ export const getAncestorLeastUpSibling = (expression: FosExpression): FosExpress
 
 export const getUpSibling = (expression: FosExpression): FosExpression | null => {
 
-  const { indexInParent, parent } = expression.getParentInfo()
+  const { targetIndexInParent, parent } = expression.getParentInfo()
   const siblings = parent.getTargetChildren()
-  if (indexInParent === 0){
+  if (targetIndexInParent === 0){
     return null
   }
-  const newRoute = siblings[indexInParent - 1]
+  const newRoute = siblings[targetIndexInParent - 1]
   if (!newRoute){
     return null
   }
@@ -113,14 +111,14 @@ export const getUpSibling = (expression: FosExpression): FosExpression | null =>
 
 export const getDownSibling = (expression: FosExpression): FosExpression | null => {
   
-  const { indexInParent, parent } = expression.getParentInfo()
+  const { targetIndexInParent, parent } = expression.getParentInfo()
   const siblings = parent.getTargetChildren()
 
-  // console.log('downSibling - sibling routes', siblingRoutes, indexInParent, nodeRoute)
-  if (indexInParent === siblings.length - 1){
+  // console.log('downSibling - sibling routes', siblingRoutes, targetIndexInParent, nodeRoute)
+  if (targetIndexInParent === siblings.length - 1){
     return null
   }
-  const newExpr = siblings[indexInParent + 1]
+  const newExpr = siblings[targetIndexInParent + 1]
   if (!newExpr){
     return null
   }
@@ -150,12 +148,12 @@ export const getDownmostDescendent = (expression: FosExpression, depthLimit: num
 
 export const getUpNode = (expression: FosExpression): FosExpression | null => {
   
-  const { indexInParent, parent, siblingRoutes } = expression.getParentInfo()
+  const { targetIndexInParent, parent, siblingRoutes } = expression.getParentInfo()
 
   const siblings = parent.getTargetChildren()
 
-  if (indexInParent > 0 ){
-    return getDownmostDescendent(siblings[indexInParent - 1]!)
+  if (targetIndexInParent > 0 ){
+    return getDownmostDescendent(siblings[targetIndexInParent - 1]!)
   }else{
     return parent
   }

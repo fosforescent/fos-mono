@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -7,17 +7,17 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/frontend/components/ui/card"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@/frontend/components/ui/tabs"
+} from "@/components/ui/tabs"
 
-import { Checkbox } from "@/frontend/components/ui/checkbox"
+import { Checkbox } from "@/components/ui/checkbox"
 
 import {
   User,
@@ -34,11 +34,11 @@ import {
   ShieldQuestion
 } from 'lucide-react'
 
-import { Alert, AlertDescription, AlertTitle } from "@/frontend/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 import _, { set } from 'lodash'
-import { AppState, FosReactOptions } from "@/shared/types"
-import { getActions } from "@/frontend/lib/actions"
+import { AppState, FosReactOptions } from "@fosforescent/shared/types"
+import { getActions } from "@/lib/actions"
 
 
 
@@ -51,19 +51,19 @@ export const RegisterComponent = ({
   options
 }: {
   setMessage: (message: { messageType: string, message: string }) => void
-  setShowTerms: (showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void}) => void
-  setShowPrivacy: (showPrivacy: {open: boolean, fromRegisterForm: boolean }) => void
+  setShowTerms: (showTerms: { open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void }) => void
+  setShowPrivacy: (showPrivacy: { open: boolean, fromRegisterForm: boolean }) => void
   data: AppState,
   setData: (data: AppState) => void,
   options: FosReactOptions
 }) => {
 
-  const { registerUser  } = getActions(options, data, setData)
+  const { registerUser } = getActions(options, data, setData)
 
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  
+
 
   const [confirm, setConfirm] = useState('')
   const [pwdsMatch, setPwdsMatch] = useState(true)
@@ -72,11 +72,11 @@ export const RegisterComponent = ({
 
   const [acceptTerms, setAcceptTerms] = useState(false)
 
-  const canSubmit = pwdValid && pwdsMatch && acceptTerms 
+  const canSubmit = pwdValid && pwdsMatch && acceptTerms
 
   const handleRegister = () => {
 
-    if (acceptTerms && pwdsMatch && pwdValid){
+    if (acceptTerms && pwdsMatch && pwdValid) {
       registerUser(email, password, acceptTerms).then((res) => {
         console.log('registerUser', res)
         setMessage({ messageType: "success", message: "Account created successfully" })
@@ -89,7 +89,7 @@ export const RegisterComponent = ({
         }
       })
     } else {
-      return 
+      return
     }
   }
 
@@ -101,12 +101,12 @@ export const RegisterComponent = ({
     if (!/[A-Z]/.test(e.target.value) || !/[0-9]/.test(e.target.value)) {
       setPwdValid(false)
       setMessage({ messageType: "fail", message: "Password must contain at least one uppercase letter and one number" })
-      return      
+      return
     }
     if (e.target.value.length < 8) {
       setPwdValid(false)
       setMessage({ messageType: "fail", message: "Password must be at least 8 characters long" })
-      return 
+      return
     }
 
     setMessage({ messageType: "none", message: "" })
@@ -139,19 +139,19 @@ export const RegisterComponent = ({
   }
 
   const handleTermsClick = () => {
-    setShowTerms({open: true, fromRegisterForm: true, setAcceptTerms})
+    setShowTerms({ open: true, fromRegisterForm: true, setAcceptTerms })
   }
 
   const handlePrivacyClick = () => {
-    setShowPrivacy({open: true, fromRegisterForm: true})
+    setShowPrivacy({ open: true, fromRegisterForm: true })
   }
 
   const handleAcceptClick = () => {
     console.log('acceptTerms', acceptTerms)
     setAcceptTerms(!acceptTerms)
-    if (confirm === password && emailValid && pwdValid){
+    if (confirm === password && emailValid && pwdValid) {
       setPwdsMatch(true)
-    }else{
+    } else {
       setPwdsMatch(false)
     }
   }
@@ -171,15 +171,15 @@ export const RegisterComponent = ({
         <Input id="new" type="password" placeholder="Confirm Password" onChange={checkSame} className={`${!pwdsMatch && "border-destructive"} text-base`} value={confirm} />
       </div>
       <div className="space-y-1 pt-5 px-9 text-slate-500 flex flex-row items-center">
-        
-      <Checkbox id="accept" name="accept" checked={acceptTerms} onClick={handleAcceptClick}/>
-      <Label htmlFor="accept" className="ml-2 block">
-        Accept <span onClick={handleTermsClick} className="link">Terms & Conditions</span> and <span onClick={handlePrivacyClick} className="link">Privacy Policy</span> 
-      </Label>
+
+        <Checkbox id="accept" name="accept" checked={acceptTerms} onClick={handleAcceptClick} />
+        <Label htmlFor="accept" className="ml-2 block">
+          Accept <span onClick={handleTermsClick} className="link">Terms & Conditions</span> and <span onClick={handlePrivacyClick} className="link">Privacy Policy</span>
+        </Label>
       </div>
     </CardContent>
     <CardFooter className="flex justify-center">
-    <Button className="bg-emerald-900 text-white" onClick={handleRegister} disabled={!canSubmit} title="Register"><User /></Button>
-  </CardFooter>      
+      <Button className="bg-emerald-900 text-white" onClick={handleRegister} disabled={!canSubmit} title="Register"><User /></Button>
+    </CardFooter>
   </form>)
 }

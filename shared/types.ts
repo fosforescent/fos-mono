@@ -1,27 +1,4 @@
 import { Delta, DiffOptions } from "@n1ru4l/json-patch-plus"
-import { getGlobal } from "../frontend/App"
-
-
-export type FosReactGlobal = ReturnType<typeof getGlobal>
-
-export type FosReactOptions = Partial<{
-  canPromptGPT: boolean,
-  promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number }) => Promise<{
-    choices: {message: { content: string, role: string}, finishReason: string}[]
-  }>,
-  toast: (toastOpts: {
-    title: string, 
-    description: string,
-    duration: number
-  }) => void,
-  canUndo: boolean,
-  undo: () => void,
-  canRedo: boolean,
-  redo: () => void,
-  
-  theme: "light" | "dark" | "system",
-  locked: boolean
-}>
 
 
 export interface TrellisSerializedData {
@@ -30,7 +7,7 @@ export interface TrellisSerializedData {
   collapsedList: FosPath[],
   rowDepth: number,
   dragInfo: DragInfo,
-  view: "Queue" | "Query" | "Tree" | "Focus" | "Settings",
+  view: "Queue" | "Query" | "Tree" | "Focus" | "Settings" | "Browse",
   activity: string,
   mode: string,
 }
@@ -38,9 +15,6 @@ export interface TrellisSerializedData {
 
 
 export type FosDataContent = {
-  alias?: {
-    id: string;
-  }
   versionControl?: {
     delta: Delta,
     branches: string[],
@@ -127,13 +101,18 @@ export type FosDataContent = {
 
     }
   }
+  alias?: {
+    id: string;
+    previous?: string; // CID of previous node this alias pointed to
+  }
   group?: {
     id: string;
     name: string;
     userProfiles: string[];
-
+    visibility?: 'public' | 'private';
+    createdBy?: string;
   }
-  market?:{
+  market?: {
     sellerProfile: string;
     buyerProfile: string;
     price: number;
@@ -145,7 +124,7 @@ export type FosDataContent = {
     completed: boolean;
     time: number;
   }
-  reactClient?:{
+  reactClient?: {
     collapsed: boolean;
   }
   updated?: {
@@ -183,7 +162,7 @@ export type SelectionPath = {
 
 export type NodeAddress = `${string}-${string}-${string}-${string}-${string}`
 export type ContentId = string
-export type FosNodeId  = ContentId
+export type FosNodeId = ContentId
 
 
 
@@ -194,7 +173,7 @@ export type FosRoute = [FosPathElem, ...FosPath]
 
 export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
 
-export type FosContextData = { 
+export type FosContextData = {
   nodes: FosNodesData,
   route: FosPath,
   rootNodeId: FosNodeId,
@@ -233,6 +212,8 @@ export type InfoState = {
     acceptRequiredCookies: boolean
     acceptSharingWithThirdParties: boolean
   }
+  approved?: boolean
+  role?: string
 }
 
 
@@ -241,7 +222,7 @@ export type AppStateInitial = {
   info: InfoState
   theme: string
   auth: AuthState
-  data:  null
+  data: null
   loaded: false
   loggedIn: boolean
 }
@@ -251,7 +232,7 @@ export type AppStateLoaded = {
   info: InfoState
   theme: string
   auth: AuthState
-  data:  { fosData: FosContextData, trellisData: TrellisSerializedData }
+  data: { fosData: FosContextData, trellisData: TrellisSerializedData }
   loaded: true
   loggedIn: boolean
 }
@@ -290,33 +271,50 @@ export type UserProfile = {
 
 }
 
-            
-export type LoginResult = { 
-  access_token: string, 
+
+export type LoginResult = {
+  access_token: string,
   type: string,
 } & InfoState
- 
 
 
-export type ContextType = { 
-  data: AppStateLoaded, 
-  setData: (data: AppStateLoaded) => void, 
-  options: FosReactOptions,
+
+export type ContextType = {
+  data: AppStateLoaded,
+  setData: (data: AppStateLoaded) => void,
+  options: Partial<{
+    canPromptGPT: boolean,
+    promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number }) => Promise<{
+      choices: { message: { content: string, role: string }, finishReason: string }[]
+    }>,
+    toast: (toastOpts: {
+      title: string,
+      description: string,
+      duration: number
+    }) => void,
+    canUndo: boolean,
+    undo: () => void,
+    canRedo: boolean,
+    redo: () => void,
+
+    theme: "light" | "dark" | "system",
+    locked: boolean
+  }>,
   nodeRoute: FosPath,
   dialogueProps: {
     loading: boolean,
     setLoading: (loading: boolean) => void,
     showCookies: boolean,
     setShowCookies: (showCookies: boolean) => void,
-    showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void},
-    setShowTerms: (showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void}) => void,
-    showPrivacy: {open: boolean, fromRegisterForm: boolean},
-    setShowPrivacy: (showPrivacy: {open: boolean, fromRegisterForm: boolean}) => void,
+    showTerms: { open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void },
+    setShowTerms: (showTerms: { open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void }) => void,
+    showPrivacy: { open: boolean, fromRegisterForm: boolean },
+    setShowPrivacy: (showPrivacy: { open: boolean, fromRegisterForm: boolean }) => void,
     showClearData: boolean,
     setShowClearData: (showClearData: boolean) => void,
     showDeleteAccount: boolean,
     setShowDeleteAccount: (showDeleteAccount: boolean) => void,
-    showEmailConfirm: { open: boolean, email: string},
+    showEmailConfirm: { open: boolean, email: string },
     setShowEmailConfirm: (showEmailConfirm: { open: boolean, email: string }) => void,
   },
   tokens: {

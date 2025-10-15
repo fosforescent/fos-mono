@@ -1,10 +1,10 @@
 import { BrainCircuit, Download, FileText } from "lucide-react"
 
 
-import { Textarea } from "@/frontend/components/ui/textarea"
-import { Button } from "@/frontend/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
 import { suggestRecursive } from "../../lib/suggestRecursive"
-import { AppState, FosReactOptions, FosPath } from "@/shared/types"
+import { AppState, FosReactOptions, FosPath } from "@fosforescent/shared/types"
 
 
 
@@ -13,13 +13,13 @@ import { AppState, FosReactOptions, FosPath } from "@/shared/types"
 
 
 
-const ResourceComponent = ({ 
+const ResourceComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -29,27 +29,27 @@ const ResourceComponent = ({
 
   const documentInfo = getDocumentInfo(node.fosNode())
 
- 
-  
-   const handleDocumentEdit = (value: string) => {
+
+
+  const handleDocumentEdit = (value: string) => {
     setDocumentInfo(node.fosNode(), { children: value })
   }
 
   const handleDownloadDocument = async () => {
-        // Create the text content
-        const textContent = documentInfo.aggregated || '';
+    // Create the text content
+    const textContent = documentInfo.aggregated || '';
 
-        // Create a Blob from the text content
-        const blob = new Blob([textContent], { type: 'text/plain' });
+    // Create a Blob from the text content
+    const blob = new Blob([textContent], { type: 'text/plain' });
 
-        // Create a URL for the Blob
-        const url = URL.createObjectURL(blob);
+    // Create a URL for the Blob
+    const url = URL.createObjectURL(blob);
 
-        // Open the Blob content in a new window
-        window.open(url, '_blank');
+    // Open the Blob content in a new window
+    window.open(url, '_blank');
 
-        // Clean up the URL object after a short delay
-        setTimeout(() => URL.revokeObjectURL(url), 100);
+    // Clean up the URL object after a short delay
+    setTimeout(() => URL.revokeObjectURL(url), 100);
 
   }
 
@@ -60,26 +60,26 @@ const ResourceComponent = ({
   const systemPromptRecursive = `Take a deep breath.  Please respond only with a single valid JSON object with the key "document" and a string value`
   const getUserPromptRecursive = (thisDescription: string, parentDescriptions: string[], node: IFosNode) => {
     const resourceInfo = getDocumentInfo(node)
-    return `Please provide text which is the fulfillment of these instructions:${thisDescription} in the context of the task ` 
-      + `${parentDescriptions.join(' subtask of the task ')}, but the following pieces are already written as part of child tasks. ` 
-      + ` Please insert them with the template format eg {{ 0 }} for child #0.  Do not be redundant with that information: \n` 
-      + `${node.getChildren().map((child, index) => `{{${index}}} : ${getDocumentInfo(child).aggregated}` ).join("\n")}`
+    return `Please provide text which is the fulfillment of these instructions:${thisDescription} in the context of the task `
+      + `${parentDescriptions.join(' subtask of the task ')}, but the following pieces are already written as part of child tasks. `
+      + ` Please insert them with the template format eg {{ 0 }} for child #0.  Do not be redundant with that information: \n`
+      + `${node.getChildren().map((child, index) => `{{${index}}} : ${getDocumentInfo(child).aggregated}`).join("\n")}`
   }
   const pattern = /.*(\{[^{}]*\}).*/m
   const parsePattern = (result: any, node: IFosNode): DocumentData => {
 
 
     const resultParsed = result as { document: string }
-    
-    return { children: resultParsed.document } 
-  } 
 
-  
+    return { children: resultParsed.document }
+  }
 
-    
+
+
+
   const handleSuggestDocument = async () => {
     console.log('suggesting document')
-    if (options?.canPromptGPT && options?.promptGPT){
+    if (options?.canPromptGPT && options?.promptGPT) {
 
       try {
         await suggestRecursive(options.promptGPT, node.fosNode(), {
@@ -92,8 +92,8 @@ const ResourceComponent = ({
           getResourceInfo: getDocumentInfo,
           setResourceInfo: setDocumentInfo,
           checkResourceInfo: checkDocumentInfo,
-        } )
-  
+        })
+
       } catch (error) {
         console.error('error suggesting document', error)
         options?.toast && options.toast({
@@ -104,7 +104,7 @@ const ResourceComponent = ({
       }
     } else {
       console.error('No authedApi')
-      const err =  new Error('No authedApi')
+      const err = new Error('No authedApi')
       err.cause = 'unauthorized'
       throw err
     }
@@ -115,15 +115,15 @@ const ResourceComponent = ({
     <div className='p-0'>
       <Button variant={"secondary"} className='bg-emerald-900 inline-block p-2' onClick={handleSuggestDocument} title="Execute prompt" disabled={checkDocumentInfo(node.fosNode())}><BrainCircuit /></Button>
       <Button variant={"secondary"} className='bg-emerald-900 inline-block p-2' onClick={handleDownloadDocument} title="Execute prompt"><Download /></Button>
-    
+
     </div>
     <div className="w-full">
-    {/* <MDEditor
+      {/* <MDEditor
       value={documentInfo.content}
       onChange={(value) => value && handleDocumentEdit(value)}
     />
     <MDEditor.Markdown source={documentInfo.content} style={{ whiteSpace: 'pre-wrap' }} /> */}
-    <Textarea value={documentInfo?.content} onChange={(e) => handleDocumentEdit(e.target.value)} />
+      <Textarea value={documentInfo?.content} onChange={(e) => handleDocumentEdit(e.target.value)} />
     </div>
   </div>)
 
@@ -162,7 +162,7 @@ const getDocumentInfo = (node: IFosNode): {
 
   const children = node.getChildren()
 
-  if (!children.length){
+  if (!children.length) {
     return {
       children: nodeData.document?.content || '',
       aggregated: nodeData.document?.content || ''
@@ -173,7 +173,7 @@ const getDocumentInfo = (node: IFosNode): {
       const childDocumentInfo = getDocumentInfo(child)
       return acc.replace(`{{${index + 1}}}`, childDocumentInfo.aggregated || '')
     }, nodeData.document?.content || '')
-  
+
     return {
       children: nodeData.document?.content || '',
       aggregated

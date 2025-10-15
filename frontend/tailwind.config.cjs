@@ -3,13 +3,12 @@ module.exports =  {
   darkMode: "class",
 
   content: [
-    "./frontend/**/*.{js,ts,jsx,tsx}",
-    // "./**/*.{js,ts,jsx,tsx}"
+    "./components/**/*.{js,ts,jsx,tsx}",
+    "./lib/**/*.{js,ts,jsx,tsx}",
+    "./hooks/**/*.{js,ts,jsx,tsx}",
+    "./landing/**/*.{js,ts,jsx,tsx}",
+    "./*.{js,ts,jsx,tsx,html}"
   ],
-  children: [
-
-    './**/*.{ts,tsx}',
-	],
   theme: {
   	container: {
   		center: 'true',

@@ -1,6 +1,6 @@
 
 import { Button } from "../ui/button"
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -14,7 +14,7 @@ import { GitBranch, GitCommit, GitCommitIcon, GitMerge, GitPullRequest, History 
 import { CommitIcon } from "@radix-ui/react-icons"
 import TripleToggleSwitch from "../elements/tripleToggle"
 import { getDragAndDropHandlers } from "../drag-drop"
-import { FosExpression } from "@/shared/dag-implementation/expression"
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression"
 
 
 /**
@@ -35,7 +35,7 @@ export const VersionControlComponent = ({
   expression,
   // children,
   ...props
-} : {
+}: {
   depthToShow: number,
   // children: React.ReactNode,
   expression: FosExpression

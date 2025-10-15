@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react'
 
 
-import _, { get, has }  from 'lodash'
+import _, { get, has } from 'lodash'
 
 
 import { ChevronDownCircleIcon, ChevronRightCircleIcon, ChevronLeftCircleIcon, DiscIcon, SendHorizonal, PlusIcon, BrainCircuit, CheckIcon, Trash2, CircleDot } from 'lucide-react'
 
 import { CaretSortIcon } from '@radix-ui/react-icons'
-import { AppState, FosReactGlobal, FosReactOptions, FosPath, AppStateLoaded } from '@/shared/types'
-import { cn } from '@/frontend/lib/utils'
+import { AppState, FosReactGlobal, FosReactOptions, FosPath, AppStateLoaded } from '@fosforescent/shared/types'
+import { cn } from '@/lib/utils'
 
 import { Card, CardContent, CardFooter } from '../ui/card'
 import { Button } from '../ui/button'
@@ -18,7 +18,7 @@ import { Command, CommandEmpty, CommandGroup, CommandItem } from '../ui/command'
 
 import { getDragAndDropHandlers } from '../drag-drop'
 import { VersionControlComponent } from '../fields/versionControl'
-import { FosExpression } from '@/shared/dag-implementation/expression'
+import { FosExpression } from '@fosforescent/shared/dag-implementation/expression'
 
 
 
@@ -30,7 +30,7 @@ export const ExpressionFields = ({
   setData,
   options,
   ...props
-} : {
+}: {
   depthToShow: number
   mode: ("read" | "write" | "execute")[]
   expression: FosExpression
@@ -89,15 +89,32 @@ export const ExpressionFields = ({
   const hasOptions = false
   const hasVersions = false
   const isTodo = false
-  
-
-  return (<div className="flex gap-2">
-    <div><DiscIcon /></div>
-    <VersionControlComponent expression={expression} depthToShow={depthToShow} />
-    {/* <ChoiceRowComponent expression={expression} depthToShow={depthToShow} /> */}
 
 
-  </div>)
+  const expressionType = expression.isTodo()
+    ? 'todo'
+    : expression.isComment()
+      ? 'comment'
+      : 'expression'
+  const description = expression.getDescription()
+
+  return (
+    <div
+      className="flex gap-2 items-center"
+      data-testid={`expression-fields-${expression.expressionId()}`}
+      data-expression-type={expressionType}
+    >
+      <div><DiscIcon /></div>
+      <VersionControlComponent expression={expression} depthToShow={depthToShow} />
+      <span
+        className="text-sm text-foreground"
+        data-testid="expression-description"
+      >
+        {description || (expressionType === 'comment' ? '(empty comment)' : '(no description)')}
+      </span>
+      {/* <ChoiceRowComponent expression={expression} depthToShow={depthToShow} /> */}
+    </div>
+  )
 }
 
 

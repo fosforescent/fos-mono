@@ -1,0 +1,236 @@
+services:
+  # Consolidated PostgreSQL database with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: fos-postgres
+    env_file:
+      - ../.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fosdev}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./prisma/init_databases.sql:/docker-entrypoint-initdb.d/init_databases.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - db-only
+      - backend
+      - full
+      - full-with-smoke
+      - smoke
+
+  # Qdrant vector database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: fos-qdrant
+    env_file:
+      - ../.env
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - db-only
+      - backend
+      - full
+      - full-with-smoke
+
+  # Temporal server
+  temporal:
+    image: temporalio/auto-setup:1.22.4
+    container_name: temporal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_DB=temporal
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233" # gRPC port
+      - "8233:8233" # HTTP API port
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "workflow", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - backend
+      - full
+      - full-with-smoke
+      - smoke
+
+  # Temporal UI
+  temporal-ui:
+    image: temporalio/ui:2.21.3
+    container_name: temporal-ui
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    ports:
+      - "8080:8080"
+    profiles:
+      - backend
+      - full
+      - full-with-smoke
+
+  # Temporal Worker (for executing workflows)
+  temporal-worker:
+    build:
+      context: ../
+      dockerfile: backend/Dockerfile.temporal-worker
+    container_name: temporal-worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: on-failure:5
+    env_file:
+      - ../.env
+    environment:
+      - TEMPORAL_SERVER_HOST=temporal:7233
+      - NODE_ENV=development
+    volumes:
+      - ../backend:/app
+      - /app/node_modules
+    profiles:
+      - backend
+      - full
+      - full-with-smoke
+
+  # Fosforescent backend (using Dockerfile)
+  backend:
+    build:
+      context: ../
+      dockerfile: backend/Dockerfile
+    container_name: fos-backend
+    env_file:
+      - ../.env
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-fosdev}?connection_limit=5
+      - JWT_SECRET=myjwtsecret
+      - PORT=80
+      - STRIPE_TOKEN=${STRIPE_TOKEN}
+      - STRIPE_SUBSCRIPTION_PRICE_ID=${STRIPE_SUBSCRIPTION_PRICE_ID}
+      - STRIPE_TOPUP_PRICE_ID=${STRIPE_TOPUP_PRICE_ID}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - POSTMARK_API_TOKEN=${POSTMARK_API_TOKEN}
+      - EMAIL_WEBHOOK_PASSWORD=${EMAIL_WEBHOOK_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - TEMPORAL_SERVER_HOST=temporal:7233
+      - NODE_ENV=${NODE_ENV:-production}
+    ports:
+      - "${BACKEND_PORT:-4000}:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - backend
+      - full
+      - full-with-smoke
+
+  # Frontend (using Dockerfile)
+  frontend:
+    build:
+      context: ../
+      dockerfile: frontend/Dockerfile
+      # Note: Not passing VITE_FOS_API_URL so it defaults to localhost:4000 for browser access
+      # Smoke test runs inside Docker so it can use backend:80 directly
+    container_name: fos-frontend
+    env_file:
+      - ../.env
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    profiles:
+      - full
+      - full-with-smoke
+      - smoke
+
+  # Smoke test - runs once to ensure test user exists
+  smoke-test:
+    image: mcr.microsoft.com/playwright:v1.52.0-jammy
+    container_name: fos-smoke-test
+    working_dir: /app/infra
+    volumes:
+      - ../:/app
+    network_mode: host  # Use host network to access localhost:5173 and localhost:4000
+    env_file:
+      - ../.env
+    environment:
+      - SMOKE_TEST_EMAIL=${SMOKE_TEST_EMAIL:-user1@fosforescent.com}
+      - SMOKE_TEST_PASSWORD=${SMOKE_TEST_PASSWORD:-user123}
+      - PLAYWRIGHT_BASE_URL=http://localhost:5173
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5433/fosdev?connection_limit=5}
+    command: >
+      sh -c "
+        set -eux &&
+        echo '🧪 Waiting for frontend to be ready...' &&
+        timeout 120 sh -c 'until wget -q -O- http://localhost:5173 > /dev/null 2>&1; do echo \"Frontend not ready yet...\"; sleep 2; done' &&
+        echo '✅ Frontend is ready!' &&
+        echo '🗄️ Running database migrations...' &&
+        cd /app/infra && npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss --skip-generate &&
+        echo '🌱 Seeding database...' &&
+        cd /app/infra && TSX_DISABLE_CACHE=1 npx prisma db seed --schema=./prisma/schema.prisma &&
+        echo '🎭 Installing Playwright browsers...' &&
+        cd /app/infra && npx playwright install --with-deps chromium &&
+        echo '🧪 Running Playwright suite...' &&
+        cd /app/infra && npx playwright test --project=chromium
+      "
+    depends_on:
+      - frontend
+      - backend
+    profiles:
+      - smoke
+      - full-with-smoke
+    restart: "no"
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  temporal_data:
+
+# Networks (optional, for custom networking)
+networks:
+  default:
+    name: fos-network

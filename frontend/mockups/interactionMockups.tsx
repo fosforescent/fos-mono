@@ -1,15 +1,15 @@
-import { AppState, FosReactOptions, FosPath } from "@/shared/types"
+import { AppState, FosReactOptions, FosPath } from "@fosforescent/shared/types"
 
 
-import {  pathEqual } from "../../shared/utils"
+import { pathEqual } from "../../shared/utils"
 import React from "react"
 import { diff } from "@n1ru4l/json-patch-plus"
 import { Button } from "../components/ui/button"
 import { ExpressionRow } from "../components/expression/ExpressionRow"
-import { FosExpression } from "@/shared/dag-implementation/expression"
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression"
 import { api } from "../api"
 
-import { FosStore } from "@/shared/dag-implementation/store"
+import { FosStore } from "@fosforescent/shared/dag-implementation/store"
 import { ExpressionFields } from "../components/expression/ExpressionFields"
 import { DefaultBreadcrumbsComponent } from "../components/breadcrumbs/breadcrumbs"
 import { TopButtons } from "../components/menu/TopButtons"
@@ -46,12 +46,12 @@ export const FieldTest = () => {
 
   setupStore(store)
 
-  const endData = expectedFinalState(new FosStore({fosCtxData: store.exportContext([]) })).exportContext([])
+  const endData = expectedFinalState(new FosStore({ fosCtxData: store.exportContext([]) })).exportContext([])
 
   const setDataCompare = (newData: AppState) => {
 
-    const resultDiff = diff({left: endData, right: newData.data})
-    if (resultDiff){
+    const resultDiff = diff({ left: endData, right: newData.data })
+    if (resultDiff) {
       console.log('diff', resultDiff)
       console.trace()
       throw new Error('diff found')
@@ -65,11 +65,11 @@ export const FieldTest = () => {
   }
 
 
-  const expression = new FosExpression(store, []) 
+  const expression = new FosExpression(store, [])
 
   return (<>
 
-    <TopButtons 
+    <TopButtons
       data={startData}
 
       setData={setDataCompare}
@@ -81,8 +81,8 @@ export const FieldTest = () => {
       setData={setDataCompare}
       options={{}}
       expression={expression}
-      />
-    <FieldsetWrapper 
+    />
+    <FieldsetWrapper
       data={startData}
       setData={setDataCompare}
       options={{}}
@@ -116,13 +116,13 @@ export const FieldTest = () => {
 
 
 
-const FieldsetWrapper = ({ 
+const FieldsetWrapper = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -155,13 +155,13 @@ const FieldsetWrapper = ({
 
 
 
-const SearchField = ({ 
+const SearchField = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -173,7 +173,7 @@ const SearchField = ({
 
 
 
-  if (!data.auth.jwt){
+  if (!data.auth.jwt) {
     throw new Error('no auth token')
   }
 
@@ -184,7 +184,7 @@ const SearchField = ({
 
     api(data, setData).authed().postData(data.data).then((response) => {
       console.log('search response', response)
-      if(!response){
+      if (!response) {
         throw new Error('no response')
       }
       const newStore = new FosStore({ fosCtxData: response })
@@ -225,62 +225,62 @@ const SearchField = ({
  */
 
 
-const OptionField = ({ 
-    data,
-    setData,
-    options,
-    expression,
-    ...props
-  } : {
-    options: FosReactOptions
-    data: AppState
-    expression: FosExpression
-    setData: (state: AppState) => void
-  }) => {
+const OptionField = ({
+  data,
+  setData,
+  options,
+  expression,
+  ...props
+}: {
+  options: FosReactOptions
+  data: AppState
+  expression: FosExpression
+  setData: (state: AppState) => void
+}) => {
 
 
-    const { 
-      nodeOptions,
-      selectedIndex,
-    } = expression.getOptionInfo()
-   
-    const nodeDescription = expression.getDescription()
+  const {
+    nodeOptions,
+    selectedIndex,
+  } = expression.getOptionInfo()
 
-    return (
-      <div>
-        {nodeDescription}
+  const nodeDescription = expression.getDescription()
 
-      
+  return (
+    <div>
+      {nodeDescription}
 
-      </div>
-    )
+
+
+    </div>
+  )
 
 
 }
-  
+
 
 
 
 export const getOptions = (nodeRoute: FosPath, state: AppStateLoaded["data"]) => {
 
 
-  
+
 
 }
 
 export const getOptionInfo = (nodeRoute: FosPath, appData: AppStateLoaded["data"]) => {
 
-  
+
 }
 
 
-const AddFirstOptionTest = ({ 
+const AddFirstOptionTest = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -296,7 +296,7 @@ const AddFirstOptionTest = ({
   return (
     <div>
       <div>
-      adf
+        adf
       </div>
     </div>
   )

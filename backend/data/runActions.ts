@@ -1,15 +1,18 @@
-import { FosExpression } from "@/shared/dag-implementation/expression";
-import { FosStore } from "@/shared/dag-implementation/store";
-import { mutableMapExpressions } from "@/shared/utils";
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression";
+import { FosStore } from "@fosforescent/shared/dag-implementation/store";
+import { mutableMapExpressions } from "@fosforescent/shared/utils";
 import { executeSearch } from "./search";
 
 
 export const runActionsOnStore = (store: FosStore ) => {
 
   /**
-   * e.g. 
-   * SEARCHQUERY --- run x function
-   * BLAHBLAH --- run y function
+   * Action types that can be evaluated:
+   * SEARCHQUERY - run search query
+   * CREATEGROUP - create a new group
+   * CREATEDM - create a DM between users
+   * ADDMEMBERTOGROUP - add member to group
+   * SENDGROUPMESSAGE - send message to group
    */
 
   const rootExpression = new FosExpression(store, [])

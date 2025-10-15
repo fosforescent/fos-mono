@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
 
-import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosPath, InfoState, AppStateInitial, AppStateLoaded,} from '../shared/types'
+import { AppState, AuthState, ContextType, FosContextData, FosReactGlobal, FosReactOptions, FosPath, InfoState, AppStateInitial, AppStateLoaded, } from '../shared/types'
 import { useTraceUpdate } from './hooks/trace-update'
 import { TutorialDialog } from './components/dialog/TutorialDialog'
 import { HelpDrawer } from './components/dialog/HelpDrawer'
@@ -10,9 +10,10 @@ import { HelpDrawer } from './components/dialog/HelpDrawer'
 
 
 import HamburgerMenu from './components/menu/HamburgerMenu'
+import { AuthLanding } from './components/AuthLanding'
 
 
-import { Toaster } from "@/frontend/components/ui/toaster"
+import { Toaster } from "@/components/ui/toaster"
 import { CookieDialog } from './components/dialog/CookieDialog'
 import { PrivacyPolicyDialog } from './components/dialog/PrivacyPolicyDialog'
 import { TermsDialog } from './components/dialog/TermsDialog'
@@ -20,11 +21,12 @@ import { ConfirmClearData } from './components/dialog/ConfirmClearData'
 import { ConfirmDeleteUser } from './components/dialog/ConfirmDeleteUser'
 import { ConfirmEmailChange } from './components/dialog/ConfirmEmailChange'
 import { ErrorBoundary } from './components/error-boundary'
-import { useToast } from '@/frontend/components/ui/use-toast';
-import { jwtDecode } from 'jwt-decode';
+import { useToast } from '@/components/ui/use-toast';
+import jwtDecode from 'jwt-decode';
 import { api } from './api'
+import { PendingApproval } from './components/admin/PendingApproval'
 
-import {  defaultTrellisData } from '../shared/defaults'
+import { defaultTrellisData } from '../shared/defaults'
 
 import { Outlet, useOutletContext, useLoaderData, useNavigate } from 'react-router-dom'
 import { getActions } from './lib/actions'
@@ -33,7 +35,7 @@ import { diff } from '@n1ru4l/json-patch-plus'
 import { useLocation } from 'react-router-dom'
 import { set } from 'date-fns'
 import { getMockEvents, applyMockEvent } from './hooks/mock-events';
-import { FosStore } from '@/shared/dag-implementation/store'
+import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 
 
 
@@ -47,7 +49,7 @@ export const initialInfoState: InfoState = {
 
 const parsedJwt = JSON.parse(localStorage.getItem("auth") || "null")
 
-const decodedJwt =  parsedJwt ? jwtDecode(parsedJwt)  as { username: string, exp: number } : { username: "", exp: 0 }
+const decodedJwt = parsedJwt ? jwtDecode(parsedJwt) as { username: string, exp: number } : { username: "", exp: 0 }
 const parsedUsername = JSON.parse(localStorage.getItem("username") || "null")
 
 export const initialAuthState: AuthState = parsedJwt ? {
@@ -71,7 +73,7 @@ declare const __FOS_API_URL__: string;
 
 
 
-export const initialDataState: AppStateInitial =  {
+export const initialDataState: AppStateInitial = {
 
   data: null,
   auth: initialAuthState,
@@ -85,29 +87,29 @@ export const initialDataState: AppStateInitial =  {
 
 
 export default function App({
-  
+
 }: {
-  
-}) {
+
+  }) {
 
   const apiUrl = window.Fos.apiUrl
-  
-  
+
+
   const [showCookieConsent, setShowCookieConsent] = useState(false)
 
-  const [showTerms, setShowTerms] = useState({open: false, fromRegisterForm: false, setAcceptTerms: (accept: boolean) => {}})
-  const [showPrivacy, setShowPrivacy] = useState({open: false, fromRegisterForm: false})
+  const [showTerms, setShowTerms] = useState({ open: false, fromRegisterForm: false, setAcceptTerms: (accept: boolean) => { } })
+  const [showPrivacy, setShowPrivacy] = useState({ open: false, fromRegisterForm: false })
 
   const [showClearData, setShowClearData] = useState(false)
   const [showDeleteAccount, setShowDeleteAccount] = useState(false)
-  const [showEmailConfirm, setShowEmailConfirm] = useState<{ open: boolean, email: string}>({ open: false, email: ""})
-
- 
-
-  
+  const [showEmailConfirm, setShowEmailConfirm] = useState<{ open: boolean, email: string }>({ open: false, email: "" })
 
 
-  const [ appState, setAppState ] = React.useState<AppState>({...initialDataState, apiUrl})
+
+
+
+
+  const [appState, setAppState] = React.useState<AppState>({ ...initialDataState, apiUrl })
 
   const jwt = appState.auth?.jwt
 
@@ -118,9 +120,9 @@ export default function App({
 
 
   useEffect(() => {
-    if (appState.loggedIn && !jwt){
-      if (parsedJwt){
-        setAppState({...appState, auth: { ...appState.auth, jwt: parsedJwt }})
+    if (appState.loggedIn && !jwt) {
+      if (parsedJwt) {
+        setAppState({ ...appState, auth: { ...appState.auth, jwt: parsedJwt } })
       }
       setAppState({
         ...appState,
@@ -130,8 +132,8 @@ export default function App({
           jwt: undefined,
         }
       })
-  
-    } else if (!appState.loggedIn && jwt){
+
+    } else if (!appState.loggedIn && jwt) {
       setAppState({
         ...appState,
         loggedIn: false,
@@ -142,20 +144,20 @@ export default function App({
       })
     }
 
-    
 
-    
+
+
   }, [jwt, parsedJwt, appState.loggedIn])
 
 
   const location = useLocation();
   const navigate = useNavigate()
 
-  
 
-  
 
-  
+
+
+
   React.useEffect(() => {
     if (!jwt) {
       return
@@ -174,8 +176,8 @@ export default function App({
         console.log('connected')
         window.Fos.ws.send('hello')
       })
-      
-      
+
+
       window.Fos.ws.addEventListener('message', handler)
 
       return () => {
@@ -185,13 +187,20 @@ export default function App({
       window.Fos.ws = new WebSocket(`${apiUrl}/socket/${jwt}`);
     }
   }, [apiUrl, jwt])
-  
+
 
   const [showTutorial, setShowTutorial] = useState(false)
 
 
 
   // console.log('rerender', )
+
+  const rawToast = useToast()
+
+  // First declare options with the basics
+  const options = {
+    toast: rawToast.toast,
+  }
 
   // useTraceUpdate({ apiDataState, loggedIn, theme, promptGPT, canPromptGPT, toast, data })
   const authedApi = appState.auth.jwt ? api(appState, setAppState, options).authed() : undefined
@@ -204,7 +213,7 @@ export default function App({
       throw new Error('Trying to prompt GPT without being logged in')
     }
     const result = await authedApi?.getSuggestions(systemPrompt, userPrompt, options || {})
-    if (!result){
+    if (!result) {
       throw new Error('Error getting GPT suggestions')
     }
     return result.suggestions
@@ -212,19 +221,14 @@ export default function App({
 
   const canPromptGPT = !!appState.auth.jwt && !!appState.info.subscription && (appState.info.subscription.apiCallsAvailable > appState.info.subscription.apiCallsUsed)
 
-
-  const rawToast = useToast()
-
-  const options = {
+  // Update options with the additional properties
+  Object.assign(options, {
     canPromptGPT,
     promptGPT,
-
-    toast: rawToast.toast,
-    // }
-  }
+  })
 
 
-  
+
   const [theme, setTheme] = useState("system")
 
 
@@ -233,7 +237,7 @@ export default function App({
 
     const root = window.document.documentElement
     if (!root) {
-      throw new Error ('Root element does not exist in DOM')
+      throw new Error('Root element does not exist in DOM')
     }
 
     root.classList.remove("light", "dark")
@@ -254,8 +258,8 @@ export default function App({
 
 
   // console.log('rerender web client main', appState.data, appState)
- 
-  
+
+
   const [showHelp, setShowHelp] = useState(false)
 
 
@@ -266,23 +270,36 @@ export default function App({
 
   const [menuOpen, setMenuOpen] = useState<boolean>(emailConfirmationToken || passwordResetToken ? true : false)
 
-  const {  loadAppData, loggedIn } = getActions(options, appState, setAppState)
+  const { loadAppData, loggedIn, setViewActivityMode } = getActions(options, appState, setAppState)
 
-  
 
-  
+
+
   useEffect(() => {
     if (!jwt && !appState.loggedIn) {
-  
       navigate('/')
       setMenuOpen(true)
     } else {
       console.log('appState', appState, jwt)
-      if (!appState.loaded){
+      if (!appState.loaded) {
         loadAppData()
       }
     }
   }, [jwt]);
+
+  // Check user approval status when app data is loaded
+  const [userApprovalChecked, setUserApprovalChecked] = useState(false)
+
+  useEffect(() => {
+    if (appState.loggedIn && appState.loaded && !userApprovalChecked) {
+      setUserApprovalChecked(true)
+      // Approval status is available in appState.info.approved
+      if (appState.info?.approved === false) {
+        // User is not approved, don't navigate away from approval page
+        console.log('User not approved, showing pending approval')
+      }
+    }
+  }, [appState.loggedIn, appState.loaded, userApprovalChecked]);
 
 
 
@@ -291,12 +308,64 @@ export default function App({
   const [currentActivity, setCurrentActivity] = useState("")
   const [currentView, setCurrentView] = useState("")
 
+  // Handlers for PendingApproval component
+  const handleLogout = () => {
+    localStorage.removeItem('auth')
+    localStorage.removeItem('username')
+    setAppState({
+      ...appState,
+      loggedIn: false,
+      auth: {
+        ...appState.auth,
+        jwt: undefined
+      }
+    })
+    navigate('/')
+    setMenuOpen(true)
+  }
+
+  const handleRefreshApprovalStatus = async () => {
+    if (appState.loggedIn && appState.auth.jwt) {
+      await loadAppData()
+    }
+  }
+
   useEffect(() => {
 
-    if (loggedIn() && appState.loaded){
-      if (location.pathname === '/'){
+    if (loggedIn() && appState.loaded && appState.data) {
+      if (location.pathname === '/') {
         navigate('')
-      } else if (location.pathname === '/inbox'){
+      } else if (location.pathname === '/tools') {
+        setCurrentActivity('todo')
+        setCurrentView("Browse")
+        setViewActivityMode("Browse", "app", "default")
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({ ...newState, })
+      } else if (location.pathname === '/inbox') {
+        setCurrentActivity('todo')
+        setCurrentView("Queue")
+        setViewActivityMode("Queue", "todo", "default")
+        const newState = {
+          ...appState,
+          data: {
+            ...appState.data,
+            fosData: {
+              ...appState.data.fosData,
+              route: []
+            }
+          }
+        }
+        setAppState({ ...newState, })
+      } else if (location.pathname === '/agora') {
         setCurrentActivity('inbox')
         setCurrentView("Queue")
         const newState = {
@@ -309,22 +378,8 @@ export default function App({
             }
           }
         }
-        setAppState({...newState, })
-      } else if (location.pathname === '/agora'){
-        setCurrentActivity('inbox')
-        setCurrentView("Queue")
-        const newState = {
-          ...appState,
-          data: {
-            ...appState.data,
-            fosData: {
-              ...appState.data.fosData,
-              route: []
-            }
-          }
-        }
-        setAppState({...newState, })
-      } else if (location.pathname === '/market'){
+        setAppState({ ...newState, })
+      } else if (location.pathname === '/market') {
         setCurrentActivity('inbox')
         setCurrentView("Query")
         const newState = {
@@ -337,8 +392,8 @@ export default function App({
             }
           }
         }
-        setAppState({...newState, })
-      } else if (location.pathname === '/search'){
+        setAppState({ ...newState, })
+      } else if (location.pathname === '/search') {
         setCurrentActivity('inbox')
         setCurrentView("Query")
         const newState = {
@@ -351,8 +406,8 @@ export default function App({
             }
           }
         }
-        setAppState({...newState, })
-      } else if (location.pathname === '/folders'){
+        setAppState({ ...newState, })
+      } else if (location.pathname === '/folders') {
         setCurrentActivity('inbox')
         setCurrentView("Tree")
         const newState = {
@@ -365,8 +420,8 @@ export default function App({
             }
           }
         }
-        setAppState({...newState, })
-      } else if (location.pathname === '/info'){
+        setAppState({ ...newState, })
+      } else if (location.pathname === '/info') {
         setCurrentActivity('inbox')
         setCurrentView("Queue")
         const newState = {
@@ -379,8 +434,8 @@ export default function App({
             }
           }
         }
-        setAppState({...newState, })
-      } else if (location.pathname === '/settings'){
+        setAppState({ ...newState, })
+      } else if (location.pathname === '/settings') {
         setCurrentActivity('inbox')
         setCurrentView("Settings")
         const newState = {
@@ -393,9 +448,9 @@ export default function App({
             }
           }
         }
-        setAppState({...newState, })
+        setAppState({ ...newState, })
       }
-  
+
     } else {
 
     }
@@ -410,7 +465,7 @@ export default function App({
 
 
   const setAppStateWithEffects = (newData: AppState) => {
-    console.log('setting data from CLIENT',newData, appState)
+    console.log('setting data from CLIENT', newData, appState)
     console.trace()
     // TODO: change setFosData to handle trellis data too
     // OR --- move trellis data into node data / fos context
@@ -418,37 +473,42 @@ export default function App({
 
 
 
-    if (newData.auth.jwt){
+    if (newData.auth.jwt) {
       localStorage.setItem('auth', JSON.stringify(newData.auth.jwt))
     }
 
 
-    const newActions =  getActions(options, newData, setAppState)
+    const newActions = getActions(options, newData, setAppState)
 
     setAppState(newData)
 
     const syncData = async () => {
-      const dataDiff = diff({ left: newData.data, right: appState.data})
-      const profileDiff = diff({ left: newData.info, right: appState.info})
-      const authDiff = diff({ left: newData.auth, right: appState.auth})
+      const dataDiff = diff({ left: newData.data, right: appState.data })
+      const profileDiff = diff({ left: newData.info, right: appState.info })
+      const authDiff = diff({ left: newData.auth, right: appState.auth })
+
+      console.log('setAppStateWithEffects: dataDiff detected:', !!dataDiff)
+      if (dataDiff) {
+        console.log('setAppStateWithEffects: dataDiff details:', dataDiff)
+      }
 
       let updatedWithServerData: AppState = newData
 
-      if (dataDiff && appState.loaded){
-        if (!updatedWithServerData){
+      if (dataDiff && appState.loaded) {
+        if (!updatedWithServerData) {
           throw new Error('App loaded, but trying to save null data')
         }
-        // console.log('saving data')
+        console.log('setAppStateWithEffects: saving data to backend')
         await newActions.saveFosAndTrellisData(updatedWithServerData as AppStateLoaded)
 
       }
 
-      if (profileDiff && appState.loaded){
+      if (profileDiff && appState.loaded) {
         newActions.saveProfileData(updatedWithServerData)
       }
 
-      if (authDiff){
-        if (appState.auth.jwt && !newData.auth.jwt){
+      if (authDiff) {
+        if (appState.auth.jwt && !newData.auth.jwt) {
           console.log('auth diff', authDiff, appState.auth, newData.auth)
           throw new Error('auth diff')
         }
@@ -457,7 +517,7 @@ export default function App({
       // console.log('setappdata', authDiff)
       // console.trace()
 
-      if (diff({left: newData, right: updatedWithServerData})){
+      if (diff({ left: newData, right: updatedWithServerData })) {
         setAppState(updatedWithServerData)
       }
 
@@ -484,11 +544,16 @@ export default function App({
   //   return 
   // }, []);
 
- 
-  return (<><div className="App h-full bg-background p-0 relative" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden', "minHeight": "100svh" }}>
-      <div style={{textAlign: 'left', boxSizing: 'border-box'}} className='w-full'>
-        <HamburgerMenu 
-          emailConfirmationToken={emailConfirmationToken} 
+
+  return (<><div
+    className="App h-full bg-background p-0 relative"
+    data-testid="main-app"
+    style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden', "minHeight": "100svh" }}>
+    <div style={{ textAlign: 'left', boxSizing: 'border-box' }} className='w-full'>
+      {/* Only show hamburger menu when logged in */}
+      {appState.loggedIn && (
+        <HamburgerMenu
+          emailConfirmationToken={emailConfirmationToken}
           passwordResetToken={passwordResetToken}
           setShowCookieConsent={setShowCookieConsent}
           setShowTerms={setShowTerms}
@@ -506,60 +571,83 @@ export default function App({
           options={global}
           menuOpen={menuOpen}
           setMenuOpen={setMenuOpen}
-          
+
+        />
+      )}
+      <div
+        className=" h-full w-full p-0 m-0"
+        data-testid={appState.loggedIn ? "main-content" : undefined}
+      >
+
+        {/* Show AuthLanding if not logged in, PendingApproval if not approved, otherwise show main app */}
+        {!appState.loggedIn ? (
+          <AuthLanding
+            data={appState}
+            setData={setAppStateWithEffects}
+            options={global}
           />
-        <div className=" h-full w-full p-0 m-0" >
- 
-        
-        {appState.loaded && <Outlet context={{
-          data: appState,
-          setData: setAppStateWithEffects,
-          options: global,
-          nodeRoute: appState.data.fosData.route,
-          dialogueProps: {
-            loading: false,
-            setLoading: () => {},
-            showCookies: showCookieConsent,
-            setShowCookies: setShowCookieConsent,
-            showTerms,
-            setShowTerms,
-            showPrivacy,
-            setShowPrivacy,
-            showClearData,
-            setShowClearData,
-            showDeleteAccount,
-            setShowDeleteAccount,
-            showEmailConfirm,
-            setShowEmailConfirm,
-          },
-          tokens: {
-            emailConfirmationToken,
-            passwordResetToken
-          }
-        }} />}
-        
-        
+        ) : appState.loaded && appState.info?.approved === false ? (
+          <PendingApproval
+            userEmail={appState.auth?.email}
+            userName={appState.auth?.username}
+            onLogout={handleLogout}
+            onRefresh={handleRefreshApprovalStatus}
+          />
+        ) : (
+          appState.loaded && (
+            <div data-testid="authenticated-content" className="h-full">
+              <Outlet context={{
+                data: appState,
+                setData: setAppStateWithEffects,
+                options: global,
+                nodeRoute: appState.data.fosData.route,
+                dialogueProps: {
+                  loading: false,
+                  setLoading: () => { },
+                  showCookies: showCookieConsent,
+                  setShowCookies: setShowCookieConsent,
+                  showTerms,
+                  setShowTerms,
+                  showPrivacy,
+                  setShowPrivacy,
+                  showClearData,
+                  setShowClearData,
+                  showDeleteAccount,
+                  setShowDeleteAccount,
+                  showEmailConfirm,
+                  setShowEmailConfirm,
+                },
+                tokens: {
+                  emailConfirmationToken,
+                  passwordResetToken
+                }
+              }} />
+            </div>
+          )
+        )}
+
+
         <TutorialDialog open={showTutorial} setOpen={setShowTutorial} />
       </div>
-      </div>
-        <div>
-        <CookieDialog open={showCookieConsent} setOpen={setShowCookieConsent} data={appState} setData={setAppState} options={options} />
-        <PrivacyPolicyDialog open={showPrivacy} setOpen={(isOpen: boolean) => setShowPrivacy({ open: isOpen, fromRegisterForm: false } )} data={appState} setData={setAppState} options={options} />
-        <TermsDialog open={showTerms.open} setOpen={(isOpen: boolean) => { setShowTerms({ ...showTerms, open: isOpen }) }} setAcceptTerms={showTerms.setAcceptTerms} data={appState} setData={setAppState} options={options} />
-        <ConfirmClearData open={showClearData} setOpen={setShowClearData} data={appState} setData={setAppState} options={options} />
-        <ConfirmDeleteUser open={showDeleteAccount} setOpen={setShowDeleteAccount} data={appState} setData={setAppState} options={options} />
-        <ConfirmEmailChange open={showEmailConfirm.open} setOpen={(status: boolean) => { setShowEmailConfirm({...showEmailConfirm, open: status}) }} email={showEmailConfirm.email} data={appState} setData={setAppState} options={options} />
-      </div>
     </div>
+    <div>
+      <CookieDialog open={showCookieConsent} setOpen={setShowCookieConsent} data={appState} setData={setAppState} options={options} />
+      <PrivacyPolicyDialog open={showPrivacy} setOpen={(isOpen: boolean) => setShowPrivacy({ open: isOpen, fromRegisterForm: false })} data={appState} setData={setAppState} options={options} />
+      <TermsDialog open={showTerms.open} setOpen={(isOpen: boolean) => { setShowTerms({ ...showTerms, open: isOpen }) }} setAcceptTerms={showTerms.setAcceptTerms} data={appState} setData={setAppState} options={options} />
+      <ConfirmClearData open={showClearData} setOpen={setShowClearData} data={appState} setData={setAppState} options={options} />
+      <ConfirmDeleteUser open={showDeleteAccount} setOpen={setShowDeleteAccount} data={appState} setData={setAppState} options={options} />
+      <ConfirmEmailChange open={showEmailConfirm.open} setOpen={(status: boolean) => { setShowEmailConfirm({ ...showEmailConfirm, open: status }) }} email={showEmailConfirm.email} data={appState} setData={setAppState} options={options} />
+    </div>
+  </div>
     <div className="w-full relative">
-      
-    <div className='flex w-full justify-end'>
-    <div className={`opacity-30 hover:opacity-80 transition`}>
-    </div></div>
+
+      <div className='flex w-full justify-end'>
+        <div className={`opacity-30 hover:opacity-80 transition`}>
+        </div></div>
     </div>
-    <HelpDrawer open={showHelp} setOpen={setShowHelp} setShowTutorial={setShowTutorial} showTutorial={showTutorial}/>
+    <HelpDrawer open={showHelp} setOpen={setShowHelp} setShowTutorial={setShowTutorial} showTutorial={showTutorial} />
     <Toaster />
-    </>)
+  </>)
 }
 
 
@@ -569,20 +657,20 @@ export default function App({
 export const getGlobal = (options: FosReactOptions): Partial<FosReactOptions> => {
   // console.log('options', options)
   const global = {
-    ...( options && options?.canPromptGPT && options?.promptGPT ? {
+    ...(options && options?.canPromptGPT && options?.promptGPT ? {
       canPromptGPT: true,
       promptGPT: options.promptGPT,
     } : {
       canPromptGPT: false,
     }),
-    ...( options && options?.canRedo ? { canRedo: true } : { canRedo: false }),
-    ...( options && options?.canUndo ? { canUndo: true } : { canUndo: false }),
-    ...( options && options?.canRedo ? { redo: options.redo } : {}),
-    ...( options && options?.canUndo ? { undo: options.undo } : {}),
-    ...( options ? { toast: options.toast } : {}),
-    ...( options ? { theme: options.theme } : {}),
-    
-    ...( options ? { locked: options.locked } : { locked: false }),
+    ...(options && options?.canRedo ? { canRedo: true } : { canRedo: false }),
+    ...(options && options?.canUndo ? { canUndo: true } : { canUndo: false }),
+    ...(options && options?.canRedo ? { redo: options.redo } : {}),
+    ...(options && options?.canUndo ? { undo: options.undo } : {}),
+    ...(options ? { toast: options.toast } : {}),
+    ...(options ? { theme: options.theme } : {}),
+
+    ...(options ? { locked: options.locked } : { locked: false }),
   }
 
   return global
@@ -593,6 +681,6 @@ export function useProps() {
 }
 
 export const getMaxDepth = () => {
-  return ( (window.innerWidth - 500) / 100)
+  return ((window.innerWidth - 500) / 100)
 }
 

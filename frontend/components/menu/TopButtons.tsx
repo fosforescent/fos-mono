@@ -1,17 +1,18 @@
-import { FosExpression } from "@/shared/dag-implementation/expression"
-import { FosStore } from "@/shared/dag-implementation/store"
-import { AppState, AppStateLoaded, FosPath, FosReactGlobal } from "@/shared/types"
+import { FosExpression } from "@fosforescent/shared/dag-implementation/expression"
+import { FosStore } from "@fosforescent/shared/dag-implementation/store"
+import { AppState, AppStateLoaded, FosPath, FosReactGlobal } from "@fosforescent/shared/types"
 import { useDraggable, useDroppable } from "@dnd-kit/core"
 import { getDragAndDropHandlers } from "../drag-drop"
+import { Button } from "@/components/ui/button"
 
 
-export const TopButtons = ({ 
+export const TopButtons = ({
   data,
   setData,
   options,
   nodeRoute: route,
   ...props
-} : {
+}: {
   options: FosReactGlobal
   data: AppStateLoaded
   nodeRoute: FosPath
@@ -40,7 +41,7 @@ export const TopButtons = ({
   const { getNodeDragInfo } = getDragAndDropHandlers(expression, options, setFosAndTrellisData)
 
   const { useDraggableArg, useDroppableArg } = getNodeDragInfo(expression.route)
-  
+
   const {
     attributes,
     listeners,
@@ -62,9 +63,25 @@ export const TopButtons = ({
   const latestBranchFromGroup = null
 
 
-  return (<div>
-    
+  const canUndo = Boolean(options?.canUndo)
+  const canRedo = Boolean(options?.canRedo)
 
-  </div>)
+  return (
+    <div
+      data-testid="top-buttons"
+      className="flex items-center gap-2"
+      {...props}
+    >
+      <Button size="sm" variant="outline" disabled={!canUndo}>
+        Undo
+      </Button>
+      <Button size="sm" variant="outline" disabled={!canRedo}>
+        Redo
+      </Button>
+      <Button size="sm">
+        New Item
+      </Button>
+    </div>
+  )
 
 }

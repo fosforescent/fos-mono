@@ -1,27 +1,27 @@
 import { BrainCircuit, Landmark } from "lucide-react"
 // import { Bank } from '@radix-ui/react-icons'
 
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import CurrencyInput from "react-currency-input-field"
 import * as SliderPrimitive from "@radix-ui/react-slider"
-import { cn } from "@/frontend/lib/utils"
+import { cn } from "@/lib/utils"
 
 
 
-import { AppState, FosDataContent, FosNodesData, FosReactOptions, FosPath, SelectionPath } from "@/shared/types"
-import { getNodeOperations } from "@/frontend/lib/nodeOperations"
-import { getNodeInfo } from "@/frontend/lib/utils"
+import { AppState, FosDataContent, FosNodesData, FosReactOptions, FosPath, SelectionPath } from "@fosforescent/shared/types"
+import { getNodeOperations } from "@/lib/nodeOperations"
+import { getNodeInfo } from "@/lib/utils"
 
 
 
 
-const ResourceComponent = ({ 
+const ResourceComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -29,19 +29,19 @@ const ResourceComponent = ({
 }) => {
 
 
-  const {  locked, 
-    hasFocus, focusChar, isDragging, draggingOver, 
-    nodeDescription, isRoot, childRoutes, isBase, nodeLabel, 
-    nodeType, nodeId, disabled, depth, isCollapsed, 
+  const { locked,
+    hasFocus, focusChar, isDragging, draggingOver,
+    nodeDescription, isRoot, childRoutes, isBase, nodeLabel,
+    nodeType, nodeId, disabled, depth, isCollapsed,
     isTooDeep, isOption, hasChildren, nodeData
   } = getNodeInfo(nodeRoute, data)
-  
-  const { 
-    suggestOption, 
-    setFocus, 
-    setSelectedOption, 
-    setFocusAndDescription, 
-    deleteRow, 
+
+  const {
+    suggestOption,
+    setFocus,
+    setSelectedOption,
+    setFocusAndDescription,
+    deleteRow,
     deleteOption,
     keyDownEvents,
     keyUpEvents,
@@ -52,15 +52,15 @@ const ResourceComponent = ({
     toggleCollapse,
     zoom,
     setNodeData,
-   } = getNodeOperations(options, data, setData, nodeRoute)
+  } = getNodeOperations(options, data, setData, nodeRoute)
 
-   const costInfo = getBudgetInfo(nodeData)
+  const costInfo = getBudgetInfo(nodeData)
 
 
   return (<div className="flex flex-row flex-wrap items-center justify-center">
-  <div className='flex flex-row w-1/2 min-w-96 items-center justify-center flex-wrap'>
-    <CostInput value={costInfo.marginal} onChange={(value) => handleBudgetEdit(value)} handleSuggestCost={handleSuggestCost} />
-  </div>
+    <div className='flex flex-row w-1/2 min-w-96 items-center justify-center flex-wrap'>
+      <CostInput value={costInfo.marginal} onChange={(value) => handleBudgetEdit(value)} handleSuggestCost={handleSuggestCost} />
+    </div>
 
   </div>)
 }
@@ -85,7 +85,7 @@ type CostInfo = {
 
 
 
-const costDisplay = ( cost: number) => {
+const costDisplay = (cost: number) => {
 
   const costString = cost.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
@@ -93,13 +93,13 @@ const costDisplay = ( cost: number) => {
 }
 
 
-const CostInput = ({ 
-  value, 
-  onChange, 
-  handleSuggestCost 
-} : { 
-  value: number, 
-  onChange: (value: number | undefined) => void , 
+const CostInput = ({
+  value,
+  onChange,
+  handleSuggestCost
+}: {
+  value: number,
+  onChange: (value: number | undefined) => void,
   handleSuggestCost: () => Promise<void>
 }) => {
 
@@ -150,7 +150,7 @@ const BudgetSlider = (props: {
   bgValue: number
   budgetInfo?: {
     available?: number,
-  }, 
+  },
   costInfo?: {
     current: number,
     average: number,
@@ -158,17 +158,17 @@ const BudgetSlider = (props: {
     max: number,
   }
 }) => {
-  
+
   return (<div className="w-full align-middle py-5 flex-row flex flex-wrap justify-center item-center">
-    {props.value !== undefined 
-    && (<div className="min-w-20 grow-1 w-2/3"><SliderPrimitive.Root
+    {props.value !== undefined
+      && (<div className="min-w-20 grow-1 w-2/3"><SliderPrimitive.Root
         className={cn(
           "relative flex w-full touch-none select-none items-center",
         )}
         defaultValue={[props.value]}
         max={props.budgetInfo?.available}
         step={props.step}
-        
+
       >
         <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-gradient-to-r from-emerald-900 to-destructive via-70% via-emerald-900">
           <SliderPrimitive.Range className="absolute h-full bg-black/30" />
@@ -182,13 +182,13 @@ const BudgetSlider = (props: {
 }
 
 
-const CostRowComponent = ({ 
+const CostRowComponent = ({
   data,
   setData,
   options,
   nodeRoute,
   ...props
-} : {
+}: {
   options: FosReactOptions
   data: AppState
   nodeRoute: FosPath
@@ -197,7 +197,7 @@ const CostRowComponent = ({
 
 
   return (<div className="flex flex-initial grow">
-    If you are seeing this, there is an error. 
+    If you are seeing this, there is an error.
     {/* <BudgetSlider value={costInfo.budget?.available} budgetInfo={costInfo.budget} step={1} bgValue={75} onChange={() => console.log("slider")}/> */}
   </div>)
 }

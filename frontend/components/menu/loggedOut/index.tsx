@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { Button } from "@/frontend/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -7,17 +7,17 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/frontend/components/ui/card"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@/frontend/components/ui/tabs"
+} from "@/components/ui/tabs"
 
-import { Checkbox } from "@/frontend/components/ui/checkbox"
+import { Checkbox } from "@/components/ui/checkbox"
 
 import {
   User,
@@ -34,7 +34,7 @@ import {
   ShieldQuestion
 } from 'lucide-react'
 
-import { Alert, AlertDescription, AlertTitle } from "@/frontend/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 import _ from 'lodash'
 
@@ -42,7 +42,7 @@ import { PwdResetComponent } from "./PwdResetComponent"
 import { ForgotPwdComponent } from "./ForgotPwdComponent"
 import { RegisterComponent } from "./RegisterComponent"
 import { LoginComponent } from "./LoginComponent"
-import { AppState, FosReactOptions } from "@/shared/types"
+import { AppState, FosReactOptions } from "@fosforescent/shared/types"
 
 
 export const LoginRegister = ({
@@ -55,12 +55,12 @@ export const LoginRegister = ({
   data,
   setData,
   options
-} : {
+}: {
   passwordResetToken?: string,
   emailConfirmationToken?: string,
   setLoading?: (loading: boolean) => void
-  setShowTerms: (showTerms: {open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void}) => void
-  setShowPrivacy: (showPrivacy: {open: boolean, fromRegisterForm: boolean }) => void
+  setShowTerms: (showTerms: { open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void }) => void
+  setShowPrivacy: (showPrivacy: { open: boolean, fromRegisterForm: boolean }) => void
   setAccordionValue: (value: "nav" | "account" | "about" | "help") => void
   data: AppState,
   setData: (data: AppState) => void,
@@ -68,7 +68,7 @@ export const LoginRegister = ({
 }) => {
 
 
-  const [message, setMessage] = useState<{ messageType: string, message: string }>({messageType: "none", message: ""})
+  const [message, setMessage] = useState<{ messageType: string, message: string }>({ messageType: "none", message: "" })
 
 
   const [forgot, setForgot] = useState(false)
@@ -79,7 +79,7 @@ export const LoginRegister = ({
   const [tab, setTab] = useState(passwordResetToken ? "reset" : startTab);
 
   const onTabChange = (value: string) => {
-    setMessage({messageType: "none", message: ""})
+    setMessage({ messageType: "none", message: "" })
     setTab(value);
   }
 
@@ -100,24 +100,24 @@ export const LoginRegister = ({
       </TabsList>
       <Card>
         {message.messageType === "fail" && <Alert variant="destructive">
-          <AlertDescription>{message.message}</AlertDescription>          
+          <AlertDescription>{message.message}</AlertDescription>
         </Alert>}
         {message.messageType === "success" && <Alert className={`emerald-900`}>
-          <AlertDescription>{message.message}</AlertDescription>          
+          <AlertDescription>{message.message}</AlertDescription>
         </Alert>}
 
-      <TabsContent value="login">
-        <LoginComponent setMessage={setMessage} setForgot={handleForgot} data={data} setData={setData} options={options} setAccordionValue={setAccordionValue} />
-      </TabsContent>
-      <TabsContent value="register">
-        <RegisterComponent setMessage={setMessage} setShowTerms={setShowTerms} setShowPrivacy={setShowPrivacy} data={data} setData={setData} options={options} />
-      </TabsContent>
-      {forgot && <TabsContent value="forgot">
-            <ForgotPwdComponent setMessage={setMessage} data={data} setData={setData} options={options} />
-      </TabsContent>}
-      {passwordResetToken && <TabsContent value="reset">
-        <PwdResetComponent setMessage={setMessage} passwordResetToken={passwordResetToken} data={data} setData={setData} options={options} /> 
-      </TabsContent>}
+        <TabsContent value="login">
+          <LoginComponent setMessage={setMessage} setForgot={handleForgot} data={data} setData={setData} options={options} setAccordionValue={setAccordionValue} />
+        </TabsContent>
+        <TabsContent value="register">
+          <RegisterComponent setMessage={setMessage} setShowTerms={setShowTerms} setShowPrivacy={setShowPrivacy} data={data} setData={setData} options={options} />
+        </TabsContent>
+        {forgot && <TabsContent value="forgot">
+          <ForgotPwdComponent setMessage={setMessage} data={data} setData={setData} options={options} />
+        </TabsContent>}
+        {passwordResetToken && <TabsContent value="reset">
+          <PwdResetComponent setMessage={setMessage} passwordResetToken={passwordResetToken} data={data} setData={setData} options={options} />
+        </TabsContent>}
       </Card>
     </Tabs>
   )

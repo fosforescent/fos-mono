@@ -1,0 +1,65 @@
+{
+  "name": "@fosforescent/infra",
+  "version": "0.1.7",
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    "./prismaClient": "./prismaClient.ts",
+    "./qdrant": "./qdrant.ts"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:smoke": "playwright test e2e-tests/smoke.spec.ts",
+    "test:with-servers": "cd .. && make e2e-test",
+    "test:api": "node apiTests/auth-flow.test.cjs",
+    "test:api:auth": "node apiTests/auth-flow.test.cjs",
+    "test:api:ws": "node apiTests/websocket-flow.test.cjs",
+    "test:api:mcp": "node apiTests/mcp-protocol.test.cjs",
+    "test:api:temporal": "node apiTests/temporal-mcp.test.cjs",
+    "test:api:all": "npm run test:api && npm run test:api:ws && npm run test:api:mcp && npm run test:api:temporal",
+    "install-browsers": "playwright install",
+    "setup": "npm install && npm run install-browsers",
+    "db:generate": "cd prisma && prisma generate",
+    "db:push": "cd prisma && prisma db push",
+    "db:migrate": "cd prisma && prisma migrate dev",
+    "db:reset": "cd prisma && prisma migrate reset",
+    "db:seed": "tsx prisma/seed.ts",
+    "qdrant:seed": "tsx qdrantSeed.ts",
+    "seed:all": "npm run db:seed && npm run qdrant:seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "@qdrant/js-client-rest": "^1.9.0",
+    "openai": "^4.73.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^22.7.7",
+    "typescript": "^5.6.3",
+    "concurrently": "^9.0.1",
+    "prisma": "^6.9.0",
+    "tsx": "^4.19.2",
+    "bcrypt": "^5.1.1",
+    "@types/bcrypt": "^5.0.2",
+    "ws": "^8.14.2"
+  }
+}

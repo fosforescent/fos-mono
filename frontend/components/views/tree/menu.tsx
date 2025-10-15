@@ -11,22 +11,22 @@ import {
   SheetTitle,
   SheetTrigger,
   SheetClose
-} from "@/frontend/components/ui/sheet"
+} from "@/components/ui/sheet"
 
 
 import { TrashIcon, PlayIcon, Folder, MinusCircleIcon, ChevronDownCircleIcon, ChevronRightCircleIcon, LucideCheck, XIcon, ChevronLeftCircleIcon, CircleEllipsis } from "lucide-react"
 import { QuestionMarkCircledIcon, ComponentNoneIcon, Crosshair1Icon, DiscIcon, DragHandleDots2Icon, DotsVerticalIcon, PlusCircledIcon, } from "@radix-ui/react-icons"
 
 
-import { Input } from "@/frontend/components/ui/input"
-import { Button } from "@/frontend/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 
 import { CSS } from '@dnd-kit/utilities';
 
 import _, { update } from 'lodash'
-import { AppState, FosReactOptions, FosPath } from '@/shared/types'
+import { AppState, FosReactOptions, FosPath } from '@fosforescent/shared/types'
 
-import { FosExpression } from '@/shared/dag-implementation/expression'
+import { FosExpression } from '@fosforescent/shared/dag-implementation/expression'
 
 
 

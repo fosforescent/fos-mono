@@ -3,7 +3,7 @@ import { FosDataModule, FosModuleProps } from '../actions/fosModules'
 import { suggestRecursive } from '../../lib/suggestRecursive'
 import { SelectionPath, IFosNode } from "@/fos-js"
 import { Button } from '/components/ui/button'
-import { Input } from '@/frontend/components/ui/input'
+import { Input } from '@/components/ui/input'
 import { FosReactOptions } from '..'
 import { FosWrapper } from '../fosWrapper'
 

@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
 
 import { WebSocketServer, WebSocket } from 'ws';
-
-var WSServer = require('ws').Server;
+import { addUserConnection } from './promptNotifications';
+import { addGroupConnection } from './groupEvents';
+import { prisma } from './prismaClient';
 
 // Create WebSocket server attached to HTTP server
 const wss = new WebSocketServer({ 
@@ -50,34 +51,59 @@ export const attachWs = (server: any) => {
     });
 
     // WebSocket connection handler
-    wss.on('connection', (ws: WebSocket, request: any, decodedToken: any) => {
+    wss.on('connection', async (ws: WebSocket, request: any, decodedToken: any) => {
     console.log('New WebSocket connection:', decodedToken);
     
-    // Send immediate confirmation
-    ws.send(JSON.stringify({ 
-        type: 'connection_established',
-        user: decodedToken
-    }));
+    try {
+        // Get user ID from database
+        const user = await prisma.userModel.findUnique({
+        where: { user_name: decodedToken.username }
+        });
+        
+        if (!user) {
+        console.error('User not found for WebSocket connection:', decodedToken.username);
+        ws.close(1008, 'User not found');
+        return;
+        }
 
-    ws.on('message', (message) => {
-        try {
-        console.log('Received message:', message.toString());
+        // Register this connection for prompt notifications
+        addUserConnection(user.id, ws);
+
+        // Register this connection for group events
+        addGroupConnection(user.id, user.fosNodeId, ws);
+
+        // Send immediate confirmation
         ws.send(JSON.stringify({
+        type: 'connection_established',
+        user: decodedToken,
+        userId: user.id,
+        fosNodeId: user.fosNodeId
+        }));
+
+        ws.on('message', (message) => {
+        try {
+            console.log('Received message:', message.toString());
+            ws.send(JSON.stringify({
             type: 'response',
             message: 'Message received',
             user: decodedToken
-        }));
+            }));
         } catch (error) {
-        console.error('Error processing message:', error);
+            console.error('Error processing message:', error);
         }
-    });
+        });
 
-    ws.on('close', () => {
-        console.log('Client disconnected:', decodedToken);
-    });
+        ws.on('close', () => {
+        console.log('Client disconnected:', decodedToken.username);
+        });
 
-    ws.on('error', (error) => {
+        ws.on('error', (error) => {
         console.error('WebSocket error:', error);
-    });
+        });
+        
+    } catch (error) {
+        console.error('Error setting up WebSocket connection:', error);
+        ws.close(1011, 'Internal server error');
+    }
     });
 }
