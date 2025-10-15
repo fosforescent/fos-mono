@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
@@ -15,17 +16,45 @@ declare const __FOS_API_URL__: string;
 
 
 const apiUrl = __FOS_API_URL__ || "http://localhost:4000"
+=======
+import React, { createContext, useContext, useEffect, useState } from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+
+import { TreeView } from './components/views/tree/TreeLayout'
+import { FosSettingsPage }  from './components/settings'
+
+import { createBrowserRouter, RouterProvider } from "react-router-dom"
+import TodoQueue from './components/views/QueueLayout'
+
+
+import { PinBoard } from './components/home/Pins'
+import { InfoHome } from './components/info/Info'
+import { MarketBrowse } from './components/home/MarketBrowse'
+import QueueView from './components/views/QueueLayout'
+import { FieldTest } from '@/mockups/interactionMockups'
+import { GroupsBrowse } from './components/home/GroupsBrowse'
+
+import './global.css'
+import './App.css'
+import { QueryView } from './components/views/QueryLayout'
+import { BrowseView } from './components/views/BrowseLayout'
+import { DashboardRouter } from './components/DashboardRouter'
+import { publicRuntimeConfig } from './config'
+
+const apiUrl = publicRuntimeConfig.apiUrl
+>>>>>>> middleguy_groups-tmp1
 
 declare global {
-  interface Window { 
+  interface Window {
     Fos: {
       ws: WebSocket;
       apiUrl: string;
-    }; 
+    };
   }
 }
 
-window.Fos = window.Fos || {  
+window.Fos = window.Fos || {
   apiUrl
 };
 

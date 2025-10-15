@@ -7,48 +7,63 @@ locals {
   }
 
   stripe_token = {
-    dev  = local.env_vars["DEV_STRIPE_TOKEN"]
-    prod = local.env_vars["PROD_STRIPE_TOKEN"]
+    default = local.env_vars["DEV_STRIPE_TOKEN"]
+    dev     = local.env_vars["DEV_STRIPE_TOKEN"]
+    prod    = local.env_vars["PROD_STRIPE_TOKEN"]
+  }
+
+  stripe_webhook_secret = {
+    default = local.env_vars["STRIPE_WEBHOOK_SECRET"]
+    dev     = local.env_vars["STRIPE_WEBHOOK_SECRET"]
+    prod    = local.env_vars["STRIPE_WEBHOOK_SECRET"]
   }
 
   stripe_subscription_price_id = {
-    dev  = local.env_vars["DEV_STRIPE_SUBSCRIPTION_PRICE_ID"]
-    prod = local.env_vars["PROD_STRIPE_SUBSCRIPTION_PRICE_ID"]
+    default = local.env_vars["DEV_STRIPE_SUBSCRIPTION_PRICE_ID"]
+    dev     = local.env_vars["DEV_STRIPE_SUBSCRIPTION_PRICE_ID"]
+    prod    = local.env_vars["PROD_STRIPE_SUBSCRIPTION_PRICE_ID"]
   }
 
   stripe_topup_price_id = {
-    dev  = local.env_vars["DEV_STRIPE_TOPUP_PRICE_ID"]
-    prod = local.env_vars["PROD_STRIPE_TOPUP_PRICE_ID"]
+    default = local.env_vars["DEV_STRIPE_TOPUP_PRICE_ID"]
+    dev     = local.env_vars["DEV_STRIPE_TOPUP_PRICE_ID"]
+    prod    = local.env_vars["PROD_STRIPE_TOPUP_PRICE_ID"]
   }
 
   postmark_token = {
-    dev  = local.env_vars["POSTMARK_API_TOKEN"]
-    prod = local.env_vars["POSTMARK_API_TOKEN"]
+    default = local.env_vars["POSTMARK_API_TOKEN"]
+    dev     = local.env_vars["POSTMARK_API_TOKEN"]
+    prod    = local.env_vars["POSTMARK_API_TOKEN"]
   }
 
   email_webhook_pwd = {
-    dev  = local.env_vars["EMAIL_WEBHOOK_PASSWORD"]
-    prod = local.env_vars["EMAIL_WEBHOOK_PASSWORD"]
+    default = local.env_vars["EMAIL_WEBHOOK_PASSWORD"]
+    dev     = local.env_vars["EMAIL_WEBHOOK_PASSWORD"]
+    prod    = local.env_vars["EMAIL_WEBHOOK_PASSWORD"]
   }
 
   openai_api_key = {
-    dev  = local.env_vars["OPENAI_API_KEY"]
-    prod = local.env_vars["OPENAI_API_KEY"]
+    default = local.env_vars["OPENAI_API_KEY"]
+    dev     = local.env_vars["OPENAI_API_KEY"]
+    prod    = local.env_vars["OPENAI_API_KEY"]
   }
 
   pinecone_api_key = {
-    dev  = local.env_vars["PINECONE_API_KEY"]
-    prod = local.env_vars["PINECONE_API_KEY"]
+    default = local.env_vars["PINECONE_API_KEY"]
+    dev     = local.env_vars["PINECONE_API_KEY"]
+    prod    = local.env_vars["PINECONE_API_KEY"]
   }
 
   jwt_secret = {
-    dev  = local.env_vars["DEV_JWT_SECRET"]
-    prod = local.env_vars["PROD_JWT_SECRET"]
+    default = local.env_vars["DEV_JWT_SECRET"]
+    dev     = local.env_vars["DEV_JWT_SECRET"]
+    prod    = local.env_vars["PROD_JWT_SECRET"]
   }
 
   node_env = {
-    dev  = "development"
-    prod = "production"
+    default = "development"
+    dev     = "development"
+    prod    = "production"
   }
 
   env = terraform.workspace

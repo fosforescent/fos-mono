@@ -36,6 +36,7 @@ import { useLocation } from 'react-router-dom'
 import { set } from 'date-fns'
 import { getMockEvents, applyMockEvent } from './hooks/mock-events';
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
+import { publicRuntimeConfig } from './config'
 
 
 
@@ -68,8 +69,6 @@ export const initialAuthState: AuthState = parsedJwt ? {
   password: "",
 }
 
-declare const __FOS_API_URL__: string;
-
 
 
 
@@ -79,7 +78,7 @@ export const initialDataState: AppStateInitial = {
   auth: initialAuthState,
   info: initialInfoState,
   theme: JSON.parse(localStorage.getItem("theme") || "null") || "system",
-  apiUrl: __FOS_API_URL__,
+  apiUrl: publicRuntimeConfig.apiUrl,
   loaded: false,
   loggedIn: !!parsedJwt,
 }
@@ -92,7 +91,7 @@ export default function App({
 
   }) {
 
-  const apiUrl = window.Fos.apiUrl
+  const apiUrl = publicRuntimeConfig.apiUrl
 
 
   const [showCookieConsent, setShowCookieConsent] = useState(false)
