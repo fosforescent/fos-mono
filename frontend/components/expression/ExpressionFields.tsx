@@ -91,13 +91,30 @@ export const ExpressionFields = ({
   const isTodo = false
 
 
-  return (<div className="flex gap-2">
-    <div><DiscIcon /></div>
-    <VersionControlComponent expression={expression} depthToShow={depthToShow} />
-    {/* <ChoiceRowComponent expression={expression} depthToShow={depthToShow} /> */}
+  const expressionType = expression.isTodo()
+    ? 'todo'
+    : expression.isComment()
+      ? 'comment'
+      : 'expression'
+  const description = expression.getDescription()
 
-
-  </div>)
+  return (
+    <div
+      className="flex gap-2 items-center"
+      data-testid={`expression-fields-${expression.expressionId()}`}
+      data-expression-type={expressionType}
+    >
+      <div><DiscIcon /></div>
+      <VersionControlComponent expression={expression} depthToShow={depthToShow} />
+      <span
+        className="text-sm text-foreground"
+        data-testid="expression-description"
+      >
+        {description || (expressionType === 'comment' ? '(empty comment)' : '(no description)')}
+      </span>
+      {/* <ChoiceRowComponent expression={expression} depthToShow={depthToShow} /> */}
+    </div>
+  )
 }
 
 

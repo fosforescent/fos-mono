@@ -456,7 +456,25 @@ export class FosExpression {
   getAllDescendentsForActivity(activity: string): FosPath[] {
     console.log('getAllDescendentsForActivity', activity)
     if (activity === 'comments') {
-      return this.getAllDescendentsMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
+      const existingRoutes = this.getAllDescendentsMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit)
+      const routeKeys = new Set(existingRoutes.map(route => JSON.stringify(route)))
+
+      const globalCommentRoutes = [...this.store.table.entries()]
+        .filter(([cid, node]) => node.data.comment?.scope === "global")
+        .map(([cid]) => {
+          const route: FosPath = [[this.store.primitive.commentConstructor.getId(), cid]]
+          return route
+        })
+        .filter(route => {
+          const key = JSON.stringify(route)
+          if (routeKeys.has(key)) {
+            return false
+          }
+          routeKeys.add(key)
+          return true
+        })
+
+      return [...existingRoutes, ...globalCommentRoutes]
     }
     if (activity === 'todo') {
       return this.getAllDescendentsMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
@@ -1087,31 +1105,38 @@ export class FosExpression {
 
 
 
-  async addComment(comment: string): Promise<FosExpression> {
+  async addComment (comment: string): Promise<FosExpression>  {
+
+    const timestamp = Date.now()
 
     const newCommentNode = this.store.create({
       data: {
         description: {
           content: comment
         },
+        comment: {
+          content: comment,
+          authorID: "global",
+          authorName: "",
+          time: timestamp,
+          votes: {},
+          scope: "global"
+        },
         updated: {
-          time: Date.now()
+          time: timestamp
         },
       },
-      children: [
-      ]
+      children: []
     })
 
-    const rootExpr = this.store.getRootExpression()
+    if (this.store.updateCtxCallback) {
+      this.store.updateCtxCallback(this.store.exportContext(this.store.fosRoute))
+    }
 
-    const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.commentConstructor.getId(), newCommentNode.getId())
-
-    await rootExpr.update(rootExpr.instructionNode, newRootTarget)
-
-    const commentExpr = new FosExpression(this.store, [[this.store.primitive.commentConstructor.getId(), newCommentNode.getId()]])
+    const commentExpr = new FosExpression(this.store, [ [ this.store.primitive.commentConstructor.getId(), newCommentNode.getId() ]])
 
     return commentExpr
-
+    
   }
 
 
@@ -1158,7 +1183,7 @@ export class FosExpression {
     const actualExpr = this.isAlias() ? this.followAlias() : this
     const newTargetChildren = actualExpr.getTargetChildren()
     const groupExpr = newTargetChildren.find((child) =>
-      child.instructionNode.getId() === groupNode.getId()
+      child.targetNode.getId() === groupNode.getId()
     )
 
     if (!groupExpr) {
@@ -1208,7 +1233,7 @@ export class FosExpression {
     const actualExpr = this.isAlias() ? this.followAlias() : this
     const newTargetChildren = actualExpr.getTargetChildren()
     const dmExpr = newTargetChildren.find((child) =>
-      child.instructionNode.getId() === dmNode.getId()
+      child.targetNode.getId() === dmNode.getId()
     )
 
     if (!dmExpr) {

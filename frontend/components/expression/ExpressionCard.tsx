@@ -47,11 +47,19 @@ export const ExpressionCard = ({
 
 
   const todoInfo = expression.isTodo() ? expression.getTodoInfo() : undefined
+  const expressionType = expression.isTodo()
+    ? 'todo'
+    : expression.isComment()
+      ? 'comment'
+      : 'expression'
 
 
 
-
-  return (<Card className="p-4 flex flex-row justify-around">
+  return (<Card
+    className="p-4 flex flex-row justify-around"
+    data-testid={`expression-card-${expressionType}`}
+    data-expression-id={expression.expressionId()}
+  >
     <ExpressionFields
       depthToShow={1}
       mode={["read"]}

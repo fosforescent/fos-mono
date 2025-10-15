@@ -3,6 +3,8 @@ MAKE=make
 include ./../.env
 export $(shell sed 's/=.*//' ./../.env)
 
+FRONTEND_PORT := 5173
+
 build-backend:
 	which node
 	node --version
@@ -51,24 +53,11 @@ test:
 	npm run test
 
 e2e-test:
-	@echo "Setting up e2e tests with hybrid docker-compose + local frontend..."
-	cd infra && docker compose down || true
-	pkill -f "npm run dev:frontend" || true
-	@echo "Starting backend with docker-compose..."
-	cd infra && make backend-up
-	@echo "Waiting for backend to be ready..."
-	sleep 30
-	@echo "Starting frontend locally..."
-	npm run dev:frontend > frontend.log 2>&1 &
-	@echo "Waiting for frontend to start..."
-	sleep 15
-	@echo "Running Playwright tests..."
-	cd e2e && npx playwright test --headed; \
+	@echo "Running Playwright e2e tests via docker-compose smoke profile..."
+	docker compose down || true
+	docker compose up --build --abort-on-container-exit --exit-code-from smoke-test smoke-test; \
 	TEST_EXIT_CODE=$$?; \
-	echo "Stopping servers..."; \
-	pkill -f "npm run dev:frontend" || true; \
-	cd infra && docker compose down || true; \
-	pkill -f "tsx.*backend" || true; \
+	docker compose down || true; \
 	exit $$TEST_EXIT_CODE
 
 	

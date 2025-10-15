@@ -1,76 +1,19 @@
 import { test, expect } from '@playwright/test';
+import { loginWithCredentials } from './helpers/auth';
+
+const TODO_TEST_USER = {
+  email: process.env.SMOKE_TEST_EMAIL || 'user1@fosforescent.com',
+  password: process.env.SMOKE_TEST_PASSWORD || 'user123',
+};
 
 test.describe('Todo Creation', () => {
   test('should authenticate and create todo in inbox', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    
-    // Take screenshot of initial state
-    await page.screenshot({ path: 'auth-test-1-initial.png' });
-    
-    const testEmail = `test-${Date.now()}@example.com`;
-    const testPassword = 'TestPassword123';
-    
-    // First, try logging in with existing seed user
-    const loginEmailInput = page.locator('input[type="email"]').or(page.locator('input[placeholder*="email"]'));
-    const loginPasswordInput = page.locator('input[type="password"]').first(); // Get first password field
-    
-    if (await loginEmailInput.isVisible({ timeout: 3000 })) {
-      console.log('Found auth form, trying existing seed user first...');
-      
-      // Try with seed user credentials
-      await loginEmailInput.fill('dmn322@fosforescent.com');
-      await loginPasswordInput.fill('Dent4567');
-      
-      const loginButton = page.getByRole('button', { name: /sign in/i }).or(page.getByRole('button', { name: /login/i }));
-      if (await loginButton.isVisible({ timeout: 2000 })) {
-        await loginButton.click();
-        await page.waitForLoadState('networkidle');
-        await page.waitForTimeout(2000);
-      }
-      
-      // Check if login was successful
-      const mainUI = page.locator('nav').or(page.locator('[data-testid="main-app"]')).or(page.locator('button').filter({ hasText: /inbox|queue|settings/i }));
-      const loginSuccessful = await mainUI.isVisible({ timeout: 3000 });
-      console.log('Seed user login successful:', loginSuccessful);
-      
-      // If seed user login failed, try registration
-      if (!loginSuccessful) {
-        console.log('Seed user login failed, trying registration...');
-        
-        const registerTab = page.getByRole('tab', { name: /register/i });
-        if (await registerTab.isVisible({ timeout: 2000 })) {
-          await registerTab.click();
-          await page.waitForTimeout(1000);
-          
-          // Fill registration form
-          const registerEmail = page.locator('input[type="email"]');
-          const registerPassword = page.locator('#register-password').or(page.locator('input[placeholder*="Create a password"]'));
-          const confirmPassword = page.locator('#confirm-password').or(page.locator('input[placeholder*="Confirm"]'));
-          
-          await registerEmail.fill(testEmail);
-          await registerPassword.fill(testPassword);
-          if (await confirmPassword.isVisible({ timeout: 1000 })) {
-            await confirmPassword.fill(testPassword);
-          }
-          
-          // Handle terms checkbox
-          const termsCheckbox = page.locator('input[type="checkbox"]').first();
-          if (await termsCheckbox.isVisible({ timeout: 2000 })) {
-            await termsCheckbox.click({ force: true });
-          }
-          
-          const registerButton = page.getByRole('button', { name: /create account/i }).or(page.getByRole('button', { name: /register/i }));
-          if (await registerButton.isVisible({ timeout: 2000 })) {
-            await registerButton.click();
-            await page.waitForLoadState('networkidle');
-            await page.waitForTimeout(3000);
-          }
-        }
-      }
-    }
-    
-    // Navigate to Inbox page where todo input should be
+
+    await loginWithCredentials(page, TODO_TEST_USER.email, TODO_TEST_USER.password);
+
+    // Ensure we are on the inbox page where the todo input lives
     const inboxButton = page.getByRole('button', { name: /inbox/i })
       .or(page.locator('button').filter({ hasText: /inbox/i }))
       .or(page.locator('[href*="inbox"]'))

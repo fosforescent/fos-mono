@@ -544,7 +544,10 @@ export default function App({
   // }, []);
 
 
-  return (<><div className="App h-full bg-background p-0 relative" style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden', "minHeight": "100svh" }}>
+  return (<><div
+    className="App h-full bg-background p-0 relative"
+    data-testid="main-app"
+    style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden', "minHeight": "100svh" }}>
     <div style={{ textAlign: 'left', boxSizing: 'border-box' }} className='w-full'>
       {/* Only show hamburger menu when logged in */}
       {appState.loggedIn && (
@@ -570,7 +573,10 @@ export default function App({
 
         />
       )}
-      <div className=" h-full w-full p-0 m-0" >
+      <div
+        className=" h-full w-full p-0 m-0"
+        data-testid={appState.loggedIn ? "main-content" : undefined}
+      >
 
         {/* Show AuthLanding if not logged in, PendingApproval if not approved, otherwise show main app */}
         {!appState.loggedIn ? (
@@ -587,32 +593,36 @@ export default function App({
             onRefresh={handleRefreshApprovalStatus}
           />
         ) : (
-          appState.loaded && <Outlet context={{
-            data: appState,
-            setData: setAppStateWithEffects,
-            options: global,
-            nodeRoute: appState.data.fosData.route,
-            dialogueProps: {
-              loading: false,
-              setLoading: () => { },
-              showCookies: showCookieConsent,
-              setShowCookies: setShowCookieConsent,
-              showTerms,
-              setShowTerms,
-              showPrivacy,
-              setShowPrivacy,
-              showClearData,
-              setShowClearData,
-              showDeleteAccount,
-              setShowDeleteAccount,
-              showEmailConfirm,
-              setShowEmailConfirm,
-            },
-            tokens: {
-              emailConfirmationToken,
-              passwordResetToken
-            }
-          }} />
+          appState.loaded && (
+            <div data-testid="authenticated-content" className="h-full">
+              <Outlet context={{
+                data: appState,
+                setData: setAppStateWithEffects,
+                options: global,
+                nodeRoute: appState.data.fosData.route,
+                dialogueProps: {
+                  loading: false,
+                  setLoading: () => { },
+                  showCookies: showCookieConsent,
+                  setShowCookies: setShowCookieConsent,
+                  showTerms,
+                  setShowTerms,
+                  showPrivacy,
+                  setShowPrivacy,
+                  showClearData,
+                  setShowClearData,
+                  showDeleteAccount,
+                  setShowDeleteAccount,
+                  showEmailConfirm,
+                  setShowEmailConfirm,
+                },
+                tokens: {
+                  emailConfirmationToken,
+                  passwordResetToken
+                }
+              }} />
+            </div>
+          )
         )}
 
 

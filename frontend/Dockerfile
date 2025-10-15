@@ -8,8 +8,8 @@ COPY package*.json ./
 COPY shared/ ./shared/
 COPY frontend/ ./frontend/
 
-# Install workspace dependencies
-RUN npm install
+# Install workspace dependencies with nested layout to keep esbuild versions isolated
+RUN npm install --install-strategy=nested --install-links=false --workspaces --include-workspace-root=false
 
 # Build argument for API URL (passed from docker-compose)
 ARG VITE_FOS_API_URL=http://localhost:4000

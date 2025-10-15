@@ -3,6 +3,9 @@ MAKE=make
 include ./.env
 export $(shell sed 's/=.*//' ./.env)
 
+INFRA_DIR := $(CURDIR)/infra
+FRONTEND_PORT := 5173
+
 build-backend:
 	which node
 	node --version
@@ -66,24 +69,12 @@ smoke-test:
 	cd infra && npm run test:smoke
 
 e2e-test:
-	@echo "Setting up e2e tests with hybrid docker-compose + local frontend..."
-	cd infra && docker compose down || true
-	pkill -f "npm run dev:frontend" || true
-	@echo "Starting backend with docker-compose..."
-	cd infra && make backend-up
-	@echo "Waiting for backend to be ready..."
-	sleep 30
-	@echo "Starting frontend locally..."
-	npm run dev:frontend > frontend.log 2>&1 &
-	@echo "Waiting for frontend to start..."
-	sleep 15
-	@echo "Running Playwright tests..."
-	cd e2e && npx playwright test --headed; \
+	@echo "Running Playwright e2e tests via docker-compose smoke profile..."
+	cd "$(INFRA_DIR)" && docker compose down --remove-orphans || true
+	cd "$(INFRA_DIR)" && docker compose up -d --build postgres qdrant temporal temporal-ui temporal-worker backend frontend
+	cd "$(INFRA_DIR)" && docker compose run --rm smoke-test; \
 	TEST_EXIT_CODE=$$?; \
-	echo "Stopping servers..."; \
-	pkill -f "npm run dev:frontend" || true; \
-	cd infra && docker compose down || true; \
-	pkill -f "tsx.*backend" || true; \
+	cd "$(INFRA_DIR)" && docker compose down --remove-orphans || true; \
 	exit $$TEST_EXIT_CODE
 
 	

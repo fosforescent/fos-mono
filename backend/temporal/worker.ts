@@ -39,9 +39,11 @@ async function run() {
       })
 
       // Create and start the worker
+      const workflowsModulePath = join(__dirname, 'workflows.ts')
+
       const worker = await Worker.create({
         connection,
-        workflowsPath: join(__dirname, 'workflows'),
+        workflowsPath: workflowsModulePath,
         activities,
         taskQueue: TASK_QUEUE,
         maxConcurrentActivityTaskExecutions: 10,

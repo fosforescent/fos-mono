@@ -1080,7 +1080,7 @@ function sortEdges(edges: FosPathElem[]): FosPathElem[] {
 export function hashContent(content: FosNodeContent): string {
   const normalized = {
     data: JSON.stringify(normalizeObject(content.data)),
-    children: sortEdges(content.children)
+    children: sortEdges(content.children || [])
   }
   return sha3_256(JSON.stringify(normalized))
 }

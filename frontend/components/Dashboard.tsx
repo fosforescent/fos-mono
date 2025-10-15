@@ -143,7 +143,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }
 
   return (
-    <div className={className}>
+    <div className={className} data-testid="dashboard">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>

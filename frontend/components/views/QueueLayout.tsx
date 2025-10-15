@@ -223,13 +223,13 @@ const QueueView = () => {
           <div className="flex flex-row items-center gap-2">
             <Filter className="h-4 w-4" />
             <Select value={currentFilter} onValueChange={setCurrentFilter}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-[150px]" data-testid="queue-filter-trigger">
                 <SelectValue placeholder="Filter by..." />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todo">Todos</SelectItem>
-                <SelectItem value="comments">Comments</SelectItem>
-                <SelectItem value="all">All Items</SelectItem>
+              <SelectContent data-testid="queue-filter-options">
+                <SelectItem value="todo" data-testid="queue-filter-todo">Todos</SelectItem>
+                <SelectItem value="comments" data-testid="queue-filter-comments">Comments</SelectItem>
+                <SelectItem value="all" data-testid="queue-filter-all">All Items</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -238,7 +238,10 @@ const QueueView = () => {
           style={{ height: 'calc(100% - 30rem)' }}
 
         >
-          <ScrollArea id="scrolldiv" className="flex-1 p-0 w-full"
+          <ScrollArea
+            id="scrolldiv"
+            className="flex-1 p-0 w-full"
+            data-testid="queue-expression-list"
             style={{ height: 'calc(100vh - 20rem)' }}
           >
 

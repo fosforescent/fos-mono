@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { prisma } from './prismaClient'
-import { dbToStore, storeToDb } from './util'
+import { dbToStore, ensureNodeInStore, storeToDb } from './util'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { FosNode } from '@fosforescent/shared/dag-implementation/node'
 import { emitMemberJoined } from './groupEvents'
@@ -156,6 +156,10 @@ export const findOrCreateDM = async (req: Request, res: Response) => {
     }
 
     const store = await dbToStore(prisma, currentUser)
+    await ensureNodeInStore(prisma, store, targetUser.fosNodeId)
+    await ensureNodeInStore(prisma, store, targetUser.fosNodeId)
+    await ensureNodeInStore(prisma, store, targetUser.fosNodeId)
+    await ensureNodeInStore(prisma, store, targetUser.fosNodeId)
     const rootExpr = store.getRootExpression()
 
     // Use FosExpression method to create DM
@@ -209,6 +213,7 @@ export const createGroup = async (req: Request, res: Response) => {
           where: { id: parseInt(memberId) }
         })
         if (member && member.fosNodeId !== user.fosNodeId) {
+          await ensureNodeInStore(prisma, store, member.fosNodeId)
           await groupExpr.addMemberToGroup(member.fosNodeId)
         }
       }
@@ -256,6 +261,7 @@ export const addUserToGroup = async (req: Request, res: Response) => {
     }
 
     const store = await dbToStore(prisma, currentUser)
+    await ensureNodeInStore(prisma, store, targetUser.fosNodeId)
 
     // Find the group expression by navigating from root
     const rootExpr = store.getRootExpression()

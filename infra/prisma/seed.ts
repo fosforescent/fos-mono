@@ -1,25 +1,81 @@
 import { PrismaClient } from '@prisma/client'
+import { config as loadEnv } from 'dotenv'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import bcrypt from 'bcrypt'
 import { dbToStore, storeToDb, validateNodeDataToDB } from '../../backend/util'
-import { hashContent } from '@fosforescent/shared/dag-implementation/store'
+import { FosStore, hashContent } from '@fosforescent/shared/dag-implementation/store'
 import type { FosNodeContent } from '@fosforescent/shared/types'
+import { validateNodeData } from '@fosforescent/shared/utils'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+loadEnv({ path: resolve(__dirname, '../../.env') })
 
 const prisma = new PrismaClient()
 
+async function ensureNodeInStore(store: FosStore, nodeCid: string, visited = new Set<string>()) {
+  if (store.table.has(nodeCid) || visited.has(nodeCid)) {
+    return
+  }
+
+  visited.add(nodeCid)
+
+  const nodeRecord = await prisma.fosNodeModel.findUnique({
+    where: { cid: nodeCid }
+  })
+
+  if (!nodeRecord) {
+    throw new Error(`Node ${nodeCid} not found in database while seeding`)
+  }
+
+  const nodeContent = validateNodeData(nodeRecord.data)
+
+  for (const [instructionCid, targetCid] of nodeContent.children) {
+    if (!store.table.has(instructionCid)) {
+      await ensureNodeInStore(store, instructionCid, visited)
+    }
+    if (!store.table.has(targetCid)) {
+      await ensureNodeInStore(store, targetCid, visited)
+    }
+  }
+
+  if (!store.table.has(nodeCid)) {
+    store.create(nodeContent)
+  }
+}
+
 async function main() {
-  // Enable vector extension for embeddings
   await prisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector;')
 
   console.log('Creating seed users...')
 
-  // Create test users sequentially to avoid race conditions
-  await createUser('alice@fosforescent.com', 'alice123', 'Alice Smith', 'user')
-  await createUser('bob@fosforescent.com', 'bob123', 'Bob Johnson', 'user')
-  await createUser('charlie@fosforescent.com', 'charlie123', 'Charlie Williams', 'user')
-  await createUser('diana@fosforescent.com', 'diana123', 'Diana Brown', 'user')
-  await createUser('eve@fosforescent.com', 'eve123', 'Eve Davis', 'user')
+  const seedUsers = [
+    { email: 'admin@fosforescent.com', password: 'admin123', displayName: 'System Admin', role: 'admin' as const },
+    { email: 'user1@fosforescent.com', password: 'user123', displayName: 'Test User One', role: 'user' as const },
+    { email: 'user2@fosforescent.com', password: 'user123', displayName: 'Test User Two', role: 'user' as const },
+    { email: 'alice@fosforescent.com', password: 'alice123', displayName: 'Alice Smith', role: 'user' as const },
+    { email: 'bob@fosforescent.com', password: 'bob123', displayName: 'Bob Johnson', role: 'user' as const },
+    { email: 'charlie@fosforescent.com', password: 'charlie123', displayName: 'Charlie Williams', role: 'user' as const },
+    { email: 'diana@fosforescent.com', password: 'diana123', displayName: 'Diana Brown', role: 'user' as const },
+    { email: 'eve@fosforescent.com', password: 'eve123', displayName: 'Eve Davis', role: 'user' as const }
+  ]
 
-  // Fetch users with fosNode relation for group creation
+  for (const entry of seedUsers) {
+    await createUser(entry.email, entry.password, entry.displayName, entry.role)
+  }
+
+  await prisma.userModel.updateMany({
+    where: {
+      user_name: {
+        in: seedUsers.map((u) => u.email)
+      }
+    },
+    data: {
+      approved: true
+    }
+  })
+
   console.log('About to fetch users with fosNode relation...')
   const users = await prisma.userModel.findMany({
     include: { fosNode: true },
@@ -28,12 +84,19 @@ async function main() {
 
   console.log('Fetched users count:', users.length)
   if (users.length > 0) {
-    console.log('First user:', JSON.stringify({
-      id: users[0].id,
-      username: users[0].user_name,
-      fosNodeId: users[0].fosNodeId,
-      fosNode: users[0].fosNode
-    }, null, 2))
+    console.log(
+      'First user:',
+      JSON.stringify(
+        {
+          id: users[0].id,
+          username: users[0].user_name,
+          fosNodeId: users[0].fosNodeId,
+          fosNode: users[0].fosNode
+        },
+        null,
+        2
+      )
+    )
   }
 
   if (users.length === 0) {
@@ -41,39 +104,41 @@ async function main() {
   }
 
   console.log('Creating groups...')
-
-  // Create various groups among users
   await createGroups(users)
 
   console.log('Creating MCP servers...')
 
-  // Create sample MCP servers
-  const mcpServers = await Promise.all([
-    createMCPServer({
+  const mcpServerDefinitions = [
+    {
       name: 'File System Tools',
       description: 'Tools for file system operations like reading, writing, and listing files',
       endpoint: 'ws://localhost:3001/mcp'
-    }),
-    createMCPServer({
+    },
+    {
       name: 'Web Search API',
       description: 'Search the web and retrieve information from various sources',
       endpoint: 'https://api.websearch.example.com/mcp'
-    }),
-    createMCPServer({
+    },
+    {
       name: 'Database Tools',
       description: 'Tools for database operations and queries',
       endpoint: 'ws://localhost:3002/mcp'
-    }),
-    createMCPServer({
+    },
+    {
       name: 'AI Assistant Tools',
       description: 'AI-powered tools for text processing and analysis',
       endpoint: 'https://ai-tools.example.com/mcp'
-    })
-  ])
+    }
+  ]
+
+  const mcpServers = []
+  for (const definition of mcpServerDefinitions) {
+    const server = await createMCPServer(definition)
+    mcpServers.push(server)
+  }
 
   console.log('Creating MCP tools...')
 
-  // Create tools for each server
   await createToolsForServer(mcpServers[0].id, [
     {
       name: 'read_file',
@@ -182,11 +247,17 @@ async function main() {
 
   console.log('Setting up user access...')
 
-  // Grant access to users for all servers
   for (const user of users) {
     for (const server of mcpServers) {
-      await prisma.userMCPServerAccessModel.create({
-        data: {
+      await prisma.userMCPServerAccessModel.upsert({
+        where: {
+          userId_serverId: {
+            userId: user.id,
+            serverId: server.id
+          }
+        },
+        update: {},
+        create: {
           userId: user.id,
           serverId: server.id,
           role: 'user'
@@ -197,7 +268,6 @@ async function main() {
 
   console.log('Setting up token pricing...')
 
-  // Set up token pricing for tools
   const pricingData = [
     { serverId: mcpServers[0].id, toolName: 'read_file', pricePerUseTokens: 1 },
     { serverId: mcpServers[0].id, toolName: 'write_file', pricePerUseTokens: 2 },
@@ -210,31 +280,51 @@ async function main() {
   ]
 
   for (const pricing of pricingData) {
-    await prisma.mCPToolPricingModel.create({
-      data: pricing
+    await prisma.mCPToolPricingModel.upsert({
+      where: {
+        serverId_toolName: {
+          serverId: pricing.serverId,
+          toolName: pricing.toolName
+        }
+      },
+      update: {
+        pricePerUseTokens: pricing.pricePerUseTokens,
+        isEnabled: true
+      },
+      create: pricing
     })
   }
 
   console.log('Setting up initial token balances...')
 
-  // Give users initial token balances
   for (const user of users) {
     const initialTokens = user.role === 'admin' ? 10000 : 1000
-    await prisma.userTokenBalanceModel.create({
-      data: {
+    await prisma.userTokenBalanceModel.upsert({
+      where: { userId: user.id },
+      update: {
+        availableTokens: initialTokens,
+        totalPurchased: initialTokens,
+        totalUsed: 0,
+        subscriptionTokens: initialTokens,
+        purchasedTokens: 0
+      },
+      create: {
         userId: user.id,
         availableTokens: initialTokens,
         totalPurchased: initialTokens,
         totalUsed: 0,
-        subscriptionTokens: initialTokens, // Initial grant as subscription tokens
+        subscriptionTokens: initialTokens,
         purchasedTokens: 0
       }
     })
 
-    // Create initial token credit transaction
-    await prisma.tokenTransactionModel.create({
-      data: {
-        transactionId: `initial_credit_${user.id}_${Date.now()}`,
+    await prisma.tokenTransactionModel.upsert({
+      where: {
+        transactionId: `initial_credit_${user.id}`
+      },
+      update: {},
+      create: {
+        transactionId: `initial_credit_${user.id}`,
         userId: user.id,
         type: 'subscription_grant',
         amount: initialTokens,
@@ -251,15 +341,33 @@ async function main() {
 
   console.log('Seed data created successfully!')
   console.log(`Created ${users.length} users`)
-  console.log(`Created ${mcpServers.length} MCP servers`)
-  console.log(`Created ${pricingData.length} tool pricing entries`)
+  console.log(`Ensured ${mcpServers.length} MCP servers`)
+  console.log(`Configured ${pricingData.length} tool pricing entries`)
 }
 
 async function createUser(email: string, password: string, displayName: string, role: 'admin' | 'user') {
+  const existingUser = await prisma.userModel.findUnique({
+    where: { user_name: email },
+    include: { fosNode: true }
+  })
+
+  if (existingUser) {
+    if (!existingUser.approved) {
+      await prisma.userModel.update({
+        where: { user_name: email },
+        data: { approved: true }
+      })
+    }
+    console.log(`User ${email} already exists, skipping creation`)
+    return await prisma.userModel.findUnique({
+      where: { user_name: email },
+      include: { fosNode: true }
+    })
+  }
+
   const hashedPassword = await bcrypt.hash(password, 10)
   const { v4: uuidv4 } = await import('uuid')
 
-  // Create the actual workspace root node
   const workspaceContent: FosNodeContent = {
     data: {
       description: {
@@ -279,7 +387,6 @@ async function createUser(email: string, password: string, displayName: string, 
     }
   })
 
-  // Create an alias node that points to the workspace
   const aliasId = uuidv4()
   const aliasContent: FosNodeContent = {
     data: {
@@ -287,7 +394,7 @@ async function createUser(email: string, password: string, displayName: string, 
         id: aliasId
       }
     },
-    children: [[workspaceCid, workspaceCid]] as FosNodeContent["children"]
+    children: [[workspaceCid, workspaceCid]] as FosNodeContent['children']
   }
   const aliasCid = hashContent(aliasContent)
 
@@ -300,18 +407,18 @@ async function createUser(email: string, password: string, displayName: string, 
     }
   })
 
-  // Create user with reference to the alias node
   const user = await prisma.userModel.create({
     data: {
       user_name: email,
       password: hashedPassword,
-      role: role,
+      role,
       accepted_terms: new Date(),
-      fosNodeId: aliasNode.cid, // Points to the alias node
+      fosNodeId: aliasNode.cid,
       user_profile: {
-        displayName: displayName,
-        email: email
+        displayName,
+        email
       },
+      approved: true,
       data: {
         nodes: {},
         route: [],
@@ -320,7 +427,6 @@ async function createUser(email: string, password: string, displayName: string, 
     }
   })
 
-  // Create access links for both nodes
   await prisma.fosNodeUserAccessLinkModel.createMany({
     data: [
       {
@@ -338,150 +444,214 @@ async function createUser(email: string, password: string, displayName: string, 
 }
 
 async function createGroups(users: any[]) {
-  console.log('createGroups received users:', users.map(u => ({ id: u.id, fosNodeId: u.fosNodeId, hasFosNode: !!u.fosNode })))
-
-  // TODO: DM creation disabled - there's an issue with createDM not finding the DM after creation
-  // The architecture needs to be revisited - DMs should be standalone nodes that both users reference
-  // For now, users are created and E2E tests can test without DMs
-
-  console.log('Skipping DM creation - users created successfully')
-
-  // Send a message in the DM
-  const aliceStore2 = await dbToStore(prisma, users[0])
-  const aliceRoot2 = aliceStore2.getRootExpression()
-  const dmExpr = aliceRoot2.getTargetChildren().find(
-    child => child.targetNode.getId() === dmAliceBob.targetNode.getId()
+  console.log(
+    'createGroups received users:',
+    users.map((u) => ({ id: u.id, email: u.user_name, fosNodeId: u.fosNodeId, hasFosNode: !!u.fosNode }))
   )
-  if (dmExpr) {
-    await dmExpr.sendGroupMessage('Hey Bob! How are you?', users[0].fosNodeId, 'Alice Smith')
-  }
-  await storeToDb(prisma, users[0], aliceStore2)
 
-  // Group 2: Small team - Alice, Charlie, Diana (3 members)
+  const userByEmail = new Map(users.map((u) => [u.user_name, u]))
+
+  const admin = userByEmail.get('admin@fosforescent.com')
+  const alice = userByEmail.get('alice@fosforescent.com')
+  const bob = userByEmail.get('bob@fosforescent.com')
+  const charlie = userByEmail.get('charlie@fosforescent.com')
+  const diana = userByEmail.get('diana@fosforescent.com')
+  const eve = userByEmail.get('eve@fosforescent.com')
+  const user1 = userByEmail.get('user1@fosforescent.com')
+  const user2 = userByEmail.get('user2@fosforescent.com')
+
+  const requiredUsers = [
+    { key: 'admin', value: admin },
+    { key: 'alice', value: alice },
+    { key: 'bob', value: bob },
+    { key: 'charlie', value: charlie },
+    { key: 'diana', value: diana },
+    { key: 'eve', value: eve },
+    { key: 'user1', value: user1 },
+    { key: 'user2', value: user2 }
+  ]
+
+  const missing = requiredUsers.filter((entry) => !entry.value).map((entry) => entry.key)
+  if (missing.length > 0) {
+    throw new Error(`Missing required users for group seed: ${missing.join(', ')}`)
+  }
+
+  console.log('Creating DM between Alice and Bob...')
+  const aliceStore = await dbToStore(prisma, alice)
+  await ensureNodeInStore(aliceStore, bob.fosNodeId)
+  const aliceRoot = aliceStore.getRootExpression()
+  await aliceRoot.createDM(bob.fosNodeId)
+  await storeToDb(prisma, alice, aliceStore)
+
+  const bobStoreForDM = await dbToStore(prisma, bob)
+  await ensureNodeInStore(bobStoreForDM, alice.fosNodeId)
+  const bobRootForDM = bobStoreForDM.getRootExpression()
+  await bobRootForDM.createDM(alice.fosNodeId)
+  await storeToDb(prisma, bob, bobStoreForDM)
+
   console.log('Creating small team: Alice, Charlie, Diana...')
-  const aliceStore3 = await dbToStore(prisma, users[0])
-  const aliceRoot3 = aliceStore3.getRootExpression()
-  const teamGroup = await aliceRoot3.createGroup(
-    'Design Team',
-    'Team working on design projects',
-    'private'
-  )
-  await teamGroup.addMemberToGroup(users[2].fosNodeId) // Charlie
-  await teamGroup.addMemberToGroup(users[3].fosNodeId) // Diana
-  await storeToDb(prisma, users[0], aliceStore3)
+  const aliceStoreTeam = await dbToStore(prisma, alice)
+  await ensureNodeInStore(aliceStoreTeam, charlie.fosNodeId)
+  await ensureNodeInStore(aliceStoreTeam, diana.fosNodeId)
+  const aliceRootTeam = aliceStoreTeam.getRootExpression()
+  const resolveGroupExpression = (expr: any) => (expr?.isAlias && expr.isAlias() ? expr.followAlias() : expr)
 
-  // Send messages in the team
-  const aliceStore4 = await dbToStore(prisma, users[0])
-  const aliceRoot4 = aliceStore4.getRootExpression()
-  const teamExpr = aliceRoot4.getTargetChildren().find(
-    child => child.targetNode.getData().group?.name === 'Design Team'
+  let teamGroup = aliceRootTeam.getTargetChildren().find(
+    (child) => child.targetNode.getData().group?.name === 'Design Team'
   )
-  if (teamExpr) {
-    await teamExpr.sendGroupMessage('Welcome to the design team!', users[0].fosNodeId, 'Alice Smith')
-    await teamExpr.sendGroupMessage('Happy to be here!', users[2].fosNodeId, 'Charlie Williams')
+  if (!teamGroup) {
+    teamGroup = await aliceRootTeam.createGroup('Design Team', 'Team working on design projects', 'public')
   }
-  await storeToDb(prisma, users[0], aliceStore4)
+  let resolvedTeamGroup = resolveGroupExpression(teamGroup)
+  if (!resolvedTeamGroup || !resolvedTeamGroup.isGroup()) {
+    throw new Error('Resolved Design Team expression is not a group')
+  }
+  resolvedTeamGroup = await resolvedTeamGroup.addMemberToGroup(charlie.fosNodeId)
+  resolvedTeamGroup = await resolvedTeamGroup.addMemberToGroup(diana.fosNodeId)
+  await storeToDb(prisma, alice, aliceStoreTeam)
 
-  // Group 3: Medium team - Bob, Charlie, Diana, Eve (4 members)
   console.log('Creating medium team: Bob, Charlie, Diana, Eve...')
-  const bobStore = await dbToStore(prisma, users[1])
+  const bobStore = await dbToStore(prisma, bob)
+  await ensureNodeInStore(bobStore, charlie.fosNodeId)
+  await ensureNodeInStore(bobStore, diana.fosNodeId)
+  await ensureNodeInStore(bobStore, eve.fosNodeId)
   const bobRoot = bobStore.getRootExpression()
-  const devGroup = await bobRoot.createGroup(
-    'Development Team',
-    'Backend and frontend developers',
-    'public'
+  let devGroup = bobRoot.getTargetChildren().find(
+    (child) => child.targetNode.getData().group?.name === 'Development Team'
   )
-  await devGroup.addMemberToGroup(users[2].fosNodeId) // Charlie
-  await devGroup.addMemberToGroup(users[3].fosNodeId) // Diana
-  await devGroup.addMemberToGroup(users[4].fosNodeId) // Eve
-  await storeToDb(prisma, users[1], bobStore)
-
-  // Send messages
-  const bobStore2 = await dbToStore(prisma, users[1])
-  const bobRoot2 = bobStore2.getRootExpression()
-  const devExpr = bobRoot2.getTargetChildren().find(
-    child => child.targetNode.getData().group?.name === 'Development Team'
-  )
-  if (devExpr) {
-    await devExpr.sendGroupMessage('Let\'s build something great!', users[1].fosNodeId, 'Bob Johnson')
+  if (!devGroup) {
+    devGroup = await bobRoot.createGroup('Development Team', 'Backend and frontend developers', 'public')
   }
-  await storeToDb(prisma, users[1], bobStore2)
+  let resolvedDevGroup = resolveGroupExpression(devGroup)
+  resolvedDevGroup = await resolvedDevGroup.addMemberToGroup(charlie.fosNodeId)
+  resolvedDevGroup = await resolvedDevGroup.addMemberToGroup(diana.fosNodeId)
+  resolvedDevGroup = await resolvedDevGroup.addMemberToGroup(eve.fosNodeId)
+  await storeToDb(prisma, bob, bobStore)
 
-  // Group 4: Large team - All 5 members
   console.log('Creating large team: All members...')
-  const charlieStore = await dbToStore(prisma, users[2])
+  const charlieStore = await dbToStore(prisma, charlie)
+  await ensureNodeInStore(charlieStore, alice.fosNodeId)
+  await ensureNodeInStore(charlieStore, bob.fosNodeId)
+  await ensureNodeInStore(charlieStore, diana.fosNodeId)
+  await ensureNodeInStore(charlieStore, eve.fosNodeId)
+  await ensureNodeInStore(charlieStore, user1.fosNodeId)
   const charlieRoot = charlieStore.getRootExpression()
-  const allHandsGroup = await charlieRoot.createGroup(
-    'All Hands',
-    'Company-wide announcements and discussions',
-    'public'
+  let allHandsGroup = charlieRoot.getTargetChildren().find(
+    (child) => child.targetNode.getData().group?.name === 'All Hands'
   )
-  await allHandsGroup.addMemberToGroup(users[0].fosNodeId) // Alice
-  await allHandsGroup.addMemberToGroup(users[1].fosNodeId) // Bob
-  await allHandsGroup.addMemberToGroup(users[3].fosNodeId) // Diana
-  await allHandsGroup.addMemberToGroup(users[4].fosNodeId) // Eve
-  await storeToDb(prisma, users[2], charlieStore)
-
-  // Send messages
-  const charlieStore2 = await dbToStore(prisma, users[2])
-  const charlieRoot2 = charlieStore2.getRootExpression()
-  const allHandsExpr = charlieRoot2.getTargetChildren().find(
-    child => child.targetNode.getData().group?.name === 'All Hands'
-  )
-  if (allHandsExpr) {
-    await allHandsExpr.sendGroupMessage('Welcome everyone!', users[2].fosNodeId, 'Charlie Williams')
-    await allHandsExpr.sendGroupMessage('Excited to collaborate!', users[3].fosNodeId, 'Diana Brown')
-    await allHandsExpr.sendGroupMessage('This is going to be great!', users[4].fosNodeId, 'Eve Davis')
+  if (!allHandsGroup) {
+    allHandsGroup = await charlieRoot.createGroup(
+      'All Hands',
+      'Company-wide announcements and discussions',
+      'public'
+    )
   }
-  await storeToDb(prisma, users[2], charlieStore2)
+  let resolvedAllHands = resolveGroupExpression(allHandsGroup)
+  resolvedAllHands = await resolvedAllHands.addMemberToGroup(alice.fosNodeId)
+  resolvedAllHands = await resolvedAllHands.addMemberToGroup(bob.fosNodeId)
+  resolvedAllHands = await resolvedAllHands.addMemberToGroup(diana.fosNodeId)
+  resolvedAllHands = await resolvedAllHands.addMemberToGroup(eve.fosNodeId)
+  resolvedAllHands = await resolvedAllHands.addMemberToGroup(user1.fosNodeId)
+  await storeToDb(prisma, charlie, charlieStore)
 
-  // Group 5: Another DM - Diana and Eve
+  const allHandsCid = resolveGroupExpression(allHandsGroup)?.targetNode?.getId()
+  if (allHandsCid) {
+    const user1StoreForAllHands = await dbToStore(prisma, user1)
+    await ensureNodeInStore(user1StoreForAllHands, allHandsCid)
+    await storeToDb(prisma, user1, user1StoreForAllHands)
+  }
+
+  console.log('Creating public support group for user1, admin, user2...')
+  const user1Store = await dbToStore(prisma, user1)
+  await ensureNodeInStore(user1Store, admin.fosNodeId)
+  await ensureNodeInStore(user1Store, user2.fosNodeId)
+  const user1Root = user1Store.getRootExpression()
+  let supportGroup = user1Root.getTargetChildren().find(
+    (child) => child.targetNode.getData().group?.name === 'Support Desk'
+  )
+  if (!supportGroup) {
+    supportGroup = await user1Root.createGroup(
+      'Support Desk',
+      'Customer support handoffs and updates',
+      'public'
+    )
+  }
+  let resolvedSupportGroup = resolveGroupExpression(supportGroup)
+  resolvedSupportGroup = await resolvedSupportGroup.addMemberToGroup(admin.fosNodeId)
+  resolvedSupportGroup = await resolvedSupportGroup.addMemberToGroup(user2.fosNodeId)
+  await storeToDb(prisma, user1, user1Store)
+
+  const supportGroupCid = resolveGroupExpression(supportGroup)?.targetNode?.getId()
+  if (supportGroupCid) {
+    const adminStore = await dbToStore(prisma, admin)
+    await ensureNodeInStore(adminStore, supportGroupCid)
+    await storeToDb(prisma, admin, adminStore)
+
+    const user2Store = await dbToStore(prisma, user2)
+    await ensureNodeInStore(user2Store, supportGroupCid)
+    await storeToDb(prisma, user2, user2Store)
+  }
+
   console.log('Creating DM between Diana and Eve...')
-  const dianaStore = await dbToStore(prisma, users[3])
+  const dianaStore = await dbToStore(prisma, diana)
+  await ensureNodeInStore(dianaStore, eve.fosNodeId)
   const dianaRoot = dianaStore.getRootExpression()
-  const dmDianaEve = await dianaRoot.createDM(users[4].fosNodeId)
-  await storeToDb(prisma, users[3], dianaStore)
+  await dianaRoot.createDM(eve.fosNodeId)
+  await storeToDb(prisma, diana, dianaStore)
 
-  // Send a message
-  const dianaStore2 = await dbToStore(prisma, users[3])
-  const dianaRoot2 = dianaStore2.getRootExpression()
-  const dmExpr2 = dianaRoot2.getTargetChildren().find(
-    child => child.targetNode.getId() === dmDianaEve.targetNode.getId()
-  )
-  if (dmExpr2) {
-    await dmExpr2.sendGroupMessage('Hi Eve! Want to grab coffee?', users[3].fosNodeId, 'Diana Brown')
-  }
-  await storeToDb(prisma, users[3], dianaStore2)
+  const eveStore = await dbToStore(prisma, eve)
+  await ensureNodeInStore(eveStore, diana.fosNodeId)
+  const eveRoot = eveStore.getRootExpression()
+  await eveRoot.createDM(diana.fosNodeId)
+  await storeToDb(prisma, eve, eveStore)
 
-  console.log('Created 5 groups:')
-  console.log('  - DM: Alice & Bob')
-  console.log('  - Design Team: Alice, Charlie, Diana (3 members)')
-  console.log('  - Development Team: Bob, Charlie, Diana, Eve (4 members, public)')
-  console.log('  - All Hands: All 5 members (public)')
-  console.log('  - DM: Diana & Eve')
+  console.log('Created seed groups:')
+  console.log('  • DM: Alice & Bob')
+  console.log('  • Design Team: Alice, Charlie, Diana')
+  console.log('  • Development Team: Bob, Charlie, Diana, Eve')
+  console.log('  • All Hands: Alice, Bob, Charlie, Diana, Eve, user1')
+  console.log('  • Support Desk: user1, admin, user2')
+  console.log('  • DM: Diana & Eve')
 }
 
-async function createMCPServer(data: {
-  name: string
-  description: string
-  endpoint: string
-}) {
-  return await prisma.mCPServerModel.create({
-    data: {
+async function createMCPServer(data: { name: string; description: string; endpoint: string }) {
+  const server = await prisma.mCPServerModel.upsert({
+    where: { name: data.name },
+    update: {
+      description: data.description,
+      endpoint: data.endpoint
+    },
+    create: {
       name: data.name,
       description: data.description,
       endpoint: data.endpoint,
       status: 'disconnected'
     }
   })
+
+  return server
 }
 
-async function createToolsForServer(serverId: number, tools: Array<{
-  name: string
-  description: string
-  inputSchema: any
-}>) {
+async function createToolsForServer(
+  serverId: number,
+  tools: Array<{
+    name: string
+    description: string
+    inputSchema: any
+  }>
+) {
   for (const tool of tools) {
+    const existing = await prisma.mCPToolModel.findFirst({
+      where: {
+        serverId,
+        name: tool.name
+      }
+    })
+
+    if (existing) {
+      continue
+    }
+
     await prisma.mCPToolModel.create({
       data: {
         serverId,
@@ -496,7 +666,6 @@ async function createToolsForServer(serverId: number, tools: Array<{
 main()
   .then(async () => {
     await prisma.$disconnect()
-    console.log('Seed completed successfully')
   })
   .catch(async (e) => {
     console.error('Seed failed:', e)

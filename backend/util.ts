@@ -72,11 +72,20 @@ export const dbToStore = async (
 
   const nodesToAdd = await prisma.fosNodeModel.findMany({
     where: {
-      FosNodeUserAccessLink: {
-        some: {
-          userId: user.id
+      OR: [
+        {
+          FosNodeUserAccessLink: {
+            some: {
+              userId: user.id
+            }
+          }
+        },
+        {
+          FosNodeUserAccessLink: {
+            none: {}
+          }
         }
-      }
+      ]
     }
   })
 
@@ -123,11 +132,20 @@ export const dbToStore = async (
           cid: {
             in: [...allIds]
           },
-          FosNodeUserAccessLink: {
-            some: {
-              userId: user.id
+          OR: [
+            {
+              FosNodeUserAccessLink: {
+                some: {
+                  userId: user.id
+                }
+              }
+            },
+            {
+              FosNodeUserAccessLink: {
+                none: {}
+              }
             }
-          }
+          ]
         }
       })
 
@@ -156,6 +174,45 @@ export const dbToStore = async (
 
 };
 
+export const ensureNodeInStore = async (
+  prisma: PrismaClient,
+  store: FosStore,
+  nodeCid: string,
+  visited: Set<string> = new Set(),
+): Promise<void> => {
+  if (store.table.has(nodeCid) || visited.has(nodeCid)) {
+    return
+  }
+
+  visited.add(nodeCid)
+
+  const nodeRecord = await prisma.fosNodeModel.findUnique({
+    where: { cid: nodeCid }
+  })
+
+  if (!nodeRecord) {
+    throw new Error(`Node ${nodeCid} not found in database`)
+  }
+
+  const nodeContent = validateNodeData(nodeRecord.data)
+
+  for (const [instructionCid, targetCid] of nodeContent.children) {
+    if (!store.table.has(instructionCid)) {
+      await ensureNodeInStore(prisma, store, instructionCid, visited)
+    }
+    if (!store.table.has(targetCid)) {
+      await ensureNodeInStore(prisma, store, targetCid, visited)
+    }
+  }
+
+  if (!store.table.has(nodeCid)) {
+    const insertedNode = store.create(nodeContent)
+    if (insertedNode.getId() !== nodeCid) {
+      throw new Error(`Hash mismatch when inserting node ${nodeCid}`)
+    }
+  }
+}
+
 
 export const storeToDb = async (
   prisma: PrismaClient,
@@ -163,63 +220,85 @@ export const storeToDb = async (
   store: FosStore,
 ): Promise<FosStore> => {
 
-
   const existingNodes = await prisma.fosNodeModel.findMany({
     where: {
-      FosNodeUserAccessLink: {
-        some: {
-          userId: user.id
+      OR: [
+        {
+          FosNodeUserAccessLink: {
+            some: {
+              userId: user.id
+            }
+          }
+        },
+        {
+          FosNodeUserAccessLink: {
+            none: {}
+          }
         }
-      }
+      ]
     }
   })
 
   existingNodes.forEach(n => {
     const hashed = store.hash(validateNodeData(n.data))
-    if (n.cid === hashed) {
+    if (n.cid !== hashed) {
       throw new Error("Hashes don't match")
     }
   })
 
-  type ReduceResultArrayTerm = {
-    cid: string,
-    data: JsonObject,
-    FosNodeUserAccessLink: {
-      create: {
-        userId: number
-      }
+  const shouldLinkNodeToUser = (node: FosNodeContent) => {
+    const scope = node.data.comment?.scope
+    if (scope === "global") {
+      return false
     }
+    return true
   }
 
-  const newEntries: ReduceResultArrayTerm[] = store.table.entries().reduce((acc: ReduceResultArrayTerm[], [id, node]: [string, FosNodeContent]) => {
+  const nodesToCreate: { cid: string, data: JsonObject }[] = []
+  const linksToEnsure: string[] = []
+
+  store.table.entries().forEach(([id, node]: [string, FosNodeContent]) => {
     if (id !== hashContent(node)) {
       throw new Error("Hashes don't match")
     }
 
-    if (existingNodes.find(n => n.cid === id)) {
-      return acc
-    } else {
-      return [...acc, {
+    const alreadyExists = existingNodes.find(n => n.cid === id)
+    if (!alreadyExists) {
+      nodesToCreate.push({
         cid: id,
-        data: validateNodeDataToDB(node),
-        FosNodeUserAccessLink: {
-          create: {
-            userId: user.id
-          }
-        }
-      }]
+        data: validateNodeDataToDB(node)
+      })
     }
-  }, [])
 
-
-  const nodes = prisma.fosNodeModel.createMany({
-    data: newEntries
+    if (shouldLinkNodeToUser(node)) {
+      linksToEnsure.push(id)
+    }
   })
+
+  if (nodesToCreate.length > 0) {
+    await prisma.fosNodeModel.createMany({
+      data: nodesToCreate,
+      skipDuplicates: true
+    })
+  }
+
+  const uniqueLinksToEnsure = [...new Set(linksToEnsure)]
+
+  if (uniqueLinksToEnsure.length > 0) {
+    await prisma.fosNodeUserAccessLinkModel.createMany({
+      data: uniqueLinksToEnsure.map(fosNodeId => ({
+        fosNodeId,
+        userId: user.id
+      })),
+      skipDuplicates: true
+    })
+  }
 
   const updatedUser = await prisma.userModel.update({
     where: { user_name: user.user_name },
-    data: {
+    data: { 
       data: validateTrellisDataToDB(store.trellisData),
+      fosNodeId: store.rootNodeId,
       FosNodeUserAccessLink: {
         create: {
           fosNodeId: store.rootNodeId

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-import { buttonVariants, Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 
 import { logo } from "../../assets"
 
@@ -12,8 +12,7 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
-  SheetClose
+  SheetTrigger
 } from "@/components/ui/sheet"
 
 
@@ -126,6 +125,12 @@ const HamburgerMenu = ({
 
   const [accordionValue, setAccordionValue] = useState(loggedIn() ? "nav" : "account")
 
+  const navLinks = [
+    { to: '/inbox', label: 'Inbox', testId: 'menu-inbox', show: loggedIn(), end: true },
+    { to: '/groups', label: 'Groups', testId: 'menu-groups', show: loggedIn() },
+    { to: '/settings', label: 'Settings', testId: 'menu-settings', show: loggedIn(), end: true }
+  ]
+
 
   useEffect(() => {
     if (!loggedIn()) {
@@ -156,11 +161,28 @@ const HamburgerMenu = ({
       </div>
       <div>
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-          <SheetTrigger><Menu /></SheetTrigger>
+          <SheetTrigger
+            data-testid="hamburger-menu"
+            aria-label="Open navigation menu"
+            className="hidden md:inline-flex"
+          >
+            <Menu />
+          </SheetTrigger>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden h-10 w-10"
+            data-testid="mobile-menu-toggle"
+            aria-label="Open navigation menu"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Menu />
+          </Button>
           <SheetContent
             className="md:min-w-[80%] sm:min-w-full flex flex-col justify-start gap-5 !border-none"
             side={'left'}
             aria-description='Fos Menu'
+            data-testid="mobile-menu"
           >
             {/* <SheetHeader className="mb-10">
               Fos
@@ -189,147 +211,36 @@ const HamburgerMenu = ({
                 <AccordionContent>
                   {loggedIn() && (<div className="grow h-full">
                     <nav className="p-4 space-y-2 flex flex-col justify-center h-full">
-                      <Button
-                        asChild
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <NavLink
-                          to="/inbox"
-                          className={({ isActive }) =>
-                            cn(
-                              "w-full",
-                              isActive && "bg-accent text-accent-foreground"
-                            )
-                          }
-                          end
+                      {navLinks.filter((link) => link.show).map((link) => (
+                        <Button
+                          key={link.testId}
+                          asChild
+                          variant="ghost"
+                          className="w-full justify-start"
+                          onClick={() => setMenuOpen(false)}
                         >
-                          Inbox
-                        </NavLink>
-                      </Button>
-                      <Button
-                        asChild
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <NavLink
-                          to="/agora"
-                          className={({ isActive }) =>
-                            cn(
-                              "w-full",
-                              isActive && "bg-accent text-accent-foreground"
-                            )
-                          }
-                          end
-                        >
-                          Agora
-                        </NavLink>
-                      </Button>
-
-                      <Button
-                        asChild
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <NavLink
-                          to="/market"
-                          className={({ isActive }) =>
-                            cn(
-                              "w-full",
-                              isActive && "bg-accent text-accent-foreground"
-                            )
-                          }
-                          end
-                        >
-                          Market
-                        </NavLink>
-                      </Button>
-                      <Button
-                        asChild
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <NavLink
-                          to="/folders"
-                          className={({ isActive }) =>
-                            cn(
-                              "w-full",
-                              isActive && "bg-accent text-accent-foreground"
-                            )
-                          }
-                          end
-                        >
-                          Folders
-                        </NavLink>
-                      </Button>
-                      {/* <Button
-                  asChild
-                  variant="ghost"
-                  className="w-full justify-start"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <NavLink
-                    to="/search"
-                    className={({ isActive }) =>
-                      cn(
-                        "w-full",
-                        isActive && "bg-accent text-accent-foreground"
-                      )
-                    }
-                    end
-                  >
-                    Search
-                  </NavLink>
-                </Button> */}
-                      <Button
-                        asChild
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <NavLink
-                          to="/info"
-                          className={({ isActive }) =>
-                            cn(
-                              "w-full",
-                              isActive && "bg-accent text-accent-foreground"
-                            )
-                          }
-                          end
-                        >
-                          Info
-                        </NavLink>
-                      </Button>
-                      <Button
-                        asChild
-                        variant="ghost"
-                        onClick={() => setMenuOpen(false)}
-                        className="w-full justify-start"
-                      >
-                        <NavLink
-                          to="/settings"
-                          className={({ isActive }) =>
-                            cn(
-                              "w-full",
-                              isActive && "bg-accent text-accent-foreground"
-                            )
-                          }
-                          end
-                        >
-                          Settings
-                        </NavLink>
-                      </Button>
+                          <NavLink
+                            to={link.to}
+                            data-testid={link.testId}
+                            className={({ isActive }) =>
+                              cn(
+                                "w-full",
+                                isActive && "bg-accent text-accent-foreground"
+                              )
+                            }
+                            end={link.end}
+                          >
+                            {link.label}
+                          </NavLink>
+                        </Button>
+                      ))}
                     </nav>
 
                   </div>)}
                 </AccordionContent>
               </AccordionItem>}
               <AccordionItem value="account">
-                <AccordionTrigger>Account </AccordionTrigger>
+                <AccordionTrigger data-testid="menu-account">Account </AccordionTrigger>
                 <AccordionContent>
                   {!loggedIn()
                     ? <LoginRegister
@@ -366,7 +277,7 @@ const HamburgerMenu = ({
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="help">
-                <AccordionTrigger>Contact</AccordionTrigger>
+                <AccordionTrigger data-testid="menu-help">Contact</AccordionTrigger>
                 <AccordionContent>
                   <div className='p-3'>
                     <Input type='email' placeholder='Your email' className='my-3' value={messageEmail} onChange={handleMessageEmailChange} />

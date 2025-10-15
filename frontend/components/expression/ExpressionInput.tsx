@@ -82,17 +82,21 @@ export const ExpressionInput = ({
   const shouldShowForm = expression.isBase() && (activeFilter === "todo" || activeFilter === "comments" || activeFilter === "all")
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 px-10 py-5">
+    <form
+      onSubmit={handleSubmit}
+      className="flex gap-2 px-10 py-5"
+      data-testid="queue-expression-form"
+    >
       {shouldShowForm && (
         <>
           {activeFilter === "all" && (
             <Select value={selectedItemType} onValueChange={setSelectedItemType}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[120px]" data-testid="queue-expression-type-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="todo">Todo</SelectItem>
-                <SelectItem value="comments">Comment</SelectItem>
+                <SelectItem value="todo" data-testid="queue-expression-type-todo">Todo</SelectItem>
+                <SelectItem value="comments" data-testid="queue-expression-type-comment">Comment</SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -102,8 +106,9 @@ export const ExpressionInput = ({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewMessage(e.target.value)}
             placeholder={getPlaceholderText()}
             className="flex-1"
+            data-testid="queue-expression-input"
           />
-          <Button type="submit" variant="default">
+          <Button type="submit" variant="default" data-testid="queue-expression-submit">
             <Send className="h-4 w-4 mr-2" />
             {getButtonText()}
           </Button>

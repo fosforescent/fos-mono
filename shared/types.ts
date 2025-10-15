@@ -78,6 +78,7 @@ export type FosDataContent = {
     votes: {
       [key: string]: string;
     }
+    scope?: "global" | "private";
   }
   peers?: {
     [key: string]: {

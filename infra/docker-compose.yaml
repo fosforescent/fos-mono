@@ -24,6 +24,7 @@ services:
       - backend
       - full
       - full-with-smoke
+      - smoke
 
   # Qdrant vector database
   qdrant:
@@ -84,6 +85,7 @@ services:
       - backend
       - full
       - full-with-smoke
+      - smoke
 
   # Temporal UI
   temporal-ui:
@@ -183,6 +185,7 @@ services:
     profiles:
       - full
       - full-with-smoke
+      - smoke
 
   # Smoke test - runs once to ensure test user exists
   smoke-test:
@@ -198,15 +201,21 @@ services:
       - SMOKE_TEST_EMAIL=${SMOKE_TEST_EMAIL:-user1@fosforescent.com}
       - SMOKE_TEST_PASSWORD=${SMOKE_TEST_PASSWORD:-user123}
       - PLAYWRIGHT_BASE_URL=http://localhost:5173
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5433/fosdev?connection_limit=5}
     command: >
       sh -c "
+        set -eux &&
         echo '🧪 Waiting for frontend to be ready...' &&
-        timeout 60 sh -c 'until wget -q -O- http://localhost:5173 > /dev/null 2>&1; do echo \"Frontend not ready yet...\"; sleep 2; done' &&
+        timeout 120 sh -c 'until wget -q -O- http://localhost:5173 > /dev/null 2>&1; do echo \"Frontend not ready yet...\"; sleep 2; done' &&
         echo '✅ Frontend is ready!' &&
-        echo '🧪 Installing dependencies...' &&
-        cd /app && npm install --silent &&
-        echo '🧪 Running smoke test...' &&
-        cd /app/infra && npx playwright test e2e-tests/smoke.spec.ts --project=chromium
+        echo '🗄️ Running database migrations...' &&
+        cd /app/infra && npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss --skip-generate &&
+        echo '🌱 Seeding database...' &&
+        cd /app/infra && TSX_DISABLE_CACHE=1 npx prisma db seed --schema=./prisma/schema.prisma &&
+        echo '🎭 Installing Playwright browsers...' &&
+        cd /app/infra && npx playwright install --with-deps chromium &&
+        echo '🧪 Running Playwright suite...' &&
+        cd /app/infra && npx playwright test --project=chromium
       "
     depends_on:
       - frontend

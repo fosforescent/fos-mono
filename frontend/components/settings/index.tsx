@@ -89,9 +89,9 @@ export const ProfilePasswordLogout = ({
     <Tabs value={tab} onValueChange={onTabChange} className="w-full">
       <TabsList className="flex w-full justify-around">
         {/* <TabsTrigger value="account"><User /></TabsTrigger> */}
-        <TabsTrigger value="settings"><Settings /></TabsTrigger>
-        <TabsTrigger value="premium"><Coins /></TabsTrigger>
-        <TabsTrigger value="password"><KeyRound /></TabsTrigger>
+        <TabsTrigger value="settings" aria-label="Settings"><Settings /></TabsTrigger>
+        <TabsTrigger value="premium" aria-label="Premium"><Coins /></TabsTrigger>
+        <TabsTrigger value="password" aria-label="Password"><KeyRound /></TabsTrigger>
       </TabsList>
       <Card>
         {message.messageType === "fail" && <Alert variant="destructive">
