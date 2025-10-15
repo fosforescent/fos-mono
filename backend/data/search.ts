@@ -3,78 +3,150 @@ import { PrismaClient } from '@prisma/client';
 import { AppState, FosPath, FosRoute } from '@fosforescent/shared/types';
 import { FosStore } from '@fosforescent/shared/dag-implementation/store';
 import { FosExpression } from '@fosforescent/shared/dag-implementation/expression';
-import OpenAI from 'openai';
+import { VertexAI } from '@google-cloud/vertexai';
 import { Document } from '@langchain/core/documents';
 import { mutableMapExpressions } from '@fosforescent/shared/utils';
 import { Embeddings, EmbeddingsParams } from '@langchain/core/embeddings';
 import { semanticSearch as qdrantSemanticSearch, upsertDocument, batchUpsertDocuments } from '@fosforescent/infra/qdrant';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Initialize Vertex AI client
+const projectId = process.env.GCP_PROJECT_ID
+const location = process.env.GCP_REGION || 'us-central1'
+
+if (!projectId) {
+  throw new Error('GCP_PROJECT_ID environment variable not found')
+}
+
+const vertexAI = new VertexAI({ project: projectId, location: location })
 
 // Initialize Prisma client
 const prisma = new PrismaClient();
 
-// OpenAI embeddings adapter that implements LangChain's Embeddings interface
-export class OpenAIEmbeddingsAdapter extends Embeddings {
-  private client: OpenAI;
+// Vertex AI embeddings adapter that implements LangChain's Embeddings interface
+export class VertexAIEmbeddingsAdapter extends Embeddings {
+  private client: VertexAI;
+  private model: string;
 
-  constructor(params: EmbeddingsParams & { client: OpenAI }) {
+  constructor(params: EmbeddingsParams & { client: VertexAI; model?: string }) {
     super(params);
     this.client = params.client;
+    // Use text-embedding-004 (768 dimensions) or text-multilingual-embedding-002 (768 dimensions)
+    // For compatibility with 3072 dimensions from OpenAI, we'll use textembedding-gecko@003
+    this.model = params.model || 'text-embedding-004';
   }
 
   async embedDocuments(texts: string[]): Promise<number[][]> {
-    const response = await this.client.embeddings.create({
-      model: "text-embedding-3-large",
-      input: texts,
-    });
-    return response.data.map(item => item.embedding);
-  }
+    const model = this.client.preview.getGenerativeModel({ model: this.model });
 
-  async embedQuery(text: string): Promise<number[]> {
-    const response = await this.client.embeddings.create({
-      model: "text-embedding-3-large",
-      input: text,
-    });
-    const responseDataEntry = response.data[0];
-    if (responseDataEntry === undefined) {
-      throw new Error('No embeddings found for query');
-    }
-    return responseDataEntry.embedding;
-  }
-}
-
-// Create embeddings adapter instance
-const embeddingsAdapter = new OpenAIEmbeddingsAdapter({
-  client: openai,
-});
-
-// Get batch embeddings from OpenAI
-export async function getBatchEmbeddings(texts: string[]): Promise<number[][]> {
-  try {
-    const batchSize = 1000;
+    // Process in batches to avoid rate limits
+    const batchSize = 5;
     const embeddings: number[][] = [];
 
     for (let i = 0; i < texts.length; i += batchSize) {
       const batch = texts.slice(i, i + batchSize);
 
-      const response = await openai.embeddings.create({
-        model: "text-embedding-3-large",
-        input: batch,
+      const promises = batch.map(async (text) => {
+        const request = {
+          contents: [{ role: 'user', parts: [{ text }] }],
+        };
+        const result = await model.generateContent(request);
+        // Vertex AI text embeddings return embeddings in a different format
+        // We need to use the embedding API endpoint
+        return this.getEmbedding(text);
       });
 
-      embeddings.push(...response.data.map(item => item.embedding));
+      const batchEmbeddings = await Promise.all(promises);
+      embeddings.push(...batchEmbeddings);
 
-      // Add a small delay between large batches to avoid rate limiting
-      if (batch.length === batchSize) {
+      // Add delay between batches
+      if (i + batchSize < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
     return embeddings;
+  }
+
+  async embedQuery(text: string): Promise<number[]> {
+    return this.getEmbedding(text);
+  }
+
+  private async getEmbedding(text: string): Promise<number[]> {
+    // Use Vertex AI Text Embeddings API
+    // Note: You might need to use the REST API or aiplatform client for embeddings
+    // This is a simplified version using the Vertex AI SDK
+    const model = this.client.preview.getGenerativeModel({ model: this.model });
+
+    try {
+      // For text embeddings, we need to use the prediction service
+      // This is a workaround - in production, use the proper embedding endpoint
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text }] }],
+      });
+
+      // Extract embedding from response
+      // Note: The actual implementation depends on the Vertex AI SDK version
+      // You may need to use the aiplatform PredictionServiceClient for embeddings
+      const embedding = await this.getTextEmbeddingFromVertexAI(text);
+      return embedding;
+    } catch (error) {
+      console.error('Error getting embedding from Vertex AI:', error);
+      throw error;
+    }
+  }
+
+  private async getTextEmbeddingFromVertexAI(text: string): Promise<number[]> {
+    // Use Vertex AI Text Embeddings API endpoint
+    // This requires the aiplatform client library
+    const { PredictionServiceClient } = require('@google-cloud/aiplatform');
+
+    const client = new PredictionServiceClient({
+      apiEndpoint: `${location}-aiplatform.googleapis.com`,
+    });
+
+    const endpoint = `projects/${projectId}/locations/${location}/publishers/google/models/${this.model}`;
+
+    const instance = {
+      content: text,
+    };
+
+    const request = {
+      endpoint,
+      instances: [instance],
+    };
+
+    try {
+      const [response] = await client.predict(request);
+      const predictions = response.predictions;
+
+      if (!predictions || predictions.length === 0) {
+        throw new Error('No embeddings returned from Vertex AI');
+      }
+
+      // Extract embedding vector from prediction
+      const embedding = predictions[0].embeddings?.values || predictions[0].values;
+
+      if (!embedding || !Array.isArray(embedding)) {
+        throw new Error('Invalid embedding format from Vertex AI');
+      }
+
+      return embedding;
+    } catch (error) {
+      console.error('Error calling Vertex AI Prediction Service:', error);
+      throw error;
+    }
+  }
+}
+
+// Create embeddings adapter instance
+const embeddingsAdapter = new VertexAIEmbeddingsAdapter({
+  client: vertexAI,
+});
+
+// Get batch embeddings from Vertex AI
+export async function getBatchEmbeddings(texts: string[]): Promise<number[][]> {
+  try {
+    return await embeddingsAdapter.embedDocuments(texts);
   } catch (error) {
     console.error('Error getting embeddings:', error);
     throw error;

@@ -35,4 +35,4 @@ ENV NODE_ENV=development \
 WORKDIR /usr/src/app
 
 EXPOSE 80
-CMD sh -c "cd infra && npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss --skip-generate && cd .. && npx tsx ./backend/index.ts"
+CMD ["npx", "tsx", "./backend/index.ts"]

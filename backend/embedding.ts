@@ -1,15 +1,20 @@
 // MCP-specific embedding utilities that complement the existing search system
-import { OpenAIEmbeddingsAdapter } from './data/search'
-import OpenAI from 'openai'
+import { VertexAIEmbeddingsAdapter } from './data/search'
+import { VertexAI } from '@google-cloud/vertexai'
 
-// Reuse the existing OpenAI client from the search system
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Initialize Vertex AI client
+const projectId = process.env.GCP_PROJECT_ID
+const location = process.env.GCP_REGION || 'us-central1'
+
+if (!projectId) {
+  throw new Error('GCP_PROJECT_ID environment variable not found')
+}
+
+const vertexAI = new VertexAI({ project: projectId, location: location })
 
 // Reuse the existing embeddings adapter
-const embeddingsAdapter = new OpenAIEmbeddingsAdapter({
-  client: openai,
+const embeddingsAdapter = new VertexAIEmbeddingsAdapter({
+  client: vertexAI,
 });
 
 // Utility function to generate embedding for MCP descriptions
@@ -18,7 +23,7 @@ export async function generateMCPEmbedding(text: string | null): Promise<number[
   if (!text || text.trim().length === 0) {
     return null
   }
-  
+
   try {
     // Use the existing embeddings adapter to maintain consistency
     return await embeddingsAdapter.embedQuery(text.trim())
@@ -33,14 +38,14 @@ export async function generateMCPEmbeddingsBatch(texts: string[]): Promise<numbe
   if (texts.length === 0) {
     return []
   }
-  
+
   try {
     // Filter out empty texts
     const validTexts = texts.filter(text => text && text.trim().length > 0)
     if (validTexts.length === 0) {
       return []
     }
-    
+
     // Use the existing embeddings adapter for batch processing
     return await embeddingsAdapter.embedDocuments(validTexts)
   } catch (error) {

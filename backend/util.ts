@@ -114,7 +114,7 @@ export const dbToStore = async (
   const getChildNodesHelper = async (node: FosNodeModel) => {
 
     const nodeData: FosNodeContent = validateNodeData(node.data)
-    const allIds = new Set(nodeData.children.flat())
+    const allIds = new Set((nodeData.children || []).flat())
 
     if (allIds.size > 0) {
 

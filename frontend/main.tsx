@@ -21,11 +21,9 @@ import './App.css'
 import { QueryView } from './components/views/QueryLayout'
 import { BrowseView } from './components/views/BrowseLayout'
 import { DashboardRouter } from './components/DashboardRouter'
+import { publicRuntimeConfig } from './config'
 
-declare const __FOS_API_URL__: string;
-
-
-const apiUrl = __FOS_API_URL__ || "http://localhost:4000"
+const apiUrl = publicRuntimeConfig.apiUrl
 
 interface LoaderData {
   shouldOpenMenu: boolean;
@@ -33,15 +31,15 @@ interface LoaderData {
 }
 
 declare global {
-  interface Window { 
+  interface Window {
     Fos: {
       ws: WebSocket;
       apiUrl: string;
-    }; 
+    };
   }
 }
 
-window.Fos = window.Fos || {  
+window.Fos = window.Fos || {
   apiUrl
 };
 

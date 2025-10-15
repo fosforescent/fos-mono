@@ -1,9 +1,14 @@
 terraform {
-  required_version = "~> 1.6.3"
+  required_version = ">= 1.6.0"
 
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+
+    google-beta = {
+      source  = "hashicorp/google-beta"
       version = "~> 5.0"
     }
 
@@ -11,25 +16,29 @@ terraform {
       source = "hashicorp/local"
     }
 
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
     }
   }
 
-  backend "s3" {
-    bucket         = "fos-terraform-state"
-    key            = "terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "terraform-locks"
+  backend "gcs" {
+    bucket = "fos-terraform-state"
+    prefix = "terraform/state"
   }
 }
 
-provider "aws" {
-  region = var.aws_region
+provider "google" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
 }
 
-provider "cloudflare" {
-  api_token = var.CLOUDFLARE_TOKEN
+provider "google-beta" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
 }
+
+# Cloudflare provider removed - using GCP for static hosting
+# provider "cloudflare" {
+#   api_token = var.CLOUDFLARE_TOKEN
+# }
