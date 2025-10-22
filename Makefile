@@ -113,5 +113,19 @@ push:
 	git commit -m "$(m)"
 	git push
 
-dockertest: 
-	docker run fos_img 
+dockertest:
+	docker run fos_img
+
+seed-live-db:
+	@echo "🔌 Starting Cloud SQL Proxy..."
+	@$(CURDIR)/infra/terraform/cloud-sql-proxy $(GCP_PROJECT):$(GCP_REGION):fos-postgres-dev --port=5433 & \
+	PROXY_PID=$$!; \
+	echo "⏳ Waiting for proxy to establish connection..."; \
+	sleep 5; \
+	echo "🌱 Running database seed..."; \
+	DATABASE_URL="postgresql://fosuser:k*6+nb$$p^2G4KMtw@localhost:5433/fosdb" npx prisma db seed --schema=./infra/prisma/schema.prisma || SEED_EXIT=$$?; \
+	echo "🛑 Stopping Cloud SQL Proxy (PID: $$PROXY_PID)..."; \
+	kill $$PROXY_PID 2>/dev/null || true; \
+	wait $$PROXY_PID 2>/dev/null || true; \
+	echo "✅ Done!"; \
+	exit $$SEED_EXIT
