@@ -1,5 +1,6 @@
 Here's the design of the Fos runtime: 
 
+
 - All data is stored in the form of content-addressed nodes
 
 
@@ -8,7 +9,106 @@ Here's the design of the Fos runtime:
 
 
 
-Fos Bus: 
+
+
+
+## Messaging / Events: 
+===
+
+- p2p messaging is just another kind of messaging - associated with registered user
+- shoudl consume same interface as integrations for discord, whatsapp, signal, twilio for text, email, etc.
+- messages are just specific kinds of events which are handled by adding to state with sender signed with public key?
+- 
+### Listeners
+- Web
+  - WebRTC
+  - http emit
+  - websockets
+- Server
+  - http handlers (express)
+  - websockets
+  - WebRTC
+  - File-based?
+  - Database triggers?
+  - 
+- Mobile
+  - web
+- Desktop
+- Repo
+  - File-based
+
+
+### Handlers/Capabilities
+- Web
+  - update dom
+  - notify / prompt
+  - 
+- Server
+  - persist
+  - forward traffic
+  - create user accounts
+  - fetch from oauth services
+  - fetch from other API's
+  - temporal?
+- Mobile
+  - notify / prompt
+- Desktop
+- Repo
+  - 
+
+### Emitters/Event sources
+- Web
+  - DOM events
+  - network events
+  - webrtc events
+  - user media events
+- Server
+  - 
+- Mobile
+  - location events
+- Desktop
+- Repo
+  - push
+  - pull
+  - merge
+  - update head
+    - (becomes "vote"/"proposal" by repo)
+
+### Events: 
+Events that affect a programming language: 
+- evaluation triggered by CLI execution (main fn called with args => continuation constructed & evaluated with response + context)
+- evaluation triggered by GUI execution (main fn called with args & OS input polling)
+- continued evaluation after awaiting input (algebraic effect returns & continuation evaluated with repsonse + context)
+- continued evaluation after awaiting network response (algebraic efffect returns & continuation evaluated with response + context => co)
+
+
+If we want to continue from scratch: 
+- continuation must get reconstructed 
+  - relevant context 
+    - existing, must be persisted (tuple space / graph etc)
+    - new relevant context must be generated (by event info?)
+    - which one is more relevant must be determined
+    - distributed via DHT?
+    - may differ by user ... 
+  - continuation-triggering events must be listened 
+    - for
+      - network response
+      - user input
+    - by
+      - event queue
+        - persisted how?
+        - published how?
+    - with features
+      - events generateed in context of certain user
+      - signed with public key (for sending)
+      - decoded by private key (when recieving)
+      - provides some default arguments, others get provided by user ctx, checking various scopes
+
+
+Events get queued?  Listener holds cursor?  
+
+
+Fos Graph Space: 
 ---
 - Events come which aren't necessarily well-formed
 - Channels?
@@ -16,7 +116,7 @@ Fos Bus:
 Fos Events:
 ---
 - Patterns
-- 
+  - 
 
 
 Fos Handlers:
