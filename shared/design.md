@@ -5,11 +5,23 @@ Here's the design of the Fos runtime:
 
 
 # Components 
-===
-
-
-
-
+- [Components](#components)
+  - [Messaging / Events:](#messaging--events)
+    - [Listeners](#listeners)
+    - [Handlers/Capabilities](#handlerscapabilities)
+    - [Emitters/Event sources](#emittersevent-sources)
+    - [Event Payload:](#event-payload)
+  - [List of channels/global mutable variables](#list-of-channelsglobal-mutable-variables)
+  - [Database](#database)
+    - [Types](#types)
+    - [Capabilities](#capabilities)
+    - [Data](#data)
+  - [Fos Graph Space:](#fos-graph-space)
+  - [Fos Events:](#fos-events)
+  - [Fos Handlers:](#fos-handlers)
+  - [Fos Store:](#fos-store)
+  - [Fos Agora:](#fos-agora)
+  - [Backend app that provides many basic capabilities](#backend-app-that-provides-many-basic-capabilities)
 
 
 ## Messaging / Events: 
@@ -18,7 +30,8 @@ Here's the design of the Fos runtime:
 - p2p messaging is just another kind of messaging - associated with registered user
 - shoudl consume same interface as integrations for discord, whatsapp, signal, twilio for text, email, etc.
 - messages are just specific kinds of events which are handled by adding to state with sender signed with public key?
-- 
+
+
 ### Listeners
 - Web
   - WebRTC
@@ -54,9 +67,10 @@ Here's the design of the Fos runtime:
   - notify / prompt
 - Desktop
 - Repo
-  - 
 
 ### Emitters/Event sources
+- Store
+  - on writes to store -> emit new head
 - Web
   - DOM events
   - network events
@@ -74,13 +88,37 @@ Here's the design of the Fos runtime:
   - update head
     - (becomes "vote"/"proposal" by repo)
 
-### Events: 
+### Event Payload: 
 Events that affect a programming language: 
 - evaluation triggered by CLI execution (main fn called with args => continuation constructed & evaluated with response + context)
 - evaluation triggered by GUI execution (main fn called with args & OS input polling)
 - continued evaluation after awaiting input (algebraic effect returns & continuation evaluated with repsonse + context)
 - continued evaluation after awaiting network response (algebraic efffect returns & continuation evaluated with response + context => co)
+- message format: {
+  - recipient public key (or blank for public)
+  - encrypted w/ recipient public key (or blank for public) {
+    - sender public key
+    - signed with sender private key {
+      recipient channel (?)
+      message
 
+      return address (?)
+    }
+  }
+}
+- OPTIONS: 
+  - message is added to sender's (public?/recipient-facing?) graph?
+    - recipient queries for messages for them, intermediaries relay queries?
+  - sender creates channel and adds message... 
+    - Channel is created, message is added
+    - message with channel address is broadcasted?
+  - sender creates channel and adds message... 
+    - Channel is created, message is added as "commit"... commit hash is udpdated
+    - ~~message with channel address is broadcasted?,~~
+    - recipient requests any messages from peers when desired.. peers can relay requests
+    - 
+    - commit hash/ cid is pulled from , node is requested
+- 
 
 If we want to continue from scratch: 
 - continuation must get reconstructed 
@@ -107,6 +145,49 @@ If we want to continue from scratch:
 
 Events get queued?  Listener holds cursor?  
 
+
+## List of channels/global mutable variables
+===
+- same interface as agents
+- is it the same as the queue?  Each element of Queue is a channel?
+
+## Database
+===
+  
+
+### Types
+- Types are sets of patterns (=sets of subtypes)? 
+- Types are used by algebraic effects to validate inputs
+- Variables are queries by type
+  - refl constructor = assignment?
+- Queries can be defined by type (pattern)
+- Types can be used to construct input interface
+- Types can be used to register services/handlers/listeners/capabilities
+- Unification => logic programming
+
+
+- Global unification is types on the entire global state
+- Types are tasks.. tasks take the form of a typed variable that *should* exist but doesn't necessarily. 
+  - unification/logic program can *make* it exist
+  - other tasks / workflows can depend on this expression which doesn't have a value yet
+  - 
+- types need to be anchored to root (void parent), anywhere (wildcard parent) or other term(s) (pattern(s))
+- global unification?
+- 
+
+
+
+### Capabilities
+- register services
+- handlers
+- evaluation
+- event listeners
+- persistence
+- message sending? / network transport?
+
+
+
+### Data
 
 Fos Graph Space: 
 ---
@@ -170,3 +251,4 @@ Fos Agora:
 ---
 Backend app that provides many basic capabilities
 - 
+
