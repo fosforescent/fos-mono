@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  whatsapp-service:
+    build: ./whatsapp
+    container_name: fos-whatsapp-service
+    ports:
+      - "3000:3000"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - INBOX_QUEUE_URL=${INBOX_QUEUE_URL}
+      - OUTBOX_QUEUE_URL=${OUTBOX_QUEUE_URL}
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+      - WEBHOOK_VERIFY_TOKEN=${WEBHOOK_VERIFY_TOKEN}
+      - PORT=3000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  discord-service:
+    build: ./discord
+    container_name: fos-discord-service
+    ports:
+      - "3001:3001"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - INBOX_QUEUE_URL=${INBOX_QUEUE_URL}
+      - OUTBOX_QUEUE_URL=${OUTBOX_QUEUE_URL}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - PORT=3001
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  default:
+    name: fos-event-services

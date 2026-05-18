@@ -1,0 +1,19 @@
+{
+  "name": "@fosforescent/desktop",
+  "version": "0.1.0",
+  "description": "Fosforescent Desktop App",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "dev:frontend": "cd ../frontend && npm run dev",
+    "build:frontend": "cd ../frontend && npm run build"
+  },
+  "keywords": ["fosforescent", "desktop", "tauri"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/cli": "^2.9.6"
+  }
+}

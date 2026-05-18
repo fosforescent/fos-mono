@@ -1,0 +1,54 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach to Chrome",
+      "port": 9222,
+      "request": "attach",
+      "type": "chrome",
+      "urlFilter": "http://localhost:5173*",
+      "webRoot": "${workspaceFolder}"
+    },
+
+    {
+      "name": "TSX Run Backend",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/backend/index.ts", // Set the entry point of your application
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "-r",
+        "dotenv/config"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "${workspaceFolder}/node_modules/**"
+      ]
+    },
+    {
+      "name": "Prisma DB Seed",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "prisma-reset",
+      "program": "${workspaceFolder}/prisma/seed.ts", // Set the entry point of your application
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "prisma",
+        "db",
+        "seed"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "${workspaceFolder}/node_modules/**"
+      ]
+    },
+
+  ]
+}

@@ -1,0 +1,138 @@
+html {
+  scroll-behavior: smooth;
+  /* font-size: 24px; */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #333;
+  z-index: -2;
+  overflow: hidden;
+}
+
+/* .main {
+  display: grid;
+  grid-template-columns:
+    1fr
+    min(65ch, 100%)
+    1fr;
+}
+.main > * {
+  grid-column: 2;
+}
+.full-bleed {
+  width: 100%;
+  grid-column: 1 / -1;
+} */
+#main::-webkit-scrollbar {
+  display: none;
+}
+
+#front-load {
+  opacity: 1;
+  transition: opacity 3s;
+  transition-duration: 3s;
+  -webkit-transition-duration: 3s;
+  -ms-transition-duration: 3s;
+  -moz-transition-duration: 3s;
+  transition-timing-function: cubic-bezier(0, .3, 1, .3);
+}
+
+#front-load.not-loaded {
+  opacity: 0;
+}
+
+.section-container{
+  opacity: .1;
+  transform: translateY(0);
+  transition: opacity .9s ease-in-out, transform 0.8s ease-in-out;
+  transition-duration: .9s;
+  -webkit-transition-duration: .9s;
+  -ms-transition-duration: .9s;
+  -moz-transition-duration: .9s;
+}
+
+.section-container.is-visible{
+  opacity: 1;
+}
+
+.tagalong-form {
+  max-height: 0;
+  box-sizing: border-box;
+  transition: max-height .3s ease-in;
+
+  overflow: hidden;
+}
+.tagalong-form.is-visible {
+  max-height: 500px;
+  transition: max-height 1s ease-in-out;
+  overflow: hidden;
+}
+
+body {
+  /* scroll-snap-type: 'y mandatory'; */
+  /* overflow-y: 'scroll'; */
+  /* height: '100vh'; */
+}
+
+.scrollbar {
+  width: calc(100% + 3px);
+  overflow: auto;
+  padding: 0 10px;
+  margin-right: -3px;
+}
+
+.scrollbar::-webkit-scrollbar {
+  width: 3px;
+}
+
+.scrollbar::-webkit-scrollbar-track {
+  border-radius: 8px;
+  background-color: #33333333;
+  border: none;
+  /* box-shadow: inset 0 0 6px rgba(0, 0, 0, .3); */
+}
+
+.scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  background-color: #FFFFFF33;
+}
+
+.section-container, .app-container, .content-container {
+  height: 100vh;
+  height: calc(100vh - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+  height: 100svh;
+  max-height: 100vh;
+  max-height: calc(100vh - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+  max-height: 100svh;
+  min-height: 100vh;
+  min-height: calc(100vh - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+  min-height: 100svh;
+  overflow: hidden;
+}
+
+
+
+#scroll-up-button, #scroll-down-button {
+  opacity: 1;
+  /* transition: opacity 3s;
+  transition-duration: 3s;
+  -webkit-transition-duration: 3s;
+  -ms-transition-duration: 3s;
+  -moz-transition-duration: 3s;
+  transition-timing-function: cubic-bezier(0, 0, 1, 0); */
+
+}
+
+#scroll-down-button.hidden, #scroll-up-button.hidden {
+  opacity: 0;
+  transition: opacity 3s;
+  transition-duration: 3s;
+  -webkit-transition-duration: 3s;
+  -ms-transition-duration: 3s;
+  -moz-transition-duration: 3s;
+  /* transition-timing-function: cubic-bezier(0, 0, 1, 0); */
+
+}
+

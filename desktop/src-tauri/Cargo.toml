@@ -1,0 +1,26 @@
+[package]
+name = "fosforescent-desktop"
+version = "0.1.0"
+description = "Fosforescent Desktop App"
+authors = []
+license = "MIT"
+repository = "https://github.com/fosforescent/fos-mono"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2", features = [] }
+tauri-plugin-log = "2"
+dirs = "5.0"
+open = "5"
+chrono = { version = "0.4", features = ["serde"] }

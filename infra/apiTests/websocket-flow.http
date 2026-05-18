@@ -1,0 +1,108 @@
+### WebSocket Testing with REST Client
+### Note: REST Client doesn't support WebSocket connections directly
+### Use these HTTP requests to get tokens for manual WebSocket testing
+
+@baseUrl = http://localhost:4000
+@wsUrl = ws://localhost:4000
+@timestamp = {{$datetime 'YYYYMMDDHHmmss'}}
+@testUsername = wstest_{{timestamp}}
+@testPassword = TestPass123
+
+### Variables for WebSocket testing
+# @authToken = 
+
+### 1. Register user for WebSocket testing
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}",
+  "password": "{{testPassword}}",
+  "accepted_terms": true,
+  "cookies": {}
+}
+
+###
+
+### 2. Login to get JWT token for WebSocket connection
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{testUsername}}",
+  "password": "{{testPassword}}"
+}
+
+# Copy the token from the response and use it for WebSocket connections below
+
+###
+
+### 3. Health check to verify backend is running
+GET {{baseUrl}}/
+Accept: application/json
+
+###
+
+### WebSocket Connection Instructions
+### 
+### Use these URLs with a WebSocket client (like Postman, wscat, or browser dev tools):
+### 
+### Normal WebSocket Connection:
+### ws://localhost:4000/{JWT_TOKEN}
+### 
+### Example with wscat:
+### wscat -c "ws://localhost:4000/YOUR_JWT_TOKEN_HERE"
+### 
+### MCP WebSocket Connection:  
+### ws://localhost:4000/mcp
+### 
+### Example with wscat:
+### wscat -c "ws://localhost:4000/mcp"
+### 
+### MCP Initialization Message (send after connecting):
+### {
+###   "jsonrpc": "2.0",
+###   "id": 1,
+###   "method": "initialize",
+###   "params": {
+###     "protocolVersion": "2024-11-05",
+###     "capabilities": {
+###       "resources": { "subscribe": true },
+###       "tools": {},
+###       "prompts": {}
+###     },
+###     "clientInfo": {
+###       "name": "test-client",
+###       "version": "1.0.0"
+###     }
+###   }
+### }
+
+### Manual WebSocket Testing Commands
+### 
+### Install wscat globally: npm install -g wscat
+### 
+### Test normal WebSocket (replace TOKEN with actual JWT):
+### wscat -c "ws://localhost:4000/TOKEN"
+### 
+### Test MCP WebSocket:
+### wscat -c "ws://localhost:4000/mcp"
+### 
+### Send MCP initialize message:
+### {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"resources":{"subscribe":true},"tools":{},"prompts":{}},"clientInfo":{"name":"test-client","version":"1.0.0"}}}
+
+###
+
+### 4. Test endpoints that WebSocket might use
+GET {{baseUrl}}/user/profile
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
+
+### 5. Test MCP-related endpoints (if available)
+GET {{baseUrl}}/mcp/servers
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+###
