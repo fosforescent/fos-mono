@@ -7,10 +7,13 @@ import { FosSettingsPage }  from './components/settings'
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
 import InboxView from './components/messaging/InboxView'
 import GroupDirectory from './components/messaging/GroupDirectory'
+import WorkspaceView from './components/views/WorkspaceView'
 
 import './global.css'
 import './App.css'
 import { publicRuntimeConfig } from './config'
+import { queueMutation } from './lib/offline/sync-queue'
+import { syncManager } from './lib/offline/sync-manager'
 
 const apiUrl = publicRuntimeConfig.apiUrl
 
@@ -19,6 +22,10 @@ declare global {
     Fos: {
       ws: WebSocket;
       apiUrl: string;
+      swRegistration?: ServiceWorkerRegistration;
+    } | {
+      apiUrl: string;
+      swRegistration?: ServiceWorkerRegistration;
     };
   }
 }
@@ -26,6 +33,66 @@ declare global {
 window.Fos = window.Fos || {
   apiUrl
 };
+
+// Register service worker for offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/'
+      });
+
+      window.Fos.swRegistration = registration;
+      console.log('[Main] Service worker registered:', registration.scope);
+
+      // Handle updates
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // New version available
+              console.log('[Main] New service worker available');
+            }
+          });
+        }
+      });
+    } catch (error) {
+      console.error('[Main] Service worker registration failed:', error);
+    }
+  });
+
+  // Handle messages from service worker
+  navigator.serviceWorker.addEventListener('message', async (event) => {
+    const { type, payload } = event.data;
+
+    switch (type) {
+      case 'QUEUE_MUTATION':
+        // Service worker asked us to queue a mutation
+        if (payload && payload.cid && payload.content) {
+          await queueMutation({
+            operation: 'update',
+            cid: payload.cid,
+            content: payload.content
+          });
+        }
+        break;
+
+      case 'SYNC_NOW':
+        // Service worker triggered a sync (e.g., from Background Sync)
+        syncManager.syncNow();
+        break;
+
+      case 'SYNC_AVAILABLE':
+        // Server has new data available
+        syncManager.syncNow();
+        break;
+
+      default:
+        console.log('[Main] Unknown message from service worker:', type);
+    }
+  });
+}
 
 
 const router = createBrowserRouter([
@@ -36,7 +103,11 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <InboxView />
+        element: <WorkspaceView />
+      },
+      {
+        path: "workspace",
+        element: <WorkspaceView />
       },
       {
         path: "inbox",

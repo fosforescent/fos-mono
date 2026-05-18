@@ -69,7 +69,9 @@ const HamburgerMenu = ({
   setData,
   options,
   menuOpen,
-  setMenuOpen
+  setMenuOpen,
+  isOfflineMode,
+  onShowLogin
 }: {
   emailConfirmationToken?: string,
   passwordResetToken?: string,
@@ -88,7 +90,9 @@ const HamburgerMenu = ({
   setData: (data: AppState) => void
   options: FosReactOptions
   menuOpen: boolean,
-  setMenuOpen: (open: boolean) => void
+  setMenuOpen: (open: boolean) => void,
+  isOfflineMode?: boolean,
+  onShowLogin?: () => void
 }) => {
 
 
@@ -125,20 +129,24 @@ const HamburgerMenu = ({
     })
   }
 
-  const [accordionValue, setAccordionValue] = useState(loggedIn() ? "nav" : "account")
+  // In offline mode, we're effectively "logged in" locally
+  const isEffectivelyLoggedIn = loggedIn() || isOfflineMode
+
+  const [accordionValue, setAccordionValue] = useState(isEffectivelyLoggedIn ? "nav" : "account")
 
   const navLinks = [
-    { to: '/inbox', label: 'Inbox', testId: 'menu-inbox', show: loggedIn(), end: true },
-    { to: '/groups', label: 'Groups', testId: 'menu-groups', show: loggedIn() },
-    { to: '/settings', label: 'Settings', testId: 'menu-settings', show: loggedIn(), end: true }
+    { to: '/', label: 'Workspace', testId: 'menu-workspace', show: isEffectivelyLoggedIn, end: true },
+    { to: '/inbox', label: 'Messages', testId: 'menu-inbox', show: isEffectivelyLoggedIn, end: true },
+    { to: '/groups', label: 'Groups', testId: 'menu-groups', show: isEffectivelyLoggedIn },
+    { to: '/settings', label: 'Settings', testId: 'menu-settings', show: isEffectivelyLoggedIn, end: true }
   ]
 
 
   useEffect(() => {
-    if (!loggedIn()) {
+    if (!isEffectivelyLoggedIn) {
       setAccordionValue('account')
     }
-  }, [appState])
+  }, [appState, isEffectivelyLoggedIn])
 
 
 
@@ -161,7 +169,19 @@ const HamburgerMenu = ({
           options={options}
         />}
       </div>
-      <div>
+      <div className="flex items-center gap-2">
+        {/* Login button shown when in offline mode */}
+        {isOfflineMode && onShowLogin && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-1"
+            onClick={onShowLogin}
+          >
+            <Cloud className="h-4 w-4" />
+            <span className="hidden sm:inline">Sign In</span>
+          </Button>
+        )}
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger
             data-testid="hamburger-menu"
@@ -230,7 +250,7 @@ const HamburgerMenu = ({
               {appState.loaded && <AccordionItem value="nav">
                 <AccordionTrigger>Nav </AccordionTrigger>
                 <AccordionContent>
-                  {loggedIn() && (<div className="grow h-full">
+                  {isEffectivelyLoggedIn && (<div className="grow h-full">
                     <nav className="p-4 space-y-2 flex flex-col justify-center h-full">
                       {navLinks.filter((link) => link.show).map((link) => (
                         <Button
@@ -263,8 +283,42 @@ const HamburgerMenu = ({
               <AccordionItem value="account">
                 <AccordionTrigger data-testid="menu-account">Account </AccordionTrigger>
                 <AccordionContent>
-                  {!loggedIn()
-                    ? <LoginRegister
+                  {/* Offline mode - show sign in option */}
+                  {isOfflineMode ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 p-3 bg-amber-100 dark:bg-amber-900/30 rounded-md">
+                        <HardDrive className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                        <div className="text-sm">
+                          <p className="font-medium text-amber-700 dark:text-amber-300">Working Offline</p>
+                          <p className="text-amber-600 dark:text-amber-400">Data is stored locally</p>
+                        </div>
+                      </div>
+                      {onShowLogin && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            setMenuOpen(false)
+                            onShowLogin()
+                          }}
+                        >
+                          <Cloud className="h-4 w-4 mr-2" />
+                          Sign in to sync across devices
+                        </Button>
+                      )}
+                      <LoginRegister
+                        emailConfirmationToken={emailConfirmationToken}
+                        passwordResetToken={passwordResetToken}
+                        setShowTerms={setShowTerms}
+                        setShowPrivacy={setShowPrivacy}
+                        setAccordionValue={setAccordionValue}
+                        data={appState}
+                        setData={setData}
+                        options={options}
+                      />
+                    </div>
+                  ) : !loggedIn() ? (
+                    <LoginRegister
                       emailConfirmationToken={emailConfirmationToken}
                       passwordResetToken={passwordResetToken}
                       setShowTerms={setShowTerms}
@@ -274,9 +328,11 @@ const HamburgerMenu = ({
                       setData={setData}
                       options={options}
                     />
-                    : <div>
+                  ) : (
+                    <div>
                       <Button variant="destructive" onClick={logOut}><LogOut /></Button><br />
-                    </div>}
+                    </div>
+                  )}
                 </AccordionContent>
               </AccordionItem>
               {/* <AccordionItem value="settings">

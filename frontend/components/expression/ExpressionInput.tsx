@@ -37,6 +37,8 @@ export const ExpressionInput = ({
       await expression.addTodo(newMessage)
     } else if (itemTypeToCreate === "comments") {
       await expression.addComment(newMessage)
+    } else if (itemTypeToCreate === "document") {
+      await expression.addDocument(newMessage)
     }
 
     // Update the UI with the new data from the store - export from root to get all data
@@ -61,6 +63,8 @@ export const ExpressionInput = ({
         return "Add a new todo..."
       case "comments":
         return "Add a comment..."
+      case "document":
+        return "Add document content..."
       default:
         return "Type a message..."
     }
@@ -73,13 +77,15 @@ export const ExpressionInput = ({
         return "Add Todo"
       case "comments":
         return "Add Comment"
+      case "document":
+        return "Add Document"
       default:
         return "Send"
     }
   }
 
 
-  const shouldShowForm = expression.isBase() && (activeFilter === "todo" || activeFilter === "comments" || activeFilter === "all")
+  const shouldShowForm = expression.isBase() && (activeFilter === "todo" || activeFilter === "comments" || activeFilter === "document" || activeFilter === "all")
 
   return (
     <form
@@ -97,6 +103,7 @@ export const ExpressionInput = ({
               <SelectContent>
                 <SelectItem value="todo" data-testid="queue-expression-type-todo">Todo</SelectItem>
                 <SelectItem value="comments" data-testid="queue-expression-type-comment">Comment</SelectItem>
+                <SelectItem value="document" data-testid="queue-expression-type-document">Document</SelectItem>
               </SelectContent>
             </Select>
           )}

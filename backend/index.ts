@@ -19,7 +19,7 @@ import { postUpdateEmail } from './auth/updateEmail'
 import { checkUsernameExists } from './auth/checkUsername'
 import { postContactMessage } from './email/contactMessage'
 
-import { getUserData, deleteUserData, postUserDataPartial } from './data'
+import { getUserData, deleteUserData, postUserDataPartial, getNodeByCid, getNodesByCids, postSync, getChangesSince } from './data'
 import { getSuggest } from './suggest'
 import {
   getMCPServers,
@@ -273,6 +273,31 @@ dataRoutes.get('/', slowDown({
   delayAfter: 100, // allow 100 requests per 1 minute, then...
   delayMs: (used) => 1.5 ** (used - 100) // begin adding 500ms of delay per request above 100:
 }), getUserData)
+
+// Offline-first lazy-load endpoints
+dataRoutes.get('/nodes/:cid', slowDown({
+  windowMs: 1 * 60 * 1000,
+  delayAfter: 200,
+  delayMs: (used) => 1.5 ** (used - 200)
+}), getNodeByCid)
+
+dataRoutes.get('/nodes', slowDown({
+  windowMs: 1 * 60 * 1000,
+  delayAfter: 100,
+  delayMs: (used) => 1.5 ** (used - 100)
+}), getNodesByCids)
+
+dataRoutes.post('/sync', slowDown({
+  windowMs: 1 * 60 * 1000,
+  delayAfter: 50,
+  delayMs: (used) => 1.5 ** (used - 50)
+}), postSync)
+
+dataRoutes.get('/changes', slowDown({
+  windowMs: 1 * 60 * 1000,
+  delayAfter: 100,
+  delayMs: (used) => 1.5 ** (used - 100)
+}), getChangesSince)
 
 
 protectedRoutes.use(slowDown({

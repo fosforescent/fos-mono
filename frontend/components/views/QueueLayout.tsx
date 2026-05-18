@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { CheckSquare, MessageSquare, PenSquare, Send, SendHorizonal, SendHorizonalIcon, Filter } from 'lucide-react';
+import { CheckSquare, MessageSquare, PenSquare, Send, SendHorizonal, SendHorizonalIcon, Filter, FileText } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -215,9 +215,9 @@ const QueueView = () => {
         <div className="flex flex-row justify-between w-screen border-b border-t p-4 w-full"
         >
           <div className="flex flex-row gap-2">
-            <Button ><CheckSquare /></Button>
-            <Button ><PenSquare /></Button>
-            <Button ><MessageSquare /></Button>
+            <Button onClick={() => setCurrentFilter("todo")} variant={currentFilter === "todo" ? "default" : "outline"}><CheckSquare /></Button>
+            <Button onClick={() => setCurrentFilter("document")} variant={currentFilter === "document" ? "default" : "outline"}><FileText /></Button>
+            <Button onClick={() => setCurrentFilter("comments")} variant={currentFilter === "comment" ? "default" : "outline"}><MessageSquare /></Button>
           </div>
 
           <div className="flex flex-row items-center gap-2">
@@ -228,6 +228,7 @@ const QueueView = () => {
               </SelectTrigger>
               <SelectContent data-testid="queue-filter-options">
                 <SelectItem value="todo" data-testid="queue-filter-todo">Todos</SelectItem>
+                <SelectItem value="document" data-testid="queue-filter-document">Documents</SelectItem>
                 <SelectItem value="comments" data-testid="queue-filter-comments">Comments</SelectItem>
                 <SelectItem value="all" data-testid="queue-filter-all">All Items</SelectItem>
               </SelectContent>

@@ -268,73 +268,45 @@ fn init_fos_directory(path: String) -> Result<FosDirectoryInfo, String> {
     })
 }
 
-/// Read the FosStore data from main.yml (or other context files)
+/// Read the FosStore data from .fos file in current directory
 #[tauri::command]
 fn read_fos_store(state: State<AppState>) -> Result<Option<String>, String> {
-    let fos_dir = state.fos_directory.lock().map_err(|e| e.to_string())?;
+    let current = state.current_directory.lock().map_err(|e| e.to_string())?;
+    let fos_path = current.join(".fos");
 
-    let fos_path = match fos_dir.as_ref() {
-        Some(p) => p.clone(),
-        None => {
-            // Try to detect .fos directory
-            let current = state.current_directory.lock().map_err(|e| e.to_string())?;
-            let info = check_fos_directory_internal(&current);
-            if !info.exists {
-                return Ok(None);
-            }
-            PathBuf::from(&info.path)
-        }
-    };
-
-    // Try context file candidates in order
-    let candidates = ["main.yml", "main.yaml", "context.yml", "context.yaml", "context.json"];
-
-    for candidate in candidates {
-        let file_path = fos_path.join(candidate);
-        if file_path.exists() {
-            let content = fs::read_to_string(&file_path)
-                .map_err(|e| format!("Failed to read {}: {}", candidate, e))?;
-            return Ok(Some(content));
-        }
+    if fos_path.exists() {
+        let content = fs::read_to_string(&fos_path)
+            .map_err(|e| format!("Failed to read .fos: {}", e))?;
+        Ok(Some(content))
+    } else {
+        Ok(None)
     }
-
-    Ok(None)
 }
 
-/// Write FosStore data to main.yml
+/// Write FosStore data to .fos file in current directory
 #[tauri::command]
 fn write_fos_store(content: String, state: State<AppState>) -> Result<(), String> {
-    let fos_dir = state.fos_directory.lock().map_err(|e| e.to_string())?;
+    let current = state.current_directory.lock().map_err(|e| e.to_string())?;
+    let fos_path = current.join(".fos");
 
-    let fos_path = match fos_dir.as_ref() {
-        Some(p) => p.clone(),
-        None => {
-            // Try to detect .fos directory
-            let current = state.current_directory.lock().map_err(|e| e.to_string())?;
-            let info = check_fos_directory_internal(&current);
-            if !info.exists {
-                return Err("No .fos directory found. Run init first.".to_string());
-            }
-            PathBuf::from(&info.path)
-        }
-    };
-
-    // Check if there's an existing context file to determine format
-    let candidates = ["main.yml", "main.yaml", "context.yml", "context.yaml", "context.json"];
-    let mut target_file = fos_path.join("main.yml"); // Default
-
-    for candidate in candidates {
-        let file_path = fos_path.join(candidate);
-        if file_path.exists() {
-            target_file = file_path;
-            break;
-        }
-    }
-
-    fs::write(&target_file, &content)
-        .map_err(|e| format!("Failed to write store: {}", e))?;
+    fs::write(&fos_path, &content)
+        .map_err(|e| format!("Failed to write .fos: {}", e))?;
 
     Ok(())
+}
+
+/// Ensure .fos file exists in current directory, create if missing
+#[tauri::command]
+fn ensure_fos_file(state: State<AppState>) -> Result<String, String> {
+    let current = state.current_directory.lock().map_err(|e| e.to_string())?;
+    let fos_path = current.join(".fos");
+
+    if !fos_path.exists() {
+        fs::write(&fos_path, "")
+            .map_err(|e| format!("Failed to create .fos: {}", e))?;
+    }
+
+    Ok(fos_path.to_string_lossy().to_string())
 }
 
 /// Get initialization info for the app (target dir, fos dir, store data)
@@ -414,6 +386,7 @@ pub fn run() {
             // FosStore operations
             read_fos_store,
             write_fos_store,
+            ensure_fos_file,
             get_app_init_info,
             // Auth
             open_auth_url,

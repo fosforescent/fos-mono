@@ -10,7 +10,7 @@ import { HelpDrawer } from './components/dialog/HelpDrawer'
 
 
 import HamburgerMenu from './components/menu/HamburgerMenu'
-import { AuthLanding } from './components/AuthLanding'
+import { LoginDialog } from './components/dialog/LoginDialog'
 
 
 import { Toaster } from "@/components/ui/toaster"
@@ -84,6 +84,9 @@ export const initialDataState: AppStateInitial = {
   loggedIn: !!parsedJwt,
 }
 
+// Load offline data from IndexedDB (called async in useEffect)
+import { loadFromIndexedDB } from './lib/actions'
+
 
 
 export default function App({
@@ -113,6 +116,121 @@ export default function App({
 
   // Desktop/Tauri integration for local storage
   const tauriHook = useTauri()
+
+  // Track if we've auto-initialized
+  const [autoInitialized, setAutoInitialized] = React.useState(false)
+
+  // Offline-first: Auto-initialize on startup (for both web and desktop)
+  useEffect(() => {
+    const initializeOfflineFirst = async () => {
+      // Already loaded or already attempted initialization, skip
+      if (appState.loaded || autoInitialized) {
+        return
+      }
+
+      // If user is logged in with JWT, let the normal login flow handle it
+      if (parsedJwt && appState.loggedIn) {
+        return
+      }
+
+      setAutoInitialized(true)
+      console.log('Auto-initializing offline-first mode...')
+
+      try {
+        // Desktop (Tauri) mode
+        if (tauriHook.isDesktop) {
+          // Ensure .fos file exists
+          await tauriHook.ensureFosFile()
+
+          // Load store content from .fos file
+          const content = await tauriHook.reloadStore()
+
+          let fosData = null
+          if (content && content.trim()) {
+            try {
+              const parsed = JSON.parse(content)
+              fosData = parsed
+            } catch {
+              console.log('Could not parse .fos content, starting fresh')
+            }
+          }
+
+          // Create a new store with the loaded data or empty
+          const store = fosData?.fosData
+            ? new FosStore({ fosCtxData: fosData })
+            : new FosStore({})
+
+          const exportedData = store.exportContext([])
+
+          setAppState(prev => ({
+            ...prev,
+            loaded: true,
+            loggedIn: true,
+            data: exportedData,
+            auth: {
+              ...prev.auth,
+              offlineMode: true,
+            },
+            info: {
+              ...prev.info,
+              offlineMode: true,
+            }
+          }))
+        } else {
+          // Web mode - use IndexedDB
+          const offlineData = await loadFromIndexedDB()
+
+          let fosData: AppStateLoaded["data"]
+          if (offlineData) {
+            fosData = offlineData
+          } else {
+            // Create fresh store
+            const store = new FosStore({})
+            fosData = store.exportContext([])
+          }
+
+          setAppState(prev => ({
+            ...prev,
+            loaded: true,
+            loggedIn: true,
+            data: fosData,
+            auth: {
+              ...prev.auth,
+              jwt: undefined,
+              offlineMode: true,
+            },
+            info: {
+              ...prev.info,
+              offlineMode: true,
+            }
+          }))
+        }
+
+        console.log('Offline-first initialization complete')
+      } catch (error) {
+        console.error('Error initializing offline-first mode:', error)
+        // Fall back to fresh store on error
+        const store = new FosStore({})
+        const fosData = store.exportContext([])
+        setAppState(prev => ({
+          ...prev,
+          loaded: true,
+          loggedIn: true,
+          data: fosData,
+          auth: {
+            ...prev.auth,
+            offlineMode: true,
+          },
+          info: {
+            ...prev.info,
+            offlineMode: true,
+          }
+        }))
+      }
+    }
+
+    initializeOfflineFirst()
+  }, [tauriHook.isDesktop, autoInitialized, appState.loaded, appState.loggedIn])
 
   const jwt = appState.auth?.jwt
 
@@ -286,20 +404,19 @@ export default function App({
 
   useEffect(() => {
     // In offline mode, skip the JWT check - we're logged in locally
-    const isOfflineMode = appState.auth?.offlineMode || appState.info?.offlineMode
+    const isInOfflineMode = appState.auth?.offlineMode || appState.info?.offlineMode
 
-    if (!jwt && !appState.loggedIn && !isOfflineMode) {
-      navigate('/')
-      setMenuOpen(true)
-    } else if (!isOfflineMode) {
-      // Only load from backend if not in offline mode
-      console.log('appState', appState, jwt)
-      if (!appState.loaded) {
-        loadAppData()
-      }
+    if (isInOfflineMode) {
+      // Offline mode - data is local, nothing to fetch
+      return
     }
-    // If offline mode and already loaded, we're good - data is local
-  }, [jwt]);
+
+    if (jwt && appState.loggedIn && !appState.loaded) {
+      // Online mode with valid JWT - load from backend
+      console.log('Loading app data from backend...')
+      loadAppData()
+    }
+  }, [jwt, appState.loggedIn, appState.loaded]);
 
   // Check user approval status when app data is loaded
   const [userApprovalChecked, setUserApprovalChecked] = useState(false)
@@ -347,8 +464,9 @@ export default function App({
   useEffect(() => {
 
     if (loggedIn() && appState.loaded && appState.data) {
-      if (location.pathname === '/') {
-        navigate('')
+      if (location.pathname === '/' || location.pathname === '/workspace') {
+        // WorkspaceView handles its own view state via ViewSwitcher
+        // Don't override the view setting here
       } else if (location.pathname === '/tools') {
         setCurrentActivity('todo')
         setCurrentView("Browse")
@@ -562,13 +680,19 @@ export default function App({
   // }, []);
 
 
+  // State for login dialog
+  const [showLoginDialog, setShowLoginDialog] = useState(false)
+
+  // Check if in offline mode (not authenticated with server)
+  const isOfflineMode = appState.auth?.offlineMode || appState.info?.offlineMode
+
   return (<><div
     className="App h-full bg-background p-0 relative"
     data-testid="main-app"
     style={{ height: '100%', width: '100%', position: 'relative', textAlign: 'center', margin: '0 auto', overflowX: 'hidden', "minHeight": "100svh" }}>
     <div style={{ textAlign: 'left', boxSizing: 'border-box' }} className='w-full'>
-      {/* Only show hamburger menu when logged in */}
-      {appState.loggedIn && (
+      {/* Always show hamburger menu when loaded */}
+      {appState.loaded && (
         <HamburgerMenu
           emailConfirmationToken={emailConfirmationToken}
           passwordResetToken={passwordResetToken}
@@ -588,22 +712,24 @@ export default function App({
           options={global}
           menuOpen={menuOpen}
           setMenuOpen={setMenuOpen}
-
+          isOfflineMode={isOfflineMode}
+          onShowLogin={() => setShowLoginDialog(true)}
         />
       )}
       <div
         className=" h-full w-full p-0 m-0"
-        data-testid={appState.loggedIn ? "main-content" : undefined}
+        data-testid={appState.loaded ? "main-content" : undefined}
       >
 
-        {/* Show AuthLanding if not logged in, PendingApproval if not approved, otherwise show main app */}
-        {!appState.loggedIn ? (
-          <AuthLanding
-            data={appState}
-            setData={setAppStateWithEffects}
-            options={global}
-          />
-        ) : appState.loaded && appState.info?.approved === false ? (
+        {/* Show loading state, PendingApproval if not approved, otherwise show main app */}
+        {!appState.loaded ? (
+          <div className="flex items-center justify-center h-screen">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading...</p>
+            </div>
+          </div>
+        ) : appState.info?.approved === false && !isOfflineMode ? (
           <PendingApproval
             userEmail={appState.auth?.email}
             userName={appState.auth?.username}
@@ -611,36 +737,34 @@ export default function App({
             onRefresh={handleRefreshApprovalStatus}
           />
         ) : (
-          appState.loaded && (
-            <div data-testid="authenticated-content" className="h-full">
-              <Outlet context={{
-                data: appState,
-                setData: setAppStateWithEffects,
-                options: global,
-                nodeRoute: appState.data.fosData.route,
-                dialogueProps: {
-                  loading: false,
-                  setLoading: () => { },
-                  showCookies: showCookieConsent,
-                  setShowCookies: setShowCookieConsent,
-                  showTerms,
-                  setShowTerms,
-                  showPrivacy,
-                  setShowPrivacy,
-                  showClearData,
-                  setShowClearData,
-                  showDeleteAccount,
-                  setShowDeleteAccount,
-                  showEmailConfirm,
-                  setShowEmailConfirm,
-                },
-                tokens: {
-                  emailConfirmationToken,
-                  passwordResetToken
-                }
-              }} />
-            </div>
-          )
+          <div data-testid="authenticated-content" className="h-full">
+            <Outlet context={{
+              data: appState,
+              setData: setAppStateWithEffects,
+              options: global,
+              nodeRoute: appState.data?.fosData?.route || [],
+              dialogueProps: {
+                loading: false,
+                setLoading: () => { },
+                showCookies: showCookieConsent,
+                setShowCookies: setShowCookieConsent,
+                showTerms,
+                setShowTerms,
+                showPrivacy,
+                setShowPrivacy,
+                showClearData,
+                setShowClearData,
+                showDeleteAccount,
+                setShowDeleteAccount,
+                showEmailConfirm,
+                setShowEmailConfirm,
+              },
+              tokens: {
+                emailConfirmationToken,
+                passwordResetToken
+              }
+            }} />
+          </div>
         )}
 
 
@@ -654,6 +778,7 @@ export default function App({
       <ConfirmClearData open={showClearData} setOpen={setShowClearData} data={appState} setData={setAppState} options={options} />
       <ConfirmDeleteUser open={showDeleteAccount} setOpen={setShowDeleteAccount} data={appState} setData={setAppState} options={options} />
       <ConfirmEmailChange open={showEmailConfirm.open} setOpen={(status: boolean) => { setShowEmailConfirm({ ...showEmailConfirm, open: status }) }} email={showEmailConfirm.email} data={appState} setData={setAppState} options={options} />
+      <LoginDialog open={showLoginDialog} setOpen={setShowLoginDialog} data={appState} setData={setAppStateWithEffects} options={global} />
     </div>
   </div>
     <div className="w-full relative">

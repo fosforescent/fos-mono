@@ -6,6 +6,7 @@ import { diff } from "@n1ru4l/json-patch-plus"
 import { debounce, set } from "lodash"
 import { FosStore } from "@fosforescent/shared/dag-implementation/store"
 import { validateTrellisData } from "@fosforescent/shared/utils"
+import { putNodes, NodeRecord, syncManager, getAllNodes, setRootNodeId, getRootNodeId } from "./offline"
 
 
 export const getActions = (options: FosReactOptions, appData: AppState, setAppData: (state: AppState) => void) => {
@@ -289,14 +290,33 @@ export const getActions = (options: FosReactOptions, appData: AppState, setAppDa
   }
 
   const saveFosAndTrellisData = debounce(async (newData: AppStateLoaded): Promise<void> => {
+    // Check if we're in offline mode
+    const isOfflineMode = newData.auth?.offlineMode || newData.info?.offlineMode
 
+    // Always save to IndexedDB first (offline-first)
+    try {
+      await saveToIndexedDB(newData.data)
+    } catch (error) {
+      console.error('Failed to save to IndexedDB:', error)
+    }
+
+    // If offline mode or not online, don't try to sync to server
+    if (isOfflineMode || !navigator.onLine) {
+      console.log('saveFosAndTrellisData: Offline - data saved locally')
+      return
+    }
+
+    // Try to sync to server
     const data: AppStateLoaded["data"] | null | undefined = await authedApi().postData(newData.data).catch((error: Error) => {
       console.log('error', error)
-      throw error
+      // Don't throw - data is saved locally, will sync later
+      return null
     });
 
     if (!data) {
-      throw new Error('error saving data')
+      // Data saved locally, will sync when online
+      console.log('saveFosAndTrellisData: Server sync failed, data saved locally')
+      return
     } else {
       if (!diff({ left: newData.data, right: data })) {
         setAppData({ ...newData, data })
@@ -534,4 +554,86 @@ const checkInfoFormat = (info: InfoState) => {
     throw new Error('info.profileInfo is not allowed')
   }
 
+}
+
+/**
+ * Save data to IndexedDB for offline-first persistence
+ */
+async function saveToIndexedDB(data: AppStateLoaded["data"]): Promise<void> {
+  const now = Date.now()
+  const records: NodeRecord[] = []
+
+  // Convert all nodes to IndexedDB records
+  for (const [cid, content] of Object.entries(data.fosData.nodes)) {
+    records.push({
+      cid,
+      content,
+      accessedAt: now,
+      syncedAt: 0, // Not synced yet
+      dirty: true
+    })
+  }
+
+  // Batch save to IndexedDB
+  if (records.length > 0) {
+    await putNodes(records)
+  }
+
+  // Save root node ID
+  await setRootNodeId(data.fosData.rootNodeId)
+}
+
+/**
+ * Load data from IndexedDB
+ */
+export async function loadFromIndexedDB(): Promise<AppStateLoaded["data"] | null> {
+  try {
+    const rootNodeId = await getRootNodeId()
+
+    if (!rootNodeId) {
+      return null
+    }
+
+    const records = await getAllNodes()
+
+    if (records.length === 0) {
+      return null
+    }
+
+    // Reconstruct FosContextData from IndexedDB records
+    const nodes: Record<string, any> = {}
+    for (const record of records) {
+      nodes[record.cid] = record.content
+    }
+
+    // Check if root node exists
+    if (!nodes[rootNodeId]) {
+      console.warn('Root node not found in IndexedDB')
+      return null
+    }
+
+    return {
+      fosData: {
+        nodes,
+        route: [],
+        rootNodeId
+      },
+      trellisData: {
+        focusChar: null,
+        focusRoute: [],
+        collapsedList: [],
+        rowDepth: 0,
+        view: "Queue",
+        activity: "todo",
+        mode: "execute",
+        dragInfo: {
+          dragging: null,
+          dragOverInfo: null
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load from IndexedDB:', error)
+    return null
+  }
 }

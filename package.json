@@ -3,22 +3,20 @@
   "version": "0.1.7",
   "scope": "@fosforescent",
   "private": true,
-  "bin": {
-    "cli": "bin/fos-cli.js",
-    "fos": "bin/fos-cli.js"
-  },
   "workspaces": [
     "frontend",
     "backend",
     "shared",
     "infra",
-    "cli"
+    "desktop"
   ],
   "scripts": {
     "cli": "npm run --workspace cli dev -- --dir ../.fos",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
+    "dev:desktop": "cd desktop && npm run dev",
+    "build:desktop": "cd desktop && npm run build",
     "build": "npm run build:frontend && npm run build:backend",
     "build:frontend": "cd frontend && npm run build",
     "build:backend": "cd backend && npm run build",
@@ -33,11 +31,14 @@
     "build-storybook": "cd frontend && npm run build-storybook"
   },
   "devDependencies": {
-    "@fosforescent/cli": "workspace:*",
     "@vitejs/plugin-react": "^4.1.1",
     "concurrently": "^9.0.1",
     "esbuild": "^0.18.20",
     "vite": "^5.0.0",
     "wait-on": "^8.0.1"
+  },
+  "dependencies": {
+    "cmdk": "^1.1.1",
+    "react-day-picker": "^10.0.1"
   }
 }

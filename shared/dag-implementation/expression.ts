@@ -508,6 +508,9 @@ export class FosExpression {
     if (activity === 'todo') {
       return this.getAllDescendentsMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField)
     }
+    if (activity === 'document') {
+      return this.getAllDescendentsMatchingPattern(this.store.primitive.documentField, this.store.primitive.unit)
+    }
     if (activity === 'all') {
       // Return all descendant routes without filtering
       const routeMap = mutableReduceToRouteMapFromExpression(this, (acc, expression) => {

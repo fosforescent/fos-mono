@@ -15,6 +15,7 @@ import {
   writeFosStore,
   initFosDirectory,
   getTargetDirectory,
+  ensureFosFile as ensureFosFileApi,
 } from './api';
 
 export function useTauri() {
@@ -192,6 +193,22 @@ export function useTauri() {
     }
   }, [isDesktop]);
 
+  // Ensure .fos file exists in current directory (create if missing)
+  const ensureFosFile = useCallback(async () => {
+    if (!isDesktop) return null;
+    setLoading(true);
+    setError(null);
+    try {
+      const path = await ensureFosFileApi();
+      return path;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [isDesktop]);
+
   return {
     // State
     isDesktop,
@@ -214,5 +231,6 @@ export function useTauri() {
     // Store actions
     saveStore,
     reloadStore,
+    ensureFosFile,
   };
 }

@@ -129,3 +129,40 @@ seed-live-db:
 	wait $$PROXY_PID 2>/dev/null || true; \
 	echo "✅ Done!"; \
 	exit $$SEED_EXIT
+
+# ============================================
+# Tauri Desktop App Commands
+# ============================================
+
+# Run Tauri in development mode (hot reload, no rebuild needed)
+# Uses Vite dev server - changes to frontend are reflected immediately
+# Default: opens in home directory. Override with DIR=. or DIR=/path/to/dir
+DIR ?= $(HOME)
+tauri-dev:
+	FOS_TARGET_DIR=$$(realpath $(DIR)) cd desktop && npm run dev
+
+# Build Tauri production release
+tauri-build:
+	cd desktop && npm run build
+
+# Build everything (frontend + backend + desktop)
+build-all:
+	npm run build:frontend
+	npm run build:backend
+	cd desktop && npm run build
+
+# Run dev for everything (frontend dev server + Tauri)
+dev-desktop:
+	cd desktop && npm run dev
+
+# Just rebuild frontend (useful if only frontend changed)
+rebuild-frontend:
+	npm run build:frontend
+
+# Install Tauri CLI globally if needed
+tauri-setup:
+	cargo install tauri-cli
+
+# Clean Tauri build artifacts
+tauri-clean:
+	cd desktop/src-tauri && cargo clean

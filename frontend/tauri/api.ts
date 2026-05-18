@@ -107,6 +107,10 @@ export async function writeFosStore(content: string): Promise<void> {
   return invokeCommand<void>('write_fos_store', { content });
 }
 
+export async function ensureFosFile(): Promise<string> {
+  return invokeCommand<string>('ensure_fos_file');
+}
+
 export async function getAppInitInfo(): Promise<AppInitInfo> {
   return invokeCommand<AppInitInfo>('get_app_init_info');
 }
