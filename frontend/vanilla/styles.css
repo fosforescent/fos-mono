@@ -1,0 +1,709 @@
+/**
+ * Vanilla UI Styles
+ * Minimal, functional styling for the graph-based UI
+ */
+
+:root {
+  --fos-bg: #0a0a0a;
+  --fos-bg-elevated: #1a1a1a;
+  --fos-bg-hover: #2a2a2a;
+  --fos-border: #333;
+  --fos-text: #e0e0e0;
+  --fos-text-muted: #888;
+  --fos-accent: #4ade80;
+  --fos-accent-dim: #22c55e33;
+  --fos-indent: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--fos-bg);
+  color: var(--fos-text);
+}
+
+/* ============================================================================
+   Node Container
+   ============================================================================ */
+
+.fos-node {
+  margin: 0;
+  padding: 0;
+}
+
+.fos-node-content {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  transition: background 0.1s;
+}
+
+.fos-node-content:hover {
+  background: var(--fos-bg-hover);
+}
+
+.fos-node-description {
+  flex: 1;
+}
+
+.fos-node-children {
+  padding-left: var(--fos-indent);
+  border-left: 1px solid var(--fos-border);
+  margin-left: 12px;
+}
+
+/* ============================================================================
+   Task/Todo
+   ============================================================================ */
+
+.fos-task {
+  margin: 0;
+}
+
+.fos-task-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  transition: background 0.1s;
+}
+
+.fos-task-header:hover {
+  background: var(--fos-bg-hover);
+}
+
+.fos-task-complete .fos-task-header {
+  opacity: 0.5;
+}
+
+.fos-task-complete .fos-input {
+  text-decoration: line-through;
+}
+
+.fos-task-children {
+  padding-left: var(--fos-indent);
+  border-left: 2px solid var(--fos-accent-dim);
+  margin-left: 12px;
+}
+
+/* ============================================================================
+   Form Elements
+   ============================================================================ */
+
+.fos-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--fos-accent);
+}
+
+.fos-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--fos-text);
+  font-size: 14px;
+  padding: 4px 0;
+  outline: none;
+}
+
+.fos-input:focus {
+  border-bottom: 1px solid var(--fos-accent);
+  margin-bottom: -1px;
+}
+
+.fos-input::placeholder {
+  color: var(--fos-text-muted);
+}
+
+/* ============================================================================
+   Document/Text
+   ============================================================================ */
+
+.fos-document {
+  padding: 12px;
+}
+
+.fos-textarea {
+  width: 100%;
+  min-height: 200px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  font-size: 14px;
+  font-family: inherit;
+  padding: 12px;
+  resize: vertical;
+  outline: none;
+}
+
+.fos-textarea:focus {
+  border-color: var(--fos-accent);
+}
+
+/* ============================================================================
+   Buttons
+   ============================================================================ */
+
+.fos-button {
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 12px;
+  transition: all 0.1s;
+}
+
+.fos-button:hover {
+  background: var(--fos-bg-hover);
+  border-color: var(--fos-accent);
+}
+
+.fos-button-primary {
+  background: var(--fos-accent);
+  color: #000;
+  border-color: var(--fos-accent);
+}
+
+.fos-button-primary:hover {
+  background: #5eead4;
+}
+
+/* ============================================================================
+   Layout
+   ============================================================================ */
+
+.fos-app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.fos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--fos-border);
+  margin-bottom: 20px;
+}
+
+.fos-header h1 {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.fos-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+/* ============================================================================
+   View Switcher
+   ============================================================================ */
+
+.fos-view-switcher {
+  display: flex;
+  gap: 4px;
+  background: var(--fos-bg-elevated);
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.fos-view-button {
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  transition: all 0.1s;
+}
+
+.fos-view-button:hover {
+  color: var(--fos-text);
+  background: var(--fos-bg-hover);
+}
+
+.fos-view-button.active {
+  background: var(--fos-accent);
+  color: #000;
+}
+
+/* ============================================================================
+   Depth-based indentation (alternative to nested padding)
+   ============================================================================ */
+
+[data-depth="1"] > .fos-node-content,
+[data-depth="1"] > .fos-task-header {
+  padding-left: calc(12px + var(--fos-indent) * 1);
+}
+
+[data-depth="2"] > .fos-node-content,
+[data-depth="2"] > .fos-task-header {
+  padding-left: calc(12px + var(--fos-indent) * 2);
+}
+
+[data-depth="3"] > .fos-node-content,
+[data-depth="3"] > .fos-task-header {
+  padding-left: calc(12px + var(--fos-indent) * 3);
+}
+
+[data-depth="4"] > .fos-node-content,
+[data-depth="4"] > .fos-task-header {
+  padding-left: calc(12px + var(--fos-indent) * 4);
+}
+
+[data-depth="5"] > .fos-node-content,
+[data-depth="5"] > .fos-task-header {
+  padding-left: calc(12px + var(--fos-indent) * 5);
+}
+
+/* ============================================================================
+   Drag and Drop
+   ============================================================================ */
+
+/* Drag handle */
+.fos-drag-handle {
+  cursor: grab;
+  padding: 4px 6px;
+  color: var(--fos-text-muted);
+  font-size: 12px;
+  letter-spacing: -2px;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+
+.fos-drag-handle:hover {
+  opacity: 1;
+  color: var(--fos-text);
+}
+
+.fos-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Row being dragged */
+.fos-dragging {
+  opacity: 0.5;
+  background: var(--fos-bg-hover);
+}
+
+/* Drop target indicators */
+.fos-drag-over {
+  position: relative;
+}
+
+/* Drop before (above) indicator */
+.fos-drop-before::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--fos-accent);
+  border-radius: 2px;
+  z-index: 10;
+}
+
+/* Drop after (below) indicator */
+.fos-drop-after::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--fos-accent);
+  border-radius: 2px;
+  z-index: 10;
+}
+
+/* Drop inside (as child) indicator */
+.fos-drop-inside {
+  background: var(--fos-accent-dim);
+  outline: 2px solid var(--fos-accent);
+  outline-offset: -2px;
+}
+
+/* Row container for drag and drop */
+.fos-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  transition: background 0.1s, padding 0.1s, transform 0.1s;
+  position: relative;
+}
+
+.fos-row:hover {
+  background: var(--fos-bg-hover);
+}
+
+.fos-row:hover .fos-drag-handle {
+  opacity: 0.8;
+}
+
+/* Tree node container */
+.fos-tree-node {
+  position: relative;
+}
+
+/* Children container */
+.fos-children {
+  margin-left: 12px;
+  border-left: 2px solid var(--fos-accent-dim);
+  padding-left: 0;
+}
+
+/* Prevent text selection during drag */
+.fos-dragging * {
+  user-select: none;
+}
+
+/* Animation for drop position changes */
+.fos-row.fos-drop-before,
+.fos-row.fos-drop-after,
+.fos-row.fos-drop-inside {
+  transition: background 0.1s, outline 0.1s;
+}
+
+/* Row actions visibility on hover */
+.fos-row-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.fos-row:hover .fos-row-actions {
+  opacity: 1;
+}
+
+/* Toggle button */
+.fos-toggle {
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.fos-toggle:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+.fos-toggle-spacer {
+  width: 24px;
+  height: 24px;
+}
+
+/* Icon buttons */
+.fos-btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.fos-btn-icon:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+/* Indent spacer */
+.fos-indent {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Text input in rows */
+.fos-text-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--fos-text);
+  font-size: 14px;
+  padding: 4px 0;
+  outline: none;
+  min-width: 0;
+}
+
+.fos-text-input:focus {
+  border-bottom: 1px solid var(--fos-accent);
+  margin-bottom: -1px;
+}
+
+.fos-text-input::placeholder {
+  color: var(--fos-text-muted);
+}
+
+/* Add row at bottom */
+.fos-add-row {
+  padding: 8px 12px;
+  padding-left: 48px; /* Account for drag handle + checkbox space */
+}
+
+/* Empty state */
+.fos-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--fos-text-muted);
+}
+
+/* ============================================================================
+   Breadcrumbs
+   ============================================================================ */
+
+.fos-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+  background: var(--fos-bg-elevated);
+  border-bottom: 1px solid var(--fos-border);
+  flex-wrap: wrap;
+}
+
+.fos-breadcrumb-item {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.fos-breadcrumb-item:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+  border-color: var(--fos-border);
+}
+
+.fos-breadcrumb-item.active {
+  color: var(--fos-text);
+  font-weight: 500;
+  cursor: default;
+}
+
+.fos-breadcrumb-item.active:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* Breadcrumb drop target */
+.fos-breadcrumb-item.fos-drop-target {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+  color: var(--fos-text);
+}
+
+.fos-breadcrumb-sep {
+  color: var(--fos-text-muted);
+  font-size: 12px;
+}
+
+/* ============================================================================
+   Depth Limiting
+   ============================================================================ */
+
+.fos-depth-limit {
+  padding: 4px 12px 4px 36px;
+  margin-left: 12px;
+  border-left: 2px solid var(--fos-accent-dim);
+}
+
+.fos-zoom-btn {
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.fos-zoom-btn:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-accent);
+}
+
+/* ============================================================================
+   Toolbar Controls
+   ============================================================================ */
+
+.fos-toolbar-spacer {
+  flex: 1;
+}
+
+.fos-zoom-out-btn {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+}
+
+.fos-zoom-out-btn:hover {
+  background: var(--fos-accent);
+  color: #000;
+}
+
+/* ============================================================================
+   Expression Tree (JSX render buffer approach)
+   ============================================================================ */
+
+/* Expression elements are identified by data-fosnode attribute */
+/* Both instruction and target CIDs are derived from DOM structure/content */
+[data-fosnode] {
+  display: block;
+}
+
+[data-fosnode][data-collapsed] > .expr-children {
+  display: none;
+}
+
+.expr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  transition: background 0.1s;
+}
+
+.expr-row:hover {
+  background: var(--fos-bg-hover);
+}
+
+.expr-handle {
+  cursor: grab;
+  padding: 4px 6px;
+  color: var(--fos-text-muted);
+  font-size: 12px;
+  letter-spacing: -2px;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+
+.expr-row:hover .expr-handle {
+  opacity: 0.8;
+}
+
+.expr-indent {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.expr-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--fos-accent);
+}
+
+.expr-toggle {
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px;
+  width: 20px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.expr-toggle:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+.expr-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--fos-text);
+  font-size: 14px;
+  padding: 4px 0;
+  outline: none;
+  min-width: 0;
+}
+
+.expr-input:focus {
+  border-bottom: 1px solid var(--fos-accent);
+  margin-bottom: -1px;
+}
+
+.expr-input::placeholder {
+  color: var(--fos-text-muted);
+}
+
+.expr-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.expr-row:hover .expr-actions {
+  opacity: 1;
+}
+
+.expr-btn-add,
+.expr-btn-delete {
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.expr-btn-add:hover,
+.expr-btn-delete:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+.expr-children {
+  margin-left: 12px;
+  border-left: 2px solid var(--fos-accent-dim);
+}

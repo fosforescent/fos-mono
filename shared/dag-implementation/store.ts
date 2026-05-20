@@ -141,15 +141,13 @@ export class FosStore {
 
 
   getRootExpression(): FosExpression {
-
-    // const {
-    //   target
-    // } = this.primitive.startRootAlias.dereferenceNodes()
-
-    const rootInstruction = this.primitive.aliasConstructor.getId()
-    const rootTarget = this.rootNodeId
-
-    return new FosExpression(this, [])
+    // Create root expression with voidNode as instruction, root node as target, no parent
+    return new FosExpression(
+      this,
+      this.primitive.voidNode,
+      this.getRootNode(),
+      null
+    )
   }
 
   getRootNode(): FosNode {
@@ -320,6 +318,13 @@ export class FosStore {
     //   this.mutateAlias(alias as string, updatedValue, this.hash(updatedValue))
     //   // throw new Error(`diff found between original and updated content`)
     // }
+
+    // Check if a node with this content already exists in cache
+    // This is critical for object identity comparison to work
+    const cid = this.hash(updatedValue)
+    if (this.cache.has(cid)) {
+      return this.cache.get(cid) as FosNode
+    }
 
     return new FosNode(updatedValue, this)
   }
@@ -682,6 +687,11 @@ export class FosStore {
     const result = this.create(nodeContent)
 
     if (!result) throw new Error(`Unable to construct node for address ${address}`)
+
+    // Cache the node so subsequent lookups return the same object
+    // This is critical for object identity comparison to work
+    this.cache.set(result.cid, result)
+
     return result
   }
 

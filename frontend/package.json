@@ -3,17 +3,14 @@
   "version": "0.1.7",
   "type": "module",
   "scripts": {
-    "dev": "vite --mode frontend",
-    "build": "vite build --mode frontend",
-    "build:production": "vite build --mode frontend",
+    "dev": "vite",
+    "build": "vite build",
+    "build:production": "vite build",
     "preview": "vite preview",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "lint:fix": "eslint . --ext ts,tsx --fix",
-    "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build",
-    "test-storybook": "test-storybook"
+    "lint:fix": "eslint . --ext ts,tsx --fix"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

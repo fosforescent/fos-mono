@@ -260,10 +260,28 @@ export type FosDataContent = {
 
 
 
+/**
+ * Serialized node content (stored on disk, CID-based children)
+ */
 export type FosNodeContent = {
   data: FosDataContent,
-  children: FosPathElem[];
+  children: FosPathElem[];  // CID strings for persistence
 }
+
+/**
+ * Forward declaration for FosNode (actual class in node.ts)
+ * Used for runtime object references
+ */
+export interface IFosNode {
+  getId(): string
+  getEdges(): FosPathElem[]
+  getData(): FosDataContent
+}
+
+/**
+ * Runtime edge with direct object references (no CID lookup needed)
+ */
+export type FosEdge<T extends IFosNode = IFosNode> = [T, T]
 
 
 // export type FosNodeData = {
@@ -286,10 +304,12 @@ export type FosNodeId = ContentId
 
 
 
+/** CID-based path element for serialization */
 export type FosPathElem = [FosNodeId, FosNodeId]
 export type FosPath = FosPathElem[]
 export type FosRoute = [FosPathElem, ...FosPath]
 
+/** UUID-based path element for runtime (after refactor) */
 export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
 
 export type FosContextData = {

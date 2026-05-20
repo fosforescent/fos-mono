@@ -210,6 +210,16 @@ async fn open_auth_url(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| format!("Failed to open browser: {}", e))
 }
 
+/// Log messages from the frontend to stdout
+#[tauri::command]
+fn log_frontend(level: String, message: String) {
+    use std::io::Write;
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    println!("[{}][Frontend:{}] {}", timestamp, level, message);
+    // Flush stdout to ensure logs appear immediately
+    let _ = std::io::stdout().flush();
+}
+
 /// Get the target directory that was passed when launching the app
 #[tauri::command]
 fn get_target_directory(state: State<AppState>) -> String {
@@ -362,7 +372,7 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
+                        .level(log::LevelFilter::Debug)
                         .build(),
                 )?;
             }
@@ -390,6 +400,8 @@ pub fn run() {
             get_app_init_info,
             // Auth
             open_auth_url,
+            // Logging
+            log_frontend,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

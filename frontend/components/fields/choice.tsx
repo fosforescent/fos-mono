@@ -140,8 +140,7 @@ const ChoiceRowComponent = ({
                 <CaretSortIcon style={{
                   padding: '0px 0px 0px 0px',
                 }} />
-                <ExpressionFields
-                </div>
+              </div>
             </div>
           </PopoverTrigger>
           <PopoverContent className="w-[200px] p-0">
@@ -236,4 +235,4 @@ const ChoiceRowComponent = ({
 
   </>
   )
-
+}

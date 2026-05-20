@@ -134,12 +134,28 @@ seed-live-db:
 # Tauri Desktop App Commands
 # ============================================
 
-# Run Tauri in development mode (hot reload, no rebuild needed)
-# Uses Vite dev server - changes to frontend are reflected immediately
+LOG_DIR := $(CURDIR)/logs
+TAURI_LOG := $(LOG_DIR)/tauri-dev.log
+
+# Run Tauri in development mode
+# Clears Vite cache and rebuilds frontend before starting
 # Default: opens in home directory. Override with DIR=. or DIR=/path/to/dir
+# Logs detailed application and JS console output to $(TAURI_LOG)
 DIR ?= $(HOME)
 tauri-dev:
-	FOS_TARGET_DIR=$$(realpath $(DIR)) cd desktop && npm run dev
+	@echo "🧹 Cleaning Vite cache..."
+	rm -rf frontend/node_modules/.vite frontend/dist 2>/dev/null || true
+	@echo "🔨 Rebuilding frontend..."
+	cd frontend && npm run build
+	@mkdir -p $(LOG_DIR)
+	@echo "🚀 Starting Tauri dev with verbose logging (logging to $(TAURI_LOG))..."
+	@echo "=== Tauri Dev Started: $$(date) ===" > $(TAURI_LOG)
+	@echo "=== Environment: RUST_LOG=debug RUST_BACKTRACE=1 ===" >> $(TAURI_LOG)
+	RUST_LOG=debug RUST_BACKTRACE=1 FOS_TARGET_DIR=$$(realpath $(DIR)) cd desktop && npm run dev 2>&1 | tee -a $(TAURI_LOG)
+
+# View tauri logs
+tauri-logs:
+	@tail -f $(TAURI_LOG)
 
 # Build Tauri production release
 tauri-build:
@@ -166,3 +182,15 @@ tauri-setup:
 # Clean Tauri build artifacts
 tauri-clean:
 	cd desktop/src-tauri && cargo clean
+
+# Reset all local Fosforescent data (local .fos, ~/.fos, caches, IndexedDB)
+reset-local:
+	@echo "🧹 Resetting all local Fosforescent data..."
+	@rm -rf .fos 2>/dev/null || true
+	@rm -rf ~/.fos 2>/dev/null || true
+	@rm -rf ~/.cache/com.fosforescent.desktop 2>/dev/null || true
+	@rm -rf ~/.local/share/com.fosforescent.desktop 2>/dev/null || true
+	@rm -rf ~/.config/com.fosforescent.desktop 2>/dev/null || true
+	@rm -rf frontend/node_modules/.vite 2>/dev/null || true
+	@rm -rf frontend/dist 2>/dev/null || true
+	@echo "✅ Reset complete. Run 'make tauri-dev' to start fresh."

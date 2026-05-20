@@ -1,11 +1,10 @@
 import { Duration, NodeData, Probability, Cost, CostAllocation } from './node-data'
 
 
-import { FosDataContent, FosNodeContent, FosPath, FosPathElem } from '../types'
+import { FosDataContent, FosNodeContent, FosPath, FosPathElem, FosEdge } from '../types'
 import { FosStore } from './store'
 import { FosExpression } from './expression'
 import { Key } from 'lucide-react'
-
 
 
 
@@ -18,15 +17,46 @@ export class FosNode {
   value: FosNodeContent
   alias: string | undefined = undefined
 
+  /** Cached resolved edges (object references instead of CID strings) */
+  private _resolvedEdges: [FosNode, FosNode][] | null = null
+
   constructor(value: FosNodeContent, store: FosStore) {
     const address = store.insert(value)
     this.cid = address
     this.store = store
     this.value = value
+    // Cache this node so lookups by CID return the same object
+    // Critical for object identity comparison to work
+    store.cache.set(this.cid, this)
   }
 
   getId(): string {
     return this.cid
+  }
+
+  /**
+   * Get edges as resolved FosNode object references.
+   * This is the preferred method for runtime navigation - no CID lookups needed after first access.
+   */
+  getEdgesResolved(): [FosNode, FosNode][] {
+    if (this._resolvedEdges === null) {
+      this._resolvedEdges = this.value.children.map(([instrCid, targetCid]) => {
+        const instrNode = this.store.getNodeByAddress(instrCid)
+        const targetNode = this.store.getNodeByAddress(targetCid)
+        if (!instrNode || !targetNode) {
+          throw new Error(`Failed to resolve edge: instr=${instrCid}, target=${targetCid}`)
+        }
+        return [instrNode, targetNode] as [FosNode, FosNode]
+      })
+    }
+    return this._resolvedEdges
+  }
+
+  /**
+   * Invalidate the resolved edges cache (call when edges change)
+   */
+  invalidateEdgesCache(): void {
+    this._resolvedEdges = null
   }
 
 
@@ -195,8 +225,8 @@ export class FosNode {
 
 
   mutate(content: FosNodeContent): FosNode {
-    const newNode = new FosNode(content, this.store)
-    return newNode
+    // Use store.create() instead of direct constructor to ensure cache is checked
+    return this.store.create(content)
   }
 
 
@@ -509,7 +539,8 @@ export class FosNode {
       },
       children: []
     }
-    const newNode = new FosNode(newTodoData, this.store)
+    // Use store.create() instead of direct constructor to ensure cache is checked
+    const newNode = this.store.create(newTodoData)
     const thisNewNode = this.addEdge(newNode.getId(), this.store.primitive.completeField.getId())
     return [thisNewNode, newNode]
   }
