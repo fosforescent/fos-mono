@@ -16,6 +16,16 @@ import { isCollapsed, toggleCollapse, addChild, pathEqual } from './tree-ops';
 import type { DragState, DragCallbacks, DropPosition } from './drag-drop';
 import { createDragState, makeDraggableDropTarget, makeDragHandle } from './drag-drop';
 import { getOrCreateUuid } from './ui-state';
+import { createProposalManager, type Proposal, type ProposalManager, PROPOSAL_COLORS } from '@fosforescent/shared/dag-implementation/proposal';
+import { getEffectiveMembers } from '@fosforescent/shared/dag-implementation/membership';
+import {
+  renderProposalBorders,
+  renderProposalSelector,
+  applyAncestorTrail,
+  renderMembersIndicator,
+  renderProposeButton,
+  type ProposalUICallbacks,
+} from './proposal-ui';
 
 export type ViewType = 'queue' | 'tree' | 'focus';
 
@@ -30,6 +40,13 @@ export type ViewContext = {
   onZoom: (path: FosPath) => void;
   dragState: DragState;
   dragCallbacks: DragCallbacks;
+  // Proposal/Consensus support
+  proposalManager?: ProposalManager;  // Manager for graph-based proposals
+  currentPeerId?: string;      // Our peer ID (public key)
+  selectedProposalId?: string | null;  // Currently selected proposal for viewing
+  onSelectProposal?: (proposalId: string | null) => void;
+  onApproveProposal?: (proposal: Proposal) => void;
+  onProposeChanges?: (expr: FosExpression, newContent: FosNodeContent) => void;
 };
 
 // Helper to create node content with description
@@ -39,6 +56,81 @@ const createNodeContent = (description: string): FosNodeContent => ({
   },
   children: []
 });
+
+/**
+ * Structural edge types - these are metadata about the node, not content.
+ * They should be exposed as data attributes, not rendered as rows.
+ */
+type StructuralEdges = {
+  targetPointer?: string;      // CID of what this node points to
+  instructionPointer?: string; // CID of the instruction/type
+  previousVersion?: string;    // CID of previous version (for version history)
+};
+
+/**
+ * Extract structural edges from children.
+ * Returns the structural metadata and the content children separately.
+ */
+const extractStructuralEdges = (
+  children: FosExpression[],
+  store: FosStore
+): { structural: StructuralEdges; content: FosExpression[] } => {
+  const structural: StructuralEdges = {};
+  const content: FosExpression[] = [];
+
+  const targetPointerId = store.primitive.targetPointerConstructor.getId();
+  const instructionPointerId = store.primitive.instructionPointerConstructor.getId();
+  const previousVersionId = store.primitive.previousVersion.getId();
+
+  for (const child of children) {
+    const instrId = child.instructionNode.getId();
+
+    if (instrId === targetPointerId) {
+      structural.targetPointer = child.targetNode.getId();
+    } else if (instrId === instructionPointerId) {
+      structural.instructionPointer = child.targetNode.getId();
+    } else if (instrId === previousVersionId) {
+      structural.previousVersion = child.targetNode.getId();
+    } else {
+      // This is content, not structural metadata
+      content.push(child);
+    }
+  }
+
+  return { structural, content };
+};
+
+/**
+ * Apply structural metadata as data attributes on an element.
+ */
+const applyStructuralAttributes = (el: HTMLElement, structural: StructuralEdges): void => {
+  if (structural.targetPointer) {
+    el.setAttribute('data-target-pointer', structural.targetPointer);
+  }
+  if (structural.instructionPointer) {
+    el.setAttribute('data-instruction-pointer', structural.instructionPointer);
+  }
+  if (structural.previousVersion) {
+    el.setAttribute('data-previous-version', structural.previousVersion);
+  }
+};
+
+/**
+ * Get the render type for an expression based on its instruction (left side).
+ */
+type RenderType = 'task' | 'string' | 'document' | 'workflow' | 'generic';
+
+const getRenderType = (expr: FosExpression, store: FosStore): RenderType => {
+  const instrId = expr.instructionNode.getId();
+
+  // Check known types
+  if (instrId === store.primitive.workflowField.getId()) return 'workflow';
+  if (instrId === store.primitive.documentField.getId()) return 'document';
+  if (instrId === store.primitive.stringField.getId()) return 'string';
+
+  // Default to task-like rendering for most content
+  return 'task';
+};
 
 // ============================================================================
 // Breadcrumb Navigation (with zoom and drop targets)
@@ -99,9 +191,10 @@ const renderBreadcrumbs = (
           }
           // Check if crumb is descendant of dragging
           if (crumb.path.length > draggingPath.length) {
-            const isDescendant = draggingPath.every((elem, i) =>
-              elem[0] === crumb.path[i][0] && elem[1] === crumb.path[i][1]
-            );
+            const isDescendant = draggingPath.every((elem, i) => {
+              const crumbElem = crumb.path[i];
+              return crumbElem && elem[0] === crumbElem[0] && elem[1] === crumbElem[1];
+            });
             if (isDescendant) {
               e.dataTransfer.dropEffect = 'none';
               return;
@@ -147,10 +240,12 @@ const renderTaskRow = (
   expr: FosExpression,
   ctx: ViewContext,
   depth: number = 0,
-  enableDragDrop: boolean = true
+  enableDragDrop: boolean = true,
+  descendantProposalColors: string[] = []
 ): HTMLElement => {
   const description = expr.getDescription() || '';
-  const children = expr.getTargetChildren();
+  const allChildren = expr.getTargetChildren();
+  const { structural, content: children } = extractStructuralEdges(allChildren, ctx.store);
   const hasChildren = children.length > 0;
   const collapsed = isCollapsed(expr);
   const path = expr.route;
@@ -159,10 +254,29 @@ const renderTaskRow = (
   // This UUID stays mapped to this logical position even after mutations
   const uuid = getOrCreateUuid(path);
 
-  const row = div({ class: 'fos-row' });
+  // Get proposals and members for this node
+  const proposals = ctx.proposalManager?.getProposalsForNode(expr) ?? [];
+  const members = getEffectiveMembers(expr);
+  const hasProposals = proposals.length > 0;
+
+  const row = div({ class: `fos-row ${hasProposals ? 'has-proposals' : ''}` });
 
   // Store UUID on the row element for later lookup
   row.dataset.uuid = uuid;
+
+  // Apply structural metadata as data attributes
+  applyStructuralAttributes(row, structural);
+
+  // Add proposal borders if this node has proposals
+  if (hasProposals) {
+    const borders = renderProposalBorders(proposals);
+    row.appendChild(borders);
+  }
+
+  // Add ancestor trail if descendants have proposals (but this node doesn't)
+  if (!hasProposals && descendantProposalColors.length > 0) {
+    applyAncestorTrail(row, descendantProposalColors);
+  }
 
   // Drag handle (grip icon)
   const dragHandle = span({ class: 'fos-drag-handle', title: 'Drag to reorder' }, ['⋮⋮']);
@@ -238,8 +352,24 @@ const renderTaskRow = (
 
   row.appendChild(textInput);
 
+  // Members indicator (if this node has members defined)
+  const nodeMembers = expr.targetNode.getData().members;
+  if (nodeMembers && nodeMembers.peerIds.length > 0) {
+    row.appendChild(renderMembersIndicator(nodeMembers.peerIds.length));
+  }
+
   // Actions
   const actions = div({ class: 'fos-row-actions' });
+
+  // Propose button (if we have peer context and callbacks)
+  if (ctx.currentPeerId && ctx.onProposeChanges && members.length > 0) {
+    const proposeBtn = renderProposeButton(() => {
+      // Create a proposal with current content (user would modify first in real usage)
+      const currentContent = expr.targetNode.getContent();
+      ctx.onProposeChanges!(expr, currentContent);
+    });
+    actions.appendChild(proposeBtn);
+  }
 
   const addBtn = button({ class: 'fos-btn-icon', title: 'Add subtask' }, ['+']);
   addBtn.addEventListener('click', async (e) => {
@@ -330,30 +460,146 @@ export const renderQueueView = (ctx: ViewContext): HTMLElement => {
 // Tree View - Hierarchical nested view with drag and drop
 // ============================================================================
 
+/**
+ * Collect all proposals from an expression and its descendants.
+ * Used to populate the proposal selector dropdown.
+ */
+const collectAllProposals = (
+  expr: FosExpression,
+  pm: ProposalManager | undefined,
+  visited = new Set<string>()
+): Proposal[] => {
+  if (!pm) return [];
+  const nodeId = expr.targetNode.getId();
+  if (visited.has(nodeId)) return [];
+  visited.add(nodeId);
+
+  const proposals: Proposal[] = [];
+
+  // Get proposals for this node
+  const nodeProposals = pm.getProposalsForNode(expr);
+  proposals.push(...nodeProposals);
+
+  // Recurse into children
+  const children = expr.getTargetChildren();
+  for (const child of children) {
+    const childProposals = collectAllProposals(child, pm, visited);
+    proposals.push(...childProposals);
+  }
+
+  return proposals;
+};
+
+/**
+ * Get a color for a sender based on their peer ID
+ */
+const getColorForSender = (senderPeerId: string): string => {
+  // Simple hash to pick a color
+  let hash = 0;
+  for (let i = 0; i < senderPeerId.length; i++) {
+    hash = ((hash << 5) - hash) + senderPeerId.charCodeAt(i);
+    hash = hash & hash;
+  }
+  const index = Math.abs(hash) % PROPOSAL_COLORS.length;
+  return PROPOSAL_COLORS[index] ?? PROPOSAL_COLORS[0];
+};
+
+/**
+ * Collect proposal colors from all descendants of an expression.
+ * Used for the ancestor trail visual indicator.
+ */
+const collectDescendantProposalColors = (
+  expr: FosExpression,
+  pm: ProposalManager | undefined,
+  visited = new Set<string>()
+): string[] => {
+  if (!pm) return [];
+  const nodeId = expr.targetNode.getId();
+  if (visited.has(nodeId)) return [];
+  visited.add(nodeId);
+
+  const colors: string[] = [];
+
+  // Get proposals for this node - derive color from sender
+  const proposals = pm.getProposalsForNode(expr);
+  for (const p of proposals) {
+    const color = getColorForSender(p.senderPeerId);
+    if (!colors.includes(color)) {
+      colors.push(color);
+    }
+  }
+
+  // Recurse into children
+  const children = expr.getTargetChildren();
+  for (const child of children) {
+    const childColors = collectDescendantProposalColors(child, pm, visited);
+    for (const c of childColors) {
+      if (!colors.includes(c)) {
+        colors.push(c);
+      }
+    }
+  }
+
+  return colors;
+};
+
 const renderTreeNode = (
   expr: FosExpression,
   ctx: ViewContext,
   depth: number = 0,
   enableDragDrop: boolean = true
-): HTMLElement => {
+): { element: HTMLElement; proposalColors: string[] } => {
   const container = div({ class: 'fos-tree-node' });
   const collapsed = isCollapsed(expr);
-  const children = expr.getTargetChildren();
+  const allChildren = expr.getTargetChildren();
+  const { structural, content: children } = extractStructuralEdges(allChildren, ctx.store);
   const hasChildren = children.length > 0;
+
+  // Apply structural metadata as data attributes
+  applyStructuralAttributes(container, structural);
 
   // Check if we're at max depth (0 = unlimited)
   const atMaxDepth = ctx.maxDepth > 0 && depth >= ctx.maxDepth;
 
-  container.appendChild(renderTaskRow(expr, ctx, depth, enableDragDrop));
+  // Collect descendant proposal colors for ancestor trail
+  let descendantColors: string[] = [];
 
   // Show children if not collapsed AND (not at max depth OR children explicitly expanded)
   if (hasChildren && !collapsed && !atMaxDepth) {
     const childContainer = div({ class: 'fos-children' });
     for (const child of children) {
-      childContainer.appendChild(renderTreeNode(child, ctx, depth + 1, enableDragDrop));
+      const childResult = renderTreeNode(child, ctx, depth + 1, enableDragDrop);
+      childContainer.appendChild(childResult.element);
+      // Collect colors from descendants
+      for (const c of childResult.proposalColors) {
+        if (!descendantColors.includes(c)) {
+          descendantColors.push(c);
+        }
+      }
     }
     container.appendChild(childContainer);
+  } else if (hasChildren && !collapsed && atMaxDepth) {
+    // At max depth but not collapsed - collect colors from hidden descendants
+    for (const child of children) {
+      const childColors = collectDescendantProposalColors(child, ctx.proposalManager);
+      for (const c of childColors) {
+        if (!descendantColors.includes(c)) {
+          descendantColors.push(c);
+        }
+      }
+    }
   }
+
+  // Render the row with descendant colors for ancestor trail
+  const row = renderTaskRow(expr, ctx, depth, enableDragDrop, descendantColors);
+  container.insertBefore(row, container.firstChild);
+
+  // Get this node's proposal colors to pass up
+  const thisNodeProposals = ctx.proposalManager?.getProposalsForNode(expr) ?? [];
+  const thisNodeColors = thisNodeProposals.map(p => getColorForSender(p.senderPeerId));
+  const allColors = [...thisNodeColors, ...descendantColors].filter(
+    (c, i, arr) => arr.indexOf(c) === i
+  );
 
   // If at max depth with children, show a "more" indicator
   if (hasChildren && !collapsed && atMaxDepth) {
@@ -368,7 +614,7 @@ const renderTreeNode = (
     container.appendChild(moreIndicator);
   }
 
-  return container;
+  return { element: container, proposalColors: allColors };
 };
 
 export const renderTreeView = (ctx: ViewContext): HTMLElement => {
@@ -384,7 +630,12 @@ export const renderTreeView = (ctx: ViewContext): HTMLElement => {
     ? new FosExpression(ctx.store, ctx.zoomPath)
     : new FosExpression(ctx.store, ctx.path);
 
-  const children = zoomedExpr.getTargetChildren();
+  // Extract structural metadata and content children
+  const allChildren = zoomedExpr.getTargetChildren();
+  const { structural, content: children } = extractStructuralEdges(allChildren, ctx.store);
+
+  // Apply structural metadata to container
+  applyStructuralAttributes(container, structural);
 
   if (children.length === 0) {
     container.appendChild(
@@ -396,7 +647,39 @@ export const renderTreeView = (ctx: ViewContext): HTMLElement => {
   const enableDragDrop = !!(ctx.dragState && ctx.dragCallbacks);
 
   for (const child of children) {
-    container.appendChild(renderTreeNode(child, ctx, 0, enableDragDrop));
+    const result = renderTreeNode(child, ctx, 0, enableDragDrop);
+    container.appendChild(result.element);
+  }
+
+  // Show proposal selector if we have peer context and there are proposals
+  if (ctx.currentPeerId && ctx.onSelectProposal && ctx.onApproveProposal && ctx.proposalManager) {
+    // Find all proposals in the current view
+    const allProposals = collectAllProposals(zoomedExpr, ctx.proposalManager);
+    if (allProposals.length > 0) {
+      const members = getEffectiveMembers(zoomedExpr);
+      const callbacks: ProposalUICallbacks = {
+        onSelectProposal: ctx.onSelectProposal,
+        onApprove: ctx.onApproveProposal,
+      };
+      const selector = renderProposalSelector(
+        allProposals,
+        members,
+        ctx.currentPeerId,
+        ctx.selectedProposalId ?? null,
+        callbacks
+      );
+      // Insert after breadcrumbs but before content
+      if (ctx.zoomPath && ctx.zoomPath.length > 0 && container.children.length > 1) {
+        const secondChild = container.children[1];
+        if (secondChild) {
+          container.insertBefore(selector, secondChild);
+        } else {
+          container.appendChild(selector);
+        }
+      } else {
+        container.insertBefore(selector, container.firstChild);
+      }
+    }
   }
 
   // Add new item input at bottom
@@ -480,7 +763,8 @@ export const renderFocusView = (ctx: ViewContext): HTMLElement => {
   container.appendChild(content);
 
   // Children as subtasks
-  const children = expr.getTargetChildren();
+  const allChildren = expr.getTargetChildren();
+  const { content: children } = extractStructuralEdges(allChildren, ctx.store);
   if (children.length > 0) {
     const subtasks = div({ class: 'fos-subtasks' });
     subtasks.appendChild(el('h3', {}, ['Subtasks']));
@@ -552,6 +836,13 @@ export type ViewContextOptions = {
   onSave: () => void;
   onNavigate: (path: FosPath) => void;
   onZoom: (path: FosPath) => void;
+  // Proposal/Consensus options
+  proposalManager?: ProposalManager;
+  currentPeerId?: string;
+  selectedProposalId?: string | null;
+  onSelectProposal?: (proposalId: string | null) => void;
+  onApproveProposal?: (proposal: Proposal) => void;
+  onProposeChanges?: (expr: FosExpression, newContent: FosNodeContent) => void;
 };
 
 export const createViewContextWithDrag = (
@@ -565,8 +856,18 @@ export const createViewContextWithDrag = (
     onUpdate,
     onSave,
     onNavigate,
-    onZoom
+    onZoom,
+    // Proposal options
+    proposalManager: providedProposalManager,
+    currentPeerId,
+    selectedProposalId,
+    onSelectProposal,
+    onApproveProposal,
+    onProposeChanges,
   } = options;
+
+  // Use provided proposal manager or create one for this store
+  const proposalManager = providedProposalManager ?? createProposalManager(store);
 
   const dragState = createDragState();
 
@@ -622,7 +923,14 @@ export const createViewContextWithDrag = (
     onNavigate,
     onZoom,
     dragState,
-    dragCallbacks
+    dragCallbacks,
+    // Proposal/Consensus
+    proposalManager,
+    currentPeerId,
+    selectedProposalId,
+    onSelectProposal,
+    onApproveProposal,
+    onProposeChanges,
   };
 
   return { ctx, dragState };
@@ -631,3 +939,8 @@ export const createViewContextWithDrag = (
 // Re-export drag types for external use
 export type { DragState, DragCallbacks, DropPosition } from './drag-drop';
 export { createDragState } from './drag-drop';
+
+// Re-export proposal types and functions for external use
+export type { Proposal, FieldDiff, ProposalManager } from '@fosforescent/shared/dag-implementation/proposal';
+export { createProposalManager, PROPOSAL_COLORS } from '@fosforescent/shared/dag-implementation/proposal';
+export { getEffectiveMembers, isMember, setMembers, addMember, removeMember } from '@fosforescent/shared/dag-implementation/membership';

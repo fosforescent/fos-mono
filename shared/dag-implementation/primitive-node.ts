@@ -169,6 +169,13 @@ export const getApproveActionNode = (store: FosStore) => generateConstructor(sto
 export const getProposalFieldNode = (store: FosStore) => generateConstructor(store, "PROPOSAL", { description: { content: 'Proposal Field Constructor' } }, [])
 export const getRevisionFieldNode = (store: FosStore) => generateConstructor(store, "REVISION", { description: { content: 'Revision Field Constructor' } }, [])
 
+// Proposal-related constructors for peer consensus (branching model)
+export const getProposedContentNode = (store: FosStore) => generateConstructor(store, "PROPOSEDCONTENT", { description: { content: 'Proposed Content Constructor' } }, [])
+export const getProposalNameNode = (store: FosStore) => generateConstructor(store, "PROPOSALNAME", { description: { content: 'Proposal/Branch Name Constructor' } }, [])
+export const getSenderNode = (store: FosStore) => generateConstructor(store, "SENDER", { description: { content: 'Sender Constructor (peer ID)' } }, [])
+export const getTimestampNode = (store: FosStore) => generateConstructor(store, "TIMESTAMP", { description: { content: 'Timestamp Constructor' } }, [])
+export const getSignatureNode = (store: FosStore) => generateConstructor(store, "SIGNATURE", { description: { content: 'Signature Constructor (Ed25519)' } }, [])
+
 export const getTransactionFieldNode = (store: FosStore) => generateConstructor(store, "TRANSACTION", { description: { content: 'Transaction Field Constructor' } }, [])
 export const getLabelFieldNode = (store: FosStore) => generateConstructor(store, "LABEL", { description: { content: 'Label Field Constructor' } }, [])
 export const getComboFieldNode = (store: FosStore) => generateConstructor(store, "COMBO", { description: { content: 'Combo Field Constructor' } }, [])
@@ -590,6 +597,12 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const proposalField = getProposalFieldNode(store)
   const revisionField = getRevisionFieldNode(store)
   const projectField = getProjectFieldNode(store)
+  // Proposal-related constructors
+  const proposedContentField = getProposedContentNode(store)
+  const proposalNameField = getProposalNameNode(store)
+  const senderField = getSenderNode(store)
+  const timestampField = getTimestampNode(store)
+  const signatureField = getSignatureNode(store)
   const periodicTrigger = getPeriodicTriggerNode(store)
   const requestTrigger = getRequestTriggerNode(store)
   const manualTrigger = getManualTriggerNode(store)
@@ -770,6 +783,11 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     invoiceItemLineField,
     receiptLineField,
     proposalField,
+    proposedContentField,
+    proposalNameField,
+    senderField,
+    timestampField,
+    signatureField,
     revisionField,
     projectField,
     periodicTrigger,
@@ -945,6 +963,11 @@ export type PrimitiveAliases = {
   startRootAlias: FosNode,
   brachConstructorNode: FosNode,
   proposalField: FosNode,
+  proposedContentField: FosNode,
+  proposalNameField: FosNode,
+  senderField: FosNode,
+  timestampField: FosNode,
+  signatureField: FosNode,
   targetPointerConstructor: FosNode,
   instructionPointerConstructor: FosNode,
   revisionField: FosNode,

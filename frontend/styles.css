@@ -181,6 +181,17 @@ body {
   background: #5eead4;
 }
 
+.fos-button--danger {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+}
+
+.fos-button--danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
 /* ============================================================================
    Layout
    ============================================================================ */
@@ -474,6 +485,43 @@ body {
   padding-left: 48px; /* Account for drag handle + checkbox space */
 }
 
+/* Add row for expression tree */
+.expr-add-row {
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.expr-add-row:hover,
+.expr-add-row:focus-within {
+  opacity: 1;
+}
+
+.expr-check-placeholder {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.expr-add-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--fos-border);
+  color: var(--fos-text);
+  font-size: 14px;
+  padding: 4px 0;
+  outline: none;
+}
+
+.expr-add-input:focus {
+  border-bottom-color: var(--fos-accent);
+}
+
+.expr-add-input::placeholder {
+  color: var(--fos-text-muted);
+  font-style: italic;
+}
+
 /* Empty state */
 .fos-empty {
   padding: 40px 20px;
@@ -706,4 +754,676 @@ body {
 .expr-children {
   margin-left: 12px;
   border-left: 2px solid var(--fos-accent-dim);
+}
+
+/* ============================================================================
+   Peer Connection UI
+   ============================================================================ */
+.fos-peer-connection {
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 8px;
+  padding: 16px;
+  max-width: 500px;
+}
+
+.fos-peer-connection-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.fos-peer-connection-status--idle {
+  background: var(--fos-bg);
+  color: var(--fos-text-muted);
+}
+
+.fos-peer-connection-status--creating-offer,
+.fos-peer-connection-status--waiting-for-answer,
+.fos-peer-connection-status--connecting {
+  background: #3b82f620;
+  color: #3b82f6;
+}
+
+.fos-peer-connection-status--connected {
+  background: #22c55e20;
+  color: #22c55e;
+}
+
+.fos-peer-connection-status--error {
+  background: #ef444420;
+  color: #ef4444;
+}
+
+.fos-peer-connection-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.fos-peer-connection-instructions {
+  font-size: 13px;
+  color: var(--fos-text-muted);
+  margin-bottom: 8px;
+}
+
+.fos-peer-connection-label {
+  font-size: 13px;
+  color: var(--fos-text-muted);
+  margin: 16px 0 8px;
+}
+
+.fos-peer-connection-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  background: var(--fos-bg);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  font-family: monospace;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.fos-peer-connection-textarea:focus {
+  outline: none;
+  border-color: var(--fos-accent);
+}
+
+.fos-peer-connection-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fos-peer-connection-waiting {
+  text-align: center;
+  color: var(--fos-text-muted);
+  font-size: 13px;
+  margin-top: 16px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.fos-peer-connection-connected {
+  text-align: center;
+  color: #22c55e;
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.fos-peer-connection-icon {
+  font-size: 20px;
+}
+
+.fos-peer-connection-status {
+  text-align: center;
+  font-size: 13px;
+  margin-top: 12px;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.fos-peer-connection-status--success {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  font-weight: 500;
+}
+
+.fos-peer-connection-status--error {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Node Peers (multi-peer per node) */
+.fos-node-peers {
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px 0;
+}
+
+.fos-node-peers-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fos-node-peers-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.fos-node-peers-count {
+  color: var(--fos-text-muted);
+  font-size: 12px;
+}
+
+.fos-node-peers-list {
+  margin-bottom: 8px;
+}
+
+.fos-node-peers-empty {
+  color: var(--fos-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  padding: 8px 0;
+}
+
+.fos-node-peers-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--fos-bg);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.fos-node-peers-item-id {
+  font-family: monospace;
+  font-size: 11px;
+  flex: 1;
+}
+
+.fos-node-peers-item-status {
+  font-size: 14px;
+}
+
+.fos-node-peers-item-status.connected {
+  color: #22c55e;
+}
+
+.fos-node-peers-item-status.disconnected {
+  color: #6b7280;
+}
+
+.fos-node-peers-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--fos-border);
+}
+
+.fos-node-peers-tabs .fos-button.active {
+  background: var(--fos-accent);
+  color: var(--fos-bg);
+}
+
+.fos-node-peers-form {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fos-border);
+}
+
+.fos-node-peers-form-content {
+  font-size: 13px;
+}
+
+.fos-node-peers-form-content > div {
+  margin-bottom: 8px;
+  color: var(--fos-text-muted);
+}
+
+.fos-button--small {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.fos-peer-path-label {
+  font-size: 13px;
+  color: var(--fos-text-muted);
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--fos-bg);
+  border-radius: 4px;
+}
+
+/* ============================================================================
+   Proposal/Consensus UI
+   ============================================================================ */
+
+/* Container for proposal borders - stacked vertically on left edge */
+.fos-proposal-borders {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+}
+
+/* Individual proposal border - 2px colored left stripe */
+.fos-proposal-border {
+  width: 2px;
+  height: 100%;
+  flex-shrink: 0;
+  /* Color set via inline style */
+}
+
+/* Row with proposals needs relative positioning and left padding */
+.fos-row.has-proposals {
+  position: relative;
+  padding-left: 20px; /* Make room for border indicators */
+}
+
+/* Field-level diff highlight */
+.fos-field-diff {
+  outline: 2px solid var(--proposal-color, #ff6b6b);
+  outline-offset: -1px;
+  border-radius: 2px;
+}
+
+.fos-field-diff--added {
+  background: rgba(74, 222, 128, 0.15);
+}
+
+.fos-field-diff--modified {
+  background: rgba(250, 204, 21, 0.15);
+}
+
+.fos-field-diff--removed {
+  background: rgba(239, 68, 68, 0.15);
+  text-decoration: line-through;
+}
+
+/* Ancestor trail indicator - shows descendants have proposals */
+.fos-has-descendant-proposal {
+  position: relative;
+}
+
+.fos-has-descendant-proposal::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--proposal-color, #ff6b6b);
+  opacity: 0.4;
+}
+
+/* Multiple ancestor trails stack */
+.fos-ancestor-trails {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+}
+
+.fos-ancestor-trail {
+  width: 2px;
+  height: 100%;
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+/* Proposal selector dropdown */
+.fos-proposal-selector {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.fos-proposal-selector-label {
+  font-size: 12px;
+  color: var(--fos-text-muted);
+  font-weight: 500;
+}
+
+.fos-proposal-dropdown {
+  background: var(--fos-bg);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  font-size: 13px;
+  padding: 4px 8px;
+  cursor: pointer;
+  min-width: 150px;
+}
+
+.fos-proposal-dropdown:hover {
+  border-color: var(--fos-accent);
+}
+
+.fos-proposal-dropdown:focus {
+  outline: none;
+  border-color: var(--fos-accent);
+}
+
+/* Proposal option with color indicator */
+.fos-proposal-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fos-proposal-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Approve button */
+.fos-approve-btn {
+  background: var(--fos-accent-dim);
+  border: 1px solid var(--fos-accent);
+  border-radius: 4px;
+  color: var(--fos-accent);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fos-approve-btn:hover {
+  background: var(--fos-accent);
+  color: #000;
+}
+
+.fos-approve-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fos-approve-btn.approved {
+  background: var(--fos-accent);
+  color: #000;
+}
+
+/* Approval status indicators */
+.fos-approval-status {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--fos-text-muted);
+}
+
+.fos-approval-count {
+  font-weight: 600;
+  color: var(--fos-text);
+}
+
+/* Propose button (appears on hover when editing) */
+.fos-propose-btn {
+  background: transparent;
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text-muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  opacity: 0;
+}
+
+.fos-row:hover .fos-propose-btn {
+  opacity: 1;
+}
+
+.fos-propose-btn:hover {
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+/* Diff preview panel */
+.fos-diff-preview {
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.fos-diff-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.fos-diff-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--fos-border);
+}
+
+.fos-diff-field:last-child {
+  border-bottom: none;
+}
+
+.fos-diff-field-name {
+  font-weight: 500;
+  min-width: 80px;
+  color: var(--fos-text-muted);
+}
+
+.fos-diff-field-values {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fos-diff-current {
+  color: var(--fos-text-muted);
+  text-decoration: line-through;
+}
+
+.fos-diff-proposed {
+  color: var(--fos-text);
+}
+
+/* Members indicator */
+.fos-members-indicator {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--fos-text-muted);
+  padding: 2px 6px;
+  background: var(--fos-bg);
+  border-radius: 10px;
+}
+
+.fos-members-indicator-icon {
+  font-size: 12px;
+}
+
+.fos-members-indicator-count {
+  font-weight: 600;
+}
+
+/* ============================================================================
+   Branch Selector (toolbar dropdown)
+   ============================================================================ */
+
+.fos-branch-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.fos-branch-icon {
+  font-size: 14px;
+  color: var(--fos-text-muted);
+}
+
+.fos-branch-dropdown-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--fos-bg);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 100px;
+}
+
+.fos-branch-dropdown-btn:hover {
+  border-color: var(--fos-accent);
+  background: var(--fos-bg-hover);
+}
+
+.fos-dropdown-arrow {
+  font-size: 8px;
+  color: var(--fos-text-muted);
+  margin-left: auto;
+}
+
+.fos-branch-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 6px;
+  min-width: 200px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.fos-branch-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-left: 3px solid transparent;
+}
+
+.fos-branch-option:hover {
+  background: var(--fos-bg-hover);
+}
+
+.fos-branch-option.selected {
+  background: var(--fos-accent-dim);
+}
+
+.fos-branch-option-name {
+  flex: 1;
+  font-size: 13px;
+}
+
+.fos-branch-option-meta {
+  font-size: 11px;
+  color: var(--fos-text-muted);
+}
+
+.fos-branch-check {
+  color: var(--fos-accent);
+  font-size: 14px;
+}
+
+.fos-branch-separator {
+  height: 1px;
+  background: var(--fos-border);
+  margin: 4px 0;
+}
+
+.fos-branch-create {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}
+
+.fos-branch-create-input {
+  flex: 1;
+  background: var(--fos-bg);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.fos-branch-create-input:focus {
+  outline: none;
+  border-color: var(--fos-accent);
+}
+
+.fos-branch-create-input::placeholder {
+  color: var(--fos-text-muted);
+}
+
+.fos-branch-create-btn {
+  background: var(--fos-accent-dim);
+  border: 1px solid var(--fos-accent);
+  border-radius: 4px;
+  color: var(--fos-accent);
+  font-size: 16px;
+  font-weight: 600;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fos-branch-create-btn:hover {
+  background: var(--fos-accent);
+  color: #000;
+}
+
+.fos-branch-approve-btn {
+  background: var(--fos-accent-dim);
+  border: 1px solid var(--fos-accent);
+  border-radius: 4px;
+  color: var(--fos-accent);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fos-branch-approve-btn:hover:not(:disabled) {
+  background: var(--fos-accent);
+  color: #000;
+}
+
+.fos-branch-approve-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fos-branch-approve-btn.approved {
+  background: var(--fos-accent);
+  color: #000;
 }

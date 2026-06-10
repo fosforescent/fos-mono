@@ -4,12 +4,12 @@
  * Replaces React with direct DOM manipulation for simpler, faster UI.
  */
 
-import { FosApp, createFosApp } from './vanilla';
+import { FosApp, createFosApp } from './index';
 import { publicRuntimeConfig } from './config';
 import { queueMutation } from './lib/offline/sync-queue';
 import { syncManager } from './lib/offline/sync-manager';
 
-import './vanilla/styles.css';
+import './styles.css';
 
 // ============================================================================
 // Console capture for Tauri - logs to both console and Tauri's log system
@@ -139,7 +139,7 @@ if ('serviceWorker' in navigator) {
 }
 
 // Initialize the app when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   console.log('[Main] DOMContentLoaded - starting vanilla app initialization');
 
   const rootEl = document.getElementById('root');
@@ -150,12 +150,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   console.log('[Main] Root element found, creating FosApp');
 
-  // Create the vanilla app
-  const app = createFosApp(rootEl, { autoLoad: true });
+  // Create the vanilla app (now async - loads from IndexedDB)
+  const app = await createFosApp(rootEl, { autoLoad: true });
 
   // Expose app globally for debugging and Tauri integration
   window.Fos.app = app;
 
   console.log('[Main] Fosforescent vanilla app initialized successfully');
-  console.log('[Main] Version: vanilla-2024-05-18-v2'); // Version marker to verify code is updated
+  console.log('[Main] Version: vanilla-2024-06-08-indexeddb'); // Version marker to verify code is updated
 });

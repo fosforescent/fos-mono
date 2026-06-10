@@ -30,6 +30,64 @@ let rootContainer: HTMLElement | null = null;
 let rootPath: FosPath = [];
 
 /**
+ * Structural edge types - these are metadata about the node, not content.
+ * They should be exposed as data attributes, not rendered as rows.
+ */
+type StructuralEdges = {
+  targetPointer?: string;      // CID of what this node points to
+  instructionPointer?: string; // CID of the instruction/type
+  previousVersion?: string;    // CID of previous version (for version history)
+};
+
+/**
+ * Extract structural edges from children.
+ * Returns the structural metadata and the content children separately.
+ */
+const extractStructuralEdges = (
+  children: FosExpression[],
+  fosStore: FosStore
+): { structural: StructuralEdges; content: FosExpression[] } => {
+  const structural: StructuralEdges = {};
+  const content: FosExpression[] = [];
+
+  const targetPointerId = fosStore.primitive.targetPointerConstructor.getId();
+  const instructionPointerId = fosStore.primitive.instructionPointerConstructor.getId();
+  const previousVersionId = fosStore.primitive.previousVersion.getId();
+
+  for (const child of children) {
+    const instrId = child.instructionNode.getId();
+
+    if (instrId === targetPointerId) {
+      structural.targetPointer = child.targetNode.getId();
+    } else if (instrId === instructionPointerId) {
+      structural.instructionPointer = child.targetNode.getId();
+    } else if (instrId === previousVersionId) {
+      structural.previousVersion = child.targetNode.getId();
+    } else {
+      // This is content, not structural metadata
+      content.push(child);
+    }
+  }
+
+  return { structural, content };
+};
+
+/**
+ * Apply structural metadata as data attributes on an element.
+ */
+const applyStructuralAttributes = (el: HTMLElement, structural: StructuralEdges): void => {
+  if (structural.targetPointer) {
+    el.setAttribute('data-target-pointer', structural.targetPointer);
+  }
+  if (structural.instructionPointer) {
+    el.setAttribute('data-instruction-pointer', structural.instructionPointer);
+  }
+  if (structural.previousVersion) {
+    el.setAttribute('data-previous-version', structural.previousVersion);
+  }
+};
+
+/**
  * Get the default instruction CID.
  * For now, all expression nodes use voidNode as instruction.
  * Future: could infer from DOM structure (data-type attribute, etc.)
@@ -639,7 +697,8 @@ const renderExpressionContent = (
 
 export const renderExpression = (expr: FosExpression, depth = 0): ExprEl => {
   const description = expr.getDescription() || '';
-  const children = expr.getTargetChildren();
+  const allChildren = expr.getTargetChildren();
+  const { structural, content: children } = extractStructuralEdges(allChildren, store);
   const hasChildren = children.length > 0;
   const isCollapsed = expr.isCollapsed();
   const isCompleted = expr.targetNode.getContent().data.todo?.completed ?? false;
@@ -653,6 +712,9 @@ export const renderExpression = (expr: FosExpression, depth = 0): ExprEl => {
   if (isCollapsed) {
     el.setAttribute('data-collapsed', '');
   }
+
+  // Apply structural metadata as data attributes
+  applyStructuralAttributes(el, structural);
 
   renderExpressionContent(el, description, depth, hasChildren, isCollapsed, isCompleted);
 
@@ -677,6 +739,65 @@ export const renderExpression = (expr: FosExpression, depth = 0): ExprEl => {
   return el;
 };
 
+/**
+ * Render an empty input row for adding new content.
+ * This row is not represented in the graph until the user types something.
+ */
+const renderAddRow = (parentExpr: FosExpression, depth: number = 0): HTMLElement => {
+  const row = div({ class: 'expr-row expr-add-row' });
+
+  // Indent
+  if (depth > 0) {
+    const indent = span({ class: 'expr-indent' });
+    indent.style.width = `${depth * 24}px`;
+    row.appendChild(indent);
+  }
+
+  // Empty checkbox placeholder (for visual alignment)
+  const checkPlaceholder = span({ class: 'expr-check-placeholder' });
+  row.appendChild(checkPlaceholder);
+
+  // Input for new content
+  const inp = input({
+    class: 'expr-input expr-add-input',
+    type: 'text',
+    placeholder: 'Add item...'
+  }) as HTMLInputElement;
+
+  const addNewChild = async (text: string) => {
+    // Create content with description
+    const content: FosNodeContent = {
+      data: { description: { content: text } },
+      children: []
+    };
+    // Use the parent's instruction type for the new child
+    await parentExpr.addChild(parentExpr.instructionNode, content);
+    inp.value = '';
+    // Trigger save and re-render
+    if (onSave) onSave();
+    if (rootContainer) {
+      renderTree(store, rootContainer, rootPath, onSave || undefined);
+    }
+  };
+
+  inp.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter' && inp.value.trim()) {
+      e.preventDefault();
+      await addNewChild(inp.value.trim());
+    }
+  });
+
+  // Also add on blur if there's content
+  inp.addEventListener('blur', async () => {
+    if (inp.value.trim()) {
+      await addNewChild(inp.value.trim());
+    }
+  });
+
+  row.appendChild(inp);
+  return row;
+};
+
 export const renderTree = (
   fosStore: FosStore,
   container: HTMLElement,
@@ -691,7 +812,17 @@ export const renderTree = (
 
   const rootExpr = new FosExpression(store, rootPath);
 
-  for (const child of rootExpr.getTargetChildren()) {
+  // Extract structural metadata and content children
+  const allChildren = rootExpr.getTargetChildren();
+  const { structural, content: children } = extractStructuralEdges(allChildren, store);
+
+  // Apply structural metadata to container
+  applyStructuralAttributes(container, structural);
+
+  for (const child of children) {
     container.appendChild(renderExpression(child));
   }
+
+  // Add empty input row for adding new content
+  container.appendChild(renderAddRow(rootExpr, 0));
 };

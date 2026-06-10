@@ -256,6 +256,11 @@ export type FosDataContent = {
     calendarId?: string;
     active: boolean;
   }
+  // Peer consensus fields
+  /** Members who can propose/approve changes to this node (peer IDs = Ed25519 public keys) */
+  members?: {
+    peerIds: string[];
+  };
 }
 
 

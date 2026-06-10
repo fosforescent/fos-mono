@@ -1,15 +1,21 @@
 {
   "name": "@fosforescent/desktop",
   "version": "0.1.0",
-  "description": "Fosforescent Desktop App",
+  "description": "Fosforescent Desktop and Mobile App",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
     "dev:frontend": "cd ../frontend && npm run dev",
-    "build:frontend": "cd ../frontend && npm run build"
+    "build:frontend": "cd ../frontend && npm run build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev",
+    "ios:build": "tauri ios build",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build"
   },
-  "keywords": ["fosforescent", "desktop", "tauri"],
+  "keywords": ["fosforescent", "desktop", "tauri", "mobile", "ios", "android"],
   "author": "",
   "license": "ISC",
   "dependencies": {

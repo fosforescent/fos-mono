@@ -2,7 +2,19 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{State, Emitter, Manager};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+mod peer;
+use peer::{PeerManager, PeerInfo, PeerMessage, IncomingMessage};
+
+/// Event payload for peer messages sent to frontend
+#[derive(Clone, Serialize)]
+struct PeerMessageEvent {
+    peer_id: String,
+    message: PeerMessage,
+}
 
 /// Application state holding current directory and .fos directory paths
 pub struct AppState {
@@ -200,14 +212,33 @@ fn list_fos_files(state: State<AppState>) -> Result<Vec<String>, String> {
 
 #[tauri::command]
 fn get_home_directory() -> Result<String, String> {
-    dirs::home_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .ok_or_else(|| "Could not determine home directory".to_string())
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        // On mobile, return app's documents directory instead
+        // This will be handled by the app's data directory
+        Ok(String::from("/"))
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .ok_or_else(|| "Could not determine home directory".to_string())
+    }
 }
 
 #[tauri::command]
 async fn open_auth_url(url: String) -> Result<(), String> {
-    open::that(&url).map_err(|e| format!("Failed to open browser: {}", e))
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        open::that(&url).map_err(|e| format!("Failed to open browser: {}", e))
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        // On mobile, we'll handle this differently (deep links or in-app browser)
+        // For now, just log and return success - the frontend handles mobile auth
+        log::info!("Mobile auth URL: {}", url);
+        Ok(())
+    }
 }
 
 /// Log messages from the frontend to stdout
@@ -361,13 +392,147 @@ fn get_app_init_info(state: State<AppState>) -> Result<AppInitInfo, String> {
     })
 }
 
+/// State for peer connections (wrapped in Arc for async access)
+pub struct PeerState(pub Arc<RwLock<PeerManager>>);
+
+impl Default for PeerState {
+    fn default() -> Self {
+        Self(Arc::new(RwLock::new(PeerManager::new())))
+    }
+}
+
+// ============================================================================
+// Peer Connection Commands
+// ============================================================================
+
+/// Create an offer to initiate a peer connection
+#[tauri::command]
+async fn peer_create_offer(
+    path: Vec<usize>,
+    state: State<'_, PeerState>,
+) -> Result<(String, String), String> {
+    let manager = state.0.read().await;
+    manager.create_offer(path).await
+}
+
+/// Accept an offer from another peer and generate an answer
+#[tauri::command]
+async fn peer_accept_offer(
+    offer: String,
+    path: Vec<usize>,
+    state: State<'_, PeerState>,
+) -> Result<(String, String), String> {
+    let manager = state.0.read().await;
+    manager.accept_offer(offer, path).await
+}
+
+/// Accept an answer to complete the connection (for the offerer)
+#[tauri::command]
+async fn peer_accept_answer(
+    peer_id: String,
+    answer: String,
+    state: State<'_, PeerState>,
+) -> Result<(), String> {
+    let manager = state.0.read().await;
+    manager.accept_answer(peer_id, answer).await
+}
+
+/// Send a message to a specific peer
+#[tauri::command]
+async fn peer_send_message(
+    peer_id: String,
+    message: PeerMessage,
+    state: State<'_, PeerState>,
+) -> Result<(), String> {
+    let manager = state.0.read().await;
+    manager.send_to_peer(&peer_id, &message).await
+}
+
+/// Broadcast a message to all peers for a specific path
+#[tauri::command]
+async fn peer_broadcast(
+    path: Vec<usize>,
+    message: PeerMessage,
+    state: State<'_, PeerState>,
+) -> Result<(), String> {
+    let manager = state.0.read().await;
+    manager.broadcast_to_path(&path, &message).await
+}
+
+/// Get info about all peers
+#[tauri::command]
+async fn peer_list(state: State<'_, PeerState>) -> Result<Vec<PeerInfo>, String> {
+    let manager = state.0.read().await;
+    Ok(manager.get_peers().await)
+}
+
+/// Get info about peers for a specific path
+#[tauri::command]
+async fn peer_list_for_path(
+    path: Vec<usize>,
+    state: State<'_, PeerState>,
+) -> Result<Vec<PeerInfo>, String> {
+    let manager = state.0.read().await;
+    Ok(manager.get_peers_for_path(&path).await)
+}
+
+/// Close a specific peer connection
+#[tauri::command]
+async fn peer_close(
+    peer_id: String,
+    state: State<'_, PeerState>,
+) -> Result<(), String> {
+    let manager = state.0.read().await;
+    manager.close_peer(&peer_id).await
+}
+
+/// Close all peer connections
+#[tauri::command]
+async fn peer_close_all(state: State<'_, PeerState>) -> Result<(), String> {
+    let manager = state.0.read().await;
+    manager.close_all().await
+}
+
+/// Get our local public key (base64 encoded)
+#[tauri::command]
+async fn peer_get_public_key(state: State<'_, PeerState>) -> Result<String, String> {
+    let manager = state.0.read().await;
+    Ok(manager.get_public_key_base64())
+}
+
+/// Send key exchange to a peer (initiates signature verification)
+#[tauri::command]
+async fn peer_send_key_exchange(
+    peer_id: String,
+    state: State<'_, PeerState>,
+) -> Result<(), String> {
+    let manager = state.0.read().await;
+    manager.send_key_exchange(&peer_id).await
+}
+
+/// Sign content for a proposal using our Ed25519 signing key
+#[tauri::command]
+async fn sign_proposal(
+    content: String,
+    state: State<'_, PeerState>,
+) -> Result<String, String> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use ed25519_dalek::Signer;
+
+    let manager = state.0.read().await;
+    let signature = manager.signing_key.sign(content.as_bytes());
+    Ok(BASE64.encode(signature.to_bytes()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Use AppState::default() which reads FOS_TARGET_DIR and FOS_DIR from env
     let app_state = AppState::default();
+    let peer_state = PeerState::default();
 
     tauri::Builder::default()
         .manage(app_state)
+        .manage(peer_state)
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -376,6 +541,82 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Spawn task to forward peer messages to frontend
+            let app_handle = app.handle().clone();
+            let peer_state = app.state::<PeerState>();
+            let peer_manager = peer_state.0.clone();
+
+            tauri::async_runtime::spawn(async move {
+                let manager = peer_manager.read().await;
+                if let Some(mut rx) = manager.take_message_receiver().await {
+                    drop(manager); // Release the read lock
+
+                    log::info!("[Peer] Message forwarder task started");
+
+                    while let Some(incoming) = rx.recv().await {
+                        let IncomingMessage { peer_id, signed } = incoming;
+                        log::debug!("[Peer] Received signed message from {}", peer_id);
+
+                        // Get the peer and verify the message
+                        let manager = peer_manager.read().await;
+                        let peer = match manager.get_peer(&peer_id).await {
+                            Some(p) => p,
+                            None => {
+                                log::warn!("[Peer] Unknown peer {}, ignoring message", peer_id);
+                                continue;
+                            }
+                        };
+
+                        // Verify the signature and get the message
+                        let message = match peer.verify_message(&signed).await {
+                            Ok(msg) => msg,
+                            Err(e) => {
+                                log::warn!("[Peer] Message verification failed from {}: {}", peer_id, e);
+                                continue;
+                            }
+                        };
+
+                        log::debug!("[Peer] Verified message from {}: {:?}", peer_id, message);
+
+                        // Handle key exchange specially
+                        if let PeerMessage::KeyExchange { public_key } = &message {
+                            match manager.process_key_exchange(&peer_id, public_key).await {
+                                Ok(is_new) => {
+                                    // Only send our public key back if this is a new key exchange
+                                    // (to prevent infinite ping-pong loop)
+                                    if is_new {
+                                        log::info!("[Peer] New key exchange from {}, sending our key back", peer_id);
+                                        if let Err(e) = manager.send_key_exchange(&peer_id).await {
+                                            log::error!("[Peer] Failed to send key exchange: {}", e);
+                                        }
+                                    } else {
+                                        log::debug!("[Peer] Received key exchange from {} but already have their key", peer_id);
+                                    }
+                                },
+                                Err(e) => {
+                                    log::error!("[Peer] Failed to process key exchange: {}", e);
+                                }
+                            }
+                            continue; // Don't forward key exchange to frontend
+                        }
+
+                        drop(manager); // Release the read lock before emitting
+
+                        let event = PeerMessageEvent {
+                            peer_id,
+                            message,
+                        };
+
+                        if let Err(e) = app_handle.emit("peer-message", event) {
+                            log::error!("[Peer] Failed to emit event: {}", e);
+                        }
+                    }
+
+                    log::info!("[Peer] Message forwarder task ended");
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -402,6 +643,19 @@ pub fn run() {
             open_auth_url,
             // Logging
             log_frontend,
+            // Peer connections (WebRTC)
+            peer_create_offer,
+            peer_accept_offer,
+            peer_accept_answer,
+            peer_send_message,
+            peer_broadcast,
+            peer_list,
+            peer_list_for_path,
+            peer_close,
+            peer_close_all,
+            peer_get_public_key,
+            peer_send_key_exchange,
+            sign_proposal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -12,6 +12,7 @@ This document outlines the plan for implementing the core FOS language semantics
 | `categorical-foundations.md` | Variables as projections, holes, eliminators |
 | `equality-and-binding.md` | HoTT-style equality, unified binding/proof/cache |
 | `carrot-dinner-example.md` | Concrete worked example |
+| `functions-and-abstraction.md` | Functions as nodes, abstraction, vector view |
 
 ## Terminology Change: instruction/target → left/right
 
@@ -116,6 +117,34 @@ fillHole(hole: Hole, value: FosNode, ctx: SubstitutionContext): SubstitutionCont
 composeProofs(p1: FosNode, p2: FosNode): FosNode  // Transitivity
 transport(proof: FosNode, predicate: FosNode, value: FosNode): FosNode
 ```
+
+## Type-Driven UI Generation
+
+**Goal:** Compose primitive types to create new types, set as node's type, generate UI from type structure.
+
+### Flow
+
+```
+1. Compose type:   Choice<Task<"dried">, Task<"grilled">>
+2. Attach to node: node has TYPE edge pointing to that type
+3. Render UI:      dispatch on type structure
+4. User interacts: applies constructor (e.g., SUM_INR)
+5. Result:         term with that constructor
+```
+
+### Edge Semantics Clarification
+
+- **Left = Constructor** (not type)
+- Constructor checked against type (type checking - to be fleshed out)
+
+### UI Dispatch
+
+| Type Structure | UI Component |
+|----------------|--------------|
+| SUM(A, B) | Choice/dropdown/radio |
+| PRODUCT(A, B) | Show all children |
+| Task<D> | Checkbox/completion |
+| Leaf with hole | Input field |
 
 ## Open Questions
 
