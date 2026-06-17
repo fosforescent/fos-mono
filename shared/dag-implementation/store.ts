@@ -10,8 +10,8 @@ import {
 
 import { AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
 
-import jsSha3 from 'js-sha3'
-const { sha3_256 } = jsSha3
+import * as jsSha3 from 'js-sha3'
+const sha3_256 = jsSha3.sha3_256
 
 import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'

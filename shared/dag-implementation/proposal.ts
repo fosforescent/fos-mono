@@ -29,7 +29,10 @@ import { FosNode } from './node';
 import { FosStore } from './store';
 import { getEffectiveMembers } from './membership';
 
-/** Color palette for proposals (derived in UI based on sender) */
+/** Color for the main branch */
+export const MAIN_BRANCH_COLOR = '#888888'; // Gray
+
+/** Color palette for proposals (derived in UI based on proposal CID) */
 export const PROPOSAL_COLORS = [
   '#ff6b6b', // Red
   '#feca57', // Yellow
@@ -38,6 +41,24 @@ export const PROPOSAL_COLORS = [
   '#54a0ff', // Blue
   '#5f27cd', // Purple
 ] as const;
+
+/**
+ * Get a consistent color for a branch based on its CID.
+ * Returns MAIN_BRANCH_COLOR for null (main branch).
+ */
+export function getBranchColor(proposalCid: string | null): string {
+  if (proposalCid === null) {
+    return MAIN_BRANCH_COLOR;
+  }
+  // Hash the proposal CID to get a consistent color index
+  let hash = 0;
+  for (let i = 0; i < proposalCid.length; i++) {
+    hash = ((hash << 5) - hash) + proposalCid.charCodeAt(i);
+    hash = hash & hash;
+  }
+  const index = Math.abs(hash) % PROPOSAL_COLORS.length;
+  return PROPOSAL_COLORS[index] ?? PROPOSAL_COLORS[0];
+}
 
 /**
  * Parsed proposal (branch) from graph structure
@@ -57,6 +78,8 @@ export interface Proposal {
   timestamp: number;
   /** CID of the base content (what it branched from) */
   previousCid: string;
+  /** Parent branch ID (null = branched from main) */
+  parentBranchId: string | null;
   /** Array of approval signatures */
   approvals: Array<{
     peerId: string;
@@ -89,6 +112,7 @@ function getConstructorIds(store: FosStore) {
     proposal: store.primitive.proposalField.getId(),
     proposalName: store.primitive.proposalNameField.getId(),
     proposedContent: store.primitive.proposedContentField.getId(),
+    parentBranch: store.primitive.parentBranchField.getId(),
     sender: store.primitive.senderField.getId(),
     timestamp: store.primitive.timestampField.getId(),
     previous: store.primitive.previousVersion.getId(),
@@ -117,6 +141,7 @@ function parseProposalNode(proposalNode: FosNode, store: FosStore): Proposal | n
   let senderPeerId = '';
   let timestamp = 0;
   let previousCid = '';
+  let parentBranchId: string | null = null;
   const approvals: Array<{ peerId: string; signature: string }> = [];
 
   for (const [instrCid, targetCid] of edges) {
@@ -143,6 +168,13 @@ function parseProposalNode(proposalNode: FosNode, store: FosStore): Proposal | n
       }
     } else if (instrCid === ids.previous) {
       previousCid = targetCid;
+    } else if (instrCid === ids.parentBranch) {
+      // Parent branch stores the parent proposal CID
+      const parentNode = store.getNodeByAddress(targetCid);
+      if (parentNode) {
+        const desc = parentNode.getData().description?.content;
+        if (desc) parentBranchId = desc;
+      }
     } else if (instrCid === ids.approval) {
       // Each approval points to a signature node
       const sigNode = store.getNodeByAddress(targetCid);
@@ -185,6 +217,7 @@ function parseProposalNode(proposalNode: FosNode, store: FosStore): Proposal | n
     senderPeerId,
     timestamp,
     previousCid,
+    parentBranchId,
     approvals,
   };
 }
@@ -207,8 +240,12 @@ export class ProposalManager {
     const edges = expression.targetNode.getEdges();
     const proposalId = getProposalConstructorId(this.store);
 
+    console.log('[getProposalsForNode] Looking for proposalId:', proposalId.slice(0, 12));
+    console.log('[getProposalsForNode] Edges:', edges.map(e => [e[0].slice(0, 12), e[1].slice(0, 12)]));
+
     for (const [instrCid, targetCid] of edges) {
       if (instrCid === proposalId) {
+        console.log('[getProposalsForNode] Found proposal edge, target:', targetCid.slice(0, 12));
         const proposalNode = this.store.getNodeByAddress(targetCid);
         if (proposalNode) {
           const parsed = parseProposalNode(proposalNode, this.store);
@@ -229,13 +266,15 @@ export class ProposalManager {
    * @param proposedContent - The proposed new content node
    * @param senderPeerId - The peer ID of the proposer
    * @param name - Branch/proposal name
+   * @param parentBranchId - Parent branch CID (null = branched from main)
    * @returns The created proposal
    */
   createProposal(
     expression: FosExpression,
     proposedContent: FosNode,
     senderPeerId: string,
-    name: string
+    name: string,
+    parentBranchId: string | null = null
   ): Proposal {
     const ids = getConstructorIds(this.store);
     const currentTargetCid = expression.targetNode.getId();
@@ -267,17 +306,36 @@ export class ProposalManager {
       [ids.previous, currentTargetCid],
     ];
 
+    // Add parent branch edge if branching from another branch
+    if (parentBranchId) {
+      const parentBranchNode = this.store.create({
+        data: { description: { content: parentBranchId } },
+        children: [],
+      });
+      proposalEdges.push([ids.parentBranch, parentBranchNode.getId()]);
+    }
+
     const proposalNode = this.store.create({
       data: {},
       children: proposalEdges,
     });
 
-    // Add the proposal as a child of the current target node
+    // Add the proposal as a child of the current target node (the alias)
     const newTargetNode = expression.targetNode.addEdge(
       ids.proposal,
       proposalNode.getId()
     );
-    expression.setTargetNode(newTargetNode);
+
+    // For root level, directly set rootNodeId to make the new node the root
+    // (setRootNode wraps the node in another alias, which is not what we want)
+    if (expression.route.length === 0) {
+      console.log('[createProposal] Setting rootNodeId directly with', newTargetNode.getEdges().length, 'edges');
+      (this.store as any).rootNodeId = newTargetNode.getId();
+      // Trigger update callback
+      (this.store as any).updateCtxCallback?.((this.store as any).exportContext([]));
+    } else {
+      expression.setTargetNode(newTargetNode);
+    }
 
     return {
       node: proposalNode,
@@ -287,6 +345,7 @@ export class ProposalManager {
       senderPeerId,
       timestamp: Date.now(),
       previousCid: currentTargetCid,
+      parentBranchId,
       approvals: [],
     };
   }

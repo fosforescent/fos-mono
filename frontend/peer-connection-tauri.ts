@@ -33,19 +33,25 @@ export type TauriPeerInfo = {
 
 export type TauriPeerMessage =
   | { type: 'KEY_EXCHANGE'; public_key: string }
+  // Legacy sync
   | { type: 'ROOT_ADDRESS_REQUEST' }
   | { type: 'ROOT_ADDRESS_RESPONSE'; root_address: string | null }
   | { type: 'ROOT_ADDRESS_CHANGED'; root_address: string }
   | { type: 'NODE_DATA'; path: number[]; data: string }
   | { type: 'NODE_REQUEST'; path: number[] }
+  // DHT-based sync
+  | { type: 'ROOT_CID'; cid: string }
+  | { type: 'WANT_NODES'; cids: string[] }
+  | { type: 'HAVE_NODES'; nodes: Record<string, string> }
+  // Keepalive
   | { type: 'PING' }
   | { type: 'PONG' }
-  // Proposal/Consensus messages
+  // Proposal/Consensus messages (same format as browser)
   | {
       type: 'PROPOSAL_CREATED';
       proposal_id: string;
       target_node_cid: string;
-      proposed_content: string; // JSON-serialized FosNodeContent
+      proposed_content: string;
       proposer_peer_id: string;
       color: string;
     }
@@ -53,7 +59,7 @@ export type TauriPeerMessage =
       type: 'PROPOSAL_APPROVAL';
       proposal_id: string;
       approver_peer_id: string;
-      signature: string; // Base64-encoded Ed25519 signature
+      signature: string;
     }
   | {
       type: 'PROPOSAL_ACCEPTED';
@@ -168,6 +174,21 @@ export async function signProposal(content: string): Promise<string> {
   return invoke<string>('sign_proposal', { content });
 }
 
+/**
+ * Verify a proposal signature from a specific peer.
+ * @param peerId - The peer ID who allegedly signed the content
+ * @param content - The content that was signed
+ * @param signature - Base64-encoded Ed25519 signature
+ * @throws If signature is invalid or peer has no public key
+ */
+export async function verifyProposalSignature(
+  peerId: string,
+  content: string,
+  signature: string
+): Promise<void> {
+  return invoke<void>('verify_proposal_signature', { peerId, content, signature });
+}
+
 // ============================================================================
 // Tauri-based NodePeer wrapper (same interface as browser version)
 // ============================================================================
@@ -216,6 +237,14 @@ async function setupGlobalMessageListener(): Promise<void> {
 // For now we cast through unknown; this should be aligned in the protocol later
 function fromTauriMessage(msg: TauriPeerMessage, path: FosPath): BrowserPeerMessage | null {
   switch (msg.type) {
+    // DHT messages - same format, pass through
+    case 'ROOT_CID':
+      return { type: 'ROOT_CID', cid: msg.cid };
+    case 'WANT_NODES':
+      return { type: 'WANT_NODES', cids: msg.cids };
+    case 'HAVE_NODES':
+      return { type: 'HAVE_NODES', nodes: msg.nodes };
+    // Legacy sync messages
     case 'NODE_REQUEST':
       return { type: 'SYNC_REQUEST', path: msg.path as unknown as FosPath };
     case 'NODE_DATA':
@@ -226,10 +255,40 @@ function fromTauriMessage(msg: TauriPeerMessage, path: FosPath): BrowserPeerMess
       return { type: 'SYNC_RESPONSE', path, nodeAddress: msg.root_address };
     case 'ROOT_ADDRESS_CHANGED':
       return { type: 'NODE_CHANGED', path, nodeAddress: msg.root_address };
+    // Keepalive
     case 'PING':
       return { type: 'PING' };
     case 'PONG':
       return { type: 'PONG' };
+    // Proposal messages - same format, pass through
+    case 'PROPOSAL_CREATED':
+      return {
+        type: 'PROPOSAL_CREATED',
+        proposal_id: msg.proposal_id,
+        target_node_cid: msg.target_node_cid,
+        proposed_content: msg.proposed_content,
+        proposer_peer_id: msg.proposer_peer_id,
+        color: msg.color,
+      };
+    case 'PROPOSAL_APPROVAL':
+      return {
+        type: 'PROPOSAL_APPROVAL',
+        proposal_id: msg.proposal_id,
+        approver_peer_id: msg.approver_peer_id,
+        signature: msg.signature,
+      };
+    case 'PROPOSAL_ACCEPTED':
+      return {
+        type: 'PROPOSAL_ACCEPTED',
+        proposal_id: msg.proposal_id,
+        new_node_cid: msg.new_node_cid,
+      };
+    case 'MEMBERS_UPDATE':
+      return {
+        type: 'MEMBERS_UPDATE',
+        node_cid: msg.node_cid,
+        members: msg.members,
+      };
     default:
       console.warn('[Tauri Peer] Unknown message type:', msg);
       return null;
@@ -282,17 +341,56 @@ export class TauriNodePeer implements IPeer {
 
   private toTauriMessage(msg: BrowserPeerMessage): TauriPeerMessage {
     switch (msg.type) {
+      // DHT messages - same format, pass through
+      case 'ROOT_CID':
+        return { type: 'ROOT_CID', cid: msg.cid };
+      case 'WANT_NODES':
+        return { type: 'WANT_NODES', cids: msg.cids };
+      case 'HAVE_NODES':
+        return { type: 'HAVE_NODES', nodes: msg.nodes };
+      // Legacy sync messages
       case 'SYNC_REQUEST':
         return { type: 'NODE_REQUEST', path: msg.path as unknown as number[] };
       case 'SYNC_RESPONSE':
         return { type: 'NODE_DATA', path: msg.path as unknown as number[], data: msg.nodeAddress || '' };
       case 'NODE_CHANGED':
         return { type: 'ROOT_ADDRESS_CHANGED', root_address: msg.nodeAddress };
+      // Keepalive
       case 'PING':
         return { type: 'PING' };
       case 'PONG':
         return { type: 'PONG' };
+      // Proposal messages - same format, pass through
+      case 'PROPOSAL_CREATED':
+        return {
+          type: 'PROPOSAL_CREATED',
+          proposal_id: msg.proposal_id,
+          target_node_cid: msg.target_node_cid,
+          proposed_content: msg.proposed_content,
+          proposer_peer_id: msg.proposer_peer_id,
+          color: msg.color,
+        };
+      case 'PROPOSAL_APPROVAL':
+        return {
+          type: 'PROPOSAL_APPROVAL',
+          proposal_id: msg.proposal_id,
+          approver_peer_id: msg.approver_peer_id,
+          signature: msg.signature,
+        };
+      case 'PROPOSAL_ACCEPTED':
+        return {
+          type: 'PROPOSAL_ACCEPTED',
+          proposal_id: msg.proposal_id,
+          new_node_cid: msg.new_node_cid,
+        };
+      case 'MEMBERS_UPDATE':
+        return {
+          type: 'MEMBERS_UPDATE',
+          node_cid: msg.node_cid,
+          members: msg.members,
+        };
       default:
+        console.warn('[Tauri Peer] Unknown message type to convert:', msg);
         return { type: 'PING' };
     }
   }

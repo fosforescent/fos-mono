@@ -261,6 +261,26 @@ export type FosDataContent = {
   members?: {
     peerIds: string[];
   };
+  // Peer reference fields (stored on peer reference nodes at root)
+  /** Peer identifier (typically derived from public key) */
+  peerId?: {
+    content: string;
+  };
+  /** Peer's Ed25519 public key (base64) */
+  publicKey?: {
+    content: string;
+  };
+  /** Human-readable name for the peer */
+  name?: {
+    content: string;
+  };
+  // Peer connection persistence
+  /** SDP offer for reconnecting to this peer */
+  peerSdpOffer?: {
+    content: string;
+    timestamp: number;
+    active: boolean;
+  };
 }
 
 

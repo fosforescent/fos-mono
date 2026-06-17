@@ -953,11 +953,11 @@ export class FosExpression {
     const parent = this.getParent()
 
     if (this.isRoot()) {
-      const {
-        target
-      } = this.targetNode.dereferenceNodes()
-      console.log('runUpdateRaw - root case', this.route, this.instructionNode.getId(), target.getId())
-      this.store.setRootNode(target)
+      // Use the targetNode directly (don't dereference - that would lose the alias structure with proposals)
+      console.log('runUpdateRaw - root case', this.route, this.instructionNode.getId(), this.targetNode.getId())
+      // Directly set rootNodeId (don't use setRootNode which wraps in new alias)
+      ;(this.store as any).rootNodeId = this.targetNode.getId();
+      (this.store as any).updateCtxCallback?.((this.store as any).exportContext([]))
 
     } else {
 
@@ -966,18 +966,30 @@ export class FosExpression {
         const {
           target,
           instruction,
-          // prevInstruction,
-          // prevTarget
         } = this.targetNode.dereferenceNodes()
 
+        // Preserve non-structural edges (proposals, etc.) from the current targetNode
+        const structuralIds = new Set([
+          this.store.primitive.targetPointerConstructor.getId(),
+          this.store.primitive.instructionPointerConstructor.getId(),
+          this.store.primitive.previousVersion.getId(),
+          this.store.primitive.prevTargetPointerConstructor?.getId(),
+          this.store.primitive.prevInstructionPointerConstructor?.getId(),
+        ].filter(Boolean))
+
+        const preservedEdges = this.targetNode.getEdges().filter(
+          ([instrId]) => !structuralIds.has(instrId)
+        )
+
+        console.log('runUpdateRaw - preserving', preservedEdges.length, 'non-structural edges')
 
         const newAliasInfo = this.store.create({
-          data: {},
+          data: this.targetNode.getContent().data, // Preserve data
           children: [
             [this.store.primitive.targetPointerConstructor.getId(), target.getId()],
             [this.store.primitive.instructionPointerConstructor.getId(), instruction.getId()],
-            [this.store.primitive.prevTargetPointerConstructor.getId(), prevTarget.getId()],
-            [this.store.primitive.prevInstructionPointerConstructor.getId(), prevInstruction.getId()],
+            [this.store.primitive.previousVersion.getId(), this.targetNode.getId()], // Previous version
+            ...preservedEdges, // Preserve proposals, etc.
           ]
         })
 
@@ -1028,9 +1040,10 @@ export class FosExpression {
   private propagateTargetChange(expr: FosExpression, newTarget: FosNode): void {
     console.log('[propagateTargetChange] expr.route.length:', expr.route.length, 'newTarget edges:', newTarget.getEdges().length)
     if (expr.route.length <= 1) {
-      // At root level - update the root node
-      console.log('[propagateTargetChange] Calling setRootNode with target that has', newTarget.getEdges().length, 'edges')
-      this.store.setRootNode(newTarget)
+      // At root level - directly set rootNodeId (don't use setRootNode which wraps in new alias)
+      console.log('[propagateTargetChange] Setting rootNodeId directly with', newTarget.getEdges().length, 'edges');
+      (this.store as any).rootNodeId = newTarget.getId();
+      (this.store as any).updateCtxCallback?.((this.store as any).exportContext([]));
     } else {
       // Update parent and continue propagating
       const parent = expr.getParent()
@@ -2853,32 +2866,47 @@ export class FosExpression {
     // Keep direct references to the nodes being moved
     const myInstructionNode = this.instructionNode
     const myTargetNode = this.targetNode
+    const myPathElem: FosPathElem = this.pathElem()
 
+    // Resolve target BEFORE removing source
+    const targetExpression = new FosExpression(this.store, targetRoute)
+    const { parent: targetParent } = targetExpression.getParentInfo()
+
+    // Store target's path element to find it after removal
+    const targetPathElem = targetExpression.pathElem()
+    const targetInstrId = targetPathElem[0]
+    const targetTargetId = targetPathElem[1]
+
+    // Store the parent's route so we can re-resolve after removal
+    const targetParentRoute = targetParent.route
+
+    // Remove source from its current location
     this.removeNode()
 
-    const targetExpression = new FosExpression(this.store, targetRoute)
-    const { parent: targetParent, targetIndexInParent } = targetExpression.getParentInfo()
+    // Re-resolve parent to get fresh state after removal
+    const freshParent = new FosExpression(this.store, targetParentRoute)
+    const parentContent = freshParent.targetNode.getContent()
 
-    const parentContent = targetParent.targetNode.getContent()
-
-    const newParentRows: FosPathElem[] = targetParent.getTargetChildren().reduce((acc: FosPathElem[], child: FosExpression, i: number) => {
-      if (i === targetIndexInParent) {
-        const newElem: FosPathElem = this.pathElem()
-        return [...acc, newElem, child.pathElem()]
+    // Build new children array, inserting source before target (found by CID, not index)
+    const newParentRows: FosPathElem[] = []
+    for (const child of parentContent.children) {
+      if (child[0] === targetInstrId && child[1] === targetTargetId) {
+        // Insert source before target
+        newParentRows.push(myPathElem)
       }
-      return [...acc, child.pathElem()]
-    }, [])
+      newParentRows.push(child)
+    }
 
     const newParentContent = {
       ...parentContent,
       children: newParentRows,
     }
 
-    const parentTargetNode = targetParent.targetNode.mutate(newParentContent)
-    targetParent.update(targetParent.instructionNode, parentTargetNode)
+    const parentTargetNode = freshParent.targetNode.mutate(newParentContent)
+    freshParent.update(freshParent.instructionNode, parentTargetNode)
 
     // Create moved expression using direct object references
-    const movedExpr = new FosExpression(this.store, myInstructionNode, myTargetNode, targetParent)
+    const movedExpr = new FosExpression(this.store, myInstructionNode, myTargetNode, freshParent)
     movedExpr.updateFocus(this.focusChar() || 0)
   }
 
@@ -2886,67 +2914,120 @@ export class FosExpression {
     // Keep direct references to the nodes being moved
     const myInstructionNode = this.instructionNode
     const myTargetNode = this.targetNode
+    const myPathElem: FosPathElem = this.pathElem()
 
+    // Resolve target BEFORE removing source
     const targetExpression = new FosExpression(this.store, targetRoute)
-    const { targetIndexInParent, parent } = targetExpression.getParentInfo()
+    const { parent } = targetExpression.getParentInfo()
 
+    // Store target's path element to find it after removal
+    const targetPathElem = targetExpression.pathElem()
+    const targetInstrId = targetPathElem[0]
+    const targetTargetId = targetPathElem[1]
+
+    // Store the parent's route so we can re-resolve after removal
+    const parentRoute = parent.route
+
+    // Remove source from its current location
     this.removeNode()
-    const parentContent = parent.targetNode.getContent()
 
-    const newParentRows: FosPathElem[] = parent.getTargetChildren().reduce((acc: FosPathElem[], child: FosExpression, i: number) => {
-      if (i === targetIndexInParent) {
-        const newElem: FosPathElem = this.pathElem()
-        return [...acc, child.pathElem(), newElem]
+    // Re-resolve parent to get fresh state after removal
+    const freshParent = new FosExpression(this.store, parentRoute)
+    const parentContent = freshParent.targetNode.getContent()
+
+    // Build new children array, inserting source after target (found by CID, not index)
+    const newParentRows: FosPathElem[] = []
+    for (const child of parentContent.children) {
+      newParentRows.push(child)
+      if (child[0] === targetInstrId && child[1] === targetTargetId) {
+        // Insert source after target
+        newParentRows.push(myPathElem)
       }
-      return [...acc, child.pathElem()]
-    }, [])
+    }
 
     const newParentContent = {
       ...parentContent,
       children: newParentRows,
     }
 
-    const parentTargetNode = parent.targetNode.mutate(newParentContent)
-    parent.update(parent.instructionNode, parentTargetNode)
+    const parentTargetNode = freshParent.targetNode.mutate(newParentContent)
+    freshParent.update(freshParent.instructionNode, parentTargetNode)
 
     // Create moved expression using direct object references
-    const movedExpr = new FosExpression(this.store, myInstructionNode, myTargetNode, parent)
+    const movedExpr = new FosExpression(this.store, myInstructionNode, myTargetNode, freshParent)
     movedExpr.updateFocus(this.focusChar() || 0)
     return movedExpr
   }
 
   moveNodeIntoRoute(targetRoute: FosPath, index: number = 0): FosExpression {
-
-    const nodeContent = this.targetNode.getContent()
     const targetExpression = new FosExpression(this.store, targetRoute)
+    // Get the TARGET node's content (where we're moving INTO)
+    const targetContent = targetExpression.targetNode.getContent()
 
     // Keep direct references to the nodes being moved
     const myInstructionNode = this.instructionNode
     const myTargetNode = this.targetNode
 
+    // The element we're inserting (source node's path element)
     const newElem: FosPathElem = this.pathElem()
 
-    const newParentRows: FosPathElem[] = index < 0
-      ? [...nodeContent.children, targetExpression.pathElem()]
-      : index === 0
-        ? [newElem]
-        : nodeContent.children.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
-          if (i === index) {
-            return [...acc, newElem, child]
-          }
-          return [...acc, child]
-        }, [])
+    // Capture source's parent info BEFORE any updates (to avoid stale route issues)
+    const { parent: sourceParent, targetIndexInParent, instructionIndexInParent } = this.getParentInfo()
+    const sourceParentRoute = sourceParent.route
+    const sourceInstrId = newElem[0]
+    const sourceTargetId = newElem[1]
 
-    console.log('newParentRows', newParentRows, targetRoute, newElem, index, nodeContent.children)
+    // Build new children array for the target
+    let newParentRows: FosPathElem[]
+    if (index < 0) {
+      // Append at end
+      newParentRows = [...targetContent.children, newElem]
+    } else if (index === 0) {
+      // Prepend at beginning
+      newParentRows = [newElem, ...targetContent.children]
+    } else {
+      // Insert at specific index
+      newParentRows = targetContent.children.reduce((acc: FosPathElem[], child: FosPathElem, i: number) => {
+        if (i === index) {
+          return [...acc, newElem, child]
+        }
+        return [...acc, child]
+      }, [])
+      // If index >= children.length, append at end
+      if (index >= targetContent.children.length) {
+        newParentRows = [...targetContent.children, newElem]
+      }
+    }
+
+    console.log('[moveNodeIntoRoute] newParentRows', newParentRows, 'targetRoute', targetRoute, 'newElem', newElem, 'index', index)
     const newParentContent = {
-      ...nodeContent,
+      ...targetContent,
       children: newParentRows,
     }
 
     const newTargetNode = targetExpression.targetNode.mutate(newParentContent)
     targetExpression.update(targetExpression.instructionNode, newTargetNode)
 
-    this.removeNode()
+    // Remove source from its original parent using FRESH lookup (not stale route)
+    // This avoids the issue where this.route points to old CIDs after the target update
+    this.moveFocusUp()
+    const freshParent = new FosExpression(this.store, sourceParentRoute)
+    const freshParentContent = freshParent.targetNode.getContent()
+
+    // Find and remove the source node from the fresh parent's children
+    const newSourceParentRows: FosPathElem[] = freshParentContent.children.filter((child: FosPathElem) =>
+      !(child[0] === sourceInstrId && child[1] === sourceTargetId)
+    )
+
+    console.log('[moveNodeIntoRoute] removing from source parent, before:', freshParentContent.children.length, 'after:', newSourceParentRows.length)
+
+    const newSourceParentContent = {
+      ...freshParentContent,
+      children: newSourceParentRows,
+    }
+
+    const newSourceParentTarget = freshParent.targetNode.mutate(newSourceParentContent)
+    freshParent.update(freshParent.instructionNode, newSourceParentTarget)
 
     // Create the moved child expression using direct object references
     // The parent is targetExpression (which has been updated in place)

@@ -29,60 +29,16 @@
 // Core app
 export { FosApp, createFosApp } from './app';
 
-// Views
-export { renderView, renderQueueView, renderTreeView, renderFocusView, createViewContextWithDrag } from './views';
-export type { ViewType, ViewContext, ViewContextOptions } from './views';
+// Views (from expression-tree)
+export { renderView, renderTree, renderQueue, renderFocus, renderExpression } from './expression-tree';
+export type { ViewType, DiffContext } from './expression-tree';
 
 // Rendering primitives
 export { el, div, span, input, button, render, renderNode, registerPattern, createNodeContent } from './render';
 export type { RenderContext, NodeRenderer } from './render';
 
-// Tree operations (wrapping FosExpression methods)
-export {
-  // Navigation
-  getUpNode,
-  getDownNode,
-  getLastDescendent,
-  getUpSibling,
-  getDownSibling,
-  // Movement
-  moveUp,
-  moveDown,
-  moveLeft,
-  moveRight,
-  // Editing
-  addSiblingBelow,
-  addChild,
-  addRowAsChild,
-  snip,
-  deleteNode,
-  // Focus
-  moveFocusUp,
-  moveFocusDown,
-  updateFocus,
-  getFocusChar,
-  // Collapse
-  toggleCollapse,
-  isCollapsed,
-  // Path utilities
-  pathEqual,
-  isAncestor,
-  pathToKey,
-  // State
-  createTreeState,
-  setFocus,
-  hasFocus,
-} from './tree-ops';
-export type { TreeState } from './tree-ops';
-
-// Keyboard handling
-export {
-  getKeyboardAction,
-  executeKeyboardAction,
-  createInputKeyboardHandler,
-  attachKeyboardHandlers,
-} from './keyboard';
-export type { KeyboardAction } from './keyboard';
+// Path utilities
+export { pathEqual, isAncestor, pathToKey } from './path-utils';
 
 // Drag and drop
 export {
@@ -120,16 +76,3 @@ export { isTauri, TauriPeerConnectionBuilder, TauriNodePeer } from './peer-conne
 export { renderBranchSelector, renderCompactBranchSelector } from './branch-selector';
 export type { BranchSelectorCallbacks, BranchSelectorProps } from './branch-selector';
 
-// Proposal UI components
-export {
-  renderProposalBorders,
-  renderProposalSelector,
-  applyAncestorTrail,
-  renderMembersIndicator,
-  renderProposeButton,
-  applyFieldDiffStyle,
-  applyFieldDiffStyles,
-  renderDiffPreview,
-  integrateProposalUI,
-} from './proposal-ui';
-export type { ProposalUICallbacks } from './proposal-ui';

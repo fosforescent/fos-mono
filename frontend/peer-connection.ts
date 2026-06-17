@@ -19,11 +19,42 @@ import { isTauri, TauriPeerConnectionBuilder, TauriNodePeer } from './peer-conne
 export type ConnectionState = 'idle' | 'creating-offer' | 'waiting-for-answer' | 'connecting' | 'connected' | 'error';
 
 export type PeerMessage =
+  // Legacy sync messages
   | { type: 'SYNC_REQUEST'; path: FosPath }
   | { type: 'SYNC_RESPONSE'; path: FosPath; nodeAddress: string | null }
   | { type: 'NODE_CHANGED'; path: FosPath; nodeAddress: string }
+  // DHT-based sync (preferred)
+  | { type: 'ROOT_CID'; cid: string }
+  | { type: 'WANT_NODES'; cids: string[] }
+  | { type: 'HAVE_NODES'; nodes: Record<string, string> }
+  // Keepalive
   | { type: 'PING' }
-  | { type: 'PONG' };
+  | { type: 'PONG' }
+  // Proposal/Consensus messages
+  | {
+      type: 'PROPOSAL_CREATED';
+      proposal_id: string;
+      target_node_cid: string;
+      proposed_content: string; // JSON-serialized FosNodeContent
+      proposer_peer_id: string;
+      color: string;
+    }
+  | {
+      type: 'PROPOSAL_APPROVAL';
+      proposal_id: string;
+      approver_peer_id: string;
+      signature: string; // Base64-encoded Ed25519 signature
+    }
+  | {
+      type: 'PROPOSAL_ACCEPTED';
+      proposal_id: string;
+      new_node_cid: string;
+    }
+  | {
+      type: 'MEMBERS_UPDATE';
+      node_cid: string;
+      members: string[];
+    };
 
 // Common interface for peer connections (browser WebRTC and Tauri backend)
 export interface IPeer {

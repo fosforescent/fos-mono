@@ -452,6 +452,17 @@ body {
   color: var(--fos-text);
 }
 
+/* Zoom button */
+.fos-zoom-in-btn {
+  color: var(--fos-accent);
+  opacity: 0.6;
+}
+
+.fos-zoom-in-btn:hover {
+  opacity: 1;
+  background: var(--fos-accent-dim);
+}
+
 /* Indent spacer */
 .fos-indent {
   display: inline-block;
@@ -647,26 +658,86 @@ body {
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--fos-border);
-  transition: background 0.1s;
+  transition: background 0.1s, padding 0.1s, transform 0.1s;
+  position: relative;
+}
+
+/* Drag-drop states for expr-row */
+.expr-row.fos-dragging {
+  opacity: 0.5;
+  background: var(--fos-bg-hover);
+}
+
+.expr-row.fos-drop-before::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--fos-accent);
+  border-radius: 2px;
+  z-index: 10;
+}
+
+.expr-row.fos-drop-after::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--fos-accent);
+  border-radius: 2px;
+  z-index: 10;
+}
+
+.expr-row.fos-drop-inside {
+  background: var(--fos-accent-dim);
+  outline: 2px solid var(--fos-accent);
+  outline-offset: -2px;
 }
 
 .expr-row:hover {
   background: var(--fos-bg-hover);
 }
 
+/* Ghost row for items in main but not in current branch */
+.expr-ghost-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  opacity: 0.5;
+  font-style: italic;
+  color: var(--fos-text-muted);
+  background: var(--fos-bg-elevated);
+}
+
+.expr-ghost-text {
+  flex: 1;
+}
+
 .expr-handle {
   cursor: grab;
   padding: 4px 6px;
   color: var(--fos-text-muted);
-  font-size: 12px;
-  letter-spacing: -2px;
+  font-size: 14px;
+  letter-spacing: 1px;
   opacity: 0.4;
   transition: opacity 0.15s;
   user-select: none;
+  -webkit-user-drag: element; /* Help with drag on some browsers */
 }
 
 .expr-row:hover .expr-handle {
-  opacity: 0.8;
+  opacity: 1;
+  color: var(--fos-text);
+}
+
+.expr-handle:active {
+  cursor: grabbing;
 }
 
 .expr-indent {
@@ -702,6 +773,12 @@ body {
   color: var(--fos-text);
 }
 
+.expr-toggle-spacer {
+  width: 20px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
 .expr-input {
   flex: 1;
   background: transparent;
@@ -734,7 +811,8 @@ body {
 }
 
 .expr-btn-add,
-.expr-btn-delete {
+.expr-btn-delete,
+.expr-btn-zoom {
   background: transparent;
   border: none;
   color: var(--fos-text-muted);
@@ -745,15 +823,328 @@ body {
   transition: background 0.1s, color 0.1s;
 }
 
+.expr-btn-zoom {
+  color: var(--fos-accent);
+  opacity: 0.7;
+}
+
 .expr-btn-add:hover,
 .expr-btn-delete:hover {
   background: var(--fos-bg-hover);
   color: var(--fos-text);
 }
 
+.expr-btn-zoom:hover {
+  opacity: 1;
+  background: var(--fos-accent-dim);
+}
+
 .expr-children {
   margin-left: 12px;
   border-left: 2px solid var(--fos-accent-dim);
+}
+
+/* ============================================================================
+   Queue View (Chat Style)
+   ============================================================================ */
+
+.expr-queue-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
+  min-height: 400px;
+}
+
+.expr-queue-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expr-queue-bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+  position: relative;
+  transition: background 0.1s;
+}
+
+.expr-queue-bubble:hover {
+  background: var(--fos-bg-hover);
+}
+
+.expr-queue-bubble:hover .expr-queue-bubble-actions {
+  opacity: 1;
+}
+
+.expr-queue-bubble-content {
+  color: var(--fos-text);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  min-height: 1em;
+}
+
+.expr-queue-bubble-content:empty::before {
+  content: attr(data-placeholder);
+  color: var(--fos-text-muted);
+  font-style: italic;
+}
+
+.expr-queue-bubble-content:focus {
+  outline: none;
+}
+
+.expr-queue-bubble-actions {
+  display: flex;
+  gap: 4px;
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.expr-queue-bubble-actions .expr-btn-zoom,
+.expr-queue-bubble-actions .expr-btn-delete {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.expr-queue-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--fos-bg-elevated);
+  border-top: 1px solid var(--fos-border);
+}
+
+.expr-queue-input {
+  flex: 1;
+  background: var(--fos-bg);
+  border: 1px solid var(--fos-border);
+  border-radius: 20px;
+  color: var(--fos-text);
+  font-size: 14px;
+  padding: 10px 16px;
+  outline: none;
+}
+
+.expr-queue-input:focus {
+  border-color: var(--fos-accent);
+}
+
+.expr-queue-input::placeholder {
+  color: var(--fos-text-muted);
+}
+
+.expr-queue-send-btn {
+  background: var(--fos-accent);
+  border: none;
+  border-radius: 20px;
+  color: #000;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.expr-queue-send-btn:hover {
+  background: #5eead4;
+}
+
+.expr-empty {
+  color: var(--fos-text-muted);
+  padding: 24px;
+  text-align: center;
+  font-style: italic;
+}
+
+.expr-queue-row {
+  border-bottom: 1px solid var(--fos-border);
+}
+
+/* ============================================================================
+   Focus View
+   ============================================================================ */
+
+.expr-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  font-size: 13px;
+  color: var(--fos-text-muted);
+}
+
+.expr-breadcrumb-link {
+  background: transparent;
+  border: none;
+  color: var(--fos-accent);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.expr-breadcrumb-link:hover {
+  background: var(--fos-accent-dim);
+}
+
+.expr-breadcrumb-sep {
+  color: var(--fos-text-muted);
+}
+
+.expr-focus-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.expr-title-input {
+  background: transparent;
+  border: none;
+  color: var(--fos-text);
+  font-size: 24px;
+  font-weight: 600;
+  padding: 8px 0;
+  width: 100%;
+  outline: none;
+}
+
+.expr-title-input::placeholder {
+  color: var(--fos-text-muted);
+}
+
+.expr-notes-area {
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 8px;
+  color: var(--fos-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 150px;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+  outline: none;
+}
+
+.expr-notes-area:focus {
+  border-color: var(--fos-accent);
+}
+
+.expr-notes-area::placeholder {
+  color: var(--fos-text-muted);
+}
+
+.expr-children-section {
+  padding: 0 16px 16px;
+}
+
+.expr-children-section h3 {
+  color: var(--fos-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px 0;
+}
+
+.expr-focus-child-row {
+  border-bottom: 1px solid var(--fos-border);
+  cursor: pointer;
+}
+
+.expr-focus-child-row:hover {
+  background: var(--fos-bg-hover);
+}
+
+/* ============================================================================
+   Breadcrumbs (Tree View)
+   ============================================================================ */
+
+.expr-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  background: var(--fos-bg-elevated);
+  font-size: 13px;
+}
+
+.expr-breadcrumb-item {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fos-accent);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.expr-breadcrumb-item:hover {
+  background: var(--fos-accent-dim);
+}
+
+.expr-breadcrumb-item.active {
+  color: var(--fos-text);
+  cursor: default;
+}
+
+.expr-breadcrumb-item.active:hover {
+  background: transparent;
+}
+
+.expr-breadcrumb-sep {
+  color: var(--fos-text-muted);
+}
+
+/* Breadcrumb as drop target */
+.expr-breadcrumb-item.expr-drop-target {
+  border-color: var(--fos-accent);
+  background: var(--fos-accent-dim);
+}
+
+/* ============================================================================
+   Depth Limit Indicator
+   ============================================================================ */
+
+.expr-depth-limit {
+  padding: 4px 12px 4px 24px;
+}
+
+.expr-depth-zoom-btn {
+  background: transparent;
+  border: 1px dashed var(--fos-border);
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.expr-depth-zoom-btn:hover {
+  background: var(--fos-bg-hover);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
 }
 
 /* ============================================================================
@@ -946,6 +1337,22 @@ body {
 
 .fos-node-peers-item-status.disconnected {
   color: #6b7280;
+}
+
+.fos-node-peers-item--online {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.fos-node-peers-item--offline {
+  background: rgba(107, 114, 128, 0.1);
+  opacity: 0.8;
+}
+
+.fos-node-peers-item-lastseen {
+  font-size: 10px;
+  color: var(--fos-text-muted);
+  margin-left: auto;
+  margin-right: 8px;
 }
 
 .fos-node-peers-tabs {
@@ -1426,4 +1833,679 @@ body {
 .fos-branch-approve-btn.approved {
   background: var(--fos-accent);
   color: #000;
+}
+
+/* Merge button in branch dropdown */
+/* Branch action buttons container */
+.fos-branch-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.fos-branch-add-btn {
+  background: var(--fos-bg-hover);
+  border: 1px solid var(--fos-border);
+  border-radius: 3px;
+  color: var(--fos-text);
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fos-branch-add-btn:hover {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+/* Sync button for pulling updates from parent */
+.expr-sync-btn {
+  background: var(--fos-bg-hover);
+  border: 1px solid var(--fos-border);
+  border-radius: 3px;
+  color: var(--fos-text);
+  font-size: 12px;
+  padding: 2px 6px;
+  margin-left: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.expr-sync-btn:hover {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+.expr-sync-btn.expr-sync-add {
+  margin-left: auto;
+}
+
+.fos-branch-merge-btn {
+  background: var(--fos-bg-hover);
+  border: 1px solid var(--fos-border);
+  border-radius: 3px;
+  color: var(--fos-text);
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fos-branch-merge-btn:hover {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+.fos-branch-request-merge-btn {
+  background: var(--fos-accent-dim);
+  border: 1px solid var(--fos-accent);
+  border-radius: 4px;
+  color: var(--fos-accent);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: 8px;
+}
+
+.fos-branch-request-merge-btn:hover {
+  background: var(--fos-accent);
+  color: var(--fos-bg);
+}
+
+/* Branch viewing indicator */
+.fos-branch-indicator {
+  background: var(--fos-accent-dim);
+  border: 1px solid var(--fos-accent);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--fos-accent);
+}
+
+.fos-branch-row {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+  border-left: 3px solid var(--fos-accent);
+}
+
+/* Section header in branch dropdown */
+.fos-branch-section-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--fos-text-muted);
+  letter-spacing: 0.5px;
+}
+
+/* Member option styling */
+.fos-member-option {
+  border-left: 3px solid #6b7280;
+}
+
+.fos-member-option:hover {
+  border-left-color: #9ca3af;
+}
+
+/* Peer option styling */
+.fos-peer-option {
+  border-left: 3px solid #22c55e;
+  cursor: pointer;
+}
+
+.fos-peer-option:hover {
+  background: var(--fos-bg-hover);
+}
+
+.fos-peer-status-dot {
+  font-size: 8px;
+}
+
+.fos-peer-sync-btn {
+  background: transparent;
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  margin-left: auto;
+  transition: all 0.15s;
+}
+
+.fos-peer-sync-btn:hover {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+/* Viewing peer data banner */
+.fos-viewing-peer-banner {
+  background: rgba(107, 114, 128, 0.2);
+  border: 1px solid #6b7280;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+/* Branch type selection row */
+.fos-branch-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.fos-branch-type-btn {
+  flex: 1;
+  min-width: 70px;
+  padding: 6px 8px;
+  font-size: 11px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.fos-branch-type-btn:hover:not(:disabled) {
+  background: var(--fos-bg-hover);
+  border-color: var(--fos-accent);
+}
+
+.fos-branch-type-btn--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Branch create row with back button */
+.fos-branch-create-row {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  align-items: center;
+}
+
+.fos-branch-back-btn {
+  padding: 4px 8px;
+  font-size: 14px;
+  background: transparent;
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+}
+
+.fos-branch-back-btn:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+/* Peer connection form in branch selector */
+.fos-peer-form {
+  padding: 8px 12px;
+}
+
+.fos-peer-form-header {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.fos-peer-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+}
+
+.fos-peer-tab.active {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+.fos-peer-tab:hover:not(.active) {
+  background: var(--fos-bg-hover);
+}
+
+.fos-peer-form-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fos-peer-textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 100px;
+  padding: 8px;
+  font-size: 11px;
+  font-family: monospace;
+  background: var(--fos-bg);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text);
+  resize: vertical;
+}
+
+.fos-peer-textarea:focus {
+  outline: none;
+  border-color: var(--fos-accent);
+}
+
+.fos-peer-label {
+  font-size: 11px;
+  color: var(--fos-text-muted);
+}
+
+.fos-peer-row {
+  display: flex;
+  gap: 4px;
+}
+
+.fos-peer-status {
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.fos-peer-status--success {
+  color: var(--fos-accent);
+}
+
+.fos-peer-status--error {
+  color: #ef4444;
+}
+
+/* Breadcrumbs navigation */
+.fos-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--fos-bg-elevated);
+  border-radius: 4px;
+  overflow-x: auto;
+  max-width: 400px;
+}
+
+.fos-breadcrumb {
+  padding: 4px 8px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: all 0.1s;
+}
+
+.fos-breadcrumb:hover:not(.active) {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+.fos-breadcrumb.active {
+  color: var(--fos-accent);
+  cursor: default;
+}
+
+.fos-breadcrumb-sep {
+  color: var(--fos-text-muted);
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+/* Link button in branch create row */
+.fos-branch-link-btn {
+  padding: 4px 8px;
+  font-size: 14px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.fos-branch-link-btn:hover {
+  background: var(--fos-bg-hover);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+/* Reference backdrop */
+.fos-reference-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+}
+
+/* Reference overlay */
+.fos-reference-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 320px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.fos-reference-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--fos-border);
+  font-weight: 500;
+}
+
+.fos-reference-header span {
+  flex: 1;
+}
+
+.fos-reference-back,
+.fos-reference-close {
+  padding: 4px 8px;
+  font-size: 14px;
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.fos-reference-back:hover,
+.fos-reference-close:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+.fos-reference-options {
+  padding: 8px;
+}
+
+.fos-reference-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.fos-reference-option:hover:not(.fos-reference-option--disabled) {
+  background: var(--fos-bg-hover);
+}
+
+.fos-reference-option--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fos-reference-icon {
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fos-bg);
+  border-radius: 6px;
+}
+
+.fos-reference-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fos-reference-title {
+  font-weight: 500;
+  color: var(--fos-text);
+}
+
+.fos-reference-desc {
+  font-size: 12px;
+  color: var(--fos-text-muted);
+}
+
+/* Peer tabs in overlay */
+.fos-peer-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fos-border);
+}
+
+.fos-peer-content {
+  padding: 12px;
+}
+
+/* URL input section in reference overlay */
+.fos-reference-url-section {
+  padding: 12px;
+  border-bottom: 1px solid var(--fos-border);
+}
+
+.fos-reference-url-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: monospace;
+  background: var(--fos-bg);
+  border: 1px solid var(--fos-border);
+  border-radius: 6px;
+  color: var(--fos-text);
+  margin-bottom: 8px;
+}
+
+.fos-reference-url-input:focus {
+  outline: none;
+  border-color: var(--fos-accent);
+}
+
+.fos-reference-url-input::placeholder {
+  color: var(--fos-text-muted);
+}
+
+.fos-reference-url-status {
+  font-size: 12px;
+  min-height: 18px;
+  margin-bottom: 8px;
+  color: var(--fos-text-muted);
+}
+
+.fos-reference-url-status--success {
+  color: var(--fos-accent);
+}
+
+.fos-reference-url-status--error {
+  color: #ef4444;
+}
+
+.fos-reference-url-status--info {
+  color: #60a5fa;
+}
+
+.fos-reference-url-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fos-reference-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--fos-text-muted);
+  font-size: 12px;
+}
+
+.fos-reference-separator::before,
+.fos-reference-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--fos-border);
+}
+
+/* ============================================================================
+   Branch Comparison
+   ============================================================================ */
+
+/* Compare button in branch option */
+.fos-branch-compare-btn {
+  background: var(--fos-bg-hover);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  color: var(--fos-text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 12px;
+  transition: all 0.1s;
+}
+
+.fos-branch-compare-btn:hover {
+  background: var(--fos-accent-dim);
+  border-color: var(--fos-accent);
+  color: var(--fos-accent);
+}
+
+/* Compare submenu dropdown */
+.fos-branch-compare-submenu {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  min-width: 120px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  margin-right: 4px;
+}
+
+.fos-branch-submenu-option {
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+
+.fos-branch-submenu-option:hover {
+  background: var(--fos-bg-hover);
+}
+
+.fos-branch-submenu-option:first-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.fos-branch-submenu-option:last-child {
+  border-radius: 0 0 4px 4px;
+}
+
+/* Comparison mode indicator */
+.fos-compare-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--fos-bg-elevated);
+  border: 1px solid var(--fos-border);
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.fos-compare-badge {
+  padding: 2px 8px;
+  font-size: 12px;
+  border: 1px solid;
+  border-radius: 4px;
+}
+
+.fos-compare-arrow {
+  color: var(--fos-text-muted);
+  font-size: 14px;
+}
+
+/* Merge action button in comparison mode */
+.fos-branch-merge-btn-action {
+  background: var(--fos-accent-dim);
+  border: 1px solid var(--fos-accent);
+  color: var(--fos-accent);
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: all 0.1s;
+}
+
+.fos-branch-merge-btn-action:hover {
+  background: var(--fos-accent);
+  color: var(--fos-bg);
+}
+
+/* Exit comparison button */
+.fos-compare-exit-btn {
+  background: transparent;
+  border: none;
+  color: var(--fos-text-muted);
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
+.fos-compare-exit-btn:hover {
+  background: var(--fos-bg-hover);
+  color: var(--fos-text);
+}
+
+/* Position actions container as relative for submenu positioning */
+.fos-branch-actions {
+  position: relative;
+}
+
+/* Disconnected peer styling */
+.fos-peer-disconnected {
+  opacity: 0.6;
+}
+
+.fos-peer-disconnected:hover {
+  opacity: 0.8;
+}
+
+.fos-peer-status-dot {
+  font-size: 10px;
 }

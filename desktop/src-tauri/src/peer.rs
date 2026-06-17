@@ -1,6 +1,10 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
+
+/// Path type matching FosPath from TypeScript: Array<[string, string]>
+/// Each element is a (content CID, children CID) pair
+pub type FosPath = Vec<(String, String)>;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,9 +37,17 @@ pub enum PeerMessage {
     #[serde(rename = "ROOT_ADDRESS_CHANGED")]
     RootAddressChanged { root_address: String },
     #[serde(rename = "NODE_DATA")]
-    NodeData { path: Vec<usize>, data: String },
+    NodeData { path: FosPath, data: String },
     #[serde(rename = "NODE_REQUEST")]
-    NodeRequest { path: Vec<usize> },
+    NodeRequest { path: FosPath },
+    // DHT-based sync
+    #[serde(rename = "ROOT_CID")]
+    RootCid { cid: String },
+    #[serde(rename = "WANT_NODES")]
+    WantNodes { cids: Vec<String> },
+    #[serde(rename = "HAVE_NODES")]
+    HaveNodes { nodes: HashMap<String, String> },
+    // Keepalive
     #[serde(rename = "PING")]
     Ping,
     #[serde(rename = "PONG")]
@@ -71,14 +83,6 @@ pub enum PeerMessage {
     },
 }
 
-/// Signed message wrapper
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SignedMessage {
-    /// The message payload (JSON string)
-    pub payload: String,
-    /// Base64-encoded Ed25519 signature
-    pub signature: String,
-}
 
 /// Connection state for a peer
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -101,7 +105,7 @@ pub enum ConnectionState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerInfo {
     pub id: String,
-    pub path: Vec<usize>,
+    pub path: FosPath,
     pub state: ConnectionState,
     /// Base64-encoded public key of the remote peer (if exchanged)
     pub public_key: Option<String>,
@@ -110,7 +114,7 @@ pub struct PeerInfo {
 /// A single peer connection
 pub struct Peer {
     pub id: String,
-    pub path: Vec<usize>,
+    pub path: FosPath,
     pub connection: Arc<RTCPeerConnection>,
     pub data_channel: Arc<Mutex<Option<Arc<RTCDataChannel>>>>,
     pub state: Arc<RwLock<ConnectionState>>,
@@ -119,17 +123,11 @@ pub struct Peer {
 }
 
 impl Peer {
-    /// Send a signed message to this peer
-    pub async fn send_signed(&self, message: &PeerMessage, signing_key: &SigningKey) -> Result<(), String> {
+    /// Send a message to this peer (raw JSON, no signing wrapper)
+    pub async fn send(&self, message: &PeerMessage) -> Result<(), String> {
         let dc_guard = self.data_channel.lock().await;
         if let Some(dc) = dc_guard.as_ref() {
-            let payload = serde_json::to_string(message).map_err(|e| e.to_string())?;
-            let signature = signing_key.sign(payload.as_bytes());
-            let signed_msg = SignedMessage {
-                payload,
-                signature: BASE64.encode(signature.to_bytes()),
-            };
-            let json = serde_json::to_string(&signed_msg).map_err(|e| e.to_string())?;
+            let json = serde_json::to_string(message).map_err(|e| e.to_string())?;
             dc.send_text(json)
                 .await
                 .map_err(|e| format!("Failed to send: {}", e))?;
@@ -149,32 +147,19 @@ impl Peer {
         self.remote_public_key.read().await.clone()
     }
 
-    /// Verify a signed message from this peer
-    pub async fn verify_message(&self, signed: &SignedMessage) -> Result<PeerMessage, String> {
+    /// Verify a proposal signature from this peer
+    /// Returns Ok(()) if signature is valid, Err if invalid or no public key
+    pub async fn verify_proposal_signature(&self, content: &str, signature_b64: &str) -> Result<(), String> {
         let remote_key = self.remote_public_key.read().await;
+        let key = remote_key.as_ref().ok_or("No remote public key set")?;
 
-        // If we don't have their public key yet, check if this is a key exchange message
-        if remote_key.is_none() {
-            // Allow unsigned key exchange messages
-            let msg: PeerMessage = serde_json::from_str(&signed.payload)
-                .map_err(|e| format!("Failed to parse payload: {}", e))?;
-            if matches!(msg, PeerMessage::KeyExchange { .. }) {
-                return Ok(msg);
-            }
-            return Err("No remote public key set and message is not key exchange".to_string());
-        }
-
-        let key = remote_key.as_ref().unwrap();
-        let sig_bytes = BASE64.decode(&signed.signature)
+        let sig_bytes = BASE64.decode(signature_b64)
             .map_err(|e| format!("Failed to decode signature: {}", e))?;
         let signature = Signature::from_slice(&sig_bytes)
             .map_err(|e| format!("Invalid signature format: {}", e))?;
 
-        key.verify(signed.payload.as_bytes(), &signature)
-            .map_err(|_| "Signature verification failed".to_string())?;
-
-        serde_json::from_str(&signed.payload)
-            .map_err(|e| format!("Failed to parse verified payload: {}", e))
+        key.verify(content.as_bytes(), &signature)
+            .map_err(|_| "Signature verification failed".to_string())
     }
 
     pub async fn get_state(&self) -> ConnectionState {
@@ -193,11 +178,11 @@ impl Peer {
     }
 }
 
-/// Raw incoming message (before verification)
+/// Incoming message from a peer
 #[derive(Debug, Clone)]
 pub struct IncomingMessage {
     pub peer_id: String,
-    pub signed: SignedMessage,
+    pub message: PeerMessage,
 }
 
 /// Manager for all peer connections
@@ -336,7 +321,7 @@ impl PeerManager {
     }
 
     /// Create an offer to initiate a connection
-    pub async fn create_offer(&self, path: Vec<usize>) -> Result<(String, String), String> {
+    pub async fn create_offer(&self, path: FosPath) -> Result<(String, String), String> {
         let peer_id = uuid::Uuid::new_v4().to_string();
         let pc = Self::create_peer_connection(true).await?;  // is_offerer = true
 
@@ -415,7 +400,7 @@ impl PeerManager {
     pub async fn accept_offer(
         &self,
         offer_string: String,
-        path: Vec<usize>,
+        path: FosPath,
     ) -> Result<(String, String), String> {
         log::info!("[Peer] accept_offer called, offer length: {}", offer_string.len());
 
@@ -605,14 +590,15 @@ impl PeerManager {
                     let pid3 = pid2.clone();
                     Box::pin(async move {
                         if let Ok(text) = String::from_utf8(msg.data.to_vec()) {
-                            // Try to parse as SignedMessage
-                            if let Ok(signed) = serde_json::from_str::<SignedMessage>(&text) {
+                            // Parse as raw PeerMessage
+                            if let Ok(peer_message) = serde_json::from_str::<PeerMessage>(&text) {
+                                log::info!("[Peer {}] Received message: {:?}", pid3, peer_message);
                                 let _ = tx3.send(IncomingMessage {
                                     peer_id: pid3,
-                                    signed,
+                                    message: peer_message,
                                 });
                             } else {
-                                log::warn!("[Peer] Received non-signed message, ignoring");
+                                log::warn!("[Peer] Failed to parse message: {}", &text[..text.len().min(100)]);
                             }
                         }
                     })
@@ -630,14 +616,15 @@ impl PeerManager {
                 let pid2 = pid.clone();
                 Box::pin(async move {
                     if let Ok(text) = String::from_utf8(msg.data.to_vec()) {
-                        // Try to parse as SignedMessage
-                        if let Ok(signed) = serde_json::from_str::<SignedMessage>(&text) {
+                        // Parse as raw PeerMessage
+                        if let Ok(peer_message) = serde_json::from_str::<PeerMessage>(&text) {
+                            log::info!("[Peer {}] Received message: {:?}", pid2, peer_message);
                             let _ = tx2.send(IncomingMessage {
                                 peer_id: pid2,
-                                signed,
+                                message: peer_message,
                             });
                         } else {
-                            log::warn!("[Peer] Received non-signed message, ignoring");
+                            log::warn!("[Peer] Failed to parse message: {}", &text[..text.len().min(100)]);
                         }
                     }
                 })
@@ -645,19 +632,19 @@ impl PeerManager {
         }
     }
 
-    /// Send a signed message to a specific peer
+    /// Send a message to a specific peer
     pub async fn send_to_peer(&self, peer_id: &str, message: &PeerMessage) -> Result<(), String> {
         let peers = self.peers.read().await;
         let peer = peers.get(peer_id).ok_or("Peer not found")?;
-        peer.send_signed(message, &self.signing_key).await
+        peer.send(message).await
     }
 
-    /// Broadcast a signed message to all peers for a specific path
-    pub async fn broadcast_to_path(&self, path: &[usize], message: &PeerMessage) -> Result<(), String> {
+    /// Broadcast a message to all peers for a specific path
+    pub async fn broadcast_to_path(&self, path: &FosPath, message: &PeerMessage) -> Result<(), String> {
         let peers = self.peers.read().await;
         for peer in peers.values() {
-            if peer.path == path {
-                let _ = peer.send_signed(message, &self.signing_key).await;
+            if &peer.path == path {
+                let _ = peer.send(message).await;
             }
         }
         Ok(())
@@ -674,11 +661,11 @@ impl PeerManager {
     }
 
     /// Get info about peers for a specific path
-    pub async fn get_peers_for_path(&self, path: &[usize]) -> Vec<PeerInfo> {
+    pub async fn get_peers_for_path(&self, path: &FosPath) -> Vec<PeerInfo> {
         let peers = self.peers.read().await;
         let mut result = Vec::new();
         for peer in peers.values() {
-            if peer.path == path {
+            if &peer.path == path {
                 result.push(peer.get_info().await);
             }
         }
@@ -705,5 +692,22 @@ impl PeerManager {
         }
         peers.clear();
         Ok(())
+    }
+
+    /// Sign content using our signing key (for proposal approvals)
+    pub fn sign_content(&self, content: &str) -> String {
+        let signature = self.signing_key.sign(content.as_bytes());
+        BASE64.encode(signature.to_bytes())
+    }
+
+    /// Verify a proposal signature from a specific peer
+    pub async fn verify_proposal_signature(
+        &self,
+        peer_id: &str,
+        content: &str,
+        signature_b64: &str,
+    ) -> Result<(), String> {
+        let peer = self.get_peer(peer_id).await.ok_or("Peer not found")?;
+        peer.verify_proposal_signature(content, signature_b64).await
     }
 }

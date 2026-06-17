@@ -11,7 +11,7 @@
 import { FosExpression } from '@fosforescent/shared/dag-implementation/expression';
 import { FosStore } from '@fosforescent/shared/dag-implementation/store';
 import { FosPath } from '@fosforescent/shared/types';
-import { pathEqual, pathToKey } from './tree-ops';
+import { pathEqual, pathToKey } from './path-utils';
 
 // ============================================================================
 // Types
@@ -218,9 +218,10 @@ export const makeDropTarget = (
 
 const isDescendant = (possibleDescendant: FosPath, possibleAncestor: FosPath): boolean => {
   if (possibleDescendant.length <= possibleAncestor.length) return false;
-  return possibleAncestor.every((elem, i) =>
-    elem[0] === possibleDescendant[i][0] && elem[1] === possibleDescendant[i][1]
-  );
+  return possibleAncestor.every((elem, i) => {
+    const descendantElem = possibleDescendant[i];
+    return descendantElem && elem[0] === descendantElem[0] && elem[1] === descendantElem[1];
+  });
 };
 
 // ============================================================================
@@ -234,21 +235,17 @@ export const executeDrop = async (
   position: DropPosition
 ): Promise<void> => {
   const sourceExpr = new FosExpression(store, sourcePath);
-  const targetExpr = new FosExpression(store, targetPath);
 
   switch (position) {
     case 'before':
-      // Move source above target
       sourceExpr.moveNodeAboveRoute(targetPath);
       break;
 
     case 'after':
-      // Move source below target
       sourceExpr.moveNodeBelowRoute(targetPath);
       break;
 
     case 'inside':
-      // Move source as child of target
       sourceExpr.moveNodeIntoRoute(targetPath, -1); // -1 = append
       break;
   }
@@ -274,31 +271,90 @@ export const makeDraggableDropTarget = (
 };
 
 // ============================================================================
+// Make Element a Drop Target Only (for use with separate drag handle)
+// ============================================================================
+
+export const makeDropTargetOnly = (
+  element: HTMLElement,
+  path: FosPath,
+  state: DragState,
+  callbacks: DragCallbacks
+): (() => void) => {
+  // Just set up drop handling, no drag initiation
+  element.dataset.fosPath = pathToKey(path);
+  return makeDropTarget(element, path, state, callbacks);
+};
+
+// ============================================================================
 // Drag Handle (for grabbing a specific part of the element)
 // ============================================================================
 
 export const makeDragHandle = (
   handle: HTMLElement,
-  draggableElement: HTMLElement
-): void => {
-  // Prevent dragging from the handle itself starting drag on parent
+  draggableElement: HTMLElement,
+  path: FosPath,
+  state: DragState,
+  callbacks: DragCallbacks
+): (() => void) => {
+  // Simpler approach: row is draggable, but only when initiated from handle
+  // Start with row NOT draggable
   draggableElement.draggable = false;
+  handle.style.cursor = 'grab';
 
-  handle.addEventListener('mousedown', () => {
+  const handleMouseDown = (e: MouseEvent) => {
+    // Enable dragging on the row when mousedown on handle
     draggableElement.draggable = true;
-  });
+  };
 
-  handle.addEventListener('mouseup', () => {
-    // Keep draggable for a moment in case drag started
+  const handleMouseUp = () => {
+    // Disable dragging after a short delay (if drag didn't start)
     setTimeout(() => {
       if (!draggableElement.classList.contains('fos-dragging')) {
         draggableElement.draggable = false;
       }
     }, 100);
-  });
+  };
 
-  // Also handle touch
-  handle.addEventListener('touchstart', () => {
-    draggableElement.draggable = true;
-  });
+  const handleDragStart = (e: DragEvent) => {
+    if (!e.dataTransfer) return;
+
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', pathToKey(path));
+
+    state.dragging = path;
+    callbacks.onDragStart(path);
+
+    draggableElement.classList.add('fos-dragging');
+    handle.style.cursor = 'grabbing';
+  };
+
+  const handleDragEnd = () => {
+    state.dragging = null;
+    state.dragOver = null;
+    state.dropPosition = null;
+    callbacks.onDragEnd();
+    draggableElement.classList.remove('fos-dragging');
+    draggableElement.draggable = false;
+    handle.style.cursor = 'grab';
+
+    document.querySelectorAll('.fos-drag-over, .fos-drop-before, .fos-drop-after, .fos-drop-inside')
+      .forEach(el => {
+        el.classList.remove('fos-drag-over', 'fos-drop-before', 'fos-drop-after', 'fos-drop-inside');
+      });
+  };
+
+  // Handle events go on the handle
+  handle.addEventListener('mousedown', handleMouseDown);
+  handle.addEventListener('mouseup', handleMouseUp);
+
+  // Drag events go on the row (the draggable element)
+  draggableElement.addEventListener('dragstart', handleDragStart);
+  draggableElement.addEventListener('dragend', handleDragEnd);
+
+  return () => {
+    handle.removeEventListener('mousedown', handleMouseDown);
+    handle.removeEventListener('mouseup', handleMouseUp);
+    draggableElement.removeEventListener('dragstart', handleDragStart);
+    draggableElement.removeEventListener('dragend', handleDragEnd);
+  };
 };

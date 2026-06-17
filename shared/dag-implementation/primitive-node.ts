@@ -169,9 +169,16 @@ export const getApproveActionNode = (store: FosStore) => generateConstructor(sto
 export const getProposalFieldNode = (store: FosStore) => generateConstructor(store, "PROPOSAL", { description: { content: 'Proposal Field Constructor' } }, [])
 export const getRevisionFieldNode = (store: FosStore) => generateConstructor(store, "REVISION", { description: { content: 'Revision Field Constructor' } }, [])
 
+// Peer-related constructors for membership-based sync
+export const getPeerFieldNode = (store: FosStore) => generateConstructor(store, "PEER", { description: { content: 'Peer Reference Constructor' } }, [])
+export const getMemberFieldNode = (store: FosStore) => generateConstructor(store, "MEMBER", { description: { content: 'Member Edge Constructor - points to peer reference' } }, [])
+export const getPeerIdFieldNode = (store: FosStore) => generateConstructor(store, "PEERID", { description: { content: 'Peer ID Field' } }, [])
+export const getPeerPublicKeyFieldNode = (store: FosStore) => generateConstructor(store, "PEERPUBKEY", { description: { content: 'Peer Public Key Field' } }, [])
+
 // Proposal-related constructors for peer consensus (branching model)
 export const getProposedContentNode = (store: FosStore) => generateConstructor(store, "PROPOSEDCONTENT", { description: { content: 'Proposed Content Constructor' } }, [])
 export const getProposalNameNode = (store: FosStore) => generateConstructor(store, "PROPOSALNAME", { description: { content: 'Proposal/Branch Name Constructor' } }, [])
+export const getParentBranchNode = (store: FosStore) => generateConstructor(store, "PARENTBRANCH", { description: { content: 'Parent Branch Constructor' } }, [])
 export const getSenderNode = (store: FosStore) => generateConstructor(store, "SENDER", { description: { content: 'Sender Constructor (peer ID)' } }, [])
 export const getTimestampNode = (store: FosStore) => generateConstructor(store, "TIMESTAMP", { description: { content: 'Timestamp Constructor' } }, [])
 export const getSignatureNode = (store: FosStore) => generateConstructor(store, "SIGNATURE", { description: { content: 'Signature Constructor (Ed25519)' } }, [])
@@ -600,9 +607,15 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   // Proposal-related constructors
   const proposedContentField = getProposedContentNode(store)
   const proposalNameField = getProposalNameNode(store)
+  const parentBranchField = getParentBranchNode(store)
   const senderField = getSenderNode(store)
   const timestampField = getTimestampNode(store)
   const signatureField = getSignatureNode(store)
+  // Peer/membership-related constructors
+  const peerField = getPeerFieldNode(store)
+  const memberField = getMemberFieldNode(store)
+  const peerIdField = getPeerIdFieldNode(store)
+  const peerPublicKeyField = getPeerPublicKeyFieldNode(store)
   const periodicTrigger = getPeriodicTriggerNode(store)
   const requestTrigger = getRequestTriggerNode(store)
   const manualTrigger = getManualTriggerNode(store)
@@ -785,9 +798,14 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     proposalField,
     proposedContentField,
     proposalNameField,
+    parentBranchField,
     senderField,
     timestampField,
     signatureField,
+    peerField,
+    memberField,
+    peerIdField,
+    peerPublicKeyField,
     revisionField,
     projectField,
     periodicTrigger,
@@ -965,9 +983,14 @@ export type PrimitiveAliases = {
   proposalField: FosNode,
   proposedContentField: FosNode,
   proposalNameField: FosNode,
+  parentBranchField: FosNode,
   senderField: FosNode,
   timestampField: FosNode,
   signatureField: FosNode,
+  peerField: FosNode,
+  memberField: FosNode,
+  peerIdField: FosNode,
+  peerPublicKeyField: FosNode,
   targetPointerConstructor: FosNode,
   instructionPointerConstructor: FosNode,
   revisionField: FosNode,

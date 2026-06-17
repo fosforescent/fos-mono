@@ -7,7 +7,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 mod peer;
-use peer::{PeerManager, PeerInfo, PeerMessage, IncomingMessage};
+#[cfg(test)]
+mod peer_test;
+
+use peer::{PeerManager, PeerInfo, PeerMessage, IncomingMessage, FosPath};
 
 /// Event payload for peer messages sent to frontend
 #[derive(Clone, Serialize)]
@@ -408,22 +411,39 @@ impl Default for PeerState {
 /// Create an offer to initiate a peer connection
 #[tauri::command]
 async fn peer_create_offer(
-    path: Vec<usize>,
+    path: FosPath,
     state: State<'_, PeerState>,
 ) -> Result<(String, String), String> {
+    log::info!("[Peer] peer_create_offer called with path: {:?}", path);
     let manager = state.0.read().await;
-    manager.create_offer(path).await
+    let result = manager.create_offer(path).await;
+    log::info!("[Peer] peer_create_offer result: {:?}", result.as_ref().map(|(id, _)| id));
+    result
 }
 
 /// Accept an offer from another peer and generate an answer
 #[tauri::command]
 async fn peer_accept_offer(
     offer: String,
-    path: Vec<usize>,
+    path: FosPath,
     state: State<'_, PeerState>,
 ) -> Result<(String, String), String> {
+    log::info!("[Peer] peer_accept_offer called");
+    log::info!("[Peer] path: {:?}", path);
+    log::info!("[Peer] offer length: {}", offer.len());
+    log::info!("[Peer] offer (first 100): {}", &offer[..offer.len().min(100)]);
+
     let manager = state.0.read().await;
-    manager.accept_offer(offer, path).await
+    match manager.accept_offer(offer, path).await {
+        Ok((peer_id, answer)) => {
+            log::info!("[Peer] peer_accept_offer SUCCESS: peer_id={}, answer_len={}", peer_id, answer.len());
+            Ok((peer_id, answer))
+        }
+        Err(e) => {
+            log::error!("[Peer] peer_accept_offer FAILED: {}", e);
+            Err(e)
+        }
+    }
 }
 
 /// Accept an answer to complete the connection (for the offerer)
@@ -451,7 +471,7 @@ async fn peer_send_message(
 /// Broadcast a message to all peers for a specific path
 #[tauri::command]
 async fn peer_broadcast(
-    path: Vec<usize>,
+    path: FosPath,
     message: PeerMessage,
     state: State<'_, PeerState>,
 ) -> Result<(), String> {
@@ -469,7 +489,7 @@ async fn peer_list(state: State<'_, PeerState>) -> Result<Vec<PeerInfo>, String>
 /// Get info about peers for a specific path
 #[tauri::command]
 async fn peer_list_for_path(
-    path: Vec<usize>,
+    path: FosPath,
     state: State<'_, PeerState>,
 ) -> Result<Vec<PeerInfo>, String> {
     let manager = state.0.read().await;
@@ -516,12 +536,20 @@ async fn sign_proposal(
     content: String,
     state: State<'_, PeerState>,
 ) -> Result<String, String> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-    use ed25519_dalek::Signer;
-
     let manager = state.0.read().await;
-    let signature = manager.signing_key.sign(content.as_bytes());
-    Ok(BASE64.encode(signature.to_bytes()))
+    Ok(manager.sign_content(&content))
+}
+
+/// Verify a proposal signature from a specific peer
+#[tauri::command]
+async fn verify_proposal_signature(
+    peer_id: String,
+    content: String,
+    signature: String,
+    state: State<'_, PeerState>,
+) -> Result<(), String> {
+    let manager = state.0.read().await;
+    manager.verify_proposal_signature(&peer_id, &content, &signature).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -555,32 +583,12 @@ pub fn run() {
                     log::info!("[Peer] Message forwarder task started");
 
                     while let Some(incoming) = rx.recv().await {
-                        let IncomingMessage { peer_id, signed } = incoming;
-                        log::debug!("[Peer] Received signed message from {}", peer_id);
-
-                        // Get the peer and verify the message
-                        let manager = peer_manager.read().await;
-                        let peer = match manager.get_peer(&peer_id).await {
-                            Some(p) => p,
-                            None => {
-                                log::warn!("[Peer] Unknown peer {}, ignoring message", peer_id);
-                                continue;
-                            }
-                        };
-
-                        // Verify the signature and get the message
-                        let message = match peer.verify_message(&signed).await {
-                            Ok(msg) => msg,
-                            Err(e) => {
-                                log::warn!("[Peer] Message verification failed from {}: {}", peer_id, e);
-                                continue;
-                            }
-                        };
-
-                        log::debug!("[Peer] Verified message from {}: {:?}", peer_id, message);
+                        let IncomingMessage { peer_id, message } = incoming;
+                        log::debug!("[Peer] Received message from {}: {:?}", peer_id, message);
 
                         // Handle key exchange specially
                         if let PeerMessage::KeyExchange { public_key } = &message {
+                            let manager = peer_manager.read().await;
                             match manager.process_key_exchange(&peer_id, public_key).await {
                                 Ok(is_new) => {
                                     // Only send our public key back if this is a new key exchange
@@ -600,8 +608,6 @@ pub fn run() {
                             }
                             continue; // Don't forward key exchange to frontend
                         }
-
-                        drop(manager); // Release the read lock before emitting
 
                         let event = PeerMessageEvent {
                             peer_id,
@@ -656,6 +662,7 @@ pub fn run() {
             peer_get_public_key,
             peer_send_key_exchange,
             sign_proposal,
+            verify_proposal_signature,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
