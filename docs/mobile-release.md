@@ -1,6 +1,8 @@
 # Mobile Release Guide (iOS + Android)
 
-Cloud builds run on GitHub Actions (`.github/workflows/mobile-build.yml`). The Tauri app
+Cloud builds run on GitHub Actions (`.github/workflows/mobile-android.yml` and
+`.github/workflows/mobile-ios.yml` — one workflow per platform so they can be run
+independently). The Tauri app
 (`desktop/src-tauri/`) wraps the `web/` frontend and ships to:
 
 - **iOS**: TestFlight via App Store Connect

@@ -147,7 +147,7 @@ The desktop app automatically detects and loads .fos directories:
 - Creates native installers for all desktop platforms
 
 ### Mobile (iOS/Android)
-- Built in GitHub Actions (`.github/workflows/mobile-build.yml`); `gen/android` and `gen/apple` are initialized fresh in CI
+- Built in GitHub Actions (`.github/workflows/mobile-android.yml` and `mobile-ios.yml`); `gen/android` and `gen/apple` are initialized fresh in CI
 - Android release signing is injected post-init by `.github/scripts/patch-android-signing.sh`
 - iOS uses Xcode automatic cloud signing via App Store Connect API key
 - App icon source: `src-tauri/app-icon.png` (1024px) — CI runs `npx tauri icon` after init

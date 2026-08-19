@@ -1,0 +1,96 @@
+name: Android Build & Publish
+
+# Builds the Tauri Android app wrapping the web/ frontend.
+# - Tag push (v*): build AND publish to Play internal track
+# - workflow_dispatch: build artifact only, unless `publish` is checked
+#
+# Required secrets/variables: see docs/mobile-release.md
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to Play Store internal track (unchecked = build artifact only)'
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  android:
+    name: Android Build & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager "ndk;26.1.10909125"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install workspace dependencies (tauri CLI)
+        run: npm ci
+
+      - name: Install web dependencies
+        run: cd web && npm ci
+
+      - name: Initialize Android project
+        run: cd desktop && npx tauri android init
+
+      - name: Generate icons
+        run: cd desktop && npx tauri icon src-tauri/app-icon.png
+
+      - name: Configure release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash .github/scripts/patch-android-signing.sh
+
+      - name: Build Android AAB (signed)
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          VITE_API_URL: ${{ vars.MOBILE_API_URL || 'https://api.fosforescent.com' }}
+        run: cd desktop && npx tauri android build --aab --target aarch64 --target armv7
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
+
+      - name: Publish to Google Play Store (internal track)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.fosforescent.app
+          releaseFiles: desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
+          track: internal
+          status: completed
