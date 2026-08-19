@@ -65,11 +65,13 @@ jobs:
       - name: Generate icons
         run: cd desktop && npx tauri icon src-tauri/app-icon.png
 
-      - name: Build iOS IPA (automatic signing via App Store Connect API key)
+      - name: Build iOS IPA (manual signing via distribution cert + profile)
         env:
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          # Tauri CLI imports these into a temp keychain and installs the profile.
+          # See docs/mobile-release.md for how these assets were created.
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
           VITE_API_URL: ${{ vars.MOBILE_API_URL || 'https://api.fosforescent.com' }}
         run: cd desktop && npx tauri ios build --export-method app-store-connect
 
