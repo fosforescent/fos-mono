@@ -38,7 +38,7 @@
     ],
     "iOS": {
       "developmentTeam": "2H3235CJSL",
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "15.0"
     },
     "android": {
       "minSdkVersion": 24
