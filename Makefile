@@ -2,9 +2,10 @@ MAKE=make
 
 include ./.env
 export $(shell sed 's/=.*//' ./.env)
-
+LOG_DIR := $(CURDIR)/logs
 INFRA_DIR := $(CURDIR)/infra
 FRONTEND_PORT := 5173
+TAURI_LOG := $(LOG_DIR)/tauri-dev.log
 
 build-backend:
 	which node
@@ -134,19 +135,18 @@ seed-live-db:
 # Tauri Desktop App Commands
 # ============================================
 
-LOG_DIR := $(CURDIR)/logs
-TAURI_LOG := $(LOG_DIR)/tauri-dev.log
+
 
 # Run Tauri in development mode
-# Clears Vite cache and rebuilds frontend before starting
+# Clears Vite cache and rebuilds web frontend before starting
 # Default: opens in home directory. Override with DIR=. or DIR=/path/to/dir
 # Logs detailed application and JS console output to $(TAURI_LOG)
 DIR ?= $(HOME)
 tauri-dev:
 	@echo "🧹 Cleaning Vite cache..."
-	rm -rf frontend/node_modules/.vite frontend/dist 2>/dev/null || true
-	@echo "🔨 Rebuilding frontend..."
-	cd frontend && npm run build
+	rm -rf web/node_modules/.vite web/dist 2>/dev/null || true
+	@echo "🔨 Rebuilding web..."
+	cd web && npm run build
 	@mkdir -p $(LOG_DIR)
 	@echo "🚀 Starting Tauri dev with verbose logging (logging to $(TAURI_LOG))..."
 	@echo "=== Tauri Dev Started: $$(date) ===" > $(TAURI_LOG)
@@ -171,13 +171,10 @@ build-all:
 dev-desktop:
 	cd desktop && npm run dev
 
-# Just rebuild frontend (useful if only frontend changed)
-rebuild-frontend:
-	npm run build:frontend
+# Just rebuild the web frontend used by Tauri (useful if only web changed)
+rebuild-web:
+	npm run build:web
 
-# Install Tauri CLI globally if needed
-tauri-setup:
-	cargo install tauri-cli
 
 # Clean Tauri build artifacts
 tauri-clean:
@@ -191,6 +188,6 @@ reset-local:
 	@rm -rf ~/.cache/com.fosforescent.desktop 2>/dev/null || true
 	@rm -rf ~/.local/share/com.fosforescent.desktop 2>/dev/null || true
 	@rm -rf ~/.config/com.fosforescent.desktop 2>/dev/null || true
-	@rm -rf frontend/node_modules/.vite 2>/dev/null || true
-	@rm -rf frontend/dist 2>/dev/null || true
+	@rm -rf web/node_modules/.vite 2>/dev/null || true
+	@rm -rf web/dist 2>/dev/null || true
 	@echo "✅ Reset complete. Run 'make tauri-dev' to start fresh."

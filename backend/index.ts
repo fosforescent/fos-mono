@@ -158,6 +158,9 @@ const allowedOrigins = [
   'fos-prod.pages.dev',
   'www.fosforescent.com',
   "fos-mono.pages.dev",
+  // Tauri webview origins (desktop + mobile apps)
+  'tauri://localhost',      // iOS / macOS / Linux
+  'http://tauri.localhost', // Android / Windows
   /^.*\.fosforescent\.com$/,
   /^.*\.fos-mono.pages\.dev$/,
   /^localhost\:[0-9]+$/,

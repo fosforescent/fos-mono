@@ -14,6 +14,8 @@
     "cli": "npm run --workspace cli dev -- --dir ../.fos",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:frontend": "cd frontend && npm run dev",
+    "dev:web": "cd web && npm run dev",
+    "build:web": "cd web && npm run build",
     "dev:backend": "cd backend && npm run dev",
     "dev:desktop": "cd desktop && npm run dev",
     "build:desktop": "cd desktop && npm run build",

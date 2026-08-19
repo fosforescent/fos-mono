@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.fosforescent.app",
   "build": {
-    "frontendDist": "../../frontend/dist",
+    "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "cd .. && npm run dev:frontend",
-    "beforeBuildCommand": "cd .. && npm run build:frontend"
+    "beforeDevCommand": "cd .. && npm run dev:web",
+    "beforeBuildCommand": "cd .. && npm run build:web"
   },
   "app": {
     "withGlobalTauri": true,

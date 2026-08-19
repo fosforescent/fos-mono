@@ -1,7 +1,7 @@
 # Desktop CLAUDE.md
 
 ## Directory Summary
-The desktop directory contains the Tauri-based desktop application for Fosforescent. It wraps the main frontend React application and adds native desktop capabilities including file system access, directory navigation, and browser-based authentication.
+The desktop directory contains the Tauri-based desktop and mobile application for Fosforescent. It wraps the `web/` vanilla-TS frontend and adds native capabilities including file system access, directory navigation, and browser-based authentication. Mobile (iOS/Android) builds run in CI — see `docs/mobile-release.md`.
 
 ## Key Components
 
@@ -138,13 +138,20 @@ The desktop app automatically detects and loads .fos directories:
 ## Build Configuration
 
 ### Development
-- Uses `npm run dev:frontend` from monorepo root
+- Uses `npm run dev:web` (runs the `web/` Vite dev server)
 - Connects to Vite dev server at `http://localhost:5173`
 
 ### Production
-- Builds frontend via `npm run build:frontend`
-- Bundles frontend from `../../frontend/dist`
-- Creates native installers for all platforms
+- Builds the web frontend via `npm run build:web`
+- Bundles frontend from `../../web/dist`
+- Creates native installers for all desktop platforms
+
+### Mobile (iOS/Android)
+- Built in GitHub Actions (`.github/workflows/mobile-build.yml`); `gen/android` and `gen/apple` are initialized fresh in CI
+- Android release signing is injected post-init by `.github/scripts/patch-android-signing.sh`
+- iOS uses Xcode automatic cloud signing via App Store Connect API key
+- App icon source: `src-tauri/app-icon.png` (1024px) — CI runs `npx tauri icon` after init
+- Full release procedure and required secrets: `docs/mobile-release.md`
 
 ## Security
 
@@ -180,7 +187,7 @@ The desktop app automatically detects and loads .fos directories:
 - [ ] Add merge conflict resolution when transitioning offline→online
 - [ ] Add file watching for .fos changes
 - [ ] Add proper CSP for production builds
-- [ ] Create app icons for all platforms
+- [ ] Replace upscaled `src-tauri/app-icon.png` with real 1024×1024 artwork
 - [ ] Add auto-update functionality
 - [ ] Implement window state persistence
 - [ ] Add tray icon support

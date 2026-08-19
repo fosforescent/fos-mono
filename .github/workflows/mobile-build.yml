@@ -1,10 +1,21 @@
 name: Mobile Build & Publish
 
+# Builds the Tauri app for Android and iOS, wrapping the web/ frontend.
+# - Tag push (v*): build AND publish to Play internal track + TestFlight
+# - workflow_dispatch: build artifacts only, unless `publish` is checked
+#
+# Required secrets/variables: see docs/mobile-release.md
+
 on:
   push:
     tags:
-      - 'v*'  # Only build on version tags
-  workflow_dispatch:  # Manual trigger
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to stores (unchecked = build artifacts only)'
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,8 +33,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -40,41 +50,37 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
 
-      - name: Install dependencies
+      - name: Install workspace dependencies (tauri CLI)
         run: npm ci
 
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
-
-      - name: Build frontend
-        run: cd frontend && npm run build
-
-      - name: Install desktop dependencies
-        run: cd desktop && npm ci
+      - name: Install web dependencies
+        run: cd web && npm ci
 
       - name: Initialize Android project
         run: cd desktop && npx tauri android init
 
-      - name: Decode Android keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > desktop/src-tauri/gen/android/release.keystore
+      - name: Generate icons
+        run: cd desktop && npx tauri icon src-tauri/app-icon.png
 
-      - name: Build Android AAB (signed)
-        run: cd desktop && npx tauri android build --aab
+      - name: Configure release signing
         env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
-          ANDROID_KEYSTORE: ${{ github.workspace }}/desktop/src-tauri/gen/android/release.keystore
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash .github/scripts/patch-android-signing.sh
+
+      - name: Build Android AAB (signed)
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          VITE_API_URL: ${{ vars.MOBILE_API_URL || 'https://api.fosforescent.com' }}
+        run: cd desktop && npx tauri android build --aab --target aarch64 --target armv7
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
@@ -82,89 +88,70 @@ jobs:
           name: android-aab
           path: desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
 
-      - name: Publish to Google Play Store
-        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' }}
+      - name: Publish to Google Play Store (internal track)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.fosforescent.app
           releaseFiles: desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
-          track: internal  # internal, alpha, beta, or production
+          track: internal
           status: completed
 
   # ===========================================
-  # iOS: Build and Publish to App Store
+  # iOS: Build and Publish to TestFlight
   # ===========================================
   ios:
     name: iOS Build & Publish
     runs-on: macos-latest
+    env:
+      # Job-wide: must be set during `tauri ios init` (baked into the Xcode project)
+      APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
+          targets: aarch64-apple-ios
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
 
-      - name: Install dependencies
+      - name: Install workspace dependencies (tauri CLI)
         run: npm ci
 
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
+      - name: Install web dependencies
+        run: cd web && npm ci
 
-      - name: Build frontend
-        run: cd frontend && npm run build
-
-      - name: Install desktop dependencies
-        run: cd desktop && npm ci
+      - name: Write App Store Connect API key
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          echo -n "$APPLE_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey_${APPLE_API_KEY_ID}.p8"
 
       - name: Initialize iOS project
         run: cd desktop && npx tauri ios init
 
-      - name: Install Apple certificate
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+      - name: Generate icons
+        run: cd desktop && npx tauri icon src-tauri/app-icon.png
+
+      - name: Build iOS IPA (automatic signing via App Store Connect API key)
         env:
-          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          echo -n "$CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-
-      - name: Install provisioning profile
-        if: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 != '' }}
-        env:
-          PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
-        run: |
-          PROFILE_PATH=$RUNNER_TEMP/profile.mobileprovision
-          echo -n "$PROFILE_BASE64" | base64 --decode -o $PROFILE_PATH
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
-
-      - name: Build iOS IPA
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          VITE_API_URL: ${{ vars.MOBILE_API_URL || 'https://api.fosforescent.com' }}
         run: cd desktop && npx tauri ios build --export-method app-store-connect
-        env:
-          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -173,21 +160,15 @@ jobs:
           path: desktop/src-tauri/gen/apple/build/**/*.ipa
 
       - name: Upload to App Store Connect (TestFlight)
-        if: ${{ secrets.APPLE_API_KEY_ID != '' }}
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
         env:
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_KEY_ISSUER: ${{ secrets.APPLE_API_KEY_ISSUER }}
-          API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           mkdir -p ~/private_keys
-          echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${API_KEY_ID}.p8
-
+          cp "$RUNNER_TEMP/keys/AuthKey_${APPLE_API_KEY_ID}.p8" ~/private_keys/
           xcrun altool --upload-app \
             --type ios \
-            --file $(find desktop/src-tauri/gen/apple/build -name "*.ipa" | head -1) \
-            --apiKey "$API_KEY_ID" \
-            --apiIssuer "$API_KEY_ISSUER"
-
-      - name: Cleanup keychain
-        if: always()
-        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+            --file "$(find desktop/src-tauri/gen/apple/build -name '*.ipa' | head -1)" \
+            --apiKey "$APPLE_API_KEY_ID" \
+            --apiIssuer "$APPLE_API_ISSUER"

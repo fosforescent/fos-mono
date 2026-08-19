@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "dev:frontend": "cd ../frontend && npm run dev",
-    "build:frontend": "cd ../frontend && npm run build",
+    "dev:web": "cd ../web && npm run dev",
+    "build:web": "cd ../web && npm run build",
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build",
