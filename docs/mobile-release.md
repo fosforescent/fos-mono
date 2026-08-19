@@ -27,9 +27,6 @@ Set in repo Settings → Secrets and variables → Actions.
 | `APPLE_API_ISSUER` | App Store Connect API Issuer ID | App Store Connect → Users and Access → Integrations |
 | `APPLE_API_KEY_ID` | App Store Connect API Key ID | Same page |
 | `APPLE_API_KEY_BASE64` | The `.p8` key, base64 | `base64 -w0 AuthKey_<KEYID>.p8` (downloadable once) |
-| `IOS_CERTIFICATE` | Apple Distribution cert + private key (.p12), base64 | Created via ASC API (see iOS signing below) |
-| `IOS_CERTIFICATE_PASSWORD` | Password of the .p12 | Chosen when the .p12 was exported |
-| `IOS_MOBILE_PROVISION` | App Store provisioning profile, base64 | Created via ASC API (see iOS signing below) |
 
 ### Variables (optional)
 
@@ -44,29 +41,18 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
 1. developer.apple.com → Identifiers → register bundle ID `com.fosforescent.app`.
 2. App Store Connect → Apps → "+" → New App, bundle ID `com.fosforescent.app`, name "Fosforescent".
 3. App Store Connect → Users and Access → Integrations → App Store Connect API → generate a
-   **Team key** with **Admin** role (used for signing-asset management via API and the
-   TestFlight upload). Record Issuer ID + Key ID, download the `.p8` (one-time download).
-4. Create the signing assets (no Mac needed — done via the ASC API with the Admin key):
-
-   ```bash
-   # Private key + CSR
-   openssl genrsa -out dist.key 2048
-   openssl req -new -key dist.key -out dist.csr -subj "/CN=Fosforescent CI Distribution"
-   # Submit csrContent via POST /v1/certificates (certificateType DISTRIBUTION),
-   # save the returned certificateContent (base64 DER) as dist.cer, then:
-   openssl x509 -inform DER -in dist.cer -out dist.pem
-   openssl pkcs12 -export -legacy -inkey dist.key -in dist.pem \
-     -name "Apple Distribution" -out dist.p12 -passout pass:<PASSWORD>
-   # Create the profile via POST /v1/profiles (profileType IOS_APP_STORE,
-   # linked to the bundle ID and certificate); save profileContent as .mobileprovision
-   ```
-
-   Store as secrets: `IOS_CERTIFICATE` (base64 of dist.p12), `IOS_CERTIFICATE_PASSWORD`,
-   `IOS_MOBILE_PROVISION` (base64 of the .mobileprovision). Copies live in the local `.env`.
-   The certificate expires after 1 year (current one: 2027-08-19) — repeat this step and
-   update the secrets before expiry. Note: Xcode *cloud signing* (`-allowProvisioningUpdates`)
-   was tried first and failed with "Cloud signing permission error" despite an Admin key;
-   explicit cert+profile signing is used instead.
+   **Team key** with the **Admin** role. Admin is REQUIRED: Xcode cloud signing fails with
+   "Cloud signing permission error" for App Manager/Developer keys, and per-permission
+   toggles are not available for API keys (only for users). Record Issuer ID + Key ID,
+   download the `.p8` (one-time download).
+4. No certificate or provisioning profile management is needed — the build uses Xcode
+   cloud signing (`-allowProvisioningUpdates` with the API key), which creates and manages
+   the distribution certificate and profile in Apple's cloud automatically. Fallback:
+   explicit signing assets (an Apple Distribution cert issued via the ASC API from a
+   Linux-generated CSR, expires 2027-08-19, plus an `IOS_APP_STORE` profile) exist in the
+   local `.env` as `IOS_CERTIFICATE`/`IOS_CERTIFICATE_PASSWORD`/`IOS_MOBILE_PROVISION`.
+   Using them requires patching the generated Xcode project to manual signing — not
+   currently wired up.
 
 ## One-time Google setup
 
@@ -120,10 +106,11 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
   loudly if the Tauri CLI template shape changes — an unsigned AAB is never shipped
   silently.
 - **iOS**: `tauri ios init` runs fresh each build with `APPLE_DEVELOPMENT_TEAM` set
-  job-wide (it is baked into the Xcode project at init time). Signing is explicit:
-  the Tauri CLI reads `IOS_CERTIFICATE`/`IOS_CERTIFICATE_PASSWORD`/`IOS_MOBILE_PROVISION`,
-  imports the cert into a temporary keychain, and installs the profile. TestFlight
-  upload uses `xcrun altool` with the ASC API key.
+  job-wide (it is baked into the Xcode project at init time). Signing uses Xcode
+  cloud signing via the Admin ASC API key
+  (`APPLE_API_ISSUER`/`APPLE_API_KEY`/`APPLE_API_KEY_PATH`) — the distribution
+  certificate and profile are cloud-managed by Apple. TestFlight upload uses
+  `xcrun altool` with the same key.
 
 ## Known caveats
 
