@@ -75,10 +75,10 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
    the app with "Release to testing tracks" permission.
 5. Complete Play Console mandatory setup before any rollout (privacy policy URL, data
    safety form, content rating questionnaire).
-6. **The very first AAB must be uploaded manually** through the Play Console UI — the
-   Publishing API rejects the first upload of a new app. Run the workflow with
-   `publish` unchecked, download the `android-aab` artifact, and upload it to the
-   internal testing track by hand. Subsequent releases go through the API.
+6. First upload: despite common advice that the first AAB must go through the Play
+   Console UI, the Publishing API accepted the initial upload fine (edit → upload
+   bundle → internal track → commit). If the API ever rejects a first upload with
+   "package not found", fall back to a manual UI upload of the `android-aab` artifact.
 
 ## Release procedure
 
