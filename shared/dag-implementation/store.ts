@@ -11,7 +11,9 @@ import {
 import { AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
 
 import * as jsSha3 from 'js-sha3'
-const sha3_256 = jsSha3.sha3_256
+// js-sha3 is CJS; depending on the runtime's ESM interop the exports may land
+// on the namespace itself or on .default (e.g. under tsx ESM).
+const sha3_256 = jsSha3.sha3_256 ?? (jsSha3 as unknown as { default: typeof jsSha3 }).default.sha3_256
 
 import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
