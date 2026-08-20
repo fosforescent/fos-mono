@@ -10,24 +10,10 @@ const defaults = {
   password: import.meta.env.VITE_API_PASSWORD ?? 'user123'
 } as const
 
-const getOrSetLocalStorage = (key: string, defaultValue: string): string => {
-  try {
-    const existing = window.localStorage.getItem(key)
-    if (existing && existing.trim().length > 0) {
-      return existing
-    }
-    window.localStorage.setItem(key, defaultValue)
-    return defaultValue
-  } catch (error) {
-    console.warn(`Unable to access localStorage for ${key}:`, error)
-    return defaultValue
-  }
-}
-
-const apiBaseUrl = getOrSetLocalStorage('web-mini.api-url', defaults.baseUrl)
+const apiBaseUrl = defaults.baseUrl
 const credentials: { username: string; password: string } = {
-  username: getOrSetLocalStorage('web-mini.username', defaults.username),
-  password: getOrSetLocalStorage('web-mini.password', defaults.password)
+  username: defaults.username,
+  password: defaults.password
 }
 
 const output = document.createElement('pre')
