@@ -153,6 +153,16 @@ tauri-dev:
 	@echo "=== Environment: RUST_LOG=debug RUST_BACKTRACE=1 ===" >> $(TAURI_LOG)
 	RUST_LOG=debug RUST_BACKTRACE=1 FOS_TARGET_DIR=$$(realpath $(DIR)) cd desktop && npm run dev 2>&1 | tee -a $(TAURI_LOG)
 
+# Run Tauri dev pointed at the production backend API.
+# Note: the web UI persists the API URL in webview localStorage
+# ('web-mini.api-url'); a previously stored value overrides this env var.
+# Clear it via devtools (localStorage.removeItem('web-mini.api-url')) or
+# `make reset-local` if the app keeps using an old URL.
+PROD_API_URL ?= https://api.fosforescent.com
+tauri-dev-prod:
+	@echo "🌐 Using production API: $(PROD_API_URL)"
+	VITE_API_URL=$(PROD_API_URL) $(MAKE) tauri-dev
+
 # View tauri logs
 tauri-logs:
 	@tail -f $(TAURI_LOG)
@@ -185,9 +195,9 @@ reset-local:
 	@echo "🧹 Resetting all local Fosforescent data..."
 	@rm -rf .fos 2>/dev/null || true
 	@rm -rf ~/.fos 2>/dev/null || true
-	@rm -rf ~/.cache/com.fosforescent.desktop 2>/dev/null || true
-	@rm -rf ~/.local/share/com.fosforescent.desktop 2>/dev/null || true
-	@rm -rf ~/.config/com.fosforescent.desktop 2>/dev/null || true
+	@rm -rf ~/.cache/com.fosforescent.app 2>/dev/null || true
+	@rm -rf ~/.local/share/com.fosforescent.app 2>/dev/null || true
+	@rm -rf ~/.config/com.fosforescent.app 2>/dev/null || true
 	@rm -rf web/node_modules/.vite 2>/dev/null || true
 	@rm -rf web/dist 2>/dev/null || true
 	@echo "✅ Reset complete. Run 'make tauri-dev' to start fresh."
