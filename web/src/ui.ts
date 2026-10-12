@@ -783,6 +783,23 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         b.title = 'Mail is registered as a capability of fos, but no handler is wired to it yet'
         body.append(b)
       }
+      if (r.capability === 'llm') {
+        if (state.session?.kind === 'user') body.append(stop(button('secondary small', 'Ask fos', () => void app.askPeerAt(at, task))))
+        else hint('sign in: the fos model answers inside')
+      }
+      if (r.capability === 'repo') {
+        const github = state.integrations.find((p) => p.id === 'github')
+        if (github?.connected) body.append(stop(button('secondary small', `Open issue${r.repo ? ' in ' + r.repo : ''}`, () => void app.askPeerAt(at, task))))
+        else hint('sign in with GitHub (root › GitHub) to open the issue')
+      }
+      if (r.capability === 'tool') {
+        if (state.session?.kind === 'user') body.append(stop(button('secondary small', `Run${r.tool ? ' ' + r.tool : ''}`, () => void app.askPeerAt(at, task))))
+        else hint('sign in: an MCP peer attached above runs it')
+      }
+      if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined) {
+        const google = state.integrations.find((p) => p.id === 'google')
+        if (google?.connected) body.append(stop(button('secondary small', 'Add to Google Calendar', () => void app.askPeerAt(at, task))))
+      }
       if (r.capability === 'peer') {
         if (r.peer && r.peer === app.actorName()) body.append(stop(button('secondary small', 'Done (confirm)', () => app.supplyRequirementAt(at, task.id, { capability: 'peer' }))))
         else hint(`waiting for ${r.peer ? '@' + r.peer : 'a peer'}`)
@@ -850,7 +867,8 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     ...(task.kind === 'requirement' && task.requirement?.capability === 'allocation' ? [{ label: `Add allocation inside (${({ account: '$', calendar: ':', inventory: '#', person: '@' } as Record<string, string>)[task.requirement.resource ?? 'account']} amount …)`, run: () => app.addRowInside(at, task.id, 'plain', `${({ account: '$ ', calendar: ': ', inventory: '# ', person: '@' } as Record<string, string>)[task.requirement?.resource ?? 'account']}`) }] : []),
     ...(task.kind === 'resource' ? [{ label: `Add allocation inside (${({ account: '$', calendar: ':', inventory: '#', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account']} amount …)`, run: () => app.addRowInside(at, task.id, 'plain', ({ account: '$ ', calendar: ': ', inventory: '# ', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account'] ?? '$ ') }] : []),
     { label: 'Add bank below (@money · @calendar · @inventory · @person name …)', run: () => app.addRowBelowWith(at, task.id, '@money ') },
-    ...(state.session?.kind === 'user' ? app.knownPeers().slice(0, 6).map((p) => ({ label: `Add @${p.name} as a member (make this a group)`, run: () => app.addPeerToRow(at, task.id, p.id, p.name) })) : []),
+    ...(state.session?.kind === 'user' ? app.knownPeers().filter((p) => !p.id.startsWith('integration:') && !p.id.startsWith('mcp:')).slice(0, 6).map((p) => ({ label: `Add @${p.name} as a member (make this a group)`, run: () => app.addPeerToRow(at, task.id, p.id, p.name) })) : []),
+    ...(state.session?.kind === 'user' ? state.mcpPeers.slice(0, 6).map((m) => ({ label: `Attach MCP peer ${m.name} here (runs ${m.tools.slice(0, 3).join(', ') || 'its tools'})`, run: () => void app.attachMcpPeer(m.serverId, [...at, task.id]) })) : []),
     { label: 'Zoom in', keys: 'Alt+→', run: () => app.zoomTo([...at, task.id]) },
     ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Ctrl+Enter', run: () => app.toggleTaskAt(at, task) }] : []),
     { label: 'Add row below', keys: 'Enter', run: () => app.addRowBelow(at, task.id) },
@@ -1114,9 +1132,27 @@ function renderRootRows(node: NodeView, state: AppState, app: App): HTMLElement[
     if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
     if (p.isAccount && p.points !== null && p.points !== undefined) { const pts = span('alloc-tag points', `✦ ${p.points} fos points`); pts.title = 'The account\'s balance: the default pool for "ff" allocations'; title.append(pts) }
     if (p.integration) {
-      const connect = button('secondary small', `Sign in with ${p.name}`, () => app.notify('error', `Signing in with ${p.name} is not set up on the server yet.`))
-      connect.title = 'SSO with this provider is not configured on the server yet; the row shows what it would provide and consume'
-      title.append(connect, span('muted', ' not connected'))
+      const i = p.integration
+      if (i.kind === 'platform') {
+        title.append(span('muted', i.connected ? ` set up on the account${i.accountName ? ` (${i.accountName})` : ''}` : ' not set up on the account (subscription or payouts)'))
+      } else if (i.connected) {
+        title.append(span('muted', ` ${i.accountName ?? 'connected'}`), button('link small', 'Disconnect', () => void app.disconnectIntegration(p.id.replace(/^integration:/, ''))))
+      } else if (i.kind === 'channel') {
+        const link = button('secondary small', i.pending ? 'Enter the code' : 'Link phone', () => void app.connectIntegration('phone'))
+        link.title = i.configured ? 'Texts about proposals reach it; texts you send become rows' : 'Texting is not configured on the server (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)'
+        link.disabled = !i.configured
+        title.append(link, span('muted', i.pending ? ` ${i.accountName ?? ''}: waiting for the code` : ' not linked'))
+      } else {
+        const connect = button('secondary small', `Sign in with ${p.name}`, () => void app.connectIntegration(p.id.replace(/^integration:/, '')))
+        connect.disabled = !i.configured || !state.session
+        connect.title = !state.session ? 'Sign in to your fos account first' : i.configured ? `Opens ${p.name}'s sign-in; you come back here connected` : `${p.name} sign-in is not configured on the server (client id and secret)`
+        title.append(connect, span('muted', ' not connected'))
+      }
+    }
+    if (p.mcp) {
+      const attach = button('secondary small', state.view.length ? 'Attach here' : 'Attach to Home', () => void app.attachMcpPeer(p.mcp!.serverId))
+      attach.title = 'Becomes a member of the node and runs its tools for "-tool name …" requirements under it'
+      title.append(attach, span('muted', ` tools: ${p.mcp.tools.join(', ') || 'none advertised'}`))
     }
     const lines = div('peer-lines', '')
     if (p.isAccount && p.policy) {
@@ -1132,8 +1168,10 @@ function renderRootRows(node: NodeView, state: AppState, app: App): HTMLElement[
       lines.append(direction(`to @${p.name}:`, 'What Home exposes to the peer (the rows it will see)', chips(p.capabilities, p.disabled, p.online, change)))
       lines.append(direction(`from @${p.name}:`, 'What Home accepts from the peer (nothing it does not list reaches us; we query for the rest)', chips(p.accepts, [], p.online, changeFrom)))
     } else if (p.integration) {
-      lines.append(direction('provides:', `What ${p.name} would hand to the tree once signed in with (as banks and handlers for the matching requirements)`, chips(p.integration.provides, [], p.online, null, 'available once signed in')))
-      lines.append(direction('consumes:', `What ${p.name} would read from or do to the tree`, chips(p.integration.consumes, [], p.online, null, 'available once signed in')))
+      lines.append(direction('provides:', `What ${p.name} hands to the tree (handlers for the matching requirements)`, chips(p.integration.provides, [], p.online, null, p.online ? undefined : 'available once connected')))
+      lines.append(direction('consumes:', `What ${p.name} reads from or does to the tree`, chips(p.integration.consumes, [], p.online, null, p.online ? undefined : 'available once connected')))
+    } else if (p.mcp) {
+      lines.append(direction('to it:', 'What an attached node exposes to the MCP peer', chips(p.capabilities, [], true, null)))
     } else if (p.capabilities.length) {
       lines.append(direction('offers:', 'How this device can reach the peer', chips(p.capabilities, [], p.online, null)))
     }
@@ -1210,8 +1248,32 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   if (kind === 'device') renderDevice(body, state, app)
   if (kind === 'market') renderMarket(body, state, app)
   if (kind === 'help') renderHelp(body)
+  if (kind === 'phone') renderPhone(body, state, app)
   card.append(body)
   el.replaceChildren(card)
+}
+
+/** Link a phone: the number, then the code that was texted to it. */
+function renderPhone(body: HTMLElement, state: AppState, app: App): void {
+  const flow = state.phone ?? { phase: 'number' as const }
+  body.append(div('muted', 'Your phone becomes a peer: fos texts you about proposals, and texts you send become rows (“done <words>” checks a task off, “list” shows open tasks, anything else is added).'))
+  if (flow.error) body.append(div('error', flow.error))
+  const form = document.createElement('form')
+  form.className = 'row'
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.autocomplete = 'off'
+  input.id = flow.phase === 'code' ? 'phone-code' : 'phone-number'
+  input.placeholder = flow.phase === 'code' ? 'the 6-digit code' : '+1 555 123 4567'
+  if (flow.phase === 'number' && flow.number) input.value = flow.number
+  const go = button('primary', flow.phase === 'busy' ? '…' : flow.phase === 'code' ? 'Verify' : 'Text me a code', () => undefined)
+  go.type = 'submit'
+  go.disabled = flow.phase === 'busy'
+  form.append(input, go)
+  form.addEventListener('submit', (e) => { e.preventDefault(); if (flow.phase === 'code') void app.phoneVerify(input.value); else void app.phoneStart(input.value) })
+  body.append(form)
+  if (flow.phase === 'code') body.append(div('muted small-print', `Sent to ${flow.number ?? 'your phone'}. Wrong number? `), button('link small', 'Start over', () => app.phoneRestart()))
+  queueMicrotask(() => input.focus())
 }
 
 /** Ctrl+H: every key the tree answers to, and every row marker. */
@@ -1236,7 +1298,7 @@ function renderHelp(body: HTMLElement): void {
 
 function modalKey(state: AppState): string {
   const d = state.direct
-  return [state.modal, state.connectFlow.phase, state.invite?.token ?? '', d?.role ?? '', d?.phase ?? '', (d?.role === 'host' ? d.pendingPeer?.peerId ?? '' : ''), state.manual.requestCode ? 'rq' : '', state.manual.resultCode ? 'rs' : '', state.requests.map((r) => r.id).join(','), state.device?.status ?? '', state.device?.name ?? '', state.market?.aliasId ?? '', state.market?.phase ?? '', state.market?.error ?? ''].join('|')
+  return [state.modal, state.connectFlow.phase, state.invite?.token ?? '', d?.role ?? '', d?.phase ?? '', (d?.role === 'host' ? d.pendingPeer?.peerId ?? '' : ''), state.manual.requestCode ? 'rq' : '', state.manual.resultCode ? 'rs' : '', state.requests.map((r) => r.id).join(','), state.device?.status ?? '', state.device?.name ?? '', state.market?.aliasId ?? '', state.market?.phase ?? '', state.market?.error ?? '', state.phone?.phase ?? '', state.phone?.error ?? ''].join('|')
 }
 
 function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
@@ -1246,7 +1308,7 @@ function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
 }
 
 function modalTitle(kind: AppState['modal']): string {
-  return kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : kind === 'help' ? 'Keys and row syntax' : 'Direct connect'
+  return kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : kind === 'help' ? 'Keys and row syntax' : kind === 'phone' ? 'Link your phone' : 'Direct connect'
 }
 
 /** A listed node of another account: its rows and requirements, this account's proposal, and a form to propose. */

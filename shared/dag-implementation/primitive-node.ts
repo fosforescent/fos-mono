@@ -136,6 +136,7 @@ export const getAutopushCapabilityNode = (store: FosStore) => generateConstructo
 export const getCalendarCapabilityNode = (store: FosStore) => generateConstructor(store, "CALENDARCAPABILITY", { description: { content: 'Capability - provides a calendar (time allocations) for calendar requirements' } }, [])
 export const getLlmCapabilityNode = (store: FosStore) => generateConstructor(store, "LLMCAPABILITY", { description: { content: 'Capability - a language model that can answer or act on rows' } }, [])
 export const getRepoCapabilityNode = (store: FosStore) => generateConstructor(store, "REPOCAPABILITY", { description: { content: 'Capability - code repositories (issues, pull requests) as rows' } }, [])
+export const getToolCapabilityNode = (store: FosStore) => generateConstructor(store, "TOOLCAPABILITY", { description: { content: 'Capability - runs tools (an MCP server attached to the node) for tool requirements under it' } }, [])
 // [ACCEPTS, capability] on a member reference: what the owner accepts from that peer (the other direction of CAPABILITY)
 export const getAcceptsNode = (store: FosStore) => generateConstructor(store, "ACCEPTS", { description: { content: 'Accepts - the owner accepts this capability from the member (what may flow in from that peer)' } }, [])
 
@@ -767,6 +768,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const calendarCapability = getCalendarCapabilityNode(store)
   const llmCapability = getLlmCapabilityNode(store)
   const repoCapability = getRepoCapabilityNode(store)
+  const toolCapability = getToolCapabilityNode(store)
   const approveAction = getApproveActionNode(store)
   const effectNode = getEffectNode(store)
   const handlerNode = getHandlerNode(store)
@@ -968,6 +970,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     calendarCapability,
     llmCapability,
     repoCapability,
+    toolCapability,
     effectNode,
     handlerNode,
 
@@ -1161,6 +1164,7 @@ export type PrimitiveAliases = {
   calendarCapability: FosNode,
   llmCapability: FosNode,
   repoCapability: FosNode,
+  toolCapability: FosNode,
   effectNode: FosNode,
   handlerNode: FosNode,
 }

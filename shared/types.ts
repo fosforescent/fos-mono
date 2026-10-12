@@ -121,7 +121,7 @@ export type FosDataContent = {
    * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
    */
   requirement?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
     resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
     amount?: number
     unit?: string
@@ -130,10 +130,14 @@ export type FosDataContent = {
     options?: string[]
     /** `peer` requirements: the peer (username or device name) the task is assigned to. */
     peer?: string
+    /** `repo` requirements: the repository (owner/name) the issue goes to. */
+    repo?: string
+    /** `tool` requirements: the tool (of an MCP peer attached above) to run; the text is its input. */
+    tool?: string
   },
   /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
   supply?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
     by: string
     at: number
     ref?: string

@@ -159,6 +159,11 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
   if ((m = t.match(/^(?:\?|search\s*:?)\s*(.*)$/is))) return { requirement: { capability: 'search' }, label: (m[1] ?? '').trim() }
   if ((m = t.match(/^market\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'market' }, label: (m[1] ?? '').trim() }
   if ((m = t.match(/^mail\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'mail' }, label: (m[1] ?? '').trim() }
+  // "-llm what should I cook" asks the language model; "-repo owner/name fix the login bug" opens an issue there
+  if ((m = t.match(/^(?:llm|ai|ask)\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'llm' }, label: (m[1] ?? '').trim() }
+  if ((m = t.match(/^repo\b\s*:?\s*(?:([\w.-]+\/[\w.-]+)\s*)?(.*)$/is))) return { requirement: { capability: 'repo', ...(m[1] ? { repo: m[1] } : {}) }, label: (m[2] ?? '').trim() }
+  // "-tool weather Paris": an MCP peer attached above runs its `weather` tool with the rest as input
+  if ((m = t.match(/^(?:tool|mcp)\b\s*:?\s*(?:([\w.-]+)\s*)?(.*)$/is))) return { requirement: { capability: 'tool', ...(m[1] ? { tool: m[1] } : {}) }, label: (m[2] ?? '').trim() }
   if ((m = t.match(/^choice\s*:?\s*(.*)$/i))) {
     const options = (m[1] ?? '').split('|').map((o) => o.trim()).filter(Boolean)
     return { requirement: { capability: 'choice', options }, label: `choice: ${options.join(' | ')}` }
@@ -237,6 +242,9 @@ export function rawRowText(task: TaskView): string {
         case 'search': return join('-?', task.title)
         case 'market': return join('-market', task.title)
         case 'mail': return join('-mail', task.title)
+        case 'llm': return join('-llm', task.title)
+        case 'repo': return join('-repo', r.repo ?? '', task.title)
+        case 'tool': return join('-tool', r.tool ?? '', task.title)
         case 'choice': return `-choice: ${(r.options ?? []).join(' | ')}`
         case 'confirmation': return join('-', task.title === 'confirmation' ? '' : task.title)
       }
@@ -298,6 +306,9 @@ export const SYNTAX_HELP: Array<[string, string]> = [
   ['-? text', 'a requirement for a search: filled when a query inside it has run (fos can run it)'],
   ['-market text', 'a requirement handled by a peer with the market capability (list it, collect proposals)'],
   ['-mail text', 'a requirement handled by a peer with the mail capability'],
+  ['-llm question', 'a requirement answered by the language model (fos): the answer lands as a note inside'],
+  ['-repo owner/name title', 'a requirement handled by GitHub: an issue is opened in that repository'],
+  ['-tool name input', 'a requirement run by an MCP peer attached to this node or above (its `name` tool, the text as input)'],
   ['-choice: a | b', 'a requirement for a decision between options'],
   ['$ 50 text', 'an allocation of money, taken from the parent context: the bank above, the bank the requirement needs, or the default pool of that type'],
   [': 1h text', 'an allocation of time; # 2 widgets things; @bob 2h the person bob'],

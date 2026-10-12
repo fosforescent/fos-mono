@@ -36,9 +36,16 @@ mountUi(root, app)
 app.start()
 
 // A `fos` CLI opened this page to have its sign-in approved (?device=CODE).
-const deviceCode = new URL(location.href).searchParams.get('device')
+const params = new URL(location.href).searchParams
+const deviceCode = params.get('device')
 if (deviceCode) {
   app.setDeviceCode(deviceCode)
+  history.replaceState(null, '', location.pathname)
+}
+// Back from an integration peer's sign-in page (?integration=github&ok=1).
+const integration = params.get('integration')
+if (integration) {
+  app.integrationReturned(integration, params.get('ok') === '1', params.get('message'))
   history.replaceState(null, '', location.pathname)
 }
 

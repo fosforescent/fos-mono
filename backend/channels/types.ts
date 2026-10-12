@@ -1,6 +1,6 @@
-/** Chat channels (WhatsApp, Discord) bridged into the backend process. */
+/** Chat channels (WhatsApp, Discord, SMS) bridged into the backend process. */
 
-export type ChannelSource = 'whatsapp' | 'discord'
+export type ChannelSource = 'whatsapp' | 'discord' | 'sms'
 
 export type InboundMessage = {
   source: ChannelSource

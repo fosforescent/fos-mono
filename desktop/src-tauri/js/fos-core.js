@@ -2028,6 +2028,12 @@
         return "mail";
       case "peer":
         return req.peer ? `@${req.peer}` : "peer";
+      case "llm":
+        return "llm";
+      case "repo":
+        return req.repo ? `repo ${req.repo}` : "repo";
+      case "tool":
+        return req.tool ? `tool ${req.tool}` : "tool";
     }
   }
   function childRows(store, cid, kind) {
@@ -2099,6 +2105,12 @@
         case "market":
           return !!s.by;
         case "mail":
+          return !!s.by;
+        case "llm":
+          return !!s.by;
+        case "repo":
+          return !!s.by;
+        case "tool":
           return !!s.by;
         case "peer":
           return !!s.by && (!req.peer || s.by === req.peer);
@@ -2205,7 +2217,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool"];
   function isLink(store, value) {
     if (isHandle(value)) return false;
     return isRefNode(store, value) || !!value.data.link;
@@ -2295,6 +2307,8 @@
         return p.llmCapability.getId();
       case "repo":
         return p.repoCapability.getId();
+      case "tool":
+        return p.toolCapability.getId();
     }
   }
   function capabilityOfTarget(store, target) {
@@ -6056,6 +6070,7 @@
   var getCalendarCapabilityNode = (store) => generateConstructor(store, "CALENDARCAPABILITY", { description: { content: "Capability - provides a calendar (time allocations) for calendar requirements" } }, []);
   var getLlmCapabilityNode = (store) => generateConstructor(store, "LLMCAPABILITY", { description: { content: "Capability - a language model that can answer or act on rows" } }, []);
   var getRepoCapabilityNode = (store) => generateConstructor(store, "REPOCAPABILITY", { description: { content: "Capability - code repositories (issues, pull requests) as rows" } }, []);
+  var getToolCapabilityNode = (store) => generateConstructor(store, "TOOLCAPABILITY", { description: { content: "Capability - runs tools (an MCP server attached to the node) for tool requirements under it" } }, []);
   var getAcceptsNode = (store) => generateConstructor(store, "ACCEPTS", { description: { content: "Accepts - the owner accepts this capability from the member (what may flow in from that peer)" } }, []);
   var getDurationFieldNode = (store) => generateConstructor(store, "DURATION", { description: { content: "Duration Field Constructor" } }, []);
   var getDateFieldNode = (store) => generateConstructor(store, "DATE", { description: { content: "Date Field Constructor" } }, []);
@@ -6393,6 +6408,7 @@
     const calendarCapability = getCalendarCapabilityNode(store);
     const llmCapability = getLlmCapabilityNode(store);
     const repoCapability = getRepoCapabilityNode(store);
+    const toolCapability = getToolCapabilityNode(store);
     const approveAction = getApproveActionNode(store);
     const effectNode = getEffectNode(store);
     const handlerNode = getHandlerNode(store);
@@ -6593,6 +6609,7 @@
       calendarCapability,
       llmCapability,
       repoCapability,
+      toolCapability,
       effectNode,
       handlerNode
     };

@@ -8,9 +8,10 @@
  * With CHANNELS_ECHO=true every inbound text is echoed back (smoke test).
  */
 
-import { Router, json, type Request } from 'express'
+import { Router, json, urlencoded, type Request } from 'express'
 import { ChannelBus, pubsubPublisher } from './bus'
 import { createDiscordAdapter, discordConfigFromEnv } from './discord'
+import { createSmsAdapter, createSmsWebhook, smsConfigFromEnv } from './sms'
 import { createWhatsAppAdapter, createWhatsAppWebhook, whatsAppConfigFromEnv } from './whatsapp'
 
 export { ChannelBus } from './bus'
@@ -23,6 +24,8 @@ export function createChannelsRouter(bus: ChannelBus = channelBus, env: NodeJS.P
   const whatsapp = whatsAppConfigFromEnv(env)
   bus.register(createWhatsAppAdapter(whatsapp))
   bus.register(createDiscordAdapter(discordConfigFromEnv(env), bus))
+  const sms = smsConfigFromEnv(env)
+  bus.register(createSmsAdapter(sms))
   if (env.PUBSUB_INBOX_TOPIC) bus.setPublisher(pubsubPublisher(env.PUBSUB_INBOX_TOPIC))
   if (env.CHANNELS_ECHO === 'true') {
     bus.onInbound(async (message) => {
@@ -34,6 +37,9 @@ export function createChannelsRouter(bus: ChannelBus = channelBus, env: NodeJS.P
   router.use('/whatsapp/webhook', json({ verify: (req, _res, buf) => { (req as Request & { rawBody?: Buffer }).rawBody = buf } }))
   router.get('/whatsapp/webhook', webhook.verify)
   router.post('/whatsapp/webhook', (req, res) => { void webhook.receive(req, res) })
+  // Twilio posts form-encoded; the signature covers the public URL and the parameters
+  const smsWebhook = createSmsWebhook(sms, bus)
+  router.post('/sms/webhook', urlencoded({ extended: false }), (req, res) => { void smsWebhook(req, res) })
   router.get('/health', (_req, res) => res.json({ channels: bus.health(), timestamp: new Date().toISOString() }))
   return router
 }

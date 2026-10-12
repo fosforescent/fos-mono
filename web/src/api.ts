@@ -217,3 +217,56 @@ export function submitMarketProposal(session: Session, owner: string, aliasId: s
 export function getTokenBalance(session: Session): Promise<{ balance: number }> {
   return authed(session, 'GET', '/tokens/balance')
 }
+
+// --- integration peers (OAuth sign-ins, the phone channel) and the handlers they provide ---------------------------
+
+export type IntegrationStatus = { id: string; name: string; kind: 'oauth' | 'platform' | 'channel'; provides: string[]; consumes: string[]; configured: boolean; connected: boolean; pending: boolean; accountName: string | null }
+
+export function listIntegrations(session: Session): Promise<{ providers: IntegrationStatus[] }> {
+  return authed(session, 'GET', '/user/integrations')
+}
+
+/** OAuth: the authorize URL to send the browser to; it comes back to the web app with ?integration=<id>&ok=1. */
+export function startIntegration(session: Session, provider: string): Promise<{ url: string }> {
+  return authed(session, 'GET', `/user/integrations/${encodeURIComponent(provider)}/start`)
+}
+
+export function disconnectIntegration(session: Session, provider: string): Promise<{ ok: true }> {
+  return authed(session, 'DELETE', `/user/integrations/${encodeURIComponent(provider)}`)
+}
+
+export function startPhone(session: Session, number: string): Promise<{ ok: true; number: string }> {
+  return authed(session, 'POST', '/user/integrations/phone', { number })
+}
+
+export function verifyPhone(session: Session, code: string): Promise<{ ok: true; number: string }> {
+  return authed(session, 'POST', '/user/integrations/phone/verify', { code })
+}
+
+export function askLlm(session: Session, prompt: string, system?: string): Promise<{ text: string; model: string }> {
+  return authed(session, 'POST', '/user/integrations/llm', { prompt, ...(system ? { system } : {}) })
+}
+
+export function createRepoIssue(session: Session, repo: string, title: string, body?: string): Promise<{ url: string; number: number }> {
+  return authed(session, 'POST', '/user/integrations/repo/issue', { repo, title, body })
+}
+
+export function createCalendarEvent(session: Session, event: { summary: string; description?: string; start: number; end: number }): Promise<{ url: string | null; id: string }> {
+  return authed(session, 'POST', '/user/integrations/calendar/event', event)
+}
+
+// --- MCP peers: the account's MCP servers attached to nodes as members that run "-tool" requirements -----------------
+
+export type McpPeerInfo = { id: string; serverId: number; name: string; tools: string[] }
+
+export function listMcpPeers(session: Session): Promise<{ peers: McpPeerInfo[] }> {
+  return authed(session, 'GET', '/user/data/mcp-peers')
+}
+
+export function attachMcpPeer(session: Session, scope: string[], serverId: number): Promise<{ ok: true; peerId: string; tools: string[] }> {
+  return authed(session, 'POST', '/user/data/mcp-peers/attach', { scope, serverId })
+}
+
+export function runMcpRequirement(session: Session, scope: string[], requirementId: string): Promise<{ text: string }> {
+  return authed(session, 'POST', '/user/data/mcp-peers/run', { scope, requirementId })
+}

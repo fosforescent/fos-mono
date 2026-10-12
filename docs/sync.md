@@ -326,6 +326,46 @@ context panel; banks are ordinary rows in the tree. A home node distinct
 from the account root is not modelled yet. While typing, a badge after the
 editor says what the line is recognized as (`describeParsed`).
 
+**Integration peers (`backend/integrations/`).** Outside services as peers
+at the device's root. *OAuth sign-ins*: GitHub (`repo`, `search`), Google
+(`calendar`, `mail`, `search`), Discord (`mail`, `relay`). `GET
+/user/integrations/:provider/start` returns the authorize URL (the state is
+the user id, signed); the public `GET /integrations/:provider/callback`
+exchanges the code, stores the tokens encrypted (`IntegrationConnectionModel`,
+AES-256-GCM under `INTEGRATION_SECRET`), and sends the browser back to
+`WEB_URL/?integration=<id>&ok=1`. Env per provider: `GITHUB_CLIENT_ID/SECRET`,
+`GOOGLE_OAUTH_CLIENT_ID/SECRET`, `DISCORD_CLIENT_ID/SECRET`, plus `API_URL`
+for the redirect URIs; unconfigured providers show as such. *Platform*:
+Stripe is "connected" when the account has a customer or an enabled
+connected account. *The phone channel*: the user links a number (`POST
+/user/integrations/phone` texts a code, `/phone/verify` confirms); fos then
+texts about proposals from other accounts, and texts sent to the platform's
+number (`backend/channels/sms.ts`, Twilio: `TWILIO_ACCOUNT_SID`,
+`TWILIO_AUTH_TOKEN`, `TWILIO_FROM`; webhook `POST /channels/sms/webhook`,
+signature verified) become rows: "done <words>" checks a task off, "list"
+answers with open tasks, anything else is added at the root. Language
+models are the fos server's own capability (`llm` in `SERVER_CAPABILITIES`,
+the voice notes' `complete` on `OPENAI_API_KEY`/Vertex), not a user key.
+
+Handlers, as requirement kinds: `-llm question` → "Ask fos" writes the
+answer as a note inside and supplies it; `-repo owner/name title` → "Open
+issue" (GitHub) adds a row with the issue URL and supplies it; a time or
+person requirement with a window (`-: 1h 2026-10-13T09:00..` or `-@bob …`)
+→ "Add to Google Calendar" creates the event and the allocation that fills
+the requirement.
+
+**MCP peers (`backend/integrations/mcpPeers.ts`).** The account's MCP
+servers (`MCPServerModel`, their tools) are peers too. "Attach here" (or
+the row menu) makes a server a member of a node (`mcp:<server id>`, name
+from the registry, `tool` + `read` + `edit`), so it advertises its tools
+there. A `-tool <name> input` requirement under that node (or below) is run
+by the nearest attached server that has the tool (`POST
+/user/data/mcp-peers/run`, "Run" on the row; `MCPClient.callTool` with
+`{ input }`); the result is a note inside the requirement with a supply by
+the peer. With `MCP_LISTEN=true` the server also listens: after every save
+of a tree (`afterSaveHooks` in `peerSync.ts`), open tool requirements under
+attached nodes are run (debounced per user).
+
 **Allocation bins (sending rows to another account).** A row whose children
 are requirement and allocation rows is a proposed transaction: what the
 receiver must fill, and what they get. "Send to @owner (node)" in the row's
@@ -548,9 +588,10 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
   tables are parsed but not yet applied to member rows.
 * Devices do not register capabilities of their own with the account yet;
   only the account server reports `capabilities` in sync responses.
-* Integration peers need server-side SSO (OAuth with GitHub/Google and API
-  keys for Anthropic/OpenAI) and handlers for `repo`/`calendar`/`llm`
-  requirements; today they are declared only.
+* Discord provides `mail`/`relay` on paper; its OAuth sign-in only identifies
+  the user (no handler sends through it yet; the channels bot does).
+* OAuth tokens are refreshed on use (Google); GitHub tokens do not expire.
+  A revoked token surfaces as a 502 from the handler, not as "disconnected".
 * Fos-point allocations are recorded in the tree but not debited from the
   token balance when a task completes.
 * Choice requirements have no handler registry yet: any signed-in viewer can

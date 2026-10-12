@@ -35,6 +35,9 @@ export function serverPeerIdFor(username: string): string {
   return `user:${username}`
 }
 
+/** Called after every save of a user's tree (indexing is built in; MCP peer listeners register here). Failures are logged. */
+export const afterSaveHooks: Array<(user: PeerSyncUser, store: FosStore) => void> = []
+
 /**
  * Serialize every load-modify-save of one user's store (syncs, proposal
  * decisions, member attachment) so none of them races another's save.
@@ -334,6 +337,7 @@ export const prismaPeerSyncDeps: PeerSyncDeps = {
     if (!dbUser) throw new Error(`user ${user.id} vanished during sync`)
     await storeToDb(prisma, dbUser, store)
     scheduleIndex(user, store)
+    for (const hook of afterSaveHooks) { try { hook(user, store) } catch (error) { console.error('[sync] after-save hook failed:', error instanceof Error ? error.message : error) } }
   },
   notify(userId, message) {
     sendToUser(userId, message)
