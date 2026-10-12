@@ -25,7 +25,7 @@ import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, 
 import { peerInviteHandlers } from './sync/peerInvites'
 import { deviceLoginHandlers } from './auth/deviceLogin'
 import { createChannelsRouter, startChannels, stopChannels } from './channels'
-import { createVoiceNoteHandler, openAiVoiceDeps } from './voice/voiceNotes'
+import { createVoiceNoteHandler, prismaVoiceUsage, voiceDepsFromEnv } from './voice/voiceNotes'
 import {
   getMCPServers,
   getMCPServer,
@@ -348,7 +348,7 @@ dataRoutes.get('/device-login/:code', deviceLoginHandlers.describe)
 dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
 dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
 // Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
-dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(openAiVoiceDeps()))
+dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), prismaVoiceUsage(prisma)))
 dataRoutes.post('/peer-invite', peerInviteHandlers.createInvite)
 dataRoutes.get('/peer-invite/requests', peerInviteHandlers.listRequests)
 dataRoutes.post('/peer-invite/:id/approve', peerInviteHandlers.approveRequest)

@@ -205,3 +205,11 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .add .mic.recording { background: #d33; color: #fff; border-radius: 50%; animation: pulse 1.2s ease-in-out infinite; }
 .add .mic.busy { opacity: 0.6; }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+/* Workflowy-style editing: the selected row's editor looks like the text it replaces */
+.task input.edit { flex: 1; border: none; background: transparent; outline: none; font: inherit; color: inherit; padding: 0; margin: 0; min-width: 0; }
+.task textarea.edit { flex: 1; }
+.task .toggle.zoom { font-weight: 700; }
+@media (max-width: 640px) {
+  .task { padding: 12px 4px; }
+  .task .toggle.zoom { font-size: 20px; padding: 0 8px; }
+}

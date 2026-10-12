@@ -23,6 +23,7 @@
     "@google-cloud/secret-manager": "^5.0.0",
     "@google-cloud/storage": "^7.7.0",
     "@google-cloud/vertexai": "^1.1.0",
+    "@google/genai": "^1.52.0",
     "@langchain/core": "^0.3.37",
     "@prisma/client": "^6.8.2",
     "@qdrant/js-client-rest": "^1.9.0",

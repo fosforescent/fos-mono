@@ -185,7 +185,7 @@ export type AddRowOptions = { done?: boolean; refId?: string; author?: { id: str
 /** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
 export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
   const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
-  if (!body && kind !== 'ref') return replica
+  if (!body && kind !== 'ref' && kind !== 'plain') return replica // a blank plain row is fine: Enter creates one to type into
   if (kind === 'ref' && !options.refId) return replica
   const id = options.id ?? newId()
   return edit(replica, at, now, (value) => {
