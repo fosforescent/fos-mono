@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { chunkText, createVoiceNoteHandler, summarizeHierarchically, voiceNoteFromAudio, type VoiceDeps } from './voiceNotes'
+import { chunkText, createVoiceNoteHandler, summarizeHierarchically, voiceNoteFromAudio, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 function deps(overrides: Partial<VoiceDeps> = {}): VoiceDeps & { calls: string[] } {
   const calls: string[] = []
@@ -54,4 +54,25 @@ test('handler: rejects empty bodies and reports model failures as 502', async ()
   await failing({ body: Buffer.from('x'), header: () => 'audio/webm' } as unknown as Request, res)
   expect(sent.status).toBe(502)
   expect(sent.body.error).toMatch(/no key/)
+})
+
+test('free budget: non-paying users are cut off at the budget, paying users are not; spend is recorded from the meter', async () => {
+  const records: Array<{ userId: number; usd: number }> = []
+  let spentSoFar = 0.95
+  const usage: VoiceUsage = {
+    budgetUsd: 1,
+    async userOf(req) { return (req as any).paying === undefined ? null : { id: 7, paying: (req as any).paying } },
+    async spent() { return spentSoFar },
+    async record(userId, entry) { records.push({ userId, usd: entry.usd }); spentSoFar += entry.usd }
+  }
+  let metered = 0
+  const d = deps({ async transcribe() { metered += 0.08; return 'spoken words here' }, drain() { const out = { usd: metered, tokens: 100 }; metered = 0; return out } })
+  const handler = createVoiceNoteHandler(d, usage)
+  const sent: { status: number; body: any } = { status: 200, body: null }
+  const res = { status(c: number) { sent.status = c; return res }, json(b: unknown) { sent.body = b; return res } } as unknown as Response
+  const call = async (paying: boolean | undefined) => { sent.status = 200; await handler({ body: Buffer.from('x'), header: () => 'audio/webm', paying } as unknown as Request, res) }
+  await call(undefined); expect(sent.status).toBe(401)
+  await call(false); expect(sent.status).toBe(200); expect(sent.body.cost.usd).toBeCloseTo(0.08); expect(records).toEqual([{ userId: 7, usd: 0.08 }])
+  await call(false); expect(sent.status).toBe(402); expect(sent.body.error).toMatch(/free budget/); expect(records).toHaveLength(1)
+  await call(true); expect(sent.status).toBe(200); expect(records).toHaveLength(2)
 })

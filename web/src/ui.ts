@@ -30,7 +30,19 @@ type Regions = {
   addInput: HTMLInputElement
 }
 
-let editingTaskId: string | null = null
+/**
+ * Workflowy-style tree: the selected row is always editable; ↑/↓ move between rows,
+ * Enter adds a blank row below, Backspace on a blank row deletes it. How many levels
+ * show at once depends on the screen: phones show one level and zoom into a row to
+ * see its children, larger screens expand/collapse a few levels in place.
+ */
+function maxDepth(): number {
+  const w = window.innerWidth
+  const h = window.innerHeight
+  if (w < 640) return 1
+  return Math.max(2, Math.min(6, Math.floor(h / 140)))
+}
+let lastDepth = maxDepth()
 let scanner: { stop(): Promise<void> } | null = null
 let lastModalKey = ''
 
@@ -108,6 +120,11 @@ export function mountUi(root: HTMLElement, app: App): void {
   })
 
   app.subscribe((state) => render(regions, state, app))
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null
+  window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer)
+    resizeTimer = setTimeout(() => { if (maxDepth() !== lastDepth) { lastDepth = maxDepth(); app.refresh() } }, 150)
+  })
 }
 
 function render(regions: Regions, state: AppState, app: App): void {
@@ -316,7 +333,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   const rows: HTMLElement[] = []
   node.tasks.forEach((task, index) => {
     rows.push(renderRow(task, at, depth, index, node.tasks.length, state, app))
-    const expanded = !state.collapsed.includes(task.id)
+    const expanded = !state.collapsed.includes(task.id) && depth + 1 < maxDepth()
     if (addingUnder === task.id) rows.push(renderInlineAdd(task, at, depth + 1, app))
     if (expanded && (task.childCount > 0 || task.childChoices > 0)) {
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
@@ -392,7 +409,11 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   handle.title = 'Drag to move'
 
   const hasChildren = task.childCount > 0 || task.childChoices > 0
-  const toggle = button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : '·', () => { if (hasChildren) app.toggleCollapsed(task.id) })
+  const canExpandHere = depth + 1 < maxDepth()
+  const toggle = hasChildren && !canExpandHere
+    ? button('icon toggle zoom', '›', () => app.zoomTo([...at, task.id]))
+    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : '·', () => { if (hasChildren) app.toggleCollapsed(task.id) })
+  if (hasChildren && !canExpandHere) toggle.title = `Open (${task.childCount} inside)`
   toggle.disabled = !hasChildren
   toggle.tabIndex = -1
 
@@ -405,33 +426,12 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (editingTaskId === task.id && task.kind !== 'ref') {
-    const multiline = task.kind === 'note'
-    const input = multiline ? document.createElement('textarea') : document.createElement('input')
-    if (!multiline) (input as HTMLInputElement).type = 'text'
-    else (input as HTMLTextAreaElement).rows = Math.min(16, Math.max(3, task.title.split('\n').length + 1))
-    input.className = 'edit'
-    input.value = task.title
-    const commit = () => {
-      if (editingTaskId !== task.id) return
-      editingTaskId = null
-      app.renameTaskAt(at, task.id, input.value)
-      app.refresh()
-    }
-    input.addEventListener('keydown', (e: Event) => {
-      const event = e as KeyboardEvent
-      if (event.key === 'Enter' && (!multiline || event.ctrlKey || event.metaKey)) { event.preventDefault(); commit() }
-      if (event.key === 'Escape') { editingTaskId = null; app.refresh() }
-      event.stopPropagation()
-    })
-    input.addEventListener('blur', commit)
-    body = input
-    queueMicrotask(() => { input.focus(); if (!multiline) (input as HTMLInputElement).select() })
+  if (selected && task.kind !== 'ref') {
+    body = renderEditor(task, at, state, app)
   } else if (task.kind === 'ref') {
     body = renderRefBody(task, app)
   } else if (task.kind === 'note') {
     body = renderNoteBody(task, at, state, app)
-    body.addEventListener('dblclick', () => { editingTaskId = task.id; app.refresh() })
   } else {
     body = span('title', '')
     body.append(renderInlineText(task.title))
@@ -439,8 +439,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
       const who = span('author', task.author?.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'comment')
       body.prepend(who)
     }
-    body.title = 'Double-click or press Enter to edit'
-    body.addEventListener('dblclick', () => { editingTaskId = task.id; app.refresh() })
+    body.title = 'Click to edit'
   }
 
   const meta = span('row-meta', '')
@@ -457,6 +456,96 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
 
   li.append(handle, toggle, checkbox, body, meta, more)
   return li
+}
+
+/** Visible rows in display order, with the relative path of each (rebuilt from the flat DOM list). */
+function visibleRows(): Array<{ el: HTMLElement; path: Scope }> {
+  const rows = [...document.querySelectorAll<HTMLElement>('.tree .task[data-id]')]
+  return rows.map((row, index) => {
+    const path: string[] = [row.dataset.id as string]
+    let depth = Number(row.style.getPropertyValue('--depth'))
+    for (let i = index - 1; i >= 0 && depth > 0; i--) {
+      const d = Number(rows[i]!.style.getPropertyValue('--depth'))
+      if (d < depth) { path.unshift(rows[i]!.dataset.id as string); depth = d }
+    }
+    return { el: row, path }
+  })
+}
+
+/** Select the row `delta` steps away from the selected one (or the first/last row). */
+function moveSelection(app: App, delta: number): void {
+  const rows = visibleRows()
+  if (!rows.length) return
+  const sel = app.state.selected
+  const index = sel ? rows.findIndex((r) => r.path.join('/') === sel.join('/')) : -1
+  const next = index < 0 ? (delta > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + delta))
+  app.select(rows[next]!.path)
+}
+
+function caretOnEdge(input: HTMLInputElement | HTMLTextAreaElement, edge: 'first' | 'last'): boolean {
+  if (input instanceof HTMLInputElement) return true
+  const pos = input.selectionStart ?? 0
+  const value = input.value
+  return edge === 'first' ? !value.slice(0, pos).includes('\n') : !value.slice(pos).includes('\n')
+}
+
+/** The selected row's text, editable in place. Keys: ↑/↓ rows, Enter new row below, Ctrl+Enter done (notes: new row),
+ *  Ctrl+Shift+Enter row inside, Tab/⇧Tab indent, Alt+↑/↓ move, Alt+→ zoom in, Alt+← zoom out, Backspace on blank deletes, Esc leaves. */
+function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+  const multiline = task.kind === 'note'
+  const input = multiline ? document.createElement('textarea') : document.createElement('input')
+  if (!multiline) (input as HTMLInputElement).type = 'text'
+  else (input as HTMLTextAreaElement).rows = Math.min(16, Math.max(2, task.title.split('\n').length + 1))
+  input.className = 'edit'
+  input.value = task.title
+  input.placeholder = task.kind === 'note' ? 'Markdown…' : task.kind === 'comment' ? 'Comment…' : ''
+  let committed = false
+  const commit = () => {
+    if (committed) return
+    committed = true
+    if (input.value === task.title) return
+    // typing a marker at the start of a plain row converts it, like the add bar: "[ ] ", "[x] ", "- ", "// "
+    const parsed = task.kind === 'plain' ? parseRowInput(input.value) : null
+    if (parsed && parsed.kind !== 'plain') {
+      app.renameTaskAt(at, task.id, parsed.text || ' ')
+      app.setRowKindAt(at, task.id, parsed.kind)
+      if (parsed.done) app.setDoneAt(at, task.id, true)
+      return
+    }
+    app.renameTaskAt(at, task.id, input.value)
+  }
+  const path: Scope = [...at, task.id]
+  input.addEventListener('keydown', (e: Event) => {
+    const event = e as KeyboardEvent
+    const k = event.key
+    const alt = event.altKey
+    const ctrl = event.ctrlKey || event.metaKey
+    if (k === 'ArrowUp' && alt) { event.preventDefault(); commit(); app.select(path); app.moveSelected('up'); return }
+    if (k === 'ArrowDown' && alt) { event.preventDefault(); commit(); app.select(path); app.moveSelected('down'); return }
+    if (k === 'ArrowRight' && alt) { event.preventDefault(); commit(); app.zoomTo(path); return }
+    if (k === 'ArrowLeft' && alt) { event.preventDefault(); commit(); app.zoomOut(); return }
+    if (k === 'ArrowUp' && !event.shiftKey && caretOnEdge(input, 'first')) { event.preventDefault(); commit(); moveSelection(app, -1); return }
+    if (k === 'ArrowDown' && !event.shiftKey && caretOnEdge(input, 'last')) { event.preventDefault(); commit(); moveSelection(app, 1); return }
+    if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id); return }
+    if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); if (task.kind === 'task') { app.toggleTaskAt(at, task); app.refresh() } else app.addRowBelow(at, task.id); return }
+    if (k === 'Enter' && !multiline) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
+    if (k === 'Tab') { event.preventDefault(); commit(); app.select(path); app.indentSelected(event.shiftKey); return }
+    if (k === 'Backspace' && input.value === '' && (ctrl || !multiline)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
+    if (k === 'Backspace' && ctrl && event.shiftKey) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
+    if (k === 'Escape') { event.preventDefault(); commit(); app.select(null); input.blur(); return }
+    if (k === '.' && ctrl) { event.preventDefault(); app.openContextMenu({ kind: 'task', at, task }); return }
+    event.stopPropagation()
+  })
+  input.addEventListener('blur', () => { commit() })
+  // keep the focus on the editor when the row is (re)rendered as selected
+  queueMicrotask(() => {
+    if (document.activeElement !== input && !state.modal && !state.contextMenu) {
+      input.focus()
+      const end = input.value.length
+      try { input.setSelectionRange(end, end) } catch { /* not all inputs */ }
+    }
+  })
+  return input
 }
 
 function firstLine(text: string): string {
@@ -559,10 +648,10 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
   void siblings
   const canInvite = state.session?.kind === 'user'
   return [
-    { label: 'Add row inside', keys: 'Ctrl+Enter', run: () => { addingUnder = task.id; addingKind = null; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh() } },
-    { label: 'Zoom in', keys: 'Z', run: () => app.zoomTo([...at, task.id]) },
-    ...(task.kind !== 'ref' ? [{ label: task.kind === 'note' ? 'Edit note' : 'Edit text', keys: 'Enter', run: () => { editingTaskId = task.id; app.refresh() } }] : []),
-    ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Space', run: () => app.toggleTaskAt(at, task) }] : []),
+    { label: 'Add row inside', keys: 'Ctrl+Shift+Enter', run: () => app.addRowInside(at, task.id) },
+    { label: 'Zoom in', keys: 'Alt+→', run: () => app.zoomTo([...at, task.id]) },
+    ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Ctrl+Enter', run: () => app.toggleTaskAt(at, task) }] : []),
+    { label: 'Add row below', keys: 'Enter', run: () => app.addRowBelow(at, task.id) },
     ...(task.kind === 'ref' ? [{ label: 'Go to the referenced row', run: () => app.followRef(task.refId ?? '') }] : []),
     { label: 'Add comment', run: () => { addingUnder = task.id; addingKind = 'comment'; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh() } },
     ...(task.kind !== 'ref' ? (['task', 'plain', 'note', 'comment'] as RowKind[]).filter((k) => k !== task.kind).map((k) => ({ label: `Change to ${ROW_KIND_LABEL[k].toLowerCase()}`, run: () => app.setRowKindAt(at, task.id, k) })) : []),
@@ -573,7 +662,7 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     { label: 'Move down', keys: 'Alt+↓', run: () => { app.select([...at, task.id]); app.moveSelected('down') } },
     ...(canInvite ? [{ label: 'Invite a device here', run: () => { app.zoomTo([...at, task.id]); void app.startInvite() } }] : []),
     ...(canInvite ? [{ label: 'Sync only this on this device', run: () => app.attachAt([...app.currentScope(), ...at, task.id]), disabled: !app.canAttach([...app.currentScope(), ...at, task.id]) }] : []),
-    { label: 'Delete', keys: 'Del', run: () => app.deleteTaskAt(at, task.id), danger: true }
+    { label: 'Delete', keys: 'Ctrl+Shift+⌫', run: () => app.deleteTaskAt(at, task.id), danger: true }
   ]
 }
 
@@ -624,10 +713,11 @@ function handleKey(event: KeyboardEvent, app: App): void {
   }
   const focusRow = (i: number) => { const r = rows[i]; if (r) { app.select(pathOf(r)); r.focus() } }
 
-  if (event.key === 'ArrowDown' && !event.altKey) { event.preventDefault(); focusRow(Math.min(rows.length - 1, selectedIndex + 1)); return }
-  if (event.key === 'ArrowUp' && !event.altKey) { event.preventDefault(); focusRow(Math.max(0, selectedIndex - 1)); return }
+  if (event.key === 'ArrowDown' && !event.altKey) { event.preventDefault(); moveSelection(app, 1); return }
+  if (event.key === 'ArrowUp' && !event.altKey) { event.preventDefault(); moveSelection(app, -1); return }
+  void focusRow
   if (!sel || selectedIndex < 0) {
-    if (event.key === 'Backspace') { event.preventDefault(); app.zoomOut() }
+    if (event.key === 'Backspace' || (event.key === 'ArrowLeft' && event.altKey)) { event.preventDefault(); app.zoomOut() }
     return
   }
   const at = sel.slice(0, -1)
@@ -636,12 +726,12 @@ function handleKey(event: KeyboardEvent, app: App): void {
   if (!task) return
   const alt = event.altKey
   switch (true) {
+    case event.key === 'Enter' && (event.ctrlKey || event.metaKey) && event.shiftKey:
+      event.preventDefault(); app.addRowInside(at, task.id); break
     case event.key === 'Enter' && (event.ctrlKey || event.metaKey):
-      event.preventDefault(); addingUnder = task.id; addingKind = null; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh(); break
+      event.preventDefault(); if (task.kind === 'task') app.toggleTaskAt(at, task); else app.addRowBelow(at, task.id); break
     case event.key === 'Enter':
-      event.preventDefault(); editingTaskId = task.id; app.refresh(); break
-    case event.key === ' ':
-      event.preventDefault(); app.toggleTaskAt(at, task); break
+      event.preventDefault(); app.addRowBelow(at, task.id); break
     case event.key === 'Tab':
       event.preventDefault(); app.indentSelected(event.shiftKey); break
     case event.key === 'ArrowRight' && !alt:
@@ -652,12 +742,14 @@ function handleKey(event: KeyboardEvent, app: App): void {
       event.preventDefault(); app.moveSelected('up'); break
     case event.key === 'ArrowDown' && alt:
       event.preventDefault(); app.moveSelected('down'); break
-    case event.key.toLowerCase() === 'z':
+    case event.key === 'ArrowRight' && alt:
       event.preventDefault(); app.zoomTo([...at, task.id]); break
+    case event.key === 'ArrowLeft' && alt:
+      event.preventDefault(); app.zoomOut(); break
+    case event.key === 'Backspace' && (event.ctrlKey || event.metaKey) && event.shiftKey:
+      event.preventDefault(); app.deleteTaskAt(at, task.id); break
     case event.key === 'Backspace':
       event.preventDefault(); app.zoomOut(); break
-    case event.key === 'Delete':
-      event.preventDefault(); app.deleteTaskAt(at, task.id); break
     case event.key === '.' || (event.key === 'F10' && event.shiftKey):
       event.preventDefault(); app.openContextMenu({ kind: 'task', at, task }); break
   }

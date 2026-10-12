@@ -7738,7 +7738,7 @@
   }
   function addRow(replica, at, kind, text, now, options = {}) {
     const body = kind === "note" ? text.replace(/\s+$/, "") : text.trim();
-    if (!body && kind !== "ref")
+    if (!body && kind !== "ref" && kind !== "plain")
       return replica;
     if (kind === "ref" && !options.refId)
       return replica;

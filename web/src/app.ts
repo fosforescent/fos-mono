@@ -497,9 +497,24 @@ export class App {
   addTask(title: string): void { this.edit(addTask(this.state.replica, this.state.view, title, this.now())) }
 
   /** Add a row of `kind` under `at` (relative to the view). Comments carry this device as the author. */
-  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition } = {}): void {
+  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string } = {}): string {
     const author = kind === 'comment' ? { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName } : undefined
-    this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...options, author }))
+    const id = options.id ?? crypto.randomUUID()
+    this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...options, author, id }))
+    return id
+  }
+  /** Workflowy-style Enter: a blank plain row right after `id` (same parent), selected for typing. */
+  addRowBelow(at: Scope, id: string): void {
+    const created = this.addRowAt(at, 'plain', '', { position: { relativeTo: id, position: 'below' } })
+    this.set({ selected: [...at, created] })
+  }
+  /** Ctrl+Shift+Enter: a blank row inside `id`, selected for typing. */
+  addRowInside(at: Scope, id: string): void {
+    const created = this.addRowAt([...at, id], 'plain', '')
+    this.set({ selected: [...at, id, created], collapsed: this.state.collapsed.filter((c) => c !== id) })
+  }
+  setDoneAt(at: Scope, id: string, done: boolean): void {
+    this.edit(setTaskDone(this.state.replica, [...this.state.view, ...at], id, done, this.now()))
   }
   setRowKindAt(at: Scope, id: string, kind: RowKind): void {
     this.edit(setRowKind(this.state.replica, [...this.state.view, ...at], id, kind, this.now()))
