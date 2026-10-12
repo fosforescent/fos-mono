@@ -175,100 +175,100 @@ resource "google_secret_manager_secret_version" "event_services_sa_key" {
 
 # IAM bindings for secret access
 resource "google_secret_manager_secret_iam_member" "backend_database_url" {
-  secret_id = google_secret_manager_secret.database_url.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  secret_id  = google_secret_manager_secret.database_url.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
   depends_on = [google_secret_manager_secret.database_url]
 }
 
 resource "google_secret_manager_secret_iam_member" "backend_jwt_secret" {
-  secret_id = google_secret_manager_secret.jwt_secret.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  secret_id  = google_secret_manager_secret.jwt_secret.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
   depends_on = [google_secret_manager_secret.jwt_secret]
 }
 
 resource "google_secret_manager_secret_iam_member" "backend_stripe_token" {
-  secret_id = google_secret_manager_secret.stripe_token.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  secret_id  = google_secret_manager_secret.stripe_token.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
   depends_on = [google_secret_manager_secret.stripe_token]
 }
 
 resource "google_secret_manager_secret_iam_member" "backend_stripe_webhook_secret" {
-  secret_id = google_secret_manager_secret.stripe_webhook_secret.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  secret_id  = google_secret_manager_secret.stripe_webhook_secret.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
   depends_on = [google_secret_manager_secret.stripe_webhook_secret]
 }
 
 resource "google_secret_manager_secret_iam_member" "backend_openai_api_key" {
-  secret_id = google_secret_manager_secret.openai_api_key.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  secret_id  = google_secret_manager_secret.openai_api_key.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
   depends_on = [google_secret_manager_secret.openai_api_key]
 }
 
 resource "google_secret_manager_secret_iam_member" "backend_postmark_token" {
-  secret_id = google_secret_manager_secret.postmark_token.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  secret_id  = google_secret_manager_secret.postmark_token.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
   depends_on = [google_secret_manager_secret.postmark_token]
 }
 
 resource "google_secret_manager_secret_iam_member" "backend_email_webhook_pwd" {
-  secret_id = google_secret_manager_secret.email_webhook_pwd.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  secret_id  = google_secret_manager_secret.email_webhook_pwd.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
   depends_on = [google_secret_manager_secret.email_webhook_pwd]
 }
 
 # Cloud Run service account access
 resource "google_secret_manager_secret_iam_member" "cloudrun_database_url" {
-  secret_id = google_secret_manager_secret.database_url.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  secret_id  = google_secret_manager_secret.database_url.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.database_url]
 }
 
 resource "google_secret_manager_secret_iam_member" "cloudrun_jwt_secret" {
-  secret_id = google_secret_manager_secret.jwt_secret.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  secret_id  = google_secret_manager_secret.jwt_secret.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.jwt_secret]
 }
 
 resource "google_secret_manager_secret_iam_member" "cloudrun_stripe_token" {
-  secret_id = google_secret_manager_secret.stripe_token.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  secret_id  = google_secret_manager_secret.stripe_token.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.stripe_token]
 }
 
 resource "google_secret_manager_secret_iam_member" "cloudrun_stripe_webhook_secret" {
-  secret_id = google_secret_manager_secret.stripe_webhook_secret.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  secret_id  = google_secret_manager_secret.stripe_webhook_secret.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.stripe_webhook_secret]
 }
 
 resource "google_secret_manager_secret_iam_member" "cloudrun_openai_api_key" {
-  secret_id = google_secret_manager_secret.openai_api_key.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  secret_id  = google_secret_manager_secret.openai_api_key.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.openai_api_key]
 }
 
 resource "google_secret_manager_secret_iam_member" "cloudrun_postmark_token" {
-  secret_id = google_secret_manager_secret.postmark_token.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  secret_id  = google_secret_manager_secret.postmark_token.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.postmark_token]
 }
 
 resource "google_secret_manager_secret_iam_member" "cloudrun_email_webhook_pwd" {
-  secret_id = google_secret_manager_secret.email_webhook_pwd.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  secret_id  = google_secret_manager_secret.email_webhook_pwd.id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.email_webhook_pwd]
 }

@@ -105,6 +105,18 @@ export type FosDataContent = {
     id: string;
     previous?: string; // CID of previous node this alias pointed to
   }
+  /**
+   * A link node: a node other peers attach to. It keeps PREV edges to its
+   * previous states, MEMBER edges with capabilities, and PROPOSAL edges
+   * (branches) that members can approve. See docs/sync.md.
+   */
+  link?: {
+    createdAt: number
+  }
+  /** On a proposal node (a peer's branch at a link node). */
+  proposal?: {
+    status: 'open' | 'rejected'
+  }
   group?: {
     id: string;
     name: string;

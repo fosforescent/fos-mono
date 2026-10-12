@@ -34,6 +34,14 @@ export const verifyJWTMiddleware = async (req: Request, res: Response, next: Nex
     // Attach the claims to the request object to use in subsequent handlers
     (req as any).claims = decoded
 
+    // Peer credentials (issued through invites) may only use the peer-sync endpoints.
+    if ((decoded as unknown as { kind?: string }).kind === 'peer') {
+      const fullPath = `${req.baseUrl ?? ''}${req.path ?? ''}`
+      if (!fullPath.startsWith('/user/data/peer-sync')) {
+        return res.status(403).json({ error: 'Peer credentials are limited to sync' })
+      }
+    }
+
     // Query user and make sure they're approved
     const user = await prisma.userModel.findUnique({
       where: { user_name: (req as any).claims.username }

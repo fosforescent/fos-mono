@@ -1,6 +1,6 @@
 [package]
 name = "fos"
-version = "0.1.0"
+version = "0.1.1"
 description = "Fosforescent - Workflow CLI and Desktop App"
 authors = []
 license = "MIT"
@@ -16,6 +16,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# CLI/REPL mode: the TypeScript sync core runs in-process (QuickJS); HTTP for the account and the local server
+rquickjs = { version = "0.14", features = ["classes", "properties", "parallel"] }
+ureq = { version = "3", features = ["json"] }
+tiny_http = "0.12"
+toml = "1"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"

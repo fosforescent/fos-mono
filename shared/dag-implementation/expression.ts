@@ -1605,7 +1605,7 @@ export class FosExpression {
       history.push(current)
 
       // Find PREV child
-      const prevChild = current.getTargetChildren().find((child) =>
+      const prevChild: FosExpression | undefined = current.getTargetChildren().find((child: FosExpression) =>
         child.instructionNode.getId() === prevPrimitive.getId()
       )
 

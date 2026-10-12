@@ -1,6 +1,6 @@
 {
   "name": "@fosforescent/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fosforescent Desktop and Mobile App",
   "type": "module",
   "scripts": {
@@ -14,9 +14,17 @@
     "ios:build": "tauri ios build",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
-    "android:build": "tauri android build"
+    "android:build": "tauri android build",
+    "build:core": "esbuild ../shared/sync/embed.ts --bundle --format=iife --platform=browser --target=es2020 --outfile=src-tauri/js/fos-core.js --inject:src-tauri/js/prelude.js"
   },
-  "keywords": ["fosforescent", "desktop", "tauri", "mobile", "ios", "android"],
+  "keywords": [
+    "fosforescent",
+    "desktop",
+    "tauri",
+    "mobile",
+    "ios",
+    "android"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {

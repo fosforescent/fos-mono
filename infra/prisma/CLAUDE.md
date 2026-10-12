@@ -12,6 +12,7 @@ Database schema definition, migrations, and seed data management for the Fosfore
 ### Data Inputs
 
 #### Schema Definition
+- **PeerInviteModel**: device invites for the sync peer flow (hashed token, scope, status, granted JWT until collected); see `docs/sync.md`
 - **Model Definitions**: Database table structures and relationships
 - **Field Types**: PostgreSQL data types including JSON, DateTime, vectors
 - **Constraints**: Primary keys, foreign keys, unique constraints, indexes

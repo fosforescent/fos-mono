@@ -74,6 +74,7 @@ model UserModel {
   OwnedMCPServers               MCPServerModel[]               @relation("MCPServerOwner")
   ProvidedServices              MCPToolModel[]                 @relation("ServiceProvider")
   VoiceNotes                    VoiceNoteModel[]               @relation("VoiceNoteOwner")
+  PeerInvites                   PeerInviteModel[]
 }
 
 model InboundEmailModel {
@@ -248,6 +249,25 @@ model UserMCPServerAccessModel {
   server       MCPServerModel @relation(fields: [serverId], references: [id], onDelete: Cascade)
   
   @@unique([userId, serverId])
+}
+
+/// Invitation for a device to attach as a peer to one of a user's nodes (docs/sync.md, backend/sync/peerInvites.ts).
+/// The invitee claims the token, the inviting user approves, and the invitee receives a scoped peer JWT.
+model PeerInviteModel {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  tokenHash   String    @unique // sha256 of the invite token (the token itself is never stored)
+  requestId   String?   @unique // random id the invitee polls with after claiming
+  scope       Json      @default("[]") // partition alias ids from the root; [] = whole account
+  scopeNames  Json      @default("[]")
+  status      String    @default("open") // open | pending | approved | denied | expired | delivered
+  peerId      String?
+  peerName    String?
+  grantedJwt  String?   // held until the invitee collects it, then cleared
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        UserModel @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ApiTokenModel {

@@ -1,4 +1,6 @@
-# Terraform AWS Infrastructure
+# Terraform Infrastructure
+
+> **Status (2026-10):** the live infrastructure is on **GCP** (Cloud Run, Cloud SQL, Secret Manager, Pub/Sub, DNS; state in the `fos-terraform-state` GCS bucket, see `main.tf`). The AWS/SQS notes below describe the earlier design and are kept for reference. CI runs this configuration from `.github/workflows/deploy-infrastructure.yml` on push to `main`, authenticating with the `GCP_TERRAFORM_SA_KEY` secret and reading secret values from the `TF_DOTENV` secret (`infra/scripts/setup-terraform-ci.sh` sets both).
 
 This Terraform configuration sets up the AWS infrastructure for the Fosforescent project, including SQS queues, IAM users, and service accounts for the backend and event services.
 
@@ -122,7 +124,7 @@ The following secrets will be created:
 
 ### GitHub Actions Workflows
 - `deploy-infrastructure.yml` - Deploys Terraform infrastructure
-- `deploy-event-services.yml` - Builds and deploys event services
+- `deploy-backend.yml` - Builds the backend image, syncs the schema, rolls Cloud Run, deploys the web app to Cloudflare Pages (the former standalone event services now live in `backend/channels/`)
 
 ## Security Considerations
 

@@ -10,10 +10,9 @@ import {
 
 import { AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
 
-import * as jsSha3 from 'js-sha3'
-// js-sha3 is CJS; depending on the runtime's ESM interop the exports may land
-// on the namespace itself or on .default (e.g. under tsx ESM).
-const sha3_256 = jsSha3.sha3_256 ?? (jsSha3 as unknown as { default: typeof jsSha3 }).default.sha3_256
+import { hashContent } from './cid'
+import { migrateContext, needsMigration, type MigrationReport } from './migrations'
+export { hashContent }
 
 import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
@@ -62,6 +61,9 @@ export class FosStore {
   primitive: PrimitiveAliases
   private hashCache = new WeakMap<FosNodeContent, string>();
 
+  /** Set when the loaded context was in an older cid format and was migrated on load. */
+  migration: MigrationReport | null = null
+
   updateCtxCallback: ((data: AppStateLoaded["data"]) => void) | null;
   commitCallback: ((data: AppStateLoaded["data"]) => void) | null;
 
@@ -79,6 +81,22 @@ export class FosStore {
     this.primitive = constructPrimitiveAliases(this)
     this.updateCtxCallback = mutationCallback || null
     this.commitCallback = commitCallback || null
+
+    if (fosCtxData && needsMigration(fosCtxData.fosData.nodes)) {
+      // Older cid format on disk: rehash bottom-up into the current format (see migrations.ts).
+      const report = migrateContext(fosCtxData.fosData)
+      this.migration = report
+      const remapPath = (path: FosPath): FosPath => path.map(([a, b]) => [report.mapping[a] ?? a, report.mapping[b] ?? b])
+      fosCtxData = {
+        fosData: report.context,
+        trellisData: {
+          ...fosCtxData.trellisData,
+          focusRoute: remapPath(fosCtxData.trellisData.focusRoute ?? []),
+          collapsedList: (fosCtxData.trellisData.collapsedList ?? []).map(remapPath)
+        }
+      }
+      console.info(`[FosStore] migrated ${Object.keys(report.mapping).length} nodes from cid format v${report.fromVersions.join('/v')} to v${report.target}`)
+    }
 
     if (fosCtxData) {
 
@@ -140,6 +158,12 @@ export class FosStore {
   //   this.workers.push(taskPromise)
   //   return taskPromise
   // }
+
+
+  /** The current address of a cid from a context loaded in an older format (identity otherwise). */
+  remapCid(cid: string): string {
+    return this.migration?.mapping[cid] ?? cid
+  }
 
 
   getRootExpression(): FosExpression {
@@ -1061,41 +1085,7 @@ export class FosStore {
 
 
 
-// Helper function to deeply sort object keys
-function normalizeObject(obj: any): any {
-  if (obj === null || typeof obj !== 'object') {
-    return obj;
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map(normalizeObject);
-  }
-
-  return Object.keys(obj)
-    .sort()
-    .reduce((result: any, key: string) => {
-      result[key] = normalizeObject(obj[key]);
-      return result;
-    }, {});
-}
-
-function sortEdges(edges: FosPathElem[]): FosPathElem[] {
-  return edges.map(edge => [...edge].sort() as FosPathElem)
-    .sort((a, b) =>
-      a[0] < b[0] ? -1 :
-        a[0] > b[0] ? 1 :
-          a[1] < b[1] ? -1 :
-            a[1] > b[1] ? 1 : 0
-    )
-}
-
-export function hashContent(content: FosNodeContent): string {
-  const normalized = {
-    data: JSON.stringify(normalizeObject(content.data)),
-    children: sortEdges(content.children || [])
-  }
-  return sha3_256(JSON.stringify(normalized))
-}
+// Hashing lives in cid.ts (versioned formats); hashContent is re-exported above for existing importers.
 
 
 const aggMapContent = (content: FosNodeContent): Map<string, string[]> => {

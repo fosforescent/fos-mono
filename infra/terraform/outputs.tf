@@ -67,13 +67,13 @@ output "backend_service_url" {
 output "secret_ids" {
   description = "IDs of created secrets in Secret Manager"
   value = {
-    database_url        = google_secret_manager_secret.database_url.secret_id
-    jwt_secret          = google_secret_manager_secret.jwt_secret.secret_id
-    stripe_token        = google_secret_manager_secret.stripe_token.secret_id
-    openai_api_key      = google_secret_manager_secret.openai_api_key.secret_id
-    postmark_token      = google_secret_manager_secret.postmark_token.secret_id
-    email_webhook_pwd   = google_secret_manager_secret.email_webhook_pwd.secret_id
-    backend_sa_key      = google_secret_manager_secret.backend_sa_key.secret_id
+    database_url          = google_secret_manager_secret.database_url.secret_id
+    jwt_secret            = google_secret_manager_secret.jwt_secret.secret_id
+    stripe_token          = google_secret_manager_secret.stripe_token.secret_id
+    openai_api_key        = google_secret_manager_secret.openai_api_key.secret_id
+    postmark_token        = google_secret_manager_secret.postmark_token.secret_id
+    email_webhook_pwd     = google_secret_manager_secret.email_webhook_pwd.secret_id
+    backend_sa_key        = google_secret_manager_secret.backend_sa_key.secret_id
     event_services_sa_key = google_secret_manager_secret.event_services_sa_key.secret_id
   }
 }

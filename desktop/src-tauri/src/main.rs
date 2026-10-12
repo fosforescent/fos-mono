@@ -1,32 +1,37 @@
-//! Fosforescent - Workflow CLI and Desktop App
+//! Fosforescent: one binary, two modes.
 //!
-//! A single binary that provides both GUI and CLI functionality.
+//!   fos                   GUI for your account (context: ~, state in ~/.fos)
+//!   fos <dir>             GUI for a project directory (fos.config.toml, state in <dir>/.fos)
+//!   fos [dir] run         CLI: sync, print the tree, then serve nearby devices and local agents
+//!   fos [dir] repl        interactive shell over the same tasks
+//!   fos [dir] ls|add|done|open|status|sync|attach|login|detach|init|serve
 //!
-//! Usage:
-//!   fos              # Launch GUI in current directory
-//!   fos <path>       # Launch GUI for specified directory
-//!   fos export md    # Export as Markdown
-//!   fos export html  # Export as HTML
-//!   fos export latex # Export as LaTeX
-//!   fos repl         # Interactive REPL
-//!   fos init         # Initialize .fos file
-//!   fos help         # Show help
+//! Both modes share the directory's `.fos/` state and the embedded sync core
+//! (shared/sync, bundled into js/fos-core.js), so the GUI and the shell are
+//! one device. The home context attaches to the account root via a browser
+//! sign-in (SSO-capable) or a connect token; a project directory attaches to
+//! the node its config/invite names.
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-mod cli;
+mod client;
+mod commands;
+mod core;
+mod local_server;
+mod project;
+mod workspace;
 
 #[derive(Parser)]
 #[command(name = "fos")]
 #[command(author = "Fosforescent")]
-#[command(version = "0.1.0")]
-#[command(about = "Fosforescent - Workflow CLI and Desktop App", long_about = None)]
+#[command(version = "0.1.1")]
+#[command(about = "Fosforescent — tasks that sync across your devices, directories and agents", long_about = None)]
 struct Cli {
-    /// Directory to use (default: current directory)
+    /// Directory to use as context (default: your home directory = your account root)
     #[arg(global = true)]
     path: Option<PathBuf>,
 
@@ -36,461 +41,151 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Export current node to various formats
-    Export {
-        /// Output format: md, html, latex
-        format: String,
-    },
-    /// Start interactive REPL for graph navigation
-    Repl,
-    /// Initialize .fos file in current directory
-    Init,
-    /// Launch the GUI (default behavior)
+    /// Launch the GUI (default)
     Gui,
-    /// Reset/clear stored data
-    Reset {
-        /// Full reset: clear local .fos, ~/.fos, and show browser instructions
+    /// Sync, show the tasks, then keep serving local devices and agents (peer-sync, MCP, WebRTC relay)
+    Run {
         #[arg(long)]
-        full: bool,
-        /// Force reset without confirmation
+        port: Option<u16>,
+        #[arg(long)]
+        host: Option<String>,
+    },
+    /// Serve only (no initial sync), for offline local networks
+    Serve {
+        #[arg(long)]
+        port: Option<u16>,
+        #[arg(long)]
+        host: Option<String>,
+    },
+    /// Interactive shell
+    Repl,
+    /// Print the task tree
+    Ls,
+    /// Sync with the account now
+    Sync,
+    /// Add a task (quote the title; optionally under another task by id prefix)
+    Add {
+        title: String,
+        #[arg(long, short)]
+        under: Option<String>,
+    },
+    /// Mark a task done
+    Done { id: String },
+    /// Reopen a task
+    Open { id: String },
+    /// Directory, branch, attachment and connection status (JSON)
+    Status,
+    /// Attach this directory with a connect token (from "Invite a device here" on a node)
+    Attach { token: Option<String> },
+    /// Sign in to your account (browser sign-in by default; --token for a connect token; --password to type credentials)
+    Login {
+        #[arg(long)]
+        token: Option<String>,
+        #[arg(long)]
+        password: bool,
+    },
+    /// Detach this directory from the account (local tasks are kept)
+    Detach,
+    /// Approve a proposal on the attached node (needs the approve capability)
+    Approve { id: String },
+    /// Reject a proposal on the attached node
+    Reject { id: String },
+    /// Write fos.config.toml here so this directory syncs as a project
+    Init {
+        #[arg(long)]
+        server: Option<String>,
+        #[arg(long)]
+        token: Option<String>,
+        #[arg(long, default_value_t = 4777)]
+        port: u16,
+    },
+    /// Remove this context's local .fos state
+    Reset {
         #[arg(short, long)]
         force: bool,
-    },
-    /// Dump stored data (IndexedDB and .fos file)
-    Dump {
-        /// Only show IndexedDB data
-        #[arg(long)]
-        idb: bool,
-        /// Only show .fos file data
-        #[arg(long)]
-        fos: bool,
-        /// Open interactive SQLite console for IndexedDB
-        #[arg(long)]
-        console: bool,
     },
 }
 
 fn main() {
     let cli = Cli::parse();
+    let path = cli.path.clone();
 
-    // Determine the working directory
-    let work_dir = cli.path.clone().unwrap_or_else(|| {
-        env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
-
-    let fos_path = work_dir.join(".fos");
-
-    match cli.command {
-        Some(Commands::Export { format }) => {
-            run_export(&fos_path, &format);
-        }
-        Some(Commands::Repl) => {
-            run_repl(&fos_path);
-        }
-        Some(Commands::Init) => {
-            run_init(&fos_path);
-        }
-        Some(Commands::Reset { full, force }) => {
-            run_reset(&fos_path, full, force);
-        }
-        Some(Commands::Dump { idb, fos, console }) => {
-            run_dump(&fos_path, idb, fos, console);
-        }
-        Some(Commands::Gui) | None => {
-            // Check if path argument looks like a subcommand that wasn't recognized
-            if let Some(ref path) = cli.path {
-                let path_str = path.to_string_lossy();
-                if path_str == "export" || path_str == "repl" || path_str == "init" {
-                    eprintln!(
-                        "{}: '{}' looks like a command. Did you mean 'fos {}'?",
-                        "Warning".yellow(),
-                        path_str,
-                        path_str
-                    );
-                }
+    // `fos somedir` with no subcommand is the GUI; warn when the "directory" looks like a typo'd command.
+    if cli.command.is_none() {
+        if let Some(p) = &path {
+            if !p.exists() {
+                eprintln!("{}: {} does not exist (commands go after the directory: fos . ls)", "Error".red(), p.display());
+                std::process::exit(2);
             }
-            run_gui(&work_dir, &fos_path);
         }
     }
-}
 
-fn run_export(fos_path: &PathBuf, format: &str) {
-    if !fos_path.exists() {
-        eprintln!(
-            "{}: No .fos file found at {}",
-            "Error".red(),
-            fos_path.display()
-        );
-        eprintln!("Run 'fos init' to create one.");
-        std::process::exit(1);
-    }
-
-    match cli::load_fos_file(fos_path) {
-        Ok(fos_file) => {
-            let data = &fos_file.fos_data;
-            let output = match format.to_lowercase().as_str() {
-                "md" | "markdown" => cli::export_to_markdown(data),
-                "html" => cli::export_to_html(data),
-                "latex" | "tex" => cli::export_to_latex(data),
-                "pdf" => {
-                    eprintln!(
-                        "{}: PDF export not yet implemented in native CLI.",
-                        "Error".red()
-                    );
-                    eprintln!("Use 'fos export html > output.html' and convert manually.");
-                    std::process::exit(1);
-                }
-                _ => {
-                    eprintln!("{}: Unknown format '{}'", "Error".red(), format);
-                    eprintln!("Valid formats: md, html, latex");
-                    std::process::exit(1);
-                }
-            };
-            println!("{}", output);
+    let result = match cli.command {
+        None | Some(Commands::Gui) => run_gui(path.as_deref()),
+        Some(Commands::Init { server, token, port }) => {
+            let dir = path.clone().unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            commands::cmd_init(&dir, server.as_deref(), token.as_deref(), port)
         }
-        Err(e) => {
-            eprintln!("{}: {}", "Error".red(), e);
-            std::process::exit(1);
-        }
-    }
-}
-
-fn run_repl(fos_path: &PathBuf) {
-    if !fos_path.exists() {
-        eprintln!(
-            "{}: No .fos file found at {}",
-            "Error".red(),
-            fos_path.display()
-        );
-        eprintln!("Run 'fos init' to create one.");
-        std::process::exit(1);
-    }
-
-    if let Err(e) = cli::run_repl(fos_path) {
+        Some(Commands::Reset { force }) => reset(path.as_deref(), force),
+        Some(other) => commands::open_workspace(path.as_deref()).and_then(|mut ws| match other {
+            Commands::Run { port, host } => commands::cmd_run(ws, false, port, host.as_deref()),
+            Commands::Serve { port, host } => commands::cmd_run(ws, true, port, host.as_deref()),
+            Commands::Repl => commands::cmd_repl(ws),
+            Commands::Ls => commands::cmd_ls(&ws),
+            Commands::Sync => commands::cmd_sync(&mut ws),
+            Commands::Add { title, under } => commands::cmd_add(&mut ws, title.trim(), under.as_deref()),
+            Commands::Done { id } => commands::cmd_done(&mut ws, &id, true),
+            Commands::Open { id } => commands::cmd_done(&mut ws, &id, false),
+            Commands::Status => commands::cmd_status(&ws),
+            Commands::Attach { token } => commands::cmd_attach(&mut ws, token.as_deref()),
+            Commands::Login { token, password } => commands::cmd_login(&mut ws, token.as_deref(), password),
+            Commands::Detach => commands::cmd_detach(&mut ws),
+            Commands::Approve { id } => commands::cmd_decide(&mut ws, &id, "approve"),
+            Commands::Reject { id } => commands::cmd_decide(&mut ws, &id, "reject"),
+            Commands::Gui | Commands::Init { .. } | Commands::Reset { .. } => unreachable!(),
+        }),
+    };
+    if let Err(e) = result {
         eprintln!("{}: {}", "Error".red(), e);
         std::process::exit(1);
     }
 }
 
-fn run_init(fos_path: &PathBuf) {
-    if fos_path.exists() {
-        println!(
-            "{}: .fos file already exists at {}",
-            "Info".cyan(),
-            fos_path.display()
-        );
-        return;
-    }
-
-    // Create empty .fos file with initial structure
-    let initial_content = r#"fosData:
-  nodes: {}
-  rootNodeId: null
-  route: []
-trellisData:
-  focusChar: null
-  focusRoute: []
-  view: Queue
-"#;
-
-    match fs::write(fos_path, initial_content) {
-        Ok(_) => {
-            println!(
-                "{} Initialized .fos file at {}",
-                "✓".green(),
-                fos_path.display()
-            );
-            println!("Run 'fos' to launch the GUI or 'fos repl' for CLI.");
-        }
-        Err(e) => {
-            eprintln!("{}: Failed to create .fos file: {}", "Error".red(), e);
-            std::process::exit(1);
-        }
-    }
-}
-
-fn run_reset(fos_path: &PathBuf, full: bool, force: bool) {
+fn reset(path: Option<&Path>, force: bool) -> Result<(), String> {
     use std::io::{self, Write};
-
-    let home_fos = dirs::home_dir().map(|h| h.join(".fos"));
-
-    // Show what will be deleted
-    println!("{}", "Fosforescent Reset".cyan().bold());
-    println!();
-
-    let mut targets: Vec<(PathBuf, &str)> = vec![];
-
-    if fos_path.exists() {
-        targets.push((fos_path.clone(), "Local .fos file"));
+    let project = project::Project::locate(path)?;
+    if !project.state_dir.exists() {
+        println!("{}: nothing to reset at {}", "Info".cyan(), project.state_dir.display());
+        return Ok(());
     }
-
-    if full {
-        if let Some(ref home) = home_fos {
-            if home.exists() {
-                targets.push((home.clone(), "Home ~/.fos directory"));
-            }
-        }
-    }
-
-    if targets.is_empty() {
-        println!("{}: No .fos data found to reset.", "Info".cyan());
-        return;
-    }
-
-    println!("The following will be deleted:");
-    for (path, desc) in &targets {
-        println!("  {} {}", "•".red(), desc);
-        println!("    {}", path.display().to_string().dimmed());
-    }
-    println!();
-
-    if full {
-        println!(
-            "{}: To clear browser data (IndexedDB), run this in your browser console:",
-            "Note".yellow()
-        );
-        println!("  {}", "localStorage.clear(); indexedDB.deleteDatabase('fosforescent-offline'); location.reload();".dimmed());
-        println!();
-    }
-
-    // Confirm unless --force
+    println!("This deletes the local state (device identity, session, task replicas) in {}", project.state_dir.display());
     if !force {
         print!("Continue? [y/N] ");
-        io::stdout().flush().unwrap();
-
+        io::stdout().flush().map_err(|e| e.to_string())?;
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-
+        io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
         if !input.trim().eq_ignore_ascii_case("y") {
             println!("{}", "Aborted.".yellow());
-            return;
+            return Ok(());
         }
     }
-
-    // Delete the files
-    let mut errors = false;
-    for (path, desc) in &targets {
-        let result = if path.is_dir() {
-            fs::remove_dir_all(path)
-        } else {
-            fs::remove_file(path)
-        };
-
-        match result {
-            Ok(_) => println!("{} Deleted {}", "✓".green(), desc),
-            Err(e) => {
-                eprintln!("{} Failed to delete {}: {}", "✗".red(), desc, e);
-                errors = true;
-            }
-        }
-    }
-
-    if errors {
-        std::process::exit(1);
-    }
-
-    println!();
-    println!("{} Reset complete. Run 'fos init' to create a fresh .fos file.", "✓".green());
+    fs::remove_dir_all(&project.state_dir).map_err(|e| e.to_string())?;
+    println!("{} removed {}", "✓".green(), project.state_dir.display());
+    Ok(())
 }
 
-fn run_dump(fos_path: &PathBuf, idb_only: bool, fos_only: bool, open_console: bool) {
-    use std::process::Command;
-
-    // If --console flag, open SQLite CLI directly
-    if open_console {
-        if let Some(db_path) = find_indexeddb_sqlite() {
-            println!("{} Opening SQLite CLI for: {}", "→".cyan(), db_path.display());
-            println!("{}", "Tip: Try 'SELECT name FROM sqlite_master WHERE type=\"table\";'".dimmed());
-            println!();
-
-            let status = Command::new("sqlite3")
-                .arg(&db_path)
-                .status();
-
-            match status {
-                Ok(s) if s.success() => {}
-                Ok(_) => eprintln!("{}: sqlite3 exited with error", "Error".red()),
-                Err(e) => {
-                    eprintln!("{}: Failed to run sqlite3: {}", "Error".red(), e);
-                    eprintln!("Install sqlite3 or use a GUI like DB Browser for SQLite");
-                    eprintln!("Database path: {}", db_path.display());
-                }
-            }
-        } else {
-            eprintln!("{}: No IndexedDB SQLite file found", "Error".red());
-            eprintln!("Run the app first to create the database");
-        }
-        return;
+fn run_gui(path: Option<&Path>) -> Result<(), String> {
+    let project = project::Project::locate(path)?;
+    project.ensure_state()?;
+    println!("{}", "Launching Fosforescent…".cyan());
+    println!("  context: {}", project.label());
+    println!("  state:   {}", project.state_dir.display());
+    env::set_var("FOS_TARGET_DIR", &project.dir);
+    env::set_var("FOS_DIR", &project.state_dir);
+    env::set_var("FOS_SERVER", project.server());
+    if project.is_home {
+        env::set_var("FOS_HOME_CONTEXT", "1");
     }
-
-    let show_both = !idb_only && !fos_only;
-
-    // Dump .fos file
-    if show_both || fos_only {
-        println!("{}", "=== .fos File ===".cyan().bold());
-        if fos_path.exists() {
-            match fs::read_to_string(fos_path) {
-                Ok(content) => {
-                    println!("Path: {}", fos_path.display().to_string().dimmed());
-                    println!("{}", content);
-                }
-                Err(e) => eprintln!("{}: Failed to read .fos: {}", "Error".red(), e),
-            }
-        } else {
-            println!("{}", "No .fos file found".yellow());
-        }
-        println!();
-    }
-
-    // Dump IndexedDB
-    if show_both || idb_only {
-        println!("{}", "=== IndexedDB (WebKit) ===".cyan().bold());
-        dump_indexeddb();
-    }
-}
-
-fn find_indexeddb_sqlite() -> Option<PathBuf> {
-    let idb_base = dirs::data_dir()?.join("com.fosforescent.desktop/WebKit/WebsiteData/IndexedDB");
-
-    if !idb_base.exists() {
-        return None;
-    }
-
-    // Find the first .sqlite3 file
-    for entry in fs::read_dir(&idb_base).ok()?.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Ok(files) = fs::read_dir(&path) {
-                for file in files.flatten() {
-                    let file_path = file.path();
-                    if file_path.extension().map(|e| e == "sqlite3").unwrap_or(false) {
-                        return Some(file_path);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn dump_indexeddb() {
-    use rusqlite::Connection;
-
-    // WebKitGTK stores IndexedDB in this location
-    let idb_base = dirs::data_dir()
-        .map(|d| d.join("com.fosforescent.desktop/WebKit/WebsiteData/IndexedDB"));
-
-    let Some(idb_path) = idb_base else {
-        println!("{}", "Could not determine IndexedDB path".yellow());
-        return;
-    };
-
-    if !idb_path.exists() {
-        println!("Path: {}", idb_path.display().to_string().dimmed());
-        println!("{}", "No IndexedDB data found".yellow());
-        return;
-    }
-
-    println!("Path: {}", idb_path.display().to_string().dimmed());
-
-    // Find SQLite files
-    let entries = match fs::read_dir(&idb_path) {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("{}: Failed to read IndexedDB dir: {}", "Error".red(), e);
-            return;
-        }
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            // Each origin has its own directory
-            println!("\n{}: {}", "Origin".green(), path.file_name().unwrap_or_default().to_string_lossy());
-
-            // Look for IndexedDB.sqlite3 files
-            if let Ok(files) = fs::read_dir(&path) {
-                for file in files.flatten() {
-                    let file_path = file.path();
-                    if file_path.extension().map(|e| e == "sqlite3").unwrap_or(false) {
-                        println!("  {}: {}", "Database".blue(), file_path.file_name().unwrap_or_default().to_string_lossy());
-
-                        // Try to read the SQLite database
-                        match Connection::open(&file_path) {
-                            Ok(conn) => {
-                                // List tables
-                                if let Ok(mut stmt) = conn.prepare("SELECT name FROM sqlite_master WHERE type='table'") {
-                                    if let Ok(tables) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                                        for table in tables.flatten() {
-                                            println!("    Table: {}", table);
-
-                                            // Try to get row count
-                                            if let Ok(count) = conn.query_row::<i64, _, _>(
-                                                &format!("SELECT COUNT(*) FROM \"{}\"", table),
-                                                [],
-                                                |r| r.get(0)
-                                            ) {
-                                                println!("      Rows: {}", count);
-                                            }
-
-                                            // For Records table, show some data
-                                            if table == "Records" {
-                                                if let Ok(mut stmt) = conn.prepare(&format!(
-                                                    "SELECT * FROM \"{}\" LIMIT 5", table
-                                                )) {
-                                                    if let Ok(mut rows) = stmt.query([]) {
-                                                        println!("      Sample data:");
-                                                        while let Ok(Some(row)) = rows.next() {
-                                                            // Try to get key and value columns
-                                                            if let (Ok(key), Ok(value)) = (
-                                                                row.get::<_, Vec<u8>>(1),
-                                                                row.get::<_, Vec<u8>>(2)
-                                                            ) {
-                                                                let key_str = String::from_utf8_lossy(&key);
-                                                                let value_preview: String = String::from_utf8_lossy(&value)
-                                                                    .chars()
-                                                                    .take(100)
-                                                                    .collect();
-                                                                println!("        {} => {}...", key_str, value_preview);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                println!("    {}: {}", "Could not open".yellow(), e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn run_gui(work_dir: &PathBuf, fos_path: &PathBuf) {
-    // Ensure .fos file exists
-    if !fos_path.exists() {
-        println!(
-            "{}: Creating .fos file at {}",
-            "Info".cyan(),
-            fos_path.display()
-        );
-        run_init(fos_path);
-    }
-
-    println!("{}", "Launching Fosforescent...".cyan());
-    println!("  Directory: {}", work_dir.display());
-    println!("  .fos file: {}", fos_path.display());
-
-    // Set environment variables for the Tauri app to pick up
-    env::set_var("FOS_TARGET_DIR", work_dir);
-    env::set_var("FOS_DIR", fos_path);
-
-    // Launch the Tauri GUI
     app_lib::run();
+    Ok(())
 }

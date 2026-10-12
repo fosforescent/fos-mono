@@ -1,0 +1,146 @@
+name: Desktop Build & Release
+
+# Builds the `fos` binary (Tauri GUI + CLI) for macOS, Windows and Linux and
+# publishes the installers to a GitHub Release.
+# - Tag push (v*): build all three and attach them to the release for that tag
+# - workflow_dispatch: build only, installers kept as workflow artifacts
+#
+# Binaries are UNSIGNED for now: macOS users must right-click → Open (or
+# `xattr -d com.apple.quarantine`), Windows shows the SmartScreen warning.
+# Signing/notarization: see docs/mobile-release.md, "Desktop".
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (universal)
+            os: macos-latest
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+            bin: desktop/src-tauri/target/universal-apple-darwin/release/fos
+            archive: fos-macos-universal.tar.gz
+          - name: Windows (x64)
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+            args: ''
+            bin: desktop/src-tauri/target/release/fos.exe
+            archive: fos-windows-x64.zip
+          - name: Linux (x64)
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            rust_targets: x86_64-unknown-linux-gnu
+            args: ''
+            bin: desktop/src-tauri/target/release/fos
+            archive: fos-linux-x64.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Install workspace dependencies (tauri CLI, esbuild)
+        run: npm ci
+
+      - name: Install web dependencies
+        run: cd web && npm ci
+
+      - name: Rebuild the embedded sync core
+        run: cd desktop && npm run build:core
+
+      - name: Build and (on tags) publish installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_API_URL: ${{ vars.DESKTOP_API_URL || vars.MOBILE_API_URL || 'https://api.fosforescent.com' }}
+        with:
+          projectPath: desktop
+          args: ${{ matrix.args }}
+          # Only create/update a GitHub Release on tag pushes.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Fosforescent {0}', github.ref_name) || '' }}
+          releaseBody: |
+            `fos` desktop app and command line for macOS, Windows and Linux.
+            Unsigned builds: on macOS right-click → Open the first time; on Windows accept the SmartScreen prompt.
+            The bare `fos` binary for terminal use is in the fos-*.tar.gz / .zip archives.
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+      - name: Archive the bare fos binary (CLI use)
+        shell: bash
+        run: |
+          mkdir -p out
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "out/${{ matrix.archive }}" "./${{ matrix.bin }}"
+          else
+            tar -C "$(dirname '${{ matrix.bin }}')" -czf "out/${{ matrix.archive }}" "$(basename '${{ matrix.bin }}')"
+          fi
+          ls -la out
+
+      - name: Upload bare binary as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: out/${{ matrix.archive }}
+
+      - name: Upload installers as workflow artifacts (manual runs)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.target }}
+          path: |
+            desktop/src-tauri/target/**/release/bundle/**/*.dmg
+            desktop/src-tauri/target/**/release/bundle/**/*.msi
+            desktop/src-tauri/target/**/release/bundle/**/*.exe
+            desktop/src-tauri/target/**/release/bundle/**/*.deb
+            desktop/src-tauri/target/**/release/bundle/**/*.rpm
+            desktop/src-tauri/target/**/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/release/bundle/**/*.dmg
+            desktop/src-tauri/target/release/bundle/**/*.msi
+            desktop/src-tauri/target/release/bundle/**/*.exe
+            desktop/src-tauri/target/release/bundle/**/*.deb
+            desktop/src-tauri/target/release/bundle/**/*.rpm
+            desktop/src-tauri/target/release/bundle/**/*.AppImage
+          if-no-files-found: warn
+
+      - name: Attach bare binary to the release (tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "out/${{ matrix.archive }}" --clobber

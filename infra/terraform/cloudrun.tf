@@ -151,6 +151,13 @@ resource "google_cloud_run_v2_service" "backend" {
         value = local.node_env[terraform.workspace]
       }
 
+      # Where the web app lives; the CLI device sign-in (fos login) sends the browser here (?device=CODE).
+      # The dev environment is what serves fosforescent.com today (dev.fosforescent.com has no DNS record).
+      env {
+        name  = "WEB_URL"
+        value = "https://fosforescent.com"
+      }
+
       env {
         name  = "GCP_PROJECT_ID"
         value = var.gcp_project_id
