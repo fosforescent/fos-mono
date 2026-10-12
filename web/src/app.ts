@@ -31,7 +31,9 @@ import {
   resolveRef,
   SERVER_CAPABILITIES,
   setMemberCapabilitiesAt,
+  setRowContentAt,
   type PeerPolicy,
+  type ResourceType,
   setMarketAt,
   setQueryOptionsAt,
   setRowKind,
@@ -566,10 +568,9 @@ export class App {
     const { extras, templateName, ...rest } = options
     let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
     if (kind === 'allocation') {
-      const bank = this.bankFor(at, data.allocation?.unit)
-      if (!bank) { this.notify('error', 'No resource bank in this context: add one (@account Travel 500, @calendar Week 40h, @inventory Shelf 12) above, or put the allocation under a requirement that names its resource.'); return id }
-      const base = data.allocation ?? { resource: '', type: bank.resource.type, amount: 0, unit: bank.resource.unit }
-      data = { ...data, allocation: { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by: this.state.session?.username ?? this.state.deviceName } }
+      const resolved = this.allocationWithBank(at, data.allocation)
+      if (!resolved) return id
+      data = { ...data, allocation: resolved }
     }
     this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...rest, ...data, author, id }))
     if (templateName && kind === 'task') this.applyTemplate(at, id, templateName)
@@ -604,21 +605,82 @@ export class App {
     return view(this.state.replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find((t) => t.id === id) ?? null
   }
   /**
-   * The bank an allocation added under `at` draws from, its parent context: the nearest bank above it; otherwise,
-   * under an allocation requirement, the first bank in the replica of the resource the requirement names (or, when
-   * it names none, whose unit matches); otherwise the first bank anywhere when there is exactly one.
+   * The bank an allocation of `type` added under `at` draws from, its parent context: the nearest bank of that type
+   * above it; otherwise, under an allocation requirement, a bank of the resource the requirement names; otherwise
+   * the default pool of the type (the first bank of that type at the top level, else the first anywhere); with no
+   * type (legacy), the nearest bank above or the only bank there is.
    */
-  bankFor(at: Scope, unit?: string): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
-    const above = this.nearestBank(at)
-    if (above) return above
-    const banks = this.banks().map(({ row }) => row)
+  bankFor(at: Scope, type?: ResourceType | null, person?: string): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
+    type Bank = TaskView & { resource: NonNullable<TaskView['resource']> }
+    const fits = (b: Bank) => (!type || b.resource.type === type) && (type !== 'person' || !person || b.title.trim().toLowerCase() === person.toLowerCase())
+    for (let i = at.length; i > 0; i--) {
+      const row = this.rowAt(at.slice(0, i))
+      if (row?.kind === 'resource' && row.resource && fits(row as Bank)) return row as Bank
+    }
+    const all = this.banks()
     const parent = this.rowAt(at)
     const req = parent?.kind === 'requirement' ? parent.requirement : undefined
-    if (req?.capability === 'allocation') {
-      const match = banks.find((b) => (req.resource ? b.resource.type === req.resource : unit && unit !== 'unit' ? b.resource.unit === unit : false))
-      if (match) return match
+    if (req?.capability === 'allocation' && req.resource && (!type || req.resource === type)) {
+      const match = all.find(({ row }) => row.resource.type === req.resource && fits(row))
+      if (match) return match.row
     }
-    return banks.length === 1 ? (banks[0] as TaskView & { resource: NonNullable<TaskView['resource']> }) : null
+    if (type) {
+      const pool = all.find(({ row, path }) => path.length === 0 && fits(row)) ?? all.find(({ row }) => fits(row))
+      return pool ? pool.row : null
+    }
+    return all.length === 1 ? (all[0] as { row: Bank }).row : null
+  }
+  /**
+   * An allocation with its bank resolved from the parent context (`bankFor`), or null (with a notice) when there is
+   * none. A person allocation needs that person's bank only when it holds a window; otherwise it stands on its own.
+   */
+  allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined): NonNullable<RowExtras['allocation']> | null {
+    const by = this.state.session?.username ?? this.state.deviceName
+    const base = allocation ?? { resource: '', type: 'inventory' as ResourceType, amount: 0, unit: 'unit' }
+    const windowed = base.start !== undefined || base.end !== undefined
+    if (base.type === 'person' && !windowed) return { ...base, by }
+    const bank = this.bankFor(at, allocation ? base.type : null, base.person)
+    if (!bank) {
+      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h` }
+      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${base.person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
+      return null
+    }
+    return { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by }
+  }
+  /**
+   * A row's text was edited in its raw marker form: re-parse it and rewrite the row in place (kind, text, data),
+   * keeping its id and children. Templates named in the text are applied as for a new row.
+   */
+  rewriteRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): void {
+    let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
+    if (parsed.kind === 'allocation') {
+      const resolved = this.allocationWithBank(at, parsed.extras?.allocation)
+      if (!resolved) return
+      extras = { ...extras, allocation: resolved }
+    }
+    const before = this.rowAt([...at, id])
+    this.edit(setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.kind, parsed.text, extras, this.now()))
+    if (parsed.templateName && parsed.kind === 'task' && before?.template?.name !== parsed.templateName) this.applyTemplate(at, id, parsed.templateName)
+    if (parsed.templateName && parsed.kind === 'requirement' && extras.requirement?.capability === 'task') {
+      const inside = view(this.state.replica, [...this.state.view, ...at, id])?.tasks ?? []
+      if (!inside.some((t) => t.kind === 'task' && t.template?.name === parsed.templateName)) this.addRowAt([...at, id], 'task', parsed.templateName, { templateName: parsed.templateName })
+    }
+  }
+  /**
+   * A peer dropped on a row makes that row a group: the peer becomes a member (may read and propose). The first
+   * member brings the fos account server along as a member too (it can be removed like any other).
+   */
+  addPeerToRow(at: Scope, rowId: string, peerId: string, name: string): void {
+    const path = [...this.state.view, ...at, rowId]
+    const node = view(this.state.replica, path)
+    if (!node) return
+    let replica = this.state.replica
+    const session = this.state.session
+    const serverId = this.state.replica.meta.serverPeerId ?? (session?.kind === 'user' ? `user:${session.username}` : null)
+    if (!node.members.length && serverId && peerId !== serverId) replica = addMemberAt(replica, path, serverId, 'fos', ['read', 'edit', 'relay'], this.now())
+    if (!node.members.some((m) => m.peerId === peerId)) replica = addMemberAt(replica, path, peerId, name, ['read', 'edit'], this.now())
+    this.edit(replica)
+    this.notify('info', `@${name} is a member of “${node.name ?? 'this row'}” (a group: its members see it and may propose).`)
   }
   /** Resource banks anywhere in the replica, with their paths. */
   banks(): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
@@ -650,9 +712,10 @@ export class App {
     const me = this.state.replica.meta.peerId
     const node = this.currentView()
     const nameOf = (id: string) => (id.startsWith('user:') ? id.slice(5) : id.slice(0, 8))
-    if (session?.kind === 'user') {
-      const id = this.state.replica.meta.serverPeerId ?? `user:${session.username}`
-      const online = this.transport() === 'account' && this.state.connection !== 'offline'
+    // the fos account server is always a peer of the root context (sign in happens on its row when not connected)
+    if (session?.kind === 'user' || this.state.view.length === 0) {
+      const id = this.state.replica.meta.serverPeerId ?? (session ? `user:${session.username}` : 'fos')
+      const online = !!session && this.transport() === 'account' && this.state.connection !== 'offline'
       peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked })
     }
     for (const m of node?.members ?? []) {
@@ -1010,11 +1073,7 @@ export class App {
   }
   /** A blank/plain row typed with a data prefix (`-` requirement, `?` query, `@calendar` bank, `$ 50` allocation, `` ` `` template) becomes a row of that kind in its place. */
   convertPlainRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): void {
-    const created = this.addRowAt(at, parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, templateName: parsed.templateName, position: { relativeTo: id, position: 'below' } })
-    const madeIt = !!view(this.state.replica, [...this.state.view, ...at])?.tasks.some((t) => t.id === created)
-    if (!madeIt) return // e.g. an allocation outside a bank: the row stays plain with its text
-    this.deleteTaskAt(at, id)
-    this.set({ selected: [...at, created] })
+    this.rewriteRowAt(at, id, parsed)
   }
   resolveChoiceAt(at: Scope, choiceId: string, pick: number | null): void {
     this.edit(resolve(this.state.replica, [...this.state.view, ...at], choiceId, pick, this.now()))

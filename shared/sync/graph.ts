@@ -144,7 +144,8 @@ export function isTaskEdge(store: FosStore, edge: FosPathElem): boolean {
 
 export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref' | 'requirement' | 'supply' | 'query' | 'resource' | 'allocation' | 'template'
 export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref', 'requirement', 'supply', 'query', 'resource', 'allocation', 'template']
-export type ResourceType = 'calendar' | 'account' | 'inventory'
+/** Kinds of resource bank: time, money, things, and a person (their own calendar). Each has its own calendar: an allocation may carry a start/end window. */
+export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person'
 /**
  * What a requirement asks for, named after the kind of child row that fills it: a done `task`, an `allocation`
  * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
@@ -620,7 +621,8 @@ export type TaskView = {
   blockedBy?: string[]
   /** Tasks that execute a template: which one. */
   template?: { id: string; name: string }
-  requirement?: NonNullable<FosDataContent['requirement']> & { satisfied: boolean; summary: string }
+  /** `have`: for allocation requirements, the amount already allocated to it (child allocations and supplied references); `need` its amount. */
+  requirement?: NonNullable<FosDataContent['requirement']> & { satisfied: boolean; summary: string; have?: number; need?: number }
   supply?: NonNullable<FosDataContent['supply']>
   query?: NonNullable<FosDataContent['query']>
   resource?: NonNullable<FosDataContent['resource']> & { allocated: number; available: number | null }
@@ -695,7 +697,10 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
   if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers; if (value.data.template) view.template = value.data.template }
-  if (kind === 'requirement' && value.data.requirement) view.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement) }
+  if (kind === 'requirement' && value.data.requirement) {
+    const progress = requirementProgress(store, nodeCid)
+    view.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement), ...(progress ? progress : {}) }
+  }
   if (kind === 'supply' && value.data.supply) view.supply = value.data.supply
   if (kind === 'query') view.query = value.data.query ?? {}
   if (kind === 'resource' && value.data.resource) { const allocated = allocatedIn(store, nodeCid); view.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === undefined ? null : value.data.resource.capacity - allocated } }
@@ -737,6 +742,31 @@ function allocationFills(req: NonNullable<FosDataContent['requirement']>, a: Fos
   return !!a && (!req.resource || a.type === req.resource) && (req.amount === undefined || a.amount >= req.amount)
 }
 
+/** Does an allocation count towards an allocation requirement at all (resource type matches), whatever its amount? */
+function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined): boolean {
+  return !!a && (!req.resource || a.type === req.resource)
+}
+
+/**
+ * How much of an allocation requirement is covered: the amounts of the allocation rows inside it and of the
+ * allocations its supplies reference, against the amount it asks for. Null for other requirement kinds or when
+ * the requirement names no amount.
+ */
+export function requirementProgress(store: FosStore, requirementCid: string, root?: string): { have: number; need: number } | null {
+  const req = valueContent(store, requirementCid).data.requirement
+  if (!req || req.capability !== 'allocation' || req.amount === undefined) return null
+  let have = 0
+  for (const { kind, value } of childRows(store, requirementCid)) {
+    if (kind === 'allocation' && allocationMatches(req, value.data.allocation)) have += value.data.allocation?.amount ?? 0
+    if (kind === 'supply' && value.data.supply?.capability === 'allocation' && value.data.supply.ref) {
+      const found = findRowByAlias(store, root ?? rootTargetCid(store), value.data.supply.ref)
+      if (!found) have += req.amount // supplied from outside this replica: trusted in full
+      else if (allocationMatches(req, found.row.allocation)) have += found.row.allocation?.amount ?? 0
+    }
+  }
+  return { have, need: req.amount }
+}
+
 /**
  * A requirement is satisfied by a child row of the kind it asks for: a done task (`task`), an allocation of the
  * resource and amount (`allocation`), a query that has been run (`search`); or by a supply row under it that
@@ -751,10 +781,17 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
       case 'task': return kind === 'task' && !!value.data.todo?.completed
       case 'allocation': return kind === 'allocation' && allocationFills(req, value.data.allocation)
       case 'search': return kind === 'query' && !!value.data.query?.executedAt
+      // "-@name": the named person allocates themself ("@name 2h") inside it
+      case 'peer': return kind === 'allocation' && value.data.allocation?.type === 'person' && (!req.peer || value.data.allocation.person === req.peer)
       default: return false
     }
   })
   if (filledByChild) return true
+  // an allocation requirement with an amount is also met by several smaller allocations adding up (child rows and supplied references)
+  if (req.capability === 'allocation' && req.amount !== undefined) {
+    const progress = requirementProgress(store, requirementCid, root)
+    if (progress && progress.have >= progress.need) return true
+  }
   return rows.some(({ kind, value }) => {
     const s = kind === 'supply' ? value.data.supply : undefined
     if (!s || s.capability !== req.capability) return false

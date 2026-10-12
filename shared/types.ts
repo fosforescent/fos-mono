@@ -122,7 +122,7 @@ export type FosDataContent = {
    */
   requirement?: {
     capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
-    resource?: 'calendar' | 'account' | 'inventory'
+    resource?: 'calendar' | 'account' | 'inventory' | 'person'
     amount?: number
     unit?: string
     start?: number
@@ -156,19 +156,22 @@ export type FosDataContent = {
   },
   /** A resource bank row (calendar, account, inventory): allocations and sub-banks are its children. */
   resource?: {
-    type: 'calendar' | 'account' | 'inventory'
+    type: 'calendar' | 'account' | 'inventory' | 'person'
     unit: string
     capacity?: number
   },
   /** An allocation row: locks `amount` of a resource bank (alias id `resource`), optionally for a time window. */
   allocation?: {
     resource: string
-    type: 'calendar' | 'account' | 'inventory'
+    type: 'calendar' | 'account' | 'inventory' | 'person'
     amount: number
     unit: string
+    /** Window the allocation holds for: start = now when absent, end = forever when absent. Every resource has its own calendar. */
     start?: number
     end?: number
     by?: string
+    /** Person allocations ("@name 2h"): who is allocated. */
+    person?: string
   },
   /** On a ref node: the reference is listed on the market (searchable by other accounts, open to proposals). */
   listing?: {

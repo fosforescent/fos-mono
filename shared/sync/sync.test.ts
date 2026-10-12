@@ -60,6 +60,7 @@ import {
   serveSync,
   setMarketAt,
   setQueryOptionsAt,
+  setRowContentAt,
   setRowKind,
   setTaskDone,
   type Replica,
@@ -1119,6 +1120,56 @@ describe('requirements, supplies, resource banks and market listings', () => {
     // a template name that is not a template, or a non-task, changes nothing
     expect(instantiateTemplate(r, [], 'e1', 'p', 10)).toBe(r)
     expect(instantiateTemplate(r, [], 'p', 'tpl', 11)).toBe(r)
+  })
+})
+
+describe('allocations: amounts add up, people allocate themselves, rows are rewritten in place', () => {
+  it('an allocation requirement reports how much is covered; smaller allocations add up to fill it', () => {
+    let r = createReplica('d')
+    r = addRow(r, [], 'resource', 'Travel', 1, { id: 'bank', resource: { type: 'account', unit: 'USD', capacity: 1000 } })
+    r = addRow(r, ['bank'], 'allocation', 'deposit', 2, { id: 'a1', allocation: { resource: 'bank', type: 'account', amount: 30, unit: 'USD' } })
+    r = addTask(r, [], 'dinner', 3, 't')
+    r = addRow(r, ['t'], 'requirement', 'groceries', 4, { id: 'rq', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
+    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: false, have: 0, need: 50 })
+    // a supplied reference to the bank's allocation covers part of it
+    r = addSupply(r, ['t'], 'rq', { capability: 'allocation', by: 'ada', ref: 'a1' }, 5)
+    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: false, have: 30, need: 50 })
+    // an allocation typed inside it covers the rest; a time allocation does not count towards money
+    r = addRow(r, ['t', 'rq'], 'allocation', 'tip', 6, { id: 'a2', allocation: { resource: 'bank', type: 'calendar', amount: 500, unit: 'h' } })
+    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: false, have: 30 })
+    r = addRow(r, ['t', 'rq'], 'allocation', 'the rest', 7, { id: 'a3', allocation: { resource: 'bank', type: 'account', amount: 20, unit: 'USD', start: 1760000000000 } })
+    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: true, have: 50, need: 50 })
+    expect(view(r, [])!.tasks[1]!.blockedBy).toBeUndefined()
+  })
+
+  it('"-@bob" is filled when bob allocates himself inside it ("@bob 2h"), not by someone else', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'review', 1, 't')
+    r = addRow(r, ['t'], 'requirement', 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer', peer: 'bob' } })
+    r = addRow(r, ['t', 'rq'], 'allocation', '', 3, { id: 'a1', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', person: 'ada' } })
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['@bob'])
+    r = addRow(r, ['t', 'rq'], 'allocation', '', 4, { id: 'a2', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', person: 'bob', start: 1760000000000, end: 1760007200000 } })
+    expect(view(r, [])!.tasks[0]!.blockedBy).toBeUndefined()
+    expect(view(r, ['t', 'rq'])!.tasks[1]!.allocation).toMatchObject({ type: 'person', person: 'bob', start: 1760000000000 })
+  })
+
+  it('setRowContentAt rewrites a row from re-parsed text in place: kind, text and data change, id and children stay', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'plan', 1, 't')
+    r = addRow(r, ['t'], 'requirement', 'lunch', 2, { id: 'rq', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
+    r = addRow(r, ['t', 'rq'], 'comment', 'any place is fine', 3, { id: 'c' })
+    // "-$ 50 lunch" edited to "-: 1h lunch walk": same row, now a time requirement
+    r = setRowContentAt(r, ['t'], 'rq', 'requirement', 'lunch walk', { requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } }, 4)
+    const row = view(r, ['t'])!.tasks[0]!
+    expect(row).toMatchObject({ id: 'rq', kind: 'requirement', title: 'lunch walk', childCount: 1, requirement: { resource: 'calendar', amount: 1, unit: 'h' } })
+    expect(view(r, ['t', 'rq'])!.tasks[0]).toMatchObject({ id: 'c', kind: 'comment', title: 'any place is fine' })
+    // edited to "[x] lunch walk": a done task, still with its child
+    r = setRowContentAt(r, ['t'], 'rq', 'task', 'lunch walk', { done: true }, 5)
+    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', kind: 'task', done: true, childCount: 1 })
+    expect(view(r, ['t'])!.tasks[0]!.requirement).toBeUndefined()
+    // and back to plain text
+    r = setRowContentAt(r, ['t'], 'rq', 'plain', 'just a note', {}, 6)
+    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', kind: 'plain', title: 'just a note', checkable: false })
   })
 })
 

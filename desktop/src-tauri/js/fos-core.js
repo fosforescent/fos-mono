@@ -1996,7 +1996,10 @@
       if (blockers.length) view2.blockedBy = blockers;
       if (value.data.template) view2.template = value.data.template;
     }
-    if (kind === "requirement" && value.data.requirement) view2.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement) };
+    if (kind === "requirement" && value.data.requirement) {
+      const progress = requirementProgress(store, nodeCid);
+      view2.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement), ...progress ? progress : {} };
+    }
     if (kind === "supply" && value.data.supply) view2.supply = value.data.supply;
     if (kind === "query") view2.query = value.data.query ?? {};
     if (kind === "resource" && value.data.resource) {
@@ -2040,6 +2043,23 @@
   function allocationFills(req, a) {
     return !!a && (!req.resource || a.type === req.resource) && (req.amount === void 0 || a.amount >= req.amount);
   }
+  function allocationMatches(req, a) {
+    return !!a && (!req.resource || a.type === req.resource);
+  }
+  function requirementProgress(store, requirementCid, root) {
+    const req = valueContent(store, requirementCid).data.requirement;
+    if (!req || req.capability !== "allocation" || req.amount === void 0) return null;
+    let have = 0;
+    for (const { kind, value } of childRows(store, requirementCid)) {
+      if (kind === "allocation" && allocationMatches(req, value.data.allocation)) have += value.data.allocation?.amount ?? 0;
+      if (kind === "supply" && value.data.supply?.capability === "allocation" && value.data.supply.ref) {
+        const found = findRowByAlias(store, root ?? rootTargetCid(store), value.data.supply.ref);
+        if (!found) have += req.amount;
+        else if (allocationMatches(req, found.row.allocation)) have += found.row.allocation?.amount ?? 0;
+      }
+    }
+    return { have, need: req.amount };
+  }
   function requirementSatisfied(store, requirementCid, root) {
     const req = valueContent(store, requirementCid).data.requirement;
     if (!req) return true;
@@ -2052,11 +2072,18 @@
           return kind === "allocation" && allocationFills(req, value.data.allocation);
         case "search":
           return kind === "query" && !!value.data.query?.executedAt;
+        // "-@name": the named person allocates themself ("@name 2h") inside it
+        case "peer":
+          return kind === "allocation" && value.data.allocation?.type === "person" && (!req.peer || value.data.allocation.person === req.peer);
         default:
           return false;
       }
     });
     if (filledByChild) return true;
+    if (req.capability === "allocation" && req.amount !== void 0) {
+      const progress = requirementProgress(store, requirementCid, root);
+      if (progress && progress.have >= progress.need) return true;
+    }
     return rows.some(({ kind, value }) => {
       const s = kind === "supply" ? value.data.supply : void 0;
       if (!s || s.capability !== req.capability) return false;
