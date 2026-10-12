@@ -2,16 +2,27 @@ import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
 import {
+  bookkeepingOf,
+  commitRoot,
   content,
+  edgeKey,
   isChoiceEdge,
+  isHandle,
+  isLegacyInlineLink,
+  isRefNode,
+  linkHistory,
+  normalizeRefs,
   partitionContent,
   partitionEdge,
   put,
   readChoice,
+  refValueCid,
   resolveScope,
   rootTargetCid,
+  stripLink,
   taskContent,
   taskEdge,
+  valueContent,
   viewNode
 } from './graph'
 import { mergeNodes, resolveChoiceIn } from './merge'
@@ -625,6 +636,8 @@ describe('link nodes: history, members and proposals', () => {
     // the peer learns of the rejection and, without further edits, nothing reopens
     guest = peerSync(world, guest, 11)
     expect(view(guest, [])!.proposals.map((p) => [p.peerId, p.status])).toEqual([['guest', 'rejected']])
+    expect(world.log.at(-1)).toBe('guest:pull')   // the rejection is bookkeeping the guest pulls; syncing again is a no-op
+    guest = peerSync(world, guest, 11)
     expect(world.log.at(-1)).toBe('guest:noop')
     // a further edit reopens the proposal
     guest = addTask(guest, [], 'try again', 12, 'g2')
@@ -678,6 +691,9 @@ describe('link nodes: history, members and proposals', () => {
     const before = view(world.sync(owner), ['proj'])!.versions
     peerSync(world, reattach(createReplica('another-peer'), ['proj'], 8), 9)   // registers a PEER edge
     guest = peerSync(world, guest, 10)
+    expect(world.log.at(-1)).toBe('guest:pull')                                  // bookkeeping changed (a new peer): the guest pulls it, no content moved
+    expect(view(guest, [])!.peers.sort()).toEqual(['another-peer', 'guest'])
+    guest = peerSync(world, guest, 11)
     expect(world.log.at(-1)).toBe('guest:noop')
     expect(view(world.sync(owner), ['proj'])!.versions).toBe(before)
   })
@@ -865,5 +881,91 @@ describe('approval convergence', () => {
     expect(() => buildSyncRequest(owner)).not.toThrow()
     guest = peerSync(guest, 11)
     expect(view(guest, [])!.tasks.map((t) => t.title)).toEqual(['from guest'])
+  })
+})
+
+describe('mutable references: root, link rows and reference rows are one node shape', () => {
+  it('a link row, the root alias and a reference row are all ref nodes (TARGETPOINTER + PREV history)', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'project', 1, 'proj')
+    r = addTask(r, ['proj'], 'design', 2, 'des')
+    r = makeLinkAt(r, ['proj'], 3)
+    const store = r.store
+    // the root alias
+    expect(isRefNode(store, content(store, store.rootNodeId))).toBe(true)
+    // the link row's identity node: a ref node whose value holds the text and rows
+    const projCid = resolveScope(store, headCid(r), ['proj'])!
+    const proj = content(store, projCid)
+    expect(isRefNode(store, proj)).toBe(true)
+    expect(isHandle(proj)).toBe(false)
+    expect(proj.data.alias?.id).toBe('proj')
+    expect(proj.data.description).toBeUndefined()
+    expect(valueContent(store, projCid).data.description?.content).toBe('project')
+    expect(view(r, ['proj'])!.tasks.map((t) => t.title)).toEqual(['design'])
+    expect(view(r, [])!.tasks[0]).toMatchObject({ id: 'proj', kind: 'task', title: 'project', isLink: true })
+    // editing inside the link advances the ref: new ref node, PREV → the old one, same value shape
+    const before = projCid
+    r = addTask(r, ['proj'], 'build', 4, 'b')
+    const after = resolveScope(store, headCid(r), ['proj'])!
+    expect(after).not.toBe(before)
+    expect(linkHistory(store, after)).toEqual([before])
+    expect(isRefNode(store, content(store, after))).toBe(true)
+    expect(view(r, ['proj'])!.versions).toBe(1)
+    // a reference row to a plain row turns that row into a ref node and snapshots it
+    r = addTask(r, [], 'today', 5, 'today')
+    r = addRef(r, ['today'], 'des', 6)
+    const des = resolveScope(store, headCid(r), ['proj', 'des'])!
+    expect(isRefNode(store, content(store, des))).toBe(true)
+    expect(view(r, ['proj'])!.tasks[0]).toMatchObject({ id: 'des', isLink: true, kind: 'task' })
+    const handleRow = view(r, ['today'])!.tasks[0]!
+    expect(handleRow.kind).toBe('ref')
+    const handleCid = resolveScope(store, headCid(r), ['today', handleRow.id])!
+    const handle = content(store, handleCid)
+    expect(isRefNode(store, handle) && isHandle(handle)).toBe(true)
+    expect(refValueCid(store, handle)).toBe(des)
+    // the handle resolves live: renaming the target shows through
+    r = renameTask(r, ['proj'], 'des', 'design v2', 7)
+    expect(resolveRef(r, 'des')?.row.title).toBe('design v2')
+    expect(view(r, ['today'])!.tasks[0]!.kind).toBe('ref') // the handle's own value is never followed as content
+  })
+
+  it('legacy inline link nodes are rewritten into ref nodes on load, keeping members, peers and history', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'shared', 1, 'sh')
+    r = addTask(r, ['sh'], 'one', 2, 'o1')
+    const store = r.store
+    // hand-build the old shape: the content node itself carries data.link and the bookkeeping edges
+    const shCid = resolveScope(store, headCid(r), ['sh'])!
+    const inline = content(store, shCid)
+    const olderVersion = put(store, { ...inline, data: { ...inline.data, link: { createdAt: 0 }, description: { content: 'shared (old)' } } })
+    const legacy = put(store, {
+      data: { ...inline.data, link: { createdAt: 0 } },
+      children: [...inline.children,
+        [store.primitive.memberField.getId(), put(store, { data: { peerId: { content: 'guest' } }, children: [[store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()]] })],
+        [store.primitive.peerField.getId(), put(store, { data: { peerId: { content: 'guest' } }, children: [] })],
+        [store.primitive.previousVersion.getId(), olderVersion]]
+    })
+    const rootValue = content(store, headCid(r))
+    const edge = rootValue.children.find((e) => edgeKey(store, e) === 'a:sh')!
+    const legacyRoot = put(store, { ...rootValue, children: rootValue.children.map((e) => (e === edge ? [legacy, e[1]] as FosPathElem : e)) })
+    commitRoot(store, legacyRoot, 3)
+    expect(isLegacyInlineLink(store, content(store, resolveScope(store, headCid(r), ['sh'])!))).toBe(true)
+    // reading still works before normalization
+    expect(view(r, ['sh'])!).toMatchObject({ isLink: true, name: 'shared' })
+    expect(view(r, ['sh'])!.members.map((m) => m.peerId)).toEqual(['guest'])
+    // a serialized replica is normalized when loaded
+    const loaded = loadReplica(JSON.parse(JSON.stringify(serializeReplica(r))))
+    const shNow = resolveScope(loaded.store, headCid(loaded), ['sh'])!
+    const node = content(loaded.store, shNow)
+    expect(isRefNode(loaded.store, node)).toBe(true)
+    expect(node.data.link).toBeUndefined()
+    expect(stripLink(loaded.store, node).data.description?.content).toBe('shared')
+    expect(view(loaded, ['sh'])!).toMatchObject({ isLink: true, name: 'shared', versions: 1, peers: ['guest'] })
+    expect(view(loaded, ['sh'])!.members.map((m) => m.peerId)).toEqual(['guest'])
+    expect(view(loaded, ['sh'])!.tasks.map((t) => t.title)).toEqual(['one'])
+    // and it keeps working as a link: edits advance it
+    const edited = addTask(loaded, ['sh'], 'two', 4, 'o2')
+    expect(view(edited, ['sh'])!.versions).toBe(2)
+    expect(normalizeRefs(edited.store, headCid(edited))).toBe(headCid(edited)) // idempotent
   })
 })

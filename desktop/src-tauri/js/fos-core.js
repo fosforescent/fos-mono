@@ -1613,6 +1613,33 @@
   function aliasIdOf(value) {
     return value.data.alias?.id ?? null;
   }
+  function isRefNode(store, value) {
+    return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId());
+  }
+  function isHandle(value) {
+    return !!value.data.ref;
+  }
+  function refValueCid(store, value) {
+    const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    return edge ? edge[1] : null;
+  }
+  function refTypeCid(store, value) {
+    const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId());
+    return edge ? edge[1] : null;
+  }
+  function valueContent(store, cid) {
+    const value = content(store, cid);
+    if (isHandle(value))
+      return value;
+    const target = refValueCid(store, value);
+    return target && store.table.has(target) ? content(store, target) : value;
+  }
+  function refNodeContent(store, data, valueCid, bookkeeping = [], typeCid = null) {
+    const children = [[store.primitive.targetPointerConstructor.getId(), valueCid]];
+    if (typeCid)
+      children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
+    return { data, children: [...children, ...bookkeeping] };
+  }
   function newId() {
     const cryptoApi = globalThis.crypto;
     if (cryptoApi?.randomUUID)
@@ -1635,7 +1662,7 @@
     return `e:${instr}:${target}`;
   }
   function isTaskEdge(store, edge) {
-    return edge[1] === store.primitive.completeField.getId() && !!content(store, edge[0]).data.todo;
+    return edge[1] === store.primitive.completeField.getId() && !!valueContent(store, edge[0]).data.todo;
   }
   function rowPrimitive(store, kind) {
     switch (kind) {
@@ -1657,7 +1684,7 @@
     const [, target] = edge;
     const p = store.primitive;
     if (target === p.completeField.getId())
-      return content(store, edge[0]).data.todo ? "task" : "plain";
+      return valueContent(store, edge[0]).data.todo ? "task" : "plain";
     if (target === p.descriptionField.getId())
       return "plain";
     if (target === p.documentField.getId())
@@ -1713,8 +1740,11 @@
       data.todo = { completed: !!extra.done, time: now };
     if (kind === "comment")
       data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
-    if (kind === "ref")
+    if (kind === "ref") {
       data.ref = { id: extra.refId ?? "" };
+      if (extra.targetCid && extra.store)
+        return refNodeContent(extra.store, data, extra.targetCid);
+    }
     return { data, children: [] };
   }
   function rowEdge(store, kind, cid) {
@@ -1818,27 +1848,49 @@
       children.push(edge);
     return { ...value, children };
   }
-  function updateAtScope(store, nodeCid, scope, fn) {
-    const value = content(store, nodeCid);
-    const version2 = (next) => {
-      if (next === value)
+  function updateAtScope(store, nodeCid, scope, fn, mode = "value") {
+    const identity = content(store, nodeCid);
+    const ref = isRefNode(store, identity) && !isHandle(identity);
+    const value = ref ? valueContent(store, nodeCid) : identity;
+    const advance = (nextValue) => {
+      if (nextValue === value)
         return nodeCid;
-      const contentChanged = isLink(next) && putStripped(store, next) !== putStripped(store, value);
-      return put(store, contentChanged ? withPrev(store, next, nodeCid) : next);
+      if (ref) {
+        const now = nextValue.data.updated?.time ?? value.data.updated?.time ?? 0;
+        return put(store, relinkContent(store, identity, nodeCid, nextValue, now));
+      }
+      if (isLegacyInlineLink(store, identity)) {
+        const contentChanged = putStripped(store, nextValue) !== putStripped(store, value);
+        return put(store, contentChanged ? withPrev(store, nextValue, nodeCid) : nextValue);
+      }
+      return put(store, nextValue);
     };
-    if (scope.length === 0)
-      return version2(fn(value));
+    if (scope.length === 0) {
+      if (mode === "node") {
+        const next = fn(identity);
+        return next === identity ? nodeCid : put(store, next);
+      }
+      return advance(fn(value));
+    }
     const [step, ...rest] = scope;
     const found = findAliasEdge(store, value, step);
     if (!found || isChoiceEdge(store, found.edge))
       throw new Error(`node ${step} not found`);
     const childCid = identityCid(store, found.edge);
-    const nextChild = updateAtScope(store, childCid, rest, fn);
+    const nextChild = updateAtScope(store, childCid, rest, fn, mode);
     if (nextChild === childCid)
       return nodeCid;
     const children = [...value.children];
     children[found.index] = withIdentity(store, found.edge, nextChild);
-    return version2({ ...value, children });
+    return advance({ ...value, children });
+  }
+  function withChildValue(store, edge, nextValue, now) {
+    const idCid = identityCid(store, edge);
+    const identity = content(store, idCid);
+    if (isRefNode(store, identity) && !isHandle(identity)) {
+      return withIdentity(store, edge, put(store, relinkContent(store, identity, idCid, nextValue, now)));
+    }
+    return withIdentity(store, edge, put(store, nextValue));
   }
   function withPeer(store, value, peerId) {
     const refCid = put(store, peerRefContent(peerId));
@@ -1930,7 +1982,8 @@
     };
   }
   function rowView(store, nodeCid, kind) {
-    const value = content(store, nodeCid);
+    const identity = content(store, nodeCid);
+    const value = valueContent(store, nodeCid);
     const created = value.data.todo?.time ?? value.data.updated?.time ?? 0;
     const sub = countNode(store, nodeCid);
     const view2 = {
@@ -1945,10 +1998,10 @@
       childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
       subtreeTasks: sub.tasks,
       subtreeDone: sub.done,
-      isLink: isLink(value)
+      isLink: isLink(store, identity)
     };
     if (kind === "ref")
-      view2.refId = value.data.ref?.id ?? "";
+      view2.refId = identity.data.ref?.id ?? "";
     if (kind === "comment" && value.data.comment)
       view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
     return view2;
@@ -1959,7 +2012,7 @@
     const kind = rowKindOf(store, edge);
     if (kind)
       return { task: rowView(store, identityCid(store, edge), kind), label: null };
-    const value = content(store, identityCid(store, edge));
+    const value = valueContent(store, identityCid(store, edge));
     return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? "node" };
   }
   function choiceView(store, choiceCid) {
@@ -1973,7 +2026,7 @@
     let tasks = 0;
     let done = 0;
     let choices = 0;
-    for (const edge of content(store, cid).children) {
+    for (const edge of valueContent(store, cid).children) {
       if (isTaskEdge(store, edge)) {
         tasks++;
         if (content(store, edge[0]).data.todo?.completed)
@@ -1994,8 +2047,9 @@
     return { tasks, done, choices };
   }
   function viewNode(store, cid) {
-    const value = content(store, cid);
-    const link = isLink(value);
+    const identity = content(store, cid);
+    const value = valueContent(store, cid);
+    const link = isLink(store, identity);
     const view2 = {
       name: value.data.description?.content ?? null,
       done: value.data.todo ? !!value.data.todo.completed : null,
@@ -2003,20 +2057,24 @@
       choices: [],
       peers: [],
       isLink: link,
-      members: link ? readMembers(store, value) : [],
-      proposals: link ? readProposals(store, value).map((p) => proposalView(store, value, p)) : [],
+      members: link ? readMembers(store, identity) : [],
+      proposals: link ? readProposals(store, identity).map((p) => proposalView(store, identity, p)) : [],
       versions: link ? linkHistory(store, cid).length : 0
     };
+    const peerEdges = identity === value ? identity.children : [...identity.children, ...value.children];
+    for (const edge of peerEdges) {
+      if (isPeerEdge(store, edge)) {
+        const peerId = content(store, edge[1]).data.peerId?.content;
+        if (peerId && !view2.peers.includes(peerId))
+          view2.peers.push(peerId);
+      }
+    }
     for (const edge of value.children) {
       const kind = rowKindOf(store, edge);
       if (kind) {
         view2.tasks.push(rowView(store, identityCid(store, edge), kind));
       } else if (isChoiceEdge(store, edge)) {
         view2.choices.push(choiceView(store, edge[1]));
-      } else if (isPeerEdge(store, edge)) {
-        const peerId = content(store, edge[1]).data.peerId?.content;
-        if (peerId)
-          view2.peers.push(peerId);
       }
     }
     return view2;
@@ -2030,13 +2088,18 @@
         continue;
       }
       const next = findChild(store, current, step);
-      names.push(next ? content(store, next).data.description?.content ?? step : step);
+      names.push(next ? valueContent(store, next).data.description?.content ?? step : step);
       current = next;
     }
     return names;
   }
-  function isLink(value) {
-    return !!value.data.link;
+  function isLink(store, value) {
+    if (isHandle(value))
+      return false;
+    return isRefNode(store, value) || !!value.data.link;
+  }
+  function isLegacyInlineLink(store, value) {
+    return !!value.data.link && !isRefNode(store, value);
   }
   function isPrevEdge(store, edge) {
     return edge[0] === store.primitive.previousVersion.getId();
@@ -2051,11 +2114,26 @@
     return isPrevEdge(store, edge) || isMemberEdge(store, edge) || isProposalEdge(store, edge) || isPeerEdge(store, edge);
   }
   function stripLink(store, value) {
+    if (isRefNode(store, value) && !isHandle(value)) {
+      const target = refValueCid(store, value);
+      return store.table.has(target) ? content(store, target) : { data: {}, children: [] };
+    }
     const { link: _link, ...data } = value.data;
     return { data, children: value.children.filter((e) => !isBookkeepingEdge(store, e)) };
   }
+  function bookkeepingOf(store, value) {
+    return value.children.filter((e) => isBookkeepingEdge(store, e));
+  }
   function putStripped(store, value) {
     return put(store, stripLink(store, value));
+  }
+  function makeLink(store, value, now) {
+    if (isRefNode(store, value) && !isHandle(value))
+      return value;
+    const stripped = stripLink(store, value);
+    const valueCid = put(store, stripped);
+    const data = { alias: value.data.alias ?? { id: newId() }, updated: { time: now } };
+    return refNodeContent(store, data, valueCid, bookkeepingOf(store, value));
   }
   function withPrev(store, next, previousCid) {
     const prevEdge = [store.primitive.previousVersion.getId(), previousCid];
@@ -2169,11 +2247,39 @@
   }
   function relinkContent(store, previous, previousCid, strippedContent, now) {
     const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e));
-    const next = {
-      data: { ...strippedContent.data, link: previous.data.link ?? { createdAt: now }, updated: { time: now } },
-      children: [...strippedContent.children, ...bookkeeping]
-    };
+    const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
+    if (previous.data.ref)
+      data.ref = previous.data.ref;
+    const next = refNodeContent(store, data, put(store, strippedContent), bookkeeping, refTypeCid(store, previous));
     return withPrev(store, next, previousCid);
+  }
+  function normalizeRefs(store, nodeCid, now = 0) {
+    const identity = content(store, nodeCid);
+    if (isHandle(identity))
+      return nodeCid;
+    const ref = isRefNode(store, identity);
+    const value = ref ? valueContent(store, nodeCid) : identity;
+    let changed = false;
+    const children = value.children.map((edge) => {
+      if (!isRowEdge(store, edge) || isPartitionEdge(store, edge))
+        return edge;
+      const childCid = identityCid(store, edge);
+      const next = normalizeRefs(store, childCid, now);
+      if (next === childCid)
+        return edge;
+      changed = true;
+      return withIdentity(store, edge, next);
+    });
+    let nextValue = changed ? { ...value, children } : value;
+    if (isLegacyInlineLink(store, identity)) {
+      const stripped = stripLink(store, nextValue);
+      return put(store, refNodeContent(store, { alias: identity.data.alias ?? { id: newId() }, updated: { time: identity.data.updated?.time ?? now } }, put(store, stripped), bookkeepingOf(store, identity)));
+    }
+    if (!changed)
+      return nodeCid;
+    if (ref)
+      return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now));
+    return put(store, nextValue);
   }
   function findAliasEdge(store, value, aliasId) {
     const key = `a:${aliasId}`;
@@ -2181,13 +2287,30 @@
     return index >= 0 ? { edge: value.children[index], index } : null;
   }
   function findChild(store, nodeCid, aliasId) {
-    const found = findAliasEdge(store, content(store, nodeCid), aliasId);
+    const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId);
     if (!found)
       return null;
     const { edge } = found;
     if (isChoiceEdge(store, edge))
       return null;
     return identityCid(store, edge);
+  }
+  function findRowByAlias(store, rootCid, aliasId, prefix = []) {
+    for (const edge of valueContent(store, rootCid).children) {
+      const kind = rowKindOf(store, edge);
+      if (!kind)
+        continue;
+      const cid = identityCid(store, edge);
+      const id = aliasIdOf(content(store, cid));
+      if (!id)
+        continue;
+      if (id === aliasId)
+        return { path: prefix, row: rowView(store, cid, kind) };
+      const found = findRowByAlias(store, cid, aliasId, [...prefix, id]);
+      if (found)
+        return found;
+    }
+    return null;
   }
   function copyRowContent(store, nodeCid, now, freshId) {
     const value = stripLink(store, content(store, nodeCid));
@@ -2219,12 +2342,11 @@
         if (!parent)
           throw new Error("destination not found");
         const target = identityCid(store, parent.edge);
-        const targetContent = content(store, target);
+        const targetContent = valueContent(store, target);
         const kids = [...targetContent.children];
         const at = position.index === void 0 || position.index < 0 ? kids.length : Math.min(position.index, kids.length);
         kids.splice(at, 0, moving);
-        const newTarget = put(store, { ...targetContent, children: kids });
-        children[parent.index] = withIdentity(store, parent.edge, newTarget);
+        children[parent.index] = withChildValue(store, parent.edge, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0);
         return { ...value, children };
       }
       const sibling = findAliasEdge(store, value, position.relativeTo);
@@ -2285,6 +2407,33 @@
     const base = baseCid ? content(store, baseCid) : EMPTY;
     const ours = content(store, oursCid);
     const theirs = content(store, theirsCid);
+    const asRef = (value) => isRefNode(store, value) && !isHandle(value) || isLegacyInlineLink(store, value);
+    if (asRef(ours) || asRef(theirs)) {
+      const refOf = (cid, value) => {
+        if (!cid)
+          return null;
+        if (isRefNode(store, value) && !isHandle(value))
+          return { cid, node: value };
+        const node = makeLink(store, value, 0);
+        return { cid: put(store, node), node };
+      };
+      const o = refOf(oursCid, ours);
+      const t = refOf(theirsCid, theirs);
+      const b = baseCid ? refOf(baseCid, base) : null;
+      const valueOf = (r) => r ? refValueCid(store, r.node) : null;
+      const oursValue = valueOf(o) ?? put(store, stripLink(store, ours));
+      const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs));
+      const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true);
+      const mergedValue = merged.kind === "node" ? merged.cid : oursValue;
+      const book = (r) => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] });
+      const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids);
+      const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue;
+      const prevEdge = (cid) => [store.primitive.previousVersion.getId(), cid];
+      const existingPrev = (r) => r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [];
+      const prev = valueChanged ? o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)] : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))];
+      const data2 = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data;
+      return { kind: "node", cid: put(store, refNodeContent(store, data2, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) };
+    }
     const isContainer = ours.children.length > 0 || theirs.children.length > 0 || base.children.length > 0;
     const data = mergeData(base.data, ours.data, theirs.data, isContainer || isTop);
     if (!data)
@@ -2526,7 +2675,7 @@
     const currentCid = resolveScope(store, rootTarget, request.scope);
     if (!currentCid)
       return { error: "scope not found", code: "scope-not-found" };
-    if (options.proposeOnly && isLink(content(store, currentCid))) {
+    if (options.proposeOnly && isLink(store, content(store, currentCid))) {
       return serveProposal(store, request, serverPeerId, now, options, rootTarget, currentCid);
     }
     const headCid2 = request.headCid;
@@ -2554,7 +2703,7 @@
     const resultCid = withPeerContent === content(store, mergedCid) ? mergedCid : put(store, withPeerContent);
     const changed = resultCid !== currentCid;
     if (changed) {
-      const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid));
+      const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), "node");
       commitRoot(store, newRootTarget, now);
     }
     const known = /* @__PURE__ */ new Set([...Object.keys(request.nodes), ...reachableSet(store, [headCid2, baseCid])]);
@@ -2613,19 +2762,18 @@
     const nextLinkCid = put(store, withPeerContent);
     let changed = nextLinkCid !== linkCid;
     if (changed) {
-      const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, nextLinkCid));
+      const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, nextLinkCid), "node");
       commitRoot(store, newRootTarget, now);
     }
-    const bookkeeping = content(store, nextLinkCid).children.filter((e) => isBookkeepingEdge(store, e));
-    const branch = content(store, branchCid);
-    const resultContent = {
-      data: { ...branch.data, link: linkValue.data.link ?? { createdAt: now } },
-      children: [...branch.children, ...bookkeeping]
-    };
+    const persisted = content(store, nextLinkCid);
+    const bookkeeping = bookkeepingOf(store, persisted);
+    const resultContent = refNodeContent(store, { ...persisted.data, alias: persisted.data.alias ?? content(store, branchCid).data.alias ?? { id: request.scope[request.scope.length - 1] ?? "" } }, branchCid, bookkeeping, refTypeCid(store, persisted));
     const resultExisted = store.table.has(store.hash(resultContent));
     const resultCid = put(store, resultContent);
     if (!resultExisted)
       changed = true;
+    if (action === "noop" && resultCid !== request.headCid)
+      action = "pull";
     const known = /* @__PURE__ */ new Set([...Object.keys(request.nodes), ...reachableSet(store, [request.headCid, request.baseCid])]);
     return {
       changed,
@@ -7663,6 +7811,14 @@
       meta: { version: SYNC_FORMAT_VERSION, peerId, scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null }
     };
   }
+  function normalizeReplicaRefs(store) {
+    const head = rootTargetCid(store);
+    const next = normalizeRefs(store, head);
+    if (next === head)
+      return false;
+    commitRoot(store, next, 0);
+    return true;
+  }
   function serializeReplica(replica) {
     return { meta: replica.meta, context: exportReachableContext(replica.store, [replica.meta.baseCid]) };
   }
@@ -7683,6 +7839,7 @@
         throw new Error("no context");
       store = new FosStore({ fosCtxData: { fosData: { nodes: ctx.nodes ?? {}, route: [], rootNodeId: ctx.rootNodeId }, trellisData: fresh.store.trellisData } });
       rootTargetCid(store);
+      normalizeReplicaRefs(store);
     } catch (error) {
       console.warn("stored replica unreadable, starting fresh", error);
       store = fresh.store;
@@ -7709,7 +7866,7 @@
     const head = headCid(replica);
     if (replica.meta.baseCid)
       return head !== replica.meta.baseCid;
-    return content(replica.store, head).children.length > 0;
+    return valueContent(replica.store, head).children.length > 0;
   }
   function view(replica, at) {
     const cid = resolveScope(replica.store, headCid(replica), at);
@@ -7720,6 +7877,11 @@
   }
   function edit(replica, at, now, fn) {
     const next = updateAtScope(replica.store, headCid(replica), at, fn);
+    commitRoot(replica.store, next, now);
+    return { ...replica };
+  }
+  function editNode(replica, at, now, fn) {
+    const next = updateAtScope(replica.store, headCid(replica), at, fn, "node");
     commitRoot(replica.store, next, now);
     return { ...replica };
   }
@@ -7744,7 +7906,7 @@
       return replica;
     const id = options.id ?? newId();
     return edit(replica, at, now, (value) => {
-      const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author }));
+      const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author, targetCid: options.targetCid, store: replica.store }));
       const edge = rowEdge(replica.store, kind, cid);
       const children = [...value.children];
       const pos = options.position;
@@ -7773,15 +7935,22 @@
     });
   }
   function addRef(replica, at, targetAliasId, now, position) {
+    const found = resolveRef(replica, targetAliasId);
+    let r = replica;
+    if (found && !found.row.isLink)
+      r = makeLinkAt(r, [...found.path, targetAliasId], now);
+    const targetPath = found ? [...found.path, targetAliasId] : null;
+    const targetCid = targetPath ? resolveScope(r.store, headCid(r), targetPath) : null;
+    const options = { refId: targetAliasId, targetCid: targetCid ?? void 0 };
     if (position && "into" in position)
-      return addRow(replica, [...at, position.into], "ref", "", now, { refId: targetAliasId });
-    return addRow(replica, at, "ref", "", now, { refId: targetAliasId, position });
+      return addRow(r, [...at, position.into], "ref", "", now, options);
+    return addRow(r, at, "ref", "", now, { ...options, position });
   }
   function copyNode(replica, fromPath, aliasId, toPath, position, now) {
     const from = resolveScope(replica.store, headCid(replica), fromPath);
     if (!from)
       return replica;
-    const found = findEdge(replica.store, content(replica.store, from), `a:${aliasId}`);
+    const found = findEdge(replica.store, valueContent(replica.store, from), `a:${aliasId}`);
     if (!found)
       return replica;
     const kind = rowKindOf(replica.store, found);
@@ -7803,6 +7972,10 @@
       children.push(edge);
       return { ...value, children };
     });
+  }
+  function resolveRef(replica, targetAliasId) {
+    const root = headCid(replica);
+    return root ? findRowByAlias(replica.store, root, targetAliasId) : null;
   }
   function updateTask(replica, at, taskId, now, change) {
     return edit(replica, at, now, (value) => {
@@ -7853,9 +8026,12 @@
     commitRoot(replica.store, next, now);
     return { ...replica };
   }
+  function makeLinkAt(replica, at, now) {
+    return editNode(replica, at, now, (node) => makeLink(replica.store, node, now));
+  }
   function applyProposalAt(replica, at, proposalCid, approverPeerId, now) {
     const store = replica.store;
-    return edit(replica, at, now, (value) => {
+    return editNode(replica, at, now, (value) => {
       const proposal = readProposal(store, proposalCid);
       if (!proposal)
         return value;
@@ -7867,7 +8043,7 @@
     });
   }
   function rejectProposalAt(replica, at, proposalCid, now) {
-    return edit(replica, at, now, (value) => markProposalRejected(replica.store, value, proposalCid));
+    return editNode(replica, at, now, (node) => markProposalRejected(replica.store, node, proposalCid));
   }
   function buildSyncRequest(replica, branch) {
     const head = headCid(replica);

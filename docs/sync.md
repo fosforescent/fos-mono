@@ -128,42 +128,58 @@ raised. Moves use the same above/below/into semantics as
 `graph.ts`); the drop position comes from where the pointer is on the row
 (top quarter above, bottom quarter below, middle into), as in the old tree.
 
-## Link nodes, proposals and history (the git-like part)
+## Mutable references: the root, link nodes and reference rows (the git-like part)
 
-Inviting a device to a node turns that node into a **link node**
-(`data.link`). A link node keeps, as ordinary edges on itself:
+There is one mutable-reference construct, the language design's ALIAS node,
+and it is used in three places:
 
-* `[PREV, previousVersion]` — one per parent version (two after a merge), so
-  the node is a chain of its previous states; bookkeeping changes (members,
-  proposals) do not create versions, content changes do;
-* `[MEMBER, ref]` — devices admitted through invites; the reference node
-  carries one `[CAPABILITY, <action>]` edge per capability, as the language
-  design does for actors: `PROPOSE` (may propose changes) and `APPROVE` (may
-  merge proposals). The approver chooses them when approving the request;
-  nothing about capabilities is stored outside the graph;
-* `[PROPOSAL, p]` — one branch per proposing peer, in the shape `proposal.ts`
-  uses (`PROPOSALNAME`, `PROPOSEDCONTENT`, `SENDER`, `TIMESTAMP`, `PREV`=base),
-  with `data.proposal.status` `open` or `rejected`.
+```
+ref node   data: alias{id} (+ ref{id} for a reference row)
+           [TARGETPOINTER, valueCid]       the current value (content node: description, todo, rows…)
+           [INSTRUCTIONPOINTER, typeCid]   optional type (the root points at ROOT)
+           [PREV, previousRefCid]*         history: one per parent version, two after a merge that changed the value
+           [MEMBER, ref]* [PROPOSAL, p]* [PEER, ref]*   who is attached to the reference
+```
 
-Syncing at a link node with a **peer credential** (an invited device) runs in
-branch mode (`serveProposal` in `protocol.ts`): the peer's head never touches
-the main content. Its stripped content becomes its proposal, rebased with a
-three-way merge whenever main moved (so a proposal is always a diff against
-the current main), and the peer receives its own branch plus the node's
-bookkeeping, so it keeps working on the branch and sees all proposals and
-members. The owner's own devices (user sessions) merge directly, as before.
+- **The root** of every replica and of the user group is a ref node; `commitRoot`
+  advances it (new ref node, PREV → the old one, MERGESOURCE → a merged root).
+- **A link row** (what devices are invited to and propose against) is a row
+  whose identity node is a ref node: `[refNode, KIND]`. Its text and rows are
+  read through TARGETPOINTER (`valueContent`); an edit inside it advances the
+  ref (`relinkContent`: new ref node pointing at the new content, PREV → the
+  old ref node, bookkeeping carried over). Members, proposals and attached
+  peers live on the ref node and never create versions. `makeLinkAt` turns a
+  plain row into one; `linkHistory` walks PREV; `NodeView.versions` counts it.
+- **A reference row** (Alt+drag) is a ref node too: `data.ref.id` names the row
+  it stands for and TARGETPOINTER holds a snapshot of that row's ref node
+  (referencing a plain row makes it a ref node first). It is resolved live by
+  id (`resolveRef`) and its own value is never followed as content.
 
-Members with the `approve` capability, and the owner, decide proposals
-(`POST /user/data/peer-sync/proposals`): approval fast-forwards or merges the
-branch into main, records `PREV`, and drops the proposal; rejection marks it
-rejected (the peer sees that; a rebase keeps it rejected, a further edit by the
-peer reopens it). Proposals are keyed per peer in the merge, so a replaced
-proposal is a modification rather than a removal plus an addition, and two
-versions of one peer's proposal resolve to the newer one. `PEER`, `MEMBER`,
-`PROPOSAL` and `PREV` edges are bookkeeping: they are not part of the content
-that proposals diff against, and they do not create versions. The UI shows the
-link panel (members, version count, proposals with an added/changed/removed
-summary) on any link node.
+Merging two versions of a ref merges their values (recursively, like any
+node), unions members/peers/proposals, and records both parents in PREV only
+when the value actually changed; a bookkeeping-only merge is not a version.
+Branch mode (`serveProposal`) hands an invited peer a ref node with the same
+identity whose value is the peer's branch plus the node's bookkeeping, so the
+peer keeps building on it; a rejection or another device attaching is served
+as `pull` (bookkeeping changed) and the next sync is a `noop`.
+
+Older data kept link nodes inline (`data.link` with the bookkeeping edges on
+the content node). `normalizeRefs` rewrites those into ref nodes when a replica
+is loaded and when the server loads a store; it is deterministic, so every
+side converges on the same nodes, and the old PREV edges are kept as history.
+
+### Proposals
+
+Invited peers never change a link's main value: in branch mode the server
+records each peer's head as a `[PROPOSAL, p]` on the ref node (proposal.ts
+shape: PROPOSALNAME, PROPOSEDCONTENT, SENDER, TIMESTAMP, PREV = the main
+value it was based on; `data.proposal.status` open|rejected), one per
+(peer, git branch), rebased onto main when main moved. A member with the
+`approve` capability (`[CAPABILITY, APPROVE]` on its MEMBER reference) merges
+it (`applyProposalAt`: three-way merge onto main, new version, proposal
+removed) or rejects it (kept, marked rejected; a further edit by the peer
+reopens it). The link panel shows members, version count and proposals with
+an added/changed/removed summary against the proposal's base.
 
 ## The `fos` binary: GUI and CLI over one context (`desktop/src-tauri/src/`)
 

@@ -32,6 +32,7 @@ import {
   markProposalRejected,
   moveChild,
   newId,
+  normalizeRefs,
   partitionContent,
   partitionEdge,
   put,
@@ -51,7 +52,9 @@ import {
   taskContent,
   taskEdge,
   updateAtScope,
+  valueContent,
   viewNode,
+  withChildValue,
   withIdentity,
   withMember,
   withoutPeer
@@ -81,6 +84,15 @@ export function createReplica(peerId: string = newId()): Replica {
   }
 }
 
+/** Rewrite legacy inline link nodes into ref nodes (idempotent; no-op on current data). */
+export function normalizeReplicaRefs(store: FosStore): boolean {
+  const head = rootTargetCid(store)
+  const next = normalizeRefs(store, head)
+  if (next === head) return false
+  commitRoot(store, next, 0)
+  return true
+}
+
 export function serializeReplica(replica: Replica): SerializedReplica {
   return { meta: replica.meta, context: exportReachableContext(replica.store, [replica.meta.baseCid]) }
 }
@@ -100,6 +112,7 @@ export function loadReplica(input: unknown): Replica {
     if (!ctx || typeof ctx !== 'object' || typeof ctx.rootNodeId !== 'string') throw new Error('no context')
     store = new FosStore({ fosCtxData: { fosData: { nodes: ctx.nodes ?? {}, route: [], rootNodeId: ctx.rootNodeId }, trellisData: fresh.store.trellisData } })
     rootTargetCid(store) // validates the root alias shape
+    normalizeReplicaRefs(store)
   } catch (error) {
     console.warn('stored replica unreadable, starting fresh', error)
     store = fresh.store
@@ -128,7 +141,7 @@ export function headCid(replica: Replica): string {
 export function isDirty(replica: Replica): boolean {
   const head = headCid(replica)
   if (replica.meta.baseCid) return head !== replica.meta.baseCid
-  return content(replica.store, head).children.length > 0
+  return valueContent(replica.store, head).children.length > 0 // a scoped replica's head may be a ref node
 }
 
 export function hasSynced(replica: Replica): boolean {
@@ -160,6 +173,13 @@ function edit(replica: Replica, at: Scope, now: number, fn: (value: FosNodeConte
   return { ...replica }
 }
 
+/** Like `edit`, but `fn` sees the identity node at `at` (the ref node of a link row): for bookkeeping. */
+function editNode(replica: Replica, at: Scope, now: number, fn: (node: FosNodeContent) => FosNodeContent): Replica {
+  const next = updateAtScope(replica.store, headCid(replica), at, fn, 'node')
+  commitRoot(replica.store, next, now)
+  return { ...replica }
+}
+
 function findTaskEdge(replica: Replica, value: FosNodeContent, taskId: string) {
   const edge = findEdge(replica.store, value, `a:${taskId}`)
   return edge && edge[1] === replica.store.primitive.completeField.getId() ? edge : undefined
@@ -180,7 +200,7 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
   })
 }
 
-export type AddRowOptions = { done?: boolean; refId?: string; author?: { id: string; name: string }; position?: MovePosition; id?: string }
+export type AddRowOptions = { done?: boolean; refId?: string; author?: { id: string; name: string }; position?: MovePosition; id?: string; targetCid?: string }
 
 /** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
 export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
@@ -189,7 +209,7 @@ export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string,
   if (kind === 'ref' && !options.refId) return replica
   const id = options.id ?? newId()
   return edit(replica, at, now, (value) => {
-    const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author }))
+    const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author, targetCid: options.targetCid, store: replica.store }))
     const edge = rowEdge(replica.store, kind, cid)
     const children = [...value.children]
     const pos = options.position
@@ -209,23 +229,30 @@ export function setRowKind(replica: Replica, at: Scope, aliasId: string, kind: R
     const edge = findChildEdge(replica, value, aliasId)
     if (!edge) return value
     if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge)) return value
-    const node = content(replica.store, identityCid(replica.store, edge))
-    const cid = put(replica.store, convertRowContent(node, kind, now))
-    return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, cid))
+    const node = valueContent(replica.store, identityCid(replica.store, edge))
+    const converted = withChildValue(replica.store, edge, convertRowContent(node, kind, now), now)
+    return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, converted)))
   })
 }
 
 /** Insert a reference row pointing at `targetAliasId` (any row in the replica) under `at`, optionally at `position`. */
 export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: number, position?: MovePosition): Replica {
-  if (position && 'into' in position) return addRow(replica, [...at, position.into], 'ref', '', now, { refId: targetAliasId })
-  return addRow(replica, at, 'ref', '', now, { refId: targetAliasId, position })
+  // the referenced row becomes a mutable reference (ref node) so the handle can point at it
+  const found = resolveRef(replica, targetAliasId)
+  let r = replica
+  if (found && !found.row.isLink) r = makeLinkAt(r, [...found.path, targetAliasId], now)
+  const targetPath = found ? [...found.path, targetAliasId] : null
+  const targetCid = targetPath ? resolveScope(r.store, headCid(r), targetPath) : null
+  const options = { refId: targetAliasId, targetCid: targetCid ?? undefined }
+  if (position && 'into' in position) return addRow(r, [...at, position.into], 'ref', '', now, options)
+  return addRow(r, at, 'ref', '', now, { ...options, position })
 }
 
 /** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
 export function copyNode(replica: Replica, fromPath: Scope, aliasId: string, toPath: Scope, position: MovePosition, now: number): Replica {
   const from = resolveScope(replica.store, headCid(replica), fromPath)
   if (!from) return replica
-  const found = findEdge(replica.store, content(replica.store, from), `a:${aliasId}`)
+  const found = findEdge(replica.store, valueContent(replica.store, from), `a:${aliasId}`)
   if (!found) return replica
   const kind = rowKindOf(replica.store, found)
   if (!kind) return replica
@@ -254,11 +281,12 @@ function updateTask(replica: Replica, at: Scope, taskId: string, now: number, ch
   return edit(replica, at, now, (value) => {
     const edge = findChildEdge(replica, value, taskId)
     if (!edge) return value
-    const node = content(replica.store, identityCid(replica.store, edge))
+    // edits apply to the row's content; for a link row that is the ref node's value (the ref then advances with PREV)
+    const node = valueContent(replica.store, identityCid(replica.store, edge))
     const next = change(node)
     if (!next) return value
-    const cid = put(replica.store, { ...next, data: { ...next.data, updated: { time: now } } })
-    return replaceEdge(replica.store, value, `a:${taskId}`, withIdentity(replica.store, edge, cid))
+    const nextValue = { ...next, data: { ...next.data, updated: { time: now } } }
+    return replaceEdge(replica.store, value, `a:${taskId}`, withChildValue(replica.store, edge, nextValue, now))
   })
 }
 
@@ -310,11 +338,11 @@ export function moveNode(replica: Replica, fromPath: Scope, aliasId: string, toP
 
 /** Make the node at `at` a link node (keeps history, can have members and proposals). */
 export function makeLinkAt(replica: Replica, at: Scope, now: number): Replica {
-  return edit(replica, at, now, (value) => makeLink(value, now))
+  return editNode(replica, at, now, (node) => makeLink(replica.store, node, now))
 }
 
 export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: string | null, capabilities: Capability[], now: number): Replica {
-  return edit(replica, at, now, (value) => withMember(replica.store, makeLink(value, now), peerId, name, capabilities))
+  return editNode(replica, at, now, (node) => withMember(replica.store, makeLink(replica.store, node, now), peerId, name, capabilities))
 }
 
 /**
@@ -324,7 +352,7 @@ export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: s
  */
 export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string, approverPeerId: string, now: number): Replica {
   const store = replica.store
-  return edit(replica, at, now, (value) => {
+  return editNode(replica, at, now, (value) => {
     const proposal = readProposal(store, proposalCid)
     if (!proposal) return value
     const main = putStripped(store, value)
@@ -339,11 +367,11 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
 
 /** Owner side: remove a device from the node at `at` (its PEER and MEMBER edges). */
 export function removePeerAt(replica: Replica, at: Scope, peerId: string, now: number): Replica {
-  return edit(replica, at, now, (value) => withoutPeer(replica.store, value, peerId))
+  return editNode(replica, at, now, (node) => withoutPeer(replica.store, node, peerId))
 }
 
 export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: string, now: number): Replica {
-  return edit(replica, at, now, (value) => markProposalRejected(replica.store, value, proposalCid))
+  return editNode(replica, at, now, (node) => markProposalRejected(replica.store, node, proposalCid))
 }
 
 // ---------------------------------------------------------------------------
