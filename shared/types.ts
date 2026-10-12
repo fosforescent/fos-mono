@@ -122,7 +122,7 @@ export type FosDataContent = {
    */
   requirement?: {
     capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
-    resource?: 'calendar' | 'account' | 'inventory' | 'person'
+    resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
     amount?: number
     unit?: string
     start?: number
@@ -156,14 +156,14 @@ export type FosDataContent = {
   },
   /** A resource bank row (calendar, account, inventory): allocations and sub-banks are its children. */
   resource?: {
-    type: 'calendar' | 'account' | 'inventory' | 'person'
+    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
     unit: string
     capacity?: number
   },
   /** An allocation row: locks `amount` of a resource bank (alias id `resource`), optionally for a time window. */
   allocation?: {
     resource: string
-    type: 'calendar' | 'account' | 'inventory' | 'person'
+    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
     amount: number
     unit: string
     /** Window the allocation holds for: start = now when absent, end = forever when absent. Every resource has its own calendar. */

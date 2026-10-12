@@ -9,7 +9,7 @@ import { isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeV
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
+import { ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
 import { CAPABILITY_LABEL, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
@@ -23,7 +23,6 @@ type Regions = {
   crumbs: HTMLElement
   choices: HTMLElement
   list: HTMLElement
-  peers: HTMLElement
   mic: HTMLButtonElement
   footer: HTMLElement
   modal: HTMLElement
@@ -87,7 +86,6 @@ export function mountUi(root: HTMLElement, app: App): void {
     <section class="tasks">
       <ul class="list tree" data-region="list"></ul>
     </section>
-    <section class="context-panel" data-region="peers"></section>
     <footer class="footer" data-region="footer"></footer>
     <div class="context-menu" data-region="context" hidden></div>
     <div class="modal-backdrop" data-region="modal" hidden></div>
@@ -104,7 +102,6 @@ export function mountUi(root: HTMLElement, app: App): void {
     crumbs: q('crumbs'),
     choices: q('choices'),
     list: q('list'),
-    peers: q('peers'),
     mic: q('mic'),
     footer: q('footer'),
     modal: q('modal')
@@ -151,7 +148,6 @@ function render(regions: Regions, state: AppState, app: App): void {
   renderChoices(regions.choices, node, state, app)
   renderLinkPanel(regions.link, node, state, app)
   renderTree(regions.list, node, state, app)
-  renderContext(regions.peers, node, state, app)
   renderFooter(regions.footer, state, app)
   renderContextMenu(regions.context, state, app)
 }
@@ -245,12 +241,15 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
 
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
-  const rootCrumb = button('crumb', pathLabel(labels.scope), () => app.goTo([]))
-  crumbs.append(rootCrumb)
+  // the device's root (peers) › Home (the replica: the account's tree, or the node this device attaches to) › …
+  const deviceCrumb = button('crumb', 'root', () => app.goToRoot())
+  deviceCrumb.title = 'This device: the peers it reaches, and Home'
+  const homeCrumb = button('crumb', labels.scope.length ? pathLabel(labels.scope) : 'Home', () => app.goTo([]))
+  crumbs.append(deviceCrumb, span('sep', '›'), homeCrumb)
   view.forEach((_id, index) => {
     crumbs.append(span('sep', '›'), button('crumb', labels.view[index] ?? '…', () => app.goTo(view.slice(0, index + 1))))
   })
-  if (view.length === 0) rootCrumb.classList.add('current')
+  if (state.atRoot) deviceCrumb.classList.add('current')
   else (crumbs.lastElementChild as HTMLElement).classList.add('current')
 
   const controls: HTMLElement[] = []
@@ -327,6 +326,7 @@ const noteHtml = new Map<string, string>()
 document.addEventListener('mouseup', () => { pointerDown = false })
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
+  if (state.atRoot) { el.replaceChildren(...renderRootRows(node, state, app)); return }
   el.replaceChildren(renderGhostRow(node, state, app), ...renderRows(node, [], 0, state, app))
 }
 
@@ -347,6 +347,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   input.className = 'edit'
   input.placeholder = 'New row… (ctrl + H for tips)'
   void node
+  const preview = kindPreview(input)
   input.autocomplete = 'off'
   let committed = false
   /** Make the typed row; null when nothing was typed or the row could not be made (e.g. an allocation with no bank). */
@@ -378,7 +379,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   })
   input.addEventListener('focus', () => { if (state.selected) { focusGhost = true; app.select(null) } })
   input.addEventListener('blur', () => { commit() })
-  li.append(span('zoom-dot', ''), span('handle', ''), toggle, input)
+  li.append(span('zoom-dot', ''), span('handle', ''), toggle, input, preview)
   if (focusGhost && !state.selected && !state.modal && !state.contextMenu && !state.menuOpen) {
     focusGhost = false
     queueMicrotask(() => {
@@ -387,6 +388,23 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     })
   }
   return li
+}
+
+/**
+ * A small badge after an editor that says what the typed line is recognized as ("requirement · money 50 USD",
+ * "allocation · time 1 h", "task", "bank · fos points"), updated as the text changes; empty for plain text.
+ */
+function kindPreview(input: HTMLInputElement | HTMLTextAreaElement): HTMLElement {
+  const badge = span('kind-preview', '')
+  const update = () => {
+    const text = input.value
+    const what = text.trim() ? describeParsed(parseRowInput(text)) : ''
+    badge.textContent = what
+    badge.hidden = !what
+  }
+  input.addEventListener('input', update)
+  update()
+  return badge
 }
 
 /** Open or close the keys/syntax help. */
@@ -649,7 +667,10 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
       try { input.setSelectionRange(end, end) } catch { /* not all inputs */ }
     }
   })
-  return input
+  // the editor plus a badge saying what the typed line is recognized as
+  const wrap = span('title editing', '')
+  wrap.append(input, kindPreview(input))
+  return wrap
 }
 
 function firstLine(text: string): string {
@@ -818,6 +839,18 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
   const canInvite = state.session?.kind === 'user'
   return [
     { label: 'Add row inside', keys: 'Ctrl+Shift+Enter', run: () => app.addRowInside(at, task.id) },
+    // typed markers, opened from the menu: the row starts with the marker and the editor takes it from there
+    ...(task.kind === 'task' ? [
+      { label: 'Add requirement inside: money (-$ 50 …)', run: () => app.addRowInside(at, task.id, 'plain', '-$ ') },
+      { label: 'Add requirement inside: time (-: 1h …)', run: () => app.addRowInside(at, task.id, 'plain', '-: ') },
+      { label: 'Add requirement inside: things (-# 2 …)', run: () => app.addRowInside(at, task.id, 'plain', '-# ') },
+      { label: 'Add requirement inside: a person (-@name …)', run: () => app.addRowInside(at, task.id, 'plain', '-@') },
+      { label: 'Add requirement inside: confirmation / task / search (- … · -[ ] … · -? …)', run: () => app.addRowInside(at, task.id, 'plain', '-') }
+    ] : []),
+    ...(task.kind === 'requirement' && task.requirement?.capability === 'allocation' ? [{ label: `Add allocation inside (${({ account: '$', calendar: ':', inventory: '#', person: '@' } as Record<string, string>)[task.requirement.resource ?? 'account']} amount …)`, run: () => app.addRowInside(at, task.id, 'plain', `${({ account: '$ ', calendar: ': ', inventory: '# ', person: '@' } as Record<string, string>)[task.requirement?.resource ?? 'account']}`) }] : []),
+    ...(task.kind === 'resource' ? [{ label: `Add allocation inside (${({ account: '$', calendar: ':', inventory: '#', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account']} amount …)`, run: () => app.addRowInside(at, task.id, 'plain', ({ account: '$ ', calendar: ': ', inventory: '# ', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account'] ?? '$ ') }] : []),
+    { label: 'Add bank below (@money · @calendar · @inventory · @person name …)', run: () => app.addRowBelowWith(at, task.id, '@money ') },
+    ...(state.session?.kind === 'user' ? app.knownPeers().slice(0, 6).map((p) => ({ label: `Add @${p.name} as a member (make this a group)`, run: () => app.addPeerToRow(at, task.id, p.id, p.name) })) : []),
     { label: 'Zoom in', keys: 'Alt+→', run: () => app.zoomTo([...at, task.id]) },
     ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Ctrl+Enter', run: () => app.toggleTaskAt(at, task) }] : []),
     { label: 'Add row below', keys: 'Enter', run: () => app.addRowBelow(at, task.id) },
@@ -996,33 +1029,29 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
 }
 
 /**
- * The context of the viewed node: the resource banks allocations here can draw from, and the peers (the account
- * server "fos" with the capabilities it registers, shown as banks; devices attached here) with, under each peer,
- * the requirements assigned to it ("-@name …") in this subtree.
+ * The device's root, one level above Home: a Home row (zoom in) and one row per peer this device reaches: the fos
+ * account server (sign-in happens on its row when not connected; its policy lines below it) and the members and
+ * attached devices of the Home node, with the capability rows the owner exposes to each (`to`) and accepts from each
+ * (`from`). Nothing here is a stored row.
  */
-function renderContext(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  const banks = app.contextBanks()
-  const peers = app.contextPeers()
-  if (!banks.length && !peers.length) { el.replaceChildren(); el.hidden = true; return }
-  el.hidden = false
-  const items: HTMLElement[] = []
-  const heading = document.createElement('h2')
-  // the root context is this device's; "home" is the group of all the user's devices (what attaches at the account's root)
-  const atRoot = state.view.length === 0
-  heading.textContent = atRoot ? 'Root · this device' : 'Context'
-  items.push(heading)
-  if (atRoot) items.push(div('muted small-print', 'Peers here are what this device can reach. Home is the group of all your devices: they show as members and attached devices below once connected. Drag a peer onto a row to make that row a group.'))
-  if (banks.length) {
-    const list = div('context-banks', '')
-    list.append(span('muted', 'Banks: '))
-    for (const { row, path } of banks) {
-      const r = row.resource
-      const chip = button('chip bank-chip', `${row.title} · ${r.capacity === undefined ? `${formatAmount(r.allocated, r.unit)} allocated` : `${formatAmount(r.available ?? 0, r.unit)} of ${formatAmount(r.capacity, r.unit)} left`}`, () => app.goTo([...path, row.id]))
-      chip.title = `${r.type} bank; "$ amount" rows draw from it`
-      list.append(chip)
-    }
-    items.push(list)
+function renderRootRows(node: NodeView, state: AppState, app: App): HTMLElement[] {
+  const rows: HTMLElement[] = []
+  const rowShell = (cls: string): HTMLLIElement => {
+    const li = document.createElement('li')
+    li.className = 'task root-row ' + cls
+    li.style.setProperty('--depth', '0')
+    return li
   }
+  // Home: the replica (the account's tree, or the node this device attaches to)
+  const home = rowShell('home')
+  const homeZoom = button('icon zoom-dot', '◉', () => app.goTo([]))
+  homeZoom.title = 'Open Home'
+  const homeTitle = span('title', '')
+  homeTitle.append(button('link ref-link', node.name && state.replica.meta.scopeNames.length ? node.name : 'Home', () => app.goTo([])), span('muted', ` · ${node.tasks.length} row${node.tasks.length === 1 ? '' : 's'}; the group of all your devices`))
+  home.append(homeZoom, span('handle', ''), button('icon toggle', '', () => undefined), homeTitle)
+  rows.push(home)
+
+  const peers = app.contextPeers()
   const owner = app.canApprove()
   const capTitle: Record<string, string> = {
     read: 'May read the content of the node',
@@ -1038,10 +1067,7 @@ function renderContext(el: HTMLElement, node: NodeView, state: AppState, app: Ap
     market: 'Lists tasks with "-market" requirements and brings back proposals',
     mail: 'Registered, no handler wired yet'
   }
-  /**
-   * One direction of a peer row as chips: `list` is what is there, `off` which of those are switched off; when
-   * `change` is given the chips are editable (click switches off/on, × removes, a select adds).
-   */
+  /** One direction of a peer row as chips; with `change` they are editable (click switches off/on, × removes, a select adds). */
   const chips = (list: Capability[], off: Capability[], online: boolean, change: ((next: Capability[], nextOff: Capability[]) => void) | null, lockedNote?: string): HTMLElement[] => {
     const out: HTMLElement[] = []
     for (const cap of list) {
@@ -1079,78 +1105,63 @@ function renderContext(el: HTMLElement, node: NodeView, state: AppState, app: Ap
     return line
   }
   for (const p of peers) {
-    const row = div('context-peer-block', '')
-    const head = div('peer-row context-peer', '')
-    head.dataset.peer = p.id
+    const li = rowShell('peer')
+    li.dataset.peer = p.id
     const dot = span('presence' + (p.online ? ' online' : ''), '')
     dot.title = p.online ? 'online' : p.isAccount ? 'offline: what it registered shows as offline until it connects again' : 'offline (still a member; its capabilities show as offline)'
-    head.append(dot, span('peer-name', p.isAccount ? `@${p.name}` : p.member ? `@${p.name}` : peerLabel(p.id, state)))
-    // peers can be dragged onto a row to make it a group with them as members
-    head.draggable = true
-    head.addEventListener('dragstart', (event) => { event.dataTransfer?.setData(PEER_DRAG_TYPE, JSON.stringify({ id: p.id, name: p.name })); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'link' })
-    head.title = 'Drag onto a row to make that row a group with this peer as a member'
-    if (p.isAccount && !state.session) {
-      // not connected: signing in happens on the fos row
-      head.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
+    const title = span('title peer-title', '')
+    title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : peerLabel(p.id, state)))
+    if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
+    if (p.isAccount && p.points !== null && p.points !== undefined) { const pts = span('alloc-tag points', `✦ ${p.points} fos points`); pts.title = 'The account\'s balance: the default pool for "ff" allocations'; title.append(pts) }
+    if (p.integration) {
+      const connect = button('secondary small', `Sign in with ${p.name}`, () => app.notify('error', `Signing in with ${p.name} is not set up on the server yet.`))
+      connect.title = 'SSO with this provider is not configured on the server yet; the row shows what it would provide and consume'
+      title.append(connect, span('muted', ' not connected'))
     }
-    if (p.member && owner) {
-      const remove = button('icon more small-icon', '×', () => app.removePeerHere(p.id))
-      remove.title = `Remove @${p.name} from this node`
-      head.append(remove)
-    } else if (state.session?.kind === 'user' && !p.isAccount && !p.member && p.id !== state.replica.meta.peerId) {
-      const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p.id }))
-      more.title = 'Device actions'
-      head.append(more)
-    }
-    row.append(head)
+    const lines = div('peer-lines', '')
     if (p.isAccount && p.policy) {
-      // the account server: what it registered with us, then this device's policy towards it (both directions)
       const policy = p.policy
       const locked = p.policyLocked ? 'set in fos.config.toml ([server] to / from)' : undefined
       const change = p.policyLocked ? null : (next: PeerPolicy) => app.setServerPolicy(next)
-      row.append(direction('offers:', `What @${p.name} registered with this device`, chips(p.capabilities, [], p.online, null)))
-      row.append(direction(`to @${p.name}:`, 'What leaves this device: read lets it serve our content, autopush sends local changes on every sync, submit proposals allows explicit sends; without autopush nothing but the connection leaves', chips(policy.to, [], true, change ? (next) => change({ ...policy, to: next }) : null, locked)))
-      row.append(direction(`from @${p.name}:`, 'What this device takes in: read pulls our node, read requests shows proposals addressed to us, autopush merges its changes in, relay/search/market/mail use its services', chips(policy.from, [], p.online, change ? (next) => change({ ...policy, from: next }) : null, locked)))
+      lines.append(direction('offers:', `What @${p.name} registered with this device`, chips(p.capabilities, [], p.online, null)))
+      lines.append(direction(`to @${p.name}:`, 'What leaves this device: read lets it serve our content, autopush sends local changes on every sync, submit proposals allows explicit sends; without autopush nothing but the connection leaves', chips(policy.to, [], true, change ? (next) => change({ ...policy, to: next }) : null, locked)))
+      lines.append(direction(`from @${p.name}:`, 'What this device takes in: read pulls our node, read requests shows proposals addressed to us, autopush merges its changes in, relay/search/market/mail use its services', chips(policy.from, [], p.online, change ? (next) => change({ ...policy, from: next }) : null, locked)))
     } else if (p.member) {
       const change = owner ? (next: Capability[], off: Capability[]) => app.setPeerCapabilities(p.id, next, off, p.accepts) : null
       const changeFrom = owner ? (next: Capability[]) => app.setPeerCapabilities(p.id, p.capabilities, p.disabled, next) : null
-      row.append(direction(`to @${p.name}:`, 'What this node exposes to the peer (the rows it will see)', chips(p.capabilities, p.disabled, p.online, change)))
-      row.append(direction(`from @${p.name}:`, 'What this node accepts from the peer (nothing it does not list reaches us; we query for the rest)', chips(p.accepts, [], p.online, changeFrom)))
+      lines.append(direction(`to @${p.name}:`, 'What Home exposes to the peer (the rows it will see)', chips(p.capabilities, p.disabled, p.online, change)))
+      lines.append(direction(`from @${p.name}:`, 'What Home accepts from the peer (nothing it does not list reaches us; we query for the rest)', chips(p.accepts, [], p.online, changeFrom)))
+    } else if (p.integration) {
+      lines.append(direction('provides:', `What ${p.name} would hand to the tree once signed in with (as banks and handlers for the matching requirements)`, chips(p.integration.provides, [], p.online, null, 'available once signed in')))
+      lines.append(direction('consumes:', `What ${p.name} would read from or do to the tree`, chips(p.integration.consumes, [], p.online, null, 'available once signed in')))
     } else if (p.capabilities.length) {
-      row.append(direction('offers:', 'How this device can reach the peer', chips(p.capabilities, [], p.online, null)))
+      lines.append(direction('offers:', 'How this device can reach the peer', chips(p.capabilities, [], p.online, null)))
     }
-    items.push(row)
-    const assigned = app.assignmentsTo(p.name)
-    if (assigned.length) {
-      const list = document.createElement('ul')
-      list.className = 'assignments'
-      for (const a of assigned) {
-        const li = document.createElement('li')
-        li.className = 'task kind-requirement' + (a.row.requirement?.satisfied ? ' done' : '')
-        li.append(span('kind-badge ' + (a.row.requirement?.satisfied ? 'ok' : 'needs'), a.row.requirement?.satisfied ? '✓' : '- @' + p.name))
-        const link = button('link', `${firstLine(a.row.title) || '(untitled)'}${a.task ? ` — for “${firstLine(a.task.title)}”` : ''}`, () => app.select([...a.at, a.row.id]))
-        li.append(link)
-        list.append(li)
-      }
-      items.push(list)
-    }
+    const meta = span('row-meta', '')
+    if (p.member && owner) { const remove = button('icon more small-icon', '×', () => app.removePeerHere(p.id)); remove.title = `Remove @${p.name} from Home`; meta.append(remove) }
+    else if (state.session?.kind === 'user' && !p.isAccount && !p.member && p.id !== state.replica.meta.peerId) { const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p.id })); more.title = 'Device actions'; meta.append(more) }
+    const body = div('peer-body', '')
+    body.append(title, lines)
+    li.append(span('zoom-dot', ''), span('handle', ''), dot, body, meta)
+    rows.push(li)
   }
   if (owner && state.session?.kind === 'user') {
-    // a peer row for another account on this node: what this owner exposes to it starts with `edit`
+    const li = rowShell('add-peer-row')
     const form = document.createElement('form')
     form.className = 'row add-peer'
     const input = document.createElement('input')
     input.type = 'text'
-    input.placeholder = '@username: add a peer row here'
+    input.placeholder = '@username: add a peer row (they become a member of Home)'
     input.autocomplete = 'off'
     input.id = 'add-peer-name'
     const go = button('secondary small', 'Add peer', () => undefined)
     go.type = 'submit'
     form.append(input, go)
     form.addEventListener('submit', (e) => { e.preventDefault(); app.addPeerHere(input.value); input.value = '' })
-    items.push(form)
+    li.append(span('zoom-dot', ''), span('handle', ''), form)
+    rows.push(li)
   }
-  el.replaceChildren(...items)
+  return rows
 }
 
 function renderFooter(el: HTMLElement, state: AppState, app: App): void {

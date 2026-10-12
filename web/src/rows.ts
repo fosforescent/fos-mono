@@ -34,12 +34,12 @@ export type ParsedInput = {
 }
 
 /** Words after "@" that open a resource bank rather than allocate a person. */
-const BANK_WORDS: Record<string, ResourceType> = { calendar: 'calendar', account: 'account', money: 'account', inventory: 'inventory', person: 'person' }
-/** The marker of each resource type: allocations ("$ 50", ": 1h", "# 2 widgets", "@bob 2h") and their requirements ("-$ 50" …). */
-export const RESOURCE_MARKER: Record<ResourceType, string> = { account: '$', calendar: ':', inventory: '#', person: '@' }
-export const RESOURCE_ICON: Record<ResourceType, string> = { account: '💲', calendar: '🕒', inventory: '📦', person: '👤' }
-export const RESOURCE_NAME: Record<ResourceType, string> = { account: 'money', calendar: 'time', inventory: 'things', person: 'person' }
-const DEFAULT_UNIT: Record<ResourceType, string> = { account: 'USD', calendar: 'h', inventory: 'unit', person: 'h' }
+const BANK_WORDS: Record<string, ResourceType> = { calendar: 'calendar', account: 'account', money: 'account', inventory: 'inventory', person: 'person', points: 'points', ff: 'points' }
+/** The marker of each resource type: allocations ("$ 50", ": 1h", "# 2 widgets", "@bob 2h", "ff 20") and their requirements ("-$ 50" …). */
+export const RESOURCE_MARKER: Record<ResourceType, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
+export const RESOURCE_ICON: Record<ResourceType, string> = { account: '💲', calendar: '🕒', inventory: '📦', person: '👤', points: '✦' }
+export const RESOURCE_NAME: Record<ResourceType, string> = { account: 'money', calendar: 'time', inventory: 'things', person: 'person', points: 'fos points' }
+const DEFAULT_UNIT: Record<ResourceType, string> = { account: 'USD', calendar: 'h', inventory: 'unit', person: 'h', points: 'ff' }
 
 const TIME_UNIT = /^(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|d|day|days)$/i
 const MONEY_UNIT = /^([A-Z]{3}|[€$£]|usd|eur|gbp)$/i
@@ -55,7 +55,8 @@ export function parseAmount(text: string, resource?: ResourceType): { amount: nu
   let unit = (m[2] ?? '').trim()
   let rest = (m[3] ?? '').trim()
   const timeLike = resource === 'calendar' || resource === 'person'
-  const fits = !unit || (timeLike ? TIME_UNIT.test(unit) : resource === 'account' ? MONEY_UNIT.test(unit) : resource === 'inventory' ? true : TIME_UNIT.test(unit) || MONEY_UNIT.test(unit) || true)
+  const fits = !unit || (timeLike ? TIME_UNIT.test(unit) : resource === 'account' ? MONEY_UNIT.test(unit) : resource === 'points' ? /^(ff|points?)$/i.test(unit) : resource === 'inventory' ? true : TIME_UNIT.test(unit) || MONEY_UNIT.test(unit) || true)
+  if (resource === 'points' && unit && fits) unit = 'ff'
   if (!fits) { rest = `${unit} ${rest}`.trim(); unit = '' }
   if (TIME_UNIT.test(unit)) {
     const u = unit.toLowerCase()
@@ -121,9 +122,14 @@ function parseTemplateRef(text: string): { templateName: string; rest: string } 
   return templateName ? { templateName, rest: (m[2] ?? '').trim() } : null
 }
 
-/** The resource type a marker character opens ("$", ":", "#"), or null. */
-function markerType(ch: string): ResourceType | null {
-  return ch === '$' ? 'account' : ch === ':' ? 'calendar' : ch === '#' ? 'inventory' : null
+/** The resource marker at the start of `text` ("$", ":", "#", or "ff" before a space or digit) with its length, or null. */
+function markerType(text: string): { type: ResourceType; length: number } | null {
+  const ch = text.charAt(0)
+  if (ch === '$') return { type: 'account', length: 1 }
+  if (ch === ':') return { type: 'calendar', length: 1 }
+  if (ch === '#') return { type: 'inventory', length: 1 }
+  if (/^ff(?=\s|\d|$)/i.test(text)) return { type: 'points', length: 2 }
+  return null
 }
 
 /**
@@ -140,16 +146,15 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
     const tpl = parseTemplateRef(rest)
     return { requirement: { capability: 'task' }, label: tpl ? (tpl.rest || tpl.templateName) : rest, ...(tpl ? { templateName: tpl.templateName } : {}) }
   }
-  const typed = markerType(t.charAt(0))
-  if (typed) {
-    const { allocation, text: label } = parseAllocation(typed, t.slice(1))
-    return { requirement: { capability: 'allocation', resource: typed, amount: allocation.amount, unit: allocation.unit, ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) }, label }
+  // "-$ 50 lunch": money, 50 of it; "-$ lunch": money, any amount (one allocation of the type fills it)
+  const allocationRequirement = (resource: ResourceType, body: string) => {
+    const hasAmount = parseAmount(body, resource) !== null
+    const { allocation, text: label } = parseAllocation(resource, body)
+    return { requirement: { capability: 'allocation' as const, resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) }, label }
   }
-  if ((m = t.match(/^@(calendar|account|money|inventory)\b\s*:?\s*(.*)$/is))) {
-    const resource = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
-    const { allocation, text: label } = parseAllocation(resource, m[2] ?? '')
-    return { requirement: { capability: 'allocation', resource, amount: allocation.amount, unit: allocation.unit, ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) }, label }
-  }
+  const typed = markerType(t)
+  if (typed) return allocationRequirement(typed.type, t.slice(typed.length))
+  if ((m = t.match(/^@(calendar|account|money|inventory|points|ff)\b\s*:?\s*(.*)$/is))) return allocationRequirement(BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType, m[2] ?? '')
   if ((m = t.match(/^@(?:person\s+)?([^\s@]+)\s*:?\s*(.*)$/s))) return { requirement: { capability: 'peer', peer: m[1] as string }, label: (m[2] ?? '').trim() }
   if ((m = t.match(/^(?:\?|search\s*:?)\s*(.*)$/is))) return { requirement: { capability: 'search' }, label: (m[1] ?? '').trim() }
   if ((m = t.match(/^market\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'market' }, label: (m[1] ?? '').trim() }
@@ -176,7 +181,7 @@ export function parseRowInput(raw: string): ParsedInput {
   if ((m = text.match(/^\/\/\s*(.*)$/s))) return { kind: 'comment', text: m[1] ?? '', done: false }
   if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? ''); return { kind: 'requirement', text: label, done: false, extras, ...(templateName ? { templateName } : {}) } }
   if ((m = text.match(/^\?\s*(.*)$/s))) return { kind: 'query', text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
-  if ((m = text.match(/^@(calendar|account|money|inventory|person)\b\s*:?\s*(.*)$/is))) {
+  if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff)\b\s*:?\s*(.*)$/is))) {
     const type = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
     const rest = (m[2] ?? '').trim()
     // optional trailing capacity: "@money Travel 500", "@calendar Week 40h", "@person bob 40h"
@@ -185,8 +190,8 @@ export function parseRowInput(raw: string): ParsedInput {
     const unit = amt?.unit ?? DEFAULT_UNIT[type]
     return { kind: 'resource', text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, ...(amt ? { capacity: amt.amount } : {}) } } }
   }
-  const typed = markerType(text.charAt(0))
-  if (typed) { const { allocation, text: label } = parseAllocation(typed, text.slice(1)); return { kind: 'allocation', text: label, done: false, extras: { allocation } } }
+  const typed = markerType(text)
+  if (typed) { const { allocation, text: label } = parseAllocation(typed.type, text.slice(typed.length)); return { kind: 'allocation', text: label, done: false, extras: { allocation } } }
   if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? '', m[1] as string); return { kind: 'allocation', text: label, done: false, extras: { allocation } } }
   if ((m = text.match(/^`\s*([^`]*)`?\s*$/s))) return { kind: 'template', text: (m[1] ?? '').trim(), done: false }
   return { kind: 'plain', text: text.trim(), done: false }
@@ -213,7 +218,7 @@ export function rawRowText(task: TaskView): string {
     case 'resource': {
       const r = task.resource
       if (!r) return `@inventory ${task.title}`
-      const word = r.type === 'account' ? 'money' : r.type
+      const word = r.type === 'account' ? 'money' : r.type === 'points' ? 'points' : r.type
       return join(`@${word}`, task.title, r.capacity !== undefined ? formatAmount(r.capacity, r.unit) : '')
     }
     case 'allocation': {
@@ -247,6 +252,35 @@ export function allocationTag(a: NonNullable<TaskView['allocation']>): string {
   return `${RESOURCE_ICON[a.type]} ${a.type === 'person' ? `${a.person ?? ''} ` : ''}${formatAmount(a.amount, a.unit)}${w ? ' ' + w : ''}`.replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * What a typed line is recognized as, shown next to the editor while typing: "task", "requirement · money 50 USD",
+ * "allocation · time 1 h", "bank · fos points", "template", … Empty for plain text.
+ */
+export function describeParsed(p: ParsedInput): string {
+  const amt = (a: { amount?: number; unit?: string } | undefined) => (a && a.amount !== undefined ? ' ' + formatAmount(a.amount, a.unit ?? '') : '')
+  switch (p.kind) {
+    case 'task': return p.templateName ? `task · executes \`${p.templateName}\`${p.done ? ' · done' : ''}` : `task${p.done ? ' · done' : ''}`
+    case 'note': return 'note'
+    case 'comment': return 'comment'
+    case 'query': return 'query'
+    case 'template': return 'template'
+    case 'resource': return `bank · ${RESOURCE_NAME[p.extras?.resource?.type ?? 'inventory']}${p.extras?.resource?.capacity !== undefined ? ' · ' + formatAmount(p.extras.resource.capacity, p.extras.resource.unit) : ''}`
+    case 'allocation': { const a = p.extras?.allocation; return `allocation · ${a ? RESOURCE_NAME[a.type] : ''}${a?.person ? ' @' + a.person : ''}${amt(a)}${a && formatWindow(a) ? ' · ' + formatWindow(a) : ''}` }
+    case 'requirement': {
+      const r = p.extras?.requirement
+      if (!r) return 'requirement'
+      switch (r.capability) {
+        case 'allocation': return `requirement · ${RESOURCE_NAME[r.resource ?? 'inventory']}${r.amount !== undefined ? amt(r) : ' (any amount)'}`
+        case 'task': return `requirement · a task${p.templateName ? ` executing \`${p.templateName}\`` : ''}`
+        case 'peer': return `requirement · @${r.peer ?? 'someone'}`
+        case 'choice': return `requirement · choice (${(r.options ?? []).join(' | ')})`
+        default: return `requirement · ${r.capability}`
+      }
+    }
+    default: return ''
+  }
+}
+
 /** The marker that recreates a row of `kind` when its text is edited from the start (shown in the help). */
 export const ROW_KIND_LABEL: Record<RowKind, string> = { task: 'Task', plain: 'Row', note: 'Note', comment: 'Comment', ref: 'Reference', requirement: 'Requirement', supply: 'Supply', query: 'Query', resource: 'Resource bank', allocation: 'Allocation', template: 'Template' }
 
@@ -267,6 +301,7 @@ export const SYNTAX_HELP: Array<[string, string]> = [
   ['-choice: a | b', 'a requirement for a decision between options'],
   ['$ 50 text', 'an allocation of money, taken from the parent context: the bank above, the bank the requirement needs, or the default pool of that type'],
   [': 1h text', 'an allocation of time; # 2 widgets things; @bob 2h the person bob'],
+  ['ff 20 text', 'an allocation of fos points (your account balance is the default pool; -ff 20 requires them)'],
   ['$ 50 2026-10-13..2026-10-20 text', 'an allocation held for a window (start is now, end is forever, when absent): every resource has its own calendar'],
   ['? text', 'a query: semantic search over your rows (Search runs it, results appear inside)'],
   ['@money Travel 500', 'a resource bank (money); @calendar Week 40h (time), @inventory Shelf 12 (things), @person bob 40h (their calendar). The first bank of a type at the top level is its default pool']

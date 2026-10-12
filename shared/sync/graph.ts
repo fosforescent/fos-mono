@@ -144,8 +144,11 @@ export function isTaskEdge(store: FosStore, edge: FosPathElem): boolean {
 
 export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref' | 'requirement' | 'supply' | 'query' | 'resource' | 'allocation' | 'template'
 export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref', 'requirement', 'supply', 'query', 'resource', 'allocation', 'template']
-/** Kinds of resource bank: time, money, things, and a person (their own calendar). Each has its own calendar: an allocation may carry a start/end window. */
-export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person'
+/**
+ * Kinds of resource bank: time, money, things, a person (their own calendar) and fos points (the account's token
+ * balance, marker "ff"). Each has its own calendar: an allocation may carry a start/end window.
+ */
+export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'points'
 /**
  * What a requirement asks for, named after the kind of child row that fills it: a done `task`, an `allocation`
  * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
@@ -788,7 +791,7 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
   })
   if (filledByChild) return true
   // an allocation requirement with an amount is also met by several smaller allocations adding up (child rows and supplied references)
-  if (req.capability === 'allocation' && req.amount !== undefined) {
+  if (req.capability === 'allocation' && req.amount !== undefined && req.amount > 0) {
     const progress = requirementProgress(store, requirementCid, root)
     if (progress && progress.have >= progress.need) return true
   }
@@ -975,15 +978,28 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo']
+/**
+ * Integration peers: outside services a user can sign in with (SSO) that then provide capabilities to the tree and
+ * consume some of ours. Listed at the device's root like other peers; the sign-in itself is not wired on the
+ * server yet, so they show as not connected.
+ */
+export type IntegrationPeer = { id: string; name: string; provides: Capability[]; consumes: Capability[] }
+export const INTEGRATION_PEERS: IntegrationPeer[] = [
+  { id: 'github', name: 'GitHub', provides: ['repo', 'search'], consumes: ['read', 'edit'] },
+  { id: 'google', name: 'Google', provides: ['calendar', 'mail', 'search'], consumes: ['read', 'edit'] },
+  { id: 'anthropic', name: 'Anthropic', provides: ['llm', 'search'], consumes: ['read'] },
+  { id: 'openai', name: 'OpenAI', provides: ['llm', 'search'], consumes: ['read'] }
+]
 export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'relay']
 /** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market and mail services. */
 export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail']
 /** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
 export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'submit proposals', approve: 'approve proposals', autopush: 'autopush',
-  direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail'
+  direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
+  calendar: 'calendar', llm: 'language model', repo: 'repositories'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1112,6 +1128,9 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'read': return p.readCapability.getId()
     case 'read-requests': return p.readRequestsCapability.getId()
     case 'autopush': return p.autopushCapability.getId()
+    case 'calendar': return p.calendarCapability.getId()
+    case 'llm': return p.llmCapability.getId()
+    case 'repo': return p.repoCapability.getId()
   }
 }
 

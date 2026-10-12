@@ -214,9 +214,13 @@ supply counts only when `by` is the named peer. A reference it cannot resolve
 is trusted (it came through a proposal from another account).
 
 **Resource banks** (`@calendar`, `@money`, `@inventory`, `@person <name>`,
-optional capacity) hold **allocations** and sub-banks as children. Each
-resource type has a marker: `$` money, `:` time, `#` things, `@name` a person
-(`-$`, `-:`, `-#`, `-@name` for the matching requirements). An allocation is
+`@points`, optional capacity) hold **allocations** and sub-banks as
+children. Each resource type has a marker: `$` money, `:` time, `#` things,
+`@name` a person, `ff` fos points (`-$`, `-:`, `-#`, `-@name`, `-ff` for the
+matching requirements). Fos points are the account's token balance
+(`GET /tokens/balance`, shown on the fos row); an `ff` allocation with no
+`@points` bank above draws from that balance (`resource: 'fos:points'`), and
+spending is accounted server-side. An allocation is
 *taken from the parent context* (`App.bankFor`): the nearest bank of its type
 above it, or, under an allocation requirement, a bank of the resource the
 requirement names, or the type's **default pool**, the first bank of that type
@@ -304,14 +308,23 @@ that scope, and sends nothing but the connection; its completions leave only
 when the policy allows a push or an explicit proposal. The server does not
 yet enforce policies on its side (it serves what the credential allows).
 
-**Groups, root and home.** Any row becomes a group by dropping a peer from
-the context panel on it (`App.addPeerToRow`): the peer becomes a member of
-that node (`read`, `edit`) and the fos account server is added as a member
-the first time (removable like any member). The root context of a client is
-the device's own: the panel there lists the fos server (sign-in happens on
-its row when not connected) and whatever attaches to the account's root,
-which is "home", the group of all the user's devices. A separate home node
-distinct from the account root is not modelled yet.
+**Groups, root and home.** Any row becomes a group through its menu ("Add
+@name as a member", `App.addPeerToRow`): the peer becomes a member of that
+node (`read`, `edit`) and the fos account server is added as a member the
+first time (removable like any member). The app starts in **Home**, the
+replica (the account's tree, the group of all the user's devices, or the
+node this device attaches to). Zooming out of Home shows the device's
+**root** (`state.atRoot`, not a node): a Home row and one row per peer the
+device reaches: the fos server (sign-in happens on its row when not
+connected; its policy lines below it) and Home's members and attached
+devices with their `to`/`from` capability rows, and the **integration
+peers** (`INTEGRATION_PEERS`: GitHub, Google, Anthropic, OpenAI) with what
+each would provide (`repo`, `calendar`, `mail`, `search`, `llm`) and consume
+(`read`, `edit`) once signed in with. SSO with those providers is not wired
+on the server yet, so they show as not connected. There is no separate
+context panel; banks are ordinary rows in the tree. A home node distinct
+from the account root is not modelled yet. While typing, a badge after the
+editor says what the line is recognized as (`describeParsed`).
 
 **Allocation bins (sending rows to another account).** A row whose children
 are requirement and allocation rows is a proposed transaction: what the
@@ -535,6 +548,11 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
   tables are parsed but not yet applied to member rows.
 * Devices do not register capabilities of their own with the account yet;
   only the account server reports `capabilities` in sync responses.
+* Integration peers need server-side SSO (OAuth with GitHub/Google and API
+  keys for Anthropic/OpenAI) and handlers for `repo`/`calendar`/`llm`
+  requirements; today they are declared only.
+* Fos-point allocations are recorded in the tree but not debited from the
+  token balance when a task completes.
 * Choice requirements have no handler registry yet: any signed-in viewer can
   pick an option. Calendar allocations carry start/end but nothing checks
   overlaps.

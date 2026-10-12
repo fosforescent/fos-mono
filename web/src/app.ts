@@ -26,6 +26,7 @@ import {
   DEFAULT_DEVICE_POLICY,
   findTemplateByName,
   instantiateTemplate,
+  INTEGRATION_PEERS,
   parsePolicy,
   removeMemberAt,
   resolveRef,
@@ -90,6 +91,7 @@ import {
   type SearchHit,
   type VoiceNote,
   getMarketNode,
+  getTokenBalance,
   submitMarketProposal,
   type MarketNode
 } from './api'
@@ -123,6 +125,10 @@ export type ContextPeer = {
   /** The account server row: this device's policy towards it, and whether fos.config.toml fixed it. */
   policy?: PeerPolicy
   policyLocked?: boolean
+  /** The account server row: the account's fos points (token balance), once fetched. */
+  points?: number | null
+  /** An integration peer (GitHub, Google, …): what it would provide and consume once signed in with; not connected yet. */
+  integration?: { provides: Capability[]; consumes: Capability[] }
 }
 
 export type ConnectFlow =
@@ -170,6 +176,13 @@ export type AppState = {
   policyLocked: boolean
   /** Keyboard selection: path (relative to the view) of the selected task. */
   selected: Scope | null
+  /**
+   * The device's own root, one level above the replica (above Home): the fos server and the other peers this device
+   * reaches, each as a row, plus the Home row. Not a node; nothing is stored there. The app starts in Home.
+   */
+  atRoot: boolean
+  /** The account's fos points (token balance) from the last fetch; null before the first or when signed out. */
+  points: number | null
   /** Open context menu, if any. */
   contextMenu: { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
@@ -262,6 +275,8 @@ export class App {
       policy: configPolicy ?? parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
       policyLocked: !!configPolicy,
       selected: null,
+      atRoot: false,
+      points: null,
       contextMenu: null,
       device: null,
       voice: null,
@@ -301,7 +316,7 @@ export class App {
     this.config.storage.savePrefs({ view: this.state.view, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
-  private notify(kind: Notice['kind'], text: string): void {
+  notify(kind: Notice['kind'], text: string): void {
     this.set({ notice: { kind, text, at: this.now() } })
   }
 
@@ -510,6 +525,7 @@ export class App {
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online' }
       if (response.presence) patch.onlinePeers = response.presence
       if (response.capabilities) patch.serverCapabilities = response.capabilities
+      if (transport === 'account') void this.refreshPoints()
       const n = done.newChoiceIds.length
       if (n > 0) {
         patch.highlighted = done.newChoiceIds
@@ -640,8 +656,13 @@ export class App {
     const windowed = base.start !== undefined || base.end !== undefined
     if (base.type === 'person' && !windowed) return { ...base, by }
     const bank = this.bankFor(at, allocation ? base.type : null, base.person)
+    if (!bank && base.type === 'points') {
+      // fos points without a bank row draw from the account's balance (the fos peer is the pool); it is checked server-side when spent
+      if (this.state.points !== null && base.amount > this.state.points) this.notify('error', `That is more than the ${this.state.points} fos points on the account; the allocation is recorded anyway.`)
+      return { ...base, resource: 'fos:points', by }
+    }
     if (!bank) {
-      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h` }
+      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h`, points: '@points Pool 500' }
       this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${base.person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
       return null
     }
@@ -716,7 +737,11 @@ export class App {
     if (session?.kind === 'user' || this.state.view.length === 0) {
       const id = this.state.replica.meta.serverPeerId ?? (session ? `user:${session.username}` : 'fos')
       const online = !!session && this.transport() === 'account' && this.state.connection !== 'offline'
-      peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked })
+      peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
+    }
+    // integration peers (sign in with GitHub, Google, …): listed at the root with what they would provide and consume; not connected yet
+    if (this.state.view.length === 0) {
+      for (const i of INTEGRATION_PEERS) peers.push({ id: `integration:${i.id}`, name: i.name, online: false, capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { provides: [...i.provides], consumes: [...i.consumes] } })
     }
     for (const m of node?.members ?? []) {
       if (m.peerId === me || peers.some((x) => x.id === m.peerId)) continue
@@ -733,6 +758,15 @@ export class App {
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
   allCapabilities(): Capability[] { return [...CAPABILITIES] }
+  /** The account's fos points (token balance), shown on the fos row and the default pool for "ff" allocations. */
+  async refreshPoints(): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { if (this.state.points !== null) this.set({ points: null }); return }
+    try {
+      const { balance } = await getTokenBalance(session)
+      if (typeof balance === 'number' && balance !== this.state.points) this.set({ points: balance })
+    } catch { /* the balance is informational; keep the last value */ }
+  }
   /** Owner side: the capability rows under the peer `peerId` on the viewed node: `to` (granted, and which are switched off) and `from` (accepted). */
   setPeerCapabilities(peerId: string, capabilities: Capability[], disabled: Capability[], accepts?: Capability[]): void {
     if (!this.canApprove()) { this.notify('error', 'Only the owner of this node (or a member who may approve) changes what peers get here.'); return }
@@ -951,10 +985,18 @@ export class App {
     const created = this.addRowAt(at, 'plain', '', { position: { relativeTo: id, position: 'below' } })
     this.set({ selected: [...at, created] })
   }
-  /** Ctrl+Shift+Enter: a blank row inside `id` (plain, or a comment from the menu), selected for typing. */
-  addRowInside(at: Scope, id: string, kind: 'plain' | 'comment' = 'plain'): void {
-    const created = this.addRowAt([...at, id], kind, kind === 'comment' ? ' ' : '')
+  /**
+   * Ctrl+Shift+Enter: a blank row inside `id` (plain, or a comment from the menu), selected for typing. `seed` starts
+   * the row's text with a marker ("-", "$ ", "@money ") so the menu can open a requirement, allocation or bank row.
+   */
+  addRowInside(at: Scope, id: string, kind: 'plain' | 'comment' = 'plain', seed = ''): void {
+    const created = this.addRowAt([...at, id], kind, kind === 'comment' ? ' ' : seed)
     this.set({ selected: [...at, id, created], collapsed: this.state.collapsed.filter((c) => c !== id) })
+  }
+  /** A row below `id` whose text starts with `seed` (a marker), selected for typing. */
+  addRowBelowWith(at: Scope, id: string, seed: string): void {
+    const created = this.addRowAt(at, 'plain', seed, { position: { relativeTo: id, position: 'below' } })
+    this.set({ selected: [...at, created] })
   }
   /** The blank row at the top of the view was typed into: a row of the parsed kind becomes the first row here. */
   addRowAtTop(parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): string | null {
@@ -1129,8 +1171,14 @@ export class App {
 
   /** Zoom into a descendant: `at` is its path relative to the current view (any depth). */
   zoomTo(at: Scope): void { this.goTo([...this.state.view, ...at]) }
-  goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null }) }
-  zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)) }
+  goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null, atRoot: false }) }
+  /** Zoom out of Home shows the device's root: the peers it reaches and the Home row. */
+  zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)); else if (!this.state.atRoot) this.set({ atRoot: true, selected: null, contextMenu: null }) }
+  goToRoot(): void { this.set({ atRoot: true, selected: null, contextMenu: null }) }
+  /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
+  knownPeers(): Array<{ id: string; name: string }> {
+    return this.contextPeers().map((p) => ({ id: p.id, name: p.name }))
+  }
   select(path: Scope | null): void { this.set({ selected: path }) }
   openContextMenu(menu: AppState['contextMenu']): void { this.set({ contextMenu: menu, menuOpen: false }) }
   closeContextMenu(): void { if (this.state.contextMenu) this.set({ contextMenu: null }) }
