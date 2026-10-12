@@ -300,3 +300,6 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .task .title.editing { flex: 1; display: flex; align-items: center; gap: 4px; min-width: 0; }
 .task .title.editing input.edit, .task .title.editing textarea.edit { flex: 1; }
 .alloc-tag.points { background: #f59e0b22; color: #92400e; }
+.legal-links { padding: 6px 12px 2px; }
+.legal-links a { color: var(--muted); }
+.legal-links a:hover { color: var(--accent); }

@@ -194,7 +194,7 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
     const next = window.prompt('Name this device', state.deviceName)
     if (next) app.setDeviceName(next)
   }))
-  items.push(name)
+  items.push(name, legalLinks('Fosforescent'))
   el.replaceChildren(...items)
 }
 
@@ -1294,6 +1294,15 @@ function renderHelp(body: HTMLElement): void {
   body.append(h4('Row markers (type them at the start of a row)'), table(SYNTAX_HELP, 'syntax'))
   body.append(div('muted small-print', 'A requirement (-) is filled by a child row of the kind it names; the task above it cannot be checked off until every requirement is filled. Allocations ($) draw from the parent context: the bank above them, or the bank the requirement needs. Peers in the context (fos when you are online) register capabilities that act as banks for search, market and mail requirements.'))
   body.append(div('muted small-print', 'Each peer row has two directions: "to" is what leaves this side (read, autopush, submit proposals, how it can be reached, services), "from" is what it takes in (read, read requests, autopush, relay, services). Nothing moves in a direction that is not listed, so no peer adds rows to your context: your sync is the query. A device set to only "from: read, read requests" receives work and sends nothing but the connection. In a project, [server] to / from in fos.config.toml fixes this.'))
+  body.append(legalLinks('Fosforescent'))
+}
+
+// Links to the static legal pages in web/public (served at /privacy and /terms); `lead` is the text before them.
+function legalLinks(lead: string): HTMLElement {
+  const el = div('muted small-print legal-links', '')
+  const link = (href: string, text: string) => { const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text; return a }
+  el.append(`${lead} `, link('/terms', 'Terms of Service'), ' and ', link('/privacy', 'Privacy Policy'), '.')
+  return el
 }
 
 function modalKey(state: AppState): string {
@@ -1406,6 +1415,7 @@ function renderConnect(body: HTMLElement, state: AppState, app: App): void {
     void app.login(String(data.get('username') ?? ''), String(data.get('password') ?? ''))
   })
   body.append(form, div('error', state.loginError ?? '', 'error'))
+  body.append(legalLinks('By signing in you agree to the'))
 
   // --- invite token
   body.append(h4('Connection token or QR code'))
