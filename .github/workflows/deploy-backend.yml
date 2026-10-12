@@ -129,6 +129,10 @@ jobs:
         with:
           node-version: '22'
 
+      # web/ compiles shared/ sources whose dependencies (js-sha3, uuid, react types, …) are in the root workspace
+      - name: Install workspace dependencies
+        run: npm ci
+
       - name: Build web app
         env:
           VITE_API_URL: ${{ env.API_URL }}
