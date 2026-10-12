@@ -24,6 +24,7 @@ import { getSuggest } from './suggest'
 import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, deleteAttachment } from './sync/peerSync'
 import { peerInviteHandlers } from './sync/peerInvites'
 import { deviceLoginHandlers } from './auth/deviceLogin'
+import { createChannelsRouter, startChannels, stopChannels } from './channels'
 import {
   getMCPServers,
   getMCPServer,
@@ -507,6 +508,8 @@ mcpRoutes.use(mcpHttpMiddleware)
 
 
 app.use('/user/data', dataRoutes)
+// Chat channels (WhatsApp webhook, Discord bot) bridged into this process; see backend/channels/
+app.use('/channels', createChannelsRouter())
 app.use('/api/v1', apiRoutes)
 app.use('/admin', adminRoutes)
 app.use('/', protectedRoutes)
@@ -552,6 +555,7 @@ attachWs(server)
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
 server.listen(PORT, '0.0.0.0', async () => {
+  void startChannels()
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);
   console.log(`MCP endpoint: ws://localhost:${PORT}/mcp`);
@@ -570,6 +574,7 @@ server.listen(PORT, '0.0.0.0', async () => {
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully')
   await mcpProxy.cleanup()
+  void stopChannels()
   server.close(() => {
     console.log('Server closed')
     process.exit(0)
