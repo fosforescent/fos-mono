@@ -28,7 +28,7 @@ mod workspace;
 #[derive(Parser)]
 #[command(name = "fos")]
 #[command(author = "Fosforescent")]
-#[command(version = "0.1.0")]
+#[command(version = "0.1.1")]
 #[command(about = "Fosforescent — tasks that sync across your devices, directories and agents", long_about = None)]
 struct Cli {
     /// Directory to use as context (default: your home directory = your account root)
