@@ -272,3 +272,58 @@ resource "google_secret_manager_secret_iam_member" "cloudrun_email_webhook_pwd" 
   member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
   depends_on = [google_secret_manager_secret.email_webhook_pwd]
 }
+
+# Integration peers (backend/integrations/): the token-encryption secret, OAuth client credentials and Twilio.
+# Values come from .env (TF_DOTENV in CI); a key missing or empty there creates no secret and no env var, and
+# the app shows that provider as "not configured" rather than failing.
+locals {
+  integration_keys = [
+    "INTEGRATION_SECRET",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "DISCORD_CLIENT_ID",
+    "DISCORD_CLIENT_SECRET",
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_FROM",
+  ]
+  integration_env = { for k in local.integration_keys : k => lookup(local.env_vars, k, "") if lookup(local.env_vars, k, "") != "" }
+}
+
+resource "google_secret_manager_secret" "integration" {
+  for_each  = local.integration_env
+  secret_id = "fos-${lower(replace(each.key, "_", "-"))}-${var.environment}"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    managed_by  = "terraform"
+  }
+}
+
+resource "google_secret_manager_secret_version" "integration" {
+  for_each    = local.integration_env
+  secret      = google_secret_manager_secret.integration[each.key].id
+  secret_data = each.value
+}
+
+resource "google_secret_manager_secret_iam_member" "backend_integration" {
+  for_each   = local.integration_env
+  secret_id  = google_secret_manager_secret.integration[each.key].id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_backend_sa.email}"
+  depends_on = [google_secret_manager_secret.integration]
+}
+
+resource "google_secret_manager_secret_iam_member" "cloudrun_integration" {
+  for_each   = local.integration_env
+  secret_id  = google_secret_manager_secret.integration[each.key].id
+  role       = "roles/secretmanager.secretAccessor"
+  member     = "serviceAccount:${google_service_account.fos_cloudrun_sa.email}"
+  depends_on = [google_secret_manager_secret.integration]
+}
