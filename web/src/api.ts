@@ -212,3 +212,8 @@ export function getMarketNode(session: Session, owner: string, aliasId: string):
 export function submitMarketProposal(session: Session, owner: string, aliasId: string, rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }>): Promise<{ proposalId: string }> {
   return authed(session, 'POST', '/user/data/market/proposals', { owner, aliasId, rows })
 }
+
+/** The account's fos points (its token balance): the default pool for "ff" allocations. */
+export function getTokenBalance(session: Session): Promise<{ balance: number }> {
+  return authed(session, 'GET', '/tokens/balance')
+}

@@ -2205,7 +2205,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo"];
   function isLink(store, value) {
     if (isHandle(value)) return false;
     return isRefNode(store, value) || !!value.data.link;
@@ -2289,6 +2289,12 @@
         return p.readRequestsCapability.getId();
       case "autopush":
         return p.autopushCapability.getId();
+      case "calendar":
+        return p.calendarCapability.getId();
+      case "llm":
+        return p.llmCapability.getId();
+      case "repo":
+        return p.repoCapability.getId();
     }
   }
   function capabilityOfTarget(store, target) {
@@ -6047,6 +6053,9 @@
   var getReadCapabilityNode = (store) => generateConstructor(store, "READ", { description: { content: "Capability - may read the content of the node" } }, []);
   var getReadRequestsCapabilityNode = (store) => generateConstructor(store, "READREQUESTS", { description: { content: "Capability - may read the requests (proposals) addressed to it on the node" } }, []);
   var getAutopushCapabilityNode = (store) => generateConstructor(store, "AUTOPUSH", { description: { content: "Capability - changes flow automatically on sync (merged), rather than only as explicit proposals" } }, []);
+  var getCalendarCapabilityNode = (store) => generateConstructor(store, "CALENDARCAPABILITY", { description: { content: "Capability - provides a calendar (time allocations) for calendar requirements" } }, []);
+  var getLlmCapabilityNode = (store) => generateConstructor(store, "LLMCAPABILITY", { description: { content: "Capability - a language model that can answer or act on rows" } }, []);
+  var getRepoCapabilityNode = (store) => generateConstructor(store, "REPOCAPABILITY", { description: { content: "Capability - code repositories (issues, pull requests) as rows" } }, []);
   var getAcceptsNode = (store) => generateConstructor(store, "ACCEPTS", { description: { content: "Accepts - the owner accepts this capability from the member (what may flow in from that peer)" } }, []);
   var getDurationFieldNode = (store) => generateConstructor(store, "DURATION", { description: { content: "Duration Field Constructor" } }, []);
   var getDateFieldNode = (store) => generateConstructor(store, "DATE", { description: { content: "Date Field Constructor" } }, []);
@@ -6381,6 +6390,9 @@
     const readRequestsCapability = getReadRequestsCapabilityNode(store);
     const autopushCapability = getAutopushCapabilityNode(store);
     const acceptsNode = getAcceptsNode(store);
+    const calendarCapability = getCalendarCapabilityNode(store);
+    const llmCapability = getLlmCapabilityNode(store);
+    const repoCapability = getRepoCapabilityNode(store);
     const approveAction = getApproveActionNode(store);
     const effectNode = getEffectNode(store);
     const handlerNode = getHandlerNode(store);
@@ -6578,6 +6590,9 @@
       readRequestsCapability,
       autopushCapability,
       acceptsNode,
+      calendarCapability,
+      llmCapability,
+      repoCapability,
       effectNode,
       handlerNode
     };

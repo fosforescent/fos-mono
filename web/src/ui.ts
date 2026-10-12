@@ -9,7 +9,7 @@ import { isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeV
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
+import { ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
 import { CAPABILITY_LABEL, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
@@ -347,6 +347,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   input.className = 'edit'
   input.placeholder = 'New row… (ctrl + H for tips)'
   void node
+  const preview = kindPreview(input)
   input.autocomplete = 'off'
   let committed = false
   /** Make the typed row; null when nothing was typed or the row could not be made (e.g. an allocation with no bank). */
@@ -378,7 +379,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   })
   input.addEventListener('focus', () => { if (state.selected) { focusGhost = true; app.select(null) } })
   input.addEventListener('blur', () => { commit() })
-  li.append(span('zoom-dot', ''), span('handle', ''), toggle, input)
+  li.append(span('zoom-dot', ''), span('handle', ''), toggle, input, preview)
   if (focusGhost && !state.selected && !state.modal && !state.contextMenu && !state.menuOpen) {
     focusGhost = false
     queueMicrotask(() => {
@@ -387,6 +388,23 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     })
   }
   return li
+}
+
+/**
+ * A small badge after an editor that says what the typed line is recognized as ("requirement · money 50 USD",
+ * "allocation · time 1 h", "task", "bank · fos points"), updated as the text changes; empty for plain text.
+ */
+function kindPreview(input: HTMLInputElement | HTMLTextAreaElement): HTMLElement {
+  const badge = span('kind-preview', '')
+  const update = () => {
+    const text = input.value
+    const what = text.trim() ? describeParsed(parseRowInput(text)) : ''
+    badge.textContent = what
+    badge.hidden = !what
+  }
+  input.addEventListener('input', update)
+  update()
+  return badge
 }
 
 /** Open or close the keys/syntax help. */
@@ -649,7 +667,10 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
       try { input.setSelectionRange(end, end) } catch { /* not all inputs */ }
     }
   })
-  return input
+  // the editor plus a badge saying what the typed line is recognized as
+  const wrap = span('title editing', '')
+  wrap.append(input, kindPreview(input))
+  return wrap
 }
 
 function firstLine(text: string): string {
@@ -1091,6 +1112,12 @@ function renderRootRows(node: NodeView, state: AppState, app: App): HTMLElement[
     const title = span('title peer-title', '')
     title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : peerLabel(p.id, state)))
     if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
+    if (p.isAccount && p.points !== null && p.points !== undefined) { const pts = span('alloc-tag points', `✦ ${p.points} fos points`); pts.title = 'The account\'s balance: the default pool for "ff" allocations'; title.append(pts) }
+    if (p.integration) {
+      const connect = button('secondary small', `Sign in with ${p.name}`, () => app.notify('error', `Signing in with ${p.name} is not set up on the server yet.`))
+      connect.title = 'SSO with this provider is not configured on the server yet; the row shows what it would provide and consume'
+      title.append(connect, span('muted', ' not connected'))
+    }
     const lines = div('peer-lines', '')
     if (p.isAccount && p.policy) {
       const policy = p.policy
@@ -1104,6 +1131,9 @@ function renderRootRows(node: NodeView, state: AppState, app: App): HTMLElement[
       const changeFrom = owner ? (next: Capability[]) => app.setPeerCapabilities(p.id, p.capabilities, p.disabled, next) : null
       lines.append(direction(`to @${p.name}:`, 'What Home exposes to the peer (the rows it will see)', chips(p.capabilities, p.disabled, p.online, change)))
       lines.append(direction(`from @${p.name}:`, 'What Home accepts from the peer (nothing it does not list reaches us; we query for the rest)', chips(p.accepts, [], p.online, changeFrom)))
+    } else if (p.integration) {
+      lines.append(direction('provides:', `What ${p.name} would hand to the tree once signed in with (as banks and handlers for the matching requirements)`, chips(p.integration.provides, [], p.online, null, 'available once signed in')))
+      lines.append(direction('consumes:', `What ${p.name} would read from or do to the tree`, chips(p.integration.consumes, [], p.online, null, 'available once signed in')))
     } else if (p.capabilities.length) {
       lines.append(direction('offers:', 'How this device can reach the peer', chips(p.capabilities, [], p.online, null)))
     }

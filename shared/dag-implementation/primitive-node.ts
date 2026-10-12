@@ -133,6 +133,9 @@ export const getMailCapabilityNode = (store: FosStore) => generateConstructor(st
 export const getReadCapabilityNode = (store: FosStore) => generateConstructor(store, "READ", { description: { content: 'Capability - may read the content of the node' } }, [])
 export const getReadRequestsCapabilityNode = (store: FosStore) => generateConstructor(store, "READREQUESTS", { description: { content: 'Capability - may read the requests (proposals) addressed to it on the node' } }, [])
 export const getAutopushCapabilityNode = (store: FosStore) => generateConstructor(store, "AUTOPUSH", { description: { content: 'Capability - changes flow automatically on sync (merged), rather than only as explicit proposals' } }, [])
+export const getCalendarCapabilityNode = (store: FosStore) => generateConstructor(store, "CALENDARCAPABILITY", { description: { content: 'Capability - provides a calendar (time allocations) for calendar requirements' } }, [])
+export const getLlmCapabilityNode = (store: FosStore) => generateConstructor(store, "LLMCAPABILITY", { description: { content: 'Capability - a language model that can answer or act on rows' } }, [])
+export const getRepoCapabilityNode = (store: FosStore) => generateConstructor(store, "REPOCAPABILITY", { description: { content: 'Capability - code repositories (issues, pull requests) as rows' } }, [])
 // [ACCEPTS, capability] on a member reference: what the owner accepts from that peer (the other direction of CAPABILITY)
 export const getAcceptsNode = (store: FosStore) => generateConstructor(store, "ACCEPTS", { description: { content: 'Accepts - the owner accepts this capability from the member (what may flow in from that peer)' } }, [])
 
@@ -761,6 +764,9 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const readRequestsCapability = getReadRequestsCapabilityNode(store)
   const autopushCapability = getAutopushCapabilityNode(store)
   const acceptsNode = getAcceptsNode(store)
+  const calendarCapability = getCalendarCapabilityNode(store)
+  const llmCapability = getLlmCapabilityNode(store)
+  const repoCapability = getRepoCapabilityNode(store)
   const approveAction = getApproveActionNode(store)
   const effectNode = getEffectNode(store)
   const handlerNode = getHandlerNode(store)
@@ -959,6 +965,9 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     readRequestsCapability,
     autopushCapability,
     acceptsNode,
+    calendarCapability,
+    llmCapability,
+    repoCapability,
     effectNode,
     handlerNode,
 
@@ -1149,6 +1158,9 @@ export type PrimitiveAliases = {
   readRequestsCapability: FosNode,
   autopushCapability: FosNode,
   acceptsNode: FosNode,
+  calendarCapability: FosNode,
+  llmCapability: FosNode,
+  repoCapability: FosNode,
   effectNode: FosNode,
   handlerNode: FosNode,
 }

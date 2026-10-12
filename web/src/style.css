@@ -294,3 +294,9 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .tree .task.root-row .peer-lines { display: flex; flex-direction: column; gap: 3px; }
 .tree .task.root-row .cap-direction { padding-left: 0; }
 .tree .task.root-row.add-peer-row .add-peer { flex: 1; }
+/* live kind indicator next to an editor */
+.kind-preview { font-size: 0.72rem; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); white-space: nowrap; margin-left: 6px; }
+.kind-preview[hidden] { display: none; }
+.task .title.editing { flex: 1; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.task .title.editing input.edit, .task .title.editing textarea.edit { flex: 1; }
+.alloc-tag.points { background: #f59e0b22; color: #92400e; }

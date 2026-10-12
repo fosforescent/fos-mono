@@ -26,6 +26,7 @@ import {
   DEFAULT_DEVICE_POLICY,
   findTemplateByName,
   instantiateTemplate,
+  INTEGRATION_PEERS,
   parsePolicy,
   removeMemberAt,
   resolveRef,
@@ -90,6 +91,7 @@ import {
   type SearchHit,
   type VoiceNote,
   getMarketNode,
+  getTokenBalance,
   submitMarketProposal,
   type MarketNode
 } from './api'
@@ -123,6 +125,10 @@ export type ContextPeer = {
   /** The account server row: this device's policy towards it, and whether fos.config.toml fixed it. */
   policy?: PeerPolicy
   policyLocked?: boolean
+  /** The account server row: the account's fos points (token balance), once fetched. */
+  points?: number | null
+  /** An integration peer (GitHub, Google, …): what it would provide and consume once signed in with; not connected yet. */
+  integration?: { provides: Capability[]; consumes: Capability[] }
 }
 
 export type ConnectFlow =
@@ -175,6 +181,8 @@ export type AppState = {
    * reaches, each as a row, plus the Home row. Not a node; nothing is stored there. The app starts in Home.
    */
   atRoot: boolean
+  /** The account's fos points (token balance) from the last fetch; null before the first or when signed out. */
+  points: number | null
   /** Open context menu, if any. */
   contextMenu: { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
@@ -268,6 +276,7 @@ export class App {
       policyLocked: !!configPolicy,
       selected: null,
       atRoot: false,
+      points: null,
       contextMenu: null,
       device: null,
       voice: null,
@@ -307,7 +316,7 @@ export class App {
     this.config.storage.savePrefs({ view: this.state.view, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
-  private notify(kind: Notice['kind'], text: string): void {
+  notify(kind: Notice['kind'], text: string): void {
     this.set({ notice: { kind, text, at: this.now() } })
   }
 
@@ -516,6 +525,7 @@ export class App {
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online' }
       if (response.presence) patch.onlinePeers = response.presence
       if (response.capabilities) patch.serverCapabilities = response.capabilities
+      if (transport === 'account') void this.refreshPoints()
       const n = done.newChoiceIds.length
       if (n > 0) {
         patch.highlighted = done.newChoiceIds
@@ -646,8 +656,13 @@ export class App {
     const windowed = base.start !== undefined || base.end !== undefined
     if (base.type === 'person' && !windowed) return { ...base, by }
     const bank = this.bankFor(at, allocation ? base.type : null, base.person)
+    if (!bank && base.type === 'points') {
+      // fos points without a bank row draw from the account's balance (the fos peer is the pool); it is checked server-side when spent
+      if (this.state.points !== null && base.amount > this.state.points) this.notify('error', `That is more than the ${this.state.points} fos points on the account; the allocation is recorded anyway.`)
+      return { ...base, resource: 'fos:points', by }
+    }
     if (!bank) {
-      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h` }
+      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h`, points: '@points Pool 500' }
       this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${base.person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
       return null
     }
@@ -722,7 +737,11 @@ export class App {
     if (session?.kind === 'user' || this.state.view.length === 0) {
       const id = this.state.replica.meta.serverPeerId ?? (session ? `user:${session.username}` : 'fos')
       const online = !!session && this.transport() === 'account' && this.state.connection !== 'offline'
-      peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked })
+      peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
+    }
+    // integration peers (sign in with GitHub, Google, …): listed at the root with what they would provide and consume; not connected yet
+    if (this.state.view.length === 0) {
+      for (const i of INTEGRATION_PEERS) peers.push({ id: `integration:${i.id}`, name: i.name, online: false, capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { provides: [...i.provides], consumes: [...i.consumes] } })
     }
     for (const m of node?.members ?? []) {
       if (m.peerId === me || peers.some((x) => x.id === m.peerId)) continue
@@ -739,6 +758,15 @@ export class App {
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
   allCapabilities(): Capability[] { return [...CAPABILITIES] }
+  /** The account's fos points (token balance), shown on the fos row and the default pool for "ff" allocations. */
+  async refreshPoints(): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { if (this.state.points !== null) this.set({ points: null }); return }
+    try {
+      const { balance } = await getTokenBalance(session)
+      if (typeof balance === 'number' && balance !== this.state.points) this.set({ points: balance })
+    } catch { /* the balance is informational; keep the last value */ }
+  }
   /** Owner side: the capability rows under the peer `peerId` on the viewed node: `to` (granted, and which are switched off) and `from` (accepted). */
   setPeerCapabilities(peerId: string, capabilities: Capability[], disabled: Capability[], accepts?: Capability[]): void {
     if (!this.canApprove()) { this.notify('error', 'Only the owner of this node (or a member who may approve) changes what peers get here.'); return }
