@@ -304,14 +304,18 @@ that scope, and sends nothing but the connection; its completions leave only
 when the policy allows a push or an explicit proposal. The server does not
 yet enforce policies on its side (it serves what the credential allows).
 
-**Groups, root and home.** Any row becomes a group by dropping a peer from
-the context panel on it (`App.addPeerToRow`): the peer becomes a member of
-that node (`read`, `edit`) and the fos account server is added as a member
-the first time (removable like any member). The root context of a client is
-the device's own: the panel there lists the fos server (sign-in happens on
-its row when not connected) and whatever attaches to the account's root,
-which is "home", the group of all the user's devices. A separate home node
-distinct from the account root is not modelled yet.
+**Groups, root and home.** Any row becomes a group through its menu ("Add
+@name as a member", `App.addPeerToRow`): the peer becomes a member of that
+node (`read`, `edit`) and the fos account server is added as a member the
+first time (removable like any member). The app starts in **Home**, the
+replica (the account's tree, the group of all the user's devices, or the
+node this device attaches to). Zooming out of Home shows the device's
+**root** (`state.atRoot`, not a node): a Home row and one row per peer the
+device reaches: the fos server (sign-in happens on its row when not
+connected; its policy lines below it) and Home's members and attached
+devices with their `to`/`from` capability rows. There is no separate context
+panel; banks are ordinary rows in the tree. A home node distinct from the
+account root is not modelled yet.
 
 **Allocation bins (sending rows to another account).** A row whose children
 are requirement and allocation rows is a proposed transaction: what the

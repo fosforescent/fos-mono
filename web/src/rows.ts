@@ -140,16 +140,15 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
     const tpl = parseTemplateRef(rest)
     return { requirement: { capability: 'task' }, label: tpl ? (tpl.rest || tpl.templateName) : rest, ...(tpl ? { templateName: tpl.templateName } : {}) }
   }
+  // "-$ 50 lunch": money, 50 of it; "-$ lunch": money, any amount (one allocation of the type fills it)
+  const allocationRequirement = (resource: ResourceType, body: string) => {
+    const hasAmount = parseAmount(body, resource) !== null
+    const { allocation, text: label } = parseAllocation(resource, body)
+    return { requirement: { capability: 'allocation' as const, resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) }, label }
+  }
   const typed = markerType(t.charAt(0))
-  if (typed) {
-    const { allocation, text: label } = parseAllocation(typed, t.slice(1))
-    return { requirement: { capability: 'allocation', resource: typed, amount: allocation.amount, unit: allocation.unit, ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) }, label }
-  }
-  if ((m = t.match(/^@(calendar|account|money|inventory)\b\s*:?\s*(.*)$/is))) {
-    const resource = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
-    const { allocation, text: label } = parseAllocation(resource, m[2] ?? '')
-    return { requirement: { capability: 'allocation', resource, amount: allocation.amount, unit: allocation.unit, ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) }, label }
-  }
+  if (typed) return allocationRequirement(typed, t.slice(1))
+  if ((m = t.match(/^@(calendar|account|money|inventory)\b\s*:?\s*(.*)$/is))) return allocationRequirement(BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType, m[2] ?? '')
   if ((m = t.match(/^@(?:person\s+)?([^\s@]+)\s*:?\s*(.*)$/s))) return { requirement: { capability: 'peer', peer: m[1] as string }, label: (m[2] ?? '').trim() }
   if ((m = t.match(/^(?:\?|search\s*:?)\s*(.*)$/is))) return { requirement: { capability: 'search' }, label: (m[1] ?? '').trim() }
   if ((m = t.match(/^market\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'market' }, label: (m[1] ?? '').trim() }

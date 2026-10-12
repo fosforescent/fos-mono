@@ -170,6 +170,11 @@ export type AppState = {
   policyLocked: boolean
   /** Keyboard selection: path (relative to the view) of the selected task. */
   selected: Scope | null
+  /**
+   * The device's own root, one level above the replica (above Home): the fos server and the other peers this device
+   * reaches, each as a row, plus the Home row. Not a node; nothing is stored there. The app starts in Home.
+   */
+  atRoot: boolean
   /** Open context menu, if any. */
   contextMenu: { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
@@ -262,6 +267,7 @@ export class App {
       policy: configPolicy ?? parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
       policyLocked: !!configPolicy,
       selected: null,
+      atRoot: false,
       contextMenu: null,
       device: null,
       voice: null,
@@ -951,10 +957,18 @@ export class App {
     const created = this.addRowAt(at, 'plain', '', { position: { relativeTo: id, position: 'below' } })
     this.set({ selected: [...at, created] })
   }
-  /** Ctrl+Shift+Enter: a blank row inside `id` (plain, or a comment from the menu), selected for typing. */
-  addRowInside(at: Scope, id: string, kind: 'plain' | 'comment' = 'plain'): void {
-    const created = this.addRowAt([...at, id], kind, kind === 'comment' ? ' ' : '')
+  /**
+   * Ctrl+Shift+Enter: a blank row inside `id` (plain, or a comment from the menu), selected for typing. `seed` starts
+   * the row's text with a marker ("-", "$ ", "@money ") so the menu can open a requirement, allocation or bank row.
+   */
+  addRowInside(at: Scope, id: string, kind: 'plain' | 'comment' = 'plain', seed = ''): void {
+    const created = this.addRowAt([...at, id], kind, kind === 'comment' ? ' ' : seed)
     this.set({ selected: [...at, id, created], collapsed: this.state.collapsed.filter((c) => c !== id) })
+  }
+  /** A row below `id` whose text starts with `seed` (a marker), selected for typing. */
+  addRowBelowWith(at: Scope, id: string, seed: string): void {
+    const created = this.addRowAt(at, 'plain', seed, { position: { relativeTo: id, position: 'below' } })
+    this.set({ selected: [...at, created] })
   }
   /** The blank row at the top of the view was typed into: a row of the parsed kind becomes the first row here. */
   addRowAtTop(parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): string | null {
@@ -1129,8 +1143,14 @@ export class App {
 
   /** Zoom into a descendant: `at` is its path relative to the current view (any depth). */
   zoomTo(at: Scope): void { this.goTo([...this.state.view, ...at]) }
-  goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null }) }
-  zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)) }
+  goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null, atRoot: false }) }
+  /** Zoom out of Home shows the device's root: the peers it reaches and the Home row. */
+  zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)); else if (!this.state.atRoot) this.set({ atRoot: true, selected: null, contextMenu: null }) }
+  goToRoot(): void { this.set({ atRoot: true, selected: null, contextMenu: null }) }
+  /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
+  knownPeers(): Array<{ id: string; name: string }> {
+    return this.contextPeers().map((p) => ({ id: p.id, name: p.name }))
+  }
   select(path: Scope | null): void { this.set({ selected: path }) }
   openContextMenu(menu: AppState['contextMenu']): void { this.set({ contextMenu: menu, menuOpen: false }) }
   closeContextMenu(): void { if (this.state.contextMenu) this.set({ contextMenu: null }) }

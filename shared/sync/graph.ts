@@ -788,7 +788,7 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
   })
   if (filledByChild) return true
   // an allocation requirement with an amount is also met by several smaller allocations adding up (child rows and supplied references)
-  if (req.capability === 'allocation' && req.amount !== undefined) {
+  if (req.capability === 'allocation' && req.amount !== undefined && req.amount > 0) {
     const progress = requirementProgress(store, requirementCid, root)
     if (progress && progress.have >= progress.need) return true
   }

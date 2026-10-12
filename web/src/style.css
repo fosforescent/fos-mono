@@ -284,3 +284,13 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .req-progress-fill { display: block; height: 100%; background: #10b981; }
 .req-have { font-size: 0.8rem; }
 .context-peer[draggable="true"] { cursor: grab; }
+/* the device's root: Home and peer rows rendered as tree rows */
+.tree .task.root-row { align-items: flex-start; }
+.tree .task.root-row .toggle { visibility: hidden; }
+.tree .task.root-row .presence { margin-top: 7px; }
+.tree .task.root-row .peer-body { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tree .task.root-row .peer-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tree .task.root-row .peer-name { font-weight: 600; }
+.tree .task.root-row .peer-lines { display: flex; flex-direction: column; gap: 3px; }
+.tree .task.root-row .cap-direction { padding-left: 0; }
+.tree .task.root-row.add-peer-row .add-peer { flex: 1; }

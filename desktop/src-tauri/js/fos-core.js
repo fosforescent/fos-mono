@@ -2080,7 +2080,7 @@
       }
     });
     if (filledByChild) return true;
-    if (req.capability === "allocation" && req.amount !== void 0) {
+    if (req.capability === "allocation" && req.amount !== void 0 && req.amount > 0) {
       const progress = requirementProgress(store, requirementCid, root);
       if (progress && progress.have >= progress.need) return true;
     }
