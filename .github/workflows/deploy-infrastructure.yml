@@ -69,6 +69,14 @@ jobs:
           printf '%s\n' "${{ secrets.TF_DOTENV }}" > .env
           echo "wrote infra/.env ($(grep -c '^[A-Z_0-9]*=' .env) entries)"
 
+      # Required variables (gcp_project_id, db_password, …) come from the TF_TFVARS secret
+      # (the gitignored terraform.tfvars). Its `environment` line is dropped so TF_VAR_environment wins.
+      - name: Write terraform.tfvars
+        run: |
+          if [ -z "${{ secrets.TF_TFVARS }}" ]; then echo "TF_TFVARS secret is not set"; exit 1; fi
+          printf '%s\n' "${{ secrets.TF_TFVARS }}" | grep -v '^[[:space:]]*environment[[:space:]]*=' > terraform.tfvars
+          echo "wrote terraform.tfvars ($(grep -c '=' terraform.tfvars) variables)"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
