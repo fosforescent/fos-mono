@@ -11,7 +11,7 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
+import { SERVER_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
@@ -94,7 +94,9 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
           // Invited peers propose at link nodes (branches members approve); the owner's own devices merge.
           const options = {
             ...(claims.kind === 'peer' ? { proposeOnly: true, peerName: claims.name } : {}),
-            onlinePeers: deps.onlinePeers ? deps.onlinePeers(user.id) : undefined
+            onlinePeers: deps.onlinePeers ? deps.onlinePeers(user.id) : undefined,
+            // what this server registers with the peer: reachable over http/ws, a relay for peers that cannot connect directly, and its services
+            capabilities: SERVER_CAPABILITIES
           }
           const served = serveSync(store, parsed, serverPeerIdFor(user.username), deps.now ? deps.now() : Date.now(), options)
           if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error } } as const

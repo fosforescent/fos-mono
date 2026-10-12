@@ -28,6 +28,8 @@ import {
   findChild,
   findEdge,
   findRowByAlias,
+  findTemplate,
+  templateRequirements,
   identityCid,
   isPartitionEdge,
   isRowEdge,
@@ -60,7 +62,9 @@ import {
   viewNode,
   withChildValue,
   withIdentity,
+  readMembers,
   withMember,
+  withoutMember,
   withoutPeer
 } from './graph'
 import { mergeNodes, resolveChoiceIn } from './merge'
@@ -209,7 +213,7 @@ export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition
 /** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
 export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
   const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
-  if (!body && !['ref', 'plain', 'supply', 'allocation'].includes(kind)) return replica // blank plain rows are fine (Enter creates one); supplies/allocations describe themselves
+  if (!body && !['ref', 'plain', 'comment', 'supply', 'allocation'].includes(kind)) return replica // blank plain rows and comments are fine (Enter / "Add comment" create one to type into); supplies/allocations describe themselves
   if (kind === 'ref' && !options.refId) return replica
   const id = options.id ?? newId()
   return edit(replica, at, now, (value) => {
@@ -255,8 +259,39 @@ export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: 
 
 /** Satisfy a requirement row at `at`/`requirementId` with a supply (who, and for search/allocation which row by alias id). */
 export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: CapabilityKind; by: string; ref?: string; choice?: number }, now: number, id?: string): Replica {
-  const label = supply.capability === 'confirmation' ? `confirmed by ${supply.by}` : supply.capability === 'choice' ? `chose option ${(supply.choice ?? 0) + 1}` : supply.capability === 'search' ? 'search results' : 'allocation'
-  return addRow(replica, [...at, requirementId], 'supply', label, now, { supply: { ...supply, at: now }, id })
+  const labels: Record<CapabilityKind, string> = {
+    confirmation: `confirmed by ${supply.by}`,
+    choice: `chose option ${(supply.choice ?? 0) + 1}`,
+    search: 'search results',
+    allocation: 'allocation',
+    task: 'task done',
+    market: `listed on the market by ${supply.by}`,
+    mail: `mail sent by ${supply.by}`,
+    peer: `done by ${supply.by}`
+  }
+  return addRow(replica, [...at, requirementId], 'supply', labels[supply.capability], now, { supply: { ...supply, at: now }, id })
+}
+
+/** The template row called `name` anywhere in the replica (first match, depth-first), or null. */
+export function findTemplateByName(replica: Replica, name: string): { path: Scope; row: TaskView; cid: string } | null {
+  const root = headCid(replica)
+  return root ? findTemplate(replica.store, root, name) : null
+}
+
+/**
+ * Make the task `taskId` (under `at`) an execution of the template `templateId`: the template's requirement
+ * rows are copied under the task (fresh ids, unfilled) and the task remembers the template.
+ */
+export function instantiateTemplate(replica: Replica, at: Scope, taskId: string, templateId: string, now: number): Replica {
+  const template = resolveRef(replica, templateId)
+  if (!template || template.row.kind !== 'template') return replica
+  const templateCid = resolveScope(replica.store, headCid(replica), [...template.path, templateId])
+  const taskCid = resolveScope(replica.store, headCid(replica), [...at, taskId])
+  if (!templateCid || !taskCid || !valueContent(replica.store, taskCid).data.todo) return replica
+  const requirements = templateRequirements(replica.store, templateCid)
+  let r = updateTask(replica, at, taskId, now, (task) => (task.data.todo ? { ...task, data: { ...task.data, template: { id: templateId, name: template.row.title } } } : null))
+  for (const req of requirements) r = addRow(r, [...at, taskId], 'requirement', req.text, now, { requirement: { ...req.requirement } })
+  return r
 }
 
 /** List (or delist) a link row on the market: a flag on its ref node, no content version. */
@@ -378,6 +413,24 @@ export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: s
 }
 
 /**
+ * Owner side: what the member `peerId` of the node at `at` is granted (its capability rows), and which of those are
+ * switched off. A switched-off capability keeps its edge (the peer has seen it and shows it as offline) but does not
+ * count for `hasCapability`. Bookkeeping on the ref node: no version.
+ */
+export function setMemberCapabilitiesAt(replica: Replica, at: Scope, peerId: string, capabilities: Capability[], disabled: Capability[], now: number, accepts?: Capability[]): Replica {
+  return editNode(replica, at, now, (node) => {
+    const link = makeLink(replica.store, node, now)
+    const existing = readMembers(replica.store, link).find((m) => m.peerId === peerId)
+    return withMember(replica.store, link, peerId, existing?.name ?? null, capabilities, disabled, accepts ?? existing?.accepts ?? [])
+  })
+}
+
+/** Owner side: drop the member `peerId` from the node at `at` (its capabilities with it). */
+export function removeMemberAt(replica: Replica, at: Scope, peerId: string, now: number): Replica {
+  return editNode(replica, at, now, (node) => withoutMember(replica.store, node, peerId))
+}
+
+/**
  * Apply a proposal at the link node `at`: three-way merge its content onto the
  * main content (fast-forward when it was rebased onto the current main), record
  * the previous version, and drop the proposal.
@@ -409,9 +462,15 @@ export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: strin
 // ---------------------------------------------------------------------------
 // Sync round trip
 
-export function buildSyncRequest(replica: Replica, branch?: string): SyncRequest {
-  const head = headCid(replica)
+/**
+ * The request for one sync round. With `push: false` (the device's policy towards the peer has no `autopush`) the
+ * request carries no local content: the head sent is the agreed base (an empty node before the first sync), so the
+ * peer only serves what it has and nothing but the connection leaves the device; local edits stay local, re-merged
+ * over whatever comes back (`completeSync` merges sent head → local head → result).
+ */
+export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean } = {}): SyncRequest {
   const base = replica.meta.baseCid
+  const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : headCid(replica)
   // The server already holds everything reachable from the agreed base.
   const known = base ? reachableSet(replica.store, [base]) : new Set<string>()
   return {

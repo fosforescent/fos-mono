@@ -201,9 +201,9 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .task.drag-ref .op-ref, .task.drag-copy .op-copy { opacity: 1; font-size: 16px; }
 .task.drag-ref { outline: 2px dashed var(--accent); border-radius: 6px; }
 .task.drag-copy { outline: 2px dotted var(--accent); border-radius: 6px; }
-.add .mic { font-size: 18px; line-height: 1; }
-.add .mic.recording { background: #d33; color: #fff; border-radius: 50%; animation: pulse 1.2s ease-in-out infinite; }
-.add .mic.busy { opacity: 0.6; }
+
+
+
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
 /* Workflowy-style editing: the selected row's editor looks like the text it replaces */
 .task input.edit { flex: 1; border: none; background: transparent; outline: none; font: inherit; color: inherit; padding: 0; margin: 0; min-width: 0; }
@@ -231,3 +231,43 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .market-form { display: grid; gap: 8px; }
 .market-form textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: inherit; }
 .market-req { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+
+/* --- blank top row, help, context panel, templates ------------------------- */
+.help-button { font-weight: 700; border: 1px solid var(--line); border-radius: 50%; width: 26px; height: 26px; padding: 0; font-size: 0.9rem; line-height: 1; }
+.help-button:hover { color: var(--accent); }
+.mic { font-size: 18px; line-height: 1; }
+.mic.recording { background: #d33; color: #fff; border-radius: 50%; animation: pulse 1.2s ease-in-out infinite; }
+.mic.busy { opacity: 0.6; }
+.tree .task.ghost { border-bottom: 1px dashed var(--line); }
+.tree .task.ghost .handle { visibility: hidden; }
+.tree .task.ghost input.edit::placeholder { color: var(--muted); opacity: 0.8; }
+.tree .task.ghost:focus-within { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.help-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.help-table td { padding: 4px 6px; vertical-align: top; border-bottom: 1px solid var(--line); }
+.help-table .help-key { white-space: nowrap; width: 1%; }
+.help-table code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; background: color-mix(in srgb, var(--muted) 14%, transparent); padding: 1px 5px; border-radius: 4px; }
+.modal.wide { max-width: 640px; }
+.context-panel { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.context-panel h2 { margin: 0 0 4px; }
+.context-banks { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.85rem; }
+.bank-chip { cursor: pointer; }
+.bank-chip:hover { border-color: var(--accent); color: var(--accent); }
+.context-peer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.9rem; }
+.context-peer .peer-name { font-weight: 600; }
+.cap-chip { background: #8b5cf633; color: #6d28d9; border-color: transparent; }
+.cap-chip.off { background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted); }
+.assignments { list-style: none; margin: 0 0 4px 18px; padding: 0; font-size: 0.9rem; }
+.assignments .task { padding: 4px 0; gap: 6px; }
+.assignments .task.done .link { text-decoration: line-through; color: var(--muted); }
+.req-hint { font-size: 0.8rem; margin-left: 6px; }
+.kind-badge.tpl { background: #f59e0b22; color: #92400e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+.task.kind-template .title { font-weight: 600; }
+.cap-chip.disabled { text-decoration: line-through; opacity: 0.7; }
+.cap-chip.editable { cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
+.cap-chip.editable:hover { border-color: var(--accent); }
+.cap-chip .cap-remove { font-size: 0.9rem; padding: 0 2px; line-height: 1; }
+.cap-add { font-size: 0.8rem; padding: 2px 4px; }
+.add-peer input { flex: 1 1 200px; font-size: 0.85rem; padding: 4px 8px; }
+.context-peer-block { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.cap-direction { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 0.85rem; padding-left: 16px; }
+.cap-dir-label { min-width: 72px; }

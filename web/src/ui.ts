@@ -9,8 +9,8 @@ import { isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeV
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { ROW_KIND_LABEL, downloadText, formatAmount, parseRowInput, renderInlineText } from './rows'
-import type { RowKind } from '../../shared/sync/index'
+import { ROW_KIND_LABEL, SYNTAX_HELP, downloadText, formatAmount, parseRowInput, renderInlineText } from './rows'
+import { CAPABILITY_LABEL, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
   context: HTMLElement
@@ -27,15 +27,36 @@ type Regions = {
   mic: HTMLButtonElement
   footer: HTMLElement
   modal: HTMLElement
-  addInput: HTMLInputElement
 }
 
 /**
- * Workflowy-style tree: the selected row is always editable; ↑/↓ move between rows,
- * Enter adds a blank row below, Backspace on a blank row deletes it. How many levels
- * show at once depends on the screen: phones show one level and zoom into a row to
- * see its children, larger screens expand/collapse a few levels in place.
+ * Workflowy-style tree: a blank row at the top is where typing starts (the cursor
+ * defaults there); the selected row is always editable; ↑/↓ move between rows,
+ * Enter adds a blank row below, Backspace on a blank row deletes it. Ctrl+H shows
+ * every key and row marker. How many levels show at once depends on the screen:
+ * phones show one level and zoom into a row to see its children, larger screens
+ * expand/collapse a few levels in place.
  */
+const KEY_HELP: Array<[string, string]> = [
+  ['↑ / ↓', 'move between rows (↑ from the first row returns to the blank row at the top)'],
+  ['Enter', 'new row below (on a requirement, bank or allocation: edit its text)'],
+  ['Ctrl+Enter', 'mark a task done or open; on other rows, new row below'],
+  ['Ctrl+Shift+Enter', 'new row inside'],
+  ['Tab / Shift+Tab', 'indent / outdent'],
+  ['Alt+↑ / Alt+↓', 'move the row up / down'],
+  ['Alt+→ / Alt+←', 'zoom into the row / zoom out'],
+  ['→ / ←', 'expand / collapse the row'],
+  ['Backspace', 'on a blank row: delete it; with nothing selected: zoom out'],
+  ['Ctrl+Shift+Backspace', 'delete the row'],
+  ['Ctrl+. or .', 'row actions (also right-click or the ⋯ button)'],
+  ['Esc', 'leave the row'],
+  ['Ctrl+H', 'this help'],
+  ['drag', 'move the row; Alt+drag places a reference, Ctrl+drag a copy']
+]
+/** Ctrl+H (also ⌘H): the keys and row-syntax help. */
+function isHelpKey(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && (event.key === 'h' || event.key === 'H')
+}
 function maxDepth(): number {
   const w = window.innerWidth
   const h = window.innerHeight
@@ -53,6 +74,8 @@ export function mountUi(root: HTMLElement, app: App): void {
         <button type="button" class="icon menu-button" data-region="menu-button" aria-label="Menu">☰</button>
         <span class="local-badge" data-region="local-badge" hidden>local</span>
         <div class="brand">Fosforescent</div>
+        <button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button>
+        <button type="button" class="icon help-button" data-region="help-button" title="Keys and row syntax (Ctrl+H)" aria-label="Keys and row syntax">?</button>
       </div>
       <div class="status" data-region="status"></div>
       <nav class="menu" data-region="menu" hidden></nav>
@@ -62,20 +85,14 @@ export function mountUi(root: HTMLElement, app: App): void {
     <section class="choices" data-region="choices"></section>
     <section class="link-panel" data-region="link" hidden></section>
     <section class="tasks">
-      <form class="add" data-region="add">
-        <input name="title" type="text" placeholder="Add a row…  ([ ] task · - note · // comment · ! requirement · ? query · @calendar/@account/@inventory bank · +amount allocation)" autocomplete="off" enterkeyhint="done" />
-        <button type="submit">Add</button>
-        <button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button>
-      </form>
       <ul class="list tree" data-region="list"></ul>
     </section>
-    <section class="peers-here" data-region="peers"></section>
+    <section class="context-panel" data-region="peers"></section>
     <footer class="footer" data-region="footer"></footer>
     <div class="context-menu" data-region="context" hidden></div>
     <div class="modal-backdrop" data-region="modal" hidden></div>
   `
   const q = <T extends HTMLElement>(name: string): T => root.querySelector(`[data-region="${name}"]`) as T
-  const addForm = q<HTMLFormElement>('add')
   const regions: Regions = {
     context: q('context'),
     link: q('link'),
@@ -90,21 +107,11 @@ export function mountUi(root: HTMLElement, app: App): void {
     peers: q('peers'),
     mic: q('mic'),
     footer: q('footer'),
-    modal: q('modal'),
-    addInput: addForm.querySelector('input') as HTMLInputElement
+    modal: q('modal')
   }
 
-  addForm.addEventListener('submit', (event) => {
-    event.preventDefault()
-    const title = regions.addInput.value
-    if (title.trim()) {
-      const parsed = parseRowInput(title)
-      app.addRowAt([], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras })
-      regions.addInput.value = ''
-    }
-    regions.addInput.focus()
-  })
   regions.mic.addEventListener('click', () => { void app.toggleVoice() })
+  q<HTMLButtonElement>('help-button').addEventListener('click', () => toggleHelp(app))
   regions.menuButton.addEventListener('click', (event) => {
     event.stopPropagation()
     app.toggleMenu()
@@ -144,7 +151,7 @@ function render(regions: Regions, state: AppState, app: App): void {
   renderChoices(regions.choices, node, state, app)
   renderLinkPanel(regions.link, node, state, app)
   renderTree(regions.list, node, state, app)
-  renderPeersHere(regions.peers, node, app)
+  renderContext(regions.peers, node, state, app)
   renderFooter(regions.footer, state, app)
   renderContextMenu(regions.context, state, app)
 }
@@ -172,7 +179,7 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   const item = (label: string, onClick: () => void, cls = '') => items.push(button(`menu-item ${cls}`, label, () => { if (cls !== 'hint') app.toggleMenu(false); onClick() }))
   const session = state.session
   if (!session) item('Connect…', () => app.openModal('connect'), 'primary-text')
-  item('Keyboard: ↑↓ select · Enter edit · Space done · Tab/⇧Tab indent · Alt+↑↓ move · Z zoom · ⌫ zoom out · Del delete · . menu', () => undefined, 'hint')
+  item('Keys and row syntax (Ctrl+H)', () => app.openModal('help'))
   if (session?.kind === 'user') {
     item('Invite a device here', () => void app.startInvite())
     item(`Connection requests${state.requests.length ? ` (${state.requests.length})` : ''}`, () => app.openModal('requests'))
@@ -307,9 +314,8 @@ function renderVersion(label: string, task: TaskView | null, plainLabel: string 
   return col
 }
 
-let addingUnder: string | null = null
-/** Kind preset for the inline add under `addingUnder` (comments from the menu). */
-let addingKind: RowKind | null = null
+/** The blank row at the top of the tree should take the focus on the next render (first paint, ↑ from the first row, Esc). */
+let focusGhost = true
 /** Rows whose body carries controls (requirements, supplies, queries, banks, allocations) keep it while selected; this is the one being text-edited (double-click / Enter). */
 let editingSpecial: string | null = null
 const SPECIAL_KINDS: ReadonlySet<RowKind> = new Set<RowKind>(['requirement', 'supply', 'query', 'resource', 'allocation'])
@@ -321,14 +327,71 @@ const noteHtml = new Map<string, string>()
 document.addEventListener('mouseup', () => { pointerDown = false })
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (node.tasks.length === 0 && node.choices.length === 0) {
-    const empty = document.createElement('li')
-    empty.className = 'empty'
-    empty.textContent = 'Nothing here yet. Add a row above: plain text, [ ] a task, - a note, // a comment.'
-    el.replaceChildren(empty)
-    return
+  el.replaceChildren(renderGhostRow(node, state, app), ...renderRows(node, [], 0, state, app))
+}
+
+/**
+ * The blank row at the top of the view: an ordinary-looking row that is not in the replica until something
+ * is typed into it. Enter makes it the first row here (with its marker parsed) and opens a new row below;
+ * leaving it with text makes the row without moving on; ↓ goes to the first real row.
+ */
+function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement {
+  const li = document.createElement('li')
+  li.className = 'task ghost kind-plain'
+  li.style.setProperty('--depth', '0')
+  const toggle = button('icon toggle', '', () => undefined)
+  toggle.disabled = true
+  toggle.tabIndex = -1
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'edit'
+  input.placeholder = node.tasks.length ? 'New row…' : 'Type here: plain text, [ ] a task, > a note, - a requirement…  (Ctrl+H shows every marker)'
+  input.autocomplete = 'off'
+  let committed = false
+  /** Make the typed row; null when nothing was typed or the row could not be made (e.g. an allocation with no bank). */
+  const commit = (): string | null => {
+    if (committed) return null
+    const raw = input.value
+    if (!raw.trim()) return null
+    committed = true
+    const parsed = parseRowInput(raw)
+    const created = app.addRowAtTop(parsed)
+    if (!created) { committed = false; return null }
+    input.value = ''
+    committed = false
+    return created
   }
-  el.replaceChildren(...renderRows(node, [], 0, state, app))
+  input.addEventListener('keydown', (e: Event) => {
+    const event = e as KeyboardEvent
+    if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
+    const k = event.key
+    if (k === 'Enter') {
+      event.preventDefault()
+      const created = commit()
+      if (created) app.addRowBelow([], created)
+      return
+    }
+    if (k === 'ArrowDown' && !event.altKey) { event.preventDefault(); const created = commit(); if (created) focusGhost = true; else if (node.tasks.length) moveSelection(app, 1); return }
+    if (k === 'Escape') { event.preventDefault(); input.value = ''; input.blur(); return }
+    event.stopPropagation()
+  })
+  input.addEventListener('focus', () => { if (state.selected) { focusGhost = true; app.select(null) } })
+  input.addEventListener('blur', () => { commit() })
+  li.append(span('handle', ''), toggle, input)
+  if (focusGhost && !state.selected && !state.modal && !state.contextMenu && !state.menuOpen) {
+    focusGhost = false
+    queueMicrotask(() => {
+      const active = document.activeElement
+      if (active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
+    })
+  }
+  return li
+}
+
+/** Open or close the keys/syntax help. */
+function toggleHelp(app: App): void {
+  if (app.state.modal === 'help') app.closeModal()
+  else app.openModal('help')
 }
 
 /** Rows for `node`'s tasks (and nested choices) at `depth`; `at` is the path relative to the view. */
@@ -337,7 +400,6 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   node.tasks.forEach((task, index) => {
     rows.push(renderRow(task, at, depth, index, node.tasks.length, state, app))
     const expanded = !state.collapsed.includes(task.id) && depth + 1 < maxDepth()
-    if (addingUnder === task.id) rows.push(renderInlineAdd(task, at, depth + 1, app))
     if (expanded && (task.childCount > 0 || task.childChoices > 0)) {
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
@@ -413,9 +475,10 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
 
   const hasChildren = task.childCount > 0 || task.childChoices > 0
   const canExpandHere = depth + 1 < maxDepth()
+  // rows without children show no bullet; notes keep a middot so a note block reads as an item in the outline
   const toggle = hasChildren && !canExpandHere
     ? button('icon toggle zoom', '›', () => app.zoomTo([...at, task.id]))
-    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : '·', () => { if (hasChildren) app.toggleCollapsed(task.id) })
+    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : task.kind === 'note' ? '·' : '', () => { if (hasChildren) app.toggleCollapsed(task.id) })
   if (hasChildren && !canExpandHere) toggle.title = `Open (${task.childCount} inside)`
   toggle.disabled = !hasChildren
   toggle.tabIndex = -1
@@ -441,6 +504,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.addEventListener('dblclick', (event) => { event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
   } else {
     body = span('title', '')
+    if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the requirement rows inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
     body.append(renderInlineText(task.title))
     if (task.kind === 'comment') {
       const who = span('author', task.author?.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'comment')
@@ -453,6 +517,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
   meta.append(opRef, opCopy)
+  if (task.template) { const b = span('kind-badge tpl', `\`${task.template.name}`); b.title = `Executes the template “${task.template.name}”: its requirements were copied underneath`; meta.append(b) }
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
   if (task.isLink) { const b = span('link-badge', '⛓'); b.title = 'Link node: other devices attach here; their changes arrive as proposals'; meta.append(b) }
   if (task.market) { const b = span('market-badge', '🛒'); b.title = 'Listed on the market: other accounts can find this and propose'; meta.append(b) }
@@ -481,12 +546,13 @@ function visibleRows(): Array<{ el: HTMLElement; path: Scope }> {
   })
 }
 
-/** Select the row `delta` steps away from the selected one (or the first/last row). */
+/** Select the row `delta` steps away from the selected one (or the first/last row); ↑ from the first row returns to the blank row at the top. */
 function moveSelection(app: App, delta: number): void {
   const rows = visibleRows()
-  if (!rows.length) return
   const sel = app.state.selected
   const index = sel ? rows.findIndex((r) => r.path.join('/') === sel.join('/')) : -1
+  if (delta < 0 && index <= 0 && sel) { focusGhost = true; app.select(null); return }
+  if (!rows.length) return
   const next = index < 0 ? (delta > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + delta))
   app.select(rows[next]!.path)
 }
@@ -514,9 +580,9 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
     if (input.value === task.title) return
-    // typing a marker at the start of a plain row converts it, like the add bar: "[ ] ", "[x] ", "- ", "// "
+    // typing a marker at the start of a plain row converts it: "[ ] ", "[x] ", "> ", "// " in place; data rows ("- ", "$ ", "? ", "@…", "`") are made anew in its place
     const parsed = task.kind === 'plain' ? parseRowInput(input.value) : null
-    if (parsed && ['task', 'note', 'comment'].includes(parsed.kind)) {
+    if (parsed && ['task', 'note', 'comment', 'template'].includes(parsed.kind) && !parsed.templateName) {
       app.renameTaskAt(at, task.id, parsed.text || ' ')
       app.setRowKindAt(at, task.id, parsed.kind)
       if (parsed.done) app.setDoneAt(at, task.id, true)
@@ -531,6 +597,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     const k = event.key
     const alt = event.altKey
     const ctrl = event.ctrlKey || event.metaKey
+    if (isHelpKey(event)) { event.preventDefault(); commit(); toggleHelp(app); return }
     if (k === 'ArrowUp' && alt) { event.preventDefault(); commit(); app.select(path); app.moveSelected('up'); return }
     if (k === 'ArrowDown' && alt) { event.preventDefault(); commit(); app.select(path); app.moveSelected('down'); return }
     if (k === 'ArrowRight' && alt) { event.preventDefault(); commit(); app.zoomTo(path); return }
@@ -543,7 +610,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if (k === 'Tab') { event.preventDefault(); commit(); app.select(path); app.indentSelected(event.shiftKey); return }
     if (k === 'Backspace' && input.value === '' && (ctrl || !multiline)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
     if (k === 'Backspace' && ctrl && event.shiftKey) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
-    if (k === 'Escape') { event.preventDefault(); commit(); app.select(null); input.blur(); return }
+    if (k === 'Escape') { event.preventDefault(); commit(); focusGhost = true; app.select(null); input.blur(); return }
     if (k === '.' && ctrl) { event.preventDefault(); app.openContextMenu({ kind: 'task', at, task }); return }
     event.stopPropagation()
   })
@@ -630,25 +697,48 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
   const badge = (text: string, cls = '') => { const b = span('kind-badge ' + cls, text); body.append(b) }
   const stop = (el: HTMLElement) => { el.addEventListener('click', (e) => e.stopPropagation()); return el }
   if (task.kind === 'requirement' && task.requirement) {
-    badge(task.requirement.satisfied ? '✓ ' + task.requirement.capability : '! ' + task.requirement.capability, task.requirement.satisfied ? 'ok' : 'needs')
+    const r = task.requirement
+    const label = r.capability === 'peer' && r.peer ? `@${r.peer}` : r.capability === 'allocation' ? `$${r.resource ? ' ' + r.resource : ''}` : r.capability === 'task' ? '[ ]' : r.capability === 'search' ? '?' : r.capability
+    badge(r.satisfied ? '✓ ' + label : '- ' + label, r.satisfied ? 'ok' : 'needs')
     body.append(document.createTextNode(' ' + task.title))
-    if (!task.requirement.satisfied) {
-      const r = task.requirement
+    if (!r.satisfied) {
+      const peers = app.contextPeers()
+      const handler = (cap: 'search' | 'market' | 'mail') => peers.find((p) => p.online && p.capabilities.includes(cap))
+      const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(button('secondary small', opt, () => app.supplyRequirementAt(at, task.id, { capability: 'choice', choice: i })))))
+      if (r.capability === 'task') hint('add a [ ] task inside and check it off')
       if (r.capability === 'search') {
-        const queries = (viewAt(state.replica, [...state.view, ...at, task.id])?.tasks ?? []).filter((q) => q.kind === 'query' && q.query?.executedAt)
-        if (queries.length) body.append(stop(button('secondary small', 'Supply search results', () => app.supplyRequirementAt(at, task.id, { capability: 'search', ref: queries[0]!.id }))))
-        else body.append(stop(button('secondary small', 'Add a search (? …) inside and run it', () => { addingUnder = task.id; addingKind = null; app.refresh() })))
+        const fos = handler('search')
+        if (fos) body.append(stop(button('secondary small', `Ask ${fos.name} to search`, () => void app.askPeerAt(at, task))))
+        else hint('add a ? query inside and run it' + (peers.length ? '' : ' (connect: fos runs searches)'))
+      }
+      if (r.capability === 'market') {
+        const fos = handler('market')
+        if (fos) body.append(stop(button('secondary small', 'List on the market', () => void app.askPeerAt(at, task))))
+        else hint('connect to your account: fos provides the market')
+      }
+      if (r.capability === 'mail') {
+        const fos = handler('mail')
+        const b = button('secondary small', fos ? `Ask ${fos.name} to send` : 'No mail handler', () => void app.askPeerAt(at, task))
+        stop(b)
+        b.disabled = true
+        b.title = 'Mail is registered as a capability of fos, but no handler is wired to it yet'
+        body.append(b)
+      }
+      if (r.capability === 'peer') {
+        if (r.peer && r.peer === app.actorName()) body.append(stop(button('secondary small', 'Done (confirm)', () => app.supplyRequirementAt(at, task.id, { capability: 'peer' }))))
+        else hint(`waiting for ${r.peer ? '@' + r.peer : 'a peer'}`)
       }
       if (r.capability === 'allocation') {
         const options = app.allocations().filter(({ row }) => !r.resource || row.allocation?.type === r.resource)
         const select = document.createElement('select')
         select.className = 'small'
-        select.append(new Option(options.length ? 'Supply an allocation…' : 'No matching allocation yet (add one under a bank)', ''))
+        select.append(new Option(options.length ? 'Supply an existing allocation…' : 'No matching allocation yet', ''))
         for (const { row } of options) select.append(new Option(`${formatAmount(row.allocation!.amount, row.allocation!.unit)} ${row.title}`.trim(), row.id))
         select.addEventListener('change', () => { if (select.value) app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: select.value }) })
         body.append(stop(select))
+        hint(`or type "$ ${r.amount ?? 'amount'}" inside`)
       }
     }
   } else if (task.kind === 'supply' && task.supply) {
@@ -674,31 +764,6 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
   return body
 }
 
-function renderInlineAdd(parent: TaskView, at: Scope, depth: number, app: App): HTMLElement {
-  const li = document.createElement('li')
-  li.className = 'task inline-add'
-  li.style.setProperty('--depth', String(depth))
-  const form = document.createElement('form')
-  form.className = 'add'
-  const preset = addingKind
-  const label = preset === 'comment' ? `Comment on “${firstLine(parent.title)}”…` : parent.kind === 'resource' ? `Under “${firstLine(parent.title)}”…  (+1h / +50 USD allocation · @calendar sub-bank)` : `Under “${firstLine(parent.title)}”…  ([ ] task · - note · // comment · ! requirement)`
-  form.innerHTML = `<input type="text" placeholder="${label.replace(/"/g, '&quot;')}" autocomplete="off" enterkeyhint="done" /><button type="submit">Add</button>`
-  const input = form.querySelector('input') as HTMLInputElement
-  form.addEventListener('submit', (event) => {
-    event.preventDefault()
-    if (input.value.trim()) {
-      const parsed = preset === 'comment' ? { kind: 'comment' as RowKind, text: input.value.trim(), done: false, extras: undefined } : parseRowInput(input.value)
-      app.addRowAt([...at, parent.id], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras })
-    }
-    input.value = ''
-    input.focus()
-  })
-  input.addEventListener('keydown', (event) => { if (event.key === 'Escape') { addingUnder = null; addingKind = null; app.refresh() } })
-  li.append(form)
-  queueMicrotask(() => input.focus())
-  return li
-}
-
 function renderNestedChoice(choice: ChoiceView, at: Scope, depth: number, state: AppState, app: App): HTMLElement {
   const li = document.createElement('li')
   li.className = 'task nested-choice'
@@ -721,11 +786,13 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Ctrl+Enter', run: () => app.toggleTaskAt(at, task) }] : []),
     { label: 'Add row below', keys: 'Enter', run: () => app.addRowBelow(at, task.id) },
     ...(task.kind === 'ref' ? [{ label: 'Go to the referenced row', run: () => app.followRef(task.refId ?? '') }] : []),
-    { label: 'Add comment', run: () => { addingUnder = task.id; addingKind = 'comment'; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh() } },
-    ...(task.kind === 'task' ? [{ label: 'Add requirement (! confirmation · ! choice: a | b · ! calendar 1h …)', run: () => { addingUnder = task.id; addingKind = null; app.refresh() } }] : []),
+    { label: 'Add comment', run: () => app.addRowInside(at, task.id, 'comment') },
+    ...(task.kind === 'task' ? [{ label: 'Add requirement (type - inside: -[ ] task · -$ 50 · -@calendar 1h · -? search · -@peer …)', run: () => app.addRowInside(at, task.id) }] : []),
     ...(state.session?.kind === 'user' && task.kind !== 'ref' && task.kind !== 'supply' ? [{ label: task.market ? 'Remove from market' : 'List on market', run: () => app.setMarketAtRow(at, task.id, !task.market) }] : []),
+    // an allocation bin (a row with requirement and allocation rows inside) goes to another account as a proposal on a node of theirs this account knows
+    ...(state.session?.kind === 'user' && task.kind !== 'ref' && task.kind !== 'supply' ? app.knownListings().slice(0, 6).map((l) => ({ label: `Send to @${l.owner} (“${firstLine(l.title) || l.aliasId.slice(0, 8)}”) as a proposal`, run: () => void app.sendRowTo(at, task, l.owner, l.aliasId) })) : []),
     ...(task.kind === 'query' ? [{ label: task.query?.market ? 'Search my rows only' : 'Search the market too', run: () => app.toggleQueryMarket(at, task) }] : []),
-    ...(task.kind !== 'ref' ? (['task', 'plain', 'note', 'comment'] as RowKind[]).filter((k) => k !== task.kind).map((k) => ({ label: `Change to ${ROW_KIND_LABEL[k].toLowerCase()}`, run: () => app.setRowKindAt(at, task.id, k) })) : []),
+    ...(task.kind !== 'ref' ? (['task', 'plain', 'note', 'comment', 'template'] as RowKind[]).filter((k) => k !== task.kind).map((k) => ({ label: `Change to ${ROW_KIND_LABEL[k].toLowerCase()}`, run: () => app.setRowKindAt(at, task.id, k) })) : []),
     ...(task.kind === 'note' ? [{ label: 'Export note (.md)', run: () => { const ctx = noteContext(task.title, noteChildren(task, at, state, app)); downloadText(noteFilename(task.title), exportNote(ctx)) } }] : []),
     { label: 'Indent', keys: 'Tab', run: () => { app.select([...at, task.id]); app.indentSelected(false) } },
     { label: 'Outdent', keys: 'Shift+Tab', run: () => { app.select([...at, task.id]); app.indentSelected(true) }, disabled: at.length === 0 },
@@ -761,9 +828,10 @@ function renderContextMenu(el: HTMLElement, state: AppState, app: App): void {
 }
 
 function handleKey(event: KeyboardEvent, app: App): void {
+  if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
   const target = event.target as HTMLElement | null
   if (target && target.closest('input, textarea, select, [contenteditable]')) return
-  if (app.state.modal) return
+  if (app.state.modal) { if (event.key === 'Escape') app.closeModal(); return }
   if (event.key === 'Escape') { app.closeContextMenu(); app.toggleMenu(false); return }
   const state = app.state
   const node = app.currentView()
@@ -860,7 +928,10 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
     members.textContent = 'No members yet. Invite a device from the ☰ menu.'
   }
   const items: HTMLElement[] = [head, members]
-  if (node.proposals.length) {
+  if (node.proposals.length && !app.readsRequests()) {
+    // requests reach a device only when it reads them (policy "from: read requests"); they are never pushed into its tree
+    items.push(div('muted', `${node.proposals.length} request${node.proposals.length === 1 ? '' : 's'} not shown: this device does not read requests (policy towards fos, in the context panel).`))
+  } else if (node.proposals.length) {
     const h = document.createElement('h2')
     h.textContent = node.proposals.length === 1 ? '1 proposal' : `${node.proposals.length} proposals`
     items.push(h)
@@ -888,25 +959,151 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
   el.replaceChildren(...items)
 }
 
-function renderPeersHere(el: HTMLElement, node: NodeView, app: App): void {
-  if (!node.peers.length) { el.replaceChildren(); el.hidden = true; return }
+/**
+ * The context of the viewed node: the resource banks allocations here can draw from, and the peers (the account
+ * server "fos" with the capabilities it registers, shown as banks; devices attached here) with, under each peer,
+ * the requirements assigned to it ("-@name …") in this subtree.
+ */
+function renderContext(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
+  const banks = app.contextBanks()
+  const peers = app.contextPeers()
+  if (!banks.length && !peers.length) { el.replaceChildren(); el.hidden = true; return }
   el.hidden = false
-  const peers = div('peers', '')
-  peers.append(span('muted', 'Devices attached here: '))
-  for (const p of node.peers) {
-    const row = span('peer-row', '')
-    row.dataset.peer = p
-    const dot = span('presence' + (app.isOnline(p) ? ' online' : ''), '')
-    dot.title = app.isOnline(p) ? 'online' : 'offline (still attached)'
-    row.append(dot, span('', peerLabel(p, app.state)))
-    if (app.state.session?.kind === 'user' && p !== app.state.replica.meta.peerId) {
-      const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p }))
-      more.title = 'Device actions'
-      row.append(more)
+  const items: HTMLElement[] = []
+  const heading = document.createElement('h2')
+  heading.textContent = 'Context'
+  items.push(heading)
+  if (banks.length) {
+    const list = div('context-banks', '')
+    list.append(span('muted', 'Banks: '))
+    for (const { row, path } of banks) {
+      const r = row.resource
+      const chip = button('chip bank-chip', `${row.title} · ${r.capacity === undefined ? `${formatAmount(r.allocated, r.unit)} allocated` : `${formatAmount(r.available ?? 0, r.unit)} of ${formatAmount(r.capacity, r.unit)} left`}`, () => app.goTo([...path, row.id]))
+      chip.title = `${r.type} bank; "$ amount" rows draw from it`
+      list.append(chip)
     }
-    peers.append(row)
+    items.push(list)
   }
-  el.replaceChildren(peers)
+  const owner = app.canApprove()
+  const capTitle: Record<string, string> = {
+    read: 'May read the content of the node',
+    'read-requests': 'May read the requests (proposals) addressed to it',
+    edit: 'May submit proposals on this node (and send rows here, e.g. an allocation bin)',
+    approve: 'May merge proposals on this node',
+    autopush: 'Changes flow automatically on sync (merged), not only as explicit proposals',
+    direct: 'Reachable device to device (WebRTC)',
+    http: 'Reachable over HTTP (through a server)',
+    ws: 'Reachable over WebSockets (through a server)',
+    relay: 'Relays messages for peers that cannot reach each other',
+    search: 'Runs "-? …" requirements: a query inside them, results as reference rows',
+    market: 'Lists tasks with "-market" requirements and brings back proposals',
+    mail: 'Registered, no handler wired yet'
+  }
+  /**
+   * One direction of a peer row as chips: `list` is what is there, `off` which of those are switched off; when
+   * `change` is given the chips are editable (click switches off/on, × removes, a select adds).
+   */
+  const chips = (list: Capability[], off: Capability[], online: boolean, change: ((next: Capability[], nextOff: Capability[]) => void) | null, lockedNote?: string): HTMLElement[] => {
+    const out: HTMLElement[] = []
+    for (const cap of list) {
+      const isOff = off.includes(cap)
+      const chip = span('chip cap-chip' + (online && !isOff ? '' : ' off') + (isOff ? ' disabled' : ''), CAPABILITY_LABEL[cap] ?? cap)
+      chip.title = `${capTitle[cap] ?? cap}${isOff ? ' (switched off)' : online ? '' : ' (offline)'}${change ? ' · click to switch ' + (isOff ? 'on' : 'off') : lockedNote ? ` · ${lockedNote}` : ''}`
+      if (change) {
+        chip.classList.add('editable')
+        chip.addEventListener('click', () => change(list, isOff ? off.filter((c) => c !== cap) : [...off, cap]))
+        const x = button('icon cap-remove', '×', () => change(list.filter((c) => c !== cap), off.filter((c) => c !== cap)))
+        x.title = `Remove ${CAPABILITY_LABEL[cap] ?? cap}`
+        chip.append(x)
+      }
+      out.push(chip)
+    }
+    if (!list.length) out.push(span('muted', 'nothing'))
+    if (change) {
+      const missing = app.allCapabilities().filter((c) => !list.includes(c))
+      if (missing.length) {
+        const add = document.createElement('select')
+        add.className = 'small cap-add'
+        add.append(new Option('+ add', ''))
+        for (const c of missing) add.append(new Option(CAPABILITY_LABEL[c] ?? c, c))
+        add.addEventListener('change', () => { if (add.value) change([...list, add.value as Capability], off) })
+        out.push(add)
+      }
+    }
+    return out
+  }
+  const direction = (label: string, title: string, els: HTMLElement[]): HTMLElement => {
+    const line = div('cap-direction', '')
+    const l = span('muted cap-dir-label', label)
+    l.title = title
+    line.append(l, ...els)
+    return line
+  }
+  for (const p of peers) {
+    const row = div('context-peer-block', '')
+    const head = div('peer-row context-peer', '')
+    head.dataset.peer = p.id
+    const dot = span('presence' + (p.online ? ' online' : ''), '')
+    dot.title = p.online ? 'online' : p.isAccount ? 'offline: what it registered shows as offline until it connects again' : 'offline (still a member; its capabilities show as offline)'
+    head.append(dot, span('peer-name', p.isAccount ? `@${p.name}` : p.member ? `@${p.name}` : peerLabel(p.id, state)))
+    if (p.member && owner) {
+      const remove = button('icon more small-icon', '×', () => app.removePeerHere(p.id))
+      remove.title = `Remove @${p.name} from this node`
+      head.append(remove)
+    } else if (state.session?.kind === 'user' && !p.isAccount && !p.member && p.id !== state.replica.meta.peerId) {
+      const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p.id }))
+      more.title = 'Device actions'
+      head.append(more)
+    }
+    row.append(head)
+    if (p.isAccount && p.policy) {
+      // the account server: what it registered with us, then this device's policy towards it (both directions)
+      const policy = p.policy
+      const locked = p.policyLocked ? 'set in fos.config.toml ([server] to / from)' : undefined
+      const change = p.policyLocked ? null : (next: PeerPolicy) => app.setServerPolicy(next)
+      row.append(direction('offers:', `What @${p.name} registered with this device`, chips(p.capabilities, [], p.online, null)))
+      row.append(direction(`to @${p.name}:`, 'What leaves this device: read lets it serve our content, autopush sends local changes on every sync, submit proposals allows explicit sends; without autopush nothing but the connection leaves', chips(policy.to, [], true, change ? (next) => change({ ...policy, to: next }) : null, locked)))
+      row.append(direction(`from @${p.name}:`, 'What this device takes in: read pulls our node, read requests shows proposals addressed to us, autopush merges its changes in, relay/search/market/mail use its services', chips(policy.from, [], p.online, change ? (next) => change({ ...policy, from: next }) : null, locked)))
+    } else if (p.member) {
+      const change = owner ? (next: Capability[], off: Capability[]) => app.setPeerCapabilities(p.id, next, off, p.accepts) : null
+      const changeFrom = owner ? (next: Capability[]) => app.setPeerCapabilities(p.id, p.capabilities, p.disabled, next) : null
+      row.append(direction(`to @${p.name}:`, 'What this node exposes to the peer (the rows it will see)', chips(p.capabilities, p.disabled, p.online, change)))
+      row.append(direction(`from @${p.name}:`, 'What this node accepts from the peer (nothing it does not list reaches us; we query for the rest)', chips(p.accepts, [], p.online, changeFrom)))
+    } else if (p.capabilities.length) {
+      row.append(direction('offers:', 'How this device can reach the peer', chips(p.capabilities, [], p.online, null)))
+    }
+    items.push(row)
+    const assigned = app.assignmentsTo(p.name)
+    if (assigned.length) {
+      const list = document.createElement('ul')
+      list.className = 'assignments'
+      for (const a of assigned) {
+        const li = document.createElement('li')
+        li.className = 'task kind-requirement' + (a.row.requirement?.satisfied ? ' done' : '')
+        li.append(span('kind-badge ' + (a.row.requirement?.satisfied ? 'ok' : 'needs'), a.row.requirement?.satisfied ? '✓' : '- @' + p.name))
+        const link = button('link', `${firstLine(a.row.title) || '(untitled)'}${a.task ? ` — for “${firstLine(a.task.title)}”` : ''}`, () => app.select([...a.at, a.row.id]))
+        li.append(link)
+        list.append(li)
+      }
+      items.push(list)
+    }
+  }
+  if (owner && state.session?.kind === 'user') {
+    // a peer row for another account on this node: what this owner exposes to it starts with `edit`
+    const form = document.createElement('form')
+    form.className = 'row add-peer'
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.placeholder = '@username: add a peer row here'
+    input.autocomplete = 'off'
+    input.id = 'add-peer-name'
+    const go = button('secondary small', 'Add peer', () => undefined)
+    go.type = 'submit'
+    form.append(input, go)
+    form.addEventListener('submit', (e) => { e.preventDefault(); app.addPeerHere(input.value); input.value = '' })
+    items.push(form)
+  }
+  el.replaceChildren(...items)
 }
 
 function renderFooter(el: HTMLElement, state: AppState, app: App): void {
@@ -942,7 +1139,7 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   void stopScanner()
 
   const card = document.createElement('div')
-  card.className = 'modal'
+  card.className = 'modal' + (kind === 'help' ? ' wide' : '')
   const header = document.createElement('div')
   header.className = 'modal-header'
   header.append(span('modal-title', modalTitle(kind)), button('icon', '×', () => app.closeModal()))
@@ -954,8 +1151,29 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   if (kind === 'direct') renderDirect(body, state, app)
   if (kind === 'device') renderDevice(body, state, app)
   if (kind === 'market') renderMarket(body, state, app)
+  if (kind === 'help') renderHelp(body)
   card.append(body)
   el.replaceChildren(card)
+}
+
+/** Ctrl+H: every key the tree answers to, and every row marker. */
+function renderHelp(body: HTMLElement): void {
+  const table = (rows: Array<[string, string]>, cls: string) => {
+    const t = document.createElement('table')
+    t.className = 'help-table ' + cls
+    for (const [key, what] of rows) {
+      const tr = document.createElement('tr')
+      const k = document.createElement('td'); k.className = 'help-key'; const code = document.createElement('code'); code.textContent = key; k.append(code)
+      const w = document.createElement('td'); w.textContent = what
+      tr.append(k, w)
+      t.append(tr)
+    }
+    return t
+  }
+  body.append(h4('Keys'), table(KEY_HELP, 'keys'))
+  body.append(h4('Row markers (type them at the start of a row)'), table(SYNTAX_HELP, 'syntax'))
+  body.append(div('muted small-print', 'A requirement (-) is filled by a child row of the kind it names; the task above it cannot be checked off until every requirement is filled. Allocations ($) draw from the parent context: the bank above them, or the bank the requirement needs. Peers in the context (fos when you are online) register capabilities that act as banks for search, market and mail requirements.'))
+  body.append(div('muted small-print', 'Each peer row has two directions: "to" is what leaves this side (read, autopush, submit proposals, how it can be reached, services), "from" is what it takes in (read, read requests, autopush, relay, services). Nothing moves in a direction that is not listed, so no peer adds rows to your context: your sync is the query. A device set to only "from: read, read requests" receives work and sends nothing but the connection. In a project, [server] to / from in fos.config.toml fixes this.'))
 }
 
 function modalKey(state: AppState): string {
@@ -970,7 +1188,7 @@ function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
 }
 
 function modalTitle(kind: AppState['modal']): string {
-  return kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : 'Direct connect'
+  return kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : kind === 'help' ? 'Keys and row syntax' : 'Direct connect'
 }
 
 /** A listed node of another account: its rows and requirements, this account's proposal, and a form to propose. */

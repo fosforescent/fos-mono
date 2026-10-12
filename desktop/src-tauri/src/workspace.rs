@@ -167,7 +167,7 @@ pub fn parse_row_input(raw: &str) -> (&'static str, String, bool) {
     if let Some(rest) = t.strip_prefix("[]").or_else(|| t.strip_prefix("[ ]")) {
         return ("task", rest.trim().to_string(), false);
     }
-    if let Some(rest) = t.strip_prefix("- ").or_else(|| t.strip_prefix('-')) {
+    if let Some(rest) = t.strip_prefix("> ").or_else(|| t.strip_prefix('>')) {
         return ("note", rest.trim_start().to_string(), false);
     }
     if let Some(rest) = t.strip_prefix("//") {
@@ -184,7 +184,8 @@ mod row_tests {
     fn prefixes_pick_the_row_kind() {
         assert_eq!(parse_row_input("[] buy milk"), ("task", "buy milk".into(), false));
         assert_eq!(parse_row_input("[x] done"), ("task", "done".into(), true));
-        assert_eq!(parse_row_input("- # Title"), ("note", "# Title".into(), false));
+        assert_eq!(parse_row_input("> # Title"), ("note", "# Title".into(), false));
+        assert_eq!(parse_row_input("- not a note"), ("plain", "- not a note".into(), false));
         assert_eq!(parse_row_input("// hmm"), ("comment", "hmm".into(), false));
         assert_eq!(parse_row_input("just text"), ("plain", "just text".into(), false));
     }

@@ -2,6 +2,7 @@ import './style.css'
 import { App } from './app'
 import { pickStorage } from './storage'
 import { createProjectStorage, findProject, saveDevice } from './project'
+import { serverPolicyOf } from '../../shared/sync/index'
 import { mountUi } from './ui'
 
 const env = import.meta.env as Record<string, string | undefined> & { DEV?: boolean }
@@ -27,7 +28,8 @@ const app = new App({
   baseUrl,
   autoLogin: project ? null : devCredentials,
   storage,
-  project: project ? { dir: project.dir, branch: () => (storage as { branch?: () => string }).branch?.() ?? null, deviceName: project.config.attach?.name ?? project.dir.split(/[\\/]/).filter(Boolean).pop() } : undefined
+  // [server] to/from in fos.config.toml fixes what this directory sends to and takes from the account server
+  project: project ? { dir: project.dir, branch: () => (storage as { branch?: () => string }).branch?.() ?? null, deviceName: project.config.attach?.name ?? project.dir.split(/[\\/]/).filter(Boolean).pop(), policy: serverPolicyOf(project.config) } : undefined
 })
 
 mountUi(root, app)

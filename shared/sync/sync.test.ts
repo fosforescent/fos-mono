@@ -1,12 +1,16 @@
 import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
+import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from './project'
 import {
+  acceptsFrom,
   bookkeepingOf,
   commitRoot,
   content,
   edgeKey,
+  hasCapability,
   isChoiceEdge,
+  parsePolicy,
   isHandle,
   isLegacyInlineLink,
   isRefNode,
@@ -40,7 +44,11 @@ import {
   copyNode,
   createReplica,
   deleteTask,
+  findTemplateByName,
   headCid,
+  instantiateTemplate,
+  removeMemberAt,
+  setMemberCapabilitiesAt,
   isDirty,
   loadReplica,
   makeLinkAt,
@@ -1039,5 +1047,159 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addRow(r, [], 'query', 'designers near me', 7, { id: 'q', query: {} })
     r = setQueryOptionsAt(r, [], 'q', { market: true, executedAt: 8, count: 3 }, 8)
     expect(view(r, [])!.tasks[2]!.query).toEqual({ market: true, executedAt: 8, count: 3 })
+  })
+
+  it('a requirement is filled by a child row of the kind it names: a done task, an allocation, a run query', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'host dinner', 1, 't')
+    r = addRow(r, ['t'], 'requirement', 'book a table', 2, { id: 'rt', requirement: { capability: 'task' } })
+    r = addRow(r, ['t'], 'requirement', 'groceries', 3, { id: 'ra', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
+    r = addRow(r, ['t'], 'requirement', 'recipes', 4, { id: 'rs', requirement: { capability: 'search' } })
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
+    // "-[ ]": a task inside, checked off
+    r = addTask(r, ['t', 'rt'], 'call the restaurant', 5, 'sub')
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
+    r = setTaskDone(r, ['t', 'rt'], 'sub', true, 6)
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
+    // "-$ 50": a "$" allocation inside; too small does not count, enough does
+    r = addRow(r, ['t', 'ra'], 'allocation', 'deposit', 7, { id: 'a1', allocation: { resource: 'bank', type: 'account', amount: 20, unit: 'USD' } })
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
+    r = addRow(r, ['t', 'ra'], 'allocation', 'the rest', 8, { id: 'a2', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['search'])
+    // "-?": a query inside that has been run
+    r = addRow(r, ['t', 'rs'], 'query', 'easy dinner recipes', 9, { id: 'q', query: {} })
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['search'])
+    r = setQueryOptionsAt(r, ['t', 'rs'], 'q', { executedAt: 10, count: 2 }, 10)
+    expect(view(r, [])!.tasks[0]!.blockedBy).toBeUndefined()
+    r = setTaskDone(r, [], 't', true, 11)
+    expect(view(r, [])!.tasks[0]!.done).toBe(true)
+  })
+
+  it('peer, market and mail requirements are filled by a supply of that capability; "-@name" waits for that peer', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'review the deck', 1, 't')
+    r = addRow(r, ['t'], 'requirement', 'give feedback', 2, { id: 'rp', requirement: { capability: 'peer', peer: 'bob' } })
+    r = addRow(r, ['t'], 'requirement', 'find a printer', 3, { id: 'rm', requirement: { capability: 'market' } })
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['@bob', 'market'])
+    r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'ada' }, 4)
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['@bob', 'market']) // someone else confirming does not count
+    r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'bob' }, 5)
+    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['market'])
+    r = addSupply(r, ['t'], 'rm', { capability: 'market', by: 'fos', ref: 't' }, 6)
+    expect(view(r, [])!.tasks[0]!.blockedBy).toBeUndefined()
+    expect(view(r, ['t', 'rm'])!.tasks[0]).toMatchObject({ kind: 'supply', title: 'listed on the market by fos' })
+  })
+
+  it('a template row keeps requirements; a task that executes it gets copies of them, unfilled, and remembers the template', () => {
+    let r = createReplica('d')
+    r = addRow(r, [], 'template', 'Trip', 1, { id: 'tpl' })
+    r = addRow(r, ['tpl'], 'requirement', 'budget', 2, { id: 'r1', requirement: { capability: 'allocation', resource: 'account', amount: 300, unit: 'USD' } })
+    r = addRow(r, ['tpl'], 'requirement', 'book transport', 3, { id: 'r2', requirement: { capability: 'task' } })
+    r = addRow(r, ['tpl'], 'plain', 'packing notes', 4, { id: 'p' })
+    expect(view(r, [])!.tasks[0]).toMatchObject({ kind: 'template', title: 'Trip', checkable: false })
+    expect(findTemplateByName(r, 'trip')?.row.id).toBe('tpl')
+    expect(findTemplateByName(r, 'nope')).toBeNull()
+    // two executions, each with its own copies
+    r = addTask(r, [], 'Trip to Oslo', 5, 'e1')
+    r = instantiateTemplate(r, [], 'e1', 'tpl', 6)
+    r = addTask(r, [], 'Trip to Rome', 7, 'e2')
+    r = instantiateTemplate(r, [], 'e2', 'tpl', 8)
+    const oslo = view(r, [])!.tasks.find((t) => t.id === 'e1')!
+    expect(oslo.template).toEqual({ id: 'tpl', name: 'Trip' })
+    expect(oslo.blockedBy).toEqual(['account 300 USD', 'task'])
+    const copies = view(r, ['e1'])!.tasks
+    expect(copies.map((c) => [c.kind, c.title, c.requirement?.satisfied])).toEqual([['requirement', 'budget', false], ['requirement', 'book transport', false]])
+    expect(copies.map((c) => c.id)).not.toContain('r1')
+    expect(view(r, ['e2'])!.tasks.map((c) => c.id)).not.toEqual(copies.map((c) => c.id))
+    // filling one execution leaves the other and the template untouched
+    r = addRow(r, ['e1', copies[0]!.id], 'allocation', 'fund', 9, { allocation: { resource: 'b', type: 'account', amount: 300, unit: 'USD' } })
+    expect(view(r, [])!.tasks.find((t) => t.id === 'e1')!.blockedBy).toEqual(['task'])
+    expect(view(r, [])!.tasks.find((t) => t.id === 'e2')!.blockedBy).toEqual(['account 300 USD', 'task'])
+    expect(view(r, ['tpl'])!.tasks.map((c) => c.requirement?.satisfied)).toEqual([false, false, undefined])
+    // a template name that is not a template, or a non-task, changes nothing
+    expect(instantiateTemplate(r, [], 'e1', 'p', 10)).toBe(r)
+    expect(instantiateTemplate(r, [], 'p', 'tpl', 11)).toBe(r)
+  })
+})
+
+describe('peer capabilities', () => {
+  it('a member row carries what the owner exposes to that peer (connection kinds and services as CAPABILITY edges); switched-off ones stay visible but do not count', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'shared project', 1, 'p')
+    r = addMemberAt(r, ['p'], 'user:bob', 'bob', ['edit', 'direct', 'search'], 2)
+    expect(view(r, ['p'])!.members).toEqual([{ peerId: 'user:bob', name: 'bob', capabilities: ['edit', 'direct', 'search'] }])
+    const before = view(r, ['p'])!.versions
+    r = setMemberCapabilitiesAt(r, ['p'], 'user:bob', ['edit', 'direct', 'search', 'relay'], ['search'], 3)
+    expect(view(r, ['p'])!.members[0]).toEqual({ peerId: 'user:bob', name: 'bob', capabilities: ['edit', 'direct', 'search', 'relay'], disabled: ['search'] })
+    expect(view(r, ['p'])!.versions).toBe(before) // bookkeeping on the ref node: no version
+    const node = content(r.store, resolveScope(r.store, headCid(r), ['p'])!)
+    expect(hasCapability(r.store, node, 'user:bob', 'search')).toBe(false)
+    expect(hasCapability(r.store, node, 'user:bob', 'relay')).toBe(true)
+    expect(hasCapability(r.store, node, 'user:bob', 'mail')).toBe(false)
+    // a disabled name that is not granted is dropped; removing the member drops every row
+    r = setMemberCapabilitiesAt(r, ['p'], 'user:bob', ['edit'], ['relay'], 4)
+    expect(view(r, ['p'])!.members[0]).toEqual({ peerId: 'user:bob', name: 'bob', capabilities: ['edit'] })
+    r = removeMemberAt(r, ['p'], 'user:bob', 5)
+    expect(view(r, ['p'])!.members).toEqual([])
+  })
+
+  it('the from direction: what the owner accepts from a member is ACCEPTS edges on the same reference', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'inbox', 1, 'i')
+    r = addMemberAt(r, ['i'], 'user:bob', 'bob', ['read'], 2)
+    r = setMemberCapabilitiesAt(r, ['i'], 'user:bob', ['read'], [], 3, ['edit', 'relay'])
+    expect(view(r, ['i'])!.members[0]).toEqual({ peerId: 'user:bob', name: 'bob', capabilities: ['read'], accepts: ['edit', 'relay'] })
+    const node = content(r.store, resolveScope(r.store, headCid(r), ['i'])!)
+    expect(acceptsFrom(r.store, node, 'user:bob', 'edit')).toBe(true)
+    expect(acceptsFrom(r.store, node, 'user:bob', 'autopush')).toBe(false)
+    expect(hasCapability(r.store, node, 'user:bob', 'edit')).toBe(false) // accepting is not granting
+    // changing the to side keeps the from side
+    r = setMemberCapabilitiesAt(r, ['i'], 'user:bob', ['read', 'http'], ['http'], 4)
+    expect(view(r, ['i'])!.members[0]).toEqual({ peerId: 'user:bob', name: 'bob', capabilities: ['read', 'http'], disabled: ['http'], accepts: ['edit', 'relay'] })
+  })
+
+  it('a receive-only policy: the sync request carries no local content, the pull still merges in, local edits stay local', () => {
+    const SERVER = 'user:ada'
+    let server = addTask(createReplica(SERVER), [], 'assigned to the work machine', 1, 'w')
+    let device = addTask(createReplica('work'), [], 'private note', 2, 'p')
+    // push: false → the head sent is an empty node (no base yet) and the private row is not in the request
+    const req = buildSyncRequest(device, undefined, { push: false })
+    expect(req.headCid).not.toBe(headCid(device))
+    expect(Object.values(req.nodes).some((n) => JSON.stringify(n).includes('private note'))).toBe(false)
+    const served = serveSync(server.store, req, SERVER, 3)
+    expect('error' in served).toBe(false)
+    if ('error' in served) return
+    const done = completeSync(device, req, served.response, 4)
+    device = done.replica
+    // the device now holds the assigned task and still its private row; the server never saw the private row
+    expect(view(device, [])!.tasks.map((t) => t.title).sort()).toEqual(['assigned to the work machine', 'private note'])
+    expect(view(server, [])!.tasks.map((t) => t.title)).toEqual(['assigned to the work machine'])
+    // a second round with the same policy: still nothing leaves (head = base), and a new server row arrives
+    server = addTask(server, [], 'another task', 5, 'a')
+    const req2 = buildSyncRequest(device, undefined, { push: false })
+    expect(req2.headCid).toBe(device.meta.baseCid)
+    const served2 = serveSync(server.store, req2, SERVER, 6)
+    if ('error' in served2) throw new Error(served2.error)
+    device = completeSync(device, req2, served2.response, 7).replica
+    expect(view(device, [])!.tasks.map((t) => t.title).sort()).toEqual(['another task', 'assigned to the work machine', 'private note'])
+    expect(view(server, [])!.tasks.map((t) => t.title)).toEqual(['assigned to the work machine', 'another task'])
+  })
+
+  it('policies come from fos.config.toml tables and keep only known capabilities', () => {
+    const config = parseToml('[attach]\nserver = "https://api.example"\n\n[server]\nto = ["http", "ws", "bogus"]\nfrom = ["read", "read-requests", "relay"]\n\n[peers.bob]\nto = ["read"]\nfrom = ["edit"]\n') as FosProjectConfig
+    expect(serverPolicyOf(config)).toEqual({ to: ['http', 'ws'], from: ['read', 'read-requests', 'relay'] })
+    expect(peerPolicyOf(config, '@bob')).toEqual({ to: ['read'], from: ['edit'] })
+    expect(peerPolicyOf(config, 'carol')).toBeNull()
+    expect(serverPolicyOf(parseToml('[attach]\nname = "x"\n') as FosProjectConfig)).toBeNull()
+    expect(parsePolicy({ to: 'read' })).toBeNull()
+    expect(parsePolicy({ from: ['read'] })).toEqual({ to: [], from: ['read'] })
+  })
+
+  it('the serving side reports the capabilities it registers with the peer', () => {
+    const device = addTask(createReplica('dev'), [], 'x', 1, 'x')
+    const server = createReplica('user:ada')
+    const served = serveSync(server.store, buildSyncRequest(device), 'user:ada', 2, { capabilities: ['http', 'ws', 'relay', 'search'] })
+    expect('error' in served).toBe(false)
+    if (!('error' in served)) expect(served.response.capabilities).toEqual(['http', 'ws', 'relay', 'search'])
   })
 })
