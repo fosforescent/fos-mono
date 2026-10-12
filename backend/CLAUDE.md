@@ -93,6 +93,7 @@ The backend directory contains the Node.js/Express API server that provides the 
 - Environment variables loaded via `dotenv`
 
 ### Production (Docker)
+- Deployed by `.github/workflows/deploy-backend.yml` on push to `main` (image → gcr.io → Cloud Run `fos-backend-dev`, schema via `prisma db push`); see `infra/CLAUDE.md`
 - Multi-stage Docker build in `Dockerfile`
 - TypeScript compilation with `tsc`
 - Optimized Node.js runtime environment

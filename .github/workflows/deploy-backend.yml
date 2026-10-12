@@ -1,0 +1,154 @@
+name: Deploy Backend & Web
+
+# Builds the backend image, pushes it to gcr.io, syncs the database schema,
+# rolls Cloud Run to the new image, and uploads the web app to its bucket.
+# - push to main touching backend/shared/prisma/web: deploy automatically
+# - workflow_dispatch: deploy on demand (choose which parts)
+#
+# Auth: the GCP_SA_KEY secret (JSON key of the github-deployer service account).
+# Create it with: bash infra/scripts/setup-gcp-deployer.sh   (needs gcloud + gh, project owner)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'shared/**'
+      - 'infra/prisma/**'
+      - 'web/**'
+      - 'package*.json'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: 'Build, push and deploy the backend'
+        type: boolean
+        default: true
+      web:
+        description: 'Build and upload the web app'
+        type: boolean
+        default: true
+
+env:
+  GCP_PROJECT: fosforescent
+  GCP_REGION: us-central1
+  SERVICE: fos-backend-dev
+  IMAGE: gcr.io/fosforescent/fos-backend
+  WEB_BUCKET: fos-frontend-dev-fosforescent
+  API_URL: https://api.fosforescent.com
+  WEB_URL: https://fosforescent.com
+  SQL_INSTANCE: fosforescent:us-central1:fos-postgres-dev
+  DATABASE_URL_SECRET: fos-database-url-dev
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    name: Backend → Cloud Run
+    if: github.event_name == 'push' || inputs.backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for gcr.io
+        run: gcloud auth configure-docker gcr.io --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Setup Node.js (prisma)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Sync database schema (prisma db push, refuses destructive changes)
+        run: |
+          curl -sfL -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.0/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port 5440 "$SQL_INSTANCE" > proxy.log 2>&1 &
+          for i in $(seq 1 30); do grep -q "ready for new connections" proxy.log && break; sleep 1; done
+          SECRET_URL=$(gcloud secrets versions access latest --secret "$DATABASE_URL_SECRET" --project "$GCP_PROJECT")
+          # the stored URL targets the Cloud SQL unix socket; rewrite it for the local proxy
+          USERINFO=$(echo "$SECRET_URL" | sed -E 's#^postgres(ql)?://([^@]+)@.*#\2#')
+          DBNAME=$(echo "$SECRET_URL" | sed -E 's#^[^@]+@[^/]*/([^?]+).*#\1#')
+          export DATABASE_URL="postgresql://${USERINFO}@127.0.0.1:5440/${DBNAME}"
+          npx --yes prisma@5 db push --schema=infra/prisma/schema.prisma --skip-generate
+          kill %1 || true
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --image "$IMAGE:${{ github.sha }}" \
+            --update-env-vars "WEB_URL=$WEB_URL,DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --quiet
+          gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$GCP_REGION" --format="value(status.url,status.latestReadyRevisionName)"
+
+      - name: Smoke test
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$API_URL/auth/device/poll?code=x")
+          echo "GET /auth/device/poll -> $code"
+          test "$code" = "200"
+
+  web:
+    name: Web → bucket
+    if: github.event_name == 'push' || inputs.web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build web app
+        env:
+          VITE_API_URL: ${{ env.API_URL }}
+        run: cd web && npm ci && npm run build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload to bucket
+        run: |
+          gcloud storage rsync web/dist "gs://$WEB_BUCKET" --recursive --delete-unmatched-destination-objects --project "$GCP_PROJECT"
+          # hashed assets may cache for a long time; the entry point must not
+          gcloud storage objects update "gs://$WEB_BUCKET/index.html" --cache-control="no-cache, max-age=0" --project "$GCP_PROJECT"
+          gcloud storage objects update "gs://$WEB_BUCKET/assets/**" --cache-control="public, max-age=31536000, immutable" --project "$GCP_PROJECT" || true
+
+      - name: Smoke test
+        run: |
+          sleep 5
+          curl -s --max-time 30 "$WEB_URL/" | grep -o '<title>[^<]*</title>' || true

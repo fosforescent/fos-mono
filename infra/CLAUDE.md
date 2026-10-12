@@ -3,6 +3,14 @@
 ## Directory Summary
 The infra directory contains infrastructure configuration, deployment tools, and end-to-end testing for Fosforescent. It includes Docker Compose configurations, Terraform infrastructure as code, and Playwright E2E tests for comprehensive application testing.
 
+## Deploying (GitHub Actions)
+
+Only a `dev` environment exists in GCP today and it serves the live site: Cloud Run `fos-backend-dev` behind `api.fosforescent.com`, bucket `fos-frontend-dev-fosforescent` behind `fosforescent.com`, Cloud SQL `fos-postgres-dev`.
+
+- `.github/workflows/deploy-backend.yml` — on push to `main` (backend/shared/prisma/web paths) or manual dispatch: builds `backend/Dockerfile` (context = repo root), pushes `gcr.io/fosforescent/fos-backend:<sha>` and `:latest`, runs `prisma db push` through the Cloud SQL proxy (fails on destructive changes instead of applying them), rolls Cloud Run to the new image with `WEB_URL`, then builds `web/` with `VITE_API_URL=https://api.fosforescent.com` and rsyncs it to the bucket. Auth is the `GCP_SA_KEY` secret (service account `github-deployer`); create/rotate it with `bash infra/scripts/setup-gcp-deployer.sh`.
+- `.github/workflows/deploy-infrastructure.yml` — Terraform for `infra/terraform/**` (plan on PRs, apply on push to `main` for `dev`).
+- `.github/workflows/desktop-release.yml`, `mobile-ios.yml`, `mobile-android.yml` — on `v*` tags; see `docs/mobile-release.md`.
+
 ## Key Components
 
 ### Docker Configuration
