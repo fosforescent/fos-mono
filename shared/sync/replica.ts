@@ -11,14 +11,23 @@ import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
+  type Capability,
+  type MovePosition,
+  type NodeView,
+  type RowKind,
   SYNC_FORMAT_VERSION,
+  type Scope,
+  type TaskView,
   commitRoot,
   content,
+  convertRowContent,
+  copyRowContent,
   exportReachableContext,
   findEdge,
+  findRowByAlias,
   identityCid,
   isPartitionEdge,
-  isTaskEdge,
+  isRowEdge,
   makeLink,
   markProposalRejected,
   moveChild,
@@ -35,13 +44,12 @@ import {
   replaceEdge,
   resolveScope,
   rootTargetCid,
+  rowContent,
+  rowEdge,
+  rowKindOf,
   scopeNames,
   taskContent,
   taskEdge,
-  type Capability,
-  type MovePosition,
-  type NodeView,
-  type Scope,
   updateAtScope,
   viewNode,
   withIdentity,
@@ -157,10 +165,10 @@ function findTaskEdge(replica: Replica, value: FosNodeContent, taskId: string) {
   return edge && edge[1] === replica.store.primitive.completeField.getId() ? edge : undefined
 }
 
-/** A child carrying `aliasId`: a task edge or a legacy plain-node edge. */
+/** A child row carrying `aliasId` (any row kind, including legacy plain rows). */
 function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string) {
   const edge = findEdge(replica.store, value, `a:${aliasId}`)
-  return edge && (isTaskEdge(replica.store, edge) || isPartitionEdge(replica.store, edge)) ? edge : undefined
+  return edge && isRowEdge(replica.store, edge) ? edge : undefined
 }
 
 export function addTask(replica: Replica, at: Scope, title: string, now: number, id: string = newId()): Replica {
@@ -170,6 +178,76 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
     const cid = put(replica.store, taskContent(id, trimmed, false, now, now))
     return { ...value, children: [...value.children, taskEdge(replica.store, cid)] }
   })
+}
+
+export type AddRowOptions = { done?: boolean; refId?: string; author?: { id: string; name: string }; position?: MovePosition; id?: string }
+
+/** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
+export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
+  const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
+  if (!body && kind !== 'ref') return replica
+  if (kind === 'ref' && !options.refId) return replica
+  const id = options.id ?? newId()
+  return edit(replica, at, now, (value) => {
+    const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author }))
+    const edge = rowEdge(replica.store, kind, cid)
+    const children = [...value.children]
+    const pos = options.position
+    if (pos && 'relativeTo' in pos) {
+      const sibling = findEdge(replica.store, value, `a:${pos.relativeTo}`)
+      const index = sibling ? children.indexOf(sibling) : -1
+      if (index >= 0) { children.splice(pos.position === 'above' ? index : index + 1, 0, edge); return { ...value, children } }
+    }
+    children.push(edge)
+    return { ...value, children }
+  })
+}
+
+/** Change what kind of row `aliasId` is (plain ↔ task ↔ note ↔ comment). Refs keep their target when converted back. */
+export function setRowKind(replica: Replica, at: Scope, aliasId: string, kind: RowKind, now: number): Replica {
+  return edit(replica, at, now, (value) => {
+    const edge = findChildEdge(replica, value, aliasId)
+    if (!edge) return value
+    if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge)) return value
+    const node = content(replica.store, identityCid(replica.store, edge))
+    const cid = put(replica.store, convertRowContent(node, kind, now))
+    return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, cid))
+  })
+}
+
+/** Insert a reference row pointing at `targetAliasId` (any row in the replica) under `at`, optionally at `position`. */
+export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: number, position?: MovePosition): Replica {
+  if (position && 'into' in position) return addRow(replica, [...at, position.into], 'ref', '', now, { refId: targetAliasId })
+  return addRow(replica, at, 'ref', '', now, { refId: targetAliasId, position })
+}
+
+/** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
+export function copyNode(replica: Replica, fromPath: Scope, aliasId: string, toPath: Scope, position: MovePosition, now: number): Replica {
+  const from = resolveScope(replica.store, headCid(replica), fromPath)
+  if (!from) return replica
+  const found = findEdge(replica.store, content(replica.store, from), `a:${aliasId}`)
+  if (!found) return replica
+  const kind = rowKindOf(replica.store, found)
+  if (!kind) return replica
+  const copied = copyRowContent(replica.store, identityCid(replica.store, found), now, newId)
+  const edge = rowEdge(replica.store, kind, copied)
+  const target = 'into' in position ? [...toPath, position.into] : toPath
+  return edit(replica, target, now, (value) => {
+    const children = [...value.children]
+    if ('relativeTo' in position) {
+      const sibling = findEdge(replica.store, value, `a:${position.relativeTo}`)
+      const index = sibling ? children.indexOf(sibling) : -1
+      if (index >= 0) { children.splice(position.position === 'above' ? index : index + 1, 0, edge); return { ...value, children } }
+    }
+    children.push(edge)
+    return { ...value, children }
+  })
+}
+
+/** Resolve a reference row's target: path (relative to the replica) and view, or null when it no longer exists. */
+export function resolveRef(replica: Replica, targetAliasId: string): { path: Scope; row: TaskView } | null {
+  const root = headCid(replica)
+  return root ? findRowByAlias(replica.store, root, targetAliasId) : null
 }
 
 function updateTask(replica: Replica, at: Scope, taskId: string, now: number, change: (task: FosNodeContent) => FosNodeContent | null): Replica {
@@ -186,7 +264,7 @@ function updateTask(replica: Replica, at: Scope, taskId: string, now: number, ch
 
 export function setTaskDone(replica: Replica, at: Scope, taskId: string, done: boolean, now: number): Replica {
   return updateTask(replica, at, taskId, now, (task) => {
-    if (!task.data.todo) return null // a legacy plain node has no completion
+    if (!task.data.todo) return null // only tasks have a completion
     if (!!task.data.todo?.completed === done) return null
     return { ...task, data: { ...task.data, todo: { completed: done, time: task.data.todo?.time ?? now } } }
   })

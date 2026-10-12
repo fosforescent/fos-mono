@@ -76,7 +76,7 @@ enum Commands {
     Ls,
     /// Sync with the account now
     Sync,
-    /// Add a task (quote the title; optionally under another task by id prefix)
+    /// Add a row (quote it; "[ ] x" task, "[x] x" done task, "- x" note, "// x" comment, else plain; optionally under another row by id prefix)
     Add {
         title: String,
         #[arg(long, short)]

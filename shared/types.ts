@@ -114,6 +114,10 @@ export type FosDataContent = {
     createdAt: number
   }
   /** On a proposal node (a peer's branch at a link node). */
+  /** A reference row: this node stands for the node whose alias id is `id` (shown by title; follows it on click). */
+  ref?: {
+    id: string
+  },
   proposal?: {
     status: 'open' | 'rejected'
   }

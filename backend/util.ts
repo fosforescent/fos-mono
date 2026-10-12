@@ -90,17 +90,15 @@ export const dbToStore = async (
     }
   })
 
-  const table = nodesToAdd.reduce((acc, node) => {
-
-    if (!verifyCid(node.cid, validateNodeData(node.data))) {
+  // one pass, mutating a single object: the former `{ ...acc }` reduce copied the table on every node (quadratic)
+  const table: FosNodesData = {}
+  for (const node of nodesToAdd) {
+    const data = validateNodeData(node.data)
+    if (!verifyCid(node.cid, data)) {
       throw new Error("Hashes don't match")
     }
-
-    return {
-      ...acc,
-      [node.cid]: validateNodeData(node.data)
-    }
-  }, {} as FosNodesData)
+    table[node.cid] = data
+  }
 
   const ctx: FosContextData = {
     nodes: table,
@@ -253,6 +251,7 @@ export const storeToDb = async (
       ]
     }
   })
+  const existingCids = new Set(existingNodes.map((n) => n.cid))
 
   existingNodes.forEach(n => {
     if (!verifyCid(n.cid, validateNodeData(n.data))) {
@@ -276,7 +275,7 @@ export const storeToDb = async (
       throw new Error("Hashes don't match")
     }
 
-    const alreadyExists = existingNodes.find(n => n.cid === id)
+    const alreadyExists = existingCids.has(id)
     if (!alreadyExists) {
       nodesToCreate.push({
         cid: id,
@@ -352,6 +351,7 @@ export const createSeedUser = async (prisma: PrismaClient, store: FosStore, user
 
   const existingNodes = await prisma.fosNodeModel.findMany({
   })
+  const existingCids2 = new Set(existingNodes.map((n) => n.cid))
 
   type ReduceResultArrayTerm = {
     cid: string,
@@ -366,7 +366,7 @@ export const createSeedUser = async (prisma: PrismaClient, store: FosStore, user
     if (id === store.rootNodeId) {
       console.log("Root node", id)
     }
-    if (existingNodes.find(n => n.cid === id)) {
+    if (existingCids2.has(id)) {
       return acc
     } else {
       return [...acc, {

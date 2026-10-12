@@ -4,7 +4,10 @@
  * Conventions used by the sync layer (all expressed with existing primitives):
  *
  *   task        edge [taskNode, COMPLETION]      taskNode.data: alias{id}, description, todo{completed,time}, updated
- *   node        edge [LIST, node]   (legacy)      a plain node without completion: data alias{id}, description; children like a task's. Older data only; the UI shows it as an uncheckable row
+ *   row         edge [rowNode, KIND]              KIND says what the row is: COMPLETION = task (data.todo), DESCRIPTION = plain row,
+ *                                                  DOCUMENT = note block (markdown body, key/value children), COMMENT = comment
+ *                                                  (data.comment), LINK = reference (data.ref.id = alias id of the node it stands for)
+ *   legacy row  edge [LIST, node]                  plain row from older data (identity on the target); read like a DESCRIPTION row
  *   peer        edge [PEER, peerRefNode]          peerRefNode.data: peerId{content}   (see membership.ts)
  *   choice      edge [CHOICE, choiceNode]         an unresolved divergence; replaces the task/partition edge it concerns
  *                 choiceNode.data: alias{id of the thing in conflict}, conflict{path}, option{defaultResolutionStrategy:'choice'}
@@ -75,7 +78,43 @@ export function isTaskEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[1] === store.primitive.completeField.getId() && !!content(store, edge[0]).data.todo
 }
 
-/** Legacy plain-node edge ([LIST, node]). New data only creates tasks; these still merge, zoom and move like any node. */
+export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref'
+export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref']
+
+/** The primitive a row node is applied to, per kind ([rowNode, KIND]). */
+export function rowPrimitive(store: FosStore, kind: RowKind): string {
+  switch (kind) {
+    case 'task': return store.primitive.completeField.getId()
+    case 'plain': return store.primitive.descriptionField.getId()
+    case 'note': return store.primitive.documentField.getId()
+    case 'comment': return store.primitive.commentField.getId()
+    case 'ref': return store.primitive.linkField.getId()
+  }
+}
+
+/** What kind of row an edge is, or null when it is not a row (choice, peer, member, …). */
+export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
+  if (isPartitionEdge(store, edge)) return 'plain' // legacy [LIST, node]
+  const [, target] = edge
+  const p = store.primitive
+  if (target === p.completeField.getId()) return content(store, edge[0]).data.todo ? 'task' : 'plain'
+  if (target === p.descriptionField.getId()) return 'plain'
+  if (target === p.documentField.getId()) return 'note'
+  if (target === p.commentField.getId()) return 'comment'
+  if (target === p.linkField.getId()) return 'ref'
+  return null
+}
+
+export function isRowEdge(store: FosStore, edge: FosPathElem): boolean {
+  return rowKindOf(store, edge) !== null
+}
+
+/** Rows of the [rowNode, KIND] shape carry their identity on the instruction side. */
+function identityOnInstruction(store: FosStore, edge: FosPathElem): boolean {
+  return !isPartitionEdge(store, edge) && rowKindOf(store, edge) !== null
+}
+
+/** Legacy plain-row edge ([LIST, node]) from older data; identity on the target. */
 export function isPartitionEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.listField.getId()
 }
@@ -88,22 +127,22 @@ export function isPeerEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.peerField.getId()
 }
 
-/** The node that carries an edge's identity and data (task → instruction, otherwise target). */
+/** The node that carries an edge's identity and data (rows → instruction, otherwise target). */
 export function identityCid(store: FosStore, edge: FosPathElem): string {
-  return isTaskEdge(store, edge) ? edge[0] : edge[1]
+  return identityOnInstruction(store, edge) ? edge[0] : edge[1]
 }
 
 /** Rebuild an edge around a new version of its identity node. */
 export function withIdentity(store: FosStore, edge: FosPathElem, cid: string): FosPathElem {
-  return isTaskEdge(store, edge) ? [cid, edge[1]] : [edge[0], cid]
+  return identityOnInstruction(store, edge) ? [cid, edge[1]] : [edge[0], cid]
 }
 
 /** Edges have the same "shape" when they differ only in their identity node. */
 export function sameShape(store: FosStore, a: FosPathElem, b: FosPathElem): boolean {
-  const aTask = isTaskEdge(store, a)
-  const bTask = isTaskEdge(store, b)
-  if (aTask !== bTask) return false
-  return aTask ? a[1] === b[1] : a[0] === b[0]
+  const aRow = identityOnInstruction(store, a)
+  const bRow = identityOnInstruction(store, b)
+  if (aRow !== bRow) return false
+  return aRow ? a[1] === b[1] : a[0] === b[0]
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +158,29 @@ export function taskContent(id: string, title: string, done: boolean, createdAt:
     },
     children: []
   }
+}
+
+/** Content of a row of `kind`. `text` is the title (task/plain/comment), markdown body (note) or ignored (ref). */
+export function rowContent(kind: RowKind, id: string, text: string, now: number, extra: { done?: boolean; refId?: string; author?: { id: string; name: string } } = {}): FosNodeContent {
+  const data: FosNodeContent['data'] = { alias: { id }, description: { content: text }, updated: { time: now } }
+  if (kind === 'task') data.todo = { completed: !!extra.done, time: now }
+  if (kind === 'comment') data.comment = { content: text, authorID: extra.author?.id ?? '', authorName: extra.author?.name ?? '', time: now, votes: {} }
+  if (kind === 'ref') data.ref = { id: extra.refId ?? '' }
+  return { data, children: [] }
+}
+
+export function rowEdge(store: FosStore, kind: RowKind, cid: string): FosPathElem {
+  return [cid, rowPrimitive(store, kind)]
+}
+
+/** Same node as a different kind of row: completion added or dropped, comment/ref data adjusted. */
+export function convertRowContent(value: FosNodeContent, kind: RowKind, now: number): FosNodeContent {
+  const { todo: _todo, comment: _comment, ref: _ref, ...rest } = value.data
+  const data: FosNodeContent['data'] = { ...rest, updated: { time: now } }
+  if (kind === 'task') data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now }
+  if (kind === 'comment') data.comment = value.data.comment ?? { content: value.data.description?.content ?? '', authorID: '', authorName: '', time: now, votes: {} }
+  if (kind === 'ref') data.ref = value.data.ref ?? { id: '' }
+  return { ...value, data }
 }
 
 export function partitionContent(id: string, name: string, children: FosPathElem[] = []): FosNodeContent {
@@ -394,9 +456,14 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 export type TaskView = {
   id: string
   title: string
-  /** False for a legacy plain node (no completion): rendered as a row without a checkbox. */
+  kind: RowKind
+  /** True only for tasks: rendered with a checkbox. */
   checkable: boolean
   done: boolean
+  /** For `ref` rows: alias id of the node this row stands for. */
+  refId?: string
+  /** For comments: who wrote it. */
+  author?: { id: string; name: string; time: number }
   createdAt: number
   updatedAt: number
   /** Direct subtasks and unresolved choices, for the tree. */
@@ -439,46 +506,37 @@ export type NodeView = {
 }
 
 export function taskView(store: FosStore, taskCid: string): TaskView {
-  const value = content(store, taskCid)
-  const created = value.data.todo?.time ?? 0
-  const sub = countNode(store, taskCid)
-  return {
-    id: aliasIdOf(value) ?? taskCid,
-    title: value.data.description?.content ?? '',
-    checkable: true,
-    done: !!value.data.todo?.completed,
-    createdAt: created,
-    updatedAt: value.data.updated?.time ?? created,
-    childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
-    childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
-    subtreeTasks: sub.tasks,
-    subtreeDone: sub.done,
-    isLink: isLink(value)
-  }
+  return rowView(store, taskCid, 'task')
 }
 
-/** A legacy plain node as a tree row: like a task but not checkable. */
-export function plainNodeView(store: FosStore, nodeCid: string): TaskView {
+/** A row of any kind as the tree shows it. */
+export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskView {
   const value = content(store, nodeCid)
+  const created = value.data.todo?.time ?? value.data.updated?.time ?? 0
   const sub = countNode(store, nodeCid)
-  return {
+  const view: TaskView = {
     id: aliasIdOf(value) ?? nodeCid,
     title: value.data.description?.content ?? '',
-    checkable: false,
-    done: false,
-    createdAt: value.data.updated?.time ?? 0,
-    updatedAt: value.data.updated?.time ?? 0,
-    childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
+    kind,
+    checkable: kind === 'task',
+    done: kind === 'task' && !!value.data.todo?.completed,
+    createdAt: created,
+    updatedAt: value.data.updated?.time ?? created,
+    childCount: value.children.filter((e) => isRowEdge(store, e)).length,
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
     isLink: isLink(value)
   }
+  if (kind === 'ref') view.refId = value.data.ref?.id ?? ''
+  if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
+  return view
 }
 
 function describeEdge(store: FosStore, edge: FosPathElem | null): { task: TaskView | null; label: string | null } {
   if (!edge) return { task: null, label: null }
-  if (isTaskEdge(store, edge)) return { task: taskView(store, edge[0]), label: null }
+  const kind = rowKindOf(store, edge)
+  if (kind) return { task: rowView(store, identityCid(store, edge), kind), label: null }
   const value = content(store, identityCid(store, edge))
   return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? 'node' }
 }
@@ -504,8 +562,8 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
       tasks += sub.tasks; done += sub.done; choices += sub.choices
     } else if (isChoiceEdge(store, edge)) {
       choices++
-    } else if (isPartitionEdge(store, edge)) {
-      const sub = countNode(store, edge[1])
+    } else if (isRowEdge(store, edge)) {
+      const sub = countNode(store, identityCid(store, edge))
       tasks += sub.tasks; done += sub.done; choices += sub.choices
     }
   }
@@ -525,12 +583,11 @@ export function viewNode(store: FosStore, cid: string): NodeView {
     versions: link ? linkHistory(store, cid).length : 0
   }
   for (const edge of value.children) {
-    if (isTaskEdge(store, edge)) {
-      view.tasks.push(taskView(store, edge[0]))
+    const kind = rowKindOf(store, edge)
+    if (kind) {
+      view.tasks.push(rowView(store, identityCid(store, edge), kind))
     } else if (isChoiceEdge(store, edge)) {
       view.choices.push(choiceView(store, edge[1]))
-    } else if (isPartitionEdge(store, edge)) {
-      view.tasks.push(plainNodeView(store, edge[1])) // legacy plain node: a row in the same list, in edge order
     } else if (isPeerEdge(store, edge)) {
       const peerId = content(store, edge[1]).data.peerId?.content
       if (peerId) view.peers.push(peerId)
@@ -547,7 +604,7 @@ export function findPeerScope(store: FosStore, nodeCid: string, peerId: string, 
     if (isPeerEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId) return prefix
   }
   for (const edge of value.children) {
-    if (!isPartitionEdge(store, edge) && !isTaskEdge(store, edge)) continue
+    if (!isRowEdge(store, edge)) continue
     const childCid = identityCid(store, edge)
     const id = aliasIdOf(content(store, childCid))
     if (!id) continue
@@ -806,6 +863,34 @@ export function findChild(store: FosStore, nodeCid: string, aliasId: string): st
   return identityCid(store, edge)
 }
 
+/** Where the row with alias `aliasId` lives below `rootCid` (depth-first), with its view; null when absent. */
+export function findRowByAlias(store: FosStore, rootCid: string, aliasId: string, prefix: Scope = []): { path: Scope; row: TaskView } | null {
+  for (const edge of content(store, rootCid).children) {
+    const kind = rowKindOf(store, edge)
+    if (!kind) continue
+    const cid = identityCid(store, edge)
+    const id = aliasIdOf(content(store, cid))
+    if (!id) continue
+    if (id === aliasId) return { path: prefix, row: rowView(store, cid, kind) }
+    const found = findRowByAlias(store, cid, aliasId, [...prefix, id])
+    if (found) return found
+  }
+  return null
+}
+
+/** Deep copy of a row's node with fresh alias ids everywhere (peers, members, proposals and history are not copied). */
+export function copyRowContent(store: FosStore, nodeCid: string, now: number, freshId: () => string): string {
+  const value = stripLink(store, content(store, nodeCid))
+  const children: FosPathElem[] = []
+  for (const edge of value.children) {
+    const kind = rowKindOf(store, edge)
+    if (!kind) continue // choices and bookkeeping are not copied
+    const copied = copyRowContent(store, identityCid(store, edge), now, freshId)
+    children.push(isPartitionEdge(store, edge) ? rowEdge(store, 'plain', copied) : withIdentity(store, edge, copied))
+  }
+  return put(store, { ...value, data: { ...value.data, alias: { id: freshId() }, updated: { time: now } }, children })
+}
+
 export type MovePosition = { relativeTo: string; position: 'above' | 'below' } | { into: string; index?: number }
 
 /**
@@ -855,8 +940,9 @@ export function proposalView(store: FosStore, nodeValue: FosNodeContent, proposa
   const index = (value: FosNodeContent) => {
     const map = new Map<string, { title: string; cid: string }>()
     for (const edge of value.children) {
-      if (!isTaskEdge(store, edge)) continue
-      map.set(edgeKey(store, edge), { title: content(store, edge[0]).data.description?.content ?? '', cid: edge[0] })
+      if (!isRowEdge(store, edge)) continue
+      const id = identityCid(store, edge)
+      map.set(edgeKey(store, edge), { title: content(store, id).data.description?.content ?? '', cid: id })
     }
     return map
   }

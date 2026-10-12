@@ -180,3 +180,17 @@ export function describeDeviceLogin(session: Session, code: string): Promise<{ c
 export function decideDeviceLogin(session: Session, code: string, decision: 'approve' | 'deny'): Promise<unknown> {
   return authed(session, 'POST', `/user/data/device-login/${encodeURIComponent(code)}/${decision}`)
 }
+
+export type VoiceCluster = { title: string; sentiment: 'positive' | 'negative' | 'neutral' | 'mixed'; summary: string; points: string[] }
+export type VoiceNote = { transcript: string; title: string; summary: string; clusters: VoiceCluster[] }
+
+/** Send a recording; the account transcribes it and organizes it into clustered notes. */
+export async function transcribeVoice(session: Session, audio: Blob): Promise<VoiceNote> {
+  const response = await fetch(`${session.baseUrl}/user/data/voice-notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': audio.type || 'audio/webm', Authorization: `Bearer ${session.jwt}` },
+    body: audio
+  })
+  if (!response.ok) throw new ApiError(response.status, await readError(response))
+  return (await response.json()) as VoiceNote
+}

@@ -72,9 +72,15 @@ impl Workspace {
         Some((id, at))
     }
 
+    /// Add a row under `at`. Like the web add bar: "[ ] x" / "[x] x" make a task, "- x" a note,
+    /// "// x" a comment, anything else a plain row.
     pub fn add_task(&self, at: &[String], title: &str) -> Result<Value, String> {
         let at_json = serde_json::to_string(at).unwrap();
-        let created = self.core.call_json("addTask", &[json!(HANDLE), json!(at_json), json!(title), json!(now_ms())]).map_err(|e| e.to_string())?;
+        let (kind, text, done) = parse_row_input(title);
+        let created = self
+            .core
+            .call_json("addRow", &[json!(HANDLE), json!(at_json), json!(kind), json!(text), json!(now_ms()), json!(json!({ "done": done }).to_string())])
+            .map_err(|e| e.to_string())?;
         self.save()?;
         Ok(created)
     }
@@ -149,5 +155,37 @@ impl Workspace {
             "peersAttachedHere": view.get("peers"),
             "proposals": view.get("proposals").and_then(|p| p.as_array()).map(|a| a.len()).unwrap_or(0)
         })
+    }
+}
+
+/// (kind, text, done) from an add-bar line.
+pub fn parse_row_input(raw: &str) -> (&'static str, String, bool) {
+    let t = raw.trim_end();
+    if let Some(rest) = t.strip_prefix("[x]").or_else(|| t.strip_prefix("[X]")) {
+        return ("task", rest.trim().to_string(), true);
+    }
+    if let Some(rest) = t.strip_prefix("[]").or_else(|| t.strip_prefix("[ ]")) {
+        return ("task", rest.trim().to_string(), false);
+    }
+    if let Some(rest) = t.strip_prefix("- ").or_else(|| t.strip_prefix('-')) {
+        return ("note", rest.trim_start().to_string(), false);
+    }
+    if let Some(rest) = t.strip_prefix("//") {
+        return ("comment", rest.trim().to_string(), false);
+    }
+    ("plain", t.trim().to_string(), false)
+}
+
+#[cfg(test)]
+mod row_tests {
+    use super::parse_row_input;
+
+    #[test]
+    fn prefixes_pick_the_row_kind() {
+        assert_eq!(parse_row_input("[] buy milk"), ("task", "buy milk".into(), false));
+        assert_eq!(parse_row_input("[x] done"), ("task", "done".into(), true));
+        assert_eq!(parse_row_input("- # Title"), ("note", "# Title".into(), false));
+        assert_eq!(parse_row_input("// hmm"), ("comment", "hmm".into(), false));
+        assert_eq!(parse_row_input("just text"), ("plain", "just text".into(), false));
     }
 }

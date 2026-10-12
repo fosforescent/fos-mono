@@ -5,7 +5,11 @@
  */
 
 import {
+  addRef,
+  addRow,
   addTask,
+  copyNode,
+  setRowKind,
   applyProposalAt,
   buildSyncRequest,
   completeSync,
@@ -24,7 +28,9 @@ import {
   serveSync,
   setTaskDone,
   view,
+  type MovePosition,
   type Replica,
+  type RowKind,
   type Scope,
   type SyncRequest,
   type SyncResponse
@@ -61,6 +67,21 @@ export const api = {
     set(handle, { store: r.store, meta: { ...r.meta, scope: parse<Scope>(scopeJson, []), scopeNames: parse<string[]>(namesJson, []), baseCid: null } })
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },
+  /** Add a row of `kind` ('task' | 'plain' | 'note' | 'comment' | 'ref') under `at`; returns its view. */
+  addRow(handle: string, atJson: string, kind: RowKind, text: string, now: number, optionsJson: string | null): string {
+    const r = get(handle)
+    const at = parse<Scope>(atJson, [])
+    const options = parse<{ done?: boolean; refId?: string; id?: string }>(optionsJson, {})
+    const id = options.id ?? crypto.randomUUID()
+    set(handle, addRow(r, at, kind, text, now, { ...options, id }))
+    const added = view(get(handle), at)?.tasks.find((t) => t.id === id) ?? null
+    return JSON.stringify(added)
+  },
+  setRowKind(handle: string, atJson: string, id: string, kind: RowKind, now: number): void { set(handle, setRowKind(get(handle), parse<Scope>(atJson, []), id, kind, now)) },
+  addRef(handle: string, atJson: string, targetId: string, now: number): void { set(handle, addRef(get(handle), parse<Scope>(atJson, []), targetId, now)) },
+  copyNode(handle: string, fromJson: string, id: string, toJson: string, positionJson: string, now: number): void {
+    set(handle, copyNode(get(handle), parse<Scope>(fromJson, []), id, parse<Scope>(toJson, []), parse<MovePosition>(positionJson, { into: '' }), now))
+  },
   /** Text lines of the tree below `at` (for the CLI/REPL), with short ids. */
   tree(handle: string, atJson: string): string {
     const r = get(handle)
@@ -69,7 +90,7 @@ export const api = {
       const node = view(r, at)
       if (!node) return
       for (const t of node.tasks) {
-        lines.push(`${'  '.repeat(depth)}${t.checkable ? (t.done ? '[x]' : '[ ]') : ' · '} ${t.id.slice(0, 8)} ${t.title}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
+        lines.push(`${'  '.repeat(depth)}${t.kind === 'task' ? (t.done ? '[x]' : '[ ]') : t.kind === 'note' ? ' ≡ ' : t.kind === 'comment' ? ' " ' : t.kind === 'ref' ? ' → ' : ' · '} ${t.id.slice(0, 8)} ${t.kind === 'ref' ? `ref ${t.refId?.slice(0, 8) ?? ''}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
       for (const c of node.choices) lines.push(`${'  '.repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`)

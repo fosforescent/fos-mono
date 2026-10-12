@@ -17,8 +17,15 @@ All structures use existing primitives. Identity across versions is
 on every edit, its alias id does not.
 
 ```
-task        [taskNode, COMPLETION]       taskNode.data: alias{id}, description{content}, todo{completed,time}, updated{time}
-node        [LIST, node]   (legacy)      a plain node without completion (older data); shown as an uncheckable row, otherwise like a task
+row         [rowNode, KIND]              rowNode.data: alias{id}, description{content}, updated{time}; KIND picks the row kind:
+              COMPLETION  task      + todo{completed,time}                         (checkbox; "[ ]"/"[x]" prefix in the add bar)
+              DESCRIPTION plain     the default row: text with links/embeds
+              DOCUMENT    note      description.content is a markdown body ("-" prefix); child rows are variables (key: value,
+                                     or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
+                                     expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
+              COMMENT     comment   + comment{authorID,authorName,time}  ("//" prefix or the menu; replies are child comments)
+              LINK        ref       + ref{id}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep copy
+legacy row  [LIST, node]                 plain row from older data (identity on the target); read like a DESCRIPTION row
 peer        [PEER, peerRefNode]          peerRefNode.data: peerId{content}          (membership.ts reads the same shape)
 choice      [CHOICE, choiceNode]         an unresolved divergence, replacing the task/node edge it concerns
               choiceNode.data: alias{id of the thing}, conflict{path}, option{defaultResolutionStrategy:'choice'}

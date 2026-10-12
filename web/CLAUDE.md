@@ -10,11 +10,16 @@ Vanilla-TS task client used in the browser and wrapped by the Tauri desktop/mobi
 - `src/api.ts` - backend calls (login, peer-sync, attachment, invites, connect polling, WebSocket events)
 - `src/p2p.ts` - WebRTC host/guest with offer/answer codes, sync over the data channel, manual relay codes
 - `src/storage.ts` - localStorage adapter: replica, prefs, session (token only)
+- `src/rows.ts` - add-bar prefixes (`[ ]`/`[x]` task, `-` note, `//` comment, otherwise a plain row), link/image/YouTube rendering for plain rows and comments, file download
+- `src/notes.ts` - note blocks: frontmatter + child-row variables (`key: value`, titled children, refs to other blocks), `{{key}}`/`{key}` expansion, lists, `.md` export
+- `src/markdown.ts` - marked + DOMPurify; KaTeX (`$…$`, `$$…$$`) and Mermaid (```mermaid fences) are dynamic imports loaded on first use
 - `src/project.ts` - project mode inside Tauri: finds `fos.config.toml` (`find_project`), keeps state in `<dir>/.fos/` through `read/write_project_file`, follows git branch switches
 
 ## Conventions
 - The UI never sees content addresses; it reads `viewNode` output (alias ids, titles, flags).
-- There is no "partition" concept: any task can be zoomed into, invited to, or attached to by a device. Legacy plain nodes from older data arrive as `TaskView` rows with `checkable: false` (no checkbox).
+- Rows have a `kind` (`task | plain | note | comment | ref`, see `docs/sync.md`); only tasks are checkable. Any row can be zoomed into, invited to, or attached to by a device; there is no "partition" concept.
+- Drag and drop: plain drag moves, **Alt+drag places a reference** (row shows the 🔗 icon), **Ctrl/⌘+drag places a deep copy** (⧉). Modifier keys are read at drag start.
+- Voice notes: the 🎙 button records with `MediaRecorder` and posts the blob to `POST /user/data/voice-notes` (needs a session); the result becomes a parent note (summary) with a note per sentiment cluster, its points as plain rows, and a transcript note.
 - Icons: `public/favicon*.png|ico`, `apple-touch-icon.png`, `icon-192/512.png`, `site.webmanifest` are generated from the tree logo (`frontend/logo3-bare.ico`, 256px, the largest copy in the repo).
 - Replica operations return a new replica object; always use the returned value.
 - `tsconfig.json` deliberately omits `erasableSyntaxOnly`/`noUnused*`/`verbatimModuleSyntax` so the graph code in `shared/` compiles.

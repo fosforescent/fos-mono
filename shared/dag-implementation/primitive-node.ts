@@ -115,6 +115,7 @@ export const getPatternFieldNode = (store: FosStore) => generateConstructor(stor
 export const getNumberFieldNode = (store: FosStore) => generateConstructor(store, "NUMBER", { description: { content: 'Number Field Constructor' } }, [])
 export const getBooleanFieldNode = (store: FosStore) => generateConstructor(store, "BOOLEAN", { description: { content: 'Boolean Field Constructor' } }, [])
 export const getLinkFieldNode = (store: FosStore) => generateConstructor(store, "LINK", { description: { content: 'Link Field Constructor' } }, [])
+export const getCommentFieldNode = (store: FosStore) => generateConstructor(store, "COMMENT", { description: { content: 'Comment Field Constructor - a row that comments on its parent; may hold sub-comments' } }, [])
 
 export const getDurationFieldNode = (store: FosStore) => generateConstructor(store, "DURATION", { description: { content: 'Duration Field Constructor' } }, [])
 export const getDateFieldNode = (store: FosStore) => generateConstructor(store, "DATE", { description: { content: 'Date Field Constructor' } }, [])
@@ -723,6 +724,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const actorNode = getActorNode(store)
   const capabilityNode = getCapabilityNode(store)
   const proposeAction = getProposeActionNode(store)
+  const commentField = getCommentFieldNode(store)
   const approveAction = getApproveActionNode(store)
   const effectNode = getEffectNode(store)
   const handlerNode = getHandlerNode(store)
@@ -903,6 +905,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     capabilityNode,
     proposeAction,
     approveAction,
+    commentField,
     effectNode,
     handlerNode,
 
@@ -1075,6 +1078,7 @@ export type PrimitiveAliases = {
   capabilityNode: FosNode,
   proposeAction: FosNode,
   approveAction: FosNode,
+  commentField: FosNode,
   effectNode: FosNode,
   handlerNode: FosNode,
 }
