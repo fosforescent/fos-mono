@@ -134,12 +134,13 @@ jobs:
               body: output
             })
 
-      # Apply only on an explicit manual dispatch. The stored state does not match what is
-      # actually deployed (the plan wants to create the VPC/DNS zone and REPLACE the Cloud SQL
-      # instance), so an automatic apply on push would destroy the live database. Re-enable
-      # push-to-main apply once the state has been reconciled (terraform import) and a plan is clean.
+      # Applies on push to main (state was reconciled with the deployed resources on 2026-10-12
+      # and the plan is clean) and on manual dispatch with action=apply. If a plan ever shows
+      # "must be replaced" on the Cloud SQL instance, stop and reconcile before merging.
       - name: Terraform Apply
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
+        if: |
+          (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         run: terraform apply -auto-approve tfplan
 
       - name: Terraform Destroy

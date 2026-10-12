@@ -46,12 +46,6 @@ output "database_connection_name" {
   value       = google_sql_database_instance.postgres.connection_name
 }
 
-output "database_private_ip" {
-  description = "Private IP address of the Cloud SQL instance"
-  value       = google_sql_database_instance.postgres.private_ip_address
-  sensitive   = true
-}
-
 output "database_public_ip" {
   description = "Public IP address of the Cloud SQL instance"
   value       = google_sql_database_instance.postgres.public_ip_address
@@ -82,17 +76,6 @@ output "secret_ids" {
 output "app_data_bucket_name" {
   description = "Name of the application data storage bucket"
   value       = google_storage_bucket.app_data.name
-}
-
-# VPC outputs
-output "vpc_network_name" {
-  description = "Name of the VPC network"
-  value       = google_compute_network.vpc_network.name
-}
-
-output "vpc_connector_name" {
-  description = "Name of the VPC connector for Cloud Run"
-  value       = google_vpc_access_connector.connector.name
 }
 
 # Service Account Keys (sensitive)

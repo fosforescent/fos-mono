@@ -16,7 +16,7 @@ resource "google_secret_manager_secret" "database_url" {
 
 resource "google_secret_manager_secret_version" "database_url" {
   secret      = google_secret_manager_secret.database_url.id
-  secret_data = "postgresql://${var.db_user}:${var.db_password}@/${var.db_name}?host=/cloudsql/${google_sql_database_instance.postgres.connection_name}"
+  secret_data = "postgresql://${var.db_user}:${urlencode(var.db_password)}@localhost/${var.db_name}?host=/cloudsql/${google_sql_database_instance.postgres.connection_name}"
 }
 
 # JWT Secret

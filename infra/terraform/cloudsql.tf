@@ -13,10 +13,10 @@ resource "google_sql_database_instance" "postgres" {
   region           = var.gcp_region
 
   settings {
-    tier              = "db-custom-2-7680" # 2 vCPU, 7.5GB RAM
+    tier              = "db-f1-micro" # matches the live dev instance (was db-custom-2-7680)
     availability_type = var.environment == "prod" ? "REGIONAL" : "ZONAL"
-    disk_type         = "PD_SSD"
-    disk_size         = 20
+    disk_type         = "PD_HDD"
+    disk_size         = 10
     disk_autoresize   = true
 
     backup_configuration {
@@ -32,9 +32,10 @@ resource "google_sql_database_instance" "postgres" {
     }
 
     ip_configuration {
-      ipv4_enabled    = true
-      private_network = google_compute_network.vpc_network.id
-      require_ssl     = true
+      ipv4_enabled = true
+      # Public IP only: Cloud Run reaches the instance over the Cloud SQL connector socket.
+      # The private VPC / peering that used to be here was removed from the project.
+      require_ssl = true
 
       # Authorized networks - Add your IP ranges here
       # authorized_networks {
@@ -43,10 +44,7 @@ resource "google_sql_database_instance" "postgres" {
       # }
     }
 
-    database_flags {
-      name  = "max_connections"
-      value = "100"
-    }
+    # No database_flags: the live instance has none, and changing flags restarts it.
 
     maintenance_window {
       day          = 7 # Sunday
@@ -64,7 +62,6 @@ resource "google_sql_database_instance" "postgres" {
 
   deletion_protection = var.environment == "prod" ? true : false
 
-  depends_on = [google_service_networking_connection.private_vpc_connection]
 }
 
 # Database
@@ -80,27 +77,8 @@ resource "google_sql_user" "user" {
   password = var.db_password != "" ? var.db_password : random_password.db_password.result
 }
 
-# VPC Network for private IP
-resource "google_compute_network" "vpc_network" {
-  name                    = "fos-vpc-${var.environment}"
-  auto_create_subnetworks = true
-}
 
-# Reserved IP range for Cloud SQL
-resource "google_compute_global_address" "private_ip_address" {
-  name          = "fos-private-ip-${var.environment}"
-  purpose       = "VPC_PEERING"
-  address_type  = "INTERNAL"
-  prefix_length = 16
-  network       = google_compute_network.vpc_network.id
-}
 
-# VPC Peering connection
-resource "google_service_networking_connection" "private_vpc_connection" {
-  network                 = google_compute_network.vpc_network.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
-}
 
 # Enable pgvector extension (must be done after instance creation)
 # Note: This requires the Cloud SQL Admin API to be enabled

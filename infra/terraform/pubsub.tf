@@ -80,6 +80,10 @@ resource "google_pubsub_subscription" "inbox_subscription" {
     service     = "event-processing"
     type        = "inbox"
   }
+
+  expiration_policy {
+    ttl = "" # never expire (the previous subscriptions were auto-deleted after 31 idle days)
+  }
 }
 
 # Outbox Subscription with Dead Letter Queue
@@ -110,6 +114,10 @@ resource "google_pubsub_subscription" "outbox_subscription" {
     service     = "event-processing"
     type        = "outbox"
   }
+
+  expiration_policy {
+    ttl = "" # never expire (the previous subscriptions were auto-deleted after 31 idle days)
+  }
 }
 
 # DLQ Subscriptions for monitoring
@@ -125,6 +133,10 @@ resource "google_pubsub_subscription" "inbox_dlq_subscription" {
     service     = "event-processing"
     type        = "inbox-dlq"
   }
+
+  expiration_policy {
+    ttl = "" # never expire (the previous subscriptions were auto-deleted after 31 idle days)
+  }
 }
 
 resource "google_pubsub_subscription" "outbox_dlq_subscription" {
@@ -138,6 +150,10 @@ resource "google_pubsub_subscription" "outbox_dlq_subscription" {
     environment = var.environment
     service     = "event-processing"
     type        = "outbox-dlq"
+  }
+
+  expiration_policy {
+    ttl = "" # never expire (the previous subscriptions were auto-deleted after 31 idle days)
   }
 }
 

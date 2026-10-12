@@ -36,18 +36,6 @@ resource "google_project_service" "aiplatform_api" {
   disable_on_destroy = false
 }
 
-# VPC Connector for Cloud Run to access Cloud SQL via private IP
-resource "google_vpc_access_connector" "connector" {
-  name          = "fos-vpc-connector-${var.environment}"
-  region        = var.gcp_region
-  network       = google_compute_network.vpc_network.name
-  ip_cidr_range = "10.8.0.0/28"
-
-  depends_on = [
-    google_project_service.vpcaccess_api,
-    google_compute_network.vpc_network
-  ]
-}
 
 # Cloud Run Service for Backend
 resource "google_cloud_run_v2_service" "backend" {
@@ -62,10 +50,6 @@ resource "google_cloud_run_v2_service" "backend" {
       max_instance_count = var.environment == "prod" ? 10 : 3
     }
 
-    vpc_access {
-      connector = google_vpc_access_connector.connector.id
-      egress    = "PRIVATE_RANGES_ONLY"
-    }
 
     containers {
       # Image will be updated by CI/CD pipeline
@@ -188,16 +172,20 @@ resource "google_cloud_run_v2_service" "backend" {
       #   name  = "QDRANT_URL"
       #   value = "http://qdrant:6333" # Update if using external Qdrant
       # }
+
+      volume_mounts {
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
+      }
     }
 
-    # Cloud SQL connections
-    # Note: This is an alternative to VPC connector for Cloud SQL access
-    # volumes {
-    #   name = "cloudsql"
-    #   cloud_sql_instance {
-    #     instances = [google_sql_database_instance.postgres.connection_name]
-    #   }
-    # }
+    # Cloud SQL over the connector socket (/cloudsql/<connection_name>), as DATABASE_URL expects
+    volumes {
+      name = "cloudsql"
+      cloud_sql_instance {
+        instances = [google_sql_database_instance.postgres.connection_name]
+      }
+    }
   }
 
   traffic {
@@ -207,8 +195,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
   depends_on = [
     google_project_service.cloudrun_api,
-    google_sql_database_instance.postgres,
-    google_vpc_access_connector.connector
+    google_sql_database_instance.postgres
   ]
 }
 
