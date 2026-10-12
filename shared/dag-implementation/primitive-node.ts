@@ -121,6 +121,20 @@ export const getSupplyFieldNode = (store: FosStore) => generateConstructor(store
 export const getQueryFieldNode = (store: FosStore) => generateConstructor(store, "QUERY", { description: { content: 'Query Field Constructor - a semantic search whose results are reference rows' } }, [])
 export const getResourceFieldNode = (store: FosStore) => generateConstructor(store, "RESOURCE", { description: { content: 'Resource Field Constructor - a calendar, account or inventory bank' } }, [])
 export const getAllocationFieldNode = (store: FosStore) => generateConstructor(store, "ALLOCATION", { description: { content: 'Allocation Field Constructor - an amount locked from a resource bank' } }, [])
+export const getTemplateFieldNode = (store: FosStore) => generateConstructor(store, "TEMPLATE", { description: { content: 'Template Field Constructor - a row whose requirement children are copied under every task that executes it' } }, [])
+// Peer capabilities ([CAPABILITY, x] edges on a member reference) beyond PROPOSE/APPROVE: how a peer can be reached, and the services it handles
+export const getDirectConnectCapabilityNode = (store: FosStore) => generateConstructor(store, "DIRECTCONNECT", { description: { content: 'Capability - reachable device to device (WebRTC data channel)' } }, [])
+export const getHttpConnectCapabilityNode = (store: FosStore) => generateConstructor(store, "HTTPCONNECT", { description: { content: 'Capability - reachable over HTTP (a server exposes it)' } }, [])
+export const getWsConnectCapabilityNode = (store: FosStore) => generateConstructor(store, "WSCONNECT", { description: { content: 'Capability - reachable over WebSockets (a server exposes it)' } }, [])
+export const getRelayCapabilityNode = (store: FosStore) => generateConstructor(store, "RELAY", { description: { content: 'Capability - relays messages for peers that cannot reach each other (the fos server always has it)' } }, [])
+export const getSearchCapabilityNode = (store: FosStore) => generateConstructor(store, "SEARCHCAPABILITY", { description: { content: 'Capability - runs search requirements (semantic search over rows)' } }, [])
+export const getMarketCapabilityNode = (store: FosStore) => generateConstructor(store, "MARKETCAPABILITY", { description: { content: 'Capability - lists tasks on the market and brings back proposals' } }, [])
+export const getMailCapabilityNode = (store: FosStore) => generateConstructor(store, "MAILCAPABILITY", { description: { content: 'Capability - sends mail for mail requirements' } }, [])
+export const getReadCapabilityNode = (store: FosStore) => generateConstructor(store, "READ", { description: { content: 'Capability - may read the content of the node' } }, [])
+export const getReadRequestsCapabilityNode = (store: FosStore) => generateConstructor(store, "READREQUESTS", { description: { content: 'Capability - may read the requests (proposals) addressed to it on the node' } }, [])
+export const getAutopushCapabilityNode = (store: FosStore) => generateConstructor(store, "AUTOPUSH", { description: { content: 'Capability - changes flow automatically on sync (merged), rather than only as explicit proposals' } }, [])
+// [ACCEPTS, capability] on a member reference: what the owner accepts from that peer (the other direction of CAPABILITY)
+export const getAcceptsNode = (store: FosStore) => generateConstructor(store, "ACCEPTS", { description: { content: 'Accepts - the owner accepts this capability from the member (what may flow in from that peer)' } }, [])
 
 export const getDurationFieldNode = (store: FosStore) => generateConstructor(store, "DURATION", { description: { content: 'Duration Field Constructor' } }, [])
 export const getDateFieldNode = (store: FosStore) => generateConstructor(store, "DATE", { description: { content: 'Date Field Constructor' } }, [])
@@ -735,6 +749,18 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const queryField = getQueryFieldNode(store)
   const resourceField = getResourceFieldNode(store)
   const allocationField = getAllocationFieldNode(store)
+  const templateField = getTemplateFieldNode(store)
+  const directConnectCapability = getDirectConnectCapabilityNode(store)
+  const httpConnectCapability = getHttpConnectCapabilityNode(store)
+  const wsConnectCapability = getWsConnectCapabilityNode(store)
+  const relayCapability = getRelayCapabilityNode(store)
+  const searchCapability = getSearchCapabilityNode(store)
+  const marketCapability = getMarketCapabilityNode(store)
+  const mailCapability = getMailCapabilityNode(store)
+  const readCapability = getReadCapabilityNode(store)
+  const readRequestsCapability = getReadRequestsCapabilityNode(store)
+  const autopushCapability = getAutopushCapabilityNode(store)
+  const acceptsNode = getAcceptsNode(store)
   const approveAction = getApproveActionNode(store)
   const effectNode = getEffectNode(store)
   const handlerNode = getHandlerNode(store)
@@ -921,6 +947,18 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     queryField,
     resourceField,
     allocationField,
+    templateField,
+    directConnectCapability,
+    httpConnectCapability,
+    wsConnectCapability,
+    relayCapability,
+    searchCapability,
+    marketCapability,
+    mailCapability,
+    readCapability,
+    readRequestsCapability,
+    autopushCapability,
+    acceptsNode,
     effectNode,
     handlerNode,
 
@@ -1099,6 +1137,18 @@ export type PrimitiveAliases = {
   queryField: FosNode,
   resourceField: FosNode,
   allocationField: FosNode,
+  templateField: FosNode,
+  directConnectCapability: FosNode,
+  httpConnectCapability: FosNode,
+  wsConnectCapability: FosNode,
+  relayCapability: FosNode,
+  searchCapability: FosNode,
+  marketCapability: FosNode,
+  mailCapability: FosNode,
+  readCapability: FosNode,
+  readRequestsCapability: FosNode,
+  autopushCapability: FosNode,
+  acceptsNode: FosNode,
   effectNode: FosNode,
   handlerNode: FosNode,
 }

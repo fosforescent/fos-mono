@@ -14,7 +14,7 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { commitRoot, content, findRowByAlias, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdge, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
+import { commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdge, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
 import { indexStore, searchRows, type Embed } from './rowIndex'
 
 export type SearchDeps = {
@@ -79,7 +79,8 @@ export function createSearchHandlers(deps: SearchDeps) {
       if (!found) return res.status(404).json({ error: 'node not found' })
       const cid = resolveScope(store, rootTargetCid(store), [...found.path, aliasId])!
       const identity = content(store, cid)
-      if (!identity.data.listing && owner !== me) return res.status(403).json({ error: 'not listed on the market' })
+      // open to bidders when listed, and to accounts the owner made members of the node (with `edit`): they may send proposals (e.g. an allocation bin)
+      if (!identity.data.listing && owner !== me && !hasCapability(store, identity, `user:${me}`, 'edit')) return res.status(403).json({ error: 'not listed on the market, and you are not a member of it' })
       const view = viewNode(store, cid)
       const mine = `user:${me}`
       const filtered: NodeView = { ...view, peers: [], members: [], proposals: owner === me ? view.proposals : view.proposals.filter((p) => p.peerId === mine) }
@@ -106,21 +107,24 @@ export function createSearchHandlers(deps: SearchDeps) {
         const path: Scope = [...found.path, aliasId]
         const cid = resolveScope(store, rootTargetCid(store), path)!
         const identity = content(store, cid)
-        if (!identity.data.listing) return { status: 403, body: { error: 'not listed on the market' } } as const
         const peerId = `user:${me}`
+        if (!identity.data.listing && !hasCapability(store, identity, peerId, 'edit')) return { status: 403, body: { error: 'not listed on the market, and you are not a member of it' } } as const
         const t = now()
         // The branch: the node's current value plus the bidder's rows. Built on the value directly
         // (updateAtScope walks `under` paths inside it) so the owner's root pointer is never touched.
         const mainValueCid = put(store, stripLink(store, identity))
         let branchCid = mainValueCid
         for (const row of rows) {
-          const kind = (typeof row.kind === 'string' && ['plain', 'comment', 'ref', 'supply', 'allocation', 'note', 'task'].includes(row.kind) ? row.kind : 'comment') as RowKind
+          const kind = (typeof row.kind === 'string' && ['plain', 'comment', 'ref', 'supply', 'allocation', 'requirement', 'note', 'task'].includes(row.kind) ? row.kind : 'comment') as RowKind
           const text = typeof row.text === 'string' ? row.text.trim().slice(0, 4000) : ''
           const data = (row.data && typeof row.data === 'object' ? row.data : {}) as Record<string, unknown>
           const under: Scope = typeof row.under === 'string' ? [row.under] : []
           const extras: RowExtras = { store }
           if (kind === 'supply' && data.supply && typeof data.supply === 'object') extras.supply = { ...(data.supply as NonNullable<RowExtras['supply']>), by: me, at: t }
           if (kind === 'allocation' && data.allocation && typeof data.allocation === 'object') extras.allocation = { ...(data.allocation as NonNullable<RowExtras['allocation']>), by: me }
+          // an allocation bin: a row with requirement rows (what the receiver must fill) and allocation rows (what they get) sent as one proposal
+          if (kind === 'requirement' && data.requirement && typeof data.requirement === 'object') extras.requirement = { ...(data.requirement as NonNullable<RowExtras['requirement']>) }
+          if (kind === 'task') extras.done = false
           if (kind === 'ref' && typeof data.refId === 'string') extras.refId = data.refId
           if (kind === 'comment') extras.author = { id: peerId, name: me }
           if (!text && !['supply', 'allocation', 'ref'].includes(kind)) continue

@@ -20,17 +20,20 @@ on every edit, its alias id does not.
 row         [rowNode, KIND]              rowNode.data: alias{id}, description{content}, updated{time}; KIND picks the row kind:
               COMPLETION  task      + todo{completed,time}                         (checkbox; "[ ]"/"[x]" prefix in the add bar)
               DESCRIPTION plain     the default row: text with links/embeds
-              DOCUMENT    note      description.content is a markdown body ("-" prefix); child rows are variables (key: value,
+              DOCUMENT    note      description.content is a markdown body (">" prefix); child rows are variables (key: value,
                                      or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
                                      expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
               COMMENT     comment   + comment{authorID,authorName,time}  ("//" prefix or the menu; replies are child comments)
               LINK        ref       + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
                                      copy; `owner` marks a market result (the row lives in another account; click opens the listing)
-              REQUIREMENT requirement + requirement{capability, resource?, amount?, unit?, start?, end?, options?}  ("!" prefix, under a task)
+              REQUIREMENT requirement + requirement{capability, resource?, amount?, unit?, start?, end?, options?, peer?}  ("-" prefix, under a task;
+                                     capability = task | allocation | search | confirmation | choice | market | mail | peer)
               SUPPLY      supply    + supply{capability, by, at, ref?, choice?}   (under a requirement; `ref` names an allocation/query row)
               QUERY       query     + query{market?, executedAt?, count?}        ("?" prefix; results are ref rows under it)
               RESOURCE    resource  + resource{type: calendar|account|inventory, unit, capacity?}   ("@calendar name 40h" prefix)
-              ALLOCATION  allocation + allocation{resource, type, amount, unit, start?, end?, by?}  ("+2h note" prefix, under a bank)
+              ALLOCATION  allocation + allocation{resource, type, amount, unit, start?, end?, by?}  ("$ 2h note" prefix; drawn from the parent context)
+              TEMPLATE    template  its requirement rows are copied under every task that executes it ("`name" prefix;
+                                     "[ ] `name` …" makes a task with todo + template{id, name})
 legacy row  [LIST, node]                 plain row from older data (identity on the target); read like a DESCRIPTION row
 peer        [PEER, peerRefNode]          peerRefNode.data: peerId{content}          (membership.ts reads the same shape)
 choice      [CHOICE, choiceNode]         an unresolved divergence, replacing the task/node edge it concerns
@@ -189,25 +192,107 @@ an added/changed/removed summary against the proposal's base.
 
 ## Requirements, resource banks, queries and the market
 
-**Requirements** (`!` prefix or the task's menu) are capabilities a task needs
-before it can be completed: `confirmation` (a signed-in person presses
-Confirm), `choice: a | b` (a handler picks an option), `search:` (a query row
-inside it has been run) and `calendar|account|inventory <amount>` (an
-allocation of that resource). `taskBlockers` lists the unsatisfied ones;
-`setTaskDone` refuses while any remain and the UI disables the checkbox
-(`needs n` badge). A requirement is satisfied by a **supply** row under it
-(`addSupply`): who supplied it, when, and for allocations/search a reference
-(`supply.ref`) to the allocation or query row by alias id.
-`requirementSatisfied` resolves that reference from the root and checks type
-and amount; a reference it cannot resolve is trusted (it came through a
-proposal from another account).
+**Requirements** (`-` prefix, under a task) are what the task needs before it
+can be completed. `-` is a modifier: what follows it names the kind of child
+row that fills the requirement. `-[ ] text` needs a task inside it to be done;
+`-$ 50 text` (or `-@account 50`, `-@calendar 1h`, `-@inventory 2 widgets`)
+needs an allocation of that resource and amount inside it; `-? text` needs a
+query inside it to have been run; `- text` needs a confirmation (a signed-in
+person presses Confirm) and `-choice: a | b` a decision; `-market text` and
+`-mail text` are handled by a peer that registered that capability; `-@name
+text` assigns the task to the peer `name`, who confirms it. `taskBlockers`
+lists the unsatisfied ones; `setTaskDone` refuses while any remain and the UI
+disables the checkbox (`needs n` badge). `requirementSatisfied` first looks for
+a child row of the required kind (a done task, an allocation whose type and
+amount fit, an executed query), then for a **supply** row (`addSupply`): who
+supplied it, when, and for allocations/search optionally a reference
+(`supply.ref`) to an allocation or query row elsewhere by alias id; a `peer`
+supply counts only when `by` is the named peer. A reference it cannot resolve
+is trusted (it came through a proposal from another account).
 
 **Resource banks** (`@calendar`, `@account`, `@inventory`, optional capacity)
-hold **allocations** (`+amount`, added under the bank or a sub-bank) and
-sub-banks as children. `allocatedIn` sums allocations in the subtree, the view
-shows `available = capacity − allocated`. An allocation row is a normal row:
-Alt+drag a reference to it onto a task, or supply it to a requirement from the
-requirement's picker.
+hold **allocations** and sub-banks as children. An allocation (`$ amount`) is
+*taken from the parent context*: the nearest bank above it, or, under an
+allocation requirement, the bank of the resource the requirement names
+(`App.bankFor`). `allocatedIn` sums allocations in the subtree, the view shows
+`available = capacity − allocated`. An allocation row is a normal row: type it
+inside the requirement, Alt+drag a reference to it onto a task, or supply an
+existing one from the requirement's picker.
+
+**Templates** (`` `name `` row) hold requirement rows. A task written as
+`[ ] `name` text` executes the template: `instantiateTemplate` copies the
+template's requirements under the task (fresh ids, unfilled) and stamps
+`data.template{id, name}` on the task, so each execution shows the rows that
+still need filling. `-[ ] `name`` is a task requirement whose child task is
+created as an execution at once.
+
+**Peers and capabilities.** A peer's capabilities are the `[CAPABILITY, x]`
+edges on its member reference (`Capability` in `graph.ts`): what it may do on
+the node (`edit`, `approve`), how it can be reached (`direct` over WebRTC,
+`http` / `ws` through a server that exposes it, `relay` for peers that cannot
+reach each other) and the services it handles (`search`, `market`, `mail`).
+The fos account server registers `SERVER_CAPABILITIES` (http, ws, relay,
+search, market, mail) with every device in each sync response
+(`ServeOptions.capabilities` → `SyncResponse.capabilities`); relaying is
+always among them. The context panel under the tree lists the banks in scope
+and the peers of the viewed node: `fos` with what it registered, the node's
+members, and attached devices (a direct-connected one shows `direct`). Within
+the owner's row for a member, the capability rows are what the owner exposes
+to that peer: the owner adds, removes (`setMemberCapabilitiesAt`,
+`removeMemberAt`) or switches them off (`data.disabledCapabilities` on the
+member reference; the edge stays, `hasCapability` ignores it). Bookkeeping,
+so no version. On the member's side the same rows arrive with the node and
+show as offline while the owner is not online; a row the owner removed before
+the member ever synced is never seen. Services act as resource banks for the
+matching requirement kinds: a `-?` requirement's "Ask fos to search" places a
+query inside it and runs it; a `-market` requirement's "List on the market"
+lists the task and records a `market` supply; mail is registered but has no
+handler yet. Under each peer the panel also lists the `-@name` requirements
+in the viewed subtree assigned to it (computed from the viewer's own rows;
+delivering an assignment into the assignee's replica is not wired yet).
+
+**Peer policies: nothing moves in a direction that is not listed.** A
+peer never adds rows to another peer's context; it can only be queried for
+them, and a device's sync round is that query. Every peer relationship has
+two directions, each a list of capabilities (`PeerPolicy` in `graph.ts`):
+`to` is what this side lets the peer have or do (`read` its content,
+`autopush` its changes on every sync, `edit` = submit proposals, `approve`,
+the connection kinds, the services it handles), `from` is what this side
+takes in from the peer (`read` pulls the peer's node, `read-requests` shows
+the proposals addressed to it, `autopush` lets the peer's changes merge in,
+`relay`/`search`/`market`/`mail` use the peer's services). On a member row the
+`to` list is the CAPABILITY edges and the `from` list the ACCEPTS edges of
+the member reference (`setMemberCapabilitiesAt(…, accepts)`, `acceptsFrom`);
+the context panel shows both lines under each peer and the owner edits them.
+Towards the account server a device keeps its own policy: `[server] to /
+from` in `fos.config.toml` for a project directory (fixed there, shown locked
+in the app) or the app's saved preference otherwise, `DEFAULT_DEVICE_POLICY`
+(everything both ways) when neither says. The web client enforces it where
+data leaves or enters the device: without `to: autopush`
+`buildSyncRequest(…, { push: false })` sends the agreed base as the head, so
+a sync round carries no local content and local edits are only re-merged
+locally; without `to: edit` explicit sends (market proposals, allocation
+bins) are refused; without `from: read` no sync round runs at all; without
+`from: read-requests` proposals that arrived with the node are not shown.
+`RECEIVE_ONLY_POLICY` (`to = ["http", "ws"]`, `from = ["read",
+"read-requests", "relay"]`) is the work-machine setting: the desktop app
+attached at a task node receives the tasks assigned there, completes them in
+that scope, and sends nothing but the connection; its completions leave only
+when the policy allows a push or an explicit proposal. The server does not
+yet enforce policies on its side (it serves what the credential allows).
+
+**Allocation bins (sending rows to another account).** A row whose children
+are requirement and allocation rows is a proposed transaction: what the
+receiver must fill, and what they get. "Send to @owner (node)" in the row's
+menu posts the row and those children (`App.sendRowTo`) through the market
+proposal route (`POST /user/data/market/proposals`), which now accepts
+`requirement` rows and lets an account propose on any node where it is a
+member with `edit` as well as on listed nodes. The receiver sees it in that
+node's link panel as a proposal named after the sender and approves it to
+take the rows in; the requirements then block the bin's task until filled.
+The sender picks the target among nodes of that account it knows (market
+results in its tree); the receiver makes an account a member of a node with
+the "Add peer" row in the context panel.
 
 **Queries** (`?` prefix) run a semantic search over the account's rows
 (`POST /user/data/search`, pgvector + Vertex `text-embedding-005`, index kept
@@ -281,6 +366,16 @@ name   = "laptop checkout"
 [serve]
 port = 4777
 host = "127.0.0.1"      # 0.0.0.0 to let devices on the LAN attach
+
+# What this directory sends to and takes from the account server (capability ids; see "Peer policies").
+# Absent: everything flows both ways. This example is a work machine that only takes work in:
+[server]
+to   = ["http", "ws"]                       # nothing but the connection leaves
+from = ["read", "read-requests", "relay"]   # pulls its node and the requests addressed to it
+
+[peers.bob]                                 # the same, towards a named peer
+to   = ["read"]
+from = ["edit"]
 ```
 
 `fos <dir>` (or any subdirectory) finds the config by walking up and keeps
@@ -394,8 +489,20 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
   `serveSync`/`completeSync` unchanged: every peer runs the same code.
 * Expression-level helpers (`FosExpression.merge`, `addTodo`) predate this and
   use the same primitives; folding them together is a cleanup for later.
-* The `fos` CLI's `add` only knows the task/note/comment prefixes; requirement,
-  query, bank and allocation prefixes are parsed in `web/src/rows.ts` only.
+* The `fos` CLI's `add` only knows the task (`[ ]`), note (`>`) and comment
+  (`//`) prefixes; requirement (`-`), query, bank, allocation (`$`) and
+  template prefixes are parsed in `web/src/rows.ts` only.
+* Assignments (`-@name`) only show in the assigner's own context panel; the
+  assignee's replica does not receive them yet (needs the proposal path).
+* Connection capabilities are declared, not enforced: nothing yet picks a
+  transport from a peer's `direct`/`http`/`ws`/`relay` rows, and the server
+  does not relay for devices that only hold `relay` through it.
+* Policies are enforced by the client only. The server should honour the
+  `to`/`from` lists too (not serve content to a peer whose row lacks `read`,
+  not keep proposals from one that lacks `edit`) and the `[peers.<name>]`
+  tables are parsed but not yet applied to member rows.
+* Devices do not register capabilities of their own with the account yet;
+  only the account server reports `capabilities` in sync responses.
 * Choice requirements have no handler registry yet: any signed-in viewer can
   pick an option. Calendar allocations carry start/end but nothing checks
   overlaps.

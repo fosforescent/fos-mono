@@ -52,6 +52,7 @@ import {
   withPeer,
   withProposal
 } from './graph'
+import type { Capability } from './graph'
 import { mergeNodes } from './merge'
 
 export type SyncAction = 'noop' | 'fast-forward' | 'pull' | 'merge' | 'propose'
@@ -68,6 +69,8 @@ export type ServeOptions = {
   peerName?: string
   /** Peer ids currently connected to the serving side, reported back as `presence`. */
   onlinePeers?: string[]
+  /** Capabilities the serving side registers with the requesting peer (connection kinds and services), reported back as `capabilities`. */
+  capabilities?: Capability[]
 }
 
 export type SyncRequest = {
@@ -99,6 +102,8 @@ export type SyncResponse = {
   serverTime: number
   /** Peer ids the serving side currently sees online (attachments persist; this is only presence). */
   presence?: string[]
+  /** Capabilities the serving peer registers with this one (how it can be reached, what it handles). */
+  capabilities?: Capability[]
 }
 
 export type SyncError = { error: string; code: 'bad-request' | 'scope-not-found' | 'missing-nodes' | 'version-mismatch' }
@@ -195,7 +200,8 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
       nodes: reachableNodes(store, [resultCid], known),
       newChoiceIds: newChoiceCids.map((cid) => content(store, cid).data.alias?.id ?? cid),
       serverTime: now,
-      presence: options.onlinePeers
+      presence: options.onlinePeers,
+      capabilities: options.capabilities
     }
   }
 }
@@ -281,7 +287,8 @@ function serveProposal(store: FosStore, request: SyncRequest, serverPeerId: stri
       nodes: reachableNodes(store, [resultCid], known),
       newChoiceIds: newChoiceCids.map((cid) => content(store, cid).data.alias?.id ?? cid),
       serverTime: now,
-      presence: options.onlinePeers
+      presence: options.onlinePeers,
+      capabilities: options.capabilities
     }
   }
 }

@@ -114,23 +114,39 @@ export type FosDataContent = {
     createdAt: number
   }
   /** On a proposal node (a peer's branch at a link node). */
-  /** A requirement row under a task: a capability / effect handler that must be supplied before the task can be completed. */
+  /**
+   * A requirement row under a task ("-" prefix): a capability / effect handler that must be supplied before the
+   * task can be completed. The capability names the kind of child row that fills it: `task` (a done task),
+   * `allocation` (an allocation of `resource`), `search` (a run query), `confirmation`/`choice` (a supply by a
+   * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
+   */
   requirement?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
     resource?: 'calendar' | 'account' | 'inventory'
     amount?: number
     unit?: string
     start?: number
     end?: number
     options?: string[]
+    /** `peer` requirements: the peer (username or device name) the task is assigned to. */
+    peer?: string
   },
   /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
   supply?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
     by: string
     at: number
     ref?: string
     choice?: number
+  },
+  /** On a member reference: granted capabilities (CAPABILITY edges) the owner has switched off; the member still sees them, as offline. */
+  disabledCapabilities?: {
+    content: string[]
+  },
+  /** On a task that executes a template row ("[ ] `name`"): the template's alias id and name; its requirements were copied under the task. */
+  template?: {
+    id: string
+    name: string
   },
   /** A query row: its description is the search text; results appear as reference rows under it. */
   query?: {

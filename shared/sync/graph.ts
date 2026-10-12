@@ -142,10 +142,17 @@ export function isTaskEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[1] === store.primitive.completeField.getId() && !!valueContent(store, edge[0]).data.todo
 }
 
-export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref' | 'requirement' | 'supply' | 'query' | 'resource' | 'allocation'
-export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref', 'requirement', 'supply', 'query', 'resource', 'allocation']
+export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref' | 'requirement' | 'supply' | 'query' | 'resource' | 'allocation' | 'template'
+export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref', 'requirement', 'supply', 'query', 'resource', 'allocation', 'template']
 export type ResourceType = 'calendar' | 'account' | 'inventory'
-export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation'
+/**
+ * What a requirement asks for, named after the kind of child row that fills it: a done `task`, an `allocation`
+ * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
+ * peer that registered that capability, or a `peer` (the named peer confirms the assignment).
+ */
+export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
+/** Capabilities a peer can register with (shown as resource banks in the context panel). */
+export const PEER_CAPABILITIES: CapabilityKind[] = ['search', 'market', 'mail']
 
 /** The primitive a row node is applied to, per kind ([rowNode, KIND]). */
 export function rowPrimitive(store: FosStore, kind: RowKind): string {
@@ -160,6 +167,7 @@ export function rowPrimitive(store: FosStore, kind: RowKind): string {
     case 'query': return store.primitive.queryField.getId()
     case 'resource': return store.primitive.resourceField.getId()
     case 'allocation': return store.primitive.allocationField.getId()
+    case 'template': return store.primitive.templateField.getId()
   }
 }
 
@@ -178,6 +186,7 @@ export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
   if (target === p.queryField.getId()) return 'query'
   if (target === p.resourceField.getId()) return 'resource'
   if (target === p.allocationField.getId()) return 'allocation'
+  if (target === p.templateField.getId()) return 'template'
   return null
 }
 
@@ -609,6 +618,8 @@ export type TaskView = {
   author?: { id: string; name: string; time: number }
   /** Tasks: unsatisfied requirements (summaries) that block completion. */
   blockedBy?: string[]
+  /** Tasks that execute a template: which one. */
+  template?: { id: string; name: string }
   requirement?: NonNullable<FosDataContent['requirement']> & { satisfied: boolean; summary: string }
   supply?: NonNullable<FosDataContent['supply']>
   query?: NonNullable<FosDataContent['query']>
@@ -683,7 +694,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   }
   if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
-  if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers }
+  if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers; if (value.data.template) view.template = value.data.template }
   if (kind === 'requirement' && value.data.requirement) view.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement) }
   if (kind === 'supply' && value.data.supply) view.supply = value.data.supply
   if (kind === 'query') view.query = value.data.query ?? {}
@@ -702,6 +713,10 @@ export function requirementSummary(req: NonNullable<FosDataContent['requirement'
     case 'choice': return `choice${req.options?.length ? ` (${req.options.join(' | ')})` : ''}`
     case 'search': return 'search'
     case 'allocation': return `${req.resource ?? 'resource'}${req.amount !== undefined ? ` ${req.amount} ${req.unit ?? ''}`.trimEnd() : ''}`
+    case 'task': return 'task'
+    case 'market': return 'market'
+    case 'mail': return 'mail'
+    case 'peer': return req.peer ? `@${req.peer}` : 'peer'
   }
 }
 
@@ -717,26 +732,72 @@ function childRows(store: FosStore, cid: string, kind?: RowKind): Array<{ cid: s
   return out
 }
 
-/** A requirement is satisfied by a supply row under it that matches its capability (and, for allocations, the amount). */
+/** Does an allocation fill an allocation requirement (resource type and amount)? */
+function allocationFills(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined): boolean {
+  return !!a && (!req.resource || a.type === req.resource) && (req.amount === undefined || a.amount >= req.amount)
+}
+
+/**
+ * A requirement is satisfied by a child row of the kind it asks for: a done task (`task`), an allocation of the
+ * resource and amount (`allocation`), a query that has been run (`search`); or by a supply row under it that
+ * matches its capability (confirmation, choice, a peer's answer, or a reference to an allocation/query row elsewhere).
+ */
 export function requirementSatisfied(store: FosStore, requirementCid: string, root?: string): boolean {
   const req = valueContent(store, requirementCid).data.requirement
   if (!req) return true
-  return childRows(store, requirementCid, 'supply').some(({ value }) => {
-    const s = value.data.supply
+  const rows = childRows(store, requirementCid)
+  const filledByChild = rows.some(({ kind, value }) => {
+    switch (req.capability) {
+      case 'task': return kind === 'task' && !!value.data.todo?.completed
+      case 'allocation': return kind === 'allocation' && allocationFills(req, value.data.allocation)
+      case 'search': return kind === 'query' && !!value.data.query?.executedAt
+      default: return false
+    }
+  })
+  if (filledByChild) return true
+  return rows.some(({ kind, value }) => {
+    const s = kind === 'supply' ? value.data.supply : undefined
     if (!s || s.capability !== req.capability) return false
     switch (req.capability) {
       case 'confirmation': return !!s.by
       case 'choice': return typeof s.choice === 'number' && (!req.options || (s.choice >= 0 && s.choice < req.options.length))
       case 'search': return !!s.ref
+      case 'task': return !!s.ref
+      case 'market': return !!s.by
+      case 'mail': return !!s.by
+      case 'peer': return !!s.by && (!req.peer || s.by === req.peer)
       case 'allocation': {
         if (!s.ref) return false
         const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref)
         if (!found) return true // supplied by reference to an allocation outside this replica's scope: trusted
-        const a = found.row.allocation
-        return !!a && (!req.resource || a.type === req.resource) && (req.amount === undefined || a.amount >= req.amount)
+        return allocationFills(req, found.row.allocation)
       }
     }
   })
+}
+
+/** Requirement rows directly under a template (or any row), as data to copy under a task that executes it. */
+export function templateRequirements(store: FosStore, templateCid: string): Array<{ text: string; requirement: NonNullable<FosDataContent['requirement']> }> {
+  return childRows(store, templateCid, 'requirement')
+    .filter(({ value }) => !!value.data.requirement)
+    .map(({ value }) => ({ text: value.data.description?.content ?? '', requirement: value.data.requirement as NonNullable<FosDataContent['requirement']> }))
+}
+
+/** The first template row named `name` (case-insensitive) below `rootCid`, depth-first. */
+export function findTemplate(store: FosStore, rootCid: string, name: string, prefix: Scope = []): { path: Scope; row: TaskView; cid: string } | null {
+  const wanted = name.trim().toLowerCase()
+  if (!wanted) return null
+  for (const edge of valueContent(store, rootCid).children) {
+    const kind = rowKindOf(store, edge)
+    if (!kind) continue
+    const cid = identityCid(store, edge)
+    const id = aliasIdOf(content(store, cid))
+    if (!id) continue
+    if (kind === 'template' && (valueContent(store, cid).data.description?.content ?? '').trim().toLowerCase() === wanted) return { path: prefix, row: rowView(store, cid, kind), cid }
+    const found = findTemplate(store, cid, name, [...prefix, id])
+    if (found) return found
+  }
+  return null
 }
 
 /** Summaries of the requirements under a task that are not satisfied yet. */
@@ -871,7 +932,42 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
 // hold stripped content so they can be three-way merged against the main
 // content with the proposal's PREV as the base.
 
-export type Capability = 'edit' | 'approve'
+/**
+ * What a peer may do on a node or provides to it: 'edit' (may propose changes) and 'approve' (may merge
+ * proposals); how the peer can be reached ('direct' device to device over WebRTC, 'http' / 'ws' through a server
+ * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
+ * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
+ */
+export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail']
+export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'relay']
+/** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market and mail services. */
+export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail']
+/** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
+export const CAPABILITY_LABEL: Record<Capability, string> = {
+  read: 'read', 'read-requests': 'read requests', edit: 'submit proposals', approve: 'approve proposals', autopush: 'autopush',
+  direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail'
+}
+/**
+ * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
+ * (its content may be read, changes are pushed automatically, proposals may be submitted, …); `from` is what this side
+ * accepts from the peer (pulls its content, reads the requests addressed to it, lets its changes merge in, uses it as a
+ * relay, …). Nothing moves in a direction that is not listed: a peer never adds rows to another's context, it can only
+ * be queried for them.
+ */
+export type PeerPolicy = { to: Capability[]; from: Capability[] }
+/** A device's default policy towards the account server: everything flows both ways (what the apps did before policies). */
+export const DEFAULT_DEVICE_POLICY: PeerPolicy = { to: ['read', 'autopush', 'edit', 'http', 'ws'], from: ['read', 'read-requests', 'autopush', 'relay', 'search', 'market', 'mail'] }
+/** A device that only takes work in (e.g. the desktop app on a work machine): nothing but the connection leaves it; it pulls its node and the requests addressed to it. */
+export const RECEIVE_ONLY_POLICY: PeerPolicy = { to: ['http', 'ws'], from: ['read', 'read-requests', 'relay'] }
+/** `{ to?: string[], from?: string[] }` (a fos.config.toml table or saved prefs) → a policy with only known capabilities, or null. */
+export function parsePolicy(value: unknown): PeerPolicy | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as { to?: unknown; from?: unknown }
+  const list = (x: unknown): Capability[] => (Array.isArray(x) ? x.filter((c): c is Capability => typeof c === 'string' && (CAPABILITIES as string[]).includes(c)) : [])
+  if (!Array.isArray(v.to) && !Array.isArray(v.from)) return null
+  return { to: list(v.to), from: list(v.from) }
+}
 
 /** A link row's identity node: a ref node that is not a reference row (legacy inline link nodes still count). */
 export function isLink(store: FosStore, value: FosNodeContent): boolean {
@@ -950,32 +1046,68 @@ export function linkHistory(store: FosStore, cid: string, limit = 50): string[] 
   return out
 }
 
-export type MemberRecord = { peerId: string; name: string | null; capabilities: Capability[] }
+/**
+ * A member of a link node. `capabilities` is what the owner exposes to that peer (the `to` direction, CAPABILITY
+ * edges), `disabled` those of them that are switched off, `accepts` what the owner takes in from that peer (the `from`
+ * direction, ACCEPTS edges). Absent lists are empty.
+ */
+export type MemberRecord = { peerId: string; name: string | null; capabilities: Capability[]; disabled?: Capability[]; accepts?: Capability[] }
 
 /**
  * Capabilities are graph vocabulary, not data: a member reference carries one
- * [CAPABILITY, <action constructor>] edge per capability, as the language
- * design does for actors. 'edit' → PROPOSE (may propose changes), 'approve' → APPROVE.
+ * [CAPABILITY, <constructor>] edge per capability, as the language design does
+ * for actors. 'edit' → PROPOSE (may propose changes), 'approve' → APPROVE; the
+ * connection kinds → DIRECTCONNECT / HTTPCONNECT / WSCONNECT / RELAY; the
+ * services → SEARCH / MARKET / MAIL.
  */
 export function capabilityTarget(store: FosStore, capability: Capability): string {
-  return capability === 'approve' ? store.primitive.approveAction.getId() : store.primitive.proposeAction.getId()
+  const p = store.primitive
+  switch (capability) {
+    case 'edit': return p.proposeAction.getId()
+    case 'approve': return p.approveAction.getId()
+    case 'direct': return p.directConnectCapability.getId()
+    case 'http': return p.httpConnectCapability.getId()
+    case 'ws': return p.wsConnectCapability.getId()
+    case 'relay': return p.relayCapability.getId()
+    case 'search': return p.searchCapability.getId()
+    case 'market': return p.marketCapability.getId()
+    case 'mail': return p.mailCapability.getId()
+    case 'read': return p.readCapability.getId()
+    case 'read-requests': return p.readRequestsCapability.getId()
+    case 'autopush': return p.autopushCapability.getId()
+  }
 }
 
+function capabilityOfTarget(store: FosStore, target: string): Capability | null {
+  return CAPABILITIES.find((c) => target === capabilityTarget(store, c)) ?? null
+}
+
+/** The capability a [CAPABILITY, x] edge grants (the `to` direction), or null for any other edge. */
 export function capabilityOf(store: FosStore, edge: FosPathElem): Capability | null {
   if (edge[0] !== store.primitive.capabilityNode.getId()) return null
-  if (edge[1] === store.primitive.approveAction.getId()) return 'approve'
-  if (edge[1] === store.primitive.proposeAction.getId()) return 'edit'
-  return null
+  return capabilityOfTarget(store, edge[1])
 }
 
-export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[]): FosNodeContent {
+/** The capability an [ACCEPTS, x] edge accepts from the member (the `from` direction), or null for any other edge. */
+export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null {
+  if (edge[0] !== store.primitive.acceptsNode.getId()) return null
+  return capabilityOfTarget(store, edge[1])
+}
+
+export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
   const unique = [...new Set(capabilities)]
+  const off = [...new Set(disabled)].filter((c) => unique.includes(c))
+  const from = [...new Set(accepts)]
   return {
     data: {
       peerId: { content: peerId },
-      ...(name ? { name: { content: name } } : {})
+      ...(name ? { name: { content: name } } : {}),
+      ...(off.length ? { disabledCapabilities: { content: off } } : {})
     },
-    children: unique.map((c): FosPathElem => [store.primitive.capabilityNode.getId(), capabilityTarget(store, c)])
+    children: [
+      ...unique.map((c): FosPathElem => [store.primitive.capabilityNode.getId(), capabilityTarget(store, c)]),
+      ...from.map((c): FosPathElem => [store.primitive.acceptsNode.getId(), capabilityTarget(store, c)])
+    ]
   }
 }
 
@@ -987,20 +1119,33 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
     const peerId = ref.data.peerId?.content
     if (!peerId) continue
     const caps = ref.children.map((e) => capabilityOf(store, e)).filter((c): c is Capability => c !== null)
-    out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps })
+    const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => (CAPABILITIES as string[]).includes(c) && caps.includes(c as Capability))
+    const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c): c is Capability => c !== null)
+    out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...(off.length ? { disabled: off } : {}), ...(accepts.length ? { accepts } : {}) })
   }
   return out
 }
 
 /** Add or replace the member entry for `peerId`. */
-export function withMember(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, capabilities: Capability[]): FosNodeContent {
-  const refCid = put(store, memberRefContent(store, peerId, name, capabilities))
+export function withMember(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
+  const refCid = put(store, memberRefContent(store, peerId, name, capabilities, disabled, accepts))
   const children = value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId))
   return { ...value, children: [...children, [store.primitive.memberField.getId(), refCid]] }
 }
 
+/** Does the owner of this node accept `capability` from `peerId` (an ACCEPTS edge on its member reference)? */
+export function acceptsFrom(store: FosStore, value: FosNodeContent, peerId: string, capability: Capability): boolean {
+  return readMembers(store, value).some((m) => m.peerId === peerId && (m.accepts ?? []).includes(capability))
+}
+
+/** Drop the member entry for `peerId` (and so every capability it was granted). */
+export function withoutMember(store: FosStore, value: FosNodeContent, peerId: string): FosNodeContent {
+  return { ...value, children: value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)) }
+}
+
+/** Does `peerId` hold `capability` on this node, granted and not switched off? */
 export function hasCapability(store: FosStore, value: FosNodeContent, peerId: string, capability: Capability): boolean {
-  return readMembers(store, value).some((m) => m.peerId === peerId && m.capabilities.includes(capability))
+  return readMembers(store, value).some((m) => m.peerId === peerId && m.capabilities.includes(capability) && !(m.disabled ?? []).includes(capability))
 }
 
 export type ProposalRecord = {

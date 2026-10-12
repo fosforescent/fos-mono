@@ -1,4 +1,4 @@
-import type { NodeView, SyncRequest, SyncResponse } from '../../shared/sync/index'
+import type { Capability, NodeView, SyncRequest, SyncResponse } from '../../shared/sync/index'
 
 export type Session = {
   baseUrl: string
@@ -91,7 +91,7 @@ export function listInviteRequests(session: Session): Promise<{ requests: Invite
 }
 
 /** Approving decides what the device may do on the node: propose changes, or also approve proposals. */
-export function answerInviteRequest(session: Session, id: number, decision: 'approve' | 'deny', capabilities: Array<'edit' | 'approve'> = ['edit']): Promise<unknown> {
+export function answerInviteRequest(session: Session, id: number, decision: 'approve' | 'deny', capabilities: Capability[] = ['edit']): Promise<unknown> {
   return authed(session, 'POST', `/user/data/peer-invite/${id}/${decision}`, decision === 'approve' ? { capabilities } : {})
 }
 

@@ -7,11 +7,20 @@
   var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-  var __esm = (fn, res) => function __init() {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  var __esm = (fn, res, err) => function __init() {
+    if (err) throw err[0];
+    try {
+      return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+    } catch (e) {
+      throw err = [e], e;
+    }
   };
   var __commonJS = (cb, mod) => function __require() {
-    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+    try {
+      return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+    } catch (e) {
+      throw mod = 0, e;
+    }
   };
   var __export = (target, all) => {
     for (var name in all)
@@ -33,10 +42,7 @@
     isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
     mod
   ));
-  var __publicField = (obj, key, value) => {
-    __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-    return value;
-  };
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
   // src-tauri/js/prelude.js
   var init_prelude = __esm({
@@ -53,8 +59,7 @@
       }
       globalThis.crypto = globalThis.crypto || {};
       globalThis.crypto.getRandomValues = (array) => {
-        for (let i = 0; i < array.length; i++)
-          array[i] = __hostRandom() & 255;
+        for (let i2 = 0; i2 < array.length; i2++) array[i2] = __hostRandom() & 255;
         return array;
       };
       globalThis.crypto.randomUUID = () => {
@@ -69,8 +74,7 @@
       globalThis.__call = (name, argsJson) => {
         try {
           const fn = globalThis.fosCore && globalThis.fosCore[name];
-          if (typeof fn !== "function")
-            return JSON.stringify({ error: "unknown core function " + name });
+          if (typeof fn !== "function") return JSON.stringify({ error: "unknown core function " + name });
           const value = fn.apply(globalThis.fosCore, JSON.parse(argsJson));
           return JSON.stringify({ ok: value === void 0 ? null : value });
         } catch (e) {
@@ -193,8 +197,8 @@
         };
         var cloneArray = function(array) {
           var newArray = [];
-          for (var i2 = 0; i2 < array.length; ++i2) {
-            newArray[i2] = array[i2];
+          for (var i3 = 0; i3 < array.length; ++i3) {
+            newArray[i3] = array[i3];
           }
           return newArray;
         };
@@ -219,8 +223,8 @@
           };
         };
         var createOutputMethods = function(method, createMethod2, bits2, padding) {
-          for (var i2 = 0; i2 < OUTPUT_TYPES.length; ++i2) {
-            var type = OUTPUT_TYPES[i2];
+          for (var i3 = 0; i3 < OUTPUT_TYPES.length; ++i3) {
+            var type = OUTPUT_TYPES[i3];
             method[type] = createMethod2(bits2, padding, type);
           }
           return method;
@@ -279,8 +283,8 @@
           { name: "kmac", padding: CSHAKE_PADDING, bits: SHAKE_BITS, createMethod: createKmacMethod }
         ];
         var methods = {}, methodNames = [];
-        for (var i = 0; i < algorithms.length; ++i) {
-          var algorithm = algorithms[i];
+        for (var i2 = 0; i2 < algorithms.length; ++i2) {
+          var algorithm = algorithms[i2];
           var bits = algorithm.bits;
           for (var j = 0; j < bits.length; ++j) {
             var methodName = algorithm.name + "_" + bits[j];
@@ -306,8 +310,8 @@
           this.byteCount = this.blockCount << 2;
           this.outputBlocks = outputBits >> 5;
           this.extraBytes = (outputBits & 31) >> 3;
-          for (var i2 = 0; i2 < 50; ++i2) {
-            this.s[i2] = 0;
+          for (var i3 = 0; i3 < 50; ++i3) {
+            this.s[i3] = 0;
           }
         }
         Keccak.prototype.update = function(message) {
@@ -317,51 +321,51 @@
           var result = formatMessage(message);
           message = result[0];
           var isString = result[1];
-          var blocks = this.blocks, byteCount = this.byteCount, length = message.length, blockCount = this.blockCount, index = 0, s = this.s, i2, code;
+          var blocks = this.blocks, byteCount = this.byteCount, length = message.length, blockCount = this.blockCount, index = 0, s = this.s, i3, code;
           while (index < length) {
             if (this.reset) {
               this.reset = false;
               blocks[0] = this.block;
-              for (i2 = 1; i2 < blockCount + 1; ++i2) {
-                blocks[i2] = 0;
+              for (i3 = 1; i3 < blockCount + 1; ++i3) {
+                blocks[i3] = 0;
               }
             }
             if (isString) {
-              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
+              for (i3 = this.start; index < length && i3 < byteCount; ++index) {
                 code = message.charCodeAt(index);
                 if (code < 128) {
-                  blocks[i2 >> 2] |= code << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= code << SHIFT[i3++ & 3];
                 } else if (code < 2048) {
-                  blocks[i2 >> 2] |= (192 | code >> 6) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= (192 | code >> 6) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code & 63) << SHIFT[i3++ & 3];
                 } else if (code < 55296 || code >= 57344) {
-                  blocks[i2 >> 2] |= (224 | code >> 12) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= (224 | code >> 12) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code & 63) << SHIFT[i3++ & 3];
                 } else {
                   code = 65536 + ((code & 1023) << 10 | message.charCodeAt(++index) & 1023);
-                  blocks[i2 >> 2] |= (240 | code >> 18) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 12 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= (240 | code >> 18) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code >> 12 & 63) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code & 63) << SHIFT[i3++ & 3];
                 }
               }
             } else {
-              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
-                blocks[i2 >> 2] |= message[index] << SHIFT[i2++ & 3];
+              for (i3 = this.start; index < length && i3 < byteCount; ++index) {
+                blocks[i3 >> 2] |= message[index] << SHIFT[i3++ & 3];
               }
             }
-            this.lastByteIndex = i2;
-            if (i2 >= byteCount) {
-              this.start = i2 - byteCount;
+            this.lastByteIndex = i3;
+            if (i3 >= byteCount) {
+              this.start = i3 - byteCount;
               this.block = blocks[blockCount];
-              for (i2 = 0; i2 < blockCount; ++i2) {
-                s[i2] ^= blocks[i2];
+              for (i3 = 0; i3 < blockCount; ++i3) {
+                s[i3] ^= blocks[i3];
               }
               f2(s);
               this.reset = true;
             } else {
-              this.start = i2;
+              this.start = i3;
             }
           }
           return this;
@@ -391,8 +395,8 @@
           var isString = result[1];
           var bytes = 0, length = str.length;
           if (isString) {
-            for (var i2 = 0; i2 < str.length; ++i2) {
-              var code = str.charCodeAt(i2);
+            for (var i3 = 0; i3 < str.length; ++i3) {
+              var code = str.charCodeAt(i3);
               if (code < 128) {
                 bytes += 1;
               } else if (code < 2048) {
@@ -400,7 +404,7 @@
               } else if (code < 55296 || code >= 57344) {
                 bytes += 3;
               } else {
-                code = 65536 + ((code & 1023) << 10 | str.charCodeAt(++i2) & 1023);
+                code = 65536 + ((code & 1023) << 10 | str.charCodeAt(++i3) & 1023);
                 bytes += 4;
               }
             }
@@ -413,8 +417,8 @@
         };
         Keccak.prototype.bytepad = function(strs, w) {
           var bytes = this.encode(w);
-          for (var i2 = 0; i2 < strs.length; ++i2) {
-            bytes += this.encodeString(strs[i2]);
+          for (var i3 = 0; i3 < strs.length; ++i3) {
+            bytes += this.encodeString(strs[i3]);
           }
           var paddingBytes = (w - bytes % w) % w;
           var zeros = [];
@@ -427,37 +431,37 @@
             return;
           }
           this.finalized = true;
-          var blocks = this.blocks, i2 = this.lastByteIndex, blockCount = this.blockCount, s = this.s;
-          blocks[i2 >> 2] |= this.padding[i2 & 3];
+          var blocks = this.blocks, i3 = this.lastByteIndex, blockCount = this.blockCount, s = this.s;
+          blocks[i3 >> 2] |= this.padding[i3 & 3];
           if (this.lastByteIndex === this.byteCount) {
             blocks[0] = blocks[blockCount];
-            for (i2 = 1; i2 < blockCount + 1; ++i2) {
-              blocks[i2] = 0;
+            for (i3 = 1; i3 < blockCount + 1; ++i3) {
+              blocks[i3] = 0;
             }
           }
           blocks[blockCount - 1] |= 2147483648;
-          for (i2 = 0; i2 < blockCount; ++i2) {
-            s[i2] ^= blocks[i2];
+          for (i3 = 0; i3 < blockCount; ++i3) {
+            s[i3] ^= blocks[i3];
           }
           f2(s);
         };
         Keccak.prototype.toString = Keccak.prototype.hex = function() {
           this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i3 = 0, j2 = 0;
           var hex = "", block;
           while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
-              block = s[i2];
+            for (i3 = 0; i3 < blockCount && j2 < outputBlocks; ++i3, ++j2) {
+              block = s[i3];
               hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15] + HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15] + HEX_CHARS[block >> 20 & 15] + HEX_CHARS[block >> 16 & 15] + HEX_CHARS[block >> 28 & 15] + HEX_CHARS[block >> 24 & 15];
             }
             if (j2 % blockCount === 0) {
               s = cloneArray(s);
               f2(s);
-              i2 = 0;
+              i3 = 0;
             }
           }
           if (extraBytes) {
-            block = s[i2];
+            block = s[i3];
             hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15];
             if (extraBytes > 1) {
               hex += HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15];
@@ -470,7 +474,7 @@
         };
         Keccak.prototype.arrayBuffer = function() {
           this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i3 = 0, j2 = 0;
           var bytes = this.outputBits >> 3;
           var buffer;
           if (extraBytes) {
@@ -480,8 +484,8 @@
           }
           var array = new Uint32Array(buffer);
           while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
-              array[j2] = s[i2];
+            for (i3 = 0; i3 < blockCount && j2 < outputBlocks; ++i3, ++j2) {
+              array[j2] = s[i3];
             }
             if (j2 % blockCount === 0) {
               s = cloneArray(s);
@@ -489,7 +493,7 @@
             }
           }
           if (extraBytes) {
-            array[j2] = s[i2];
+            array[j2] = s[i3];
             buffer = buffer.slice(0, bytes);
           }
           return buffer;
@@ -497,12 +501,12 @@
         Keccak.prototype.buffer = Keccak.prototype.arrayBuffer;
         Keccak.prototype.digest = Keccak.prototype.array = function() {
           this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i3 = 0, j2 = 0;
           var array = [], offset, block;
           while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
+            for (i3 = 0; i3 < blockCount && j2 < outputBlocks; ++i3, ++j2) {
               offset = j2 << 2;
-              block = s[i2];
+              block = s[i3];
               array[offset] = block & 255;
               array[offset + 1] = block >> 8 & 255;
               array[offset + 2] = block >> 16 & 255;
@@ -515,7 +519,7 @@
           }
           if (extraBytes) {
             offset = j2 << 2;
-            block = s[i2];
+            block = s[i3];
             array[offset] = block & 255;
             if (extraBytes > 1) {
               array[offset + 1] = block >> 8 & 255;
@@ -714,8 +718,8 @@
         if (COMMON_JS) {
           module.exports = methods;
         } else {
-          for (i = 0; i < methodNames.length; ++i) {
-            root[methodNames[i]] = methods[methodNames[i]];
+          for (i2 = 0; i2 < methodNames.length; ++i2) {
+            root[methodNames[i2]] = methods[methodNames[i2]];
           }
           if (AMD) {
             define(function() {
@@ -845,7 +849,7 @@
 
   // ../shared/node_modules/uuid/dist/esm-browser/v1.js
   function v1(options, buf, offset) {
-    var i = buf && offset || 0;
+    var i2 = buf && offset || 0;
     var b = buf || new Array(16);
     options = options || {};
     var node = options.node;
@@ -891,19 +895,19 @@
     _clockseq = clockseq;
     msecs += 122192928e5;
     var tl = ((msecs & 268435455) * 1e4 + nsecs) % 4294967296;
-    b[i++] = tl >>> 24 & 255;
-    b[i++] = tl >>> 16 & 255;
-    b[i++] = tl >>> 8 & 255;
-    b[i++] = tl & 255;
+    b[i2++] = tl >>> 24 & 255;
+    b[i2++] = tl >>> 16 & 255;
+    b[i2++] = tl >>> 8 & 255;
+    b[i2++] = tl & 255;
     var tmh = msecs / 4294967296 * 1e4 & 268435455;
-    b[i++] = tmh >>> 8 & 255;
-    b[i++] = tmh & 255;
-    b[i++] = tmh >>> 24 & 15 | 16;
-    b[i++] = tmh >>> 16 & 255;
-    b[i++] = clockseq >>> 8 | 128;
-    b[i++] = clockseq & 255;
+    b[i2++] = tmh >>> 8 & 255;
+    b[i2++] = tmh & 255;
+    b[i2++] = tmh >>> 24 & 15 | 16;
+    b[i2++] = tmh >>> 16 & 255;
+    b[i2++] = clockseq >>> 8 | 128;
+    b[i2++] = clockseq & 255;
     for (var n = 0; n < 6; ++n) {
-      b[i + n] = node[n];
+      b[i2 + n] = node[n];
     }
     return buf || unsafeStringify(b);
   }
@@ -940,8 +944,8 @@
   function stringToBytes(str) {
     str = unescape(encodeURIComponent(str));
     var bytes = [];
-    for (var i = 0; i < str.length; ++i) {
-      bytes.push(str.charCodeAt(i));
+    for (var i2 = 0; i2 < str.length; ++i2) {
+      bytes.push(str.charCodeAt(i2));
     }
     return bytes;
   }
@@ -965,8 +969,8 @@
       bytes[8] = bytes[8] & 63 | 128;
       if (buf) {
         offset = offset || 0;
-        for (var i = 0; i < 16; ++i) {
-          buf[offset + i] = bytes[i];
+        for (var i2 = 0; i2 < 16; ++i2) {
+          buf[offset + i2] = bytes[i2];
         }
         return buf;
       }
@@ -996,8 +1000,8 @@
     if (typeof bytes === "string") {
       var msg = unescape(encodeURIComponent(bytes));
       bytes = new Uint8Array(msg.length);
-      for (var i = 0; i < msg.length; ++i) {
-        bytes[i] = msg.charCodeAt(i);
+      for (var i2 = 0; i2 < msg.length; ++i2) {
+        bytes[i2] = msg.charCodeAt(i2);
       }
     }
     return md5ToHexEncodedArray(wordsToMd5(bytesToWords(bytes), bytes.length * 8));
@@ -1006,8 +1010,8 @@
     var output = [];
     var length32 = input.length * 32;
     var hexTab = "0123456789abcdef";
-    for (var i = 0; i < length32; i += 8) {
-      var x = input[i >> 5] >>> i % 32 & 255;
+    for (var i2 = 0; i2 < length32; i2 += 8) {
+      var x = input[i2 >> 5] >>> i2 % 32 & 255;
       var hex = parseInt(hexTab.charAt(x >>> 4 & 15) + hexTab.charAt(x & 15), 16);
       output.push(hex);
     }
@@ -1023,75 +1027,75 @@
     var b = -271733879;
     var c = -1732584194;
     var d = 271733878;
-    for (var i = 0; i < x.length; i += 16) {
+    for (var i2 = 0; i2 < x.length; i2 += 16) {
       var olda = a;
       var oldb = b;
       var oldc = c;
       var oldd = d;
-      a = md5ff(a, b, c, d, x[i], 7, -680876936);
-      d = md5ff(d, a, b, c, x[i + 1], 12, -389564586);
-      c = md5ff(c, d, a, b, x[i + 2], 17, 606105819);
-      b = md5ff(b, c, d, a, x[i + 3], 22, -1044525330);
-      a = md5ff(a, b, c, d, x[i + 4], 7, -176418897);
-      d = md5ff(d, a, b, c, x[i + 5], 12, 1200080426);
-      c = md5ff(c, d, a, b, x[i + 6], 17, -1473231341);
-      b = md5ff(b, c, d, a, x[i + 7], 22, -45705983);
-      a = md5ff(a, b, c, d, x[i + 8], 7, 1770035416);
-      d = md5ff(d, a, b, c, x[i + 9], 12, -1958414417);
-      c = md5ff(c, d, a, b, x[i + 10], 17, -42063);
-      b = md5ff(b, c, d, a, x[i + 11], 22, -1990404162);
-      a = md5ff(a, b, c, d, x[i + 12], 7, 1804603682);
-      d = md5ff(d, a, b, c, x[i + 13], 12, -40341101);
-      c = md5ff(c, d, a, b, x[i + 14], 17, -1502002290);
-      b = md5ff(b, c, d, a, x[i + 15], 22, 1236535329);
-      a = md5gg(a, b, c, d, x[i + 1], 5, -165796510);
-      d = md5gg(d, a, b, c, x[i + 6], 9, -1069501632);
-      c = md5gg(c, d, a, b, x[i + 11], 14, 643717713);
-      b = md5gg(b, c, d, a, x[i], 20, -373897302);
-      a = md5gg(a, b, c, d, x[i + 5], 5, -701558691);
-      d = md5gg(d, a, b, c, x[i + 10], 9, 38016083);
-      c = md5gg(c, d, a, b, x[i + 15], 14, -660478335);
-      b = md5gg(b, c, d, a, x[i + 4], 20, -405537848);
-      a = md5gg(a, b, c, d, x[i + 9], 5, 568446438);
-      d = md5gg(d, a, b, c, x[i + 14], 9, -1019803690);
-      c = md5gg(c, d, a, b, x[i + 3], 14, -187363961);
-      b = md5gg(b, c, d, a, x[i + 8], 20, 1163531501);
-      a = md5gg(a, b, c, d, x[i + 13], 5, -1444681467);
-      d = md5gg(d, a, b, c, x[i + 2], 9, -51403784);
-      c = md5gg(c, d, a, b, x[i + 7], 14, 1735328473);
-      b = md5gg(b, c, d, a, x[i + 12], 20, -1926607734);
-      a = md5hh(a, b, c, d, x[i + 5], 4, -378558);
-      d = md5hh(d, a, b, c, x[i + 8], 11, -2022574463);
-      c = md5hh(c, d, a, b, x[i + 11], 16, 1839030562);
-      b = md5hh(b, c, d, a, x[i + 14], 23, -35309556);
-      a = md5hh(a, b, c, d, x[i + 1], 4, -1530992060);
-      d = md5hh(d, a, b, c, x[i + 4], 11, 1272893353);
-      c = md5hh(c, d, a, b, x[i + 7], 16, -155497632);
-      b = md5hh(b, c, d, a, x[i + 10], 23, -1094730640);
-      a = md5hh(a, b, c, d, x[i + 13], 4, 681279174);
-      d = md5hh(d, a, b, c, x[i], 11, -358537222);
-      c = md5hh(c, d, a, b, x[i + 3], 16, -722521979);
-      b = md5hh(b, c, d, a, x[i + 6], 23, 76029189);
-      a = md5hh(a, b, c, d, x[i + 9], 4, -640364487);
-      d = md5hh(d, a, b, c, x[i + 12], 11, -421815835);
-      c = md5hh(c, d, a, b, x[i + 15], 16, 530742520);
-      b = md5hh(b, c, d, a, x[i + 2], 23, -995338651);
-      a = md5ii(a, b, c, d, x[i], 6, -198630844);
-      d = md5ii(d, a, b, c, x[i + 7], 10, 1126891415);
-      c = md5ii(c, d, a, b, x[i + 14], 15, -1416354905);
-      b = md5ii(b, c, d, a, x[i + 5], 21, -57434055);
-      a = md5ii(a, b, c, d, x[i + 12], 6, 1700485571);
-      d = md5ii(d, a, b, c, x[i + 3], 10, -1894986606);
-      c = md5ii(c, d, a, b, x[i + 10], 15, -1051523);
-      b = md5ii(b, c, d, a, x[i + 1], 21, -2054922799);
-      a = md5ii(a, b, c, d, x[i + 8], 6, 1873313359);
-      d = md5ii(d, a, b, c, x[i + 15], 10, -30611744);
-      c = md5ii(c, d, a, b, x[i + 6], 15, -1560198380);
-      b = md5ii(b, c, d, a, x[i + 13], 21, 1309151649);
-      a = md5ii(a, b, c, d, x[i + 4], 6, -145523070);
-      d = md5ii(d, a, b, c, x[i + 11], 10, -1120210379);
-      c = md5ii(c, d, a, b, x[i + 2], 15, 718787259);
-      b = md5ii(b, c, d, a, x[i + 9], 21, -343485551);
+      a = md5ff(a, b, c, d, x[i2], 7, -680876936);
+      d = md5ff(d, a, b, c, x[i2 + 1], 12, -389564586);
+      c = md5ff(c, d, a, b, x[i2 + 2], 17, 606105819);
+      b = md5ff(b, c, d, a, x[i2 + 3], 22, -1044525330);
+      a = md5ff(a, b, c, d, x[i2 + 4], 7, -176418897);
+      d = md5ff(d, a, b, c, x[i2 + 5], 12, 1200080426);
+      c = md5ff(c, d, a, b, x[i2 + 6], 17, -1473231341);
+      b = md5ff(b, c, d, a, x[i2 + 7], 22, -45705983);
+      a = md5ff(a, b, c, d, x[i2 + 8], 7, 1770035416);
+      d = md5ff(d, a, b, c, x[i2 + 9], 12, -1958414417);
+      c = md5ff(c, d, a, b, x[i2 + 10], 17, -42063);
+      b = md5ff(b, c, d, a, x[i2 + 11], 22, -1990404162);
+      a = md5ff(a, b, c, d, x[i2 + 12], 7, 1804603682);
+      d = md5ff(d, a, b, c, x[i2 + 13], 12, -40341101);
+      c = md5ff(c, d, a, b, x[i2 + 14], 17, -1502002290);
+      b = md5ff(b, c, d, a, x[i2 + 15], 22, 1236535329);
+      a = md5gg(a, b, c, d, x[i2 + 1], 5, -165796510);
+      d = md5gg(d, a, b, c, x[i2 + 6], 9, -1069501632);
+      c = md5gg(c, d, a, b, x[i2 + 11], 14, 643717713);
+      b = md5gg(b, c, d, a, x[i2], 20, -373897302);
+      a = md5gg(a, b, c, d, x[i2 + 5], 5, -701558691);
+      d = md5gg(d, a, b, c, x[i2 + 10], 9, 38016083);
+      c = md5gg(c, d, a, b, x[i2 + 15], 14, -660478335);
+      b = md5gg(b, c, d, a, x[i2 + 4], 20, -405537848);
+      a = md5gg(a, b, c, d, x[i2 + 9], 5, 568446438);
+      d = md5gg(d, a, b, c, x[i2 + 14], 9, -1019803690);
+      c = md5gg(c, d, a, b, x[i2 + 3], 14, -187363961);
+      b = md5gg(b, c, d, a, x[i2 + 8], 20, 1163531501);
+      a = md5gg(a, b, c, d, x[i2 + 13], 5, -1444681467);
+      d = md5gg(d, a, b, c, x[i2 + 2], 9, -51403784);
+      c = md5gg(c, d, a, b, x[i2 + 7], 14, 1735328473);
+      b = md5gg(b, c, d, a, x[i2 + 12], 20, -1926607734);
+      a = md5hh(a, b, c, d, x[i2 + 5], 4, -378558);
+      d = md5hh(d, a, b, c, x[i2 + 8], 11, -2022574463);
+      c = md5hh(c, d, a, b, x[i2 + 11], 16, 1839030562);
+      b = md5hh(b, c, d, a, x[i2 + 14], 23, -35309556);
+      a = md5hh(a, b, c, d, x[i2 + 1], 4, -1530992060);
+      d = md5hh(d, a, b, c, x[i2 + 4], 11, 1272893353);
+      c = md5hh(c, d, a, b, x[i2 + 7], 16, -155497632);
+      b = md5hh(b, c, d, a, x[i2 + 10], 23, -1094730640);
+      a = md5hh(a, b, c, d, x[i2 + 13], 4, 681279174);
+      d = md5hh(d, a, b, c, x[i2], 11, -358537222);
+      c = md5hh(c, d, a, b, x[i2 + 3], 16, -722521979);
+      b = md5hh(b, c, d, a, x[i2 + 6], 23, 76029189);
+      a = md5hh(a, b, c, d, x[i2 + 9], 4, -640364487);
+      d = md5hh(d, a, b, c, x[i2 + 12], 11, -421815835);
+      c = md5hh(c, d, a, b, x[i2 + 15], 16, 530742520);
+      b = md5hh(b, c, d, a, x[i2 + 2], 23, -995338651);
+      a = md5ii(a, b, c, d, x[i2], 6, -198630844);
+      d = md5ii(d, a, b, c, x[i2 + 7], 10, 1126891415);
+      c = md5ii(c, d, a, b, x[i2 + 14], 15, -1416354905);
+      b = md5ii(b, c, d, a, x[i2 + 5], 21, -57434055);
+      a = md5ii(a, b, c, d, x[i2 + 12], 6, 1700485571);
+      d = md5ii(d, a, b, c, x[i2 + 3], 10, -1894986606);
+      c = md5ii(c, d, a, b, x[i2 + 10], 15, -1051523);
+      b = md5ii(b, c, d, a, x[i2 + 1], 21, -2054922799);
+      a = md5ii(a, b, c, d, x[i2 + 8], 6, 1873313359);
+      d = md5ii(d, a, b, c, x[i2 + 15], 10, -30611744);
+      c = md5ii(c, d, a, b, x[i2 + 6], 15, -1560198380);
+      b = md5ii(b, c, d, a, x[i2 + 13], 21, 1309151649);
+      a = md5ii(a, b, c, d, x[i2 + 4], 6, -145523070);
+      d = md5ii(d, a, b, c, x[i2 + 11], 10, -1120210379);
+      c = md5ii(c, d, a, b, x[i2 + 2], 15, 718787259);
+      b = md5ii(b, c, d, a, x[i2 + 9], 21, -343485551);
       a = safeAdd(a, olda);
       b = safeAdd(b, oldb);
       c = safeAdd(c, oldc);
@@ -1105,8 +1109,8 @@
     }
     var length8 = input.length * 8;
     var output = new Uint32Array(getOutputLength(length8));
-    for (var i = 0; i < length8; i += 8) {
-      output[i >> 5] |= (input[i / 8] & 255) << i % 32;
+    for (var i2 = 0; i2 < length8; i2 += 8) {
+      output[i2 >> 5] |= (input[i2 / 8] & 255) << i2 % 32;
     }
     return output;
   }
@@ -1176,8 +1180,8 @@
     rnds[8] = rnds[8] & 63 | 128;
     if (buf) {
       offset = offset || 0;
-      for (var i = 0; i < 16; ++i) {
-        buf[offset + i] = rnds[i];
+      for (var i2 = 0; i2 < 16; ++i2) {
+        buf[offset + i2] = rnds[i2];
       }
       return buf;
     }
@@ -1216,8 +1220,8 @@
     if (typeof bytes === "string") {
       var msg = unescape(encodeURIComponent(bytes));
       bytes = [];
-      for (var i = 0; i < msg.length; ++i) {
-        bytes.push(msg.charCodeAt(i));
+      for (var i2 = 0; i2 < msg.length; ++i2) {
+        bytes.push(msg.charCodeAt(i2));
       }
     } else if (!Array.isArray(bytes)) {
       bytes = Array.prototype.slice.call(bytes);
@@ -1312,17 +1316,15 @@
     return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: true, configurable: true, writable: true }) : e[r] = t, e;
   }
   function _toPropertyKey(t) {
-    var i = _toPrimitive(t, "string");
-    return "symbol" == typeof i ? i : i + "";
+    var i2 = _toPrimitive(t, "string");
+    return "symbol" == typeof i2 ? i2 : i2 + "";
   }
   function _toPrimitive(t, r) {
-    if ("object" != typeof t || !t)
-      return t;
+    if ("object" != typeof t || !t) return t;
     var e = t[Symbol.toPrimitive];
     if (void 0 !== e) {
-      var i = e.call(t, r || "default");
-      if ("object" != typeof i)
-        return i;
+      var i2 = e.call(t, r || "default");
+      if ("object" != typeof i2) return i2;
       throw new TypeError("@@toPrimitive must return a primitive value.");
     }
     return ("string" === r ? String : Number)(t);
@@ -1333,8 +1335,8 @@
     }), new Uint8Array(16));
     bytes = v1ToV6(bytes);
     if (buf) {
-      for (var i = 0; i < 16; i++) {
-        buf[offset + i] = bytes[i];
+      for (var i2 = 0; i2 < 16; i2++) {
+        buf[offset + i2] = bytes[i2];
       }
       return buf;
     }
@@ -1369,7 +1371,7 @@
   // ../shared/node_modules/uuid/dist/esm-browser/v7.js
   function v7(options, buf, offset) {
     options = options || {};
-    var i = buf && offset || 0;
+    var i2 = buf && offset || 0;
     var b = buf || new Uint8Array(16);
     var rnds = options.random || (options.rng || rng)();
     var msecs = options.msecs !== void 0 ? options.msecs : Date.now();
@@ -1410,22 +1412,22 @@
     }
     _seqHigh = seqHigh;
     _seqLow = seqLow;
-    b[i++] = _msecs / 1099511627776 & 255;
-    b[i++] = _msecs / 4294967296 & 255;
-    b[i++] = _msecs / 16777216 & 255;
-    b[i++] = _msecs / 65536 & 255;
-    b[i++] = _msecs / 256 & 255;
-    b[i++] = _msecs & 255;
-    b[i++] = seqHigh >>> 4 & 15 | 112;
-    b[i++] = seqHigh & 255;
-    b[i++] = seqLow >>> 13 & 63 | 128;
-    b[i++] = seqLow >>> 5 & 255;
-    b[i++] = seqLow << 3 & 255 | rnds[10] & 7;
-    b[i++] = rnds[11];
-    b[i++] = rnds[12];
-    b[i++] = rnds[13];
-    b[i++] = rnds[14];
-    b[i++] = rnds[15];
+    b[i2++] = _msecs / 1099511627776 & 255;
+    b[i2++] = _msecs / 4294967296 & 255;
+    b[i2++] = _msecs / 16777216 & 255;
+    b[i2++] = _msecs / 65536 & 255;
+    b[i2++] = _msecs / 256 & 255;
+    b[i2++] = _msecs & 255;
+    b[i2++] = seqHigh >>> 4 & 15 | 112;
+    b[i2++] = seqHigh & 255;
+    b[i2++] = seqLow >>> 13 & 63 | 128;
+    b[i2++] = seqLow >>> 5 & 255;
+    b[i2++] = seqLow << 3 & 255 | rnds[10] & 7;
+    b[i2++] = rnds[11];
+    b[i2++] = rnds[12];
+    b[i2++] = rnds[13];
+    b[i2++] = rnds[14];
+    b[i2++] = rnds[15];
     return buf || unsafeStringify(b);
   }
   var _seqLow, _seqHigh, _msecs, v7_default;
@@ -1511,10 +1513,8 @@
   var PREFIXED = /^v(\d+)-([0-9a-f]+)$/;
   var LEGACY = /^[0-9a-f]{64}$/;
   function normalizeObject(obj) {
-    if (obj === null || typeof obj !== "object")
-      return obj;
-    if (Array.isArray(obj))
-      return obj.map(normalizeObject);
+    if (obj === null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(normalizeObject);
     const source = obj;
     return Object.keys(source).sort().reduce((result, key) => {
       result[key] = normalizeObject(source[key]);
@@ -1558,23 +1558,20 @@
   };
   var CURRENT_CID_VERSION = 2;
   function parseCid(cid) {
-    if (typeof cid !== "string")
-      return null;
+    if (typeof cid !== "string") return null;
     const prefixed = PREFIXED.exec(cid);
     if (prefixed) {
       const version2 = Number(prefixed[1]);
       return version2 in CID_FORMATS ? { version: version2, digest: prefixed[2] } : null;
     }
-    if (LEGACY.test(cid))
-      return { version: 0, digest: cid };
+    if (LEGACY.test(cid)) return { version: 0, digest: cid };
     return null;
   }
   function cidVersion(cid) {
     return parseCid(cid)?.version ?? null;
   }
   function formatCid(version2, digest) {
-    if (!(version2 in CID_FORMATS))
-      throw new Error(`unknown cid version ${version2}`);
+    if (!(version2 in CID_FORMATS)) throw new Error(`unknown cid version ${version2}`);
     return version2 === 0 ? digest : `v${version2}-${digest}`;
   }
   function isCurrentCid(cid) {
@@ -1582,8 +1579,7 @@
   }
   function hashContentAt(content2, version2) {
     const format = CID_FORMATS[version2];
-    if (!format)
-      throw new Error(`unknown cid version ${version2}`);
+    if (!format) throw new Error(`unknown cid version ${version2}`);
     return formatCid(version2, format.digest(content2));
   }
   function hashContent(content2) {
@@ -1591,8 +1587,7 @@
   }
   function verifyCid(cid, content2) {
     const parsed = parseCid(cid);
-    if (!parsed)
-      return false;
+    if (!parsed) return false;
     return hashContentAt(content2, parsed.version) === cid;
   }
 
@@ -1600,8 +1595,7 @@
   var SYNC_FORMAT_VERSION = 1;
   function content(store, cid) {
     const value = store.table.get(cid);
-    if (!value)
-      throw new Error(`node ${cid.slice(0, 12)} not found`);
+    if (!value) throw new Error(`node ${cid.slice(0, 12)} not found`);
     return value;
   }
   function hasNode(store, cid) {
@@ -1614,51 +1608,45 @@
     return value.data.alias?.id ?? null;
   }
   function isRefNode(store, value) {
-    return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    return value.children.some(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
   }
   function isHandle(value) {
     return !!value.data.ref;
   }
   function refValueCid(store, value) {
-    const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    const edge = value.children.find(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
     return edge ? edge[1] : null;
   }
   function refTypeCid(store, value) {
-    const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId());
+    const edge = value.children.find(([i2]) => i2 === store.primitive.instructionPointerConstructor.getId());
     return edge ? edge[1] : null;
   }
   function valueContent(store, cid) {
     const value = content(store, cid);
-    if (isHandle(value))
-      return value;
+    if (isHandle(value)) return value;
     const target = refValueCid(store, value);
     return target && store.table.has(target) ? content(store, target) : value;
   }
   function refNodeContent(store, data, valueCid, bookkeeping = [], typeCid = null) {
     const children = [[store.primitive.targetPointerConstructor.getId(), valueCid]];
-    if (typeCid)
-      children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
+    if (typeCid) children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
     return { data, children: [...children, ...bookkeeping] };
   }
   function newId() {
     const cryptoApi = globalThis.crypto;
-    if (cryptoApi?.randomUUID)
-      return cryptoApi.randomUUID();
+    if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
     return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
   }
   function edgeKey(store, edge) {
     const [instr, target] = edge;
     if (instr === store.primitive.proposalField.getId()) {
       const p = readProposal(store, target);
-      if (p)
-        return `p:${p.peerId}/${p.name}`;
+      if (p) return `p:${p.peerId}/${p.name}`;
     }
     const targetAlias = aliasIdOf(content(store, target));
-    if (targetAlias)
-      return `a:${targetAlias}`;
+    if (targetAlias) return `a:${targetAlias}`;
     const instrAlias = aliasIdOf(content(store, instr));
-    if (instrAlias)
-      return `a:${instrAlias}`;
+    if (instrAlias) return `a:${instrAlias}`;
     return `e:${instr}:${target}`;
   }
   function isTaskEdge(store, edge) {
@@ -1686,33 +1674,25 @@
         return store.primitive.resourceField.getId();
       case "allocation":
         return store.primitive.allocationField.getId();
+      case "template":
+        return store.primitive.templateField.getId();
     }
   }
   function rowKindOf(store, edge) {
-    if (isPartitionEdge(store, edge))
-      return "plain";
+    if (isPartitionEdge(store, edge)) return "plain";
     const [, target] = edge;
     const p = store.primitive;
-    if (target === p.completeField.getId())
-      return valueContent(store, edge[0]).data.todo ? "task" : "plain";
-    if (target === p.descriptionField.getId())
-      return "plain";
-    if (target === p.documentField.getId())
-      return "note";
-    if (target === p.commentField.getId())
-      return "comment";
-    if (target === p.linkField.getId())
-      return "ref";
-    if (target === p.requirementField.getId())
-      return "requirement";
-    if (target === p.supplyField.getId())
-      return "supply";
-    if (target === p.queryField.getId())
-      return "query";
-    if (target === p.resourceField.getId())
-      return "resource";
-    if (target === p.allocationField.getId())
-      return "allocation";
+    if (target === p.completeField.getId()) return valueContent(store, edge[0]).data.todo ? "task" : "plain";
+    if (target === p.descriptionField.getId()) return "plain";
+    if (target === p.documentField.getId()) return "note";
+    if (target === p.commentField.getId()) return "comment";
+    if (target === p.linkField.getId()) return "ref";
+    if (target === p.requirementField.getId()) return "requirement";
+    if (target === p.supplyField.getId()) return "supply";
+    if (target === p.queryField.getId()) return "query";
+    if (target === p.resourceField.getId()) return "resource";
+    if (target === p.allocationField.getId()) return "allocation";
+    if (target === p.templateField.getId()) return "template";
     return null;
   }
   function isRowEdge(store, edge) {
@@ -1739,8 +1719,7 @@
   function sameShape(store, a, b) {
     const aRow = identityOnInstruction(store, a);
     const bRow = identityOnInstruction(store, b);
-    if (aRow !== bRow)
-      return false;
+    if (aRow !== bRow) return false;
     return aRow ? a[1] === b[1] : a[0] === b[0];
   }
   function taskContent(id, title, done, createdAt, updatedAt) {
@@ -1756,24 +1735,16 @@
   }
   function rowContent(kind, id, text, now, extra = {}) {
     const data = { alias: { id }, description: { content: text }, updated: { time: now } };
-    if (kind === "task")
-      data.todo = { completed: !!extra.done, time: now };
-    if (kind === "requirement")
-      data.requirement = extra.requirement ?? { capability: "confirmation" };
-    if (kind === "supply")
-      data.supply = extra.supply ?? { capability: "confirmation", by: "", at: now };
-    if (kind === "query")
-      data.query = extra.query ?? {};
-    if (kind === "resource")
-      data.resource = extra.resource ?? { type: "inventory", unit: "unit" };
-    if (kind === "allocation")
-      data.allocation = extra.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
-    if (kind === "comment")
-      data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
+    if (kind === "task") data.todo = { completed: !!extra.done, time: now };
+    if (kind === "requirement") data.requirement = extra.requirement ?? { capability: "confirmation" };
+    if (kind === "supply") data.supply = extra.supply ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query") data.query = extra.query ?? {};
+    if (kind === "resource") data.resource = extra.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation") data.allocation = extra.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
+    if (kind === "comment") data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
     if (kind === "ref") {
       data.ref = extra.refOwner ? { id: extra.refId ?? "", owner: extra.refOwner } : { id: extra.refId ?? "" };
-      if (extra.targetCid && extra.store)
-        return refNodeContent(extra.store, data, extra.targetCid);
+      if (extra.targetCid && extra.store) return refNodeContent(extra.store, data, extra.targetCid);
     }
     return { data, children: [] };
   }
@@ -1783,22 +1754,14 @@
   function convertRowContent(value, kind, now) {
     const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, ...rest } = value.data;
     const data = { ...rest, updated: { time: now } };
-    if (kind === "task")
-      data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
-    if (kind === "comment")
-      data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
-    if (kind === "ref")
-      data.ref = value.data.ref ?? { id: "" };
-    if (kind === "requirement")
-      data.requirement = value.data.requirement ?? { capability: "confirmation" };
-    if (kind === "supply")
-      data.supply = value.data.supply ?? { capability: "confirmation", by: "", at: now };
-    if (kind === "query")
-      data.query = value.data.query ?? {};
-    if (kind === "resource")
-      data.resource = value.data.resource ?? { type: "inventory", unit: "unit" };
-    if (kind === "allocation")
-      data.allocation = value.data.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
+    if (kind === "task") data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
+    if (kind === "comment") data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
+    if (kind === "ref") data.ref = value.data.ref ?? { id: "" };
+    if (kind === "requirement") data.requirement = value.data.requirement ?? { capability: "confirmation" };
+    if (kind === "supply") data.supply = value.data.supply ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query") data.query = value.data.query ?? {};
+    if (kind === "resource") data.resource = value.data.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation") data.allocation = value.data.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
     return { ...value, data };
   }
   function peerRefContent(peerId) {
@@ -1819,11 +1782,9 @@
     const value = content(store, cid);
     let instr = null;
     let target = null;
-    for (const [i, t] of value.children) {
-      if (i === store.primitive.instructionPointerConstructor.getId())
-        instr = t;
-      if (i === store.primitive.targetPointerConstructor.getId())
-        target = t;
+    for (const [i2, t] of value.children) {
+      if (i2 === store.primitive.instructionPointerConstructor.getId()) instr = t;
+      if (i2 === store.primitive.targetPointerConstructor.getId()) target = t;
     }
     return {
       peerId: value.data.peerId?.content ?? null,
@@ -1866,8 +1827,7 @@
   function resolveScope(store, nodeCid, scope) {
     let current = nodeCid;
     for (const step of scope) {
-      if (!current)
-        return null;
+      if (!current) return null;
       current = findChild(store, current, step);
     }
     return current;
@@ -1878,14 +1838,12 @@
     for (const existing of value.children) {
       if (edgeKey(store, existing) === key) {
         found = true;
-        if (edge)
-          children.push(edge);
+        if (edge) children.push(edge);
       } else {
         children.push(existing);
       }
     }
-    if (!found && edge)
-      children.push(edge);
+    if (!found && edge) children.push(edge);
     return { ...value, children };
   }
   function updateAtScope(store, nodeCid, scope, fn, mode = "value") {
@@ -1893,8 +1851,7 @@
     const ref = isRefNode(store, identity) && !isHandle(identity);
     const value = ref ? valueContent(store, nodeCid) : identity;
     const advance = (nextValue) => {
-      if (nextValue === value)
-        return nodeCid;
+      if (nextValue === value) return nodeCid;
       if (ref) {
         const now = nextValue.data.updated?.time ?? value.data.updated?.time ?? 0;
         return put(store, relinkContent(store, identity, nodeCid, nextValue, now));
@@ -1914,12 +1871,10 @@
     }
     const [step, ...rest] = scope;
     const found = findAliasEdge(store, value, step);
-    if (!found || isChoiceEdge(store, found.edge))
-      throw new Error(`node ${step} not found`);
+    if (!found || isChoiceEdge(store, found.edge)) throw new Error(`node ${step} not found`);
     const childCid = identityCid(store, found.edge);
     const nextChild = updateAtScope(store, childCid, rest, fn, mode);
-    if (nextChild === childCid)
-      return nodeCid;
+    if (nextChild === childCid) return nodeCid;
     const children = [...value.children];
     children[found.index] = withIdentity(store, found.edge, nextChild);
     return advance({ ...value, children });
@@ -1935,30 +1890,27 @@
   function withPeer(store, value, peerId) {
     const refCid = put(store, peerRefContent(peerId));
     const edge = [store.primitive.peerField.getId(), refCid];
-    if (value.children.some(([i, t]) => i === edge[0] && t === edge[1]))
-      return value;
+    if (value.children.some(([i2, t]) => i2 === edge[0] && t === edge[1])) return value;
     return { ...value, children: [...value.children, edge] };
   }
   function rootTargetCid(store) {
     const root = content(store, store.rootNodeId);
-    const pointer = root.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    const pointer = root.children.find(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
     return pointer ? pointer[1] : store.rootNodeId;
   }
   function rootIsAlias(store) {
-    return content(store, store.rootNodeId).children.some(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    return content(store, store.rootNodeId).children.some(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
   }
   function commitRoot(store, newTargetCid, now, mergeSourceCid = null) {
-    if (newTargetCid === rootTargetCid(store) && !mergeSourceCid)
-      return;
+    if (newTargetCid === rootTargetCid(store) && !mergeSourceCid) return;
     const previous = content(store, store.rootNodeId);
-    const instruction = rootIsAlias(store) ? previous.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId()) : void 0;
+    const instruction = rootIsAlias(store) ? previous.children.find(([i2]) => i2 === store.primitive.instructionPointerConstructor.getId()) : void 0;
     const children = [
       [store.primitive.targetPointerConstructor.getId(), newTargetCid],
       [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : store.primitive.rootInstructionNode.getId()],
       [store.primitive.previousVersion.getId(), store.rootNodeId]
     ];
-    if (mergeSourceCid)
-      children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid]);
+    if (mergeSourceCid) children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid]);
     const alias = previous.data.alias ?? { id: newId() };
     store.rootNodeId = put(store, { data: { alias, updated: { time: now } }, children });
     store.updateCtxCallback?.(store.exportContext([]));
@@ -1969,17 +1921,13 @@
     const seen = /* @__PURE__ */ new Set();
     while (stack.length) {
       const cid = stack.pop();
-      if (seen.has(cid))
-        continue;
+      if (seen.has(cid)) continue;
       seen.add(cid);
       const value = content(store, cid);
-      if (!skip.has(cid))
-        out[cid] = value;
-      for (const [i, t] of value.children) {
-        if (!seen.has(i))
-          stack.push(i);
-        if (!seen.has(t))
-          stack.push(t);
+      if (!skip.has(cid)) out[cid] = value;
+      for (const [i2, t] of value.children) {
+        if (!seen.has(i2)) stack.push(i2);
+        if (!seen.has(t)) stack.push(t);
       }
     }
     return out;
@@ -1990,10 +1938,8 @@
   function importNodes(store, nodes) {
     const accepted = [];
     let pending = Object.entries(nodes).filter(([cid, value]) => {
-      if (store.table.has(cid))
-        return false;
-      if (!value || typeof value !== "object" || !Array.isArray(value.children))
-        return false;
+      if (store.table.has(cid)) return false;
+      if (!value || typeof value !== "object" || !Array.isArray(value.children)) return false;
       return isCurrentCid(cid) && verifyCid(cid, value);
     });
     let progress = true;
@@ -2002,7 +1948,7 @@
       const rest = [];
       for (const entry of pending) {
         const [cid, value] = entry;
-        if (value.children.every(([i, t]) => store.table.has(i) && store.table.has(t))) {
+        if (value.children.every(([i2, t]) => store.table.has(i2) && store.table.has(t))) {
           store.table.set(cid, value);
           accepted.push(cid);
           progress = true;
@@ -2042,30 +1988,23 @@
     };
     if (kind === "ref") {
       view2.refId = identity.data.ref?.id ?? "";
-      if (identity.data.ref?.owner)
-        view2.refOwner = identity.data.ref.owner;
+      if (identity.data.ref?.owner) view2.refOwner = identity.data.ref.owner;
     }
-    if (kind === "comment" && value.data.comment)
-      view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
+    if (kind === "comment" && value.data.comment) view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
     if (kind === "task") {
       const blockers = taskBlockers(store, nodeCid);
-      if (blockers.length)
-        view2.blockedBy = blockers;
+      if (blockers.length) view2.blockedBy = blockers;
+      if (value.data.template) view2.template = value.data.template;
     }
-    if (kind === "requirement" && value.data.requirement)
-      view2.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement) };
-    if (kind === "supply" && value.data.supply)
-      view2.supply = value.data.supply;
-    if (kind === "query")
-      view2.query = value.data.query ?? {};
+    if (kind === "requirement" && value.data.requirement) view2.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement) };
+    if (kind === "supply" && value.data.supply) view2.supply = value.data.supply;
+    if (kind === "query") view2.query = value.data.query ?? {};
     if (kind === "resource" && value.data.resource) {
       const allocated = allocatedIn(store, nodeCid);
       view2.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === void 0 ? null : value.data.resource.capacity - allocated };
     }
-    if (kind === "allocation" && value.data.allocation)
-      view2.allocation = value.data.allocation;
-    if (identity.data.listing)
-      view2.market = true;
+    if (kind === "allocation" && value.data.allocation) view2.allocation = value.data.allocation;
+    if (identity.data.listing) view2.market = true;
     return view2;
   }
   function requirementSummary(req) {
@@ -2078,27 +2017,49 @@
         return "search";
       case "allocation":
         return `${req.resource ?? "resource"}${req.amount !== void 0 ? ` ${req.amount} ${req.unit ?? ""}`.trimEnd() : ""}`;
+      case "task":
+        return "task";
+      case "market":
+        return "market";
+      case "mail":
+        return "mail";
+      case "peer":
+        return req.peer ? `@${req.peer}` : "peer";
     }
   }
   function childRows(store, cid, kind) {
     const out = [];
     for (const edge of valueContent(store, cid).children) {
       const k = rowKindOf(store, edge);
-      if (!k || kind && k !== kind)
-        continue;
+      if (!k || kind && k !== kind) continue;
       const id = identityCid(store, edge);
       out.push({ cid: id, kind: k, value: valueContent(store, id) });
     }
     return out;
   }
+  function allocationFills(req, a) {
+    return !!a && (!req.resource || a.type === req.resource) && (req.amount === void 0 || a.amount >= req.amount);
+  }
   function requirementSatisfied(store, requirementCid, root) {
     const req = valueContent(store, requirementCid).data.requirement;
-    if (!req)
-      return true;
-    return childRows(store, requirementCid, "supply").some(({ value }) => {
-      const s = value.data.supply;
-      if (!s || s.capability !== req.capability)
-        return false;
+    if (!req) return true;
+    const rows = childRows(store, requirementCid);
+    const filledByChild = rows.some(({ kind, value }) => {
+      switch (req.capability) {
+        case "task":
+          return kind === "task" && !!value.data.todo?.completed;
+        case "allocation":
+          return kind === "allocation" && allocationFills(req, value.data.allocation);
+        case "search":
+          return kind === "query" && !!value.data.query?.executedAt;
+        default:
+          return false;
+      }
+    });
+    if (filledByChild) return true;
+    return rows.some(({ kind, value }) => {
+      const s = kind === "supply" ? value.data.supply : void 0;
+      if (!s || s.capability !== req.capability) return false;
       switch (req.capability) {
         case "confirmation":
           return !!s.by;
@@ -2106,14 +2067,19 @@
           return typeof s.choice === "number" && (!req.options || s.choice >= 0 && s.choice < req.options.length);
         case "search":
           return !!s.ref;
+        case "task":
+          return !!s.ref;
+        case "market":
+          return !!s.by;
+        case "mail":
+          return !!s.by;
+        case "peer":
+          return !!s.by && (!req.peer || s.by === req.peer);
         case "allocation": {
-          if (!s.ref)
-            return false;
+          if (!s.ref) return false;
           const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref);
-          if (!found)
-            return true;
-          const a = found.row.allocation;
-          return !!a && (!req.resource || a.type === req.resource) && (req.amount === void 0 || a.amount >= req.amount);
+          if (!found) return true;
+          return allocationFills(req, found.row.allocation);
         }
       }
     });
@@ -2124,19 +2090,15 @@
   function allocatedIn(store, bankCid) {
     let total = 0;
     for (const { cid, kind, value } of childRows(store, bankCid)) {
-      if (kind === "allocation")
-        total += value.data.allocation?.amount ?? 0;
-      else if (kind === "resource")
-        total += allocatedIn(store, cid);
+      if (kind === "allocation") total += value.data.allocation?.amount ?? 0;
+      else if (kind === "resource") total += allocatedIn(store, cid);
     }
     return total;
   }
   function describeEdge(store, edge) {
-    if (!edge)
-      return { task: null, label: null };
+    if (!edge) return { task: null, label: null };
     const kind = rowKindOf(store, edge);
-    if (kind)
-      return { task: rowView(store, identityCid(store, edge), kind), label: null };
+    if (kind) return { task: rowView(store, identityCid(store, edge), kind), label: null };
     const value = valueContent(store, identityCid(store, edge));
     return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? "node" };
   }
@@ -2154,8 +2116,7 @@
     for (const edge of valueContent(store, cid).children) {
       if (isTaskEdge(store, edge)) {
         tasks++;
-        if (content(store, edge[0]).data.todo?.completed)
-          done++;
+        if (content(store, edge[0]).data.todo?.completed) done++;
         const sub = countNode(store, edge[0]);
         tasks += sub.tasks;
         done += sub.done;
@@ -2190,8 +2151,7 @@
     for (const edge of peerEdges) {
       if (isPeerEdge(store, edge)) {
         const peerId = content(store, edge[1]).data.peerId?.content;
-        if (peerId && !view2.peers.includes(peerId))
-          view2.peers.push(peerId);
+        if (peerId && !view2.peers.includes(peerId)) view2.peers.push(peerId);
       }
     }
     for (const edge of value.children) {
@@ -2218,9 +2178,9 @@
     }
     return names;
   }
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail"];
   function isLink(store, value) {
-    if (isHandle(value))
-      return false;
+    if (isHandle(value)) return false;
     return isRefNode(store, value) || !!value.data.link;
   }
   function isLegacyInlineLink(store, value) {
@@ -2253,8 +2213,7 @@
     return put(store, stripLink(store, value));
   }
   function makeLink(store, value, now) {
-    if (isRefNode(store, value) && !isHandle(value))
-      return value;
+    if (isRefNode(store, value) && !isHandle(value)) return value;
     const stripped = stripLink(store, value);
     const valueCid = put(store, stripped);
     const data = { alias: value.data.alias ?? { id: newId() }, updated: { time: now } };
@@ -2271,33 +2230,62 @@
     while (current && out.length < limit) {
       const prev = content(store, current).children.find((e) => isPrevEdge(store, e));
       current = prev ? prev[1] : null;
-      if (current && store.table.has(current))
-        out.push(current);
-      else
-        break;
+      if (current && store.table.has(current)) out.push(current);
+      else break;
     }
     return out;
   }
+  function capabilityTarget(store, capability) {
+    const p = store.primitive;
+    switch (capability) {
+      case "edit":
+        return p.proposeAction.getId();
+      case "approve":
+        return p.approveAction.getId();
+      case "direct":
+        return p.directConnectCapability.getId();
+      case "http":
+        return p.httpConnectCapability.getId();
+      case "ws":
+        return p.wsConnectCapability.getId();
+      case "relay":
+        return p.relayCapability.getId();
+      case "search":
+        return p.searchCapability.getId();
+      case "market":
+        return p.marketCapability.getId();
+      case "mail":
+        return p.mailCapability.getId();
+      case "read":
+        return p.readCapability.getId();
+      case "read-requests":
+        return p.readRequestsCapability.getId();
+      case "autopush":
+        return p.autopushCapability.getId();
+    }
+  }
+  function capabilityOfTarget(store, target) {
+    return CAPABILITIES.find((c) => target === capabilityTarget(store, c)) ?? null;
+  }
   function capabilityOf(store, edge) {
-    if (edge[0] !== store.primitive.capabilityNode.getId())
-      return null;
-    if (edge[1] === store.primitive.approveAction.getId())
-      return "approve";
-    if (edge[1] === store.primitive.proposeAction.getId())
-      return "edit";
-    return null;
+    if (edge[0] !== store.primitive.capabilityNode.getId()) return null;
+    return capabilityOfTarget(store, edge[1]);
+  }
+  function acceptsOf(store, edge) {
+    if (edge[0] !== store.primitive.acceptsNode.getId()) return null;
+    return capabilityOfTarget(store, edge[1]);
   }
   function readMembers(store, value) {
     const out = [];
     for (const edge of value.children) {
-      if (!isMemberEdge(store, edge))
-        continue;
+      if (!isMemberEdge(store, edge)) continue;
       const ref = content(store, edge[1]);
       const peerId = ref.data.peerId?.content;
-      if (!peerId)
-        continue;
+      if (!peerId) continue;
       const caps = ref.children.map((e) => capabilityOf(store, e)).filter((c) => c !== null);
-      out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps });
+      const off = (ref.data.disabledCapabilities?.content ?? []).filter((c) => CAPABILITIES.includes(c) && caps.includes(c));
+      const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c) => c !== null);
+      out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...off.length ? { disabled: off } : {}, ...accepts.length ? { accepts } : {} });
     }
     return out;
   }
@@ -2324,36 +2312,27 @@
     let baseCid = "";
     let timestamp = 0;
     for (const [instr, target] of value.children) {
-      if (instr === store.primitive.proposalNameField.getId())
-        name = content(store, target).data.description?.content ?? "";
-      else if (instr === store.primitive.proposedContentField.getId())
-        contentCid = target;
-      else if (instr === store.primitive.senderField.getId())
-        peerId = content(store, target).data.description?.content ?? "";
-      else if (instr === store.primitive.timestampField.getId())
-        timestamp = Number(content(store, target).data.description?.content ?? 0) || 0;
-      else if (instr === store.primitive.previousVersion.getId())
-        baseCid = target;
+      if (instr === store.primitive.proposalNameField.getId()) name = content(store, target).data.description?.content ?? "";
+      else if (instr === store.primitive.proposedContentField.getId()) contentCid = target;
+      else if (instr === store.primitive.senderField.getId()) peerId = content(store, target).data.description?.content ?? "";
+      else if (instr === store.primitive.timestampField.getId()) timestamp = Number(content(store, target).data.description?.content ?? 0) || 0;
+      else if (instr === store.primitive.previousVersion.getId()) baseCid = target;
     }
-    if (!peerId || !contentCid || !baseCid)
-      return null;
+    if (!peerId || !contentCid || !baseCid) return null;
     return { cid, peerId, name, status: value.data.proposal?.status === "rejected" ? "rejected" : "open", contentCid, baseCid, timestamp };
   }
   function markProposalRejected(store, value, proposalCid) {
     const record = readProposal(store, proposalCid);
-    if (!record || record.status === "rejected")
-      return value;
+    if (!record || record.status === "rejected") return value;
     const rejectedCid = put(store, proposalContent(store, record.peerId, record.name, record.contentCid, record.baseCid, record.timestamp, "rejected"));
     return withProposal(store, value, record.peerId, rejectedCid, record.name);
   }
   function readProposals(store, value) {
     const out = [];
     for (const edge of value.children) {
-      if (!isProposalEdge(store, edge))
-        continue;
+      if (!isProposalEdge(store, edge)) continue;
       const record = readProposal(store, edge[1]);
-      if (record)
-        out.push(record);
+      if (record) out.push(record);
     }
     return out;
   }
@@ -2363,8 +2342,7 @@
       return !!p && p.peerId === peerId && (name === void 0 || p.name === name);
     };
     const children = value.children.filter((e) => !(isProposalEdge(store, e) && matches(e[1])));
-    if (proposalCid)
-      children.push([store.primitive.proposalField.getId(), proposalCid]);
+    if (proposalCid) children.push([store.primitive.proposalField.getId(), proposalCid]);
     return { ...value, children };
   }
   function removeProposalByCid(store, value, proposalCid) {
@@ -2373,25 +2351,21 @@
   function relinkContent(store, previous, previousCid, strippedContent, now) {
     const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e));
     const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
-    if (previous.data.ref)
-      data.ref = previous.data.ref;
+    if (previous.data.ref) data.ref = previous.data.ref;
     const next = refNodeContent(store, data, put(store, strippedContent), bookkeeping, refTypeCid(store, previous));
     return withPrev(store, next, previousCid);
   }
   function normalizeRefs(store, nodeCid, now = 0) {
     const identity = content(store, nodeCid);
-    if (isHandle(identity))
-      return nodeCid;
+    if (isHandle(identity)) return nodeCid;
     const ref = isRefNode(store, identity);
     const value = ref ? valueContent(store, nodeCid) : identity;
     let changed = false;
     const children = value.children.map((edge) => {
-      if (!isRowEdge(store, edge) || isPartitionEdge(store, edge))
-        return edge;
+      if (!isRowEdge(store, edge) || isPartitionEdge(store, edge)) return edge;
       const childCid = identityCid(store, edge);
       const next = normalizeRefs(store, childCid, now);
-      if (next === childCid)
-        return edge;
+      if (next === childCid) return edge;
       changed = true;
       return withIdentity(store, edge, next);
     });
@@ -2400,10 +2374,8 @@
       const stripped = stripLink(store, nextValue);
       return put(store, refNodeContent(store, { alias: identity.data.alias ?? { id: newId() }, updated: { time: identity.data.updated?.time ?? now } }, put(store, stripped), bookkeepingOf(store, identity)));
     }
-    if (!changed)
-      return nodeCid;
-    if (ref)
-      return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now));
+    if (!changed) return nodeCid;
+    if (ref) return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now));
     return put(store, nextValue);
   }
   function findAliasEdge(store, value, aliasId) {
@@ -2413,27 +2385,21 @@
   }
   function findChild(store, nodeCid, aliasId) {
     const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId);
-    if (!found)
-      return null;
+    if (!found) return null;
     const { edge } = found;
-    if (isChoiceEdge(store, edge))
-      return null;
+    if (isChoiceEdge(store, edge)) return null;
     return identityCid(store, edge);
   }
   function findRowByAlias(store, rootCid, aliasId, prefix = []) {
     for (const edge of valueContent(store, rootCid).children) {
       const kind = rowKindOf(store, edge);
-      if (!kind)
-        continue;
+      if (!kind) continue;
       const cid = identityCid(store, edge);
       const id = aliasIdOf(content(store, cid));
-      if (!id)
-        continue;
-      if (id === aliasId)
-        return { path: prefix, row: rowView(store, cid, kind) };
+      if (!id) continue;
+      if (id === aliasId) return { path: prefix, row: rowView(store, cid, kind) };
       const found = findRowByAlias(store, cid, aliasId, [...prefix, id]);
-      if (found)
-        return found;
+      if (found) return found;
     }
     return null;
   }
@@ -2442,30 +2408,25 @@
     const children = [];
     for (const edge of value.children) {
       const kind = rowKindOf(store, edge);
-      if (!kind)
-        continue;
+      if (!kind) continue;
       const copied = copyRowContent(store, identityCid(store, edge), now, freshId);
       children.push(isPartitionEdge(store, edge) ? rowEdge(store, "plain", copied) : withIdentity(store, edge, copied));
     }
     return put(store, { ...value, data: { ...value.data, alias: { id: freshId() }, updated: { time: now } }, children });
   }
   function moveChild(store, rootCid, fromPath, aliasId, toPath, position) {
-    if (toPath.includes(aliasId))
-      return null;
+    if (toPath.includes(aliasId)) return null;
     const fromCid = resolveScope(store, rootCid, fromPath);
-    if (!fromCid)
-      return null;
+    if (!fromCid) return null;
     const found = findAliasEdge(store, content(store, fromCid), aliasId);
-    if (!found)
-      return null;
+    if (!found) return null;
     const moving = found.edge;
     let root = updateAtScope(store, rootCid, fromPath, (value) => ({ ...value, children: value.children.filter((e) => e !== moving) }));
     const insert = (value) => {
       const children = [...value.children];
       if ("into" in position) {
         const parent = findAliasEdge(store, value, position.into);
-        if (!parent)
-          throw new Error("destination not found");
+        if (!parent) throw new Error("destination not found");
         const target = identityCid(store, parent.edge);
         const targetContent = valueContent(store, target);
         const kids = [...targetContent.children];
@@ -2475,8 +2436,7 @@
         return { ...value, children };
       }
       const sibling = findAliasEdge(store, value, position.relativeTo);
-      if (!sibling)
-        throw new Error("destination not found");
+      if (!sibling) throw new Error("destination not found");
       children.splice(position.position === "above" ? sibling.index : sibling.index + 1, 0, moving);
       return { ...value, children };
     };
@@ -2489,8 +2449,7 @@
     const index = (value) => {
       const map = /* @__PURE__ */ new Map();
       for (const edge of value.children) {
-        if (!isRowEdge(store, edge))
-          continue;
+        if (!isRowEdge(store, edge)) continue;
         const id = identityCid(store, edge);
         map.set(edgeKey(store, edge), { title: content(store, id).data.description?.content ?? "", cid: id });
       }
@@ -2501,14 +2460,10 @@
     const summary = { added: [], changed: [], removed: [] };
     for (const [key, entry] of b) {
       const before = a.get(key);
-      if (!before)
-        summary.added.push(entry.title);
-      else if (before.cid !== entry.cid)
-        summary.changed.push(entry.title);
+      if (!before) summary.added.push(entry.title);
+      else if (before.cid !== entry.cid) summary.changed.push(entry.title);
     }
-    for (const [key, entry] of a)
-      if (!b.has(key))
-        summary.removed.push(entry.title);
+    for (const [key, entry] of a) if (!b.has(key)) summary.removed.push(entry.title);
     return { id: proposal.cid, peerId: proposal.peerId, name: proposal.name, status: proposal.status, timestamp: proposal.timestamp, summary };
   }
 
@@ -2518,27 +2473,21 @@
   function mergeNodes(store, baseCid, oursCid, theirsCid, labels) {
     const newChoiceCids = [];
     const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true);
-    if (outcome.kind !== "node")
-      throw new Error("unreachable: top-level merge cannot conflict");
+    if (outcome.kind !== "node") throw new Error("unreachable: top-level merge cannot conflict");
     return { cid: outcome.cid, newChoiceCids };
   }
   function mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, isTop) {
-    if (oursCid === theirsCid)
-      return { kind: "node", cid: oursCid };
-    if (baseCid === oursCid)
-      return { kind: "node", cid: theirsCid };
-    if (baseCid === theirsCid)
-      return { kind: "node", cid: oursCid };
+    if (oursCid === theirsCid) return { kind: "node", cid: oursCid };
+    if (baseCid === oursCid) return { kind: "node", cid: theirsCid };
+    if (baseCid === theirsCid) return { kind: "node", cid: oursCid };
     const base = baseCid ? content(store, baseCid) : EMPTY;
     const ours = content(store, oursCid);
     const theirs = content(store, theirsCid);
     const asRef = (value) => isRefNode(store, value) && !isHandle(value) || isLegacyInlineLink(store, value);
     if (asRef(ours) || asRef(theirs)) {
       const refOf = (cid, value) => {
-        if (!cid)
-          return null;
-        if (isRefNode(store, value) && !isHandle(value))
-          return { cid, node: value };
+        if (!cid) return null;
+        if (isRefNode(store, value) && !isHandle(value)) return { cid, node: value };
         const node = makeLink(store, value, 0);
         return { cid: put(store, node), node };
       };
@@ -2561,8 +2510,7 @@
     }
     const isContainer = ours.children.length > 0 || theirs.children.length > 0 || base.children.length > 0;
     const data = mergeData(base.data, ours.data, theirs.data, isContainer || isTop);
-    if (!data)
-      return { kind: "conflict" };
+    if (!data) return { kind: "conflict" };
     const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids);
     return { kind: "node", cid: put(store, { data, children }) };
   }
@@ -2573,34 +2521,27 @@
     const o = ours;
     const t = theirs;
     for (const key of keys) {
-      if (key === "versionControl")
-        continue;
+      if (key === "versionControl") continue;
       if (key === "updated") {
         const time = Math.max(timeOf(o[key]), timeOf(t[key]), timeOf(b[key]));
-        if (time > 0)
-          out[key] = { time };
+        if (time > 0) out[key] = { time };
         continue;
       }
       const bv = b[key], ov = o[key], tv = t[key];
       if (same(ov, tv)) {
-        if (ov !== void 0)
-          out[key] = ov;
+        if (ov !== void 0) out[key] = ov;
         continue;
       }
       if (same(bv, ov)) {
-        if (tv !== void 0)
-          out[key] = tv;
+        if (tv !== void 0) out[key] = tv;
         continue;
       }
       if (same(bv, tv)) {
-        if (ov !== void 0)
-          out[key] = ov;
+        if (ov !== void 0) out[key] = ov;
         continue;
       }
-      if (!theirsWins)
-        return null;
-      if (tv !== void 0)
-        out[key] = tv;
+      if (!theirsWins) return null;
+      if (tv !== void 0) out[key] = tv;
     }
     return out;
   }
@@ -2608,20 +2549,16 @@
     return value && typeof value === "object" && typeof value.time === "number" ? value.time : 0;
   }
   function same(a, b) {
-    if (a === b)
-      return true;
-    if (a === void 0 || b === void 0)
-      return false;
+    if (a === b) return true;
+    if (a === void 0 || b === void 0) return false;
     return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
   }
   function sortKeys(value) {
-    if (Array.isArray(value))
-      return value.map(sortKeys);
+    if (Array.isArray(value)) return value.map(sortKeys);
     if (value && typeof value === "object") {
       const src = value;
       const out = {};
-      for (const k of Object.keys(src).sort())
-        out[k] = sortKeys(src[k]);
+      for (const k of Object.keys(src).sort()) out[k] = sortKeys(src[k]);
       return out;
     }
     return value;
@@ -2629,8 +2566,7 @@
   function mergeChildren(store, base, ours, theirs, labels, newChoiceCids) {
     const index = (value) => {
       const map = /* @__PURE__ */ new Map();
-      for (const edge of value.children)
-        map.set(edgeKey(store, edge), edge);
+      for (const edge of value.children) map.set(edgeKey(store, edge), edge);
       return map;
     };
     const bMap = index(base);
@@ -2643,18 +2579,15 @@
       const o = oMap.get(key) ?? null;
       const t = tMap.get(key) ?? null;
       if (sameEdge(o, t)) {
-        if (o)
-          out.push(o);
+        if (o) out.push(o);
         continue;
       }
       if (sameEdge(b, o)) {
-        if (t)
-          out.push(t);
+        if (t) out.push(t);
         continue;
       }
       if (sameEdge(b, t)) {
-        if (o)
-          out.push(o);
+        if (o) out.push(o);
         continue;
       }
       if (key.startsWith("p:") && o && t) {
@@ -2685,66 +2618,54 @@
   function orderedKeys(ours, theirs, base) {
     const out = [...ours];
     const present = new Set(out);
-    theirs.forEach((key, i) => {
-      if (present.has(key))
-        return;
+    theirs.forEach((key, i2) => {
+      if (present.has(key)) return;
       let at = -1;
-      for (let j = i - 1; j >= 0 && at < 0; j--) {
+      for (let j = i2 - 1; j >= 0 && at < 0; j--) {
         const idx = out.indexOf(theirs[j]);
-        if (idx >= 0)
-          at = idx + 1;
+        if (idx >= 0) at = idx + 1;
       }
-      for (let j = i + 1; j < theirs.length && at < 0; j++) {
+      for (let j = i2 + 1; j < theirs.length && at < 0; j++) {
         const idx = out.indexOf(theirs[j]);
-        if (idx >= 0)
-          at = idx;
+        if (idx >= 0) at = idx;
       }
-      if (at < 0)
-        at = out.length;
+      if (at < 0) at = out.length;
       out.splice(at, 0, key);
       present.add(key);
     });
-    for (const key of base)
-      if (!present.has(key)) {
-        out.push(key);
-        present.add(key);
-      }
+    for (const key of base) if (!present.has(key)) {
+      out.push(key);
+      present.add(key);
+    }
     return out;
   }
   function sameEdge(a, b) {
-    if (!a || !b)
-      return a === b;
+    if (!a || !b) return a === b;
     return a[0] === b[0] && a[1] === b[1];
   }
   function resolveChoiceIn(store, value, choiceId, pick, now) {
     const key = `a:${choiceId}`;
     const edge = value.children.find((e) => edgeKey(store, e) === key);
-    if (!edge || !isChoiceEdge(store, edge))
-      return value;
+    if (!edge || !isChoiceEdge(store, edge)) return value;
     const children = [];
     for (const existing of value.children) {
       if (existing !== edge) {
         children.push(existing);
         continue;
       }
-      if (pick === null)
-        continue;
+      if (pick === null) continue;
       const choice = content(store, edge[1]);
-      const alternatives = choice.children.filter(([i]) => i === store.primitive.optionNotSelectedConstructor.getId());
+      const alternatives = choice.children.filter(([i2]) => i2 === store.primitive.optionNotSelectedConstructor.getId());
       const alt = alternatives[pick];
-      if (!alt)
-        throw new Error(`choice ${choiceId} has no option ${pick}`);
+      if (!alt) throw new Error(`choice ${choiceId} has no option ${pick}`);
       const pointer = content(store, alt[1]);
       let instr = null;
       let target = null;
-      for (const [i, t] of pointer.children) {
-        if (i === store.primitive.instructionPointerConstructor.getId())
-          instr = t;
-        if (i === store.primitive.targetPointerConstructor.getId())
-          target = t;
+      for (const [i2, t] of pointer.children) {
+        if (i2 === store.primitive.instructionPointerConstructor.getId()) instr = t;
+        if (i2 === store.primitive.targetPointerConstructor.getId()) target = t;
       }
-      if (!instr || !target)
-        continue;
+      if (!instr || !target) continue;
       const picked = [instr, target];
       const idCid = identityCid(store, picked);
       const touched = put(store, { ...content(store, idCid), data: { ...content(store, idCid).data, updated: { time: now } } });
@@ -2756,24 +2677,17 @@
   // ../shared/sync/protocol.ts
   init_prelude();
   function parseSyncRequest(body) {
-    if (!body || typeof body !== "object")
-      return { error: "request body must be an object", code: "bad-request" };
+    if (!body || typeof body !== "object") return { error: "request body must be an object", code: "bad-request" };
     const raw = body;
-    if (raw.version !== SYNC_FORMAT_VERSION)
-      return { error: `unsupported sync version ${String(raw.version)}`, code: "bad-request" };
-    if (typeof raw.cidVersion !== "number")
-      return { error: "cidVersion required", code: "bad-request" };
-    if (typeof raw.peerId !== "string" || !raw.peerId || raw.peerId.length > 128)
-      return { error: "peerId must be a non-empty string", code: "bad-request" };
+    if (raw.version !== SYNC_FORMAT_VERSION) return { error: `unsupported sync version ${String(raw.version)}`, code: "bad-request" };
+    if (typeof raw.cidVersion !== "number") return { error: "cidVersion required", code: "bad-request" };
+    if (typeof raw.peerId !== "string" || !raw.peerId || raw.peerId.length > 128) return { error: "peerId must be a non-empty string", code: "bad-request" };
     if (!Array.isArray(raw.scope) || raw.scope.length > 32 || !raw.scope.every((s) => typeof s === "string" && s.length > 0 && s.length <= 128)) {
       return { error: "scope must be an array of ids", code: "bad-request" };
     }
-    if (typeof raw.headCid !== "string" || !raw.headCid)
-      return { error: "headCid required", code: "bad-request" };
-    if (raw.baseCid !== null && raw.baseCid !== void 0 && typeof raw.baseCid !== "string")
-      return { error: "baseCid must be a cid or null", code: "bad-request" };
-    if (raw.nodes !== void 0 && (typeof raw.nodes !== "object" || raw.nodes === null))
-      return { error: "nodes must be an object", code: "bad-request" };
+    if (typeof raw.headCid !== "string" || !raw.headCid) return { error: "headCid required", code: "bad-request" };
+    if (raw.baseCid !== null && raw.baseCid !== void 0 && typeof raw.baseCid !== "string") return { error: "baseCid must be a cid or null", code: "bad-request" };
+    if (raw.nodes !== void 0 && (typeof raw.nodes !== "object" || raw.nodes === null)) return { error: "nodes must be an object", code: "bad-request" };
     return {
       version: SYNC_FORMAT_VERSION,
       cidVersion: raw.cidVersion,
@@ -2798,8 +2712,7 @@
     }
     const rootTarget = rootTargetCid(store);
     const currentCid = resolveScope(store, rootTarget, request.scope);
-    if (!currentCid)
-      return { error: "scope not found", code: "scope-not-found" };
+    if (!currentCid) return { error: "scope not found", code: "scope-not-found" };
     if (options.proposeOnly && isLink(store, content(store, currentCid))) {
       return serveProposal(store, request, serverPeerId, now, options, rootTarget, currentCid);
     }
@@ -2844,7 +2757,8 @@
         nodes: reachableNodes(store, [resultCid], known),
         newChoiceIds: newChoiceCids.map((cid) => content(store, cid).data.alias?.id ?? cid),
         serverTime: now,
-        presence: options.onlinePeers
+        presence: options.onlinePeers,
+        capabilities: options.capabilities
       }
     };
   }
@@ -2879,8 +2793,7 @@
       const peerEdited = !existing || headStripped !== existing.contentCid;
       const status = existing?.status === "rejected" && !peerEdited ? "rejected" : "open";
       proposalCid = unchanged ? existing.cid : put(store, proposalContent(store, request.peerId, branchName, branchCid, mainStripped, existing && !peerEdited ? existing.timestamp : now, status));
-      if (unchanged)
-        action = "noop";
+      if (unchanged) action = "noop";
     }
     const nextLink = withProposal(store, linkValue, request.peerId, proposalCid, branchName);
     const withPeerContent = withPeer(store, nextLink, request.peerId);
@@ -2895,10 +2808,8 @@
     const resultContent = refNodeContent(store, { ...persisted.data, alias: persisted.data.alias ?? content(store, branchCid).data.alias ?? { id: request.scope[request.scope.length - 1] ?? "" } }, branchCid, bookkeeping, refTypeCid(store, persisted));
     const resultExisted = store.table.has(store.hash(resultContent));
     const resultCid = put(store, resultContent);
-    if (!resultExisted)
-      changed = true;
-    if (action === "noop" && resultCid !== request.headCid)
-      action = "pull";
+    if (!resultExisted) changed = true;
+    if (action === "noop" && resultCid !== request.headCid) action = "pull";
     const known = /* @__PURE__ */ new Set([...Object.keys(request.nodes), ...reachableSet(store, [request.headCid, request.baseCid])]);
     return {
       changed,
@@ -2912,7 +2823,8 @@
         nodes: reachableNodes(store, [resultCid], known),
         newChoiceIds: newChoiceCids.map((cid) => content(store, cid).data.alias?.id ?? cid),
         serverTime: now,
-        presence: options.onlinePeers
+        presence: options.onlinePeers,
+        capabilities: options.capabilities
       }
     };
   }
@@ -2921,8 +2833,7 @@
       throw new Error(`server uses cid format v${response.cidVersion}, this client uses v${CURRENT_CID_VERSION}`);
     }
     importNodes(store, response.nodes);
-    if (!hasNode(store, response.resultCid))
-      throw new Error("sync response did not include the result node");
+    if (!hasNode(store, response.resultCid)) throw new Error("sync response did not include the result node");
     const current = rootTargetCid(store);
     if (current === request.headCid) {
       commitRoot(store, response.resultCid, now);
@@ -3287,8 +3198,7 @@
     getChild(index) {
       const edges = this.targetNode.getEdgesResolved();
       const edge = edges[index];
-      if (!edge)
-        return null;
+      if (!edge) return null;
       const [instrNode, targetNode] = edge;
       return new _FosExpression(this.store, instrNode, targetNode, this);
     }
@@ -3297,8 +3207,7 @@
      * Uses object identity comparison instead of CID comparison.
      */
     getIndex() {
-      if (!this._parent)
-        return 0;
+      if (!this._parent) return 0;
       const siblings = this._parent.targetNode.getEdgesResolved();
       return siblings.findIndex(
         ([instrNode, targetNode]) => instrNode === this.instructionNode && targetNode === this.targetNode
@@ -4044,8 +3953,7 @@
         for (const rule of rules) {
           const head = this.getRuleHead(rule);
           const body = this.getRuleBody(rule);
-          if (!head)
-            continue;
+          if (!head) continue;
           const bodySatisfied = body.every(
             (condition) => this.queryFacts(condition).length > 0
           );
@@ -4364,15 +4272,13 @@
         const oursChild = conflictExpr.getTargetChildren().find(
           (c) => c.instructionNode.getId() === conflictOursPrimitive.getId()
         );
-        if (!oursChild)
-          throw new Error("Ours not found in conflict");
+        if (!oursChild) throw new Error("Ours not found in conflict");
         resolvedNode = oursChild.targetNode;
       } else if (resolution === "theirs") {
         const theirsChild = conflictExpr.getTargetChildren().find(
           (c) => c.instructionNode.getId() === conflictTheirsPrimitive.getId()
         );
-        if (!theirsChild)
-          throw new Error("Theirs not found in conflict");
+        if (!theirsChild) throw new Error("Theirs not found in conflict");
         resolvedNode = theirsChild.targetNode;
       } else {
         resolvedNode = resolution;
@@ -4458,8 +4364,7 @@
      */
     getBudgetInfo() {
       const budgetData = this.targetNode.getData().budget;
-      if (!budgetData)
-        return null;
+      if (!budgetData) return null;
       return {
         total: budgetData.total,
         consumed: budgetData.consumed,
@@ -4605,8 +4510,7 @@
      */
     getCalendarInfo() {
       const calendarData = this.targetNode.getData().calendar;
-      if (!calendarData)
-        return null;
+      if (!calendarData) return null;
       return {
         name: calendarData.name,
         slots: calendarData.slots || []
@@ -4692,8 +4596,7 @@
      */
     getAvailableTimeSlots() {
       const calendarInfo = this.getCalendarInfo();
-      if (!calendarInfo)
-        return [];
+      if (!calendarInfo) return [];
       return calendarInfo.slots.filter((s) => !s.allocated).map(({ id, start, end }) => ({ id, start, end }));
     }
     /**
@@ -4818,8 +4721,7 @@
       const personFieldCid = this.store.primitive.personField.getId();
       const existingDM = this.getTargetChildren().find((child) => {
         const groupData = child.targetNode.getData().group;
-        if (!groupData)
-          return false;
+        if (!groupData) return false;
         const profiles = groupData.userProfiles || [];
         return profiles.length === 2 && profiles.includes(this.targetNode.getId()) && profiles.includes(targetUserNodeCid);
       });
@@ -5089,8 +4991,8 @@
       const { targetIndexInParent, parent } = this.getParentInfo();
       const parentContent = parent.targetNode.getContent();
       const parentChildren = parentContent.children;
-      const newParentRows = parentContent.children.reduce((acc, child, i) => {
-        if (i !== targetIndexInParent) {
+      const newParentRows = parentContent.children.reduce((acc, child, i2) => {
+        if (i2 !== targetIndexInParent) {
           return [...acc, ...parentChildren];
         }
         return [...acc, child];
@@ -5178,8 +5080,8 @@
       } else if (index === 0) {
         newParentRows = [newElem, ...targetContent.children];
       } else {
-        newParentRows = targetContent.children.reduce((acc, child, i) => {
-          if (i === index) {
+        newParentRows = targetContent.children.reduce((acc, child, i2) => {
+          if (i2 === index) {
             return [...acc, newElem, child];
           }
           return [...acc, child];
@@ -5227,13 +5129,13 @@
       if (parent.route.length === 1) {
         return;
       }
-      siblingRoutes().forEach((siblingRoute, i) => {
-        if (i < targetIndexInParent + 1) {
+      siblingRoutes().forEach((siblingRoute, i2) => {
+        if (i2 < targetIndexInParent + 1) {
           return;
         } else {
-          console.log("siblingRoute", siblingRoute, this.route, i, targetIndexInParent);
+          console.log("siblingRoute", siblingRoute, this.route, i2, targetIndexInParent);
           throw new Error("Not implemented");
-          this.moveNodeIntoRoute(this.route, i - targetIndexInParent + 1);
+          this.moveNodeIntoRoute(this.route, i2 - targetIndexInParent + 1);
         }
       });
       const exprInNewPath = this.moveNodeBelowRoute(parent.route);
@@ -5561,9 +5463,9 @@
     let resultMap = /* @__PURE__ */ new Map();
     const helper = (acc, expr) => {
       const nodeRoute = expr.route;
-      for (let i = 0; i < nodeRoute.length; i++) {
-        for (let j = i + 1; j < nodeRoute.length; j++) {
-          if (nodeRoute[i]?.[0] === nodeRoute[j]?.[0] && nodeRoute[i]?.[1] === nodeRoute[j]?.[1]) {
+      for (let i2 = 0; i2 < nodeRoute.length; i2++) {
+        for (let j = i2 + 1; j < nodeRoute.length; j++) {
+          if (nodeRoute[i2]?.[0] === nodeRoute[j]?.[0] && nodeRoute[i2]?.[1] === nodeRoute[j]?.[1]) {
             return;
           }
         }
@@ -5805,7 +5707,7 @@
       if (orderArray.length != this.getEdges().length) {
         throw new Error("Order array length must match the number of edges");
       }
-      const orderedEdges = orderArray.map((i) => this.getEdges()[i]).map((edge) => {
+      const orderedEdges = orderArray.map((i2) => this.getEdges()[i2]).map((edge) => {
         if (edge === void 0) {
           throw new Error("Edge not found");
         }
@@ -6107,6 +6009,18 @@
   var getQueryFieldNode = (store) => generateConstructor(store, "QUERY", { description: { content: "Query Field Constructor - a semantic search whose results are reference rows" } }, []);
   var getResourceFieldNode = (store) => generateConstructor(store, "RESOURCE", { description: { content: "Resource Field Constructor - a calendar, account or inventory bank" } }, []);
   var getAllocationFieldNode = (store) => generateConstructor(store, "ALLOCATION", { description: { content: "Allocation Field Constructor - an amount locked from a resource bank" } }, []);
+  var getTemplateFieldNode = (store) => generateConstructor(store, "TEMPLATE", { description: { content: "Template Field Constructor - a row whose requirement children are copied under every task that executes it" } }, []);
+  var getDirectConnectCapabilityNode = (store) => generateConstructor(store, "DIRECTCONNECT", { description: { content: "Capability - reachable device to device (WebRTC data channel)" } }, []);
+  var getHttpConnectCapabilityNode = (store) => generateConstructor(store, "HTTPCONNECT", { description: { content: "Capability - reachable over HTTP (a server exposes it)" } }, []);
+  var getWsConnectCapabilityNode = (store) => generateConstructor(store, "WSCONNECT", { description: { content: "Capability - reachable over WebSockets (a server exposes it)" } }, []);
+  var getRelayCapabilityNode = (store) => generateConstructor(store, "RELAY", { description: { content: "Capability - relays messages for peers that cannot reach each other (the fos server always has it)" } }, []);
+  var getSearchCapabilityNode = (store) => generateConstructor(store, "SEARCHCAPABILITY", { description: { content: "Capability - runs search requirements (semantic search over rows)" } }, []);
+  var getMarketCapabilityNode = (store) => generateConstructor(store, "MARKETCAPABILITY", { description: { content: "Capability - lists tasks on the market and brings back proposals" } }, []);
+  var getMailCapabilityNode = (store) => generateConstructor(store, "MAILCAPABILITY", { description: { content: "Capability - sends mail for mail requirements" } }, []);
+  var getReadCapabilityNode = (store) => generateConstructor(store, "READ", { description: { content: "Capability - may read the content of the node" } }, []);
+  var getReadRequestsCapabilityNode = (store) => generateConstructor(store, "READREQUESTS", { description: { content: "Capability - may read the requests (proposals) addressed to it on the node" } }, []);
+  var getAutopushCapabilityNode = (store) => generateConstructor(store, "AUTOPUSH", { description: { content: "Capability - changes flow automatically on sync (merged), rather than only as explicit proposals" } }, []);
+  var getAcceptsNode = (store) => generateConstructor(store, "ACCEPTS", { description: { content: "Accepts - the owner accepts this capability from the member (what may flow in from that peer)" } }, []);
   var getDurationFieldNode = (store) => generateConstructor(store, "DURATION", { description: { content: "Duration Field Constructor" } }, []);
   var getDateFieldNode = (store) => generateConstructor(store, "DATE", { description: { content: "Date Field Constructor" } }, []);
   var getTimeFieldNode = (store) => generateConstructor(store, "TIME", { description: { content: "Time Field Constructor" } }, []);
@@ -6248,8 +6162,7 @@
       children: constructedChildren
     };
     const newNode = store.create(nodeContent, alias);
-    if (!newNode)
-      throw new Error("could not create node");
+    if (!newNode) throw new Error("could not create node");
     return newNode;
   };
   var constructPrimitiveAliases = (store) => {
@@ -6429,6 +6342,18 @@
     const queryField = getQueryFieldNode(store);
     const resourceField = getResourceFieldNode(store);
     const allocationField = getAllocationFieldNode(store);
+    const templateField = getTemplateFieldNode(store);
+    const directConnectCapability = getDirectConnectCapabilityNode(store);
+    const httpConnectCapability = getHttpConnectCapabilityNode(store);
+    const wsConnectCapability = getWsConnectCapabilityNode(store);
+    const relayCapability = getRelayCapabilityNode(store);
+    const searchCapability = getSearchCapabilityNode(store);
+    const marketCapability = getMarketCapabilityNode(store);
+    const mailCapability = getMailCapabilityNode(store);
+    const readCapability = getReadCapabilityNode(store);
+    const readRequestsCapability = getReadRequestsCapabilityNode(store);
+    const autopushCapability = getAutopushCapabilityNode(store);
+    const acceptsNode = getAcceptsNode(store);
     const approveAction = getApproveActionNode(store);
     const effectNode = getEffectNode(store);
     const handlerNode = getHandlerNode(store);
@@ -6614,6 +6539,18 @@
       queryField,
       resourceField,
       allocationField,
+      templateField,
+      directConnectCapability,
+      httpConnectCapability,
+      wsConnectCapability,
+      relayCapability,
+      searchCapability,
+      marketCapability,
+      mailCapability,
+      readCapability,
+      readRequestsCapability,
+      autopushCapability,
+      acceptsNode,
       effectNode,
       handlerNode
     };
@@ -6649,13 +6586,11 @@
     let at = from;
     while (at < to) {
       const step = MIGRATIONS.find((m) => m.from === at);
-      if (!step)
-        throw new Error(`no migration from cid version ${at}`);
+      if (!step) throw new Error(`no migration from cid version ${at}`);
       steps.push(step);
       at = step.to;
     }
-    if (at !== to)
-      throw new Error(`cannot migrate from cid version ${from} to ${to}`);
+    if (at !== to) throw new Error(`cannot migrate from cid version ${from} to ${to}`);
     return steps;
   }
   function migrateContext(context, target = CURRENT_CID_VERSION) {
@@ -6666,41 +6601,32 @@
     const inProgress = /* @__PURE__ */ new Set();
     const migrate = (cid) => {
       const done = mapping[cid];
-      if (done !== void 0)
-        return done;
+      if (done !== void 0) return done;
       const content2 = input[cid];
-      if (!content2)
-        throw new MigrationError(`node ${cid} referenced but not present in the context`, cid);
-      if (inProgress.has(cid))
-        throw new MigrationError(`cycle through node ${cid}`, cid);
+      if (!content2) throw new MigrationError(`node ${cid} referenced but not present in the context`, cid);
+      if (inProgress.has(cid)) throw new MigrationError(`cycle through node ${cid}`, cid);
       inProgress.add(cid);
       const version2 = cidVersion(cid);
-      if (version2 === null)
-        throw new MigrationError(`node ${cid} is not a recognised cid`, cid);
-      if (version2 > target)
-        throw new MigrationError(`node ${cid} is newer (v${version2}) than the target format v${target}`, cid);
+      if (version2 === null) throw new MigrationError(`node ${cid} is not a recognised cid`, cid);
+      if (version2 > target) throw new MigrationError(`node ${cid} is newer (v${version2}) than the target format v${target}`, cid);
       fromVersions.add(version2);
       let upgraded = content2;
       for (const step of stepsBetween(version2, target)) {
-        if (step.upgrade)
-          upgraded = step.upgrade(upgraded);
+        if (step.upgrade) upgraded = step.upgrade(upgraded);
       }
       const children = upgraded.children.map(([instr, targetCid]) => [migrate(instr), migrate(targetCid)]);
       const next = { ...upgraded, children };
-      const unchanged = version2 === target && children.every((edge, i) => edge[0] === upgraded.children[i]?.[0] && edge[1] === upgraded.children[i]?.[1]);
+      const unchanged = version2 === target && children.every((edge, i2) => edge[0] === upgraded.children[i2]?.[0] && edge[1] === upgraded.children[i2]?.[1]);
       const newCid = unchanged ? cid : hashContentAt(next, target);
       inProgress.delete(cid);
       mapping[cid] = newCid;
       output[newCid] = unchanged ? content2 : next;
       return newCid;
     };
-    for (const cid of Object.keys(input))
-      migrate(cid);
+    for (const cid of Object.keys(input)) migrate(cid);
     const remapPath = (path) => path.map(([a, b]) => [mapping[a] ?? a, mapping[b] ?? b]);
     const changed = {};
-    for (const [oldCid, newCid] of Object.entries(mapping))
-      if (oldCid !== newCid)
-        changed[oldCid] = newCid;
+    for (const [oldCid, newCid] of Object.entries(mapping)) if (oldCid !== newCid) changed[oldCid] = newCid;
     return {
       context: {
         nodes: output,
@@ -7647,7 +7573,7 @@
     }
     exportContext(route) {
       const nodes = {};
-      Array.from(this.table.entries()).forEach(([address, content2], i) => {
+      Array.from(this.table.entries()).forEach(([address, content2], i2) => {
         nodes[address] = content2;
       });
       const rootContent = nodes[this.rootNodeId];
@@ -7668,15 +7594,13 @@
       };
     }
     getNodeByAddress(address) {
-      if (this.cache.has(address))
-        return this.cache.get(address);
+      if (this.cache.has(address)) return this.cache.get(address);
       if (!this.checkAddress(address)) {
         throw new Error(`address ${address} not found`);
       }
       const nodeContent = this.table.get(address);
       const result = this.create(nodeContent);
-      if (!result)
-        throw new Error(`Unable to construct node for address ${address}`);
+      if (!result) throw new Error(`Unable to construct node for address ${address}`);
       this.cache.set(result.cid, result);
       return result;
     }
@@ -7704,8 +7628,7 @@
       const result = [];
       const tableEntries = [...this.table.entries()];
       tableEntries.forEach(([entrykey, entryvalue]) => {
-        if (entrykey === queryCid)
-          return;
+        if (entrykey === queryCid) return;
         this.create(entryvalue);
         try {
           const thisNode = this.getNodeByAddress(entrykey);
@@ -7884,7 +7807,7 @@
         });
       });
       this.table = new Map([...otherStore.table, ...this.table]);
-      Array.from(otherStore.table.entries()).filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent], i) => {
+      Array.from(otherStore.table.entries()).filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent], i2) => {
         if (this.insert(otherContent) !== otherAddress) {
           throw new Error(`stores mismatched`);
         }
@@ -7954,8 +7877,7 @@
   function normalizeReplicaRefs(store) {
     const head = rootTargetCid(store);
     const next = normalizeRefs(store, head);
-    if (next === head)
-      return false;
+    if (next === head) return false;
     commitRoot(store, next, 0);
     return true;
   }
@@ -7964,19 +7886,16 @@
   }
   function loadReplica(input) {
     const fresh = createReplica();
-    if (!input || typeof input !== "object")
-      return fresh;
+    if (!input || typeof input !== "object") return fresh;
     const raw = input;
     const meta = raw.meta;
-    if (!meta || typeof meta !== "object")
-      return fresh;
+    if (!meta || typeof meta !== "object") return fresh;
     const peerId = typeof meta.peerId === "string" && meta.peerId ? meta.peerId : fresh.meta.peerId;
     const scope = Array.isArray(meta.scope) ? meta.scope.filter((s) => typeof s === "string" && s.length > 0) : [];
     let store;
     try {
       const ctx = raw.context;
-      if (!ctx || typeof ctx !== "object" || typeof ctx.rootNodeId !== "string")
-        throw new Error("no context");
+      if (!ctx || typeof ctx !== "object" || typeof ctx.rootNodeId !== "string") throw new Error("no context");
       store = new FosStore({ fosCtxData: { fosData: { nodes: ctx.nodes ?? {}, route: [], rootNodeId: ctx.rootNodeId }, trellisData: fresh.store.trellisData } });
       rootTargetCid(store);
       normalizeReplicaRefs(store);
@@ -8004,8 +7923,7 @@
   }
   function isDirty(replica) {
     const head = headCid(replica);
-    if (replica.meta.baseCid)
-      return head !== replica.meta.baseCid;
+    if (replica.meta.baseCid) return head !== replica.meta.baseCid;
     return valueContent(replica.store, head).children.length > 0;
   }
   function view(replica, at) {
@@ -8031,8 +7949,7 @@
   }
   function addTask(replica, at, title, now, id = newId()) {
     const trimmed = title.trim();
-    if (!trimmed)
-      return replica;
+    if (!trimmed) return replica;
     return edit(replica, at, now, (value) => {
       const cid = put(replica.store, taskContent(id, trimmed, false, now, now));
       return { ...value, children: [...value.children, taskEdge(replica.store, cid)] };
@@ -8040,10 +7957,8 @@
   }
   function addRow(replica, at, kind, text, now, options = {}) {
     const body = kind === "note" ? text.replace(/\s+$/, "") : text.trim();
-    if (!body && !["ref", "plain", "supply", "allocation"].includes(kind))
-      return replica;
-    if (kind === "ref" && !options.refId)
-      return replica;
+    if (!body && !["ref", "plain", "comment", "supply", "allocation"].includes(kind)) return replica;
+    if (kind === "ref" && !options.refId) return replica;
     const id = options.id ?? newId();
     return edit(replica, at, now, (value) => {
       const { position: _p, id: _i, ...extras } = options;
@@ -8066,10 +7981,8 @@
   function setRowKind(replica, at, aliasId, kind, now) {
     return edit(replica, at, now, (value) => {
       const edge = findChildEdge(replica, value, aliasId);
-      if (!edge)
-        return value;
-      if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge))
-        return value;
+      if (!edge) return value;
+      if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge)) return value;
       const node = valueContent(replica.store, identityCid(replica.store, edge));
       const converted = withChildValue(replica.store, edge, convertRowContent(node, kind, now), now);
       return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, converted)));
@@ -8078,25 +7991,20 @@
   function addRef(replica, at, targetAliasId, now, position) {
     const found = resolveRef(replica, targetAliasId);
     let r = replica;
-    if (found && !found.row.isLink)
-      r = makeLinkAt(r, [...found.path, targetAliasId], now);
+    if (found && !found.row.isLink) r = makeLinkAt(r, [...found.path, targetAliasId], now);
     const targetPath = found ? [...found.path, targetAliasId] : null;
     const targetCid = targetPath ? resolveScope(r.store, headCid(r), targetPath) : null;
     const options = { refId: targetAliasId, targetCid: targetCid ?? void 0 };
-    if (position && "into" in position)
-      return addRow(r, [...at, position.into], "ref", "", now, options);
+    if (position && "into" in position) return addRow(r, [...at, position.into], "ref", "", now, options);
     return addRow(r, at, "ref", "", now, { ...options, position });
   }
   function copyNode(replica, fromPath, aliasId, toPath, position, now) {
     const from = resolveScope(replica.store, headCid(replica), fromPath);
-    if (!from)
-      return replica;
+    if (!from) return replica;
     const found = findEdge(replica.store, valueContent(replica.store, from), `a:${aliasId}`);
-    if (!found)
-      return replica;
+    if (!found) return replica;
     const kind = rowKindOf(replica.store, found);
-    if (!kind)
-      return replica;
+    if (!kind) return replica;
     const copied = copyRowContent(replica.store, identityCid(replica.store, found), now, newId);
     const edge = rowEdge(replica.store, kind, copied);
     const target = "into" in position ? [...toPath, position.into] : toPath;
@@ -8121,12 +8029,10 @@
   function updateTask(replica, at, taskId, now, change) {
     return edit(replica, at, now, (value) => {
       const edge = findChildEdge(replica, value, taskId);
-      if (!edge)
-        return value;
+      if (!edge) return value;
       const node = valueContent(replica.store, identityCid(replica.store, edge));
       const next = change(node);
-      if (!next)
-        return value;
+      if (!next) return value;
       const nextValue = { ...next, data: { ...next.data, updated: { time: now } } };
       return replaceEdge(replica.store, value, `a:${taskId}`, withChildValue(replica.store, edge, nextValue, now));
     });
@@ -8135,31 +8041,25 @@
     if (done) {
       const parent = resolveScope(replica.store, headCid(replica), at);
       const taskCid = parent ? findChild(replica.store, parent, taskId) : null;
-      if (taskCid && taskBlockers(replica.store, taskCid).length)
-        return replica;
+      if (taskCid && taskBlockers(replica.store, taskCid).length) return replica;
     }
     return updateTask(replica, at, taskId, now, (task) => {
-      if (!task.data.todo)
-        return null;
-      if (!!task.data.todo?.completed === done)
-        return null;
+      if (!task.data.todo) return null;
+      if (!!task.data.todo?.completed === done) return null;
       return { ...task, data: { ...task.data, todo: { completed: done, time: task.data.todo?.time ?? now } } };
     });
   }
   function renameTask(replica, at, taskId, title, now) {
     const trimmed = title.trim();
-    if (!trimmed)
-      return replica;
+    if (!trimmed) return replica;
     return updateTask(replica, at, taskId, now, (task) => {
-      if (task.data.description?.content === trimmed)
-        return null;
+      if (task.data.description?.content === trimmed) return null;
       return { ...task, data: { ...task.data, description: { content: trimmed } } };
     });
   }
   function deleteTask(replica, at, taskId, now) {
     return edit(replica, at, now, (value) => {
-      if (!findChildEdge(replica, value, taskId))
-        return value;
+      if (!findChildEdge(replica, value, taskId)) return value;
       return replaceEdge(replica.store, value, `a:${taskId}`, null);
     });
   }
@@ -8168,8 +8068,7 @@
   }
   function moveNode(replica, fromPath, aliasId, toPath, position, now) {
     const next = moveChild(replica.store, headCid(replica), fromPath, aliasId, toPath, position);
-    if (!next || next === headCid(replica))
-      return replica;
+    if (!next || next === headCid(replica)) return replica;
     commitRoot(replica.store, next, now);
     return { ...replica };
   }
@@ -8180,8 +8079,7 @@
     const store = replica.store;
     return editNode(replica, at, now, (value) => {
       const proposal = readProposal(store, proposalCid);
-      if (!proposal)
-        return value;
+      if (!proposal) return value;
       const main = putStripped(store, value);
       const mergedCid = proposal.baseCid === main ? proposal.contentCid : mergeNodes(store, proposal.baseCid, main, proposal.contentCid, { ours: approverPeerId, theirs: proposal.peerId }).cid;
       const linkCid = put(store, value);
@@ -8192,9 +8090,9 @@
   function rejectProposalAt(replica, at, proposalCid, now) {
     return editNode(replica, at, now, (node) => markProposalRejected(replica.store, node, proposalCid));
   }
-  function buildSyncRequest(replica, branch) {
-    const head = headCid(replica);
+  function buildSyncRequest(replica, branch, options = {}) {
     const base = replica.meta.baseCid;
+    const head = options.push === false ? base ?? put(replica.store, { data: {}, children: [] }) : headCid(replica);
     const known = base ? reachableSet(replica.store, [base]) : /* @__PURE__ */ new Set();
     return {
       version: SYNC_FORMAT_VERSION,
@@ -8208,7 +8106,7 @@
     };
   }
   function completeSync(replica, request, response, now = Date.now()) {
-    if (response.scope.length !== request.scope.length || response.scope.some((s, i) => s !== request.scope[i])) {
+    if (response.scope.length !== request.scope.length || response.scope.some((s, i2) => s !== request.scope[i2])) {
       throw new Error("sync response scope does not match request scope");
     }
     const applied = applySyncResponse(replica.store, request, response, replica.meta.peerId, now);
@@ -8222,10 +8120,9 @@
     };
   }
   function reattach(replica, newScope, now, names) {
-    if (isDirty(replica))
-      throw new Error("cannot change scope with unsynced local changes");
+    if (isDirty(replica)) throw new Error("cannot change scope with unsynced local changes");
     const { store, meta } = replica;
-    const isPrefix = meta.scope.length <= newScope.length && meta.scope.every((s, i) => newScope[i] === s);
+    const isPrefix = meta.scope.length <= newScope.length && meta.scope.every((s, i2) => newScope[i2] === s);
     const relative = newScope.slice(meta.scope.length);
     const target = isPrefix ? resolveScope(store, headCid(replica), relative) : null;
     if (target) {
@@ -8244,8 +8141,7 @@
   var replicas = /* @__PURE__ */ new Map();
   function get2(handle) {
     const r = replicas.get(handle);
-    if (!r)
-      throw new Error(`no replica ${handle}`);
+    if (!r) throw new Error(`no replica ${handle}`);
     return r;
   }
   function set(handle, r) {
@@ -8300,17 +8196,13 @@
       const lines = [];
       const walk = (at, depth) => {
         const node = view(r, at);
-        if (!node)
-          return;
+        if (!node) return;
         for (const t of node.tasks) {
           lines.push(`${"  ".repeat(depth)}${t.kind === "task" ? t.done ? "[x]" : "[ ]" : t.kind === "note" ? " \u2261 " : t.kind === "comment" ? ' " ' : t.kind === "ref" ? " \u2192 " : " \xB7 "} ${t.id.slice(0, 8)} ${t.kind === "ref" ? `ref ${t.refId?.slice(0, 8) ?? ""}` : t.title.split("\n")[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ""}${t.isLink ? " \u26D3" : ""}`);
-          if (t.childCount)
-            walk([...at, t.id], depth + 1);
+          if (t.childCount) walk([...at, t.id], depth + 1);
         }
-        for (const c of node.choices)
-          lines.push(`${"  ".repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`);
-        for (const p of node.proposals)
-          lines.push(`${"  ".repeat(depth)}[>] ${p.id.slice(0, 8)} proposal "${p.name}" by ${p.peerId.slice(0, 8)} (${p.status}) +${p.summary.added.length} ~${p.summary.changed.length} -${p.summary.removed.length}`);
+        for (const c of node.choices) lines.push(`${"  ".repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`);
+        for (const p of node.proposals) lines.push(`${"  ".repeat(depth)}[>] ${p.id.slice(0, 8)} proposal "${p.name}" by ${p.peerId.slice(0, 8)} (${p.status}) +${p.summary.added.length} ~${p.summary.changed.length} -${p.summary.removed.length}`);
       };
       walk(parse2(atJson, []), 0);
       return JSON.stringify(lines);
@@ -8320,15 +8212,12 @@
       const r = get2(handle);
       const search = (at) => {
         const node = view(r, at);
-        if (!node)
-          return null;
+        if (!node) return null;
         const direct = node.tasks.find((t) => t.id.startsWith(prefix));
-        if (direct)
-          return { id: direct.id, at };
+        if (direct) return { id: direct.id, at };
         for (const t of node.tasks) {
           const f2 = search([...at, t.id]);
-          if (f2)
-            return f2;
+          if (f2) return f2;
         }
         return null;
       };
@@ -8375,14 +8264,11 @@
     /** Serve another peer against this replica (the directory as a node). */
     serveSync(handle, requestJson, serverPeerId, now, optionsJson) {
       const parsed = parseSyncRequest(JSON.parse(requestJson));
-      if ("error" in parsed)
-        return JSON.stringify({ error: parsed.error, code: parsed.code });
+      if ("error" in parsed) return JSON.stringify({ error: parsed.error, code: parsed.code });
       const r = get2(handle);
       const served = serveSync(r.store, parsed, serverPeerId, now, parse2(optionsJson, {}));
-      if ("error" in served)
-        return JSON.stringify(served);
-      if (served.changed)
-        set(handle, { ...r });
+      if ("error" in served) return JSON.stringify(served);
+      if (served.changed) set(handle, { ...r });
       return JSON.stringify({ changed: served.changed, response: served.response });
     }
   };

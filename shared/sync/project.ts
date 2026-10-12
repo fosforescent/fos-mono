@@ -4,15 +4,34 @@
  * key = string | number | bool | array of those; that is all the config needs.
  */
 
+import { parsePolicy, type PeerPolicy } from './graph'
+
 export type TomlValue = string | number | boolean | TomlValue[] | { [key: string]: TomlValue }
 
 export const CONFIG_FILE = 'fos.config.toml'
 export const STATE_DIR = '.fos'
 
-/** Shape of fos.config.toml. */
+/**
+ * Shape of fos.config.toml. `[server]` is this directory's policy towards the account server (`to` = what leaves the
+ * device, `from` = what it takes in; capability ids from `CAPABILITIES`); `[peers.<name>]` the same towards another
+ * peer. Absent: `DEFAULT_DEVICE_POLICY` (everything flows both ways).
+ */
 export type FosProjectConfig = {
   attach?: { server?: string; token?: string; name?: string }
   serve?: { port?: number; host?: string }
+  server?: { to?: string[]; from?: string[] }
+  peers?: { [name: string]: { to?: string[]; from?: string[] } }
+}
+
+/** The policy towards the account server declared in the config, or null when it declares none. */
+export function serverPolicyOf(config: FosProjectConfig): PeerPolicy | null {
+  return config.server ? parsePolicy(config.server) : null
+}
+
+/** The policy towards the peer `name` declared in the config, or null. */
+export function peerPolicyOf(config: FosProjectConfig, name: string): PeerPolicy | null {
+  const entry = config.peers?.[name] ?? config.peers?.[name.replace(/^@/, '')]
+  return entry ? parsePolicy(entry) : null
 }
 
 /** File-system-safe name for a branch (.fos/replicas/<name>.json). */

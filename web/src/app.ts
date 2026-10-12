@@ -18,10 +18,20 @@
 import {
   addRef,
   addRow,
+  addMemberAt,
   addSupply,
   addTask,
+  CAPABILITIES,
   copyNode,
+  DEFAULT_DEVICE_POLICY,
+  findTemplateByName,
+  instantiateTemplate,
+  parsePolicy,
+  removeMemberAt,
   resolveRef,
+  SERVER_CAPABILITIES,
+  setMemberCapabilitiesAt,
+  type PeerPolicy,
   setMarketAt,
   setQueryOptionsAt,
   setRowKind,
@@ -46,6 +56,7 @@ import {
   setTaskDone,
   view,
   type Capability,
+  type CapabilityKind,
   type MovePosition,
   type NodeView,
   type Replica,
@@ -89,7 +100,28 @@ export type Notice = { kind: 'info' | 'error'; text: string; at: number }
 
 export type Credentials = { username: string; password: string }
 
-export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market'
+export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help'
+
+/**
+ * A peer in the context panel: the account server ("fos") with what it registered on the last sync, a member of the
+ * viewed node (its capability rows are what this node's owner exposes to it; `disabled` ones show as switched off), or a
+ * device attached here. `member` says whether the rows can be edited here (by the owner).
+ */
+export type ContextPeer = {
+  id: string
+  name: string
+  online: boolean
+  /** The `to` direction: what this side exposes to the peer (for the account server: what it registered with us, see `policy` for what we send it). */
+  capabilities: Capability[]
+  disabled: Capability[]
+  /** The `from` direction on a member row: what this node's owner accepts from the peer. */
+  accepts: Capability[]
+  isAccount: boolean
+  member: boolean
+  /** The account server row: this device's policy towards it, and whether fos.config.toml fixed it. */
+  policy?: PeerPolicy
+  policyLocked?: boolean
+}
 
 export type ConnectFlow =
   | { phase: 'idle' }
@@ -128,6 +160,12 @@ export type AppState = {
   collapsed: string[]
   /** Peer ids the account currently sees online (from the last sync response). */
   onlinePeers: string[]
+  /** What the account server registered with this device on the last sync (connection kinds and services); null before the first. */
+  serverCapabilities: Capability[] | null
+  /** This device's policy towards the account server: `to` = what leaves the device, `from` = what it takes in. */
+  policy: PeerPolicy
+  /** The policy came from fos.config.toml (project mode) and cannot be changed in the app. */
+  policyLocked: boolean
   /** Keyboard selection: path (relative to the view) of the selected task. */
   selected: Scope | null
   /** Open context menu, if any. */
@@ -146,8 +184,8 @@ export type AppConfig = {
   storage: ReplicaStorage
   pollIntervalMs?: number
   now?: () => number
-  /** Project mode (desktop shell in a directory with fos.config.toml). */
-  project?: { dir: string; branch: () => string | null; deviceName?: string }
+  /** Project mode (desktop shell in a directory with fos.config.toml). `policy` is the config's `[server]` table, when present. */
+  project?: { dir: string; branch: () => string | null; deviceName?: string; policy?: PeerPolicy | null }
 }
 
 type Timer = ReturnType<typeof setTimeout>
@@ -195,7 +233,8 @@ export class App {
     this.config = config
     this.autoCredentials = config.autoLogin
     const replica = loadReplica(config.storage.loadReplica())
-    const prefs = (config.storage.loadPrefs() ?? {}) as { view?: unknown; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown }
+    const prefs = (config.storage.loadPrefs() ?? {}) as { view?: unknown; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
+    const configPolicy = config.project?.policy ?? null
     const savedView = Array.isArray(prefs.view) ? prefs.view.filter((s): s is string => typeof s === 'string') : []
     const session = loadSession(config.storage.loadSession(), config.baseUrl)
     this.state = {
@@ -217,6 +256,9 @@ export class App {
       manual: {},
       collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed.filter((s): s is string => typeof s === 'string') : [],
       onlinePeers: [],
+      serverCapabilities: null,
+      policy: configPolicy ?? parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
+      policyLocked: !!configPolicy,
       selected: null,
       contextMenu: null,
       device: null,
@@ -254,7 +296,7 @@ export class App {
   }
 
   private savePrefs(): void {
-    this.config.storage.savePrefs({ view: this.state.view, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed })
+    this.config.storage.savePrefs({ view: this.state.view, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
   private notify(kind: Notice['kind'], text: string): void {
@@ -449,11 +491,15 @@ export class App {
     const transport = this.transport()
     if (!transport) return
     if (this.syncInFlight) { this.syncRequested = true; return }
+    // The policy towards the account server decides what a sync round moves: nothing comes in without `from: read`
+    // (the device still answers its own explicit actions), and nothing local goes out without `to: autopush`.
+    const policy = transport === 'account' ? this.state.policy : null
+    if (policy && !policy.from.includes('read')) { this.set({ connection: 'online' }); return }
     this.syncInFlight = true
     this.clearTimer('debounce')
     this.set({ connection: 'syncing' })
 
-    const request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined)
+    const request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !policy || policy.to.includes('autopush') })
     try {
       const response = transport === 'account'
         ? await peerSync(this.state.session as Session, request)
@@ -461,6 +507,7 @@ export class App {
       const done = completeSync(this.state.replica, request, response, this.now())
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online' }
       if (response.presence) patch.onlinePeers = response.presence
+      if (response.capabilities) patch.serverCapabilities = response.capabilities
       const n = done.newChoiceIds.length
       if (n > 0) {
         patch.highlighted = done.newChoiceIds
@@ -508,21 +555,37 @@ export class App {
 
   addTask(title: string): void { this.edit(addTask(this.state.replica, this.state.view, title, this.now())) }
 
-  /** Add a row of `kind` under `at` (relative to the view). Comments carry this device as the author. */
-  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'> } = {}): string {
+  /**
+   * Add a row of `kind` under `at` (relative to the view). Comments carry this device as the author; an allocation
+   * draws from the parent context (`bankFor`); a task naming a template executes it (its requirements are copied
+   * underneath); a task requirement naming a template gets that execution as its child right away.
+   */
+  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string } = {}): string {
     const author = kind === 'comment' ? { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName } : undefined
     const id = options.id ?? crypto.randomUUID()
-    const { extras, ...rest } = options
+    const { extras, templateName, ...rest } = options
     let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
     if (kind === 'allocation') {
-      // an allocation draws from the nearest resource bank above it
-      const bank = this.nearestBank(at)
-      if (!bank) { this.notify('error', 'Allocations go under a resource bank (@calendar, @account or @inventory).'); return id }
+      const bank = this.bankFor(at, data.allocation?.unit)
+      if (!bank) { this.notify('error', 'No resource bank in this context: add one (@account Travel 500, @calendar Week 40h, @inventory Shelf 12) above, or put the allocation under a requirement that names its resource.'); return id }
       const base = data.allocation ?? { resource: '', type: bank.resource.type, amount: 0, unit: bank.resource.unit }
       data = { ...data, allocation: { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by: this.state.session?.username ?? this.state.deviceName } }
     }
     this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...rest, ...data, author, id }))
+    if (templateName && kind === 'task') this.applyTemplate(at, id, templateName)
+    if (templateName && kind === 'requirement' && data.requirement?.capability === 'task') {
+      // "-[ ] `name`": the required task is created at once as an execution of the template
+      const child = this.addRowAt([...at, id], 'task', templateName, { templateName })
+      this.set({ collapsed: this.state.collapsed.filter((c) => c !== id && c !== child) })
+    }
     return id
+  }
+  /** Make the task `taskId` an execution of the template called `name`: its requirement rows are copied underneath, unfilled. */
+  applyTemplate(at: Scope, taskId: string, name: string): void {
+    const template = findTemplateByName(this.state.replica, name)
+    if (!template) { this.notify('error', `No template called “${name}”. Make one with a \`${name} row and put its requirements (- …) inside.`); return }
+    this.edit(instantiateTemplate(this.state.replica, [...this.state.view, ...at], taskId, template.row.id, this.now()))
+    this.set({ collapsed: this.state.collapsed.filter((c) => c !== taskId) })
   }
   /** The closest resource-bank row on the path `at` (relative to the view), if any. */
   nearestBank(at: Scope): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
@@ -533,6 +596,192 @@ export class App {
       if (row?.kind === 'resource' && row.resource) return row as TaskView & { resource: NonNullable<TaskView['resource']> }
     }
     return null
+  }
+  /** The row `at` points at (relative to the view), if any. */
+  rowAt(at: Scope): TaskView | null {
+    const id = at[at.length - 1]
+    if (!id) return null
+    return view(this.state.replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find((t) => t.id === id) ?? null
+  }
+  /**
+   * The bank an allocation added under `at` draws from, its parent context: the nearest bank above it; otherwise,
+   * under an allocation requirement, the first bank in the replica of the resource the requirement names (or, when
+   * it names none, whose unit matches); otherwise the first bank anywhere when there is exactly one.
+   */
+  bankFor(at: Scope, unit?: string): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
+    const above = this.nearestBank(at)
+    if (above) return above
+    const banks = this.banks().map(({ row }) => row)
+    const parent = this.rowAt(at)
+    const req = parent?.kind === 'requirement' ? parent.requirement : undefined
+    if (req?.capability === 'allocation') {
+      const match = banks.find((b) => (req.resource ? b.resource.type === req.resource : unit && unit !== 'unit' ? b.resource.unit === unit : false))
+      if (match) return match
+    }
+    return banks.length === 1 ? (banks[0] as TaskView & { resource: NonNullable<TaskView['resource']> }) : null
+  }
+  /** Resource banks anywhere in the replica, with their paths. */
+  banks(): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
+    const out: Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> = []
+    const walk = (path: Scope) => {
+      const node = view(this.state.replica, path)
+      if (!node) return
+      for (const row of node.tasks) {
+        if (row.kind === 'resource' && row.resource) out.push({ row: row as TaskView & { resource: NonNullable<TaskView['resource']> }, path })
+        if (row.childCount) walk([...path, row.id])
+      }
+    }
+    walk([])
+    return out
+  }
+  /** Banks visible from the current view: those above it (the context) plus those at this level. */
+  contextBanks(): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
+    const here = this.state.view
+    return this.banks().filter(({ path }) => path.length <= here.length && path.every((p, i) => here[i] === p))
+  }
+  /**
+   * Peers in the context of the viewed node: the account server ("fos") with what it registered on the last sync
+   * (`SERVER_CAPABILITIES` until then), the node's members with the capability rows this node's owner exposes to each
+   * (editable here by the owner), and devices attached here (a direct-connected one is reachable `direct`).
+   */
+  contextPeers(): ContextPeer[] {
+    const peers: ContextPeer[] = []
+    const session = this.state.session
+    const me = this.state.replica.meta.peerId
+    const node = this.currentView()
+    const nameOf = (id: string) => (id.startsWith('user:') ? id.slice(5) : id.slice(0, 8))
+    if (session?.kind === 'user') {
+      const id = this.state.replica.meta.serverPeerId ?? `user:${session.username}`
+      const online = this.transport() === 'account' && this.state.connection !== 'offline'
+      peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked })
+    }
+    for (const m of node?.members ?? []) {
+      if (m.peerId === me || peers.some((x) => x.id === m.peerId)) continue
+      peers.push({ id: m.peerId, name: m.name ?? nameOf(m.peerId), online: this.isOnline(m.peerId), capabilities: [...m.capabilities], disabled: [...(m.disabled ?? [])], accepts: [...(m.accepts ?? [])], isAccount: m.peerId.startsWith('user:'), member: true })
+    }
+    const directPeer = this.state.direct?.phase === 'connected' ? this.state.replica.meta.serverPeerId ?? null : null
+    for (const p of node?.peers ?? []) {
+      if (p === me) continue
+      const known = peers.find((x) => x.id === p)
+      if (known) { if (p === directPeer && !known.capabilities.includes('direct')) known.capabilities.push('direct'); continue }
+      peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false })
+    }
+    return peers
+  }
+  /** Every capability a peer row can carry, for the owner's "add" control. */
+  allCapabilities(): Capability[] { return [...CAPABILITIES] }
+  /** Owner side: the capability rows under the peer `peerId` on the viewed node: `to` (granted, and which are switched off) and `from` (accepted). */
+  setPeerCapabilities(peerId: string, capabilities: Capability[], disabled: Capability[], accepts?: Capability[]): void {
+    if (!this.canApprove()) { this.notify('error', 'Only the owner of this node (or a member who may approve) changes what peers get here.'); return }
+    this.edit(setMemberCapabilitiesAt(this.state.replica, this.state.view, peerId, capabilities, disabled, this.now(), accepts))
+  }
+  /** This device's policy towards the account server (unless fos.config.toml fixed it). Turning `from: read` on syncs at once. */
+  setServerPolicy(policy: PeerPolicy): void {
+    if (this.state.policyLocked) { this.notify('error', 'This policy is set in fos.config.toml ([server] to / from); edit the file to change it.'); return }
+    const before = this.state.policy
+    this.set({ policy: { to: [...new Set(policy.to)], from: [...new Set(policy.from)] } })
+    this.savePrefs()
+    if (!before.from.includes('read') && policy.from.includes('read')) void this.syncNow('policy')
+    if (!before.to.includes('autopush') && policy.to.includes('autopush')) this.scheduleSync()
+  }
+  /** May this device submit proposals to the account (send rows, market proposals)? `to: edit` in its policy. */
+  mayPropose(): boolean { return this.state.policy.to.includes('edit') }
+  /** Does this device read the requests (proposals) addressed to it? `from: read-requests` in its policy. */
+  readsRequests(): boolean { return this.state.policy.from.includes('read-requests') }
+  /** Owner side: a peer row for another account on the viewed node, starting with `edit` (so it may send proposals here, e.g. allocation bins). */
+  addPeerHere(username: string): void {
+    const name = username.trim().replace(/^@/, '')
+    if (!name) return
+    if (!this.canApprove()) { this.notify('error', 'Only the owner of this node adds peers to it.'); return }
+    this.edit(addMemberAt(this.state.replica, this.state.view, `user:${name}`, name, ['edit'], this.now()))
+    this.notify('info', `@${name} is a member here: they can propose on this node once they sync. Add or switch off capabilities on their row.`)
+  }
+  /** Owner side: drop a peer row (and everything it was granted) from the viewed node. */
+  removePeerHere(peerId: string): void {
+    if (!this.canApprove()) return
+    this.edit(removeMemberAt(this.state.replica, this.state.view, peerId, this.now()))
+  }
+  /** Nodes of other accounts this account can send proposals to: market results in the tree (ref rows with an owner), one per node. */
+  knownListings(): Array<{ owner: string; aliasId: string; title: string }> {
+    const out: Array<{ owner: string; aliasId: string; title: string }> = []
+    const walk = (path: Scope) => {
+      const node = view(this.state.replica, path)
+      if (!node) return
+      for (const row of node.tasks) {
+        if (row.kind === 'ref' && row.refOwner && row.refId && !out.some((l) => l.owner === row.refOwner && l.aliasId === row.refId)) out.push({ owner: row.refOwner, aliasId: row.refId, title: row.title })
+        if (row.childCount) walk([...path, row.id])
+      }
+    }
+    walk([])
+    return out
+  }
+  /**
+   * Send a row to another account as a proposed transaction: the row and its requirement, allocation, task and comment
+   * children go as one proposal on the target node (an allocation bin: what they must fill, and what they receive).
+   * The receiver sees it in that node's link panel and approves it to take the rows in.
+   */
+  async sendRowTo(at: Scope, row: TaskView, owner: string, aliasId: string): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account to send rows to other accounts.'); this.openModal('connect'); return }
+    if (!this.mayPropose()) { this.notify('error', 'This device does not submit proposals (policy towards fos: add "submit proposals" under "to").'); return }
+    const binId = `${row.id}-${session.username}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)
+    const rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }> = [
+      { kind: row.kind === 'task' ? 'task' : row.kind === 'note' ? 'note' : 'plain', text: row.title || 'allocation bin', id: binId }
+    ]
+    for (const child of view(this.state.replica, [...this.state.view, ...at, row.id])?.tasks ?? []) {
+      if (child.kind === 'requirement' && child.requirement) { const { satisfied: _s, summary: _m, ...requirement } = child.requirement; rows.push({ kind: 'requirement', text: child.title, data: { requirement }, under: binId }) }
+      else if (child.kind === 'allocation' && child.allocation) rows.push({ kind: 'allocation', text: child.title, data: { allocation: child.allocation }, under: binId })
+      else if (child.kind === 'task' || child.kind === 'plain' || child.kind === 'comment' || child.kind === 'note') rows.push({ kind: child.kind, text: child.title, under: binId })
+    }
+    try {
+      await submitMarketProposal(session, owner, aliasId, rows)
+      this.notify('info', `Sent to @${owner} as a proposal with ${rows.length - 1} row${rows.length === 2 ? '' : 's'} inside; they approve it to take it in.`)
+    } catch (error) {
+      this.notify('error', `Could not send: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  /** Requirements in the viewed subtree assigned to the peer `name` ("-@name …"), with the task they belong to. */
+  assignmentsTo(name: string): Array<{ at: Scope; row: TaskView; task: TaskView | null }> {
+    const out: Array<{ at: Scope; row: TaskView; task: TaskView | null }> = []
+    const walk = (at: Scope, parent: TaskView | null) => {
+      const node = view(this.state.replica, [...this.state.view, ...at])
+      if (!node) return
+      for (const row of node.tasks) {
+        if (row.kind === 'requirement' && row.requirement?.capability === 'peer' && row.requirement.peer === name) out.push({ at, row, task: parent })
+        if (row.childCount) walk([...at, row.id], row)
+      }
+    }
+    walk([], null)
+    return out
+  }
+  /** Who this device acts as when it confirms: the account username, else the device name. */
+  actorName(): string { return this.state.session?.username ?? this.state.deviceName }
+  /**
+   * Hand a requirement to the peer that registered its capability. search: a query row with the requirement's text
+   * is placed inside and run (filling it); market: the task is listed and the listing recorded as the supply.
+   */
+  async askPeerAt(at: Scope, req: TaskView): Promise<void> {
+    const r = req.requirement
+    if (!r) return
+    if (r.capability === 'search') {
+      const inside = view(this.state.replica, [...this.state.view, ...at, req.id])?.tasks ?? []
+      let query = inside.find((q) => q.kind === 'query')
+      if (!query) {
+        const id = this.addRowAt([...at, req.id], 'query', req.title || 'search', { extras: { query: {} } })
+        query = view(this.state.replica, [...this.state.view, ...at, req.id])?.tasks.find((q) => q.id === id)
+      }
+      if (query) await this.runQueryAt([...at, req.id], query)
+      this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
+      return
+    }
+    if (r.capability === 'market') {
+      const taskId = at[at.length - 1]
+      if (!taskId) { this.notify('error', 'Market requirements go under a task; the task is what gets listed.'); return }
+      this.setMarketAtRow(at.slice(0, -1), taskId, true)
+      if (this.state.session?.kind === 'user') this.edit(addSupply(this.state.replica, [...this.state.view, ...at], req.id, { capability: 'market', by: 'fos', ref: taskId }, this.now()))
+      return
+    }
+    this.notify('error', `No peer handles “${r.capability}” yet.`)
   }
   /** Resource banks and allocations anywhere in the replica, for picking an allocation to supply. */
   allocations(): Array<{ row: TaskView; path: Scope }> {
@@ -549,8 +798,8 @@ export class App {
     return out
   }
   /** Supply a requirement: a confirmation by this user, a choice, or a reference to an allocation/query row. */
-  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: 'confirmation' | 'choice' | 'search' | 'allocation'; ref?: string; choice?: number }): void {
-    if (supply.capability === 'confirmation' && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
+  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: CapabilityKind; ref?: string; choice?: number }): void {
+    if ((supply.capability === 'confirmation' || supply.capability === 'peer') && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
     const by = this.state.session?.username ?? this.state.deviceName
     this.edit(addSupply(this.state.replica, [...this.state.view, ...at], requirementId, { ...supply, by }, this.now()))
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirementId) })
@@ -601,6 +850,7 @@ export class App {
     const session = this.state.session
     const market = this.state.market
     if (!session || session.kind !== 'user' || !market) return
+    if (!this.mayPropose()) { this.notify('error', 'This device does not submit proposals (policy towards fos: add "submit proposals" under "to").'); return }
     const rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }> = []
     if (comment.trim()) rows.push({ kind: 'comment', text: comment.trim() })
     for (const s of supplies) {
@@ -638,10 +888,16 @@ export class App {
     const created = this.addRowAt(at, 'plain', '', { position: { relativeTo: id, position: 'below' } })
     this.set({ selected: [...at, created] })
   }
-  /** Ctrl+Shift+Enter: a blank row inside `id`, selected for typing. */
-  addRowInside(at: Scope, id: string): void {
-    const created = this.addRowAt([...at, id], 'plain', '')
+  /** Ctrl+Shift+Enter: a blank row inside `id` (plain, or a comment from the menu), selected for typing. */
+  addRowInside(at: Scope, id: string, kind: 'plain' | 'comment' = 'plain'): void {
+    const created = this.addRowAt([...at, id], kind, kind === 'comment' ? ' ' : '')
     this.set({ selected: [...at, id, created], collapsed: this.state.collapsed.filter((c) => c !== id) })
+  }
+  /** The blank row at the top of the view was typed into: a row of the parsed kind becomes the first row here. */
+  addRowAtTop(parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): string | null {
+    const first = this.currentView()?.tasks[0]
+    const created = this.addRowAt([], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, templateName: parsed.templateName, ...(first ? { position: { relativeTo: first.id, position: 'above' as const } } : {}) })
+    return this.currentView()?.tasks.some((t) => t.id === created) ? created : null
   }
   setDoneAt(at: Scope, id: string, done: boolean): void {
     this.edit(setTaskDone(this.state.replica, [...this.state.view, ...at], id, done, this.now()))
@@ -752,9 +1008,9 @@ export class App {
   deleteTaskAt(at: Scope, taskId: string): void {
     this.edit(deleteTask(this.state.replica, [...this.state.view, ...at], taskId, this.now()))
   }
-  /** A blank/plain row typed with a data prefix (`!` requirement, `?` query, `@calendar` bank, `+1h` allocation) becomes a row of that kind in its place. */
-  convertPlainRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'> }): void {
-    const created = this.addRowAt(at, parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, position: { relativeTo: id, position: 'below' } })
+  /** A blank/plain row typed with a data prefix (`-` requirement, `?` query, `@calendar` bank, `$ 50` allocation, `` ` `` template) becomes a row of that kind in its place. */
+  convertPlainRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): void {
+    const created = this.addRowAt(at, parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, templateName: parsed.templateName, position: { relativeTo: id, position: 'below' } })
     const madeIt = !!view(this.state.replica, [...this.state.view, ...at])?.tasks.some((t) => t.id === created)
     if (!madeIt) return // e.g. an allocation outside a bank: the row stays plain with its text
     this.deleteTaskAt(at, id)
