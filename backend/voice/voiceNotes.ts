@@ -102,6 +102,15 @@ export async function voiceNoteFromAudio(deps: VoiceDeps, audio: Buffer, mimeTyp
   return { transcript, ...organized, summary: organized.summary || summary }
 }
 
+/** Accounting must never take the request (or the process) down: log and carry on. */
+async function recordSafely(usage: VoiceUsage, userId: number, entry: Parameters<VoiceUsage['record']>[1]): Promise<void> {
+  try {
+    await usage.record(userId, entry)
+  } catch (error) {
+    console.error('voice note usage could not be recorded:', error instanceof Error ? error.message : error)
+  }
+}
+
 /** Express handler; the raw body is the audio (see express.raw in index.ts). */
 export function createVoiceNoteHandler(deps: VoiceDeps, usage?: VoiceUsage) {
   return async (req: Request, res: Response): Promise<Response> => {
@@ -112,13 +121,18 @@ export function createVoiceNoteHandler(deps: VoiceDeps, usage?: VoiceUsage) {
     const mimeType = (req.header('content-type') ?? 'audio/webm').split(';')[0] as string
     let user: { id: number; paying: boolean } | null = null
     if (usage) {
-      user = await usage.userOf(req)
-      if (!user) return res.status(401).json({ error: 'Unauthorized' })
-      if (!user.paying) {
-        const spent = await usage.spent(user.id)
-        if (spent >= usage.budgetUsd) {
-          return res.status(402).json({ error: `Voice notes have used up the free budget ($${usage.budgetUsd.toFixed(2)}). Subscribe to keep transcribing.`, spentUsd: spent, budgetUsd: usage.budgetUsd })
+      try {
+        user = await usage.userOf(req)
+        if (!user) return res.status(401).json({ error: 'Unauthorized' })
+        if (!user.paying) {
+          const spent = await usage.spent(user.id)
+          if (spent >= usage.budgetUsd) {
+            return res.status(402).json({ error: `Voice notes have used up the free budget ($${usage.budgetUsd.toFixed(2)}). Subscribe to keep transcribing.`, spentUsd: spent, budgetUsd: usage.budgetUsd })
+          }
         }
+      } catch (error) {
+        console.error('voice note budget check failed:', error instanceof Error ? error.message : error)
+        return res.status(500).json({ error: 'could not check the voice-note budget' })
       }
     }
     const started = Date.now()
@@ -126,11 +140,11 @@ export function createVoiceNoteHandler(deps: VoiceDeps, usage?: VoiceUsage) {
     try {
       const note = await voiceNoteFromAudio(deps, audio, mimeType)
       const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
-      if (usage && user) await usage.record(user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: audio.length, clusters: note.clusters.length })
+      if (usage && user) await recordSafely(usage, user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: audio.length, clusters: note.clusters.length })
       return res.json({ ...note, cost: { usd: cost.usd, tokens: cost.tokens } })
     } catch (error) {
       const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
-      if (usage && user && cost.usd > 0) await usage.record(user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: audio.length, clusters: 0 })
+      if (usage && user && cost.usd > 0) await recordSafely(usage, user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: audio.length, clusters: 0 })
       console.error('voice note failed:', error instanceof Error ? error.message : error)
       return res.status(502).json({ error: `transcription failed: ${error instanceof Error ? error.message : String(error)}` })
     }
@@ -251,8 +265,12 @@ export function openAiVoiceDeps(): VoiceDeps {
   }
 }
 
-/** Usage accounting on Prisma: one ToolUseModel row per voice note (toolName "voice-note", cost in metadata.usd). */
-export function prismaVoiceUsage(prisma: { userModel: any; toolUseModel: any }, budgetUsd = Number(process.env.VOICE_FREE_BUDGET_USD ?? 1)): VoiceUsage {
+/**
+ * Usage accounting on Prisma: one TokenTransactionModel debit per voice note (description
+ * "Voice note", USD in metadata). ToolUseModel cannot be used: its toolUseId is a foreign
+ * key to a bid session.
+ */
+export function prismaVoiceUsage(prisma: { userModel: any; tokenTransactionModel: any }, budgetUsd = Number(process.env.VOICE_FREE_BUDGET_USD ?? 1)): VoiceUsage {
   return {
     budgetUsd,
     async userOf(req) {
@@ -264,15 +282,16 @@ export function prismaVoiceUsage(prisma: { userModel: any; toolUseModel: any }, 
       return { id: user.id, paying }
     },
     async spent(userId) {
-      const rows: Array<{ metadata: unknown }> = await prisma.toolUseModel.findMany({ where: { callerUserId: userId, toolName: 'voice-note' }, select: { metadata: true } })
+      const rows: Array<{ metadata: unknown }> = await prisma.tokenTransactionModel.findMany({ where: { userId, type: 'debit', description: { startsWith: 'Voice note' } }, select: { metadata: true } })
       return rows.reduce((sum, r) => sum + Number((r.metadata as { usd?: unknown })?.usd ?? 0), 0)
     },
     async record(userId, entry) {
       const { randomUUID } = await import('node:crypto')
-      await prisma.toolUseModel.create({ data: {
-        toolUseId: randomUUID(), callerUserId: userId, toolName: 'voice-note', toolDescription: 'Voice note transcription and clustering',
-        status: 'completed', duration: Math.round(entry.seconds * 1000), tokenCost: entry.tokens, completedAt: new Date(),
-        inputParameters: { bytes: entry.bytes }, outputResult: { clusters: entry.clusters }, metadata: { usd: entry.usd, tokens: entry.tokens }
+      await prisma.tokenTransactionModel.create({ data: {
+        transactionId: randomUUID(), userId, type: 'debit', amount: -Math.round(entry.tokens),
+        description: `Voice note (${entry.clusters} cluster${entry.clusters === 1 ? '' : 's'}, ${(entry.bytes / 1024).toFixed(0)} KB audio)`,
+        balanceBefore: 0, balanceAfter: 0,
+        metadata: { kind: 'voice-note', usd: entry.usd, tokens: entry.tokens, seconds: entry.seconds, bytes: entry.bytes, clusters: entry.clusters }
       } })
     }
   }

@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { chunkText, createVoiceNoteHandler, summarizeHierarchically, voiceNoteFromAudio, type VoiceDeps, type VoiceUsage } from './voiceNotes'
+import { chunkText, createVoiceNoteHandler, prismaVoiceUsage, summarizeHierarchically, voiceNoteFromAudio, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 function deps(overrides: Partial<VoiceDeps> = {}): VoiceDeps & { calls: string[] } {
   const calls: string[] = []
@@ -75,4 +75,24 @@ test('free budget: non-paying users are cut off at the budget, paying users are 
   await call(false); expect(sent.status).toBe(200); expect(sent.body.cost.usd).toBeCloseTo(0.08); expect(records).toEqual([{ userId: 7, usd: 0.08 }])
   await call(false); expect(sent.status).toBe(402); expect(sent.body.error).toMatch(/free budget/); expect(records).toHaveLength(1)
   await call(true); expect(sent.status).toBe(200); expect(records).toHaveLength(2)
+})
+
+test('prisma usage: paying detection, spend summed from voice-note debits, records as token transactions', async () => {
+  const created: any[] = []
+  const prisma = {
+    userModel: { async findUnique({ where }: any) { return where.user_name === 'free@x' ? { id: 1, subscription_status: '', role: 'user' } : where.user_name === 'pro@x' ? { id: 2, subscription_status: 'active', role: 'user' } : null } },
+    tokenTransactionModel: {
+      async findMany({ where }: any) { expect(where.type).toBe('debit'); return where.userId === 1 ? [{ metadata: { usd: 0.4 } }, { metadata: { usd: 0.35 } }, { metadata: {} }] : [] },
+      async create({ data }: any) { created.push(data) }
+    }
+  }
+  const usage = prismaVoiceUsage(prisma, 1)
+  expect(await usage.userOf({ claims: { username: 'free@x' } } as any)).toEqual({ id: 1, paying: false })
+  expect(await usage.userOf({ claims: { username: 'pro@x' } } as any)).toEqual({ id: 2, paying: true })
+  expect(await usage.userOf({ claims: {} } as any)).toBeNull()
+  expect(await usage.spent(1)).toBeCloseTo(0.75)
+  await usage.record(1, { usd: 0.01, tokens: 1234, seconds: 3.2, bytes: 8000, clusters: 2 })
+  expect(created[0]).toMatchObject({ userId: 1, type: 'debit', amount: -1234, metadata: { kind: 'voice-note', usd: 0.01 } })
+  expect(created[0].description).toMatch(/^Voice note \(2 clusters/)
+  expect(typeof created[0].transactionId).toBe('string')
 })
