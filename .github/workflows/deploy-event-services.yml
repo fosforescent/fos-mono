@@ -138,7 +138,7 @@ jobs:
 
       - name: Deploy with Docker Compose
         run: |
-          cd event-services
+          cd backend/event-services
           
           # Pull latest images
           docker compose pull || true
