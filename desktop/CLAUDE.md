@@ -10,29 +10,28 @@ The desktop directory contains the Tauri-based desktop and mobile application fo
 - `src-tauri/Cargo.toml` - Rust dependencies
 - `src-tauri/capabilities/default.json` - Permission capabilities
 
-### Rust Backend (`src-tauri/src/`)
-- `lib.rs` - Main Tauri application with commands:
-  - **Directory Navigation:**
-    - `get_current_directory` - Get current working directory
-    - `set_directory` - Change to a directory
-    - `get_directory_contents` - List directory entries with .fos detection
-    - `navigate_up` - Navigate to parent directory
-    - `get_home_directory` - Get user's home directory
-  - **.fos Directory Operations:**
-    - `check_fos_directory` - Check for .fos directory (with ~/.fos fallback)
-    - `read_fos_config` - Read .fos/config.json if present
-    - `list_fos_files` - List files in .fos directory
-    - `get_target_directory` - Get the directory passed via FOS_TARGET_DIR
-    - `get_fos_directory` - Get the active .fos directory path
-    - `set_fos_directory` - Set the active .fos directory path
-    - `init_fos_directory` - Create a new .fos directory with config
-  - **FosStore Operations:**
-    - `read_fos_store` - Read main.yml/context file from .fos
-    - `write_fos_store` - Write FosStore data to .fos
-    - `get_app_init_info` - Get full init info (target dir, fos dir, store content)
-  - **Auth:**
-    - `open_auth_url` - Open URL in system browser for auth
-- `main.rs` - Application entry point
+### One binary, two modes (`src-tauri/src/`)
+`fos` is the Tauri GUI *and* a Rust CLI/REPL over the same context directory and `.fos/` state (design: `docs/sync.md`, "The `fos` binary"):
+
+```
+fos                 GUI for your account      (context ~, state ~/.fos)
+fos <dir>           GUI for a project         (nearest fos.config.toml, state <dir>/.fos)
+fos [dir] run       sync, print the tree, serve local devices/agents (peer-sync, MCP, WebRTC relay, events)
+fos [dir] repl      interactive shell
+fos [dir] ls | add "…" | done <id> | open <id> | status | sync | approve <id> | reject <id> | attach <token> | detach | init | reset
+fos login           home context: browser sign-in (SSO-capable device flow) | --token <connect token> | --password
+```
+
+- `main.rs` - clap entry: resolves the context (`fos <dir>` or `~`), dispatches to the GUI (`app_lib::run()` with `FOS_TARGET_DIR`, `FOS_DIR`, `FOS_SERVER`, `FOS_HOME_CONTEXT`) or the CLI
+- `core.rs` - QuickJS (`rquickjs`, `parallel` feature) host for the embedded sync core `js/fos-core.js` (built from `shared/sync/embed.ts` + `js/prelude.js` shims); Rust never reimplements merge/sync semantics, it passes JSON strings through `fosCore.*`
+- `project.rs` - context resolution: `fos.config.toml` discovery (walk up), `[attach]`/`[serve]` config (`toml`), git branch from `.git/HEAD`, `.fos/` files (`device.json`, `session.json`, `replicas/<branch>.json`, `.gitignore`), home mode = `~/.fos` (optional `~/.fos/config.toml` for the server; `FOS_API_URL` overrides)
+- `workspace.rs` - an open replica for the current branch + session; edits, `sync()` (first sync asks the account where the device attaches), branch switching, `status()`
+- `client.rs` - account HTTP (`ureq`): login, connect-token attach with approval polling, device login (`/auth/device/start|poll`), attachment, peer-sync, proposal decisions, detach
+- `local_server.rs` - `tiny_http` server: `/peer-sync` (served from the directory's replica), `/mcp` (JSON-RPC tools: list/add/done/rename/delete/sync_now/status), `/p2p/offer|answer` relay, `/status`, `/events?since=` long-poll
+- `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync status approve reject attach login branches`)
+- `lib.rs` - Tauri commands for the GUI. `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; plus the older directory navigation, `.fos` directory, FosStore, auth and WebRTC peer commands (`peer.rs`)
+
+Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. After changing `shared/sync`, rebuild the core bundle: `cd desktop && ../node_modules/.bin/esbuild ../shared/sync/embed.ts --bundle --format=iife --platform=browser --target=es2020 --outfile=src-tauri/js/fos-core.js --inject:src-tauri/js/prelude.js`. Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
 
 ### Frontend Integration (`frontend/tauri/`)
 - `api.ts` - TypeScript bindings for Tauri commands
@@ -49,6 +48,8 @@ The desktop directory contains the Tauri-based desktop and mobile application fo
 - **tauri-plugin-dialog** - File dialogs
 - **tauri-plugin-log** - Logging (dev only)
 - **tauri-plugin-deep-link** - URL scheme handling for auth callbacks
+- **rquickjs** - embedded JS engine for the sync core
+- **ureq / tiny_http / toml / clap / rustyline** - account client, local server, config, CLI, REPL
 - **dirs** - Home directory detection
 - **open** - Browser opening
 - **tokio** - Async runtime
@@ -170,9 +171,11 @@ The desktop app automatically detects and loads .fos directories:
 - **Tauri integration**: TypeScript bindings and React hook (`useTauri`)
 - **Peer connection dialog**: WebRTC setup with QR code exchange
 
+### ✅ Completed (continued)
+- **Online/offline transition**: the `web/` UI keeps a replica in webview localStorage, works offline, and merges with the account on login via `shared/sync` (three-way merge on the FosStore graph, CHOICE nodes for divergences, optional attachment to a single partition). See `docs/sync.md`.
+
 ### 🚧 In Progress
-- **Peer data sync**: WebRTC connection established but data transfer not implemented
-- **Online/offline transition**: No merge logic when going from offline to online
+- **Peer data sync**: WebRTC connection established but data transfer not implemented (can reuse `serveSync`/`completeSync` from `shared/sync`)
 
 ### ❌ Not Started
 - File watching for .fos changes
@@ -184,7 +187,8 @@ The desktop app automatically detects and loads .fos directories:
 
 ## TODOs
 - [ ] Implement data sync over WebRTC peer connection
-- [ ] Add merge conflict resolution when transitioning offline→online
+- [x] Add merge conflict resolution when transitioning offline→online (`shared/sync`, Choice nodes)
+- [ ] File-backed `ReplicaStorage` adapter writing the replica into `.fos/` (currently localStorage on all platforms)
 - [ ] Add file watching for .fos changes
 - [ ] Add proper CSP for production builds
 - [ ] Replace upscaled `src-tauri/app-icon.png` with real 1024×1024 artwork

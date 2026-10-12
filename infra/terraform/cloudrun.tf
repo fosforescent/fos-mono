@@ -151,6 +151,12 @@ resource "google_cloud_run_v2_service" "backend" {
         value = local.node_env[terraform.workspace]
       }
 
+      # Where the web app lives; the CLI device sign-in (fos login) sends the browser here (?device=CODE)
+      env {
+        name  = "WEB_URL"
+        value = var.environment == "prod" ? "https://fosforescent.com" : "https://dev.fosforescent.com"
+      }
+
       env {
         name  = "GCP_PROJECT_ID"
         value = var.gcp_project_id

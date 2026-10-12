@@ -34,9 +34,11 @@ The primary goal is to implement the evaluation mechanism that allows:
 - **backend/**: Node.js/Express API server with Prisma ORM and PostgreSQL
 - **frontend/**: React/Vite SPA with TypeScript and Tailwind CSS
 - **shared/**: Core graph implementation and type definitions shared between frontend and backend
+- **shared/sync/**: Offline/online sync on the FosStore graph (identity-keyed three-way merge, CHOICE nodes for divergences, peer-link protocol); see `docs/sync.md`
+- **web/**: Vanilla-TS task UI used by the browser and wrapped by the Tauri desktop/mobile app; offline-first via localStorage replica
 - **prisma/**: Database schema and migrations
 - **infra/**: Infrastructure configuration including Terraform, Docker Compose, and E2E tests
-- **cli/**: Command-line interface tools
+- **desktop/**: Tauri shell = the `fos` binary: GUI mode and a Rust CLI/REPL mode over the same `.fos/` state (`fos <dir>` = project context, `fos` = home/account context); see `desktop/CLAUDE.md` and `docs/sync.md`
 - **docs/**: Documentation and architecture guides
 
 ### Core Graph System
@@ -167,7 +169,7 @@ Uses multiple database systems:
 
 ## Development Notes
 
-- The graph system uses cryptographic hashing (CID) for content addressing
+- The graph system uses cryptographic hashing (CID) for content addressing; cids carry a format version (`v1-…`) and older formats are migrated on load, see `docs/cid-versioning.md`
 - Nodes are immutable - mutations create new nodes
 - The system supports both local and planned distributed operation via DHT
 - Vector embeddings are stored in Qdrant for high-performance semantic search
@@ -228,6 +230,7 @@ Each major directory in this monorepo contains its own `CLAUDE.md` file with det
 - `prisma/CLAUDE.md` - Database schema and management
 - `shared/dag-implementation/CLAUDE.md` - Core graph system
 - `shared/evaluation/CLAUDE.md` - Expression evaluation
+- `shared/sync/CLAUDE.md` - Offline/online sync core
 - `shared/mock/CLAUDE.md` - Example workflows and test data
 - `infra/CLAUDE.md` - Infrastructure, Docker, and E2E testing
 

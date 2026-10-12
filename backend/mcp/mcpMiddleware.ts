@@ -55,9 +55,14 @@ export class MCPExpressMiddleware {
 
   // Attach WebSocket server for MCP connections
   attachToServer(httpServer: HttpServer, path: string = '/mcp') {
-    this.wss = new WebSocketServer({
-      server: httpServer,
-      path: path
+    // noServer: the HTTP server is shared with the per-user WebSocket endpoint (ws.ts).
+    // With `{ server, path }` the ws library would answer every non-/mcp upgrade with 400.
+    const wss = new WebSocketServer({ noServer: true })
+    this.wss = wss
+    httpServer.on('upgrade', (request, socket, head) => {
+      const pathname = (request.url || '').split('?')[0]
+      if (pathname !== path) return
+      wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws, request))
     })
 
     this.wss.on('connection', (ws: WebSocket, request) => {

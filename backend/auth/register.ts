@@ -5,6 +5,7 @@ import { generateLinkToken, sendConfirmationEmail } from '../email/email'
 import { prisma } from '../prismaClient'
 
 import { FosStore, hashContent } from '@fosforescent/shared/dag-implementation/store'
+import { verifyCid } from '@fosforescent/shared/dag-implementation/cid'
 import { validateNodeDataToDB } from '../util'
 
 export const hashPassword = async (password: string) => {
@@ -71,7 +72,7 @@ export const postRegister = async (req: Request, res: Response) => {
 
     // Prepare new nodes for insertion
     const newEntries = Array.from(newStore.table.entries()).reduce((acc, [id, node]) => {
-      if (id !== hashContent(node)) {
+      if (!verifyCid(id, node)) {
         throw new Error("Hashes don't match")
       }
 

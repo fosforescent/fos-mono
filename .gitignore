@@ -261,3 +261,7 @@ terraform.rc
 *.mts.timestamp-*
 
 *.terraform.lock.hcl
+android-upload-key.jks
+
+# Local fos state (device identity, sessions, replicas)
+.fos/

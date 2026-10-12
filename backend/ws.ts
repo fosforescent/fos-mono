@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 
 import { WebSocketServer, WebSocket } from 'ws';
-import { addUserConnection } from './promptNotifications';
+import { addUserConnection, setSocketPeer } from './promptNotifications';
 import { addGroupConnection } from './groupEvents';
 import { prisma } from './prismaClient';
 
@@ -16,6 +16,13 @@ export const attachWs = (server: any) => {
     // Handle upgrades manually
     server.on('upgrade', (request: any, socket: any, head: any) => {
     console.log('Upgrade request received:', request.url);
+
+    // Other WebSocket servers (the MCP endpoint at /mcp) share this HTTP server and
+    // handle their own upgrades; only /ws/{jwt} (or /{jwt}) belongs to this one.
+    const upgradePath: string = (request.url || '').split('?')[0]
+    if (upgradePath.startsWith('/mcp')) {
+      return;
+    }
 
     try {
         const token = request.url?.split('/')[2];
@@ -83,6 +90,16 @@ export const attachWs = (server: any) => {
         ws.on('message', (message) => {
         try {
             console.log('Received message:', message.toString());
+            // Presence announcement from a device (see web/src/app.ts)
+            try {
+              const parsed = JSON.parse(message.toString()) as { type?: unknown; peerId?: unknown }
+              if (parsed.type === 'hello' && typeof parsed.peerId === 'string') {
+                setSocketPeer(ws, parsed.peerId)
+                return
+              }
+            } catch {
+              // not JSON: fall through
+            }
             ws.send(JSON.stringify({
             type: 'response',
             message: 'Message received',

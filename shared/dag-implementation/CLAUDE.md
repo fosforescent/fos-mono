@@ -105,6 +105,7 @@ Add methods:
 - **Result Caching**: Memoization of computed values
 
 #### Content Addressing
+- **Versioned cids**: `cid.ts` writes `v<N>-<digest>` and verifies legacy bare-hex (v0) rows with their own algorithm; `migrations.ts` holds the ordered format migrations and `migrateContext` rehashes a graph bottom-up. `FosStore` migrates older contexts on load (`store.migration`, `store.remapCid`). See `docs/cid-versioning.md` for how to add a format version.
 - **Deterministic Hashing**: Identical content produces identical CIDs
 - **Integrity Verification**: Content tampering detection
 - **Deduplication**: Automatic elimination of duplicate nodes

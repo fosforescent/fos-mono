@@ -163,6 +163,9 @@ export const getRefundCompleteActionNode = (store: FosStore) => generateConstruc
 
 export const getReviewActionNode = (store: FosStore) => generateConstructor(store, "REVIEW", { description: { content: 'Review Action Constructor' } }, [])
 export const getApproveActionNode = (store: FosStore) => generateConstructor(store, "APPROVE", { description: { content: 'Approve Action Constructor' } }, [])
+// Capability targets for link-node members (edges [CAPABILITY, <action>] on the member reference):
+// PROPOSE = may propose changes (a branch); APPROVE (above) = may merge proposals.
+export const getProposeActionNode = (store: FosStore) => generateConstructor(store, "PROPOSE", { description: { content: 'Propose Action Constructor - may propose changes to a link node' } }, [])
 
 
 
@@ -719,6 +722,8 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   // Actor primitives
   const actorNode = getActorNode(store)
   const capabilityNode = getCapabilityNode(store)
+  const proposeAction = getProposeActionNode(store)
+  const approveAction = getApproveActionNode(store)
   const effectNode = getEffectNode(store)
   const handlerNode = getHandlerNode(store)
 
@@ -896,6 +901,8 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     // Actor primitives
     actorNode,
     capabilityNode,
+    proposeAction,
+    approveAction,
     effectNode,
     handlerNode,
 
@@ -1066,6 +1073,8 @@ export type PrimitiveAliases = {
   // Actor primitives
   actorNode: FosNode,
   capabilityNode: FosNode,
+  proposeAction: FosNode,
+  approveAction: FosNode,
   effectNode: FosNode,
   handlerNode: FosNode,
 }

@@ -13,6 +13,10 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `email/` - Email service integration (Postmark)
 - `mcp/` - Model Context Protocol server and client implementations
 - `mcp/temporalMcpServer.ts` - Temporal MCP server for long-running task management
+- `util.ts` - `dbToStore`/`storeToDb`; loads migrate older cid formats, saves add only missing access links (the link table has no unique constraint, so re-creating links on every save used to duplicate them and slow every load)
+- `auth/deviceLogin.ts` - browser sign-in for a device without a browser (the `fos` CLI): `POST /auth/device/start` → code + verify URL, `GET /auth/device/poll`; the signed-in web app calls `GET|POST /user/data/device-login/:code[/approve|/deny]`; in-memory, 10-minute codes, grants a normal user JWT (so SSO in the web app signs the CLI in too)
+- `sync/peerInvites.ts` - invite tokens (`/user/data/peer-invite*`, public `/peer/connect*`) that grant scoped peer JWTs (`kind: 'peer'`, confined by `verifyJwt.ts` to peer-sync); table `PeerInviteModel`
+- `sync/peerSync.ts` - `POST/GET /user/data/peer-sync` (+ `/attachment`): user-group side of the offline/online sync (`shared/sync`, `docs/sync.md`); merges into the user's FosStore via `dbToStore`/`storeToDb`, serializes per user, nudges other devices over WebSocket (`sendToUser` in `promptNotifications.ts`)
 
 ### Graph System Integration
 - `qdrant.ts` - Qdrant vector database integration for semantic search  
@@ -103,6 +107,7 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `POSTMARK_API_TOKEN` - Email service token
 - `QDRANT_URL` - Qdrant vector database URL (default: http://localhost:6333)
 - `QDRANT_API_KEY` - Qdrant API key (optional for local development)
+- `WEB_URL` (falls back to `FRONTEND_URL`) - where the web app lives; used for the device sign-in verify URL
 
 ## Testing
 - Unit tests with Jest framework

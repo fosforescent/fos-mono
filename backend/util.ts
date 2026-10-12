@@ -12,7 +12,8 @@ import {
 
 import { UserModel, FosNodeModel, PrismaClient } from "@prisma/client";
 
-import { FosStore, hashContent } from "@fosforescent/shared/dag-implementation/store";
+import { FosStore } from "@fosforescent/shared/dag-implementation/store";
+import { verifyCid } from "@fosforescent/shared/dag-implementation/cid";
 import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
 
 import { Prisma } from '@prisma/client';
@@ -91,8 +92,7 @@ export const dbToStore = async (
 
   const table = nodesToAdd.reduce((acc, node) => {
 
-    const hashed = hashContent(validateNodeData(node.data))
-    if (node.cid !== hashed) {
+    if (!verifyCid(node.cid, validateNodeData(node.data))) {
       throw new Error("Hashes don't match")
     }
 
@@ -156,16 +156,31 @@ export const dbToStore = async (
       await Promise.all(childrenPromises)
 
     }
-    if (!newStore.table.has(node.cid)) {
-      const newStoreNode = newStore.create(nodeData)
+    // Rows may be in an older cid format than the (migrated) store: follow the migration mapping.
+    if (!newStore.table.has(newStore.remapCid(node.cid))) {
+      const remapped: FosNodeContent = {
+        ...nodeData,
+        children: nodeData.children.map(([a, b]) => [newStore.remapCid(a), newStore.remapCid(b)] as [string, string])
+      }
+      newStore.create(remapped)
     }
   }
 
 
 
-  await getChildNodesHelper(user.fosNode)
+  // The first query already loaded every node linked to the user; the recursive
+  // walk (one query per node) is only needed when the root is not among them.
+  if (!newStore.table.has(newStore.remapCid(user.fosNode.cid))) {
+    await getChildNodesHelper(user.fosNode)
+  }
 
-  const rootNodeId = newStore.create(validateNodeData(user.fosNode.data)).cid
+  const rootContent = validateNodeData(user.fosNode.data)
+  const rootNodeId = newStore.table.has(newStore.remapCid(user.fosNode.cid))
+    ? newStore.remapCid(user.fosNode.cid)
+    : newStore.create({
+        ...rootContent,
+        children: rootContent.children.map(([a, b]) => [newStore.remapCid(a), newStore.remapCid(b)] as [string, string])
+      }).cid
 
   newStore.rootNodeId = rootNodeId
   newStore.trellisData = trellisData
@@ -240,8 +255,7 @@ export const storeToDb = async (
   })
 
   existingNodes.forEach(n => {
-    const hashed = store.hash(validateNodeData(n.data))
-    if (n.cid !== hashed) {
+    if (!verifyCid(n.cid, validateNodeData(n.data))) {
       throw new Error("Hashes don't match")
     }
   })
@@ -258,7 +272,7 @@ export const storeToDb = async (
   const linksToEnsure: string[] = []
 
   store.table.entries().forEach(([id, node]: [string, FosNodeContent]) => {
-    if (id !== hashContent(node)) {
+    if (!verifyCid(id, node)) {
       throw new Error("Hashes don't match")
     }
 
@@ -282,11 +296,20 @@ export const storeToDb = async (
     })
   }
 
+  // Only add links that do not exist yet: the table has no unique constraint, so
+  // re-creating them on every save would duplicate every link (and slow every load).
   const uniqueLinksToEnsure = [...new Set(linksToEnsure)]
+  const alreadyLinked = new Set(
+    (await prisma.fosNodeUserAccessLinkModel.findMany({
+      where: { userId: user.id, fosNodeId: { in: uniqueLinksToEnsure } },
+      select: { fosNodeId: true }
+    })).map((l) => l.fosNodeId)
+  )
+  const linksToCreate = uniqueLinksToEnsure.filter((cid) => !alreadyLinked.has(cid))
 
-  if (uniqueLinksToEnsure.length > 0) {
+  if (linksToCreate.length > 0) {
     await prisma.fosNodeUserAccessLinkModel.createMany({
-      data: uniqueLinksToEnsure.map(fosNodeId => ({
+      data: linksToCreate.map(fosNodeId => ({
         fosNodeId,
         userId: user.id
       })),
@@ -298,12 +321,7 @@ export const storeToDb = async (
     where: { user_name: user.user_name },
     data: { 
       data: validateTrellisDataToDB(store.trellisData),
-      fosNodeId: store.rootNodeId,
-      FosNodeUserAccessLink: {
-        create: {
-          fosNodeId: store.rootNodeId
-        }
-      }
+      fosNodeId: store.rootNodeId
     }
   })
 
@@ -341,7 +359,7 @@ export const createSeedUser = async (prisma: PrismaClient, store: FosStore, user
   }
 
   const newEntries: ReduceResultArrayTerm[] = store.table.entries().reduce((acc: ReduceResultArrayTerm[], [id, node]: [string, FosNodeContent]) => {
-    if (id !== hashContent(node)) {
+    if (!verifyCid(id, node)) {
       throw new Error("Hashes don't match")
     }
 

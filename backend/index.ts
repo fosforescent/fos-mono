@@ -21,6 +21,9 @@ import { postContactMessage } from './email/contactMessage'
 
 import { getUserData, deleteUserData, postUserDataPartial, getNodeByCid, getNodesByCids, postSync, getChangesSince } from './data'
 import { getSuggest } from './suggest'
+import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, deleteAttachment } from './sync/peerSync'
+import { peerInviteHandlers } from './sync/peerInvites'
+import { deviceLoginHandlers } from './auth/deviceLogin'
 import {
   getMCPServers,
   getMCPServer,
@@ -262,6 +265,22 @@ app.post('/auth/check-username', slowDown({
 }), checkUsernameExists)
 app.put('/error', maxRequests(10), putError)
 
+// Device connection through an invite token (no session yet): claim, then poll for approval.
+app.post('/peer/connect', slowDown({
+  windowMs: 10 * 60 * 1000,
+  delayAfter: 10,
+  delayMs: (used) => (2 ** (used - 10)) * 500
+}), peerInviteHandlers.claimInvite)
+app.get('/peer/connect/:requestId', slowDown({
+  windowMs: 1 * 60 * 1000,
+  delayAfter: 120,
+  delayMs: (used) => 1.5 ** (used - 120)
+}), peerInviteHandlers.pollRequest)
+
+// Browser sign-in for a device without a browser (the fos CLI): start, then poll until approved in the web app.
+app.post('/auth/device/start', slowDown({ windowMs: 10 * 60 * 1000, delayAfter: 10, delayMs: (used) => (2 ** (used - 10)) * 500 }), deviceLoginHandlers.start)
+app.get('/auth/device/poll', slowDown({ windowMs: 1 * 60 * 1000, delayAfter: 120, delayMs: (used) => 1.5 ** (used - 120) }), deviceLoginHandlers.poll)
+
 dataRoutes.use(verifyJWTMiddleware)
 // dataRoutes.use(clientManagerMiddleware)
 dataRoutes.post('/', slowDown({
@@ -301,6 +320,34 @@ dataRoutes.get('/changes', slowDown({
   delayAfter: 100,
   delayMs: (used) => 1.5 ** (used - 100)
 }), getChangesSince)
+
+// Peer-link sync for the replicated task document (docs/sync.md, shared/sync).
+// Devices attach to the user group's document at a scope and exchange subtrees;
+// divergences become Choice nodes that any device can resolve.
+dataRoutes.post('/peer-sync', slowDown({
+  windowMs: 1 * 60 * 1000,
+  delayAfter: 120,
+  delayMs: (used) => 1.5 ** (used - 120)
+}), postPeerSync)
+
+dataRoutes.get('/peer-sync', slowDown({
+  windowMs: 1 * 60 * 1000,
+  delayAfter: 60,
+  delayMs: (used) => 1.5 ** (used - 60)
+}), getPeerSyncDoc)
+
+dataRoutes.get('/peer-sync/attachment', getPeerAttachment)
+dataRoutes.post('/peer-sync/proposals', postProposalDecision)
+dataRoutes.delete('/peer-sync/attachment', deleteAttachment)
+
+// Peer invites: the inviting user creates/approves; the invitee claims and polls without a session.
+dataRoutes.get('/device-login/:code', deviceLoginHandlers.describe)
+dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
+dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
+dataRoutes.post('/peer-invite', peerInviteHandlers.createInvite)
+dataRoutes.get('/peer-invite/requests', peerInviteHandlers.listRequests)
+dataRoutes.post('/peer-invite/:id/approve', peerInviteHandlers.approveRequest)
+dataRoutes.post('/peer-invite/:id/deny', peerInviteHandlers.denyRequest)
 
 
 protectedRoutes.use(slowDown({
