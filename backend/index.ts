@@ -26,7 +26,13 @@ import { createSearchHandlers } from './search/routes'
 import { vertexEmbed } from './search/rowIndex'
 import { peerInviteHandlers } from './sync/peerInvites'
 import { deviceLoginHandlers } from './auth/deviceLogin'
-import { createChannelsRouter, startChannels, stopChannels } from './channels'
+import { channelBus, createChannelsRouter, startChannels, stopChannels } from './channels'
+import { createIntegrationHandlers, createSmsInbound, prismaIntegrationDeps } from './integrations/routes'
+import { createMcpPeerHandlers, prismaMcpPeerDeps } from './integrations/mcpPeers'
+import { rowsDeps } from './integrations/store'
+import { MCPClient } from './mcp/mcpClient'
+import { getUserId } from './apiTokenAuth'
+import { afterSaveHooks } from './sync/peerSync'
 import { createVoiceNoteHandler, prismaVoiceUsage, voiceDepsFromEnv } from './voice/voiceNotes'
 import {
   getMCPServers,
@@ -352,7 +358,12 @@ dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
 // Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
 dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), prismaVoiceUsage(prisma)))
 // Semantic search over this account's rows (and market listings), market views and proposals (pgvector, Vertex embeddings)
-const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaPeerSyncDeps.loadStore, saveStore: prismaPeerSyncDeps.saveStore, withUserLock, notify: prismaPeerSyncDeps.notify })
+const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaPeerSyncDeps.loadStore, saveStore: prismaPeerSyncDeps.saveStore, withUserLock, notify: (userId, message) => {
+  prismaPeerSyncDeps.notify?.(userId, message)
+  // a proposal from another account also reaches the owner's linked phone
+  const by = typeof message.byPeerId === 'string' ? message.byPeerId : ''
+  if (message.type === 'sync_changed' && by.startsWith('user:')) void integrations.notifyUser(userId, `fos: new proposal from ${by.slice(5)}. Open the app to review it.`)
+} })
 dataRoutes.post('/search', searchHandlers.search)
 dataRoutes.post('/search/reindex', searchHandlers.reindex)
 dataRoutes.get('/market/node', searchHandlers.marketNode)
@@ -519,8 +530,56 @@ mcpRoutes.use(mcpHttpMiddleware)
 
 
 
+// Integration peers (OAuth sign-ins, the phone channel, MCP servers) and the handlers they provide; see backend/integrations/
+const storeDeps = { loadStore: prismaPeerSyncDeps.loadStore, saveStore: prismaPeerSyncDeps.saveStore, withUserLock, usernameOf: async (id: number) => (await prisma.userModel.findUnique({ where: { id }, select: { user_name: true } }))?.user_name ?? null }
+const smsAdapter = channelBus.adapter('sms')
+const integrationDeps = prismaIntegrationDeps(prisma, getUserId, {
+  complete: (system, user) => voiceDepsFromEnv().complete(system, user, false),
+  sms: smsAdapter?.configured() ? (to, text) => channelBus.send({ destination: 'sms', to, text }).then(() => undefined) : null,
+  rows: rowsDeps(storeDeps)
+})
+const integrations = createIntegrationHandlers(integrationDeps)
+const integrationRoutes = express.Router()
+integrationRoutes.use(verifyJWTMiddleware)
+integrationRoutes.get('/', (req, res) => void integrations.list(req, res))
+integrationRoutes.get('/:provider/start', (req, res) => void integrations.start(req, res))
+integrationRoutes.delete('/:provider', (req, res) => void integrations.disconnect(req, res))
+integrationRoutes.post('/phone', (req, res) => void integrations.phoneStart(req, res))
+integrationRoutes.post('/phone/verify', (req, res) => void integrations.phoneVerify(req, res))
+integrationRoutes.post('/llm', (req, res) => void integrations.llm(req, res))
+integrationRoutes.post('/repo/issue', (req, res) => void integrations.repoIssue(req, res))
+integrationRoutes.post('/calendar/event', (req, res) => void integrations.calendarEvent(req, res))
+app.use('/user/integrations', integrationRoutes)
+app.get('/integrations/:provider/callback', (req, res) => void integrations.callback(req, res))
+channelBus.onInbound(createSmsInbound(integrationDeps))
+
+// MCP peers: a server attached to a node runs its tools for "-tool" requirements under it
+const mcpPeers = createMcpPeerHandlers(prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (server, tool, input) => {
+  const client = new MCPClient({ endpoint: server.endpoint, credentials: server.credentials })
+  try {
+    await client.connect()
+    await client.initialize()
+    const result = await client.callTool(tool, { input })
+    return (result.content ?? []).map((c: any) => (typeof c?.text === 'string' ? c.text : JSON.stringify(c))).join('\n')
+  } finally {
+    await client.disconnect().catch(() => undefined)
+  }
+}))
+dataRoutes.get('/mcp-peers', (req, res) => void mcpPeers.list(req, res))
+dataRoutes.post('/mcp-peers/attach', (req, res) => void mcpPeers.attach(req, res))
+dataRoutes.post('/mcp-peers/run', (req, res) => void mcpPeers.run(req, res))
+if (process.env.MCP_LISTEN === 'true') {
+  // listen: after every save, run the open tool requirements under attached nodes (debounced per user)
+  const pending = new Map<number, ReturnType<typeof setTimeout>>()
+  afterSaveHooks.push((user, store) => {
+    const prev = pending.get(user.id)
+    if (prev) clearTimeout(prev)
+    pending.set(user.id, setTimeout(() => { pending.delete(user.id); void mcpPeers.runOpenToolRequests(user, store).catch((e) => console.error('[mcp] listener failed:', e)) }, 3000))
+  })
+}
+
 app.use('/user/data', dataRoutes)
-// Chat channels (WhatsApp webhook, Discord bot) bridged into this process; see backend/channels/
+// Chat channels (WhatsApp webhook, Discord bot, Twilio SMS) bridged into this process; see backend/channels/
 app.use('/channels', createChannelsRouter())
 app.use('/api/v1', apiRoutes)
 app.use('/admin', adminRoutes)

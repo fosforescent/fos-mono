@@ -154,9 +154,9 @@ export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'po
  * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
  * peer that registered that capability, or a `peer` (the named peer confirms the assignment).
  */
-export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer'
+export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
 /** Capabilities a peer can register with (shown as resource banks in the context panel). */
-export const PEER_CAPABILITIES: CapabilityKind[] = ['search', 'market', 'mail']
+export const PEER_CAPABILITIES: CapabilityKind[] = ['search', 'market', 'mail', 'llm', 'repo', 'tool']
 
 /** The primitive a row node is applied to, per kind ([rowNode, KIND]). */
 export function rowPrimitive(store: FosStore, kind: RowKind): string {
@@ -725,6 +725,9 @@ export function requirementSummary(req: NonNullable<FosDataContent['requirement'
     case 'market': return 'market'
     case 'mail': return 'mail'
     case 'peer': return req.peer ? `@${req.peer}` : 'peer'
+    case 'llm': return 'llm'
+    case 'repo': return req.repo ? `repo ${req.repo}` : 'repo'
+    case 'tool': return req.tool ? `tool ${req.tool}` : 'tool'
   }
 }
 
@@ -805,6 +808,9 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
       case 'task': return !!s.ref
       case 'market': return !!s.by
       case 'mail': return !!s.by
+      case 'llm': return !!s.by
+      case 'repo': return !!s.by
+      case 'tool': return !!s.by
       case 'peer': return !!s.by && (!req.peer || s.by === req.peer)
       case 'allocation': {
         if (!s.ref) return false
@@ -978,28 +984,34 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool']
+/**
+ * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
+ * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
+ */
+export const MCP_PEER_PREFIX = 'mcp:'
 /**
  * Integration peers: outside services a user can sign in with (SSO) that then provide capabilities to the tree and
  * consume some of ours. Listed at the device's root like other peers; the sign-in itself is not wired on the
  * server yet, so they show as not connected.
  */
-export type IntegrationPeer = { id: string; name: string; provides: Capability[]; consumes: Capability[] }
+export type IntegrationPeer = { id: string; name: string; kind: 'oauth' | 'platform' | 'channel'; provides: Capability[]; consumes: Capability[] }
 export const INTEGRATION_PEERS: IntegrationPeer[] = [
-  { id: 'github', name: 'GitHub', provides: ['repo', 'search'], consumes: ['read', 'edit'] },
-  { id: 'google', name: 'Google', provides: ['calendar', 'mail', 'search'], consumes: ['read', 'edit'] },
-  { id: 'anthropic', name: 'Anthropic', provides: ['llm', 'search'], consumes: ['read'] },
-  { id: 'openai', name: 'OpenAI', provides: ['llm', 'search'], consumes: ['read'] }
+  { id: 'github', name: 'GitHub', kind: 'oauth', provides: ['repo', 'search'], consumes: ['read', 'edit'] },
+  { id: 'google', name: 'Google', kind: 'oauth', provides: ['calendar', 'mail', 'search'], consumes: ['read', 'edit'] },
+  { id: 'discord', name: 'Discord', kind: 'oauth', provides: ['mail', 'relay'], consumes: ['read'] },
+  { id: 'stripe', name: 'Stripe', kind: 'platform', provides: ['market'], consumes: ['read'] },
+  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', provides: ['mail', 'relay'], consumes: ['read', 'edit'] }
 ]
 export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'relay']
-/** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market and mail services. */
-export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail']
+/** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market, mail and language-model services. */
+export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail', 'llm']
 /** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
 export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'submit proposals', approve: 'approve proposals', autopush: 'autopush',
   direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
-  calendar: 'calendar', llm: 'language model', repo: 'repositories'
+  calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1131,6 +1143,7 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'calendar': return p.calendarCapability.getId()
     case 'llm': return p.llmCapability.getId()
     case 'repo': return p.repoCapability.getId()
+    case 'tool': return p.toolCapability.getId()
   }
 }
 

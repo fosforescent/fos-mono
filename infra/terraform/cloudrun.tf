@@ -153,6 +153,32 @@ resource "google_cloud_run_v2_service" "backend" {
         value = "https://fosforescent.com"
       }
 
+      # Public base of this API: OAuth redirect URIs (/integrations/<provider>/callback) and the Twilio webhook are built on it.
+      env {
+        name  = "API_URL"
+        value = "https://api.fosforescent.com"
+      }
+
+      # MCP peers attached to nodes run open "-tool" requirements after every save (backend/integrations/mcpPeers.ts)
+      env {
+        name  = "MCP_LISTEN"
+        value = lookup(local.env_vars, "MCP_LISTEN", "false")
+      }
+
+      # Integration peers: OAuth client credentials, Twilio, the token-encryption secret (only the keys set in .env)
+      dynamic "env" {
+        for_each = local.integration_env
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.integration[env.key].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+
       env {
         name  = "GCP_PROJECT_ID"
         value = var.gcp_project_id

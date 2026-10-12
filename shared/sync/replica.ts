@@ -290,7 +290,10 @@ export function addSupply(replica: Replica, at: Scope, requirementId: string, su
     task: 'task done',
     market: `listed on the market by ${supply.by}`,
     mail: `mail sent by ${supply.by}`,
-    peer: `done by ${supply.by}`
+    peer: `done by ${supply.by}`,
+    llm: `answered by ${supply.by}`,
+    repo: `issue opened by ${supply.by}`,
+    tool: `run by ${supply.by}`
   }
   return addRow(replica, [...at, requirementId], 'supply', labels[supply.capability], now, { supply: { ...supply, at: now }, id })
 }

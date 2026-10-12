@@ -521,3 +521,24 @@ model VoiceNoteModel {
   @@index([userId, createdAt])
   @@index([sessionToken, createdAt])
 }
+
+/// An integration peer connection: OAuth tokens (encrypted, `secret`), or a linked phone number (`accountName`,
+/// `metadata.verified`). One per provider per user. See backend/integrations/.
+model IntegrationConnectionModel {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  provider    String                       // github, google, discord, phone, …
+  kind        String                       // oauth | channel
+  accountName String?                      // login / email / phone number shown on the peer row
+  secret      String                       // encrypted JSON (tokens); "{}" encrypted for a phone
+  scopes      String    @default("")
+  expiresAt   DateTime?
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  user        UserModel @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([provider, accountName])
+}

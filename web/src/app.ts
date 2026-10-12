@@ -92,10 +92,24 @@ import {
   type VoiceNote,
   getMarketNode,
   getTokenBalance,
+  listIntegrations,
+  startIntegration,
+  disconnectIntegration,
+  startPhone,
+  verifyPhone,
+  askLlm,
+  createRepoIssue,
+  createCalendarEvent,
+  listMcpPeers,
+  attachMcpPeer,
+  runMcpRequirement,
+  type IntegrationStatus,
+  type McpPeerInfo,
   submitMarketProposal,
   type MarketNode
 } from './api'
 import { DirectGuest, DirectHost, DirectLink, ManualRelay, isWebRtcAvailable, type ChannelMessage } from './p2p'
+import { openExternal } from './project'
 import type { ReplicaStorage } from './storage'
 
 export type Connection = 'offline' | 'connecting' | 'online' | 'syncing'
@@ -104,7 +118,7 @@ export type Notice = { kind: 'info' | 'error'; text: string; at: number }
 
 export type Credentials = { username: string; password: string }
 
-export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help'
+export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help' | 'phone'
 
 /**
  * A peer in the context panel: the account server ("fos") with what it registered on the last sync, a member of the
@@ -127,8 +141,10 @@ export type ContextPeer = {
   policyLocked?: boolean
   /** The account server row: the account's fos points (token balance), once fetched. */
   points?: number | null
-  /** An integration peer (GitHub, Google, …): what it would provide and consume once signed in with; not connected yet. */
-  integration?: { provides: Capability[]; consumes: Capability[] }
+  /** An integration peer (GitHub, Google, Discord, Stripe, the phone): what it provides and consumes, and its connection status from the server. */
+  integration?: { kind: 'oauth' | 'platform' | 'channel'; provides: Capability[]; consumes: Capability[]; configured: boolean; connected: boolean; pending: boolean; accountName: string | null }
+  /** An MCP peer: one of the account's MCP servers, with the tools it advertises; attached to nodes as a member `mcp:<id>`. */
+  mcp?: { serverId: number; tools: string[] }
 }
 
 export type ConnectFlow =
@@ -183,6 +199,12 @@ export type AppState = {
   atRoot: boolean
   /** The account's fos points (token balance) from the last fetch; null before the first or when signed out. */
   points: number | null
+  /** Integration peers as the server reports them (connected, account name, whether the flow is configured). */
+  integrations: IntegrationStatus[]
+  /** The account's MCP servers, as peers that can be attached to nodes. */
+  mcpPeers: McpPeerInfo[]
+  /** The phone-linking modal: waiting for a number, then for the code texted to it. */
+  phone: { phase: 'number' | 'code' | 'busy'; number?: string; error?: string } | null
   /** Open context menu, if any. */
   contextMenu: { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
@@ -232,6 +254,8 @@ export class App {
   private syncInFlight = false
   private syncRequested = false
   private debounceTimer: Timer | null = null
+  /** Integration id whose sign-in is running in the system browser (Tauri apps); checked when the window regains focus. */
+  private pendingIntegration: string | null = null
   private pollTimer: Timer | null = null
   private retryTimer: Timer | null = null
   private connectPollTimer: Timer | null = null
@@ -277,6 +301,9 @@ export class App {
       selected: null,
       atRoot: false,
       points: null,
+      integrations: [],
+      mcpPeers: [],
+      phone: null,
       contextMenu: null,
       device: null,
       voice: null,
@@ -368,6 +395,8 @@ export class App {
     window.addEventListener('offline', () => {
       if (this.state.connection !== 'offline') this.set({ connection: 'offline' })
     })
+    window.addEventListener('focus', () => void this.checkPendingIntegration())
+    document.addEventListener('visibilitychange', () => void this.checkPendingIntegration())
     if (this.pendingSession) {
       void this.resume(this.pendingSession)
       this.pendingSession = null
@@ -525,7 +554,7 @@ export class App {
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online' }
       if (response.presence) patch.onlinePeers = response.presence
       if (response.capabilities) patch.serverCapabilities = response.capabilities
-      if (transport === 'account') void this.refreshPoints()
+      if (transport === 'account') { void this.refreshPoints(); if (!this.state.integrations.length) void this.refreshIntegrations() }
       const n = done.newChoiceIds.length
       if (n > 0) {
         patch.highlighted = done.newChoiceIds
@@ -739,9 +768,16 @@ export class App {
       const online = !!session && this.transport() === 'account' && this.state.connection !== 'offline'
       peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
     }
-    // integration peers (sign in with GitHub, Google, …): listed at the root with what they would provide and consume; not connected yet
+    // integration peers (sign in with GitHub, Google, Discord; Stripe on the account; the phone): the server's status when signed in, the registry otherwise
     if (this.state.view.length === 0) {
-      for (const i of INTEGRATION_PEERS) peers.push({ id: `integration:${i.id}`, name: i.name, online: false, capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { provides: [...i.provides], consumes: [...i.consumes] } })
+      for (const i of INTEGRATION_PEERS) {
+        const s = this.state.integrations.find((p) => p.id === i.id)
+        peers.push({ id: `integration:${i.id}`, name: i.name, online: !!s?.connected, capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { kind: i.kind, provides: [...i.provides], consumes: [...i.consumes], configured: s?.configured ?? false, connected: s?.connected ?? false, pending: s?.pending ?? false, accountName: s?.accountName ?? null } })
+      }
+      for (const m of this.state.mcpPeers) {
+        if (peers.some((x) => x.id === m.id)) continue
+        peers.push({ id: m.id, name: m.name, online: true, capabilities: ['tool', 'read', 'edit'], disabled: [], accepts: [], isAccount: false, member: false, mcp: { serverId: m.serverId, tools: m.tools } })
+      }
     }
     for (const m of node?.members ?? []) {
       if (m.peerId === me || peers.some((x) => x.id === m.peerId)) continue
@@ -758,6 +794,90 @@ export class App {
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
   allCapabilities(): Capability[] { return [...CAPABILITIES] }
+  /** Integration peers and MCP peers as the server sees them for this account. */
+  async refreshIntegrations(): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { if (this.state.integrations.length || this.state.mcpPeers.length) this.set({ integrations: [], mcpPeers: [] }); return }
+    try {
+      const [{ providers }, mcp] = await Promise.all([listIntegrations(session), listMcpPeers(session).catch(() => ({ peers: [] as McpPeerInfo[] }))])
+      this.set({ integrations: providers, mcpPeers: mcp.peers })
+    } catch { /* the rows fall back to the static registry */ }
+  }
+  /** Sign in with an OAuth peer (the browser leaves for the provider and comes back with ?integration=…), or link the phone. */
+  async connectIntegration(id: string): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your fos account first; integrations attach to it.'); this.openModal('connect'); return }
+    const status = this.state.integrations.find((p) => p.id === id)
+    if (id === 'phone') { this.set({ phone: { phase: 'number' } }); this.openModal('phone'); return }
+    if (status?.kind === 'platform') { this.notify('info', `${status.name} is set up on the account itself (payments); there is nothing to connect here.`); return }
+    try {
+      const { url } = await startIntegration(session, id)
+      // In the Tauri apps the sign-in runs in the system browser: Google (and others) refuse embedded webviews
+      // ("disallowed_useragent"), and navigating the app's own window away would lose the app. The provider's
+      // callback lands on the web site, so the app learns the result when it regains focus (`checkPendingIntegration`).
+      const external = openExternal(url)
+      if (!external) { window.location.assign(url); return }
+      await external
+      this.pendingIntegration = id
+      this.notify('info', `Finish signing in to ${status?.name ?? id} in your browser, then come back here.`)
+    } catch (error) {
+      this.notify('error', error instanceof Error ? error.message : String(error))
+    }
+  }
+  /** After a sign-in opened in the system browser: on return, see whether the peer is now connected. */
+  private async checkPendingIntegration(): Promise<void> {
+    const id = this.pendingIntegration
+    if (!id || document.visibilityState === 'hidden') return
+    await this.refreshIntegrations()
+    const status = this.state.integrations.find((p) => p.id === id)
+    if (status?.connected) { this.pendingIntegration = null; this.set({ atRoot: true }); this.notify('info', `${status.name} is connected.`) }
+  }
+  async disconnectIntegration(id: string): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') return
+    try { await disconnectIntegration(session, id); await this.refreshIntegrations(); this.notify('info', `${this.state.integrations.find((p) => p.id === id)?.name ?? id} disconnected.`) } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
+  /** Back from a provider's sign-in page (main.ts reads ?integration=&ok=&message=). */
+  integrationReturned(provider: string, ok: boolean, message: string | null): void {
+    const name = this.state.integrations.find((p) => p.id === provider)?.name ?? provider
+    this.notify(ok ? 'info' : 'error', ok ? `${name} is connected.` : `${name}: ${message ?? 'sign-in failed'}`)
+    this.set({ atRoot: true })
+    void this.refreshIntegrations()
+  }
+  async phoneStart(number: string): Promise<void> {
+    const session = this.state.session
+    if (!session) return
+    this.set({ phone: { phase: 'busy', number } })
+    try { const r = await startPhone(session, number); this.set({ phone: { phase: 'code', number: r.number } }) } catch (error) { this.set({ phone: { phase: 'number', number, error: error instanceof Error ? error.message : String(error) } }) }
+  }
+  phoneRestart(): void { this.set({ phone: { phase: 'number' } }) }
+  async phoneVerify(code: string): Promise<void> {
+    const session = this.state.session
+    const number = this.state.phone?.number
+    if (!session) return
+    this.set({ phone: { phase: 'busy', number } })
+    try {
+      const r = await verifyPhone(session, code)
+      this.set({ phone: null, modal: null })
+      this.notify('info', `${r.number} is linked: you get texts about proposals, and texts you send become rows (“done …”, “list”, or anything to add).`)
+      await this.refreshIntegrations()
+    } catch (error) {
+      this.set({ phone: { phase: 'code', number, error: error instanceof Error ? error.message : String(error) } })
+    }
+  }
+  /** Attach one of the account's MCP servers to the viewed node (Home when at the root): it becomes a member advertising `tool`. */
+  async attachMcpPeer(serverId: number, at: Scope = []): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to attach MCP peers.'); return }
+    const scope = [...this.currentScope(), ...at]
+    try {
+      const r = await attachMcpPeer(session, scope, serverId)
+      this.notify('info', `Attached: it runs ${r.tools.length ? r.tools.join(', ') : 'its tools'} for "-tool" requirements under ${scope.length ? 'this node' : 'Home'}.`)
+      await this.syncNow('mcp attach')
+    } catch (error) {
+      this.notify('error', error instanceof Error ? error.message : String(error))
+    }
+  }
   /** The account's fos points (token balance), shown on the fos row and the default pool for "ff" allocations. */
   async refreshPoints(): Promise<void> {
     const session = this.state.session
@@ -876,6 +996,50 @@ export class App {
       if (!taskId) { this.notify('error', 'Market requirements go under a task; the task is what gets listed.'); return }
       this.setMarketAtRow(at.slice(0, -1), taskId, true)
       if (this.state.session?.kind === 'user') this.edit(addSupply(this.state.replica, [...this.state.view, ...at], req.id, { capability: 'market', by: 'fos', ref: taskId }, this.now()))
+      return
+    }
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account: its peers handle this.'); this.openModal('connect'); return }
+    const task = this.rowAt(at)
+    const context = `${task ? `Task: ${task.title}\n` : ''}${req.title ? `Request: ${req.title}` : ''}`.trim()
+    try {
+      if (r.capability === 'llm') {
+        // the fos server's own model answers; the answer is a note inside the requirement, supplied by fos
+        const { text } = await askLlm(session, context || 'Help with this task.')
+        let replica = addRow(this.state.replica, [...this.state.view, ...at, req.id], 'note', text || '(no answer)', this.now())
+        replica = addSupply(replica, [...this.state.view, ...at], req.id, { capability: 'llm', by: 'fos' }, this.now())
+        this.edit(replica)
+        this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
+        return
+      }
+      if (r.capability === 'repo') {
+        if (!r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
+        const { url, number } = await createRepoIssue(session, r.repo, req.title || task?.title || 'from fos', task ? `From the fos task “${task.title}”.` : undefined)
+        let replica = addRow(this.state.replica, [...this.state.view, ...at, req.id], 'plain', `${r.repo}#${number} ${url}`, this.now())
+        replica = addSupply(replica, [...this.state.view, ...at], req.id, { capability: 'repo', by: 'github', ref: String(number) }, this.now())
+        this.edit(replica)
+        this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
+        return
+      }
+      if (r.capability === 'tool') {
+        // an MCP peer attached above runs the tool on the server, which writes the answer into the tree; pull it
+        const { text } = await runMcpRequirement(session, [...this.currentScope(), ...at], req.id)
+        this.notify('info', text.slice(0, 200) || 'Ran.')
+        await this.syncNow('tool run')
+        return
+      }
+      if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined) {
+        // the calendar capability: an event for the window, and the time allocation that fills the requirement
+        const end = r.end ?? r.start + Math.round((r.amount ?? 1) * 3_600_000)
+        const summary = task?.title || req.title || 'fos'
+        const { url } = await createCalendarEvent(session, { summary, description: req.title, start: r.start, end })
+        const allocation = this.allocationWithBank([...at, req.id], { resource: '', type: r.resource, amount: r.amount ?? (end - r.start) / 3_600_000, unit: 'h', start: r.start, end, ...(r.peer ? { person: r.peer } : {}) })
+        if (allocation) this.edit(addRow(this.state.replica, [...this.state.view, ...at, req.id], 'allocation', url ? `on Google Calendar ${url}` : 'on Google Calendar', this.now(), { allocation }))
+        this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
+        return
+      }
+    } catch (error) {
+      this.notify('error', error instanceof Error ? error.message : String(error))
       return
     }
     this.notify('error', `No peer handles “${r.capability}” yet.`)

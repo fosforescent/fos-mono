@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#fafafa" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="/legal.css" />
+    <title>Privacy Policy · Fosforescent</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a href="/">Fosforescent</a>
+        <nav>
+          <a href="/privacy" aria-current="page">Privacy</a>
+          <a href="/terms">Terms</a>
+        </nav>
+      </header>
+
+      <h1>Privacy Policy</h1>
+      <p class="meta">Effective October 12, 2026 · Sycamore Technology LLC</p>
+
+      <p>Fosforescent is a collaborative task and workflow service operated by Sycamore Technology LLC ("Fosforescent", "we", "us"). It is offered through the website at fosforescent.com, the desktop and mobile apps, and the <code>fos</code> command-line tool (together, the "Service"). This policy explains what information we collect, how we use it, and the choices you have. By using the Service you agree to this policy. If you do not agree, please do not use the Service.</p>
+
+      <ol class="toc">
+        <li><a href="#collect">What we collect</a></li>
+        <li><a href="#local">Data that stays on your device</a></li>
+        <li><a href="#use">How we use information</a></li>
+        <li><a href="#integrations">Connected services</a></li>
+        <li><a href="#google">Google user data</a></li>
+        <li><a href="#sharing">When we share information</a></li>
+        <li><a href="#peers">Sharing with other users</a></li>
+        <li><a href="#retention">Retention and deletion</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#choices">Your choices and rights</a></li>
+        <li><a href="#children">Children</a></li>
+        <li><a href="#international">International users</a></li>
+        <li><a href="#changes">Changes to this policy</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ol>
+
+      <h2 id="collect">1. What we collect</h2>
+      <p><strong>Account information.</strong> When you create an account we collect a username, an email address and a password. Passwords are stored only as salted hashes. We keep a record of sign-in events (time, approximate IP address, device name) to protect your account.</p>
+      <p><strong>Content you sync.</strong> The rows you write in Fosforescent (tasks, notes, comments, requirements, allocations, templates, banks and the structure between them) are stored on our servers only when you choose to sync them with your account. The Service is offline-first: content lives on your device until a sync sends it. See section 2.</p>
+      <p><strong>Device and peer information.</strong> The name you give a device, its sync policy, which node of your account it is attached to, and which other accounts or devices you have made members of a node.</p>
+      <p><strong>Voice notes.</strong> If you record a voice note, the audio is sent to our servers for transcription and summarisation and the resulting text becomes rows in your account. We do not keep the audio after it has been processed.</p>
+      <p><strong>Phone number.</strong> If you link a phone, we store the number you verify and the content of text messages you exchange with the Service, because those messages become rows and notifications.</p>
+      <p><strong>Payment information.</strong> Paid plans and Fos points are billed through Stripe. We store your Stripe customer identifier, subscription status and point balance. We never see or store full card numbers.</p>
+      <p><strong>Technical information.</strong> Standard server logs (IP address, browser or app version, request timestamps, errors) and, in the browser, local storage used to keep your replica, preferences and session on your device. We do not use third-party advertising or analytics cookies.</p>
+      <p><strong>Messages to us.</strong> Anything you send through the contact form or by email.</p>
+
+      <h2 id="local">2. Data that stays on your device</h2>
+      <p>Each device holds its own copy of your content. A device's sync policy decides what leaves it. With the default policy, edits sync to your account. With a receive-only policy (for example <code>[server] to = []</code> in a project's <code>fos.config.toml</code>, or the corresponding setting on the fos row), the device sends nothing but what is needed to keep the connection, and receives work from your account without pushing local rows. Direct device-to-device connections over WebRTC exchange content between your devices without passing through our servers, apart from the short connection codes used to establish them.</p>
+
+      <h2 id="use">3. How we use information</h2>
+      <ul>
+        <li>To provide, sync and back up your content across your devices and with the people you share with.</li>
+        <li>To run features you invoke: search over your own content, the market, AI answers to <code>-llm</code> requirements, calendar events, repository issues, text notifications, and tools exposed by MCP servers you attach.</li>
+        <li>To bill you, manage subscriptions and Fos points, and send receipts.</li>
+        <li>To send account emails such as sign-in links, verification codes and security notices. We do not send marketing email without your consent.</li>
+        <li>To keep the Service secure, prevent abuse, debug problems and understand aggregate usage.</li>
+        <li>To comply with law and enforce our <a href="/terms">Terms of Service</a>.</li>
+      </ul>
+      <p>We do not sell your personal information and we do not use your content to train machine-learning models.</p>
+
+      <h2 id="integrations">4. Connected services</h2>
+      <p>You can connect third-party accounts to Fosforescent. Each connection is optional, started by you, and can be removed at any time from the peer's row in the app. When you connect a service we receive an access token from it, which we encrypt at rest and use only for the actions described here:</p>
+      <ul>
+        <li><strong>GitHub</strong> (scopes <code>repo</code>, <code>read:user</code>): to read your username and to open issues in repositories you choose when a <code>-repo</code> requirement is run.</li>
+        <li><strong>Google</strong> (scopes <code>calendar.events</code>, <code>userinfo.email</code>): to read your email address and to create events on your primary calendar when you choose "Add to Google Calendar". See section 5.</li>
+        <li><strong>Discord</strong> (scope <code>identify</code>): to read your Discord username so it can appear as a peer.</li>
+        <li><strong>Phone (Twilio)</strong>: to send and receive text messages with the number you verified.</li>
+        <li><strong>Stripe</strong>: to process payments.</li>
+        <li><strong>AI providers</strong>: the text of rows you explicitly ask an AI to answer, transcribe or summarise is sent to the model provider (currently OpenAI) under terms that do not permit them to train on it.</li>
+        <li><strong>MCP servers</strong>: when you attach a Model Context Protocol server to a node, open <code>-tool</code> requirements under that node, and nothing else, are sent to that server. The server's operator, not Fosforescent, controls what it does with them.</li>
+      </ul>
+      <p>These providers handle your data under their own privacy policies.</p>
+
+      <h2 id="google">5. Google user data</h2>
+      <p>Fosforescent's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements. Specifically:</p>
+      <ul>
+        <li>We use Google Calendar access only to create the calendar events you ask for from within the Service and to confirm they were created.</li>
+        <li>We use your Google email address only to label the connected account in the app.</li>
+        <li>We do not read your existing calendar, contacts or mail, and we do not transfer Google user data to anyone except as needed to provide the feature you invoked, as required by law, or as part of a merger or acquisition with notice to you.</li>
+        <li>Google user data is never used for advertising, never sold, and never used to train models.</li>
+        <li>Disconnecting Google in the app deletes the stored token. You can also revoke access at <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.</li>
+      </ul>
+
+      <h2 id="sharing">6. When we share information</h2>
+      <p>We share personal information only:</p>
+      <ul>
+        <li>with service providers that host and run the Service on our behalf (cloud hosting, database, email delivery, payment processing, SMS delivery, AI model providers), under contracts that restrict their use of it;</li>
+        <li>with other users, as described in section 7;</li>
+        <li>when required by law, subpoena or court order, or to protect the rights, property or safety of Fosforescent, our users or the public;</li>
+        <li>in connection with a merger, acquisition or sale of assets, in which case we will notify you before your information becomes subject to a different policy.</li>
+      </ul>
+
+      <h2 id="peers">7. Sharing with other users</h2>
+      <p>Fosforescent is collaborative. Content you place in a node that other accounts are members of is visible to those members according to the capabilities you grant them. Rows you list on the market are visible to any signed-in user who searches for them, along with your username. Proposals you send to another user are visible to that user. Your username and online status are visible to peers you share a node with. Other users may copy or export content you have shared with them, and we cannot retrieve it from them.</p>
+
+      <h2 id="retention">8. Retention and deletion</h2>
+      <p>We keep your account information and synced content for as long as your account is active. Content-addressed storage means earlier versions of a row may be retained in history until the containing node's history is pruned. Server logs are kept for up to 90 days. Payment records are kept as long as tax and accounting law require.</p>
+      <p>You can delete individual rows in the app at any time. To delete your account and all content associated with it, email <a href="mailto:datadeletions@fosforescent.com">datadeletions@fosforescent.com</a> from the address on the account. We will complete the deletion within 30 days, except for records we must keep by law and copies held by other users you shared with. Copies on your own devices are under your control and are not affected.</p>
+
+      <h2 id="security">9. Security</h2>
+      <p>Content is addressed by cryptographic hash and verified on import. Passwords are hashed. Third-party tokens are encrypted at rest with a key held separately from the database. Traffic to the Service uses TLS. Sessions use short-lived signed tokens that you can end by signing out. No method of transmission or storage is completely secure, and we cannot guarantee absolute security. If we learn of a breach affecting your personal information we will notify you as the law requires.</p>
+
+      <h2 id="choices">10. Your choices and rights</h2>
+      <ul>
+        <li><strong>Access and export.</strong> Your content is on your devices and can be exported from the app; you may also request a copy from us.</li>
+        <li><strong>Correction.</strong> You can edit your rows and device names in the app, and ask us to correct account details.</li>
+        <li><strong>Deletion.</strong> See section 8.</li>
+        <li><strong>Connected services.</strong> Disconnect any integration from its row in the app.</li>
+        <li><strong>Sync.</strong> Set a device's policy so that nothing leaves it, or use it entirely offline.</li>
+        <li><strong>Text messages.</strong> Reply STOP to any message to unlink your phone.</li>
+      </ul>
+      <p>Residents of the European Economic Area, the United Kingdom, California and other jurisdictions with privacy laws may have additional rights, including the right to object to or restrict processing, data portability, and the right to lodge a complaint with a supervisory authority. To exercise any right, contact us at the address below. We will not discriminate against you for exercising them.</p>
+
+      <h2 id="children">11. Children</h2>
+      <p>The Service is not directed to children under 13 (or under 16 where that is the applicable age) and we do not knowingly collect personal information from them. If you believe a child has provided us with personal information, contact us and we will delete it.</p>
+
+      <h2 id="international">12. International users</h2>
+      <p>The Service is operated from the United States and your information is processed and stored there and in other countries where our service providers operate. Those countries may have data protection laws different from those of your country. By using the Service you consent to this transfer.</p>
+
+      <h2 id="changes">13. Changes to this policy</h2>
+      <p>We may update this policy from time to time. The effective date at the top shows the current version. For material changes we will give notice in the app or by email before they take effect. Continued use of the Service after the effective date means you accept the updated policy.</p>
+
+      <h2 id="contact">14. Contact</h2>
+      <p>Sycamore Technology LLC<br />Louisville, Kentucky, United States<br />Privacy questions: <a href="mailto:privacy@fosforescent.com">privacy@fosforescent.com</a><br />Deletion requests: <a href="mailto:datadeletions@fosforescent.com">datadeletions@fosforescent.com</a></p>
+
+      <footer>© 2026 Sycamore Technology LLC · <a href="/terms">Terms of Service</a> · <a href="/">Back to the app</a></footer>
+    </main>
+  </body>
+</html>
