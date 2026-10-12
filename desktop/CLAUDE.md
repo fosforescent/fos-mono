@@ -31,7 +31,7 @@ fos login           home context: browser sign-in (SSO-capable device flow) | --
 - `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync status approve reject attach login branches`)
 - `lib.rs` - Tauri commands for the GUI. `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; plus the older directory navigation, `.fos` directory, FosStore, auth and WebRTC peer commands (`peer.rs`)
 
-Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. After changing `shared/sync`, rebuild the core bundle: `cd desktop && ../node_modules/.bin/esbuild ../shared/sync/embed.ts --bundle --format=iife --platform=browser --target=es2020 --outfile=src-tauri/js/fos-core.js --inject:src-tauri/js/prelude.js`. Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
+Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle: `cd desktop && ../node_modules/.bin/esbuild ../shared/sync/embed.ts --bundle --format=iife --platform=browser --target=es2020 --outfile=src-tauri/js/fos-core.js --inject:src-tauri/js/prelude.js`. Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
 
 ### Frontend Integration (`frontend/tauri/`)
 - `api.ts` - TypeScript bindings for Tauri commands

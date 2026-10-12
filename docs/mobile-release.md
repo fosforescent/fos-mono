@@ -127,3 +127,21 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
   images, switch the upload step to `fastlane pilot`.
 - Backend CORS must allow Tauri webview origins (`tauri://localhost`,
   `http://tauri.localhost`) — configured in `backend/index.ts`.
+
+## Desktop (macOS, Windows, Linux)
+
+`.github/workflows/desktop-release.yml` builds the `fos` binary (GUI + CLI) with
+`tauri-apps/tauri-action` on the same `v*` tag push as the mobile workflows and
+attaches the installers (dmg, msi/nsis exe, deb/rpm/AppImage) plus a bare
+`fos-<os>.tar.gz`/`.zip` of the executable to the GitHub Release for that tag.
+`workflow_dispatch` builds only and keeps everything as workflow artifacts.
+`DESKTOP_API_URL` (repository variable, falls back to `MOBILE_API_URL`) is baked
+into the web bundle as `VITE_API_URL`.
+
+**Unsigned for now.** macOS: Gatekeeper blocks the first launch; right-click →
+Open, or `xattr -d com.apple.quarantine Fosforescent.app`. Windows: SmartScreen
+shows "unknown publisher". To sign later: macOS needs `APPLE_CERTIFICATE`,
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_PASSWORD`, `APPLE_TEAM_ID` (tauri-action notarizes automatically when
+they are set); Windows needs a code-signing certificate configured under
+`bundle.windows.certificateThumbprint` in `tauri.conf.json`.
