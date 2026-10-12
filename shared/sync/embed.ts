@@ -5,7 +5,6 @@
  */
 
 import {
-  addPartition,
   addTask,
   applyProposalAt,
   buildSyncRequest,
@@ -70,7 +69,7 @@ export const api = {
       const node = view(r, at)
       if (!node) return
       for (const t of node.tasks) {
-        lines.push(`${'  '.repeat(depth)}${t.done ? '[x]' : '[ ]'} ${t.id.slice(0, 8)} ${t.title}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
+        lines.push(`${'  '.repeat(depth)}${t.checkable ? (t.done ? '[x]' : '[ ]') : ' · '} ${t.id.slice(0, 8)} ${t.title}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
       for (const c of node.choices) lines.push(`${'  '.repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`)
@@ -99,7 +98,6 @@ export const api = {
     const node = view(next, parse<Scope>(atJson, []))
     return JSON.stringify(node?.tasks.at(-1) ?? null)
   },
-  addPartition(handle: string, atJson: string, name: string, now: number): void { set(handle, addPartition(get(handle), parse<Scope>(atJson, []), name, now)) },
   setTaskDone(handle: string, atJson: string, id: string, done: boolean, now: number): void { set(handle, setTaskDone(get(handle), parse<Scope>(atJson, []), id, done, now)) },
   renameTask(handle: string, atJson: string, id: string, title: string, now: number): void { set(handle, renameTask(get(handle), parse<Scope>(atJson, []), id, title, now)) },
   deleteTask(handle: string, atJson: string, id: string, now: number): void { set(handle, deleteTask(get(handle), parse<Scope>(atJson, []), id, now)) },

@@ -91,12 +91,6 @@ input[type="text"], input[type="password"] { font: inherit; padding: 8px 10px; b
 .deleted { font-style: italic; color: var(--danger); }
 .choice-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
 
-.partition-list { list-style: none; padding: 0; margin: 0 0 10px; }
-.partition-list li { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
-.partition-list li .link { font-weight: 600; }
-.partition-list li .muted { flex: 1; }
-.add-partition { display: flex; gap: 8px; margin-top: 8px; }
-.add-partition input { flex: 1; }
 
 .footer { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem; }
 .notice { padding: 8px 10px; border-radius: 6px; background: var(--card); border: 1px solid var(--line); }
@@ -173,3 +167,5 @@ input[type="text"], input[type="password"] { font: inherit; padding: 8px 10px; b
 .peer-row { display: inline-flex; align-items: center; gap: 5px; }
 .presence { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: 0.5; }
 .presence.online { background: var(--ok); opacity: 1; }
+.task.plain .title { font-weight: 600; }
+.peers-here { margin-top: 12px; }

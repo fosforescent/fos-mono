@@ -4,7 +4,7 @@
  * Conventions used by the sync layer (all expressed with existing primitives):
  *
  *   task        edge [taskNode, COMPLETION]      taskNode.data: alias{id}, description, todo{completed,time}, updated
- *   partition   edge [LIST, partitionNode]        partitionNode.data: alias{id}, description ; children: tasks, partitions, …
+ *   node        edge [LIST, node]   (legacy)      a plain node without completion: data alias{id}, description; children like a task's. Older data only; the UI shows it as an uncheckable row
  *   peer        edge [PEER, peerRefNode]          peerRefNode.data: peerId{content}   (see membership.ts)
  *   choice      edge [CHOICE, choiceNode]         an unresolved divergence; replaces the task/partition edge it concerns
  *                 choiceNode.data: alias{id of the thing in conflict}, conflict{path}, option{defaultResolutionStrategy:'choice'}
@@ -20,7 +20,7 @@ import { FosStore } from '../dag-implementation/store'
 import { isCurrentCid, verifyCid } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 
-export type Scope = string[] // alias ids of nested partitions, [] = the node a replica is attached to
+export type Scope = string[] // alias ids of nested nodes (tasks or legacy plain nodes), [] = the node a replica is attached to
 
 export const SYNC_FORMAT_VERSION = 1 as const
 
@@ -75,6 +75,7 @@ export function isTaskEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[1] === store.primitive.completeField.getId() && !!content(store, edge[0]).data.todo
 }
 
+/** Legacy plain-node edge ([LIST, node]). New data only creates tasks; these still merge, zoom and move like any node. */
 export function isPartitionEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.listField.getId()
 }
@@ -215,14 +216,7 @@ export function findEdge(store: FosStore, value: FosNodeContent, key: string): F
   return value.children.find((edge) => edgeKey(store, edge) === key)
 }
 
-export function findPartition(store: FosStore, nodeCid: string, aliasId: string): string | null {
-  for (const edge of content(store, nodeCid).children) {
-    if (isPartitionEdge(store, edge) && aliasIdOf(content(store, edge[1])) === aliasId) return edge[1]
-  }
-  return null
-}
-
-/** Follow alias ids (partitions or tasks) from `nodeCid`. Null if any step is missing. */
+/** Follow alias ids (tasks or legacy plain nodes) from `nodeCid`. Null if any step is missing. */
 export function resolveScope(store: FosStore, nodeCid: string | null, scope: Scope): string | null {
   let current = nodeCid
   for (const step of scope) {
@@ -400,6 +394,8 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 export type TaskView = {
   id: string
   title: string
+  /** False for a legacy plain node (no completion): rendered as a row without a checkbox. */
+  checkable: boolean
   done: boolean
   createdAt: number
   updatedAt: number
@@ -419,7 +415,6 @@ export type ChoiceView = {
   baseLabel: string | null
   options: ChoiceOptionView[]
 }
-export type PartitionView = { id: string; name: string; taskCount: number; choiceCount: number }
 export type ProposalView = {
   id: string
   peerId: string
@@ -435,7 +430,6 @@ export type NodeView = {
   done: boolean | null
   tasks: TaskView[]
   choices: ChoiceView[]
-  partitions: PartitionView[]
   peers: string[]
   isLink: boolean
   members: MemberRecord[]
@@ -451,10 +445,30 @@ export function taskView(store: FosStore, taskCid: string): TaskView {
   return {
     id: aliasIdOf(value) ?? taskCid,
     title: value.data.description?.content ?? '',
+    checkable: true,
     done: !!value.data.todo?.completed,
     createdAt: created,
     updatedAt: value.data.updated?.time ?? created,
-    childCount: value.children.filter((e) => isTaskEdge(store, e)).length,
+    childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
+    childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
+    subtreeTasks: sub.tasks,
+    subtreeDone: sub.done,
+    isLink: isLink(value)
+  }
+}
+
+/** A legacy plain node as a tree row: like a task but not checkable. */
+export function plainNodeView(store: FosStore, nodeCid: string): TaskView {
+  const value = content(store, nodeCid)
+  const sub = countNode(store, nodeCid)
+  return {
+    id: aliasIdOf(value) ?? nodeCid,
+    title: value.data.description?.content ?? '',
+    checkable: false,
+    done: false,
+    createdAt: value.data.updated?.time ?? 0,
+    updatedAt: value.data.updated?.time ?? 0,
+    childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
@@ -504,7 +518,7 @@ export function viewNode(store: FosStore, cid: string): NodeView {
   const view: NodeView = {
     name: value.data.description?.content ?? null,
     done: value.data.todo ? !!value.data.todo.completed : null,
-    tasks: [], choices: [], partitions: [], peers: [],
+    tasks: [], choices: [], peers: [],
     isLink: link,
     members: link ? readMembers(store, value) : [],
     proposals: link ? readProposals(store, value).map((p) => proposalView(store, value, p)) : [],
@@ -516,14 +530,7 @@ export function viewNode(store: FosStore, cid: string): NodeView {
     } else if (isChoiceEdge(store, edge)) {
       view.choices.push(choiceView(store, edge[1]))
     } else if (isPartitionEdge(store, edge)) {
-      const child = content(store, edge[1])
-      const counts = countNode(store, edge[1])
-      view.partitions.push({
-        id: aliasIdOf(child) ?? edge[1],
-        name: child.data.description?.content ?? '',
-        taskCount: counts.tasks,
-        choiceCount: counts.choices
-      })
+      view.tasks.push(plainNodeView(store, edge[1])) // legacy plain node: a row in the same list, in edge order
     } else if (isPeerEdge(store, edge)) {
       const peerId = content(store, edge[1]).data.peerId?.content
       if (peerId) view.peers.push(peerId)
@@ -550,7 +557,7 @@ export function findPeerScope(store: FosStore, nodeCid: string, peerId: string, 
   return null
 }
 
-/** Partition names along a scope, for labels. */
+/** Node names along a scope, for labels. */
 export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope): string[] {
   const names: string[] = []
   let current = nodeCid

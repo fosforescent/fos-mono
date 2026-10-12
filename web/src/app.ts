@@ -16,7 +16,6 @@
  */
 
 import {
-  addPartition,
   addTask,
   applyProposalAt,
   buildSyncRequest,
@@ -91,7 +90,7 @@ export type DirectState =
 
 export type AppState = {
   replica: Replica
-  /** Partition ids inside the replica currently displayed (relative to its scope). */
+  /** Path of node ids inside the replica currently displayed (relative to its scope). */
   view: Scope
   connection: Connection
   session: Session | null
@@ -485,16 +484,16 @@ export class App {
   }
 
   addTask(title: string): void { this.edit(addTask(this.state.replica, this.state.view, title, this.now())) }
-  toggleTask(task: TaskView): void { this.edit(setTaskDone(this.state.replica, this.state.view, task.id, !task.done, this.now())) }
+  toggleTask(task: TaskView): void { if (!task.checkable) return; this.edit(setTaskDone(this.state.replica, this.state.view, task.id, !task.done, this.now())) }
   renameTask(taskId: string, title: string): void { this.edit(renameTask(this.state.replica, this.state.view, taskId, title, this.now())) }
   deleteTask(taskId: string): void { this.edit(deleteTask(this.state.replica, this.state.view, taskId, this.now())) }
-  addPartition(name: string): void { this.edit(addPartition(this.state.replica, this.state.view, name, this.now())) }
 
   /** `at` is relative to the current view (e.g. [parentTaskId] for a subtask). */
   addTaskAt(at: Scope, title: string): void {
     this.edit(addTask(this.state.replica, [...this.state.view, ...at], title, this.now()))
   }
   toggleTaskAt(at: Scope, task: TaskView): void {
+    if (!task.checkable) return
     this.edit(setTaskDone(this.state.replica, [...this.state.view, ...at], task.id, !task.done, this.now()))
   }
   renameTaskAt(at: Scope, taskId: string, title: string): void {
@@ -555,7 +554,6 @@ export class App {
   // -------------------------------------------------------------------------
   // Navigation, menu, modals
 
-  openPartition(id: string): void { this.goTo([...this.state.view, id]) }
   /** Zoom into a descendant: `at` is its path relative to the current view (any depth). */
   zoomTo(at: Scope): void { this.goTo([...this.state.view, ...at]) }
   goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null }) }
@@ -693,7 +691,7 @@ export class App {
     try {
       const next = reattach(this.state.replica, scope, this.now(), scope.length === 0 ? [] : undefined)
       this.set({ replica: next, view: [], menuOpen: false })
-      this.notify('info', scope.length === 0 ? 'This device now syncs the whole account.' : 'This device now syncs only this partition.')
+      this.notify('info', scope.length === 0 ? 'This device now syncs the whole account.' : 'This device now syncs only this node.')
       void this.syncNow('reattach')
     } catch (error) {
       this.notify('error', error instanceof Error ? error.message : String(error))

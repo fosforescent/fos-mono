@@ -152,7 +152,7 @@ describe('mergeNodes', () => {
     const { cid, newChoiceCids } = mergeNodes(store, base, ours, theirs, LABELS)
     const v = viewNode(store, cid)
     // work: both sides changed different things inside it → merged recursively
-    expect(v.partitions.map((p) => p.name)).toEqual(['Work', 'Play'])
+    expect(v.tasks.filter((t) => !t.checkable).map((t) => t.title)).toEqual(['Work', 'Play'])
     const work = viewNode(store, resolveScope(store, cid, ['work'])!)
     expect(work.tasks.map((t) => [t.id, t.done])).toEqual([['w1', true], ['w2', false]])
     // home: deleted by ours, changed by theirs → a choice over the partition itself
@@ -343,7 +343,7 @@ describe('replica + user group end to end', () => {
     let workPhone = reattach(createReplica('work-phone'), ['work'], 4)
     workPhone = world.sync(workPhone)
     expect(titles(workPhone)).toEqual(['work task'])
-    expect(view(workPhone, [])!.partitions).toEqual([])
+    expect(view(workPhone, [])!.tasks.filter((t) => !t.checkable)).toEqual([])
     expect(view(workPhone, [])!.name).toBe('work')
 
     workPhone = addTask(workPhone, [], 'added on work phone', 5, 'w2')
@@ -352,13 +352,13 @@ describe('replica + user group end to end', () => {
 
     laptop = deleteTask(laptop, [], 'r1', 7)
     laptop = world.sync(laptop)
-    expect(titles(laptop)).toEqual([])
+    expect(titles(laptop)).toEqual(['work']) // the plain node 'work' is a row like any other
     expect(view(laptop, ['work'])!.tasks.map((t) => [t.title, t.done])).toEqual([['work task', true], ['added on work phone', false]])
     expect(view(laptop, ['work'])!.peers).toEqual(['work-phone'])
 
     workPhone = world.sync(workPhone)
     expect(titles(workPhone)).toEqual(['work task', 'added on work phone'])
-    expect(world.serverTasks()).toEqual([])
+    expect(world.serverTasks()).toEqual(['work'])
   })
 
   it('reattaching a synced root replica into a partition keeps its agreed base; back to root pulls everything', () => {
@@ -377,7 +377,7 @@ describe('replica + user group end to end', () => {
     let back = reattach(scoped, [], 6)
     expect(isDirty(back)).toBe(false)
     back = world.sync(back)
-    expect(view(back, [])!.partitions.map((p) => p.name)).toEqual(['work'])
+    expect(view(back, [])!.tasks.filter((t) => !t.checkable).map((t) => t.title)).toEqual(['work'])
     expect(titles(back, ['work'])).toEqual(['w'])
   })
 

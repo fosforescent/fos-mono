@@ -18,9 +18,9 @@ on every edit, its alias id does not.
 
 ```
 task        [taskNode, COMPLETION]       taskNode.data: alias{id}, description{content}, todo{completed,time}, updated{time}
-partition   [LIST, partitionNode]        partitionNode.data: alias{id}, description{content}; children: tasks, partitions, peers…
+node        [LIST, node]   (legacy)      a plain node without completion (older data); shown as an uncheckable row, otherwise like a task
 peer        [PEER, peerRefNode]          peerRefNode.data: peerId{content}          (membership.ts reads the same shape)
-choice      [CHOICE, choiceNode]         an unresolved divergence, replacing the task/partition edge it concerns
+choice      [CHOICE, choiceNode]         an unresolved divergence, replacing the task/node edge it concerns
               choiceNode.data: alias{id of the thing}, conflict{path}, option{defaultResolutionStrategy:'choice'}
               children: [CONFLICTBASE, ptr] [NOTSELECTED, ptr] [NOTSELECTED, ptr]
               ptr.data: peerId{content}; children: [INSTRUCTIONPOINTER, instr] [TARGETPOINTER, target]  (no pointers = deleted)
@@ -42,7 +42,7 @@ itself as an immutable set member). Per child:
 |---------------------------------------------|------------------------------------------------------|
 | only one side changed                       | take that side (add, edit or delete)                 |
 | both changed identically                    | take it                                              |
-| both changed, same shape (task/task, partition/partition) | recurse: data merged field by field, children merged |
+| both changed, same shape (task/task, node/node) | recurse: data merged field by field, children merged |
 | same data field edited to different values  | leaf (task): **choice** with both versions; container: theirs wins for that field |
 | one deleted, the other edited               | **choice** (one option is "deleted")                 |
 | a choice resolved on one side only          | resolution wins (the other side still holds the base) |
@@ -59,7 +59,7 @@ and, apart from container data conflicts, symmetric.
 
 A device becomes a **peer** of the user group when it logs in: a
 `[PEER, peerRef]` edge is kept on the node it attaches to. The link has a
-`scope` (a path of partition alias ids; `[]` = the whole document) and a base
+`scope` (a path of node alias ids; `[]` = the whole document) and a base
 (the content node both sides agreed on last time, `null` on a new link).
 
 ```
@@ -96,9 +96,12 @@ collide.
 ## Scopes (attaching at a child node)
 
 `scope: []` attaches the device to the user group's root content.
-`scope: [partitionId]` attaches it to that partition: the device's root alias
-points at a copy of the partition node, the server merges at that node, and
-root-level tasks or sibling partitions never reach the device.
+`scope: [nodeId, …]` attaches it to that node (any task in the tree): the
+device's root alias points at a copy of that node, the server merges there, and
+nothing outside the subtree reaches the device. There is no separate
+"partition" concept: a node a peer attaches to is just a node the peer largely
+controls (today the device still keeps local state for it; a later step may
+make some subtrees peer-only).
 
 Changing scope (`reattach`) requires a fully synced replica. Moving deeper
 keeps the matching subtree and base; anywhere else starts an empty link that
@@ -107,7 +110,7 @@ pulls the server's state on the next sync.
 ## Tree, order and moves
 
 Tasks contain tasks: a task edge's node carries its own task edges, so the
-view is a tree and a scope path may step through tasks as well as partitions
+view is a tree and a scope path is a path of node ids
 ("zoom" shows one node with its subtree). Child **order is part of a node's
 identity** (cid v2 hashes edges in order), so drag-and-drop reorders replicate
 like any other change. The merge keeps order: ours' order is the backbone and
@@ -252,7 +255,7 @@ and a dismissable **Connect** modal with three ways in:
 1. **Sign in** with username and password → a user session; the device attaches
    where the account says.
 2. **Connection token / QR code** (`backend/sync/peerInvites.ts`). The inviting
-   user picks a node (root or a partition) and chooses *Invite a device here*:
+   user picks a node (root or any task) and chooses *Invite a device here*:
    the server creates a token (stored hashed, 15 min) tied to that scope and
    the app shows it as text and QR. The connecting device claims it
    (`POST /peer/connect`), the inviting user is notified over the WebSocket
@@ -285,10 +288,10 @@ are set; production bundles contain no credentials.
 4. Edits trigger a debounced sync; `sync_changed` from another device and the
    browser `online` event trigger a sync.
 5. Login or sync failure → offline mode with exponential retry (5 s … 5 min).
-   A 401 drops the session; a 404 means the attached partition is gone.
+   A 401 drops the session; a 404 means the attached node is gone.
 
 The UI never sees cids: `viewNode` turns a node into tasks, choices,
-partitions and peers keyed by alias ids.
+nodes and peers keyed by alias ids.
 
 ## Server (`backend/sync/peerSync.ts`)
 
