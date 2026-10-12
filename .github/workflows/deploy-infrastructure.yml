@@ -99,7 +99,9 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          terraform plan -no-color -out=tfplan
+          terraform plan -no-color -out=tfplan | tee plan.txt
+          echo '### Terraform plan' >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(Plan:|No changes)|^  # ' plan.txt >> "$GITHUB_STEP_SUMMARY" || true
         continue-on-error: false
 
       - name: Update Pull Request
@@ -132,10 +134,12 @@ jobs:
               body: output
             })
 
+      # Apply only on an explicit manual dispatch. The stored state does not match what is
+      # actually deployed (the plan wants to create the VPC/DNS zone and REPLACE the Cloud SQL
+      # instance), so an automatic apply on push would destroy the live database. Re-enable
+      # push-to-main apply once the state has been reconciled (terraform import) and a plan is clean.
       - name: Terraform Apply
-        if: |
-          (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
         run: terraform apply -auto-approve tfplan
 
       - name: Terraform Destroy
