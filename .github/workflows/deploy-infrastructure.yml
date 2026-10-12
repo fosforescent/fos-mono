@@ -59,13 +59,15 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      # locals.tf reads secret values (Stripe, JWT, Postmark, …) from the repo-root .env;
-      # in CI that file comes from the TF_DOTENV secret (the .env contents).
+      # locals.tf reads secret values (Stripe, JWT, Postmark, …) via file("../.env"), i.e. infra/.env
+      # (a symlink to the repo-root .env locally); in CI it comes from the TF_DOTENV secret.
       - name: Write .env for Terraform locals
-        working-directory: .
+        working-directory: infra
         run: |
           if [ -z "${{ secrets.TF_DOTENV }}" ]; then echo "TF_DOTENV secret is not set"; exit 1; fi
+          rm -f .env
           printf '%s\n' "${{ secrets.TF_DOTENV }}" > .env
+          echo "wrote infra/.env ($(grep -c '^[A-Z_0-9]*=' .env) entries)"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
