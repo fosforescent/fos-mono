@@ -678,6 +678,7 @@ pub fn run() {
     let peer_state = PeerState::default();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(app_state)
         .manage(peer_state)
         .setup(|app| {

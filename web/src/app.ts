@@ -109,6 +109,7 @@ import {
   type MarketNode
 } from './api'
 import { DirectGuest, DirectHost, DirectLink, ManualRelay, isWebRtcAvailable, type ChannelMessage } from './p2p'
+import { openExternal } from './project'
 import type { ReplicaStorage } from './storage'
 
 export type Connection = 'offline' | 'connecting' | 'online' | 'syncing'
@@ -253,6 +254,8 @@ export class App {
   private syncInFlight = false
   private syncRequested = false
   private debounceTimer: Timer | null = null
+  /** Integration id whose sign-in is running in the system browser (Tauri apps); checked when the window regains focus. */
+  private pendingIntegration: string | null = null
   private pollTimer: Timer | null = null
   private retryTimer: Timer | null = null
   private connectPollTimer: Timer | null = null
@@ -392,6 +395,8 @@ export class App {
     window.addEventListener('offline', () => {
       if (this.state.connection !== 'offline') this.set({ connection: 'offline' })
     })
+    window.addEventListener('focus', () => void this.checkPendingIntegration())
+    document.addEventListener('visibilitychange', () => void this.checkPendingIntegration())
     if (this.pendingSession) {
       void this.resume(this.pendingSession)
       this.pendingSession = null
@@ -807,10 +812,25 @@ export class App {
     if (status?.kind === 'platform') { this.notify('info', `${status.name} is set up on the account itself (payments); there is nothing to connect here.`); return }
     try {
       const { url } = await startIntegration(session, id)
-      window.location.assign(url)
+      // In the Tauri apps the sign-in runs in the system browser: Google (and others) refuse embedded webviews
+      // ("disallowed_useragent"), and navigating the app's own window away would lose the app. The provider's
+      // callback lands on the web site, so the app learns the result when it regains focus (`checkPendingIntegration`).
+      const external = openExternal(url)
+      if (!external) { window.location.assign(url); return }
+      await external
+      this.pendingIntegration = id
+      this.notify('info', `Finish signing in to ${status?.name ?? id} in your browser, then come back here.`)
     } catch (error) {
       this.notify('error', error instanceof Error ? error.message : String(error))
     }
+  }
+  /** After a sign-in opened in the system browser: on return, see whether the peer is now connected. */
+  private async checkPendingIntegration(): Promise<void> {
+    const id = this.pendingIntegration
+    if (!id || document.visibilityState === 'hidden') return
+    await this.refreshIntegrations()
+    const status = this.state.integrations.find((p) => p.id === id)
+    if (status?.connected) { this.pendingIntegration = null; this.set({ atRoot: true }); this.notify('info', `${status.name} is connected.`) }
   }
   async disconnectIntegration(id: string): Promise<void> {
     const session = this.state.session

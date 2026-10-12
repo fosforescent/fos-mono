@@ -25,6 +25,11 @@ export function inTauri(): boolean {
   return !!(window as TauriWindow).__TAURI__?.core?.invoke
 }
 
+/** Open a URL in the system browser (tauri-plugin-opener, `opener:default` in capabilities). Null outside Tauri. */
+export function openExternal(url: string): Promise<void> | null {
+  return tauriInvoke<void>('plugin:opener|open_url', { url })
+}
+
 export async function findProject(): Promise<ProjectInfo | null> {
   const call = tauriInvoke<{ dir: string; config: string; branch: string | null } | null>('find_project')
   if (!call) return null

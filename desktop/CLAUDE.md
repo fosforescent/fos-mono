@@ -43,11 +43,9 @@ Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`
 
 ### Rust Dependencies
 - **tauri 2.9.5** - Core Tauri framework
-- **tauri-plugin-shell** - Shell/browser opening
-- **tauri-plugin-fs** - File system operations
-- **tauri-plugin-dialog** - File dialogs
 - **tauri-plugin-log** - Logging (dev only)
-- **tauri-plugin-deep-link** - URL scheme handling for auth callbacks
+- **tauri-plugin-opener** (`~2.4`, the newest that keeps tauri 2.9.5 locked; `opener:default` in `capabilities/default.json`) - opens URLs in the system browser. The web app calls it through `openExternal` (`web/src/project.ts`, `plugin:opener|open_url`) for the OAuth integration peers (GitHub/Google/Discord): Google refuses sign-ins from embedded webviews (`disallowed_useragent`), and navigating the app's own webview away would lose the app. The provider's callback lands on the web site; the app checks the connection when it regains focus (`App.checkPendingIntegration`).
+- No shell/fs/dialog/deep-link plugins: file access goes through the app's own commands (`commands.rs`)
 - **rquickjs** - embedded JS engine for the sync core
 - **ureq / tiny_http / toml / clap / rustyline** - account client, local server, config, CLI, REPL
 - **dirs** - Home directory detection
