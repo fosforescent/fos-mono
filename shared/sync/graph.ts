@@ -8,6 +8,24 @@
  *                                                  DOCUMENT = note block (markdown body, key/value children), COMMENT = comment
  *                                                  (data.comment), LINK = reference (data.ref.id = alias id of the node it stands for)
  *   legacy row  edge [LIST, node]                  plain row from older data (identity on the target); read like a DESCRIPTION row
+ *
+ * Mutable references. The root alias, link nodes (what devices attach to and
+ * propose against) and reference rows are one and the same node shape, the
+ * language design's ALIAS node:
+ *
+ *   ref node    data: alias{id} (+ ref{id} for a reference row)
+ *               [TARGETPOINTER, valueCid]       the current value (a content node: description, todo, rows…)
+ *               [INSTRUCTIONPOINTER, typeCid]   optional type (the root uses the ROOT instruction)
+ *               [PREV, previousRefCid]*         history: one per parent version, two after a merge
+ *               [MEMBER, ref]* [PROPOSAL, p]* [PEER, ref]*   who is attached to the reference
+ *
+ *   A row whose identity node is a ref node is a "link row": its text and rows
+ *   are read through TARGETPOINTER (`valueContent`), edits advance the ref
+ *   (new ref node, PREV → the old one), bookkeeping stays on the ref node.
+ *   A reference row is a ref node with data.ref.id naming the row it stands
+ *   for and TARGETPOINTER holding a snapshot of that row's ref node; it is
+ *   resolved live by id. Older data had link nodes inline (data.link with the
+ *   bookkeeping edges on the content node); `normalizeRefs` rewrites those.
  *   peer        edge [PEER, peerRefNode]          peerRefNode.data: peerId{content}   (see membership.ts)
  *   choice      edge [CHOICE, choiceNode]         an unresolved divergence; replaces the task/partition edge it concerns
  *                 choiceNode.data: alias{id of the thing in conflict}, conflict{path}, option{defaultResolutionStrategy:'choice'}
@@ -49,6 +67,52 @@ export function aliasIdOf(value: FosNodeContent): string | null {
   return value.data.alias?.id ?? null
 }
 
+// ---------------------------------------------------------------------------
+// Mutable references (ALIAS nodes)
+
+/** A node with a TARGETPOINTER edge: the root alias, a link row's identity node, or a reference row. */
+export function isRefNode(store: FosStore, value: FosNodeContent): boolean {
+  return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
+}
+
+/** A reference row: a ref node standing for another row (data.ref.id); its own value is not followed. */
+export function isHandle(value: FosNodeContent): boolean {
+  return !!value.data.ref
+}
+
+export function refValueCid(store: FosStore, value: FosNodeContent): string | null {
+  const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId())
+  return edge ? edge[1] : null
+}
+
+export function refTypeCid(store: FosStore, value: FosNodeContent): string | null {
+  const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())
+  return edge ? edge[1] : null
+}
+
+/** The content a node stands for: its TARGETPOINTER value for ref nodes (not handles), the node itself otherwise. */
+export function valueContent(store: FosStore, cid: string): FosNodeContent {
+  const value = content(store, cid)
+  if (isHandle(value)) return value
+  const target = refValueCid(store, value)
+  return target && store.table.has(target) ? content(store, target) : value
+}
+
+/** Cid of the content a node stands for (see valueContent). */
+export function valueCidOf(store: FosStore, cid: string): string {
+  const value = content(store, cid)
+  if (isHandle(value)) return cid
+  const target = refValueCid(store, value)
+  return target && store.table.has(target) ? target : cid
+}
+
+/** Build a ref node for `valueCid` with the given identity and bookkeeping edges. */
+export function refNodeContent(store: FosStore, data: FosNodeContent['data'], valueCid: string, bookkeeping: FosPathElem[] = [], typeCid: string | null = null): FosNodeContent {
+  const children: FosPathElem[] = [[store.primitive.targetPointerConstructor.getId(), valueCid]]
+  if (typeCid) children.push([store.primitive.instructionPointerConstructor.getId(), typeCid])
+  return { data, children: [...children, ...bookkeeping] }
+}
+
 export function newId(): string {
   const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
   if (cryptoApi?.randomUUID) return cryptoApi.randomUUID()
@@ -75,7 +139,7 @@ export function edgeKey(store: FosStore, edge: FosPathElem): string {
 }
 
 export function isTaskEdge(store: FosStore, edge: FosPathElem): boolean {
-  return edge[1] === store.primitive.completeField.getId() && !!content(store, edge[0]).data.todo
+  return edge[1] === store.primitive.completeField.getId() && !!valueContent(store, edge[0]).data.todo
 }
 
 export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref'
@@ -97,7 +161,7 @@ export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
   if (isPartitionEdge(store, edge)) return 'plain' // legacy [LIST, node]
   const [, target] = edge
   const p = store.primitive
-  if (target === p.completeField.getId()) return content(store, edge[0]).data.todo ? 'task' : 'plain'
+  if (target === p.completeField.getId()) return valueContent(store, edge[0]).data.todo ? 'task' : 'plain'
   if (target === p.descriptionField.getId()) return 'plain'
   if (target === p.documentField.getId()) return 'note'
   if (target === p.commentField.getId()) return 'comment'
@@ -161,11 +225,15 @@ export function taskContent(id: string, title: string, done: boolean, createdAt:
 }
 
 /** Content of a row of `kind`. `text` is the title (task/plain/comment), markdown body (note) or ignored (ref). */
-export function rowContent(kind: RowKind, id: string, text: string, now: number, extra: { done?: boolean; refId?: string; author?: { id: string; name: string } } = {}): FosNodeContent {
+export function rowContent(kind: RowKind, id: string, text: string, now: number, extra: { done?: boolean; refId?: string; author?: { id: string; name: string }; targetCid?: string; store?: FosStore } = {}): FosNodeContent {
   const data: FosNodeContent['data'] = { alias: { id }, description: { content: text }, updated: { time: now } }
   if (kind === 'task') data.todo = { completed: !!extra.done, time: now }
   if (kind === 'comment') data.comment = { content: text, authorID: extra.author?.id ?? '', authorName: extra.author?.name ?? '', time: now, votes: {} }
-  if (kind === 'ref') data.ref = { id: extra.refId ?? '' }
+  if (kind === 'ref') {
+    data.ref = { id: extra.refId ?? '' }
+    // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
+    if (extra.targetCid && extra.store) return refNodeContent(extra.store, data, extra.targetCid)
+  }
   return { data, children: [] }
 }
 
@@ -309,24 +377,60 @@ export function replaceEdge(store: FosStore, value: FosNodeContent, key: string,
  * returns the new cid of `nodeCid`. Every link node on the way to the change
  * gets a PREV edge to the version it replaces, so links keep their history.
  */
-export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn: (value: FosNodeContent) => FosNodeContent): string {
-  const value = content(store, nodeCid)
-  const version = (next: FosNodeContent): string => {
-    if (next === value) return nodeCid
-    // A link gets a PREV edge only when its content changed, not for bookkeeping (members, proposals).
-    const contentChanged = isLink(next) && putStripped(store, next) !== putStripped(store, value)
-    return put(store, contentChanged ? withPrev(store, next, nodeCid) : next)
+/**
+ * Apply `fn` at `scope` below `nodeCid` and return the new cid of `nodeCid`.
+ *   mode 'value' (default): `fn` sees and returns the *content* a node stands for; when the
+ *     node is a ref (link row, root alias) the ref advances: a new ref node pointing at the new
+ *     content with PREV → the old ref node. Bookkeeping (members, proposals, peers) is kept.
+ *   mode 'node': `fn` sees and returns the identity node itself (a ref node for link rows), for
+ *     bookkeeping changes and wholesale replacement; no PREV is added unless `fn` adds it.
+ */
+export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn: (value: FosNodeContent) => FosNodeContent, mode: 'value' | 'node' = 'value'): string {
+  const identity = content(store, nodeCid)
+  const ref = isRefNode(store, identity) && !isHandle(identity)
+  const value = ref ? valueContent(store, nodeCid) : identity
+
+  // the result for this node given its new content
+  const advance = (nextValue: FosNodeContent): string => {
+    if (nextValue === value) return nodeCid
+    if (ref) {
+      const now = nextValue.data.updated?.time ?? value.data.updated?.time ?? 0
+      return put(store, relinkContent(store, identity, nodeCid, nextValue, now))
+    }
+    if (isLegacyInlineLink(store, identity)) {
+      // not normalized yet: keep the old inline behaviour (PREV only on content change)
+      const contentChanged = putStripped(store, nextValue) !== putStripped(store, value)
+      return put(store, contentChanged ? withPrev(store, nextValue, nodeCid) : nextValue)
+    }
+    return put(store, nextValue)
   }
-  if (scope.length === 0) return version(fn(value))
+
+  if (scope.length === 0) {
+    if (mode === 'node') {
+      const next = fn(identity)
+      return next === identity ? nodeCid : put(store, next)
+    }
+    return advance(fn(value))
+  }
   const [step, ...rest] = scope as [string, ...string[]]
   const found = findAliasEdge(store, value, step)
   if (!found || isChoiceEdge(store, found.edge)) throw new Error(`node ${step} not found`)
   const childCid = identityCid(store, found.edge)
-  const nextChild = updateAtScope(store, childCid, rest, fn)
+  const nextChild = updateAtScope(store, childCid, rest, fn, mode)
   if (nextChild === childCid) return nodeCid
   const children = [...value.children]
   children[found.index] = withIdentity(store, found.edge, nextChild)
-  return version({ ...value, children })
+  return advance({ ...value, children })
+}
+
+/** Replace the content a child edge's identity stands for; returns the edge with its new identity (refs advance with PREV). */
+export function withChildValue(store: FosStore, edge: FosPathElem, nextValue: FosNodeContent, now: number): FosPathElem {
+  const idCid = identityCid(store, edge)
+  const identity = content(store, idCid)
+  if (isRefNode(store, identity) && !isHandle(identity)) {
+    return withIdentity(store, edge, put(store, relinkContent(store, identity, idCid, nextValue, now)))
+  }
+  return withIdentity(store, edge, put(store, nextValue))
 }
 
 /** Deliberately detach a device: drop its PEER edge (and its MEMBER entry, if any). */
@@ -511,7 +615,8 @@ export function taskView(store: FosStore, taskCid: string): TaskView {
 
 /** A row of any kind as the tree shows it. */
 export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskView {
-  const value = content(store, nodeCid)
+  const identity = content(store, nodeCid)
+  const value = valueContent(store, nodeCid)
   const created = value.data.todo?.time ?? value.data.updated?.time ?? 0
   const sub = countNode(store, nodeCid)
   const view: TaskView = {
@@ -526,9 +631,9 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
-    isLink: isLink(value)
+    isLink: isLink(store, identity)
   }
-  if (kind === 'ref') view.refId = value.data.ref?.id ?? ''
+  if (kind === 'ref') view.refId = identity.data.ref?.id ?? ''
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
   return view
 }
@@ -537,7 +642,7 @@ function describeEdge(store: FosStore, edge: FosPathElem | null): { task: TaskVi
   if (!edge) return { task: null, label: null }
   const kind = rowKindOf(store, edge)
   if (kind) return { task: rowView(store, identityCid(store, edge), kind), label: null }
-  const value = content(store, identityCid(store, edge))
+  const value = valueContent(store, identityCid(store, edge))
   return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? 'node' }
 }
 
@@ -554,7 +659,7 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
   let tasks = 0
   let done = 0
   let choices = 0
-  for (const edge of content(store, cid).children) {
+  for (const edge of valueContent(store, cid).children) {
     if (isTaskEdge(store, edge)) {
       tasks++
       if (content(store, edge[0]).data.todo?.completed) done++
@@ -571,16 +676,25 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
 }
 
 export function viewNode(store: FosStore, cid: string): NodeView {
-  const value = content(store, cid)
-  const link = isLink(value)
+  const identity = content(store, cid)      // ref node for link rows (bookkeeping lives here)
+  const value = valueContent(store, cid)    // the content: text, rows
+  const link = isLink(store, identity)
   const view: NodeView = {
     name: value.data.description?.content ?? null,
     done: value.data.todo ? !!value.data.todo.completed : null,
     tasks: [], choices: [], peers: [],
     isLink: link,
-    members: link ? readMembers(store, value) : [],
-    proposals: link ? readProposals(store, value).map((p) => proposalView(store, value, p)) : [],
+    members: link ? readMembers(store, identity) : [],
+    proposals: link ? readProposals(store, identity).map((p) => proposalView(store, identity, p)) : [],
     versions: link ? linkHistory(store, cid).length : 0
+  }
+  // peers may sit on the ref node (new) or on the content node (legacy inline links, plain nodes)
+  const peerEdges = identity === value ? identity.children : [...identity.children, ...value.children]
+  for (const edge of peerEdges) {
+    if (isPeerEdge(store, edge)) {
+      const peerId = content(store, edge[1]).data.peerId?.content
+      if (peerId && !view.peers.includes(peerId)) view.peers.push(peerId)
+    }
   }
   for (const edge of value.children) {
     const kind = rowKindOf(store, edge)
@@ -588,9 +702,6 @@ export function viewNode(store: FosStore, cid: string): NodeView {
       view.tasks.push(rowView(store, identityCid(store, edge), kind))
     } else if (isChoiceEdge(store, edge)) {
       view.choices.push(choiceView(store, edge[1]))
-    } else if (isPeerEdge(store, edge)) {
-      const peerId = content(store, edge[1]).data.peerId?.content
-      if (peerId) view.peers.push(peerId)
     }
   }
   // Order is the edge order (part of the node's identity since cid v2); no sorting.
@@ -599,8 +710,9 @@ export function viewNode(store: FosStore, cid: string): NodeView {
 
 /** Where a peer is attached: the scope of the first node (depth-first) carrying a [PEER, ref] edge for `peerId`. */
 export function findPeerScope(store: FosStore, nodeCid: string, peerId: string, prefix: Scope = []): Scope | null {
-  const value = content(store, nodeCid)
-  for (const edge of value.children) {
+  const identity = content(store, nodeCid)
+  const value = valueContent(store, nodeCid)
+  for (const edge of identity === value ? identity.children : [...identity.children, ...value.children]) {
     if (isPeerEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId) return prefix
   }
   for (const edge of value.children) {
@@ -621,7 +733,7 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
   for (const step of scope) {
     if (!current) { names.push(step); continue }
     const next = findChild(store, current, step)
-    names.push(next ? content(store, next).data.description?.content ?? step : step)
+    names.push(next ? valueContent(store, next).data.description?.content ?? step : step)
     current = next
   }
   return names
@@ -643,8 +755,15 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
 
 export type Capability = 'edit' | 'approve'
 
-export function isLink(value: FosNodeContent): boolean {
-  return !!value.data.link
+/** A link row's identity node: a ref node that is not a reference row (legacy inline link nodes still count). */
+export function isLink(store: FosStore, value: FosNodeContent): boolean {
+  if (isHandle(value)) return false
+  return isRefNode(store, value) || !!value.data.link
+}
+
+/** Legacy inline link node (data.link with bookkeeping on the content node), not yet rewritten as a ref node. */
+export function isLegacyInlineLink(store: FosStore, value: FosNodeContent): boolean {
+  return !!value.data.link && !isRefNode(store, value)
 }
 
 export function isPrevEdge(store: FosStore, edge: FosPathElem): boolean {
@@ -664,10 +783,19 @@ export function isBookkeepingEdge(store: FosStore, edge: FosPathElem): boolean {
   return isPrevEdge(store, edge) || isMemberEdge(store, edge) || isProposalEdge(store, edge) || isPeerEdge(store, edge)
 }
 
-/** The node's content without history/member/proposal edges (and without the link marker). */
+/** The content a link node stands for: the TARGETPOINTER value for ref nodes; for legacy inline links the node without its bookkeeping. */
 export function stripLink(store: FosStore, value: FosNodeContent): FosNodeContent {
+  if (isRefNode(store, value) && !isHandle(value)) {
+    const target = refValueCid(store, value) as string
+    return store.table.has(target) ? content(store, target) : { data: {}, children: [] }
+  }
   const { link: _link, ...data } = value.data
   return { data, children: value.children.filter((e) => !isBookkeepingEdge(store, e)) }
+}
+
+/** Bookkeeping edges (PREV, MEMBER, PROPOSAL, PEER) of a link node, wherever they live. */
+export function bookkeepingOf(store: FosStore, value: FosNodeContent): FosPathElem[] {
+  return value.children.filter((e) => isBookkeepingEdge(store, e))
 }
 
 /** Put a stripped content node and return its cid. */
@@ -675,10 +803,13 @@ export function putStripped(store: FosStore, value: FosNodeContent): string {
   return put(store, stripLink(store, value))
 }
 
-/** Turn a node into a link node (idempotent). */
-export function makeLink(value: FosNodeContent, now: number): FosNodeContent {
-  if (isLink(value)) return value
-  return { ...value, data: { ...value.data, link: { createdAt: now } } }
+/** Turn a node into a link node: a ref node whose value is the node's content (idempotent; rewrites legacy inline links). */
+export function makeLink(store: FosStore, value: FosNodeContent, now: number): FosNodeContent {
+  if (isRefNode(store, value) && !isHandle(value)) return value
+  const stripped = stripLink(store, value)
+  const valueCid = put(store, stripped)
+  const data: FosNodeContent['data'] = { alias: value.data.alias ?? { id: newId() }, updated: { time: now } }
+  return refNodeContent(store, data, valueCid, bookkeepingOf(store, value))
 }
 
 /** New version of a link node: `next` content plus a PREV edge to the version it replaces. */
@@ -834,14 +965,43 @@ export function removeProposalByCid(store: FosStore, value: FosNodeContent, prop
   return { ...value, children: value.children.filter((e) => !(isProposalEdge(store, e) && e[1] === proposalCid)) }
 }
 
-/** Rebuild a link node from new stripped content, keeping bookkeeping edges and adding PREV → previous version. */
+/** New version of a link node: a ref node pointing at `strippedContent`, keeping members/proposals/peers, PREV → the version it replaces. */
 export function relinkContent(store: FosStore, previous: FosNodeContent, previousCid: string, strippedContent: FosNodeContent, now: number): FosNodeContent {
   const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e))
-  const next: FosNodeContent = {
-    data: { ...strippedContent.data, link: previous.data.link ?? { createdAt: now }, updated: { time: now } },
-    children: [...strippedContent.children, ...bookkeeping]
-  }
+  const data: FosNodeContent['data'] = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } }
+  if (previous.data.ref) data.ref = previous.data.ref
+  const next = refNodeContent(store, data, put(store, strippedContent), bookkeeping, refTypeCid(store, previous))
   return withPrev(store, next, previousCid)
+}
+
+/**
+ * Rewrite legacy inline link nodes (data.link with bookkeeping on the content node)
+ * below `nodeCid` into ref nodes. Returns the new cid (same cid when nothing changed).
+ * Deterministic, so every device and the server converge on the same nodes.
+ */
+export function normalizeRefs(store: FosStore, nodeCid: string, now: number = 0): string {
+  const identity = content(store, nodeCid)
+  if (isHandle(identity)) return nodeCid
+  const ref = isRefNode(store, identity)
+  const value = ref ? valueContent(store, nodeCid) : identity
+  let changed = false
+  const children = value.children.map((edge) => {
+    if (!isRowEdge(store, edge) || isPartitionEdge(store, edge)) return edge
+    const childCid = identityCid(store, edge)
+    const next = normalizeRefs(store, childCid, now)
+    if (next === childCid) return edge
+    changed = true
+    return withIdentity(store, edge, next)
+  })
+  let nextValue = changed ? { ...value, children } : value
+  if (isLegacyInlineLink(store, identity)) {
+    // the node itself: content → value node, bookkeeping → ref node (history edges kept)
+    const stripped = stripLink(store, nextValue)
+    return put(store, refNodeContent(store, { alias: identity.data.alias ?? { id: newId() }, updated: { time: identity.data.updated?.time ?? now } }, put(store, stripped), bookkeepingOf(store, identity)))
+  }
+  if (!changed) return nodeCid
+  if (ref) return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now))
+  return put(store, nextValue)
 }
 
 // ---------------------------------------------------------------------------
@@ -856,7 +1016,7 @@ export function findAliasEdge(store: FosStore, value: FosNodeContent, aliasId: s
 
 /** Cid of the node that `aliasId` names below `nodeCid` (task or partition), or null. */
 export function findChild(store: FosStore, nodeCid: string, aliasId: string): string | null {
-  const found = findAliasEdge(store, content(store, nodeCid), aliasId)
+  const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId)
   if (!found) return null
   const { edge } = found
   if (isChoiceEdge(store, edge)) return null
@@ -865,7 +1025,7 @@ export function findChild(store: FosStore, nodeCid: string, aliasId: string): st
 
 /** Where the row with alias `aliasId` lives below `rootCid` (depth-first), with its view; null when absent. */
 export function findRowByAlias(store: FosStore, rootCid: string, aliasId: string, prefix: Scope = []): { path: Scope; row: TaskView } | null {
-  for (const edge of content(store, rootCid).children) {
+  for (const edge of valueContent(store, rootCid).children) {
     const kind = rowKindOf(store, edge)
     if (!kind) continue
     const cid = identityCid(store, edge)
@@ -916,12 +1076,11 @@ export function moveChild(store: FosStore, rootCid: string, fromPath: Scope, ali
       const parent = findAliasEdge(store, value, position.into)
       if (!parent) throw new Error('destination not found')
       const target = identityCid(store, parent.edge)
-      const targetContent = content(store, target)
+      const targetContent = valueContent(store, target)
       const kids = [...targetContent.children]
       const at = position.index === undefined || position.index < 0 ? kids.length : Math.min(position.index, kids.length)
       kids.splice(at, 0, moving)
-      const newTarget = put(store, { ...targetContent, children: kids })
-      children[parent.index] = withIdentity(store, parent.edge, newTarget)
+      children[parent.index] = withChildValue(store, parent.edge, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0)
       return { ...value, children }
     }
     const sibling = findAliasEdge(store, value, position.relativeTo)

@@ -29,6 +29,8 @@ import { CURRENT_CID_VERSION, type CidVersion } from '../dag-implementation/cid'
 import type { FosNodesData } from '../types'
 import {
   SYNC_FORMAT_VERSION,
+  type Scope,
+  bookkeepingOf,
   commitRoot,
   content,
   hasNode,
@@ -41,13 +43,14 @@ import {
   reachableNodes,
   reachableSet,
   readProposals,
+  refNodeContent,
+  refTypeCid,
   resolveScope,
   rootTargetCid,
   stripLink,
   updateAtScope,
   withPeer,
-  withProposal,
-  type Scope
+  withProposal
 } from './graph'
 import { mergeNodes } from './merge'
 
@@ -142,7 +145,7 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
   const rootTarget = rootTargetCid(store)
   const currentCid = resolveScope(store, rootTarget, request.scope)
   if (!currentCid) return { error: 'scope not found', code: 'scope-not-found' }
-  if (options.proposeOnly && isLink(content(store, currentCid))) {
+  if (options.proposeOnly && isLink(store, content(store, currentCid))) {
     return serveProposal(store, request, serverPeerId, now, options, rootTarget, currentCid)
   }
 
@@ -175,7 +178,7 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
 
   const changed = resultCid !== currentCid
   if (changed) {
-    const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid))
+    const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), 'node')
     commitRoot(store, newRootTarget, now)
   }
 
@@ -249,22 +252,21 @@ function serveProposal(store: FosStore, request: SyncRequest, serverPeerId: stri
   const nextLinkCid = put(store, withPeerContent)
   let changed = nextLinkCid !== linkCid
   if (changed) {
-    const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, nextLinkCid))
+    const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, nextLinkCid), 'node')
     commitRoot(store, newRootTarget, now)
   }
 
-  // What the peer sees: its branch content plus the node's bookkeeping edges.
-  // The peer builds on this node (its next version links PREV to it), so it must
-  // be persisted even when the link itself did not change.
-  const bookkeeping = content(store, nextLinkCid).children.filter((e) => isBookkeepingEdge(store, e))
-  const branch = content(store, branchCid)
-  const resultContent = {
-    data: { ...branch.data, link: linkValue.data.link ?? { createdAt: now } },
-    children: [...branch.children, ...bookkeeping]
-  }
+  // What the peer sees: a ref node with the same identity whose value is its branch, plus the
+  // node's bookkeeping edges. The peer builds on this node (its next version links PREV to it),
+  // so it must be persisted even when the link itself did not change.
+  const persisted = content(store, nextLinkCid)
+  const bookkeeping = bookkeepingOf(store, persisted)
+  const resultContent = refNodeContent(store, { ...persisted.data, alias: persisted.data.alias ?? content(store, branchCid).data.alias ?? { id: request.scope[request.scope.length - 1] ?? '' } }, branchCid, bookkeeping, refTypeCid(store, persisted))
   const resultExisted = store.table.has(store.hash(resultContent))
   const resultCid = put(store, resultContent)
   if (!resultExisted) changed = true
+  // Same content but different bookkeeping (a proposal approved/rejected, members changed): the peer must pull it.
+  if (action === 'noop' && resultCid !== request.headCid) action = 'pull'
 
   const known = new Set([...Object.keys(request.nodes), ...reachableSet(store, [request.headCid, request.baseCid])])
   return {

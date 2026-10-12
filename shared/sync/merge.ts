@@ -17,14 +17,24 @@
 import { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
+  bookkeepingOf,
   content,
   edgeKey,
   identityCid,
   isChoiceEdge,
+  isHandle,
+  isLegacyInlineLink,
+  isPrevEdge,
+  isRefNode,
+  makeLink,
   put,
   putChoice,
   readProposal,
+  refNodeContent,
+  refTypeCid,
+  refValueCid,
   sameShape,
+  stripLink,
   withIdentity,
   type ChoiceOption
 } from './graph'
@@ -66,6 +76,39 @@ function mergeNode(
   const base = baseCid ? content(store, baseCid) : EMPTY
   const ours = content(store, oursCid)
   const theirs = content(store, theirsCid)
+
+  // Mutable references merge by value; members/proposals/peers are unioned; history keeps both parents.
+  const asRef = (value: FosNodeContent): boolean => (isRefNode(store, value) && !isHandle(value)) || isLegacyInlineLink(store, value)
+  if (asRef(ours) || asRef(theirs)) {
+    const refOf = (cid: string | null, value: FosNodeContent): { cid: string; node: FosNodeContent } | null => {
+      if (!cid) return null
+      if (isRefNode(store, value) && !isHandle(value)) return { cid, node: value }
+      const node = makeLink(store, value, 0)
+      return { cid: put(store, node), node }
+    }
+    const o = refOf(oursCid, ours) as { cid: string; node: FosNodeContent }
+    const t = refOf(theirsCid, theirs) as { cid: string; node: FosNodeContent }
+    const b = baseCid ? refOf(baseCid, base) : null
+    const valueOf = (r: { node: FosNodeContent } | null): string | null => (r ? refValueCid(store, r.node) : null)
+    const oursValue = valueOf(o) ?? put(store, stripLink(store, ours))
+    const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs))
+    const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true)
+    const mergedValue = merged.kind === 'node' ? merged.cid : oursValue
+    const book = (r: { node: FosNodeContent } | null): FosNodeContent => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] })
+    const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids)
+    // History: a merge that changed the value is a new version with both parents; a merge of
+    // bookkeeping only (members, peers, proposals) is not a version, so the existing PREV edges
+    // are kept as they are (unioned, like any other bookkeeping).
+    const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue
+    const prevEdge = (cid: string): FosPathElem => [store.primitive.previousVersion.getId(), cid]
+    const existingPrev = (r: { node: FosNodeContent } | null): FosPathElem[] => (r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [])
+    const prev: FosPathElem[] = valueChanged
+      ? (o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)])
+      : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))]
+    const data = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data
+    return { kind: 'node', cid: put(store, refNodeContent(store, data, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) }
+  }
+
   const isContainer = ours.children.length > 0 || theirs.children.length > 0 || base.children.length > 0
 
   const data = mergeData(base.data, ours.data, theirs.data, isContainer || isTop)
