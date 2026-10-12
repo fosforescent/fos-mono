@@ -14,6 +14,8 @@ Vanilla-TS task client used in the browser and wrapped by the Tauri desktop/mobi
 
 ## Conventions
 - The UI never sees content addresses; it reads `viewNode` output (alias ids, titles, flags).
+- There is no "partition" concept: any task can be zoomed into, invited to, or attached to by a device. Legacy plain nodes from older data arrive as `TaskView` rows with `checkable: false` (no checkbox).
+- Icons: `public/favicon*.png|ico`, `apple-touch-icon.png`, `icon-192/512.png`, `site.webmanifest` are generated from the tree logo (`frontend/logo3-bare.ico`, 256px, the largest copy in the repo).
 - Replica operations return a new replica object; always use the returned value.
 - `tsconfig.json` deliberately omits `erasableSyntaxOnly`/`noUnused*`/`verbatimModuleSyntax` so the graph code in `shared/` compiles.
 

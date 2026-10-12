@@ -1670,17 +1670,11 @@
       children: []
     };
   }
-  function partitionContent(id, name, children = []) {
-    return { data: { alias: { id }, description: { content: name } }, children };
-  }
   function peerRefContent(peerId) {
     return { data: { peerId: { content: peerId } }, children: [] };
   }
   function taskEdge(store, taskCid) {
     return [taskCid, store.primitive.completeField.getId()];
-  }
-  function partitionEdge(store, partitionCid) {
-    return [store.primitive.listField.getId(), partitionCid];
   }
   function pointerContent(peerId, edge, store) {
     const data = peerId ? { peerId: { content: peerId } } : {};
@@ -1881,10 +1875,28 @@
     return {
       id: aliasIdOf(value) ?? taskCid,
       title: value.data.description?.content ?? "",
+      checkable: true,
       done: !!value.data.todo?.completed,
       createdAt: created,
       updatedAt: value.data.updated?.time ?? created,
-      childCount: value.children.filter((e) => isTaskEdge(store, e)).length,
+      childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
+      childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
+      subtreeTasks: sub.tasks,
+      subtreeDone: sub.done,
+      isLink: isLink(value)
+    };
+  }
+  function plainNodeView(store, nodeCid) {
+    const value = content(store, nodeCid);
+    const sub = countNode(store, nodeCid);
+    return {
+      id: aliasIdOf(value) ?? nodeCid,
+      title: value.data.description?.content ?? "",
+      checkable: false,
+      done: false,
+      createdAt: value.data.updated?.time ?? 0,
+      updatedAt: value.data.updated?.time ?? 0,
+      childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
       childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
       subtreeTasks: sub.tasks,
       subtreeDone: sub.done,
@@ -1938,7 +1950,6 @@
       done: value.data.todo ? !!value.data.todo.completed : null,
       tasks: [],
       choices: [],
-      partitions: [],
       peers: [],
       isLink: link,
       members: link ? readMembers(store, value) : [],
@@ -1951,14 +1962,7 @@
       } else if (isChoiceEdge(store, edge)) {
         view2.choices.push(choiceView(store, edge[1]));
       } else if (isPartitionEdge(store, edge)) {
-        const child = content(store, edge[1]);
-        const counts = countNode(store, edge[1]);
-        view2.partitions.push({
-          id: aliasIdOf(child) ?? edge[1],
-          name: child.data.description?.content ?? "",
-          taskCount: counts.tasks,
-          choiceCount: counts.choices
-        });
+        view2.tasks.push(plainNodeView(store, edge[1]));
       } else if (isPeerEdge(store, edge)) {
         const peerId = content(store, edge[1]).data.peerId?.content;
         if (peerId)
@@ -7653,9 +7657,9 @@
     commitRoot(replica.store, next, now);
     return { ...replica };
   }
-  function findTaskEdge(replica, value, taskId) {
-    const edge = findEdge(replica.store, value, `a:${taskId}`);
-    return edge && edge[1] === replica.store.primitive.completeField.getId() ? edge : void 0;
+  function findChildEdge(replica, value, aliasId) {
+    const edge = findEdge(replica.store, value, `a:${aliasId}`);
+    return edge && (isTaskEdge(replica.store, edge) || isPartitionEdge(replica.store, edge)) ? edge : void 0;
   }
   function addTask(replica, at, title, now, id = newId()) {
     const trimmed = title.trim();
@@ -7668,19 +7672,21 @@
   }
   function updateTask(replica, at, taskId, now, change) {
     return edit(replica, at, now, (value) => {
-      const edge = findTaskEdge(replica, value, taskId);
+      const edge = findChildEdge(replica, value, taskId);
       if (!edge)
         return value;
-      const task = content(replica.store, edge[0]);
-      const next = change(task);
+      const node = content(replica.store, identityCid(replica.store, edge));
+      const next = change(node);
       if (!next)
         return value;
       const cid = put(replica.store, { ...next, data: { ...next.data, updated: { time: now } } });
-      return replaceEdge(replica.store, value, `a:${taskId}`, taskEdge(replica.store, cid));
+      return replaceEdge(replica.store, value, `a:${taskId}`, withIdentity(replica.store, edge, cid));
     });
   }
   function setTaskDone(replica, at, taskId, done, now) {
     return updateTask(replica, at, taskId, now, (task) => {
+      if (!task.data.todo)
+        return null;
       if (!!task.data.todo?.completed === done)
         return null;
       return { ...task, data: { ...task.data, todo: { completed: done, time: task.data.todo?.time ?? now } } };
@@ -7698,22 +7704,13 @@
   }
   function deleteTask(replica, at, taskId, now) {
     return edit(replica, at, now, (value) => {
-      if (!findTaskEdge(replica, value, taskId))
+      if (!findChildEdge(replica, value, taskId))
         return value;
       return replaceEdge(replica.store, value, `a:${taskId}`, null);
     });
   }
   function resolve(replica, at, choiceId, pick, now) {
     return edit(replica, at, now, (value) => resolveChoiceIn(replica.store, value, choiceId, pick, now));
-  }
-  function addPartition(replica, at, name, now, id = newId()) {
-    const clean = name.trim();
-    if (!clean)
-      return replica;
-    return edit(replica, at, now, (value) => {
-      const cid = put(replica.store, partitionContent(id, clean));
-      return { ...value, children: [...value.children, partitionEdge(replica.store, cid)] };
-    });
   }
   function moveNode(replica, fromPath, aliasId, toPath, position, now) {
     const next = moveChild(replica.store, headCid(replica), fromPath, aliasId, toPath, position);
@@ -7830,7 +7827,7 @@
         if (!node)
           return;
         for (const t of node.tasks) {
-          lines.push(`${"  ".repeat(depth)}${t.done ? "[x]" : "[ ]"} ${t.id.slice(0, 8)} ${t.title}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ""}${t.isLink ? " \u26D3" : ""}`);
+          lines.push(`${"  ".repeat(depth)}${t.checkable ? t.done ? "[x]" : "[ ]" : " \xB7 "} ${t.id.slice(0, 8)} ${t.title}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ""}${t.isLink ? " \u26D3" : ""}`);
           if (t.childCount)
             walk([...at, t.id], depth + 1);
         }
@@ -7866,9 +7863,6 @@
       set(handle, next);
       const node = view(next, parse2(atJson, []));
       return JSON.stringify(node?.tasks.at(-1) ?? null);
-    },
-    addPartition(handle, atJson, name, now) {
-      set(handle, addPartition(get2(handle), parse2(atJson, []), name, now));
     },
     setTaskDone(handle, atJson, id, done, now) {
       set(handle, setTaskDone(get2(handle), parse2(atJson, []), id, done, now));

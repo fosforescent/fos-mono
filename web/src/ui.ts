@@ -19,7 +19,7 @@ type Regions = {
   crumbs: HTMLElement
   choices: HTMLElement
   list: HTMLElement
-  partitions: HTMLElement
+  peers: HTMLElement
   footer: HTMLElement
   modal: HTMLElement
   addInput: HTMLInputElement
@@ -51,7 +51,7 @@ export function mountUi(root: HTMLElement, app: App): void {
       </form>
       <ul class="list tree" data-region="list"></ul>
     </section>
-    <section class="partitions" data-region="partitions"></section>
+    <section class="peers-here" data-region="peers"></section>
     <footer class="footer" data-region="footer"></footer>
     <div class="context-menu" data-region="context" hidden></div>
     <div class="modal-backdrop" data-region="modal" hidden></div>
@@ -69,7 +69,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     crumbs: q('crumbs'),
     choices: q('choices'),
     list: q('list'),
-    partitions: q('partitions'),
+    peers: q('peers'),
     footer: q('footer'),
     modal: q('modal'),
     addInput: addForm.querySelector('input') as HTMLInputElement
@@ -110,14 +110,14 @@ function render(regions: Regions, state: AppState, app: App): void {
 
   const node = app.currentView()
   if (!node) {
-    app.goTo([]) // the viewed partition vanished (e.g. removed by a merge)
+    app.goTo([]) // the viewed node vanished (e.g. removed by a merge)
     return
   }
   renderCrumbs(regions.crumbs, state, app)
   renderChoices(regions.choices, node, state, app)
   renderLinkPanel(regions.link, node, state, app)
   renderTree(regions.list, node, state, app)
-  renderPartitions(regions.partitions, node, app)
+  renderPeersHere(regions.peers, node, app)
   renderFooter(regions.footer, state, app)
   renderContextMenu(regions.context, state, app)
 }
@@ -309,7 +309,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const path: Scope = [...at, task.id]
   const selected = !!state.selected && state.selected.length === path.length && state.selected.every((p, i) => path[i] === p)
   const li = document.createElement('li')
-  li.className = 'task' + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
+  li.className = 'task' + (task.checkable ? '' : ' plain') + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
   li.style.setProperty('--depth', String(depth))
   li.draggable = true
   li.tabIndex = 0
@@ -362,6 +362,8 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const checkbox = document.createElement('input')
   checkbox.type = 'checkbox'
   checkbox.checked = task.done
+  checkbox.hidden = !task.checkable // a legacy plain node has no completion
+  checkbox.disabled = !task.checkable
   checkbox.tabIndex = -1
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
@@ -601,57 +603,25 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
   el.replaceChildren(...items)
 }
 
-function renderPartitions(el: HTMLElement, node: NodeView, app: App): void {
-  const heading = document.createElement('h2')
-  heading.textContent = 'Partitions'
-  const list = document.createElement('ul')
-  list.className = 'partition-list'
-  for (const partition of node.partitions) {
-    const li = document.createElement('li')
-    const open = button('link', partition.name || '(unnamed)', () => app.openPartition(partition.id))
-    const meta = span('muted', `${partition.taskCount} task${partition.taskCount === 1 ? '' : 's'}` + (partition.choiceCount ? `, ${partition.choiceCount} conflict${partition.choiceCount === 1 ? '' : 's'}` : ''))
-    li.append(open, meta)
-    if (app.state.session?.kind === 'user') {
-      const scope: Scope = [...app.currentScope(), partition.id]
-      const attach = button('secondary small', 'Sync only this', () => app.attachAt(scope))
-      attach.disabled = !app.canAttach(scope)
-      attach.title = attach.disabled ? 'Available while online with no unsynced changes' : 'Attach this device here'
-      li.append(attach)
+function renderPeersHere(el: HTMLElement, node: NodeView, app: App): void {
+  if (!node.peers.length) { el.replaceChildren(); el.hidden = true; return }
+  el.hidden = false
+  const peers = div('peers', '')
+  peers.append(span('muted', 'Devices attached here: '))
+  for (const p of node.peers) {
+    const row = span('peer-row', '')
+    row.dataset.peer = p
+    const dot = span('presence' + (app.isOnline(p) ? ' online' : ''), '')
+    dot.title = app.isOnline(p) ? 'online' : 'offline (still attached)'
+    row.append(dot, span('', peerLabel(p, app.state)))
+    if (app.state.session?.kind === 'user' && p !== app.state.replica.meta.peerId) {
+      const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p }))
+      more.title = 'Device actions'
+      row.append(more)
     }
-    list.append(li)
+    peers.append(row)
   }
-  const form = document.createElement('form')
-  form.className = 'add-partition'
-  form.innerHTML = `<input name="name" type="text" placeholder="New partition name" autocomplete="off" /><button type="submit">Create</button>`
-  form.addEventListener('submit', (event) => {
-    event.preventDefault()
-    const input = form.querySelector('input') as HTMLInputElement
-    app.addPartition(input.value)
-    input.value = ''
-  })
-  const peers = node.peers.length ? div('peers', '') : null
-  if (peers) {
-    peers.append(span('muted', 'Devices attached here: '))
-    for (const p of node.peers) {
-      const row = span('peer-row', '')
-      row.dataset.peer = p
-      const dot = span('presence' + (app.isOnline(p) ? ' online' : ''), '')
-      dot.title = app.isOnline(p) ? 'online' : 'offline (still attached)'
-      row.append(dot, span('', peerLabel(p, app.state)))
-      if (app.state.session?.kind === 'user' && p !== app.state.replica.meta.peerId) {
-        const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p }))
-        more.title = 'Device actions'
-        row.append(more)
-      }
-      peers.append(row)
-    }
-  }
-  el.replaceChildren(
-    heading,
-    ...(node.partitions.length ? [list] : [div('muted', 'Partitions let a device sync just one part of your account.')]),
-    form,
-    ...(peers ? [peers] : [])
-  )
+  el.replaceChildren(peers)
 }
 
 function renderFooter(el: HTMLElement, state: AppState, app: App): void {

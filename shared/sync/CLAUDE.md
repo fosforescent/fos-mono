@@ -8,7 +8,7 @@ Tauri desktop/mobile shell) and the backend. Design: `docs/sync.md`.
 
 ## Files
 - `embed.ts` - the replica API as JSON-string functions on `globalThis.fosCore` (+ `tree`, `findTask` for the shell); bundled by esbuild into `desktop/src-tauri/js/fos-core.js` and run in QuickJS by the `fos` binary. Rebuild after changing anything here: `cd desktop && ../node_modules/.bin/esbuild ../shared/sync/embed.ts --bundle --format=iife --platform=browser --target=es2020 --outfile=src-tauri/js/fos-core.js --inject:src-tauri/js/prelude.js`
-- `graph.ts` - conventions and helpers: task/partition/peer/choice edges built from existing primitives, identity keys (`data.alias.id`), `resolveScope`/`updateAtScope` path copying (steps through tasks too; links get PREV on content change), `moveChild` (above/below/into), link nodes (`makeLink`, members with capabilities, proposals, `linkHistory`), `commitRoot`, `reachableNodes`/`importNodes`, and the UI view model (`viewNode`)
+- `graph.ts` - conventions and helpers: task/peer/choice edges (plus legacy `[LIST, node]` plain nodes from older data, shown as uncheckable rows) built from existing primitives, identity keys (`data.alias.id`), `resolveScope`/`updateAtScope` path copying (steps through tasks too; links get PREV on content change), `moveChild` (above/below/into), link nodes (`makeLink`, members with capabilities, proposals, `linkHistory`), `commitRoot`, `reachableNodes`/`importNodes`, and the UI view model (`viewNode`)
 - `merge.ts` - `mergeNodes(store, base, ours, theirs, labels)` and `resolveChoiceIn`
 - `protocol.ts` - `SyncRequest`/`SyncResponse`, `parseSyncRequest`, `serveSync` (server side; `proposeOnly` runs branch mode at link nodes), `applySyncResponse` (device side)
 - `replica.ts` - `Replica = { store, meta }`, edit operations, `buildSyncRequest`/`completeSync`, `reattach`, `serializeReplica`/`loadReplica`
@@ -22,7 +22,7 @@ Tauri desktop/mobile shell) and the backend. Design: `docs/sync.md`.
 ## Invariants
 - Requests and responses carry `cidVersion`; peers in a different cid format are refused (`version-mismatch`, HTTP 409) and `importNodes` only accepts current-format nodes that verify.
 - Equal content ⇒ equal cid on every peer (`hashContent` sorts edges).
-- A thing is either a task/partition edge or inside a CHOICE edge under the same alias id, never both.
+- A thing is either a task (or legacy plain node) edge or inside a CHOICE edge under the same alias id, never both.
 - After `completeSync`, the replica's root target equals `meta.baseCid` equals what the server holds at the scope.
 
 ## Testing

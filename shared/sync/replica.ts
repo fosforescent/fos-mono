@@ -1,6 +1,6 @@
 /**
  * Device replica: a FosStore whose root alias points at the node this device is
- * attached to (the whole user-group document for scope [], or one partition),
+ * attached to (the whole user-group document for scope [], or one node),
  * plus the link metadata needed to sync it.
  *
  * Every edit creates new content nodes (path copy) and advances the root alias
@@ -16,7 +16,11 @@ import {
   content,
   exportReachableContext,
   findEdge,
+  identityCid,
+  isPartitionEdge,
+  isTaskEdge,
   makeLink,
+  markProposalRejected,
   moveChild,
   newId,
   partitionContent,
@@ -25,7 +29,6 @@ import {
   putStripped,
   reachableNodes,
   reachableSet,
-  markProposalRejected,
   readProposal,
   relinkContent,
   removeProposalByCid,
@@ -35,14 +38,15 @@ import {
   scopeNames,
   taskContent,
   taskEdge,
-  updateAtScope,
-  viewNode,
-  withMember,
-  withoutPeer,
   type Capability,
   type MovePosition,
   type NodeView,
-  type Scope
+  type Scope,
+  updateAtScope,
+  viewNode,
+  withIdentity,
+  withMember,
+  withoutPeer
 } from './graph'
 import { mergeNodes, resolveChoiceIn } from './merge'
 import { applySyncResponse, type SyncRequest, type SyncResponse } from './protocol'
@@ -51,7 +55,7 @@ export type ReplicaMeta = {
   version: typeof SYNC_FORMAT_VERSION
   peerId: string
   scope: Scope
-  /** Display names of the partitions along `scope` (a scoped replica cannot resolve them itself). */
+  /** Display names of the nodes along `scope` (a scoped replica cannot resolve them itself). */
   scopeNames: string[]
   baseCid: string | null
   lastSyncAt: number | null
@@ -153,6 +157,12 @@ function findTaskEdge(replica: Replica, value: FosNodeContent, taskId: string) {
   return edge && edge[1] === replica.store.primitive.completeField.getId() ? edge : undefined
 }
 
+/** A child carrying `aliasId`: a task edge or a legacy plain-node edge. */
+function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string) {
+  const edge = findEdge(replica.store, value, `a:${aliasId}`)
+  return edge && (isTaskEdge(replica.store, edge) || isPartitionEdge(replica.store, edge)) ? edge : undefined
+}
+
 export function addTask(replica: Replica, at: Scope, title: string, now: number, id: string = newId()): Replica {
   const trimmed = title.trim()
   if (!trimmed) return replica
@@ -164,18 +174,19 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
 
 function updateTask(replica: Replica, at: Scope, taskId: string, now: number, change: (task: FosNodeContent) => FosNodeContent | null): Replica {
   return edit(replica, at, now, (value) => {
-    const edge = findTaskEdge(replica, value, taskId)
+    const edge = findChildEdge(replica, value, taskId)
     if (!edge) return value
-    const task = content(replica.store, edge[0])
-    const next = change(task)
+    const node = content(replica.store, identityCid(replica.store, edge))
+    const next = change(node)
     if (!next) return value
     const cid = put(replica.store, { ...next, data: { ...next.data, updated: { time: now } } })
-    return replaceEdge(replica.store, value, `a:${taskId}`, taskEdge(replica.store, cid))
+    return replaceEdge(replica.store, value, `a:${taskId}`, withIdentity(replica.store, edge, cid))
   })
 }
 
 export function setTaskDone(replica: Replica, at: Scope, taskId: string, done: boolean, now: number): Replica {
   return updateTask(replica, at, taskId, now, (task) => {
+    if (!task.data.todo) return null // a legacy plain node has no completion
     if (!!task.data.todo?.completed === done) return null
     return { ...task, data: { ...task.data, todo: { completed: done, time: task.data.todo?.time ?? now } } }
   })
@@ -192,7 +203,7 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
 
 export function deleteTask(replica: Replica, at: Scope, taskId: string, now: number): Replica {
   return edit(replica, at, now, (value) => {
-    if (!findTaskEdge(replica, value, taskId)) return value
+    if (!findChildEdge(replica, value, taskId)) return value
     return replaceEdge(replica.store, value, `a:${taskId}`, null)
   })
 }
@@ -201,6 +212,7 @@ export function resolve(replica: Replica, at: Scope, choiceId: string, pick: num
   return edit(replica, at, now, (value) => resolveChoiceIn(replica.store, value, choiceId, pick, now))
 }
 
+/** @deprecated Legacy plain nodes are no longer created by the apps; kept for tests over older data. */
 export function addPartition(replica: Replica, at: Scope, name: string, now: number, id: string = newId()): Replica {
   const clean = name.trim()
   if (!clean) return replica
@@ -210,7 +222,7 @@ export function addPartition(replica: Replica, at: Scope, name: string, now: num
   })
 }
 
-/** Move a task (or partition) within the tree. `fromPath`/`toPath` are relative to the replica. */
+/** Move a node within the tree. `fromPath`/`toPath` are relative to the replica. */
 export function moveNode(replica: Replica, fromPath: Scope, aliasId: string, toPath: Scope, position: MovePosition, now: number): Replica {
   const next = moveChild(replica.store, headCid(replica), fromPath, aliasId, toPath, position)
   if (!next || next === headCid(replica)) return replica
