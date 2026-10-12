@@ -271,7 +271,7 @@ export const storeToDb = async (
   const nodesToCreate: { cid: string, data: JsonObject }[] = []
   const linksToEnsure: string[] = []
 
-  store.table.entries().forEach(([id, node]: [string, FosNodeContent]) => {
+  Array.from(store.table.entries()).forEach(([id, node]: [string, FosNodeContent]) => {
     if (!verifyCid(id, node)) {
       throw new Error("Hashes don't match")
     }
@@ -358,7 +358,7 @@ export const createSeedUser = async (prisma: PrismaClient, store: FosStore, user
     data: JsonObject,
   }
 
-  const newEntries: ReduceResultArrayTerm[] = store.table.entries().reduce((acc: ReduceResultArrayTerm[], [id, node]: [string, FosNodeContent]) => {
+  const newEntries: ReduceResultArrayTerm[] = Array.from(store.table.entries()).reduce((acc: ReduceResultArrayTerm[], [id, node]: [string, FosNodeContent]) => {
     if (!verifyCid(id, node)) {
       throw new Error("Hashes don't match")
     }
