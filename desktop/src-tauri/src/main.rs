@@ -12,19 +12,31 @@
 //! sign-in (SSO-capable) or a connect token; a project directory attaches to
 //! the node its config/invite names.
 
+#[cfg(desktop)]
 use clap::{Parser, Subcommand};
+#[cfg(desktop)]
 use colored::Colorize;
+#[cfg(desktop)]
 use std::env;
+#[cfg(desktop)]
 use std::fs;
+#[cfg(desktop)]
 use std::path::{Path, PathBuf};
 
+#[cfg(desktop)]
 mod client;
+#[cfg(desktop)]
 mod commands;
+#[cfg(desktop)]
 mod core;
+#[cfg(desktop)]
 mod local_server;
+#[cfg(desktop)]
 mod project;
+#[cfg(desktop)]
 mod workspace;
 
+#[cfg(desktop)]
 #[derive(Parser)]
 #[command(name = "fos")]
 #[command(author = "Fosforescent")]
@@ -39,6 +51,7 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[cfg(desktop)]
 #[derive(Subcommand)]
 enum Commands {
     /// Launch the GUI (default)
@@ -106,6 +119,12 @@ enum Commands {
     },
 }
 
+#[cfg(mobile)]
+fn main() {
+    app_lib::run();
+}
+
+#[cfg(desktop)]
 fn main() {
     let cli = Cli::parse();
     let path = cli.path.clone();
@@ -151,6 +170,7 @@ fn main() {
     }
 }
 
+#[cfg(desktop)]
 fn reset(path: Option<&Path>, force: bool) -> Result<(), String> {
     use std::io::{self, Write};
     let project = project::Project::locate(path)?;
@@ -174,6 +194,7 @@ fn reset(path: Option<&Path>, force: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(desktop)]
 fn run_gui(path: Option<&Path>) -> Result<(), String> {
     let project = project::Project::locate(path)?;
     project.ensure_state()?;

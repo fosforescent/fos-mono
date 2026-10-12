@@ -17,10 +17,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # CLI/REPL mode: the TypeScript sync core runs in-process (QuickJS); HTTP for the account and the local server
-rquickjs = { version = "0.14", features = ["classes", "properties", "parallel"] }
-ureq = { version = "3", features = ["json"] }
-tiny_http = "0.12"
-toml = "1"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
@@ -55,3 +51,12 @@ rand = "0.8"
 [features]
 # Enable custom protocol for mobile deep linking
 custom-protocol = ["tauri/custom-protocol"]
+
+# CLI/REPL mode only (QuickJS core, account client, local server, config). The mobile
+# apps are GUI-only and rquickjs-sys has no prebuilt bindings for iOS/Android, so these
+# are compiled for desktop targets exclusively.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+rquickjs = { version = "0.14", features = ["classes", "properties", "parallel"] }
+ureq = { version = "3", features = ["json"] }
+tiny_http = "0.12"
+toml = "1"
