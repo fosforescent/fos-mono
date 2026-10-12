@@ -51,7 +51,7 @@ fn read_body(request: &mut Request) -> Value {
 
 const TOOLS: &str = r#"[
   {"name":"list_tasks","description":"List the tasks of this directory as an indented tree with id prefixes and done state.","inputSchema":{"type":"object","properties":{"parent":{"type":"string","description":"id prefix of a task to list the subtasks of"}}}},
-  {"name":"add_task","description":"Add a task (optionally as a subtask of parent).","inputSchema":{"type":"object","required":["title"],"properties":{"title":{"type":"string"},"parent":{"type":"string"}}}},
+  {"name":"add_task","description":"Add a row (optionally under parent). Plain text makes a plain row; prefix with \"[ ] \" for a task, \"[x] \" for a done task, \"- \" for a markdown note, \"// \" for a comment.","inputSchema":{"type":"object","required":["title"],"properties":{"title":{"type":"string"},"parent":{"type":"string"}}}},
   {"name":"set_task_done","description":"Mark a task done or open.","inputSchema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"},"done":{"type":"boolean","default":true}}}},
   {"name":"rename_task","description":"Change a task title.","inputSchema":{"type":"object","required":["id","title"],"properties":{"id":{"type":"string"},"title":{"type":"string"}}}},
   {"name":"delete_task","description":"Delete a task and its subtasks.","inputSchema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}},

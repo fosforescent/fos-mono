@@ -7,6 +7,10 @@
 import QRCode from 'qrcode'
 import { isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState } from './app'
+import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
+import { hydrateDiagrams, renderMarkdown } from './markdown'
+import { ROW_KIND_LABEL, downloadText, parseRowInput, renderInlineText } from './rows'
+import type { RowKind } from '../../shared/sync/index'
 
 type Regions = {
   context: HTMLElement
@@ -20,6 +24,7 @@ type Regions = {
   choices: HTMLElement
   list: HTMLElement
   peers: HTMLElement
+  mic: HTMLButtonElement
   footer: HTMLElement
   modal: HTMLElement
   addInput: HTMLInputElement
@@ -46,8 +51,9 @@ export function mountUi(root: HTMLElement, app: App): void {
     <section class="link-panel" data-region="link" hidden></section>
     <section class="tasks">
       <form class="add" data-region="add">
-        <input name="title" type="text" placeholder="Add a task…" autocomplete="off" enterkeyhint="done" />
+        <input name="title" type="text" placeholder="Add a row…  ([ ] task · - note · // comment)" autocomplete="off" enterkeyhint="done" />
         <button type="submit">Add</button>
+        <button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button>
       </form>
       <ul class="list tree" data-region="list"></ul>
     </section>
@@ -70,6 +76,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     choices: q('choices'),
     list: q('list'),
     peers: q('peers'),
+    mic: q('mic'),
     footer: q('footer'),
     modal: q('modal'),
     addInput: addForm.querySelector('input') as HTMLInputElement
@@ -79,11 +86,13 @@ export function mountUi(root: HTMLElement, app: App): void {
     event.preventDefault()
     const title = regions.addInput.value
     if (title.trim()) {
-      app.addTask(title)
+      const parsed = parseRowInput(title)
+      app.addRowAt([], parsed.kind, parsed.text, { done: parsed.done })
       regions.addInput.value = ''
     }
     regions.addInput.focus()
   })
+  regions.mic.addEventListener('click', () => { void app.toggleVoice() })
   regions.menuButton.addEventListener('click', (event) => {
     event.stopPropagation()
     app.toggleMenu()
@@ -106,6 +115,7 @@ function render(regions: Regions, state: AppState, app: App): void {
   regions.localBadge.hidden = !app.isLocal()
   renderMenu(regions.menu, state, app)
   renderBanner(regions.banner, state, app)
+  renderMic(regions.mic, state, app)
   renderModal(regions.modal, state, app)
 
   const node = app.currentView()
@@ -166,6 +176,15 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   }))
   items.push(name)
   el.replaceChildren(...items)
+}
+
+function renderMic(el: HTMLButtonElement, state: AppState, app: App): void {
+  const v = state.voice
+  el.classList.toggle('recording', v?.phase === 'recording')
+  el.classList.toggle('busy', v?.phase === 'uploading')
+  el.disabled = v?.phase === 'uploading'
+  el.textContent = v?.phase === 'recording' ? '■' : v?.phase === 'uploading' ? '…' : '🎙'
+  el.title = v?.phase === 'recording' ? 'Stop recording' : v?.phase === 'uploading' ? 'Transcribing and organizing…' : app.canRecordVoice() ? 'Record a voice note (transcribed and organized into notes)' : 'Connect to your account to record voice notes'
 }
 
 function renderBanner(el: HTMLElement, state: AppState, app: App): void {
@@ -272,15 +291,20 @@ function renderVersion(label: string, task: TaskView | null, plainLabel: string 
 }
 
 let addingUnder: string | null = null
-let drag: { id: string; at: Scope } | null = null
+/** Kind preset for the inline add under `addingUnder` (comments from the menu). */
+let addingKind: RowKind | null = null
+type DragMode = 'move' | 'ref' | 'copy'
+let drag: { id: string; at: Scope; mode: DragMode } | null = null
 let pointerDown = false
+/** Rendered-markdown cache keyed by expanded note text, so re-renders are synchronous after the first paint. */
+const noteHtml = new Map<string, string>()
 document.addEventListener('mouseup', () => { pointerDown = false })
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
   if (node.tasks.length === 0 && node.choices.length === 0) {
     const empty = document.createElement('li')
     empty.className = 'empty'
-    empty.textContent = 'No tasks here yet.'
+    empty.textContent = 'Nothing here yet. Add a row above: plain text, [ ] a task, - a note, // a comment.'
     el.replaceChildren(empty)
     return
   }
@@ -309,7 +333,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const path: Scope = [...at, task.id]
   const selected = !!state.selected && state.selected.length === path.length && state.selected.every((p, i) => path[i] === p)
   const li = document.createElement('li')
-  li.className = 'task' + (task.checkable ? '' : ' plain') + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
+  li.className = 'task kind-' + task.kind + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
   li.style.setProperty('--depth', String(depth))
   li.draggable = true
   li.tabIndex = 0
@@ -327,11 +351,22 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
 
   // --- drag and drop: above / below / into, decided by where the pointer is on the row
   li.addEventListener('dragstart', (event) => {
-    drag = { id: task.id, at }
+    // Alt + drag places a reference to this row; Ctrl/⌘ + drag places a copy; plain drag moves it.
+    const mode: DragMode = event.altKey ? 'ref' : (event.ctrlKey || event.metaKey) ? 'copy' : 'move'
+    drag = { id: task.id, at, mode }
     event.dataTransfer?.setData('text/plain', task.id)
-    li.classList.add('dragging')
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = mode === 'move' ? 'move' : 'copyLink'
+    li.classList.add('dragging', `drag-${mode}`)
+    const tree = li.closest('.tree') as HTMLElement | null
+    if (tree) tree.dataset.dragMode = mode
   })
-  li.addEventListener('dragend', () => { drag = null; li.classList.remove('dragging'); clearDropMarks(li) })
+  li.addEventListener('dragend', () => {
+    drag = null
+    li.classList.remove('dragging', 'drag-move', 'drag-ref', 'drag-copy')
+    clearDropMarks(li)
+    const tree = li.closest('.tree') as HTMLElement | null
+    if (tree) delete tree.dataset.dragMode
+  })
   li.addEventListener('dragover', (event) => {
     if (!drag || drag.id === task.id) return
     event.preventDefault()
@@ -347,7 +382,9 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     if (!drag || drag.id === task.id) return
     const position = dropPosition(li, event.clientY)
     const move: MovePosition = position === 'into' ? { into: task.id } : { relativeTo: task.id, position }
-    app.moveTask(drag.at, drag.id, at, move)
+    if (drag.mode === 'ref') app.addRefAt(at, drag.id, move)
+    else if (drag.mode === 'copy') app.copyRowAt(drag.at, drag.id, at, move)
+    else app.moveTask(drag.at, drag.id, at, move)
     drag = null
   })
 
@@ -368,9 +405,11 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (editingTaskId === task.id) {
-    const input = document.createElement('input')
-    input.type = 'text'
+  if (editingTaskId === task.id && task.kind !== 'ref') {
+    const multiline = task.kind === 'note'
+    const input = multiline ? document.createElement('textarea') : document.createElement('input')
+    if (!multiline) (input as HTMLInputElement).type = 'text'
+    else (input as HTMLTextAreaElement).rows = Math.min(16, Math.max(3, task.title.split('\n').length + 1))
     input.className = 'edit'
     input.value = task.title
     const commit = () => {
@@ -379,21 +418,35 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
       app.renameTaskAt(at, task.id, input.value)
       app.refresh()
     }
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') commit()
+    input.addEventListener('keydown', (e: Event) => {
+      const event = e as KeyboardEvent
+      if (event.key === 'Enter' && (!multiline || event.ctrlKey || event.metaKey)) { event.preventDefault(); commit() }
       if (event.key === 'Escape') { editingTaskId = null; app.refresh() }
       event.stopPropagation()
     })
     input.addEventListener('blur', commit)
     body = input
-    queueMicrotask(() => { input.focus(); input.select() })
+    queueMicrotask(() => { input.focus(); if (!multiline) (input as HTMLInputElement).select() })
+  } else if (task.kind === 'ref') {
+    body = renderRefBody(task, app)
+  } else if (task.kind === 'note') {
+    body = renderNoteBody(task, at, state, app)
+    body.addEventListener('dblclick', () => { editingTaskId = task.id; app.refresh() })
   } else {
-    body = span('title', task.title)
+    body = span('title', '')
+    body.append(renderInlineText(task.title))
+    if (task.kind === 'comment') {
+      const who = span('author', task.author?.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'comment')
+      body.prepend(who)
+    }
     body.title = 'Double-click or press Enter to edit'
     body.addEventListener('dblclick', () => { editingTaskId = task.id; app.refresh() })
   }
 
   const meta = span('row-meta', '')
+  const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
+  const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
+  meta.append(opRef, opCopy)
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
   if (task.isLink) { const b = span('link-badge', '⛓'); b.title = 'Link node: other devices attach here; their changes arrive as proposals'; meta.append(b) }
 
@@ -406,21 +459,84 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   return li
 }
 
+function firstLine(text: string): string {
+  return (text.split('\n')[0] ?? '').replace(/^#+\s*/, '').slice(0, 60)
+}
+
+/** A reference row shows the title of the row it points at and follows it on click. */
+function renderRefBody(task: TaskView, app: App): HTMLElement {
+  const target = app.refTarget(task.refId ?? '')
+  const body = span('title ref', '')
+  const arrow = span('ref-arrow', '→')
+  if (target) {
+    const link = button('link ref-link', firstLine(target.row.title) || '(untitled)', () => app.followRef(task.refId ?? ''))
+    link.title = `Reference to a ${ROW_KIND_LABEL[target.row.kind].toLowerCase()}; click to go there`
+    body.append(arrow, link)
+    if (target.row.kind === 'task') body.append(span('muted', target.row.done ? ' (done)' : ''))
+  } else {
+    body.append(arrow, span('muted', ' (missing reference)'))
+  }
+  return body
+}
+
+/** Direct children of a note (with their sub-rows and resolved refs), for variables. */
+function noteChildren(task: TaskView, at: Scope, state: AppState, app: App): NoteChild[] {
+  const node = viewAt(state.replica, [...state.view, ...at, task.id])
+  if (!node) return []
+  return node.tasks.map((row) => {
+    const subRows = row.childCount ? viewAt(state.replica, [...state.view, ...at, task.id, row.id])?.tasks ?? [] : []
+    if (row.kind !== 'ref') return { row, subRows }
+    const target = app.refTarget(row.refId ?? '')
+    const targetSub = target && target.row.childCount ? viewAt(state.replica, [...target.path, target.row.id])?.tasks ?? [] : []
+    return { row, subRows, refTarget: target ? { row: target.row, subRows: targetSub } : null }
+  })
+}
+
+/** A note block: markdown with variables expanded; math and diagrams fill in asynchronously. */
+function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+  const body = div('title note-body', '')
+  body.title = 'Double-click or press Enter to edit (Ctrl+Enter saves)'
+  const ctx = noteContext(task.title, noteChildren(task, at, state, app))
+  const expanded = ctx.body.trim() ? expandNoteText(ctx) : ''
+  if (!expanded) { body.append(span('muted', '(empty note)')); return body }
+  const cached = noteHtml.get(expanded)
+  if (cached) {
+    body.innerHTML = cached
+    void hydrateDiagrams(body)
+  } else {
+    body.textContent = expanded
+    void renderMarkdown(expanded).then((html) => {
+      noteHtml.set(expanded, html)
+      if (body.isConnected) { body.innerHTML = html; void hydrateDiagrams(body) }
+    })
+  }
+  return body
+}
+
+function expandNoteText(ctx: ReturnType<typeof noteContext>): string {
+  return exportNote(ctx).replace(/^---\n[\s\S]*?\n---\n\n?/, '')
+}
+
 function renderInlineAdd(parent: TaskView, at: Scope, depth: number, app: App): HTMLElement {
   const li = document.createElement('li')
   li.className = 'task inline-add'
   li.style.setProperty('--depth', String(depth))
   const form = document.createElement('form')
   form.className = 'add'
-  form.innerHTML = `<input type="text" placeholder="Subtask of “${parent.title}”…" autocomplete="off" enterkeyhint="done" /><button type="submit">Add</button>`
+  const preset = addingKind
+  const label = preset === 'comment' ? `Comment on “${firstLine(parent.title)}”…` : `Under “${firstLine(parent.title)}”…  ([ ] task · - note · // comment)`
+  form.innerHTML = `<input type="text" placeholder="${label.replace(/"/g, '&quot;')}" autocomplete="off" enterkeyhint="done" /><button type="submit">Add</button>`
   const input = form.querySelector('input') as HTMLInputElement
   form.addEventListener('submit', (event) => {
     event.preventDefault()
-    if (input.value.trim()) app.addTaskAt([...at, parent.id], input.value)
+    if (input.value.trim()) {
+      const parsed = preset === 'comment' ? { kind: 'comment' as RowKind, text: input.value.trim(), done: false } : parseRowInput(input.value)
+      app.addRowAt([...at, parent.id], parsed.kind, parsed.text, { done: parsed.done })
+    }
     input.value = ''
     input.focus()
   })
-  input.addEventListener('keydown', (event) => { if (event.key === 'Escape') { addingUnder = null; app.refresh() } })
+  input.addEventListener('keydown', (event) => { if (event.key === 'Escape') { addingUnder = null; addingKind = null; app.refresh() } })
   li.append(form)
   queueMicrotask(() => input.focus())
   return li
@@ -443,10 +559,14 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
   void siblings
   const canInvite = state.session?.kind === 'user'
   return [
-    { label: 'Add subtask', keys: 'Ctrl+Enter', run: () => { addingUnder = task.id; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh() } },
+    { label: 'Add row inside', keys: 'Ctrl+Enter', run: () => { addingUnder = task.id; addingKind = null; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh() } },
     { label: 'Zoom in', keys: 'Z', run: () => app.zoomTo([...at, task.id]) },
-    { label: 'Edit title', keys: 'Enter', run: () => { editingTaskId = task.id; app.refresh() } },
-    { label: task.done ? 'Mark open' : 'Mark done', keys: 'Space', run: () => app.toggleTaskAt(at, task) },
+    ...(task.kind !== 'ref' ? [{ label: task.kind === 'note' ? 'Edit note' : 'Edit text', keys: 'Enter', run: () => { editingTaskId = task.id; app.refresh() } }] : []),
+    ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Space', run: () => app.toggleTaskAt(at, task) }] : []),
+    ...(task.kind === 'ref' ? [{ label: 'Go to the referenced row', run: () => app.followRef(task.refId ?? '') }] : []),
+    { label: 'Add comment', run: () => { addingUnder = task.id; addingKind = 'comment'; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh() } },
+    ...(task.kind !== 'ref' ? (['task', 'plain', 'note', 'comment'] as RowKind[]).filter((k) => k !== task.kind).map((k) => ({ label: `Change to ${ROW_KIND_LABEL[k].toLowerCase()}`, run: () => app.setRowKindAt(at, task.id, k) })) : []),
+    ...(task.kind === 'note' ? [{ label: 'Export note (.md)', run: () => { const ctx = noteContext(task.title, noteChildren(task, at, state, app)); downloadText(noteFilename(task.title), exportNote(ctx)) } }] : []),
     { label: 'Indent', keys: 'Tab', run: () => { app.select([...at, task.id]); app.indentSelected(false) } },
     { label: 'Outdent', keys: 'Shift+Tab', run: () => { app.select([...at, task.id]); app.indentSelected(true) }, disabled: at.length === 0 },
     { label: 'Move up', keys: 'Alt+↑', run: () => { app.select([...at, task.id]); app.moveSelected('up') } },
@@ -517,7 +637,7 @@ function handleKey(event: KeyboardEvent, app: App): void {
   const alt = event.altKey
   switch (true) {
     case event.key === 'Enter' && (event.ctrlKey || event.metaKey):
-      event.preventDefault(); addingUnder = task.id; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh(); break
+      event.preventDefault(); addingUnder = task.id; addingKind = null; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh(); break
     case event.key === 'Enter':
       event.preventDefault(); editingTaskId = task.id; app.refresh(); break
     case event.key === ' ':

@@ -16,7 +16,12 @@
  */
 
 import {
+  addRef,
+  addRow,
   addTask,
+  copyNode,
+  resolveRef,
+  setRowKind,
   applyProposalAt,
   buildSyncRequest,
   completeSync,
@@ -41,6 +46,7 @@ import {
   type MovePosition,
   type NodeView,
   type Replica,
+  type RowKind,
   type Scope,
   type SyncRequest,
   type TaskView
@@ -61,7 +67,9 @@ import {
   type InviteRequest,
   type Session,
   describeDeviceLogin,
-  decideDeviceLogin
+  decideDeviceLogin,
+  transcribeVoice,
+  type VoiceNote
 } from './api'
 import { DirectGuest, DirectHost, DirectLink, ManualRelay, isWebRtcAvailable, type ChannelMessage } from './p2p'
 import type { ReplicaStorage } from './storage'
@@ -117,6 +125,8 @@ export type AppState = {
   contextMenu: { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
   device: { code: string; name: string | null; status: 'loading' | 'ready' | 'approved' | 'denied' | 'error'; error?: string } | null
+  /** Microphone capture: recording (with start time), uploading, or idle. */
+  voice: { phase: 'recording'; startedAt: number } | { phase: 'uploading' } | null
 }
 
 export type AppConfig = {
@@ -198,7 +208,8 @@ export class App {
       onlinePeers: [],
       selected: null,
       contextMenu: null,
-      device: null
+      device: null,
+      voice: null
     }
     this.pendingSession = session
     this.connectDismissed = prefs.connectDismissed === true
@@ -484,6 +495,100 @@ export class App {
   }
 
   addTask(title: string): void { this.edit(addTask(this.state.replica, this.state.view, title, this.now())) }
+
+  /** Add a row of `kind` under `at` (relative to the view). Comments carry this device as the author. */
+  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition } = {}): void {
+    const author = kind === 'comment' ? { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName } : undefined
+    this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...options, author }))
+  }
+  setRowKindAt(at: Scope, id: string, kind: RowKind): void {
+    this.edit(setRowKind(this.state.replica, [...this.state.view, ...at], id, kind, this.now()))
+  }
+  /** Alt+drag: a reference to `targetId` placed at `position` under `toAt`. */
+  addRefAt(toAt: Scope, targetId: string, position?: MovePosition): void {
+    this.edit(addRef(this.state.replica, [...this.state.view, ...toAt], targetId, this.now(), position))
+  }
+  /** Ctrl+drag: a copy of the row `id` (with its subtree) at `position` under `toAt`. */
+  copyRowAt(fromAt: Scope, id: string, toAt: Scope, position: MovePosition): void {
+    const base = this.state.view
+    this.edit(copyNode(this.state.replica, [...base, ...fromAt], id, [...base, ...toAt], position, this.now()))
+  }
+  // -------------------------------------------------------------------------
+  // Voice notes: record in the browser, let the account transcribe and organize
+
+  private recorder: MediaRecorder | null = null
+  private recorded: Blob[] = []
+
+  canRecordVoice(): boolean {
+    return !!this.state.session && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
+  }
+
+  async toggleVoice(): Promise<void> {
+    if (this.state.voice?.phase === 'recording') { this.recorder?.stop(); return }
+    if (this.state.voice) return
+    if (!this.state.session) { this.notify('error', 'Connect to your account to transcribe voice notes.'); this.openModal('connect'); return }
+    if (!this.canRecordVoice()) { this.notify('error', 'This browser cannot record audio.'); return }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported(m))
+      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      this.recorded = []
+      recorder.addEventListener('dataavailable', (e) => { if (e.data.size) this.recorded.push(e.data) })
+      recorder.addEventListener('stop', () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(this.recorded, { type: recorder.mimeType || 'audio/webm' })
+        this.recorder = null
+        void this.submitVoice(blob)
+      })
+      recorder.start(1000)
+      this.recorder = recorder
+      this.set({ voice: { phase: 'recording', startedAt: this.now() } })
+    } catch (error) {
+      this.notify('error', `Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private async submitVoice(blob: Blob): Promise<void> {
+    const session = this.state.session
+    if (!session || blob.size < 1000) { this.set({ voice: null }); if (blob.size < 1000) this.notify('error', 'The recording was empty.'); return }
+    this.set({ voice: { phase: 'uploading' } })
+    try {
+      const note = await transcribeVoice(session, blob)
+      this.insertVoiceNote(note)
+      this.notify('info', `Voice note added: ${note.clusters.length} cluster${note.clusters.length === 1 ? '' : 's'}.`)
+    } catch (error) {
+      this.notify('error', error instanceof Error ? error.message : String(error))
+    } finally {
+      this.set({ voice: null })
+    }
+  }
+
+  /** Note blocks from a transcription: one parent note (summary) with a note per cluster and its points as rows, plus the transcript. */
+  insertVoiceNote(note: VoiceNote): void {
+    const at = this.state.view
+    const stamp = new Date(this.now()).toLocaleString()
+    const parentId = crypto.randomUUID()
+    let replica = addRow(this.state.replica, at, 'note', `# ${note.title || 'Voice note'}\n\n_${stamp}_\n\n${note.summary}`, this.now(), { id: parentId })
+    for (const cluster of note.clusters) {
+      const clusterId = crypto.randomUUID()
+      replica = addRow(replica, [...at, parentId], 'note', `## ${cluster.title}\n\n**${cluster.sentiment}** — ${cluster.summary}`, this.now(), { id: clusterId })
+      for (const point of cluster.points) replica = addRow(replica, [...at, parentId, clusterId], 'plain', point, this.now())
+    }
+    replica = addRow(replica, [...at, parentId], 'note', `## Transcript\n\n${note.transcript}`, this.now())
+    this.edit(replica)
+  }
+
+  /** Where a reference points, relative to the replica root (null when the target is gone). */
+  refTarget(refId: string): { path: Scope; row: TaskView } | null {
+    return resolveRef(this.state.replica, refId)
+  }
+  /** Follow a reference: zoom to the target's parent and select it. */
+  followRef(refId: string): void {
+    const target = this.refTarget(refId)
+    if (!target) { this.notify('error', 'The referenced row no longer exists.'); return }
+    this.goTo(target.path)
+    this.set({ selected: [target.row.id], highlighted: [...this.state.highlighted.filter((h) => h !== target.row.id), target.row.id] })
+  }
   toggleTask(task: TaskView): void { if (!task.checkable) return; this.edit(setTaskDone(this.state.replica, this.state.view, task.id, !task.done, this.now())) }
   renameTask(taskId: string, title: string): void { this.edit(renameTask(this.state.replica, this.state.view, taskId, title, this.now())) }
   deleteTask(taskId: string): void { this.edit(deleteTask(this.state.replica, this.state.view, taskId, this.now())) }

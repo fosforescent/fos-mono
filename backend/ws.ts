@@ -60,7 +60,19 @@ export const attachWs = (server: any) => {
     // WebSocket connection handler
     wss.on('connection', async (ws: WebSocket, request: any, decodedToken: any) => {
     console.log('New WebSocket connection:', decodedToken);
-    
+
+    // Presence announcement from a device (see web/src/app.ts). Registered before any await:
+    // a hello that arrives while the user lookup is pending would otherwise be dropped, and
+    // the device would never show as online.
+    ws.on('message', (message) => {
+        try {
+            const parsed = JSON.parse(message.toString()) as { type?: unknown; peerId?: unknown }
+            if (parsed.type === 'hello' && typeof parsed.peerId === 'string') setSocketPeer(ws, parsed.peerId)
+        } catch {
+            // not JSON
+        }
+    });
+
     try {
         // Get user ID from database
         const user = await prisma.userModel.findUnique({
@@ -90,13 +102,9 @@ export const attachWs = (server: any) => {
         ws.on('message', (message) => {
         try {
             console.log('Received message:', message.toString());
-            // Presence announcement from a device (see web/src/app.ts)
             try {
-              const parsed = JSON.parse(message.toString()) as { type?: unknown; peerId?: unknown }
-              if (parsed.type === 'hello' && typeof parsed.peerId === 'string') {
-                setSocketPeer(ws, parsed.peerId)
-                return
-              }
+              const parsed = JSON.parse(message.toString()) as { type?: unknown }
+              if (parsed.type === 'hello') return // handled above
             } catch {
               // not JSON: fall through
             }

@@ -169,3 +169,39 @@ input[type="text"], input[type="password"] { font: inherit; padding: 8px 10px; b
 .presence.online { background: var(--ok); opacity: 1; }
 .task.plain .title { font-weight: 600; }
 .peers-here { margin-top: 12px; }
+
+/* row kinds */
+.task.kind-plain .title, .task.kind-comment .title { white-space: pre-wrap; }
+.task .title a { color: var(--accent); text-decoration: underline; word-break: break-all; }
+.task .embeds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.task .embed { max-width: 100%; max-height: 240px; border-radius: 6px; border: 1px solid var(--line); }
+.task .embed.video { width: 100%; max-width: 480px; aspect-ratio: 16 / 9; height: auto; max-height: none; }
+.task.kind-comment { background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 6px; }
+.task.kind-comment .author { display: block; font-size: 12px; color: var(--muted); }
+.task.kind-comment .toggle, .task.kind-comment .checkbox { opacity: 0.8; }
+.task.kind-ref .title.ref { display: inline-flex; align-items: center; gap: 6px; }
+.task.kind-ref .ref-arrow { color: var(--muted); }
+.task.kind-ref .ref-link { font-weight: 600; padding: 0; }
+.task.kind-note .note-body { display: block; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--bg) 92%, var(--muted)); line-height: 1.45; overflow-x: auto; white-space: normal; }
+.note-body h1, .note-body h2, .note-body h3 { margin: 0.2em 0 0.4em; line-height: 1.25; }
+.note-body h1 { font-size: 1.25em; } .note-body h2 { font-size: 1.12em; } .note-body h3 { font-size: 1em; }
+.note-body p { margin: 0 0 0.6em; } .note-body p:last-child { margin-bottom: 0; }
+.note-body ul, .note-body ol { margin: 0 0 0.6em 1.2em; padding: 0; }
+.note-body pre { background: color-mix(in srgb, var(--muted) 12%, transparent); padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
+.note-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+.note-body table { border-collapse: collapse; } .note-body td, .note-body th { border: 1px solid var(--line); padding: 2px 6px; }
+.note-body blockquote { margin: 0 0 0.6em; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.note-body .diagram svg { max-width: 100%; height: auto; }
+.note-body .diagram-error { border: 1px solid #d33; }
+.note-body .katex-display { overflow-x: auto; }
+textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--bg); color: inherit; resize: vertical; }
+/* alt/ctrl drag hints */
+.op-icon { display: none; margin-left: 4px; font-size: 13px; opacity: 0.55; }
+.tree[data-drag-mode="ref"] .op-ref, .tree[data-drag-mode="copy"] .op-copy { display: inline; }
+.task.drag-ref .op-ref, .task.drag-copy .op-copy { opacity: 1; font-size: 16px; }
+.task.drag-ref { outline: 2px dashed var(--accent); border-radius: 6px; }
+.task.drag-copy { outline: 2px dotted var(--accent); border-radius: 6px; }
+.add .mic { font-size: 18px; line-height: 1; }
+.add .mic.recording { background: #d33; color: #fff; border-radius: 50%; animation: pulse 1.2s ease-in-out infinite; }
+.add .mic.busy { opacity: 0.6; }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }

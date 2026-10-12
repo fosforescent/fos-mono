@@ -1637,6 +1637,43 @@
   function isTaskEdge(store, edge) {
     return edge[1] === store.primitive.completeField.getId() && !!content(store, edge[0]).data.todo;
   }
+  function rowPrimitive(store, kind) {
+    switch (kind) {
+      case "task":
+        return store.primitive.completeField.getId();
+      case "plain":
+        return store.primitive.descriptionField.getId();
+      case "note":
+        return store.primitive.documentField.getId();
+      case "comment":
+        return store.primitive.commentField.getId();
+      case "ref":
+        return store.primitive.linkField.getId();
+    }
+  }
+  function rowKindOf(store, edge) {
+    if (isPartitionEdge(store, edge))
+      return "plain";
+    const [, target] = edge;
+    const p = store.primitive;
+    if (target === p.completeField.getId())
+      return content(store, edge[0]).data.todo ? "task" : "plain";
+    if (target === p.descriptionField.getId())
+      return "plain";
+    if (target === p.documentField.getId())
+      return "note";
+    if (target === p.commentField.getId())
+      return "comment";
+    if (target === p.linkField.getId())
+      return "ref";
+    return null;
+  }
+  function isRowEdge(store, edge) {
+    return rowKindOf(store, edge) !== null;
+  }
+  function identityOnInstruction(store, edge) {
+    return !isPartitionEdge(store, edge) && rowKindOf(store, edge) !== null;
+  }
   function isPartitionEdge(store, edge) {
     return edge[0] === store.primitive.listField.getId();
   }
@@ -1647,17 +1684,17 @@
     return edge[0] === store.primitive.peerField.getId();
   }
   function identityCid(store, edge) {
-    return isTaskEdge(store, edge) ? edge[0] : edge[1];
+    return identityOnInstruction(store, edge) ? edge[0] : edge[1];
   }
   function withIdentity(store, edge, cid) {
-    return isTaskEdge(store, edge) ? [cid, edge[1]] : [edge[0], cid];
+    return identityOnInstruction(store, edge) ? [cid, edge[1]] : [edge[0], cid];
   }
   function sameShape(store, a, b) {
-    const aTask = isTaskEdge(store, a);
-    const bTask = isTaskEdge(store, b);
-    if (aTask !== bTask)
+    const aRow = identityOnInstruction(store, a);
+    const bRow = identityOnInstruction(store, b);
+    if (aRow !== bRow)
       return false;
-    return aTask ? a[1] === b[1] : a[0] === b[0];
+    return aRow ? a[1] === b[1] : a[0] === b[0];
   }
   function taskContent(id, title, done, createdAt, updatedAt) {
     return {
@@ -1669,6 +1706,30 @@
       },
       children: []
     };
+  }
+  function rowContent(kind, id, text, now, extra = {}) {
+    const data = { alias: { id }, description: { content: text }, updated: { time: now } };
+    if (kind === "task")
+      data.todo = { completed: !!extra.done, time: now };
+    if (kind === "comment")
+      data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
+    if (kind === "ref")
+      data.ref = { id: extra.refId ?? "" };
+    return { data, children: [] };
+  }
+  function rowEdge(store, kind, cid) {
+    return [cid, rowPrimitive(store, kind)];
+  }
+  function convertRowContent(value, kind, now) {
+    const { todo: _todo, comment: _comment, ref: _ref, ...rest } = value.data;
+    const data = { ...rest, updated: { time: now } };
+    if (kind === "task")
+      data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
+    if (kind === "comment")
+      data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
+    if (kind === "ref")
+      data.ref = value.data.ref ?? { id: "" };
+    return { ...value, data };
   }
   function peerRefContent(peerId) {
     return { data: { peerId: { content: peerId } }, children: [] };
@@ -1868,46 +1929,36 @@
       rootNodeId: store.rootNodeId
     };
   }
-  function taskView(store, taskCid) {
-    const value = content(store, taskCid);
-    const created = value.data.todo?.time ?? 0;
-    const sub = countNode(store, taskCid);
-    return {
-      id: aliasIdOf(value) ?? taskCid,
-      title: value.data.description?.content ?? "",
-      checkable: true,
-      done: !!value.data.todo?.completed,
-      createdAt: created,
-      updatedAt: value.data.updated?.time ?? created,
-      childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
-      childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
-      subtreeTasks: sub.tasks,
-      subtreeDone: sub.done,
-      isLink: isLink(value)
-    };
-  }
-  function plainNodeView(store, nodeCid) {
+  function rowView(store, nodeCid, kind) {
     const value = content(store, nodeCid);
+    const created = value.data.todo?.time ?? value.data.updated?.time ?? 0;
     const sub = countNode(store, nodeCid);
-    return {
+    const view2 = {
       id: aliasIdOf(value) ?? nodeCid,
       title: value.data.description?.content ?? "",
-      checkable: false,
-      done: false,
-      createdAt: value.data.updated?.time ?? 0,
-      updatedAt: value.data.updated?.time ?? 0,
-      childCount: value.children.filter((e) => isTaskEdge(store, e) || isPartitionEdge(store, e)).length,
+      kind,
+      checkable: kind === "task",
+      done: kind === "task" && !!value.data.todo?.completed,
+      createdAt: created,
+      updatedAt: value.data.updated?.time ?? created,
+      childCount: value.children.filter((e) => isRowEdge(store, e)).length,
       childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
       subtreeTasks: sub.tasks,
       subtreeDone: sub.done,
       isLink: isLink(value)
     };
+    if (kind === "ref")
+      view2.refId = value.data.ref?.id ?? "";
+    if (kind === "comment" && value.data.comment)
+      view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
+    return view2;
   }
   function describeEdge(store, edge) {
     if (!edge)
       return { task: null, label: null };
-    if (isTaskEdge(store, edge))
-      return { task: taskView(store, edge[0]), label: null };
+    const kind = rowKindOf(store, edge);
+    if (kind)
+      return { task: rowView(store, identityCid(store, edge), kind), label: null };
     const value = content(store, identityCid(store, edge));
     return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? "node" };
   }
@@ -1933,8 +1984,8 @@
         choices += sub.choices;
       } else if (isChoiceEdge(store, edge)) {
         choices++;
-      } else if (isPartitionEdge(store, edge)) {
-        const sub = countNode(store, edge[1]);
+      } else if (isRowEdge(store, edge)) {
+        const sub = countNode(store, identityCid(store, edge));
         tasks += sub.tasks;
         done += sub.done;
         choices += sub.choices;
@@ -1957,12 +2008,11 @@
       versions: link ? linkHistory(store, cid).length : 0
     };
     for (const edge of value.children) {
-      if (isTaskEdge(store, edge)) {
-        view2.tasks.push(taskView(store, edge[0]));
+      const kind = rowKindOf(store, edge);
+      if (kind) {
+        view2.tasks.push(rowView(store, identityCid(store, edge), kind));
       } else if (isChoiceEdge(store, edge)) {
         view2.choices.push(choiceView(store, edge[1]));
-      } else if (isPartitionEdge(store, edge)) {
-        view2.tasks.push(plainNodeView(store, edge[1]));
       } else if (isPeerEdge(store, edge)) {
         const peerId = content(store, edge[1]).data.peerId?.content;
         if (peerId)
@@ -2139,6 +2189,18 @@
       return null;
     return identityCid(store, edge);
   }
+  function copyRowContent(store, nodeCid, now, freshId) {
+    const value = stripLink(store, content(store, nodeCid));
+    const children = [];
+    for (const edge of value.children) {
+      const kind = rowKindOf(store, edge);
+      if (!kind)
+        continue;
+      const copied = copyRowContent(store, identityCid(store, edge), now, freshId);
+      children.push(isPartitionEdge(store, edge) ? rowEdge(store, "plain", copied) : withIdentity(store, edge, copied));
+    }
+    return put(store, { ...value, data: { ...value.data, alias: { id: freshId() }, updated: { time: now } }, children });
+  }
   function moveChild(store, rootCid, fromPath, aliasId, toPath, position) {
     if (toPath.includes(aliasId))
       return null;
@@ -2180,9 +2242,10 @@
     const index = (value) => {
       const map = /* @__PURE__ */ new Map();
       for (const edge of value.children) {
-        if (!isTaskEdge(store, edge))
+        if (!isRowEdge(store, edge))
           continue;
-        map.set(edgeKey(store, edge), { title: content(store, edge[0]).data.description?.content ?? "", cid: edge[0] });
+        const id = identityCid(store, edge);
+        map.set(edgeKey(store, edge), { title: content(store, id).data.description?.content ?? "", cid: id });
       }
       return map;
     };
@@ -5765,6 +5828,7 @@
   var getNumberFieldNode = (store) => generateConstructor(store, "NUMBER", { description: { content: "Number Field Constructor" } }, []);
   var getBooleanFieldNode = (store) => generateConstructor(store, "BOOLEAN", { description: { content: "Boolean Field Constructor" } }, []);
   var getLinkFieldNode = (store) => generateConstructor(store, "LINK", { description: { content: "Link Field Constructor" } }, []);
+  var getCommentFieldNode = (store) => generateConstructor(store, "COMMENT", { description: { content: "Comment Field Constructor - a row that comments on its parent; may hold sub-comments" } }, []);
   var getDurationFieldNode = (store) => generateConstructor(store, "DURATION", { description: { content: "Duration Field Constructor" } }, []);
   var getDateFieldNode = (store) => generateConstructor(store, "DATE", { description: { content: "Date Field Constructor" } }, []);
   var getTimeFieldNode = (store) => generateConstructor(store, "TIME", { description: { content: "Time Field Constructor" } }, []);
@@ -6081,6 +6145,7 @@
     const actorNode = getActorNode(store);
     const capabilityNode = getCapabilityNode(store);
     const proposeAction = getProposeActionNode(store);
+    const commentField = getCommentFieldNode(store);
     const approveAction = getApproveActionNode(store);
     const effectNode = getEffectNode(store);
     const handlerNode = getHandlerNode(store);
@@ -6260,6 +6325,7 @@
       capabilityNode,
       proposeAction,
       approveAction,
+      commentField,
       effectNode,
       handlerNode
     };
@@ -7659,7 +7725,7 @@
   }
   function findChildEdge(replica, value, aliasId) {
     const edge = findEdge(replica.store, value, `a:${aliasId}`);
-    return edge && (isTaskEdge(replica.store, edge) || isPartitionEdge(replica.store, edge)) ? edge : void 0;
+    return edge && isRowEdge(replica.store, edge) ? edge : void 0;
   }
   function addTask(replica, at, title, now, id = newId()) {
     const trimmed = title.trim();
@@ -7668,6 +7734,74 @@
     return edit(replica, at, now, (value) => {
       const cid = put(replica.store, taskContent(id, trimmed, false, now, now));
       return { ...value, children: [...value.children, taskEdge(replica.store, cid)] };
+    });
+  }
+  function addRow(replica, at, kind, text, now, options = {}) {
+    const body = kind === "note" ? text.replace(/\s+$/, "") : text.trim();
+    if (!body && kind !== "ref")
+      return replica;
+    if (kind === "ref" && !options.refId)
+      return replica;
+    const id = options.id ?? newId();
+    return edit(replica, at, now, (value) => {
+      const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author }));
+      const edge = rowEdge(replica.store, kind, cid);
+      const children = [...value.children];
+      const pos = options.position;
+      if (pos && "relativeTo" in pos) {
+        const sibling = findEdge(replica.store, value, `a:${pos.relativeTo}`);
+        const index = sibling ? children.indexOf(sibling) : -1;
+        if (index >= 0) {
+          children.splice(pos.position === "above" ? index : index + 1, 0, edge);
+          return { ...value, children };
+        }
+      }
+      children.push(edge);
+      return { ...value, children };
+    });
+  }
+  function setRowKind(replica, at, aliasId, kind, now) {
+    return edit(replica, at, now, (value) => {
+      const edge = findChildEdge(replica, value, aliasId);
+      if (!edge)
+        return value;
+      if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge))
+        return value;
+      const node = content(replica.store, identityCid(replica.store, edge));
+      const cid = put(replica.store, convertRowContent(node, kind, now));
+      return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, cid));
+    });
+  }
+  function addRef(replica, at, targetAliasId, now, position) {
+    if (position && "into" in position)
+      return addRow(replica, [...at, position.into], "ref", "", now, { refId: targetAliasId });
+    return addRow(replica, at, "ref", "", now, { refId: targetAliasId, position });
+  }
+  function copyNode(replica, fromPath, aliasId, toPath, position, now) {
+    const from = resolveScope(replica.store, headCid(replica), fromPath);
+    if (!from)
+      return replica;
+    const found = findEdge(replica.store, content(replica.store, from), `a:${aliasId}`);
+    if (!found)
+      return replica;
+    const kind = rowKindOf(replica.store, found);
+    if (!kind)
+      return replica;
+    const copied = copyRowContent(replica.store, identityCid(replica.store, found), now, newId);
+    const edge = rowEdge(replica.store, kind, copied);
+    const target = "into" in position ? [...toPath, position.into] : toPath;
+    return edit(replica, target, now, (value) => {
+      const children = [...value.children];
+      if ("relativeTo" in position) {
+        const sibling = findEdge(replica.store, value, `a:${position.relativeTo}`);
+        const index = sibling ? children.indexOf(sibling) : -1;
+        if (index >= 0) {
+          children.splice(position.position === "above" ? index : index + 1, 0, edge);
+          return { ...value, children };
+        }
+      }
+      children.push(edge);
+      return { ...value, children };
     });
   }
   function updateTask(replica, at, taskId, now, change) {
@@ -7818,6 +7952,25 @@
     view(handle, atJson) {
       return JSON.stringify(view(get2(handle), parse2(atJson, [])));
     },
+    /** Add a row of `kind` ('task' | 'plain' | 'note' | 'comment' | 'ref') under `at`; returns its view. */
+    addRow(handle, atJson, kind, text, now, optionsJson) {
+      const r = get2(handle);
+      const at = parse2(atJson, []);
+      const options = parse2(optionsJson, {});
+      const id = options.id ?? crypto.randomUUID();
+      set(handle, addRow(r, at, kind, text, now, { ...options, id }));
+      const added = view(get2(handle), at)?.tasks.find((t) => t.id === id) ?? null;
+      return JSON.stringify(added);
+    },
+    setRowKind(handle, atJson, id, kind, now) {
+      set(handle, setRowKind(get2(handle), parse2(atJson, []), id, kind, now));
+    },
+    addRef(handle, atJson, targetId, now) {
+      set(handle, addRef(get2(handle), parse2(atJson, []), targetId, now));
+    },
+    copyNode(handle, fromJson, id, toJson, positionJson, now) {
+      set(handle, copyNode(get2(handle), parse2(fromJson, []), id, parse2(toJson, []), parse2(positionJson, { into: "" }), now));
+    },
     /** Text lines of the tree below `at` (for the CLI/REPL), with short ids. */
     tree(handle, atJson) {
       const r = get2(handle);
@@ -7827,7 +7980,7 @@
         if (!node)
           return;
         for (const t of node.tasks) {
-          lines.push(`${"  ".repeat(depth)}${t.checkable ? t.done ? "[x]" : "[ ]" : " \xB7 "} ${t.id.slice(0, 8)} ${t.title}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ""}${t.isLink ? " \u26D3" : ""}`);
+          lines.push(`${"  ".repeat(depth)}${t.kind === "task" ? t.done ? "[x]" : "[ ]" : t.kind === "note" ? " \u2261 " : t.kind === "comment" ? ' " ' : t.kind === "ref" ? " \u2192 " : " \xB7 "} ${t.id.slice(0, 8)} ${t.kind === "ref" ? `ref ${t.refId?.slice(0, 8) ?? ""}` : t.title.split("\n")[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ""}${t.isLink ? " \u26D3" : ""}`);
           if (t.childCount)
             walk([...at, t.id], depth + 1);
         }

@@ -25,6 +25,7 @@ import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, 
 import { peerInviteHandlers } from './sync/peerInvites'
 import { deviceLoginHandlers } from './auth/deviceLogin'
 import { createChannelsRouter, startChannels, stopChannels } from './channels'
+import { createVoiceNoteHandler, openAiVoiceDeps } from './voice/voiceNotes'
 import {
   getMCPServers,
   getMCPServer,
@@ -210,7 +211,8 @@ app.use('/subscription/webhook', stripeRoute)
 
 // protectedRoutes.use(express.json());
 // dataRoutes.use(express.json());
-app.use(express.json())
+// Sync requests carry whole subtrees of nodes; the default 100kb limit rejected them (413) once an account grew.
+app.use(express.json({ limit: '50mb' }))
 
 protectedRoutes.use((req, res, next) => {
   const xForwardedFor = req.headers['x-forwarded-for'];
@@ -345,6 +347,8 @@ dataRoutes.delete('/peer-sync/attachment', deleteAttachment)
 dataRoutes.get('/device-login/:code', deviceLoginHandlers.describe)
 dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
 dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
+// Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
+dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(openAiVoiceDeps()))
 dataRoutes.post('/peer-invite', peerInviteHandlers.createInvite)
 dataRoutes.get('/peer-invite/requests', peerInviteHandlers.listRequests)
 dataRoutes.post('/peer-invite/:id/approve', peerInviteHandlers.approveRequest)
