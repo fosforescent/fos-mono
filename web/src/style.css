@@ -213,3 +213,21 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
   .task { padding: 12px 4px; }
   .task .toggle.zoom { font-size: 20px; padding: 0 8px; }
 }
+/* requirements, supplies, queries, resource banks, allocations */
+.kind-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 18%, transparent); margin-right: 4px; vertical-align: middle; }
+.kind-badge.needs { background: #f59e0b33; color: #b45309; }
+.kind-badge.ok { background: #10b98133; color: #047857; }
+.kind-badge.query { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.kind-badge.bank { background: #8b5cf633; color: #6d28d9; }
+.kind-badge.alloc { background: #0ea5e933; color: #0369a1; }
+.title.special button, .title.special select { margin-left: 6px; vertical-align: middle; }
+.blocked-badge { font-size: 11px; color: #b45309; margin-left: 6px; }
+.market-badge { margin-left: 4px; }
+/* market listings (another account's listed node) */
+.market-head { margin-bottom: 8px; }
+.market-title { font-weight: 600; }
+.market-rows { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 4px; }
+.market-mine { font-size: 13px; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 10%, transparent); margin-bottom: 10px; }
+.market-form { display: grid; gap: 8px; }
+.market-form textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: inherit; }
+.market-req { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }

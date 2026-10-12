@@ -116,6 +116,11 @@ export const getNumberFieldNode = (store: FosStore) => generateConstructor(store
 export const getBooleanFieldNode = (store: FosStore) => generateConstructor(store, "BOOLEAN", { description: { content: 'Boolean Field Constructor' } }, [])
 export const getLinkFieldNode = (store: FosStore) => generateConstructor(store, "LINK", { description: { content: 'Link Field Constructor' } }, [])
 export const getCommentFieldNode = (store: FosStore) => generateConstructor(store, "COMMENT", { description: { content: 'Comment Field Constructor - a row that comments on its parent; may hold sub-comments' } }, [])
+export const getRequirementFieldNode = (store: FosStore) => generateConstructor(store, "REQUIREMENT", { description: { content: 'Requirement Field Constructor - a capability or effect handler a task needs supplied before completion' } }, [])
+export const getSupplyFieldNode = (store: FosStore) => generateConstructor(store, "SUPPLY", { description: { content: 'Supply Field Constructor - satisfies a requirement (confirmation, choice, search result, allocation)' } }, [])
+export const getQueryFieldNode = (store: FosStore) => generateConstructor(store, "QUERY", { description: { content: 'Query Field Constructor - a semantic search whose results are reference rows' } }, [])
+export const getResourceFieldNode = (store: FosStore) => generateConstructor(store, "RESOURCE", { description: { content: 'Resource Field Constructor - a calendar, account or inventory bank' } }, [])
+export const getAllocationFieldNode = (store: FosStore) => generateConstructor(store, "ALLOCATION", { description: { content: 'Allocation Field Constructor - an amount locked from a resource bank' } }, [])
 
 export const getDurationFieldNode = (store: FosStore) => generateConstructor(store, "DURATION", { description: { content: 'Duration Field Constructor' } }, [])
 export const getDateFieldNode = (store: FosStore) => generateConstructor(store, "DATE", { description: { content: 'Date Field Constructor' } }, [])
@@ -725,6 +730,11 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const capabilityNode = getCapabilityNode(store)
   const proposeAction = getProposeActionNode(store)
   const commentField = getCommentFieldNode(store)
+  const requirementField = getRequirementFieldNode(store)
+  const supplyField = getSupplyFieldNode(store)
+  const queryField = getQueryFieldNode(store)
+  const resourceField = getResourceFieldNode(store)
+  const allocationField = getAllocationFieldNode(store)
   const approveAction = getApproveActionNode(store)
   const effectNode = getEffectNode(store)
   const handlerNode = getHandlerNode(store)
@@ -906,6 +916,11 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     proposeAction,
     approveAction,
     commentField,
+    requirementField,
+    supplyField,
+    queryField,
+    resourceField,
+    allocationField,
     effectNode,
     handlerNode,
 
@@ -1079,6 +1094,11 @@ export type PrimitiveAliases = {
   proposeAction: FosNode,
   approveAction: FosNode,
   commentField: FosNode,
+  requirementField: FosNode,
+  supplyField: FosNode,
+  queryField: FosNode,
+  resourceField: FosNode,
+  allocationField: FosNode,
   effectNode: FosNode,
   handlerNode: FosNode,
 }

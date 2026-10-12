@@ -24,7 +24,13 @@ row         [rowNode, KIND]              rowNode.data: alias{id}, description{co
                                      or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
                                      expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
               COMMENT     comment   + comment{authorID,authorName,time}  ("//" prefix or the menu; replies are child comments)
-              LINK        ref       + ref{id}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep copy
+              LINK        ref       + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
+                                     copy; `owner` marks a market result (the row lives in another account; click opens the listing)
+              REQUIREMENT requirement + requirement{capability, resource?, amount?, unit?, start?, end?, options?}  ("!" prefix, under a task)
+              SUPPLY      supply    + supply{capability, by, at, ref?, choice?}   (under a requirement; `ref` names an allocation/query row)
+              QUERY       query     + query{market?, executedAt?, count?}        ("?" prefix; results are ref rows under it)
+              RESOURCE    resource  + resource{type: calendar|account|inventory, unit, capacity?}   ("@calendar name 40h" prefix)
+              ALLOCATION  allocation + allocation{resource, type, amount, unit, start?, end?, by?}  ("+2h note" prefix, under a bank)
 legacy row  [LIST, node]                 plain row from older data (identity on the target); read like a DESCRIPTION row
 peer        [PEER, peerRefNode]          peerRefNode.data: peerId{content}          (membership.ts reads the same shape)
 choice      [CHOICE, choiceNode]         an unresolved divergence, replacing the task/node edge it concerns
@@ -180,6 +186,50 @@ it (`applyProposalAt`: three-way merge onto main, new version, proposal
 removed) or rejects it (kept, marked rejected; a further edit by the peer
 reopens it). The link panel shows members, version count and proposals with
 an added/changed/removed summary against the proposal's base.
+
+## Requirements, resource banks, queries and the market
+
+**Requirements** (`!` prefix or the task's menu) are capabilities a task needs
+before it can be completed: `confirmation` (a signed-in person presses
+Confirm), `choice: a | b` (a handler picks an option), `search:` (a query row
+inside it has been run) and `calendar|account|inventory <amount>` (an
+allocation of that resource). `taskBlockers` lists the unsatisfied ones;
+`setTaskDone` refuses while any remain and the UI disables the checkbox
+(`needs n` badge). A requirement is satisfied by a **supply** row under it
+(`addSupply`): who supplied it, when, and for allocations/search a reference
+(`supply.ref`) to the allocation or query row by alias id.
+`requirementSatisfied` resolves that reference from the root and checks type
+and amount; a reference it cannot resolve is trusted (it came through a
+proposal from another account).
+
+**Resource banks** (`@calendar`, `@account`, `@inventory`, optional capacity)
+hold **allocations** (`+amount`, added under the bank or a sub-bank) and
+sub-banks as children. `allocatedIn` sums allocations in the subtree, the view
+shows `available = capacity − allocated`. An allocation row is a normal row:
+Alt+drag a reference to it onto a task, or supply it to a requirement from the
+requirement's picker.
+
+**Queries** (`?` prefix) run a semantic search over the account's rows
+(`POST /user/data/search`, pgvector + Vertex `text-embedding-005`, index kept
+by `backend/search/rowIndex.ts` a few seconds after every save) and place the
+hits as reference rows under the query; Refresh replaces them. "Search the
+market too" includes rows other accounts listed.
+
+**The market.** "List on market" turns a row into a link node with
+`data.listing` on its ref node (bookkeeping, no version). Listed rows are
+searchable by every account; a hit from another account is a ref row with
+`ref.owner`, which opens the listing (`GET /user/data/market/node`): the
+node's rows and requirements, and the requester's own proposal only (no
+peers, members or other bidders). "Send proposal" posts rows
+(`POST /user/data/market/proposals`): a comment, plus for each allocation
+requirement an allocation row copied from the bidder's bank and a supply
+under the requirement referencing it. The server builds a branch (the node's
+value plus those rows) and records it as a proposal keyed `user:<bidder>` on
+the owner's ref node, exactly like a device's branch-mode proposal; a
+resubmission replaces it. The owner sees every proposal in the link panel
+named after the bidder and approves one (`applyProposalAt`), which merges the
+comment, allocation and supply into the task and unblocks it. Bidders never
+see each other's proposals.
 
 ## The `fos` binary: GUI and CLI over one context (`desktop/src-tauri/src/`)
 
@@ -344,3 +394,8 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
   `serveSync`/`completeSync` unchanged: every peer runs the same code.
 * Expression-level helpers (`FosExpression.merge`, `addTodo`) predate this and
   use the same primitives; folding them together is a cleanup for later.
+* The `fos` CLI's `add` only knows the task/note/comment prefixes; requirement,
+  query, bank and allocation prefixes are parsed in `web/src/rows.ts` only.
+* Choice requirements have no handler registry yet: any signed-in viewer can
+  pick an option. Calendar allocations carry start/end but nothing checks
+  overlaps.
