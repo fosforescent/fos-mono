@@ -23,7 +23,9 @@ ACCOUNT_ID=$(grep -E '^CLOUDFLARE_ACCOUNT_ID=' "$ROOT/.env" | cut -d= -f2- | tr 
 ACCOUNT_ID=${ACCOUNT_ID:-${CLOUDFLARE_ACCOUNT_ID:-}}
 if [ -n "$ACCOUNT_ID" ]; then gh secret set CLOUDFLARE_ACCOUNT_ID --body "$ACCOUNT_ID"; echo "CLOUDFLARE_ACCOUNT_ID set"; else echo "CLOUDFLARE_ACCOUNT_ID not found in .env; set it with: gh secret set CLOUDFLARE_ACCOUNT_ID --body <id>"; fi
 CF_TOKEN=$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ROOT/.env" | cut -d= -f2- | tr -d '"' || true)
-if [ -n "$CF_TOKEN" ] && curl -sf -H "Authorization: Bearer $CF_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify >/dev/null; then
+# account-owned tokens (cfat_…) only verify at the account endpoint; user tokens at /user/tokens/verify
+cf_ok() { curl -sf -H "Authorization: Bearer $CF_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/tokens/verify" >/dev/null 2>&1 || curl -sf -H "Authorization: Bearer $CF_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify >/dev/null 2>&1; }
+if [ -n "$CF_TOKEN" ] && cf_ok; then
   gh secret set CLOUDFLARE_API_TOKEN --body "$CF_TOKEN"; echo "CLOUDFLARE_API_TOKEN set (verified with Cloudflare)"
 else
   echo "CLOUDFLARE_API_TOKEN in .env is missing or rejected by Cloudflare; create an API token with 'Cloudflare Pages: Edit' for the account, put it in .env, and re-run" >&2
