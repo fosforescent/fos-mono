@@ -9,7 +9,7 @@ import { isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeV
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { ROW_KIND_LABEL, SYNTAX_HELP, downloadText, formatAmount, parseRowInput, renderInlineText } from './rows'
+import { ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
 import { CAPABILITY_LABEL, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
@@ -345,7 +345,8 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   const input = document.createElement('input')
   input.type = 'text'
   input.className = 'edit'
-  input.placeholder = node.tasks.length ? 'New row…' : 'Type here: plain text, [ ] a task, > a note, - a requirement…  (Ctrl+H shows every marker)'
+  input.placeholder = 'New row… (ctrl + H for tips)'
+  void node
   input.autocomplete = 'off'
   let committed = false
   /** Make the typed row; null when nothing was typed or the row could not be made (e.g. an allocation with no bank). */
@@ -366,9 +367,9 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
     const k = event.key
     if (k === 'Enter') {
+      // the typed row becomes the first row here; the blank row stays on top, ready for the next one (no extra blank row below)
       event.preventDefault()
-      const created = commit()
-      if (created) app.addRowBelow([], created)
+      if (commit()) focusGhost = true
       return
     }
     if (k === 'ArrowDown' && !event.altKey) { event.preventDefault(); const created = commit(); if (created) focusGhost = true; else if (node.tasks.length) moveSelection(app, 1); return }
@@ -377,7 +378,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   })
   input.addEventListener('focus', () => { if (state.selected) { focusGhost = true; app.select(null) } })
   input.addEventListener('blur', () => { commit() })
-  li.append(span('handle', ''), toggle, input)
+  li.append(span('zoom-dot', ''), span('handle', ''), toggle, input)
   if (focusGhost && !state.selected && !state.modal && !state.contextMenu && !state.menuOpen) {
     focusGhost = false
     queueMicrotask(() => {
@@ -449,10 +450,13 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     const tree = li.closest('.tree') as HTMLElement | null
     if (tree) delete tree.dataset.dragMode
   })
+  const peerDrag = (event: DragEvent) => !!event.dataTransfer?.types.includes(PEER_DRAG_TYPE)
   li.addEventListener('dragover', (event) => {
+    if (peerDrag(event)) { event.preventDefault(); li.classList.add('drop-into'); return }
     if (!drag || drag.id === task.id) return
     event.preventDefault()
-    const position = dropPosition(li, event.clientY)
+    // a requirement takes what is dropped on it as a child (an allocation fills it, a template adds its requirements)
+    const position = task.kind === 'requirement' ? 'into' : dropPosition(li, event.clientY)
     li.classList.toggle('drop-above', position === 'above')
     li.classList.toggle('drop-below', position === 'below')
     li.classList.toggle('drop-into', position === 'into')
@@ -461,8 +465,20 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   li.addEventListener('drop', (event) => {
     event.preventDefault()
     clearDropMarks(li)
+    if (peerDrag(event)) {
+      // a peer dropped on a row: the row becomes a group with that peer as a member
+      try { const peer = JSON.parse(event.dataTransfer?.getData(PEER_DRAG_TYPE) ?? '') as { id: string; name: string }; if (peer?.id) app.addPeerToRow(at, task.id, peer.id, peer.name) } catch { /* not a peer */ }
+      return
+    }
     if (!drag || drag.id === task.id) return
-    const position = dropPosition(li, event.clientY)
+    const dragged = app.rowAt([...drag.at, drag.id])
+    if (task.kind === 'requirement' && dragged) {
+      // onto a requirement: an allocation is supplied to it (it stays in its bank), a template is executed inside it
+      // (its requirements show as rows under this one), anything else is moved inside
+      if (dragged.kind === 'allocation') { app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: dragged.id }); drag = null; return }
+      if (dragged.kind === 'template') { app.addRowAt([...at, task.id], 'task', dragged.title, { templateName: dragged.title }); drag = null; return }
+    }
+    const position = task.kind === 'requirement' ? 'into' : dropPosition(li, event.clientY)
     const move: MovePosition = position === 'into' ? { into: task.id } : { relativeTo: task.id, position }
     if (drag.mode === 'ref') app.addRefAt(at, drag.id, move)
     else if (drag.mode === 'copy') app.copyRowAt(drag.at, drag.id, at, move)
@@ -470,6 +486,9 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     drag = null
   })
 
+  const zoom = button('icon zoom-dot', '◉', () => app.zoomTo(path))
+  zoom.title = 'Zoom in (Alt+→)'
+  zoom.tabIndex = -1
   const handle = span('handle', '⋮⋮')
   handle.title = 'Drag to move'
 
@@ -517,7 +536,15 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
   meta.append(opRef, opCopy)
-  if (task.template) { const b = span('kind-badge tpl', `\`${task.template.name}`); b.title = `Executes the template “${task.template.name}”: its requirements were copied underneath`; meta.append(b) }
+  if (task.template) { const b = span('kind-badge tpl' + (task.blockedBy?.length ? ' unmet' : ''), `\`${task.template.name}`); b.title = `Executes the template “${task.template.name}”: its requirements were copied underneath${task.blockedBy?.length ? ` (${task.blockedBy.length} still unmet)` : ''}`; meta.append(b) }
+  // allocations under a row show as little tags on it (money, time, things, people)
+  if (task.childCount > 0 && task.kind !== 'resource') {
+    for (const child of viewAt(state.replica, [...state.view, ...path])?.tasks ?? []) {
+      if (child.kind === 'allocation' && child.allocation) { const t = span('alloc-tag', allocationTag(child.allocation)); t.title = `${child.title || 'allocation'}${child.allocation.by ? ` · ${child.allocation.by}` : ''}`; meta.append(t) }
+    }
+  }
+  if (task.kind === 'requirement' && task.requirement && !task.requirement.satisfied) li.classList.add('unmet')
+  if (task.kind === 'template' && task.childCount > 0 && (viewAt(state.replica, [...state.view, ...path])?.tasks ?? []).some((c) => c.kind === 'requirement' && !c.requirement?.satisfied)) li.classList.add('unmet')
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
   if (task.isLink) { const b = span('link-badge', '⛓'); b.title = 'Link node: other devices attach here; their changes arrive as proposals'; meta.append(b) }
   if (task.market) { const b = span('market-badge', '🛒'); b.title = 'Listed on the market: other accounts can find this and propose'; meta.append(b) }
@@ -528,9 +555,11 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   more.tabIndex = -1
   void index; void siblingCount
 
-  li.append(handle, toggle, checkbox, body, meta, more)
+  li.append(zoom, handle, toggle, checkbox, body, meta, more)
   return li
 }
+
+const PEER_DRAG_TYPE = 'application/x-fos-peer'
 
 /** Visible rows in display order, with the relative path of each (rebuilt from the flat DOM list). */
 function visibleRows(): Array<{ el: HTMLElement; path: Scope }> {
@@ -572,24 +601,21 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   if (!multiline) (input as HTMLInputElement).type = 'text'
   else (input as HTMLTextAreaElement).rows = Math.min(16, Math.max(2, task.title.split('\n').length + 1))
   input.className = 'edit'
-  input.value = task.title
-  input.placeholder = task.kind === 'note' ? 'Markdown…' : task.kind === 'comment' ? 'Comment…' : ''
+  // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
+  const raw = task.kind === 'ref' || task.kind === 'supply' ? task.title : rawRowText(task)
+  input.value = raw
+  input.placeholder = task.kind === 'note' ? '> Markdown…' : task.kind === 'comment' ? '// Comment…' : 'ctrl + H for tips'
   let committed = false
   const commit = () => {
     if (committed) return
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
-    if (input.value === task.title) return
-    // typing a marker at the start of a plain row converts it: "[ ] ", "[x] ", "> ", "// " in place; data rows ("- ", "$ ", "? ", "@…", "`") are made anew in its place
-    const parsed = task.kind === 'plain' ? parseRowInput(input.value) : null
-    if (parsed && ['task', 'note', 'comment', 'template'].includes(parsed.kind) && !parsed.templateName) {
-      app.renameTaskAt(at, task.id, parsed.text || ' ')
-      app.setRowKindAt(at, task.id, parsed.kind)
-      if (parsed.done) app.setDoneAt(at, task.id, true)
-      return
-    }
-    if (parsed && parsed.kind !== 'plain') { app.convertPlainRowAt(at, task.id, parsed); return }
-    app.renameTaskAt(at, task.id, input.value)
+    if (input.value === raw) return
+    if (task.kind === 'ref' || task.kind === 'supply') { app.renameTaskAt(at, task.id, input.value); return }
+    // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
+    const parsed = parseRowInput(input.value)
+    if (parsed.kind === 'plain' && !parsed.text) { app.renameTaskAt(at, task.id, ' '); return }
+    app.rewriteRowAt(at, task.id, parsed)
   }
   const path: Scope = [...at, task.id]
   input.addEventListener('keydown', (e: Event) => {
@@ -698,9 +724,19 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
   const stop = (el: HTMLElement) => { el.addEventListener('click', (e) => e.stopPropagation()); return el }
   if (task.kind === 'requirement' && task.requirement) {
     const r = task.requirement
-    const label = r.capability === 'peer' && r.peer ? `@${r.peer}` : r.capability === 'allocation' ? `$${r.resource ? ' ' + r.resource : ''}` : r.capability === 'task' ? '[ ]' : r.capability === 'search' ? '?' : r.capability
+    const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@' }
+    const label = r.capability === 'peer' && r.peer ? `@${r.peer}` : r.capability === 'allocation' ? `${marker[r.resource ?? ''] ?? '$'}${r.amount !== undefined ? ' ' + formatAmount(r.amount, r.unit ?? '') : ''}` : r.capability === 'task' ? '[ ]' : r.capability === 'search' ? '?' : r.capability
     badge(r.satisfied ? '✓ ' + label : '- ' + label, r.satisfied ? 'ok' : 'needs')
     body.append(document.createTextNode(' ' + task.title))
+    if (r.have !== undefined && r.need !== undefined && r.need > 0) {
+      // how much of the amount is covered: the green part of the bar
+      const bar = span('req-progress', '')
+      const fill = span('req-progress-fill', '')
+      fill.style.width = `${Math.min(100, Math.round((r.have / r.need) * 100))}%`
+      bar.append(fill)
+      bar.title = `${formatAmount(r.have, r.unit ?? '')} of ${formatAmount(r.need, r.unit ?? '')} allocated`
+      body.append(bar, span('muted req-have', ` ${formatAmount(r.have, r.unit ?? '')} / ${formatAmount(r.need, r.unit ?? '')}`))
+    }
     if (!r.satisfied) {
       const peers = app.contextPeers()
       const handler = (cap: 'search' | 'market' | 'mail') => peers.find((p) => p.online && p.capabilities.includes(cap))
@@ -738,7 +774,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         for (const { row } of options) select.append(new Option(`${formatAmount(row.allocation!.amount, row.allocation!.unit)} ${row.title}`.trim(), row.id))
         select.addEventListener('change', () => { if (select.value) app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: select.value }) })
         body.append(stop(select))
-        hint(`or type "$ ${r.amount ?? 'amount'}" inside`)
+        hint(`or type "${marker[r.resource ?? ''] ?? '$'} ${r.amount ?? 'amount'}" inside, or drop an allocation here`)
       }
     }
   } else if (task.kind === 'supply' && task.supply) {
@@ -971,8 +1007,11 @@ function renderContext(el: HTMLElement, node: NodeView, state: AppState, app: Ap
   el.hidden = false
   const items: HTMLElement[] = []
   const heading = document.createElement('h2')
-  heading.textContent = 'Context'
+  // the root context is this device's; "home" is the group of all the user's devices (what attaches at the account's root)
+  const atRoot = state.view.length === 0
+  heading.textContent = atRoot ? 'Root · this device' : 'Context'
   items.push(heading)
+  if (atRoot) items.push(div('muted small-print', 'Peers here are what this device can reach. Home is the group of all your devices: they show as members and attached devices below once connected. Drag a peer onto a row to make that row a group.'))
   if (banks.length) {
     const list = div('context-banks', '')
     list.append(span('muted', 'Banks: '))
@@ -1046,6 +1085,14 @@ function renderContext(el: HTMLElement, node: NodeView, state: AppState, app: Ap
     const dot = span('presence' + (p.online ? ' online' : ''), '')
     dot.title = p.online ? 'online' : p.isAccount ? 'offline: what it registered shows as offline until it connects again' : 'offline (still a member; its capabilities show as offline)'
     head.append(dot, span('peer-name', p.isAccount ? `@${p.name}` : p.member ? `@${p.name}` : peerLabel(p.id, state)))
+    // peers can be dragged onto a row to make it a group with them as members
+    head.draggable = true
+    head.addEventListener('dragstart', (event) => { event.dataTransfer?.setData(PEER_DRAG_TYPE, JSON.stringify({ id: p.id, name: p.name })); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'link' })
+    head.title = 'Drag onto a row to make that row a group with this peer as a member'
+    if (p.isAccount && !state.session) {
+      // not connected: signing in happens on the fos row
+      head.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
+    }
     if (p.member && owner) {
       const remove = button('icon more small-icon', '×', () => app.removePeerHere(p.id))
       remove.title = `Remove @${p.name} from this node`

@@ -233,6 +233,29 @@ export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string,
 }
 
 /** Change what kind of row `aliasId` is (plain ↔ task ↔ note ↔ comment). Refs keep their target when converted back. */
+/**
+ * Rewrite a row in place from re-parsed text: new kind, text and data (requirement, allocation, resource, query,
+ * done) while it keeps its alias id and children. What editing a row's raw text ("-$ 50 lunch" → "-: 1h lunch") does.
+ */
+export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, kind: RowKind, text: string, extras: Omit<RowExtras, 'store'>, now: number): Replica {
+  return edit(replica, at, now, (value) => {
+    const edge = findChildEdge(replica, value, aliasId)
+    if (!edge) return value
+    const node = valueContent(replica.store, identityCid(replica.store, edge))
+    const converted = convertRowContent(node, kind, now)
+    const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
+    const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
+    if (kind === 'task') data.todo = { completed: !!extras.done, time: node.data.todo?.time ?? now }
+    if (kind === 'requirement' && extras.requirement) data.requirement = extras.requirement
+    if (kind === 'allocation' && extras.allocation) data.allocation = extras.allocation
+    if (kind === 'resource' && extras.resource) data.resource = extras.resource
+    if (kind === 'query' && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
+    if (kind === 'comment' && node.data.comment) data.comment = { ...node.data.comment, content: body }
+    const next = withChildValue(replica.store, edge, { ...converted, data }, now)
+    return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, next)))
+  })
+}
+
 export function setRowKind(replica: Replica, at: Scope, aliasId: string, kind: RowKind, now: number): Replica {
   return edit(replica, at, now, (value) => {
     const edge = findChildEdge(replica, value, aliasId)

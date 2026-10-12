@@ -271,3 +271,16 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .context-peer-block { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .cap-direction { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 0.85rem; padding-left: 16px; }
 .cap-dir-label { min-width: 72px; }
+/* zoom dot, allocation tags, unmet requirements, progress */
+.tree .task .zoom-dot { font-size: 0.8rem; padding: 0 2px; color: var(--muted); opacity: 0.5; }
+.tree .task:hover .zoom-dot, .tree .task.selected .zoom-dot { opacity: 1; }
+.tree .task .zoom-dot:hover { color: var(--accent); }
+.tree .task.ghost .zoom-dot { visibility: hidden; }
+.alloc-tag { font-size: 0.75rem; padding: 1px 6px; border-radius: 999px; background: #0ea5e922; color: #0369a1; white-space: nowrap; }
+.tree .task.unmet { background: color-mix(in srgb, #ef4444 9%, transparent); box-shadow: inset 3px 0 0 #ef4444; }
+.tree .task.unmet.selected { background: color-mix(in srgb, #ef4444 14%, transparent); }
+.kind-badge.tpl.unmet { background: #ef444433; color: #b91c1c; }
+.req-progress { display: inline-block; vertical-align: middle; width: 80px; height: 8px; margin-left: 8px; border-radius: 4px; background: #ef444433; overflow: hidden; }
+.req-progress-fill { display: block; height: 100%; background: #10b981; }
+.req-have { font-size: 0.8rem; }
+.context-peer[draggable="true"] { cursor: grab; }

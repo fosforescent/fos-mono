@@ -30,8 +30,11 @@ row         [rowNode, KIND]              rowNode.data: alias{id}, description{co
                                      capability = task | allocation | search | confirmation | choice | market | mail | peer)
               SUPPLY      supply    + supply{capability, by, at, ref?, choice?}   (under a requirement; `ref` names an allocation/query row)
               QUERY       query     + query{market?, executedAt?, count?}        ("?" prefix; results are ref rows under it)
-              RESOURCE    resource  + resource{type: calendar|account|inventory, unit, capacity?}   ("@calendar name 40h" prefix)
-              ALLOCATION  allocation + allocation{resource, type, amount, unit, start?, end?, by?}  ("$ 2h note" prefix; drawn from the parent context)
+              RESOURCE    resource  + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
+              ALLOCATION  allocation + allocation{resource, type, amount, unit, start?, end?, by?, person?}
+                                     ("$ 50" money, ": 1h" time, "# 2 widgets" things, "@bob 2h" a person; optional window
+                                     "2026-10-13..2026-10-20" after the amount, start = now / end = forever when absent; drawn from the parent
+                                     context: the bank above, the bank the requirement names, or the type's default pool = first top-level bank)
               TEMPLATE    template  its requirement rows are copied under every task that executes it ("`name" prefix;
                                      "[ ] `name` …" makes a task with todo + template{id, name})
 legacy row  [LIST, node]                 plain row from older data (identity on the target); read like a DESCRIPTION row
@@ -210,14 +213,34 @@ supplied it, when, and for allocations/search optionally a reference
 supply counts only when `by` is the named peer. A reference it cannot resolve
 is trusted (it came through a proposal from another account).
 
-**Resource banks** (`@calendar`, `@account`, `@inventory`, optional capacity)
-hold **allocations** and sub-banks as children. An allocation (`$ amount`) is
-*taken from the parent context*: the nearest bank above it, or, under an
-allocation requirement, the bank of the resource the requirement names
-(`App.bankFor`). `allocatedIn` sums allocations in the subtree, the view shows
-`available = capacity − allocated`. An allocation row is a normal row: type it
-inside the requirement, Alt+drag a reference to it onto a task, or supply an
-existing one from the requirement's picker.
+**Resource banks** (`@calendar`, `@money`, `@inventory`, `@person <name>`,
+optional capacity) hold **allocations** and sub-banks as children. Each
+resource type has a marker: `$` money, `:` time, `#` things, `@name` a person
+(`-$`, `-:`, `-#`, `-@name` for the matching requirements). An allocation is
+*taken from the parent context* (`App.bankFor`): the nearest bank of its type
+above it, or, under an allocation requirement, a bank of the resource the
+requirement names, or the type's **default pool**, the first bank of that type
+at the top level. It may carry a **window** after the amount
+(`$ 50 2026-10-13..2026-10-20`; start is now and end is forever when absent),
+so every resource has its own calendar; a person allocation without a window
+needs no bank, with one it needs that person's bank (`@person bob 40h`).
+`allocatedIn` sums allocations in the subtree, the view shows
+`available = capacity − allocated` (windows are recorded, not yet checked for
+overlap). `requirementProgress` reports how much of an amount is covered by
+the allocations inside a requirement and the ones its supplies reference;
+several smaller allocations add up, and `-@name` is filled when that person
+allocates themself inside it. An allocation row is a normal row: type it
+inside the requirement, drop one onto the requirement (a supply referencing
+it; the allocation stays in its bank), Alt+drag a reference, or pick an
+existing one in the requirement's picker. Dropping a template on a
+requirement executes it inside, so the template's requirements show as rows
+under the original. Allocations under a row show on it as small tags; unmet
+requirements and executions with unmet requirements are marked red, with a
+green bar for the covered part of an amount.
+
+Editing a row shows its raw marker form (`rawRowText`: `-$ 50 lunch`,
+`[x] done`, `> note`) and re-parses it on commit; `setRowContentAt` rewrites
+the row in place, keeping its id and children.
 
 **Templates** (`` `name `` row) hold requirement rows. A task written as
 `[ ] `name` text` executes the template: `instantiateTemplate` copies the
@@ -280,6 +303,15 @@ attached at a task node receives the tasks assigned there, completes them in
 that scope, and sends nothing but the connection; its completions leave only
 when the policy allows a push or an explicit proposal. The server does not
 yet enforce policies on its side (it serves what the credential allows).
+
+**Groups, root and home.** Any row becomes a group by dropping a peer from
+the context panel on it (`App.addPeerToRow`): the peer becomes a member of
+that node (`read`, `edit`) and the fos account server is added as a member
+the first time (removable like any member). The root context of a client is
+the device's own: the panel there lists the fos server (sign-in happens on
+its row when not connected) and whatever attaches to the account's root,
+which is "home", the group of all the user's devices. A separate home node
+distinct from the account root is not modelled yet.
 
 **Allocation bins (sending rows to another account).** A row whose children
 are requirement and allocation rows is a proposed transaction: what the
