@@ -12,8 +12,10 @@ import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
   type Capability,
+  type CapabilityKind,
   type MovePosition,
   type NodeView,
+  type RowExtras,
   type RowKind,
   SYNC_FORMAT_VERSION,
   type Scope,
@@ -23,6 +25,7 @@ import {
   convertRowContent,
   copyRowContent,
   exportReachableContext,
+  findChild,
   findEdge,
   findRowByAlias,
   identityCid,
@@ -49,6 +52,7 @@ import {
   rowEdge,
   rowKindOf,
   scopeNames,
+  taskBlockers,
   taskContent,
   taskEdge,
   updateAtScope,
@@ -200,16 +204,17 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
   })
 }
 
-export type AddRowOptions = { done?: boolean; refId?: string; author?: { id: string; name: string }; position?: MovePosition; id?: string; targetCid?: string }
+export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition; id?: string }
 
 /** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
 export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
   const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
-  if (!body && kind !== 'ref' && kind !== 'plain') return replica // a blank plain row is fine: Enter creates one to type into
+  if (!body && !['ref', 'plain', 'supply', 'allocation'].includes(kind)) return replica // blank plain rows are fine (Enter creates one); supplies/allocations describe themselves
   if (kind === 'ref' && !options.refId) return replica
   const id = options.id ?? newId()
   return edit(replica, at, now, (value) => {
-    const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author, targetCid: options.targetCid, store: replica.store }))
+    const { position: _p, id: _i, ...extras } = options
+    const cid = put(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store }))
     const edge = rowEdge(replica.store, kind, cid)
     const children = [...value.children]
     const pos = options.position
@@ -246,6 +251,27 @@ export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: 
   const options = { refId: targetAliasId, targetCid: targetCid ?? undefined }
   if (position && 'into' in position) return addRow(r, [...at, position.into], 'ref', '', now, options)
   return addRow(r, at, 'ref', '', now, { ...options, position })
+}
+
+/** Satisfy a requirement row at `at`/`requirementId` with a supply (who, and for search/allocation which row by alias id). */
+export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: CapabilityKind; by: string; ref?: string; choice?: number }, now: number, id?: string): Replica {
+  const label = supply.capability === 'confirmation' ? `confirmed by ${supply.by}` : supply.capability === 'choice' ? `chose option ${(supply.choice ?? 0) + 1}` : supply.capability === 'search' ? 'search results' : 'allocation'
+  return addRow(replica, [...at, requirementId], 'supply', label, now, { supply: { ...supply, at: now }, id })
+}
+
+/** List (or delist) a link row on the market: a flag on its ref node, no content version. */
+export function setMarketAt(replica: Replica, at: Scope, listed: boolean, now: number, by?: string): Replica {
+  return editNode(replica, at, now, (node) => {
+    const ref = makeLink(replica.store, node, now)
+    if (listed === !!ref.data.listing) return ref === node ? node : ref
+    const { listing: _m, ...rest } = ref.data
+    return { ...ref, data: listed ? { ...rest, listing: { listedAt: now, ...(by ? { by } : {}) } } : rest }
+  })
+}
+
+/** Change a query row's options (market flag, executed stamp). */
+export function setQueryOptionsAt(replica: Replica, at: Scope, queryId: string, patch: Partial<NonNullable<FosNodeContent['data']['query']>>, now: number): Replica {
+  return updateTask(replica, at, queryId, now, (row) => (row.data.query ? { ...row, data: { ...row.data, query: { ...row.data.query, ...patch } } } : null))
 }
 
 /** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
@@ -291,6 +317,12 @@ function updateTask(replica: Replica, at: Scope, taskId: string, now: number, ch
 }
 
 export function setTaskDone(replica: Replica, at: Scope, taskId: string, done: boolean, now: number): Replica {
+  if (done) {
+    // a task with unsatisfied requirements cannot be completed (the view's `blockedBy` says what is missing)
+    const parent = resolveScope(replica.store, headCid(replica), at)
+    const taskCid = parent ? findChild(replica.store, parent, taskId) : null
+    if (taskCid && taskBlockers(replica.store, taskCid).length) return replica
+  }
   return updateTask(replica, at, taskId, now, (task) => {
     if (!task.data.todo) return null // only tasks have a completion
     if (!!task.data.todo?.completed === done) return null

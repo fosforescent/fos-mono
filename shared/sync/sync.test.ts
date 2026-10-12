@@ -32,6 +32,7 @@ import {
   addPartition,
   addRef,
   addRow,
+  addSupply,
   addTask,
   applyProposalAt,
   buildSyncRequest,
@@ -49,6 +50,8 @@ import {
   resolveRef,
   serializeReplica,
   serveSync,
+  setMarketAt,
+  setQueryOptionsAt,
   setRowKind,
   setTaskDone,
   type Replica,
@@ -967,5 +970,74 @@ describe('mutable references: root, link rows and reference rows are one node sh
     const edited = addTask(loaded, ['sh'], 'two', 4, 'o2')
     expect(view(edited, ['sh'])!.versions).toBe(2)
     expect(normalizeRefs(edited.store, headCid(edited))).toBe(headCid(edited)) // idempotent
+  })
+})
+
+describe('requirements, supplies, resource banks and market listings', () => {
+  it('a task with unsatisfied requirements cannot be completed; supplies satisfy them', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'ship it', 1, 't')
+    r = addRow(r, ['t'], 'requirement', 'confirmation', 2, { id: 'rq1', requirement: { capability: 'confirmation' } })
+    r = addRow(r, ['t'], 'requirement', 'choice', 3, { id: 'rq2', requirement: { capability: 'choice', options: ['fast', 'cheap'] } })
+    let task = view(r, [])!.tasks[0]!
+    expect(task.blockedBy).toEqual(['confirmation', 'choice (fast | cheap)'])
+    expect(view(r, ['t'])!.tasks.map((x) => [x.kind, x.requirement?.satisfied])).toEqual([['requirement', false], ['requirement', false]])
+    // completion is refused while blocked
+    r = setTaskDone(r, [], 't', true, 4)
+    expect(view(r, [])!.tasks[0]!.done).toBe(false)
+    r = addSupply(r, ['t'], 'rq1', { capability: 'confirmation', by: 'ada@x' }, 5)
+    r = addSupply(r, ['t'], 'rq2', { capability: 'choice', by: 'ada@x', choice: 1 }, 6)
+    task = view(r, [])!.tasks[0]!
+    expect(task.blockedBy).toBeUndefined()
+    expect(view(r, ['t', 'rq1'])!.tasks[0]).toMatchObject({ kind: 'supply', supply: { capability: 'confirmation', by: 'ada@x' } })
+    r = setTaskDone(r, [], 't', true, 7)
+    expect(view(r, [])!.tasks[0]!.done).toBe(true)
+    // a supply of the wrong capability does not count
+    let r2 = addRow(createReplica('e'), [], 'task', 'x', 1, { id: 'x' })
+    r2 = addRow(r2, ['x'], 'requirement', 'confirmation', 2, { id: 'q', requirement: { capability: 'confirmation' } })
+    r2 = addSupply(r2, ['x'], 'q', { capability: 'choice', by: 'bob', choice: 0 }, 3)
+    expect(view(r2, [])!.tasks[0]!.blockedBy).toEqual(['confirmation'])
+  })
+
+  it('resource banks track allocations (sub-banks included); an allocation reference satisfies an allocation requirement', () => {
+    let r = createReplica('d')
+    r = addRow(r, [], 'resource', 'Week 42', 1, { id: 'cal', resource: { type: 'calendar', unit: 'h', capacity: 40 } })
+    r = addRow(r, ['cal'], 'allocation', 'planning', 2, { id: 'a1', allocation: { resource: 'cal', type: 'calendar', amount: 1, unit: 'h', start: 1760000000000 } })
+    r = addRow(r, ['cal'], 'resource', 'Mornings', 3, { id: 'sub', resource: { type: 'calendar', unit: 'h' } })
+    r = addRow(r, ['cal', 'sub'], 'allocation', 'standups', 4, { id: 'a2', allocation: { resource: 'sub', type: 'calendar', amount: 2.5, unit: 'h' } })
+    const bank = view(r, [])!.tasks[0]!
+    expect(bank.resource).toMatchObject({ type: 'calendar', capacity: 40, allocated: 3.5, available: 36.5 })
+    expect(view(r, ['cal'])!.tasks.find((t) => t.id === 'sub')!.resource).toMatchObject({ allocated: 2.5, available: null })
+    // a task requiring 1h of calendar; supplied with a reference to the allocation
+    r = addTask(r, [], 'interview', 5, 't')
+    r = addRow(r, ['t'], 'requirement', 'calendar 1 h', 6, { id: 'rq', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } })
+    expect(view(r, [])!.tasks[1]!.blockedBy).toEqual(['calendar 1 h'])
+    r = addSupply(r, ['t'], 'rq', { capability: 'allocation', by: 'ada', ref: 'a1' }, 7)
+    expect(view(r, [])!.tasks[1]!.blockedBy).toBeUndefined()
+    // too small an allocation does not satisfy a larger requirement
+    r = addRow(r, ['t'], 'requirement', 'calendar 2 h', 8, { id: 'rq2', requirement: { capability: 'allocation', resource: 'calendar', amount: 2, unit: 'h' } })
+    r = addSupply(r, ['t'], 'rq2', { capability: 'allocation', by: 'ada', ref: 'a1' }, 9)
+    expect(view(r, [])!.tasks[1]!.blockedBy).toEqual(['calendar 2 h'])
+    r = addSupply(r, ['t'], 'rq2', { capability: 'allocation', by: 'ada', ref: 'a2' }, 10)
+    expect(view(r, [])!.tasks[1]!.blockedBy).toBeUndefined()
+  })
+
+  it('listing on the market is a flag on the ref node (bookkeeping, no version); queries carry their options', () => {
+    let r = createReplica('d')
+    r = addTask(r, [], 'offer', 1, 'o')
+    r = makeLinkAt(r, ['o'], 2)
+    const before = view(r, ['o'])!.versions
+    r = setMarketAt(r, ['o'], true, 3, 'ada@x')
+    expect(view(r, [])!.tasks[0]!.market).toBe(true)
+    expect(view(r, ['o'])!.versions).toBe(before)
+    r = setMarketAt(r, ['o'], false, 4)
+    expect(view(r, [])!.tasks[0]!.market).toBeUndefined()
+    // listing a plain row makes it a link first
+    r = addTask(r, [], 'plain offer', 5, 'p')
+    r = setMarketAt(r, ['p'], true, 6)
+    expect(view(r, [])!.tasks[1]).toMatchObject({ isLink: true, market: true })
+    r = addRow(r, [], 'query', 'designers near me', 7, { id: 'q', query: {} })
+    r = setQueryOptionsAt(r, [], 'q', { market: true, executedAt: 8, count: 3 }, 8)
+    expect(view(r, [])!.tasks[2]!.query).toEqual({ market: true, executedAt: 8, count: 3 })
   })
 })

@@ -21,7 +21,9 @@ import { postContactMessage } from './email/contactMessage'
 
 import { getUserData, deleteUserData, postUserDataPartial, getNodeByCid, getNodesByCids, postSync, getChangesSince } from './data'
 import { getSuggest } from './suggest'
-import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, deleteAttachment } from './sync/peerSync'
+import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, deleteAttachment, prismaPeerSyncDeps, withUserLock } from './sync/peerSync'
+import { createSearchHandlers } from './search/routes'
+import { vertexEmbed } from './search/rowIndex'
 import { peerInviteHandlers } from './sync/peerInvites'
 import { deviceLoginHandlers } from './auth/deviceLogin'
 import { createChannelsRouter, startChannels, stopChannels } from './channels'
@@ -349,6 +351,12 @@ dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
 dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
 // Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
 dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), prismaVoiceUsage(prisma)))
+// Semantic search over this account's rows (and market listings), market views and proposals (pgvector, Vertex embeddings)
+const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaPeerSyncDeps.loadStore, saveStore: prismaPeerSyncDeps.saveStore, withUserLock, notify: prismaPeerSyncDeps.notify })
+dataRoutes.post('/search', searchHandlers.search)
+dataRoutes.post('/search/reindex', searchHandlers.reindex)
+dataRoutes.get('/market/node', searchHandlers.marketNode)
+dataRoutes.post('/market/proposals', searchHandlers.marketProposal)
 dataRoutes.post('/peer-invite', peerInviteHandlers.createInvite)
 dataRoutes.get('/peer-invite/requests', peerInviteHandlers.listRequests)
 dataRoutes.post('/peer-invite/:id/approve', peerInviteHandlers.approveRequest)
@@ -612,4 +620,4 @@ process.on('SIGINT', async () => {
 //   socket.on('message', (msg) => {
 //     console.log('message: ' + msg);
 //   });
-// });
+// });

@@ -9,7 +9,7 @@ import { isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeV
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { ROW_KIND_LABEL, downloadText, parseRowInput, renderInlineText } from './rows'
+import { ROW_KIND_LABEL, downloadText, formatAmount, parseRowInput, renderInlineText } from './rows'
 import type { RowKind } from '../../shared/sync/index'
 
 type Regions = {
@@ -63,7 +63,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     <section class="link-panel" data-region="link" hidden></section>
     <section class="tasks">
       <form class="add" data-region="add">
-        <input name="title" type="text" placeholder="Add a row…  ([ ] task · - note · // comment)" autocomplete="off" enterkeyhint="done" />
+        <input name="title" type="text" placeholder="Add a row…  ([ ] task · - note · // comment · ! requirement · ? query · @calendar/@account/@inventory bank · +amount allocation)" autocomplete="off" enterkeyhint="done" />
         <button type="submit">Add</button>
         <button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button>
       </form>
@@ -99,7 +99,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     const title = regions.addInput.value
     if (title.trim()) {
       const parsed = parseRowInput(title)
-      app.addRowAt([], parsed.kind, parsed.text, { done: parsed.done })
+      app.addRowAt([], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras })
       regions.addInput.value = ''
     }
     regions.addInput.focus()
@@ -310,6 +310,9 @@ function renderVersion(label: string, task: TaskView | null, plainLabel: string 
 let addingUnder: string | null = null
 /** Kind preset for the inline add under `addingUnder` (comments from the menu). */
 let addingKind: RowKind | null = null
+/** Rows whose body carries controls (requirements, supplies, queries, banks, allocations) keep it while selected; this is the one being text-edited (double-click / Enter). */
+let editingSpecial: string | null = null
+const SPECIAL_KINDS: ReadonlySet<RowKind> = new Set<RowKind>(['requirement', 'supply', 'query', 'resource', 'allocation'])
 type DragMode = 'move' | 'ref' | 'copy'
 let drag: { id: string; at: Scope; mode: DragMode } | null = null
 let pointerDown = false
@@ -421,17 +424,21 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.type = 'checkbox'
   checkbox.checked = task.done
   checkbox.hidden = !task.checkable // a legacy plain node has no completion
-  checkbox.disabled = !task.checkable
+  checkbox.disabled = !task.checkable || (!task.done && !!task.blockedBy?.length)
+  if (task.blockedBy?.length) checkbox.title = `Needs: ${task.blockedBy.join(', ')}`
   checkbox.tabIndex = -1
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (selected && task.kind !== 'ref') {
+  if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.kind === 'ref') {
     body = renderRefBody(task, app)
   } else if (task.kind === 'note') {
     body = renderNoteBody(task, at, state, app)
+  } else if (SPECIAL_KINDS.has(task.kind)) {
+    body = renderSpecialBody(task, at, state, app)
+    body.addEventListener('dblclick', (event) => { event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
   } else {
     body = span('title', '')
     body.append(renderInlineText(task.title))
@@ -448,6 +455,8 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   meta.append(opRef, opCopy)
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
   if (task.isLink) { const b = span('link-badge', '⛓'); b.title = 'Link node: other devices attach here; their changes arrive as proposals'; meta.append(b) }
+  if (task.market) { const b = span('market-badge', '🛒'); b.title = 'Listed on the market: other accounts can find this and propose'; meta.append(b) }
+  if (task.blockedBy?.length) { const b = span('blocked-badge', `needs ${task.blockedBy.length}`); b.title = `Needs: ${task.blockedBy.join(', ')}`; meta.append(b) }
 
   const more = button('icon more', '⋯', () => { app.select(path); app.openContextMenu({ kind: 'task', at, task }) })
   more.title = 'Actions (or right-click)'
@@ -503,15 +512,17 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   const commit = () => {
     if (committed) return
     committed = true
+    if (editingSpecial === task.id) editingSpecial = null
     if (input.value === task.title) return
     // typing a marker at the start of a plain row converts it, like the add bar: "[ ] ", "[x] ", "- ", "// "
     const parsed = task.kind === 'plain' ? parseRowInput(input.value) : null
-    if (parsed && parsed.kind !== 'plain') {
+    if (parsed && ['task', 'note', 'comment'].includes(parsed.kind)) {
       app.renameTaskAt(at, task.id, parsed.text || ' ')
       app.setRowKindAt(at, task.id, parsed.kind)
       if (parsed.done) app.setDoneAt(at, task.id, true)
       return
     }
+    if (parsed && parsed.kind !== 'plain') { app.convertPlainRowAt(at, task.id, parsed); return }
     app.renameTaskAt(at, task.id, input.value)
   }
   const path: Scope = [...at, task.id]
@@ -554,9 +565,16 @@ function firstLine(text: string): string {
 
 /** A reference row shows the title of the row it points at and follows it on click. */
 function renderRefBody(task: TaskView, app: App): HTMLElement {
-  const target = app.refTarget(task.refId ?? '')
   const body = span('title ref', '')
   const arrow = span('ref-arrow', '→')
+  if (task.refOwner) {
+    // a market result: the node lives in another account; open it to read it and propose
+    const link = button('link ref-link', `🛒 ${firstLine(task.title) || '(untitled)'}`, () => void app.openMarket(task.refOwner!, task.refId ?? '', task.title))
+    link.title = `Listed on the market by ${task.refOwner}; click to view and propose`
+    body.append(arrow, link, span('muted', ` — ${task.refOwner}`))
+    return body
+  }
+  const target = app.refTarget(task.refId ?? '')
   if (target) {
     const link = button('link ref-link', firstLine(target.row.title) || '(untitled)', () => app.followRef(task.refId ?? ''))
     link.title = `Reference to a ${ROW_KIND_LABEL[target.row.kind].toLowerCase()}; click to go there`
@@ -606,6 +624,56 @@ function expandNoteText(ctx: ReturnType<typeof noteContext>): string {
   return exportNote(ctx).replace(/^---\n[\s\S]*?\n---\n\n?/, '')
 }
 
+/** Requirement, supply, query, resource-bank and allocation rows: a kind badge, the text, and a status/balance. */
+function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+  const body = span('title special', '')
+  const badge = (text: string, cls = '') => { const b = span('kind-badge ' + cls, text); body.append(b) }
+  const stop = (el: HTMLElement) => { el.addEventListener('click', (e) => e.stopPropagation()); return el }
+  if (task.kind === 'requirement' && task.requirement) {
+    badge(task.requirement.satisfied ? '✓ ' + task.requirement.capability : '! ' + task.requirement.capability, task.requirement.satisfied ? 'ok' : 'needs')
+    body.append(document.createTextNode(' ' + task.title))
+    if (!task.requirement.satisfied) {
+      const r = task.requirement
+      if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
+      if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(button('secondary small', opt, () => app.supplyRequirementAt(at, task.id, { capability: 'choice', choice: i })))))
+      if (r.capability === 'search') {
+        const queries = (viewAt(state.replica, [...state.view, ...at, task.id])?.tasks ?? []).filter((q) => q.kind === 'query' && q.query?.executedAt)
+        if (queries.length) body.append(stop(button('secondary small', 'Supply search results', () => app.supplyRequirementAt(at, task.id, { capability: 'search', ref: queries[0]!.id }))))
+        else body.append(stop(button('secondary small', 'Add a search (? …) inside and run it', () => { addingUnder = task.id; addingKind = null; app.refresh() })))
+      }
+      if (r.capability === 'allocation') {
+        const options = app.allocations().filter(({ row }) => !r.resource || row.allocation?.type === r.resource)
+        const select = document.createElement('select')
+        select.className = 'small'
+        select.append(new Option(options.length ? 'Supply an allocation…' : 'No matching allocation yet (add one under a bank)', ''))
+        for (const { row } of options) select.append(new Option(`${formatAmount(row.allocation!.amount, row.allocation!.unit)} ${row.title}`.trim(), row.id))
+        select.addEventListener('change', () => { if (select.value) app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: select.value }) })
+        body.append(stop(select))
+      }
+    }
+  } else if (task.kind === 'supply' && task.supply) {
+    badge('supplied', 'ok')
+    body.append(document.createTextNode(` ${task.title} · ${task.supply.by}`))
+    if (task.supply.ref) { const t = app.refTarget(task.supply.ref); if (t) body.append(stop(button('link small', firstLine(t.row.title) || t.row.kind, () => app.followRef(task.supply!.ref!)))) }
+  } else if (task.kind === 'query') {
+    badge('?' + (task.query?.market ? ' market' : ''), 'query')
+    body.append(document.createTextNode(' ' + task.title + ' '))
+    body.append(stop(button('secondary small', task.query?.executedAt ? 'Refresh' : 'Search', () => void app.runQueryAt(at, task))))
+  } else if (task.kind === 'resource' && task.resource) {
+    badge(task.resource.type, 'bank')
+    body.append(document.createTextNode(' ' + task.title + ' '))
+    const r = task.resource
+    body.append(span('muted', r.capacity === undefined ? `${formatAmount(r.allocated, r.unit)} allocated` : `${formatAmount(r.available ?? 0, r.unit)} of ${formatAmount(r.capacity, r.unit)} available`))
+  } else if (task.kind === 'allocation' && task.allocation) {
+    const a = task.allocation
+    badge('+' + formatAmount(a.amount, a.unit), 'alloc')
+    const when = a.start ? ` ${new Date(a.start).toLocaleDateString()}${a.end ? '–' + new Date(a.end).toLocaleDateString() : ''}` : ''
+    body.append(document.createTextNode(` ${task.title}${when}${a.by ? ` · ${a.by}` : ''}`))
+  }
+  body.title = 'Double-click (or Enter) to edit the text'
+  return body
+}
+
 function renderInlineAdd(parent: TaskView, at: Scope, depth: number, app: App): HTMLElement {
   const li = document.createElement('li')
   li.className = 'task inline-add'
@@ -613,14 +681,14 @@ function renderInlineAdd(parent: TaskView, at: Scope, depth: number, app: App): 
   const form = document.createElement('form')
   form.className = 'add'
   const preset = addingKind
-  const label = preset === 'comment' ? `Comment on “${firstLine(parent.title)}”…` : `Under “${firstLine(parent.title)}”…  ([ ] task · - note · // comment)`
+  const label = preset === 'comment' ? `Comment on “${firstLine(parent.title)}”…` : parent.kind === 'resource' ? `Under “${firstLine(parent.title)}”…  (+1h / +50 USD allocation · @calendar sub-bank)` : `Under “${firstLine(parent.title)}”…  ([ ] task · - note · // comment · ! requirement)`
   form.innerHTML = `<input type="text" placeholder="${label.replace(/"/g, '&quot;')}" autocomplete="off" enterkeyhint="done" /><button type="submit">Add</button>`
   const input = form.querySelector('input') as HTMLInputElement
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     if (input.value.trim()) {
-      const parsed = preset === 'comment' ? { kind: 'comment' as RowKind, text: input.value.trim(), done: false } : parseRowInput(input.value)
-      app.addRowAt([...at, parent.id], parsed.kind, parsed.text, { done: parsed.done })
+      const parsed = preset === 'comment' ? { kind: 'comment' as RowKind, text: input.value.trim(), done: false, extras: undefined } : parseRowInput(input.value)
+      app.addRowAt([...at, parent.id], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras })
     }
     input.value = ''
     input.focus()
@@ -654,6 +722,9 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     { label: 'Add row below', keys: 'Enter', run: () => app.addRowBelow(at, task.id) },
     ...(task.kind === 'ref' ? [{ label: 'Go to the referenced row', run: () => app.followRef(task.refId ?? '') }] : []),
     { label: 'Add comment', run: () => { addingUnder = task.id; addingKind = 'comment'; if (state.collapsed.includes(task.id)) app.toggleCollapsed(task.id); else app.refresh() } },
+    ...(task.kind === 'task' ? [{ label: 'Add requirement (! confirmation · ! choice: a | b · ! calendar 1h …)', run: () => { addingUnder = task.id; addingKind = null; app.refresh() } }] : []),
+    ...(state.session?.kind === 'user' && task.kind !== 'ref' && task.kind !== 'supply' ? [{ label: task.market ? 'Remove from market' : 'List on market', run: () => app.setMarketAtRow(at, task.id, !task.market) }] : []),
+    ...(task.kind === 'query' ? [{ label: task.query?.market ? 'Search my rows only' : 'Search the market too', run: () => app.toggleQueryMarket(at, task) }] : []),
     ...(task.kind !== 'ref' ? (['task', 'plain', 'note', 'comment'] as RowKind[]).filter((k) => k !== task.kind).map((k) => ({ label: `Change to ${ROW_KIND_LABEL[k].toLowerCase()}`, run: () => app.setRowKindAt(at, task.id, k) })) : []),
     ...(task.kind === 'note' ? [{ label: 'Export note (.md)', run: () => { const ctx = noteContext(task.title, noteChildren(task, at, state, app)); downloadText(noteFilename(task.title), exportNote(ctx)) } }] : []),
     { label: 'Indent', keys: 'Tab', run: () => { app.select([...at, task.id]); app.indentSelected(false) } },
@@ -730,6 +801,8 @@ function handleKey(event: KeyboardEvent, app: App): void {
       event.preventDefault(); app.addRowInside(at, task.id); break
     case event.key === 'Enter' && (event.ctrlKey || event.metaKey):
       event.preventDefault(); if (task.kind === 'task') app.toggleTaskAt(at, task); else app.addRowBelow(at, task.id); break
+    case event.key === 'Enter' && SPECIAL_KINDS.has(task.kind):
+      event.preventDefault(); editingSpecial = task.id; app.refresh(); break
     case event.key === 'Enter':
       event.preventDefault(); app.addRowBelow(at, task.id); break
     case event.key === 'Tab':
@@ -880,13 +953,14 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   if (kind === 'requests') renderRequests(body, state, app)
   if (kind === 'direct') renderDirect(body, state, app)
   if (kind === 'device') renderDevice(body, state, app)
+  if (kind === 'market') renderMarket(body, state, app)
   card.append(body)
   el.replaceChildren(card)
 }
 
 function modalKey(state: AppState): string {
   const d = state.direct
-  return [state.modal, state.connectFlow.phase, state.invite?.token ?? '', d?.role ?? '', d?.phase ?? '', (d?.role === 'host' ? d.pendingPeer?.peerId ?? '' : ''), state.manual.requestCode ? 'rq' : '', state.manual.resultCode ? 'rs' : '', state.requests.map((r) => r.id).join(','), state.device?.status ?? '', state.device?.name ?? ''].join('|')
+  return [state.modal, state.connectFlow.phase, state.invite?.token ?? '', d?.role ?? '', d?.phase ?? '', (d?.role === 'host' ? d.pendingPeer?.peerId ?? '' : ''), state.manual.requestCode ? 'rq' : '', state.manual.resultCode ? 'rs' : '', state.requests.map((r) => r.id).join(','), state.device?.status ?? '', state.device?.name ?? '', state.market?.aliasId ?? '', state.market?.phase ?? '', state.market?.error ?? ''].join('|')
 }
 
 function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
@@ -896,7 +970,66 @@ function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
 }
 
 function modalTitle(kind: AppState['modal']): string {
-  return kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : 'Direct connect'
+  return kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : 'Direct connect'
+}
+
+/** A listed node of another account: its rows and requirements, this account's proposal, and a form to propose. */
+function renderMarket(body: HTMLElement, state: AppState, app: App): void {
+  const m = state.market
+  if (!m) return
+  const head = div('market-head', '')
+  head.append(span('market-title', firstLine(m.title) || '(untitled)'), span('muted', ` — listed by ${m.owner}`))
+  body.append(head)
+  if (m.phase === 'loading') { body.append(div('muted', 'Loading…')); return }
+  if (m.error) body.append(div('error', m.error))
+  const node = m.node
+  if (!node) return
+  const rows = document.createElement('ul')
+  rows.className = 'market-rows'
+  const requirements = node.view.tasks.filter((t) => t.kind === 'requirement' && t.requirement)
+  for (const t of node.view.tasks) {
+    const li = document.createElement('li')
+    const kind = ROW_KIND_LABEL[t.kind] ?? t.kind
+    const badgeText = t.kind === 'requirement' ? (t.requirement?.satisfied ? '✓ ' : '! ') + (t.requirement?.capability ?? kind) : kind.toLowerCase()
+    li.append(span('kind-badge ' + (t.kind === 'requirement' ? (t.requirement?.satisfied ? 'ok' : 'needs') : ''), badgeText), document.createTextNode(' ' + (firstLine(t.title) || '')))
+    rows.append(li)
+  }
+  if (!node.view.tasks.length) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = 'No rows shown.'; rows.append(li) }
+  body.append(rows)
+
+  if (node.myProposal) {
+    const mine = node.view.proposals[0]
+    body.append(div('market-mine', `Your proposal: ${node.myProposal.status}${mine?.summary.added.length ? ` — ${mine.summary.added.join('; ')}` : ''}. Only you and ${m.owner} can see it; other bidders cannot.`))
+  }
+
+  const form = document.createElement('form')
+  form.className = 'market-form'
+  const comment = document.createElement('textarea')
+  comment.placeholder = node.myProposal ? 'Replace your proposal with a new comment…' : 'Your proposal (a comment the owner will see)…'
+  comment.rows = 3
+  form.append(comment)
+  const picks: Array<{ requirementId: string; select: HTMLSelectElement }> = []
+  for (const r of requirements) {
+    if (r.requirement!.capability !== 'allocation' || r.requirement!.satisfied) continue
+    const line = div('market-req', '')
+    line.append(span('', `Supply “${firstLine(r.title)}”: `))
+    const select = document.createElement('select')
+    const options = app.allocations().filter(({ row }) => !r.requirement!.resource || row.allocation?.type === r.requirement!.resource)
+    select.append(new Option(options.length ? 'Pick one of your allocations…' : 'No matching allocation (add one under a bank first)', ''))
+    for (const { row } of options) select.append(new Option(`${formatAmount(row.allocation!.amount, row.allocation!.unit)} ${row.title}`.trim(), row.id))
+    line.append(select)
+    form.append(line)
+    picks.push({ requirementId: r.id, select })
+  }
+  const submit = button('primary', m.phase === 'submitting' ? 'Sending…' : node.myProposal ? 'Replace proposal' : 'Send proposal', () => undefined)
+  submit.type = 'submit'
+  submit.disabled = m.phase === 'submitting'
+  form.append(submit)
+  form.addEventListener('submit', (e) => {
+    e.preventDefault()
+    void app.submitProposal(comment.value, picks.filter((pk) => pk.select.value).map((pk) => ({ requirementId: pk.requirementId, allocationId: pk.select.value })))
+  })
+  body.append(form)
 }
 
 function renderDevice(body: HTMLElement, state: AppState, app: App): void {

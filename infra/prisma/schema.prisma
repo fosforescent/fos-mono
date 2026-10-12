@@ -1,10 +1,12 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector] // pgvector, for RowEmbeddingModel.embedding; created by `prisma db push` if missing
 }
 
 generator client {
-  provider      = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
@@ -53,6 +55,7 @@ model UserModel {
   last_bank_account_added       DateTime?                    // When last bank account was added
   // profile                       Json                    @default("{}")
   fosNode                       FosNodeModel                 @relation("UserFosNode", fields: [fosNodeId], references: [cid])
+  rowEmbeddings                 RowEmbeddingModel[]
   fosNodeId                     String                       @unique
   // platform_fees          PlatformFee[]
   AuthEvent                     UserEventModel[]
@@ -268,6 +271,25 @@ model PeerInviteModel {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   user        UserModel @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Semantic search index over rows (backend/search/rowIndex.ts): one embedding per (user, row alias id).
+// `embedding` is a pgvector column; it is written and queried with raw SQL.
+model RowEmbeddingModel {
+  id        Int                           @id @default(autoincrement())
+  userId    Int
+  owner     String                        // username, shown to other accounts for market rows
+  aliasId   String
+  kind      String
+  title     String
+  path      Json                          @default("[]")
+  market    Boolean                       @default(false)
+  textHash  String
+  embedding Unsupported("vector(768)")?
+  updatedAt DateTime                      @default(now())
+  user      UserModel                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, aliasId])
+  @@index([market])
 }
 
 model ApiTokenModel {

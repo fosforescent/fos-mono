@@ -39,7 +39,7 @@
 
 import { FosStore } from '../dag-implementation/store'
 import { isCurrentCid, verifyCid } from '../dag-implementation/cid'
-import type { FosContextData, FosNodeContent, FosNodesData, FosPathElem } from '../types'
+import type { FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 
 export type Scope = string[] // alias ids of nested nodes (tasks or legacy plain nodes), [] = the node a replica is attached to
 
@@ -142,8 +142,10 @@ export function isTaskEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[1] === store.primitive.completeField.getId() && !!valueContent(store, edge[0]).data.todo
 }
 
-export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref'
-export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref']
+export type RowKind = 'task' | 'plain' | 'note' | 'comment' | 'ref' | 'requirement' | 'supply' | 'query' | 'resource' | 'allocation'
+export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref', 'requirement', 'supply', 'query', 'resource', 'allocation']
+export type ResourceType = 'calendar' | 'account' | 'inventory'
+export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation'
 
 /** The primitive a row node is applied to, per kind ([rowNode, KIND]). */
 export function rowPrimitive(store: FosStore, kind: RowKind): string {
@@ -153,6 +155,11 @@ export function rowPrimitive(store: FosStore, kind: RowKind): string {
     case 'note': return store.primitive.documentField.getId()
     case 'comment': return store.primitive.commentField.getId()
     case 'ref': return store.primitive.linkField.getId()
+    case 'requirement': return store.primitive.requirementField.getId()
+    case 'supply': return store.primitive.supplyField.getId()
+    case 'query': return store.primitive.queryField.getId()
+    case 'resource': return store.primitive.resourceField.getId()
+    case 'allocation': return store.primitive.allocationField.getId()
   }
 }
 
@@ -166,6 +173,11 @@ export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
   if (target === p.documentField.getId()) return 'note'
   if (target === p.commentField.getId()) return 'comment'
   if (target === p.linkField.getId()) return 'ref'
+  if (target === p.requirementField.getId()) return 'requirement'
+  if (target === p.supplyField.getId()) return 'supply'
+  if (target === p.queryField.getId()) return 'query'
+  if (target === p.resourceField.getId()) return 'resource'
+  if (target === p.allocationField.getId()) return 'allocation'
   return null
 }
 
@@ -225,12 +237,32 @@ export function taskContent(id: string, title: string, done: boolean, createdAt:
 }
 
 /** Content of a row of `kind`. `text` is the title (task/plain/comment), markdown body (note) or ignored (ref). */
-export function rowContent(kind: RowKind, id: string, text: string, now: number, extra: { done?: boolean; refId?: string; author?: { id: string; name: string }; targetCid?: string; store?: FosStore } = {}): FosNodeContent {
+export type RowExtras = {
+  done?: boolean
+  refId?: string
+  /** Market result: the account owning the referenced node. */
+  refOwner?: string
+  author?: { id: string; name: string }
+  targetCid?: string
+  store?: FosStore
+  requirement?: NonNullable<FosNodeContent['data']['requirement']>
+  supply?: NonNullable<FosNodeContent['data']['supply']>
+  query?: NonNullable<FosNodeContent['data']['query']>
+  resource?: NonNullable<FosNodeContent['data']['resource']>
+  allocation?: NonNullable<FosNodeContent['data']['allocation']>
+}
+
+export function rowContent(kind: RowKind, id: string, text: string, now: number, extra: RowExtras = {}): FosNodeContent {
   const data: FosNodeContent['data'] = { alias: { id }, description: { content: text }, updated: { time: now } }
   if (kind === 'task') data.todo = { completed: !!extra.done, time: now }
+  if (kind === 'requirement') data.requirement = extra.requirement ?? { capability: 'confirmation' }
+  if (kind === 'supply') data.supply = extra.supply ?? { capability: 'confirmation', by: '', at: now }
+  if (kind === 'query') data.query = extra.query ?? {}
+  if (kind === 'resource') data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
+  if (kind === 'allocation') data.allocation = extra.allocation ?? { resource: '', type: 'inventory', amount: 0, unit: 'unit' }
   if (kind === 'comment') data.comment = { content: text, authorID: extra.author?.id ?? '', authorName: extra.author?.name ?? '', time: now, votes: {} }
   if (kind === 'ref') {
-    data.ref = { id: extra.refId ?? '' }
+    data.ref = extra.refOwner ? { id: extra.refId ?? '', owner: extra.refOwner } : { id: extra.refId ?? '' }
     // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
     if (extra.targetCid && extra.store) return refNodeContent(extra.store, data, extra.targetCid)
   }
@@ -243,11 +275,16 @@ export function rowEdge(store: FosStore, kind: RowKind, cid: string): FosPathEle
 
 /** Same node as a different kind of row: completion added or dropped, comment/ref data adjusted. */
 export function convertRowContent(value: FosNodeContent, kind: RowKind, now: number): FosNodeContent {
-  const { todo: _todo, comment: _comment, ref: _ref, ...rest } = value.data
+  const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
   const data: FosNodeContent['data'] = { ...rest, updated: { time: now } }
   if (kind === 'task') data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now }
   if (kind === 'comment') data.comment = value.data.comment ?? { content: value.data.description?.content ?? '', authorID: '', authorName: '', time: now, votes: {} }
   if (kind === 'ref') data.ref = value.data.ref ?? { id: '' }
+  if (kind === 'requirement') data.requirement = value.data.requirement ?? { capability: 'confirmation' }
+  if (kind === 'supply') data.supply = value.data.supply ?? { capability: 'confirmation', by: '', at: now }
+  if (kind === 'query') data.query = value.data.query ?? {}
+  if (kind === 'resource') data.resource = value.data.resource ?? { type: 'inventory', unit: 'unit' }
+  if (kind === 'allocation') data.allocation = value.data.allocation ?? { resource: '', type: 'inventory', amount: 0, unit: 'unit' }
   return { ...value, data }
 }
 
@@ -566,8 +603,19 @@ export type TaskView = {
   done: boolean
   /** For `ref` rows: alias id of the node this row stands for. */
   refId?: string
+  /** Reference rows pointing at another account's listed node (market results). */
+  refOwner?: string
   /** For comments: who wrote it. */
   author?: { id: string; name: string; time: number }
+  /** Tasks: unsatisfied requirements (summaries) that block completion. */
+  blockedBy?: string[]
+  requirement?: NonNullable<FosDataContent['requirement']> & { satisfied: boolean; summary: string }
+  supply?: NonNullable<FosDataContent['supply']>
+  query?: NonNullable<FosDataContent['query']>
+  resource?: NonNullable<FosDataContent['resource']> & { allocated: number; available: number | null }
+  allocation?: NonNullable<FosDataContent['allocation']>
+  /** Link rows: listed on the market. */
+  market?: boolean
   createdAt: number
   updatedAt: number
   /** Direct subtasks and unresolved choices, for the tree. */
@@ -633,9 +681,79 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
     subtreeDone: sub.done,
     isLink: isLink(store, identity)
   }
-  if (kind === 'ref') view.refId = identity.data.ref?.id ?? ''
+  if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
+  if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers }
+  if (kind === 'requirement' && value.data.requirement) view.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement) }
+  if (kind === 'supply' && value.data.supply) view.supply = value.data.supply
+  if (kind === 'query') view.query = value.data.query ?? {}
+  if (kind === 'resource' && value.data.resource) { const allocated = allocatedIn(store, nodeCid); view.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === undefined ? null : value.data.resource.capacity - allocated } }
+  if (kind === 'allocation' && value.data.allocation) view.allocation = value.data.allocation
+  if (identity.data.listing) view.market = true
   return view
+}
+
+// ---------------------------------------------------------------------------
+// Requirements, supplies, resources
+
+export function requirementSummary(req: NonNullable<FosDataContent['requirement']>): string {
+  switch (req.capability) {
+    case 'confirmation': return 'confirmation'
+    case 'choice': return `choice${req.options?.length ? ` (${req.options.join(' | ')})` : ''}`
+    case 'search': return 'search'
+    case 'allocation': return `${req.resource ?? 'resource'}${req.amount !== undefined ? ` ${req.amount} ${req.unit ?? ''}`.trimEnd() : ''}`
+  }
+}
+
+/** Rows directly under `cid` of a given kind, with their identity cids. */
+function childRows(store: FosStore, cid: string, kind?: RowKind): Array<{ cid: string; kind: RowKind; value: FosNodeContent }> {
+  const out: Array<{ cid: string; kind: RowKind; value: FosNodeContent }> = []
+  for (const edge of valueContent(store, cid).children) {
+    const k = rowKindOf(store, edge)
+    if (!k || (kind && k !== kind)) continue
+    const id = identityCid(store, edge)
+    out.push({ cid: id, kind: k, value: valueContent(store, id) })
+  }
+  return out
+}
+
+/** A requirement is satisfied by a supply row under it that matches its capability (and, for allocations, the amount). */
+export function requirementSatisfied(store: FosStore, requirementCid: string, root?: string): boolean {
+  const req = valueContent(store, requirementCid).data.requirement
+  if (!req) return true
+  return childRows(store, requirementCid, 'supply').some(({ value }) => {
+    const s = value.data.supply
+    if (!s || s.capability !== req.capability) return false
+    switch (req.capability) {
+      case 'confirmation': return !!s.by
+      case 'choice': return typeof s.choice === 'number' && (!req.options || (s.choice >= 0 && s.choice < req.options.length))
+      case 'search': return !!s.ref
+      case 'allocation': {
+        if (!s.ref) return false
+        const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref)
+        if (!found) return true // supplied by reference to an allocation outside this replica's scope: trusted
+        const a = found.row.allocation
+        return !!a && (!req.resource || a.type === req.resource) && (req.amount === undefined || a.amount >= req.amount)
+      }
+    }
+  })
+}
+
+/** Summaries of the requirements under a task that are not satisfied yet. */
+export function taskBlockers(store: FosStore, taskCid: string): string[] {
+  return childRows(store, taskCid, 'requirement')
+    .filter(({ cid }) => !requirementSatisfied(store, cid))
+    .map(({ value }) => (value.data.requirement ? requirementSummary(value.data.requirement) : 'requirement'))
+}
+
+/** Sum of allocation amounts anywhere under a resource bank (sub-banks included). */
+export function allocatedIn(store: FosStore, bankCid: string): number {
+  let total = 0
+  for (const { cid, kind, value } of childRows(store, bankCid)) {
+    if (kind === 'allocation') total += value.data.allocation?.amount ?? 0
+    else if (kind === 'resource') total += allocatedIn(store, cid)
+  }
+  return total
 }
 
 function describeEdge(store: FosStore, edge: FosPathElem | null): { task: TaskView | null; label: string | null } {

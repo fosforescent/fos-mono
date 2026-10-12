@@ -1676,6 +1676,16 @@
         return store.primitive.commentField.getId();
       case "ref":
         return store.primitive.linkField.getId();
+      case "requirement":
+        return store.primitive.requirementField.getId();
+      case "supply":
+        return store.primitive.supplyField.getId();
+      case "query":
+        return store.primitive.queryField.getId();
+      case "resource":
+        return store.primitive.resourceField.getId();
+      case "allocation":
+        return store.primitive.allocationField.getId();
     }
   }
   function rowKindOf(store, edge) {
@@ -1693,6 +1703,16 @@
       return "comment";
     if (target === p.linkField.getId())
       return "ref";
+    if (target === p.requirementField.getId())
+      return "requirement";
+    if (target === p.supplyField.getId())
+      return "supply";
+    if (target === p.queryField.getId())
+      return "query";
+    if (target === p.resourceField.getId())
+      return "resource";
+    if (target === p.allocationField.getId())
+      return "allocation";
     return null;
   }
   function isRowEdge(store, edge) {
@@ -1738,10 +1758,20 @@
     const data = { alias: { id }, description: { content: text }, updated: { time: now } };
     if (kind === "task")
       data.todo = { completed: !!extra.done, time: now };
+    if (kind === "requirement")
+      data.requirement = extra.requirement ?? { capability: "confirmation" };
+    if (kind === "supply")
+      data.supply = extra.supply ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query")
+      data.query = extra.query ?? {};
+    if (kind === "resource")
+      data.resource = extra.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation")
+      data.allocation = extra.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
     if (kind === "comment")
       data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
     if (kind === "ref") {
-      data.ref = { id: extra.refId ?? "" };
+      data.ref = extra.refOwner ? { id: extra.refId ?? "", owner: extra.refOwner } : { id: extra.refId ?? "" };
       if (extra.targetCid && extra.store)
         return refNodeContent(extra.store, data, extra.targetCid);
     }
@@ -1751,7 +1781,7 @@
     return [cid, rowPrimitive(store, kind)];
   }
   function convertRowContent(value, kind, now) {
-    const { todo: _todo, comment: _comment, ref: _ref, ...rest } = value.data;
+    const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, ...rest } = value.data;
     const data = { ...rest, updated: { time: now } };
     if (kind === "task")
       data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
@@ -1759,6 +1789,16 @@
       data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
     if (kind === "ref")
       data.ref = value.data.ref ?? { id: "" };
+    if (kind === "requirement")
+      data.requirement = value.data.requirement ?? { capability: "confirmation" };
+    if (kind === "supply")
+      data.supply = value.data.supply ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query")
+      data.query = value.data.query ?? {};
+    if (kind === "resource")
+      data.resource = value.data.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation")
+      data.allocation = value.data.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
     return { ...value, data };
   }
   function peerRefContent(peerId) {
@@ -2000,11 +2040,96 @@
       subtreeDone: sub.done,
       isLink: isLink(store, identity)
     };
-    if (kind === "ref")
+    if (kind === "ref") {
       view2.refId = identity.data.ref?.id ?? "";
+      if (identity.data.ref?.owner)
+        view2.refOwner = identity.data.ref.owner;
+    }
     if (kind === "comment" && value.data.comment)
       view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
+    if (kind === "task") {
+      const blockers = taskBlockers(store, nodeCid);
+      if (blockers.length)
+        view2.blockedBy = blockers;
+    }
+    if (kind === "requirement" && value.data.requirement)
+      view2.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement) };
+    if (kind === "supply" && value.data.supply)
+      view2.supply = value.data.supply;
+    if (kind === "query")
+      view2.query = value.data.query ?? {};
+    if (kind === "resource" && value.data.resource) {
+      const allocated = allocatedIn(store, nodeCid);
+      view2.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === void 0 ? null : value.data.resource.capacity - allocated };
+    }
+    if (kind === "allocation" && value.data.allocation)
+      view2.allocation = value.data.allocation;
+    if (identity.data.listing)
+      view2.market = true;
     return view2;
+  }
+  function requirementSummary(req) {
+    switch (req.capability) {
+      case "confirmation":
+        return "confirmation";
+      case "choice":
+        return `choice${req.options?.length ? ` (${req.options.join(" | ")})` : ""}`;
+      case "search":
+        return "search";
+      case "allocation":
+        return `${req.resource ?? "resource"}${req.amount !== void 0 ? ` ${req.amount} ${req.unit ?? ""}`.trimEnd() : ""}`;
+    }
+  }
+  function childRows(store, cid, kind) {
+    const out = [];
+    for (const edge of valueContent(store, cid).children) {
+      const k = rowKindOf(store, edge);
+      if (!k || kind && k !== kind)
+        continue;
+      const id = identityCid(store, edge);
+      out.push({ cid: id, kind: k, value: valueContent(store, id) });
+    }
+    return out;
+  }
+  function requirementSatisfied(store, requirementCid, root) {
+    const req = valueContent(store, requirementCid).data.requirement;
+    if (!req)
+      return true;
+    return childRows(store, requirementCid, "supply").some(({ value }) => {
+      const s = value.data.supply;
+      if (!s || s.capability !== req.capability)
+        return false;
+      switch (req.capability) {
+        case "confirmation":
+          return !!s.by;
+        case "choice":
+          return typeof s.choice === "number" && (!req.options || s.choice >= 0 && s.choice < req.options.length);
+        case "search":
+          return !!s.ref;
+        case "allocation": {
+          if (!s.ref)
+            return false;
+          const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref);
+          if (!found)
+            return true;
+          const a = found.row.allocation;
+          return !!a && (!req.resource || a.type === req.resource) && (req.amount === void 0 || a.amount >= req.amount);
+        }
+      }
+    });
+  }
+  function taskBlockers(store, taskCid) {
+    return childRows(store, taskCid, "requirement").filter(({ cid }) => !requirementSatisfied(store, cid)).map(({ value }) => value.data.requirement ? requirementSummary(value.data.requirement) : "requirement");
+  }
+  function allocatedIn(store, bankCid) {
+    let total = 0;
+    for (const { cid, kind, value } of childRows(store, bankCid)) {
+      if (kind === "allocation")
+        total += value.data.allocation?.amount ?? 0;
+      else if (kind === "resource")
+        total += allocatedIn(store, cid);
+    }
+    return total;
   }
   function describeEdge(store, edge) {
     if (!edge)
@@ -5977,6 +6102,11 @@
   var getBooleanFieldNode = (store) => generateConstructor(store, "BOOLEAN", { description: { content: "Boolean Field Constructor" } }, []);
   var getLinkFieldNode = (store) => generateConstructor(store, "LINK", { description: { content: "Link Field Constructor" } }, []);
   var getCommentFieldNode = (store) => generateConstructor(store, "COMMENT", { description: { content: "Comment Field Constructor - a row that comments on its parent; may hold sub-comments" } }, []);
+  var getRequirementFieldNode = (store) => generateConstructor(store, "REQUIREMENT", { description: { content: "Requirement Field Constructor - a capability or effect handler a task needs supplied before completion" } }, []);
+  var getSupplyFieldNode = (store) => generateConstructor(store, "SUPPLY", { description: { content: "Supply Field Constructor - satisfies a requirement (confirmation, choice, search result, allocation)" } }, []);
+  var getQueryFieldNode = (store) => generateConstructor(store, "QUERY", { description: { content: "Query Field Constructor - a semantic search whose results are reference rows" } }, []);
+  var getResourceFieldNode = (store) => generateConstructor(store, "RESOURCE", { description: { content: "Resource Field Constructor - a calendar, account or inventory bank" } }, []);
+  var getAllocationFieldNode = (store) => generateConstructor(store, "ALLOCATION", { description: { content: "Allocation Field Constructor - an amount locked from a resource bank" } }, []);
   var getDurationFieldNode = (store) => generateConstructor(store, "DURATION", { description: { content: "Duration Field Constructor" } }, []);
   var getDateFieldNode = (store) => generateConstructor(store, "DATE", { description: { content: "Date Field Constructor" } }, []);
   var getTimeFieldNode = (store) => generateConstructor(store, "TIME", { description: { content: "Time Field Constructor" } }, []);
@@ -6294,6 +6424,11 @@
     const capabilityNode = getCapabilityNode(store);
     const proposeAction = getProposeActionNode(store);
     const commentField = getCommentFieldNode(store);
+    const requirementField = getRequirementFieldNode(store);
+    const supplyField = getSupplyFieldNode(store);
+    const queryField = getQueryFieldNode(store);
+    const resourceField = getResourceFieldNode(store);
+    const allocationField = getAllocationFieldNode(store);
     const approveAction = getApproveActionNode(store);
     const effectNode = getEffectNode(store);
     const handlerNode = getHandlerNode(store);
@@ -6474,6 +6609,11 @@
       proposeAction,
       approveAction,
       commentField,
+      requirementField,
+      supplyField,
+      queryField,
+      resourceField,
+      allocationField,
       effectNode,
       handlerNode
     };
@@ -7900,13 +8040,14 @@
   }
   function addRow(replica, at, kind, text, now, options = {}) {
     const body = kind === "note" ? text.replace(/\s+$/, "") : text.trim();
-    if (!body && kind !== "ref" && kind !== "plain")
+    if (!body && !["ref", "plain", "supply", "allocation"].includes(kind))
       return replica;
     if (kind === "ref" && !options.refId)
       return replica;
     const id = options.id ?? newId();
     return edit(replica, at, now, (value) => {
-      const cid = put(replica.store, rowContent(kind, id, body, now, { done: options.done, refId: options.refId, author: options.author, targetCid: options.targetCid, store: replica.store }));
+      const { position: _p, id: _i, ...extras } = options;
+      const cid = put(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store }));
       const edge = rowEdge(replica.store, kind, cid);
       const children = [...value.children];
       const pos = options.position;
@@ -7929,9 +8070,9 @@
         return value;
       if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge))
         return value;
-      const node = content(replica.store, identityCid(replica.store, edge));
-      const cid = put(replica.store, convertRowContent(node, kind, now));
-      return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, cid));
+      const node = valueContent(replica.store, identityCid(replica.store, edge));
+      const converted = withChildValue(replica.store, edge, convertRowContent(node, kind, now), now);
+      return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, converted)));
     });
   }
   function addRef(replica, at, targetAliasId, now, position) {
@@ -7982,15 +8123,21 @@
       const edge = findChildEdge(replica, value, taskId);
       if (!edge)
         return value;
-      const node = content(replica.store, identityCid(replica.store, edge));
+      const node = valueContent(replica.store, identityCid(replica.store, edge));
       const next = change(node);
       if (!next)
         return value;
-      const cid = put(replica.store, { ...next, data: { ...next.data, updated: { time: now } } });
-      return replaceEdge(replica.store, value, `a:${taskId}`, withIdentity(replica.store, edge, cid));
+      const nextValue = { ...next, data: { ...next.data, updated: { time: now } } };
+      return replaceEdge(replica.store, value, `a:${taskId}`, withChildValue(replica.store, edge, nextValue, now));
     });
   }
   function setTaskDone(replica, at, taskId, done, now) {
+    if (done) {
+      const parent = resolveScope(replica.store, headCid(replica), at);
+      const taskCid = parent ? findChild(replica.store, parent, taskId) : null;
+      if (taskCid && taskBlockers(replica.store, taskCid).length)
+        return replica;
+    }
     return updateTask(replica, at, taskId, now, (task) => {
       if (!task.data.todo)
         return null;

@@ -15,6 +15,7 @@ import { applyProposalAt, content, findPeerScope, hasCapability, headCid, normal
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
+import { indexStore, vertexEmbed } from '../search/rowIndex'
 
 export type PeerSyncUser = { id: number; username: string }
 
@@ -294,6 +295,26 @@ export function createDetachHandler(deps: PeerSyncDeps) {
   }
 }
 
+/**
+ * Re-embed a user's rows a little after each save (debounced per user, never on the request path).
+ * Row embeddings feed `POST /user/data/search`; a failure here only logs (search degrades, sync does not).
+ */
+const indexTimers = new Map<number, ReturnType<typeof setTimeout>>()
+const indexEmbed = vertexEmbed()
+const INDEX_DELAY_MS = Number(process.env.ROW_INDEX_DELAY_MS ?? 3000)
+function scheduleIndex(user: PeerSyncUser, store: FosStore): void {
+  if (process.env.ROW_INDEX_DISABLED === 'true') return
+  const pending = indexTimers.get(user.id)
+  if (pending) clearTimeout(pending)
+  indexTimers.set(user.id, setTimeout(() => {
+    indexTimers.delete(user.id)
+    indexStore(prisma, user, store, indexEmbed)
+      .then((r) => { if (r.embedded || r.removed) console.log(`[search] indexed ${user.username}: +${r.embedded} -${r.removed}`) })
+      .catch((error) => console.warn('[search] indexing failed:', String(error instanceof Error ? error.message || error : error).replace(/\s+/g, ' ').trim().slice(0, 400)))
+  }, INDEX_DELAY_MS))
+  indexTimers.get(user.id)?.unref?.()
+}
+
 export const prismaPeerSyncDeps: PeerSyncDeps = {
   async loadStore(username) {
     const user = await prisma.userModel.findUnique({ where: { user_name: username }, include: { fosNode: true } })
@@ -310,6 +331,7 @@ export const prismaPeerSyncDeps: PeerSyncDeps = {
     const dbUser = await prisma.userModel.findUnique({ where: { id: user.id }, include: { fosNode: true } })
     if (!dbUser) throw new Error(`user ${user.id} vanished during sync`)
     await storeToDb(prisma, dbUser, store)
+    scheduleIndex(user, store)
   },
   notify(userId, message) {
     sendToUser(userId, message)

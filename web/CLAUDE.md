@@ -10,14 +10,16 @@ Vanilla-TS task client used in the browser and wrapped by the Tauri desktop/mobi
 - `src/api.ts` - backend calls (login, peer-sync, attachment, invites, connect polling, WebSocket events)
 - `src/p2p.ts` - WebRTC host/guest with offer/answer codes, sync over the data channel, manual relay codes
 - `src/storage.ts` - localStorage adapter: replica, prefs, session (token only)
-- `src/rows.ts` - add-bar prefixes (`[ ]`/`[x]` task, `-` note, `//` comment, otherwise a plain row), link/image/YouTube rendering for plain rows and comments, file download
+- `src/rows.ts` - add-bar prefixes (`[ ]`/`[x]` task, `-` note, `//` comment, `!` requirement (`confirmation`, `choice: a | b`, `search:`, `calendar 1h note`), `?` query, `@calendar|@account|@inventory name [capacity]` resource bank, `+amount [note]` allocation, otherwise a plain row), amount parsing/formatting, link/image/YouTube rendering, file download
 - `src/notes.ts` - note blocks: frontmatter + child-row variables (`key: value`, titled children, refs to other blocks), `{{key}}`/`{key}` expansion, lists, `.md` export
 - `src/markdown.ts` - marked + DOMPurify; KaTeX (`$…$`, `$$…$$`) and Mermaid (```mermaid fences) are dynamic imports loaded on first use
 - `src/project.ts` - project mode inside Tauri: finds `fos.config.toml` (`find_project`), keeps state in `<dir>/.fos/` through `read/write_project_file`, follows git branch switches
 
 ## Conventions
 - The UI never sees content addresses; it reads `viewNode` output (alias ids, titles, flags).
-- Rows have a `kind` (`task | plain | note | comment | ref`, see `docs/sync.md`); only tasks are checkable. Any row can be zoomed into, invited to, or attached to by a device; there is no "partition" concept.
+- Rows have a `kind` (`task | plain | note | comment | ref | requirement | supply | query | resource | allocation`, see `docs/sync.md`); only tasks are checkable, and a task with unsatisfied requirements has a disabled checkbox and a `needs n` badge. Any row can be zoomed into, invited to, or attached to by a device; there is no "partition" concept.
+- Rows with controls (requirement, supply, query, resource, allocation) keep their body when selected (`renderSpecialBody`: Confirm / choice buttons, allocation picker, Search/Refresh, bank balance); double-click or Enter edits their text. Typing a `!`/`?`/`@`/`+` prefix into a blank row converts it (`App.convertPlainRowAt`).
+- Market: "List on market" (context menu, signed in) flags a row; query rows can "Search the market too"; a hit from another account is a ref row with `refOwner` that opens the **Market listing** modal (`state.market`, `App.openMarket`/`submitProposal`): the owner's rows, the requester's own proposal, a comment box and a picker per allocation requirement over `App.allocations()`.
 - Drag and drop: plain drag moves, **Alt+drag places a reference** (row shows the 🔗 icon), **Ctrl/⌘+drag places a deep copy** (⧉). Modifier keys are read at drag start.
 - Voice notes: the 🎙 button records with `MediaRecorder` and posts the blob to `POST /user/data/voice-notes` (needs a session); the result becomes a parent note (summary) with a note per sentiment cluster, its points as plain rows, and a transcript note.
 - Icons: `public/favicon*.png|ico`, `apple-touch-icon.png`, `icon-192/512.png`, `site.webmanifest` are generated from the tree logo (`frontend/logo3-bare.ico`, 256px, the largest copy in the repo).

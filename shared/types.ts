@@ -114,9 +114,56 @@ export type FosDataContent = {
     createdAt: number
   }
   /** On a proposal node (a peer's branch at a link node). */
+  /** A requirement row under a task: a capability / effect handler that must be supplied before the task can be completed. */
+  requirement?: {
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation'
+    resource?: 'calendar' | 'account' | 'inventory'
+    amount?: number
+    unit?: string
+    start?: number
+    end?: number
+    options?: string[]
+  },
+  /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
+  supply?: {
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation'
+    by: string
+    at: number
+    ref?: string
+    choice?: number
+  },
+  /** A query row: its description is the search text; results appear as reference rows under it. */
+  query?: {
+    market?: boolean
+    executedAt?: number
+    count?: number
+  },
+  /** A resource bank row (calendar, account, inventory): allocations and sub-banks are its children. */
+  resource?: {
+    type: 'calendar' | 'account' | 'inventory'
+    unit: string
+    capacity?: number
+  },
+  /** An allocation row: locks `amount` of a resource bank (alias id `resource`), optionally for a time window. */
+  allocation?: {
+    resource: string
+    type: 'calendar' | 'account' | 'inventory'
+    amount: number
+    unit: string
+    start?: number
+    end?: number
+    by?: string
+  },
+  /** On a ref node: the reference is listed on the market (searchable by other accounts, open to proposals). */
+  listing?: {
+    listedAt: number
+    by?: string
+  },
   /** A reference row: this node stands for the node whose alias id is `id` (shown by title; follows it on click). */
   ref?: {
     id: string
+    /** Set on a market result: the account that owns the referenced node (the row lives in their store, not ours). */
+    owner?: string
   },
   proposal?: {
     status: 'open' | 'rejected'

@@ -18,9 +18,12 @@
 import {
   addRef,
   addRow,
+  addSupply,
   addTask,
   copyNode,
   resolveRef,
+  setMarketAt,
+  setQueryOptionsAt,
   setRowKind,
   applyProposalAt,
   buildSyncRequest,
@@ -46,6 +49,7 @@ import {
   type MovePosition,
   type NodeView,
   type Replica,
+  type RowExtras,
   type RowKind,
   type Scope,
   type SyncRequest,
@@ -69,7 +73,12 @@ import {
   describeDeviceLogin,
   decideDeviceLogin,
   transcribeVoice,
-  type VoiceNote
+  searchRows,
+  type SearchHit,
+  type VoiceNote,
+  getMarketNode,
+  submitMarketProposal,
+  type MarketNode
 } from './api'
 import { DirectGuest, DirectHost, DirectLink, ManualRelay, isWebRtcAvailable, type ChannelMessage } from './p2p'
 import type { ReplicaStorage } from './storage'
@@ -80,7 +89,7 @@ export type Notice = { kind: 'info' | 'error'; text: string; at: number }
 
 export type Credentials = { username: string; password: string }
 
-export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device'
+export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market'
 
 export type ConnectFlow =
   | { phase: 'idle' }
@@ -127,6 +136,8 @@ export type AppState = {
   device: { code: string; name: string | null; status: 'loading' | 'ready' | 'approved' | 'denied' | 'error'; error?: string } | null
   /** Microphone capture: recording (with start time), uploading, or idle. */
   voice: { phase: 'recording'; startedAt: number } | { phase: 'uploading' } | null
+  /** A listed node of another account opened from a market search result (the `market` modal). */
+  market: { owner: string; aliasId: string; title: string; node: MarketNode | null; error?: string; phase: 'loading' | 'ready' | 'submitting' | 'submitted' } | null
 }
 
 export type AppConfig = {
@@ -209,7 +220,8 @@ export class App {
       selected: null,
       contextMenu: null,
       device: null,
-      voice: null
+      voice: null,
+      market: null
     }
     this.pendingSession = session
     this.connectDismissed = prefs.connectDismissed === true
@@ -497,11 +509,129 @@ export class App {
   addTask(title: string): void { this.edit(addTask(this.state.replica, this.state.view, title, this.now())) }
 
   /** Add a row of `kind` under `at` (relative to the view). Comments carry this device as the author. */
-  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string } = {}): string {
+  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'> } = {}): string {
     const author = kind === 'comment' ? { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName } : undefined
     const id = options.id ?? crypto.randomUUID()
-    this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...options, author, id }))
+    const { extras, ...rest } = options
+    let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
+    if (kind === 'allocation') {
+      // an allocation draws from the nearest resource bank above it
+      const bank = this.nearestBank(at)
+      if (!bank) { this.notify('error', 'Allocations go under a resource bank (@calendar, @account or @inventory).'); return id }
+      const base = data.allocation ?? { resource: '', type: bank.resource.type, amount: 0, unit: bank.resource.unit }
+      data = { ...data, allocation: { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by: this.state.session?.username ?? this.state.deviceName } }
+    }
+    this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...rest, ...data, author, id }))
     return id
+  }
+  /** The closest resource-bank row on the path `at` (relative to the view), if any. */
+  nearestBank(at: Scope): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
+    for (let i = at.length; i > 0; i--) {
+      const parentAt = at.slice(0, i - 1)
+      const id = at[i - 1] as string
+      const row = view(this.state.replica, [...this.state.view, ...parentAt])?.tasks.find((t) => t.id === id)
+      if (row?.kind === 'resource' && row.resource) return row as TaskView & { resource: NonNullable<TaskView['resource']> }
+    }
+    return null
+  }
+  /** Resource banks and allocations anywhere in the replica, for picking an allocation to supply. */
+  allocations(): Array<{ row: TaskView; path: Scope }> {
+    const out: Array<{ row: TaskView; path: Scope }> = []
+    const walk = (path: Scope) => {
+      const node = view(this.state.replica, path)
+      if (!node) return
+      for (const row of node.tasks) {
+        if (row.kind === 'allocation') out.push({ row, path })
+        if (row.childCount) walk([...path, row.id])
+      }
+    }
+    walk([])
+    return out
+  }
+  /** Supply a requirement: a confirmation by this user, a choice, or a reference to an allocation/query row. */
+  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: 'confirmation' | 'choice' | 'search' | 'allocation'; ref?: string; choice?: number }): void {
+    if (supply.capability === 'confirmation' && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
+    const by = this.state.session?.username ?? this.state.deviceName
+    this.edit(addSupply(this.state.replica, [...this.state.view, ...at], requirementId, { ...supply, by }, this.now()))
+    this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirementId) })
+  }
+  /** Run a query row: semantic search through the account; results become reference rows under it (replacing the previous ones). */
+  async runQueryAt(at: Scope, query: TaskView): Promise<void> {
+    const session = this.state.session
+    if (!session) { this.notify('error', 'Connect to your account to run searches.'); this.openModal('connect'); return }
+    try {
+      const { hits } = await searchRows(session, query.title, { market: !!query.query?.market, limit: 10 })
+      this.applyQueryResults(at, query, hits)
+    } catch (error) {
+      this.notify('error', `Search failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  applyQueryResults(at: Scope, query: TaskView, hits: SearchHit[]): void {
+    const path = [...this.state.view, ...at, query.id]
+    // drop previous results (reference rows, local or market), keep anything else the user put there
+    const existing = view(this.state.replica, path)?.tasks ?? []
+    let replica = this.state.replica
+    for (const row of existing) if (row.kind === 'ref') replica = deleteTask(replica, path, row.id, this.now())
+    for (const hit of hits) {
+      if (hit.owner === null && hit.aliasId !== query.id && resolveRef(replica, hit.aliasId)) {
+        replica = addRef(replica, path, hit.aliasId, this.now())
+      } else if (hit.owner) {
+        // a row listed on the market by another account: a reference row that remembers the owner (opens the market modal)
+        replica = addRow(replica, path, 'ref', hit.title, this.now(), { refId: hit.aliasId, refOwner: hit.owner })
+      }
+    }
+    replica = setQueryOptionsAt(replica, [...this.state.view, ...at], query.id, { executedAt: this.now(), count: hits.length }, this.now())
+    this.edit(replica)
+    this.notify('info', hits.length ? `${hits.length} result${hits.length === 1 ? '' : 's'}.` : 'No results.')
+  }
+  /** Open a listed node of another account (from a market result row): what they show, and this account's proposal. */
+  async openMarket(owner: string, aliasId: string, title: string): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account to view market listings.'); this.openModal('connect'); return }
+    this.set({ market: { owner, aliasId, title, node: null, phase: 'loading' }, modal: 'market', menuOpen: false, contextMenu: null })
+    try {
+      const node = await getMarketNode(session, owner, aliasId)
+      if (this.state.market?.aliasId === aliasId) this.set({ market: { ...this.state.market, node, phase: 'ready' } })
+    } catch (error) {
+      if (this.state.market?.aliasId === aliasId) this.set({ market: { ...this.state.market, phase: 'ready', error: error instanceof Error ? error.message : String(error) } })
+    }
+  }
+  /** Submit this account's proposal on the open market node: a comment, plus allocations supplied to its requirements. */
+  async submitProposal(comment: string, supplies: Array<{ requirementId: string; allocationId: string }>): Promise<void> {
+    const session = this.state.session
+    const market = this.state.market
+    if (!session || session.kind !== 'user' || !market) return
+    const rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }> = []
+    if (comment.trim()) rows.push({ kind: 'comment', text: comment.trim() })
+    for (const s of supplies) {
+      const found = this.allocations().find(({ row }) => row.id === s.allocationId)
+      if (!found?.row.allocation) continue
+      // the allocation itself travels with the proposal (the owner cannot see our banks); the supply references its copy
+      const copyId = `${s.allocationId}-${session.username}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)
+      rows.push({ kind: 'allocation', text: found.row.title, id: copyId, data: { allocation: { ...found.row.allocation, by: session.username } } })
+      rows.push({ kind: 'supply', text: '', under: s.requirementId, data: { supply: { capability: 'allocation', ref: copyId } } })
+    }
+    if (!rows.length) { this.notify('error', 'Write a comment or supply an allocation first.'); return }
+    this.set({ market: { ...market, phase: 'submitting', error: undefined } })
+    try {
+      await submitMarketProposal(session, market.owner, market.aliasId, rows)
+      const node = await getMarketNode(session, market.owner, market.aliasId)
+      this.set({ market: { ...market, node, phase: 'submitted' } })
+      this.notify('info', `Proposal sent to ${market.owner}. They see it under “${market.title}”; you only see your own.`)
+    } catch (error) {
+      this.set({ market: { ...market, phase: 'ready', error: error instanceof Error ? error.message : String(error) } })
+    }
+  }
+  /** Toggle whether a query also searches rows other accounts listed on the market. */
+  toggleQueryMarket(at: Scope, query: TaskView): void {
+    const market = !query.query?.market
+    this.edit(setQueryOptionsAt(this.state.replica, [...this.state.view, ...at], query.id, { market }, this.now()))
+  }
+  /** List or delist a link row on the market (owner only). */
+  setMarketAtRow(at: Scope, id: string, listed: boolean): void {
+    if (!this.state.session || this.state.session.kind !== 'user') { this.notify('error', 'Sign in to your account to list on the market.'); return }
+    this.edit(setMarketAt(this.state.replica, [...this.state.view, ...at, id], listed, this.now(), this.state.session.username))
+    this.notify('info', listed ? 'Listed on the market: other accounts can find it and propose.' : 'Removed from the market.')
   }
   /** Workflowy-style Enter: a blank plain row right after `id` (same parent), selected for typing. */
   addRowBelow(at: Scope, id: string): void {
@@ -621,6 +751,14 @@ export class App {
   }
   deleteTaskAt(at: Scope, taskId: string): void {
     this.edit(deleteTask(this.state.replica, [...this.state.view, ...at], taskId, this.now()))
+  }
+  /** A blank/plain row typed with a data prefix (`!` requirement, `?` query, `@calendar` bank, `+1h` allocation) becomes a row of that kind in its place. */
+  convertPlainRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'> }): void {
+    const created = this.addRowAt(at, parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, position: { relativeTo: id, position: 'below' } })
+    const madeIt = !!view(this.state.replica, [...this.state.view, ...at])?.tasks.some((t) => t.id === created)
+    if (!madeIt) return // e.g. an allocation outside a bank: the row stays plain with its text
+    this.deleteTaskAt(at, id)
+    this.set({ selected: [...at, created] })
   }
   resolveChoiceAt(at: Scope, choiceId: string, pick: number | null): void {
     this.edit(resolve(this.state.replica, [...this.state.view, ...at], choiceId, pick, this.now()))
