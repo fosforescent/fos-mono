@@ -232,7 +232,11 @@ resource "google_cloud_run_v2_service" "backend" {
 
   depends_on = [
     google_project_service.cloudrun_api,
-    google_sql_database_instance.postgres
+    google_sql_database_instance.postgres,
+    # The dynamic env block references the integration secrets with version = "latest": the service update must
+    # wait for the first version and the accessor bindings, or Cloud Run rejects the revision (version not found).
+    google_secret_manager_secret_version.integration,
+    google_secret_manager_secret_iam_member.cloudrun_integration,
   ]
 }
 
