@@ -137,6 +137,18 @@ test('llm answers through the platform model', async () => {
   expect((await call(h.llm, 7, { body: {} })).status).toBe(400)
 })
 
+test('llm rejects oversized previews without calling the model and preserves the supplied context', async () => {
+  const { deps } = fakeDeps()
+  const complete = jest.fn(async (_system: string, prompt: string) => prompt)
+  deps.complete = complete
+  const h = createIntegrationHandlers(deps)
+  expect((await call(h.llm, 7, { body: { prompt: 'x'.repeat(20_001) } })).status).toBe(400)
+  expect(complete).not.toHaveBeenCalled()
+  const prompt = 'Ancestor: project\nSelected task: implement reservations'
+  expect((await call(h.llm, 7, { body: { prompt, system: 'Review required' } })).status).toBe(200)
+  expect(complete).toHaveBeenCalledWith('Review required', prompt)
+})
+
 test('phone channel: a code is texted, verifying links the number; inbound texts add rows, list and check off tasks', async () => {
   const { deps, stored, texts, rows } = fakeDeps()
   const h = createIntegrationHandlers(deps)

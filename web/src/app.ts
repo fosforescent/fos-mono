@@ -16,6 +16,7 @@
  */
 
 import {
+  addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   addRow,
   addMemberAt,
@@ -118,7 +119,7 @@ export type Notice = { kind: 'info' | 'error'; text: string; at: number }
 
 export type Credentials = { username: string; password: string }
 
-export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help' | 'phone'
+export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help' | 'phone' | 'work'
 
 /**
  * A peer in the context panel: the account server ("fos") with what it registered on the last sync, a member of the
@@ -172,6 +173,7 @@ export type AppState = {
   highlighted: string[]
   canAutoLogin: boolean
   menuOpen: boolean
+  work?: { path: Scope; preview: WorkContext; busy: boolean; error?: string }
   modal: ModalKind | null
   connectFlow: ConnectFlow
   invite: InviteState
@@ -971,6 +973,51 @@ export class App {
   }
   /** Who this device acts as when it confirms: the account username, else the device name. */
   actorName(): string { return this.state.session?.username ?? this.state.deviceName }
+  addWorkTemplate(at: Scope, id: string): void {
+    try {
+      this.edit(addPlanningTemplate(this.state.replica, [...this.state.view, ...at, id], this.now()))
+      this.set({ collapsed: this.state.collapsed.filter((c) => c !== id) })
+      this.notify('info', 'Fill in the specification and acceptance examples, then confirm readiness and preview the agent context.')
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  openWork(at: Scope, id: string): void {
+    if (this.state.work?.busy) { this.notify('info', 'An agent request is still running.'); return }
+    try {
+      const path = [...this.state.view, ...at, id]
+      this.set({ work: { path, preview: taskWorkContext(this.state.replica, path), busy: false }, modal: 'work', contextMenu: null })
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  refreshWork(): void {
+    const work = this.state.work
+    if (!work || work.busy) return
+    try { this.set({ work: { ...work, preview: taskWorkContext(this.state.replica, work.path), error: undefined } }) }
+    catch (error) { this.set({ work: { ...work, error: String(error) } }) }
+  }
+  async runWork(): Promise<void> {
+    const work = this.state.work, session = this.state.session
+    if (!work || work.busy) return
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to use the fos model.'); return }
+    this.set({ work: { ...work, busy: true, error: undefined } })
+    try {
+      const run = beginTaskWork(this.state.replica, work.path, work.preview, this.now())
+      this.edit(run.replica)
+      this.set({ collapsed: [...this.state.collapsed, run.path.at(-1)!] })
+      const { text } = await askLlm(session, run.prompt, run.system)
+      if (this.state.session !== session) throw new Error('The account changed while the model was running. The answer was not added to another account.')
+      this.edit(proposeTaskResult(this.state.replica, run.resultPath, text, this.now()))
+      this.notify('info', 'The result is ready for review. The task is still awaiting acceptance.')
+      this.set({ work: { ...work, preview: taskWorkContext(this.state.replica, work.path), busy: false } })
+    } catch (error) { this.set({ work: { ...work, busy: false, error: error instanceof Error ? error.message : String(error) } }) }
+  }
+  reviewWork(resultPath: Scope, proposalCid: string, accept: boolean): void {
+    const work = this.state.work
+    if (!work || work.busy || !this.canApprove(view(this.state.replica, work.path))) return
+    try {
+      this.edit(decideTaskResult(this.state.replica, work.path, resultPath, proposalCid, accept, this.now()))
+      this.refreshWork()
+    } catch (error) { this.set({ work: { ...work, error: error instanceof Error ? error.message : String(error) } }) }
+  }
+  workResults() { return this.state.work ? workAttempts(this.state.replica, this.state.work.path) : [] }
   /**
    * Hand a requirement to the peer that registered its capability. search: a query row with the requirement's text
    * is placed inside and run (filling it); market: the task is listed and the listing recorded as the supply.
@@ -999,17 +1046,8 @@ export class App {
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account: its peers handle this.'); this.openModal('connect'); return }
     const task = this.rowAt(at)
-    const context = `${task ? `Task: ${task.title}\n` : ''}${req.title ? `Request: ${req.title}` : ''}`.trim()
     try {
-      if (r.capability === 'llm') {
-        // the fos server's own model answers; the answer is a note inside the requirement, supplied by fos
-        const { text } = await askLlm(session, context || 'Help with this task.')
-        let replica = addRow(this.state.replica, [...this.state.view, ...at, req.id], 'note', text || '(no answer)', this.now())
-        replica = addSupply(replica, [...this.state.view, ...at], req.id, { capability: 'llm', by: 'fos' }, this.now())
-        this.edit(replica)
-        this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
-        return
-      }
+      if (r.capability === 'llm') { this.openWork(at, req.id); return }
       if (r.capability === 'repo') {
         if (!r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         const { url, number } = await createRepoIssue(session, r.repo, req.title || task?.title || 'from fos', task ? `From the fos task “${task.title}”.` : undefined)

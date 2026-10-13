@@ -5,7 +5,7 @@
  */
 
 import QRCode from 'qrcode'
-import { isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { content, headCid, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
@@ -545,7 +545,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.addEventListener('dblclick', (event) => { event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
   } else {
     body = span('title', '')
-    if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the requirement rows inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
+    if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
     body.append(renderInlineText(task.title))
     if (task.kind === 'comment') {
       const who = span('author', task.author?.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'comment')
@@ -558,7 +558,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
   meta.append(opRef, opCopy)
-  if (task.template) { const b = span('kind-badge tpl' + (task.blockedBy?.length ? ' unmet' : ''), `\`${task.template.name}`); b.title = `Executes the template “${task.template.name}”: its requirements were copied underneath${task.blockedBy?.length ? ` (${task.blockedBy.length} still unmet)` : ''}`; meta.append(b) }
+  if (task.template) { const b = span('kind-badge tpl' + (task.blockedBy?.length ? ' unmet' : ''), `\`${task.template.name}`); b.title = `Executes the template “${task.template.name}”: its nested rows were copied underneath${task.blockedBy?.length ? ` (${task.blockedBy.length} still unmet)` : ''}`; meta.append(b) }
   // allocations under a row show as little tags on it (money, time, things, people)
   if (task.childCount > 0 && task.kind !== 'resource') {
     for (const child of viewAt(state.replica, [...state.view, ...path])?.tasks ?? []) {
@@ -762,6 +762,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       bar.title = `${formatAmount(r.have, r.unit ?? '')} of ${formatAmount(r.need, r.unit ?? '')} allocated`
       body.append(bar, span('muted req-have', ` ${formatAmount(r.have, r.unit ?? '')} / ${formatAmount(r.need, r.unit ?? '')}`))
     }
+    if (r.capability === 'llm') body.append(stop(button('secondary small', 'Context & results', () => app.openWork(at, task.id))))
     if (!r.satisfied) {
       const peers = app.contextPeers()
       const handler = (cap: 'search' | 'market' | 'mail') => peers.find((p) => p.online && p.capabilities.includes(cap))
@@ -786,10 +787,6 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         b.disabled = true
         b.title = 'Mail is registered as a capability of fos, but no handler is wired to it yet'
         body.append(b)
-      }
-      if (r.capability === 'llm') {
-        if (state.session?.kind === 'user') body.append(stop(button('secondary small', 'Ask fos', () => void app.askPeerAt(at, task))))
-        else hint('sign in: the fos model answers inside')
       }
       if (r.capability === 'repo') {
         const github = state.integrations.find((p) => p.id === 'github')
@@ -859,6 +856,7 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
   void siblings
   const canInvite = state.session?.kind === 'user'
   return [
+    ...(task.kind === 'task' && !task.template ? [{ label: 'Use Implement and verify template', run: () => app.addWorkTemplate(at, task.id) }] : []),
     { label: 'Add row inside', keys: 'Ctrl+Shift+Enter', run: () => app.addRowInside(at, task.id) },
     // typed markers, opened from the menu: the row starts with the marker and the editor takes it from there
     ...(task.kind === 'task' ? [
@@ -1230,7 +1228,7 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   void stopScanner()
 
   const card = document.createElement('div')
-  card.className = 'modal' + (kind === 'help' ? ' wide' : '')
+  card.className = 'modal' + ((kind === 'help' || kind === 'work') ? ' wide' : '')
   const header = document.createElement('div')
   header.className = 'modal-header'
   header.append(span('modal-title', modalTitle(kind)), button('icon', '×', () => app.closeModal()))
@@ -1243,6 +1241,7 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   if (kind === 'device') renderDevice(body, state, app)
   if (kind === 'market') renderMarket(body, state, app)
   if (kind === 'help') renderHelp(body)
+  if (kind === 'work') renderWork(body, state, app)
   if (kind === 'phone') renderPhone(body, state, app)
   card.append(body)
   el.replaceChildren(card)
@@ -1302,6 +1301,7 @@ function legalLinks(lead: string): HTMLElement {
 
 function modalKey(state: AppState): string {
   const d = state.direct
+  if (state.modal === 'work') return JSON.stringify([state.work, headCid(state.replica)])
   return [state.modal, state.connectFlow.phase, state.invite?.token ?? '', d?.role ?? '', d?.phase ?? '', (d?.role === 'host' ? d.pendingPeer?.peerId ?? '' : ''), state.manual.requestCode ? 'rq' : '', state.manual.resultCode ? 'rs' : '', state.requests.map((r) => r.id).join(','), state.device?.status ?? '', state.device?.name ?? '', state.market?.aliasId ?? '', state.market?.phase ?? '', state.market?.error ?? '', state.phone?.phase ?? '', state.phone?.error ?? ''].join('|')
 }
 
@@ -1312,7 +1312,51 @@ function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
 }
 
 function modalTitle(kind: AppState['modal']): string {
-  return kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : kind === 'help' ? 'Keys and row syntax' : kind === 'phone' ? 'Link your phone' : 'Direct connect'
+  return kind === 'work' ? 'Delegate and review' : kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : kind === 'help' ? 'Keys and row syntax' : kind === 'phone' ? 'Link your phone' : 'Direct connect'
+}
+
+function renderWork(body: HTMLElement, state: AppState, app: App): void {
+  const work = state.work
+  if (!work) return
+  body.append(div('muted', 'This sends the preview below to the fos model to propose a plan or specification. Accepting its result fulfills this request; you still decide when the task is done.'))
+  if (work.error) body.append(div('error', work.error))
+  for (const blocker of work.preview.blockers) body.append(div('error', blocker))
+  const preview = document.createElement('details')
+  preview.open = true
+  const summary = document.createElement('summary')
+  summary.textContent = 'Exact context sent to the model'
+  const prompt = document.createElement('pre')
+  prompt.className = 'work-context'
+  prompt.textContent = `System instructions:\n${WORK_SYSTEM}\n\nTask context:\n${work.preview.prompt}`
+  preview.append(summary, prompt)
+  body.append(preview)
+  const refresh = button('secondary', 'Refresh context', () => app.refreshWork())
+  const run = button('primary', work.busy ? 'Running…' : 'Run with this context', () => void app.runWork())
+  refresh.disabled = work.busy
+  run.disabled = work.busy || work.preview.blockers.length > 0 || state.session?.kind !== 'user'
+  body.append(refresh, run)
+  if (state.session?.kind !== 'user') body.append(div('muted', 'Sign in to run the model. You can preview the context offline.'))
+  for (const attempt of app.workResults().reverse()) {
+    const section = div('work-result', '')
+    const saved = document.createElement('details'), label = document.createElement('summary')
+    label.textContent = 'Context used for this attempt'
+    const text = document.createElement('pre'); text.className = 'work-context'; text.textContent = `System instructions:\n${attempt.system}\n\nTask context:\n${attempt.context}`
+    saved.append(label, text); section.append(saved)
+    if (attempt.resultCid) section.append(div('muted', 'Accepted result'), div('work-context', content(state.replica.store, attempt.resultCid).data.description?.content ?? ''))
+    else if (!attempt.proposals.length) section.append(div('muted', work.busy ? 'Awaiting a result…' : 'No result received. You can start a new attempt.'))
+    for (const proposal of attempt.proposals) {
+      section.append(div('work-context', content(state.replica.store, proposal.contentCid).data.description?.content ?? ''))
+      if (proposal.status === 'rejected') { section.append(div('muted', 'Rejected — retained for reference.')); continue }
+      const accept = button('primary', 'Accept result', () => app.reviewWork(attempt.resultPath, proposal.cid, true))
+      const reject = button('secondary', 'Reject', () => app.reviewWork(attempt.resultPath, proposal.cid, false))
+      const changed = attempt.context !== work.preview.prompt
+      if (changed) section.append(div('error', 'The task context changed. Run a new attempt before accepting.'))
+      accept.disabled = work.busy || changed || work.preview.blockers.length > 0 || !app.canApprove(viewAt(state.replica, work.path))
+      reject.disabled = work.busy || !app.canApprove(viewAt(state.replica, work.path))
+      section.append(accept, reject)
+    }
+    body.append(section)
+  }
 }
 
 /** A listed node of another account: its rows and requirements, this account's proposal, and a form to propose. */

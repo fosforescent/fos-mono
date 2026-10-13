@@ -303,3 +303,6 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .legal-links { padding: 6px 12px 2px; }
 .legal-links a { color: var(--muted); }
 .legal-links a:hover { color: var(--accent); }
+
+.work-context { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; font: inherit; padding: .75rem; }
+.work-result { border-top: 1px solid var(--border, #ccc); margin-top: 1rem; padding-top: 1rem; }
