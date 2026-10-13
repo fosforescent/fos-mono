@@ -312,3 +312,10 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .crumb-path .crumb { max-width: 100%; overflow-wrap: anywhere; }
 .crumb-path .crumb:not(.current) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(16rem, 65vw); }
 .crumb-path .crumb.current { flex: 1 1 12rem; min-width: 0; text-align: left; }
+
+.peer-details { margin-top: .35rem; }
+.peer-details > summary { cursor: pointer; color: var(--muted); }
+.peer-details > .peer-connection, .peer-details > .peer-lines { padding-left: 1rem; margin-top: .35rem; }
+.add-peer select { max-width: 100%; min-width: 0; }
+.add-peer { flex-wrap: wrap; }
+.reset-data-row { padding: .75rem; }

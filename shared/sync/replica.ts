@@ -39,6 +39,7 @@ import {
   withPrev,
   bookkeepingOf,
   isMemberEdge,
+  isChoiceEdge,
   capabilityOf,
   identityCid,
   isPartitionEdge,
@@ -410,6 +411,13 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
     if (task.data.description?.content === trimmed) return null
     return { ...task, data: { ...task.data, description: { content: trimmed } } }
   })
+}
+
+/** Clear the attached Home's rows and choices as one ordinary, syncable edit. */
+export function resetHomeContent(replica: Replica, now: number): Replica {
+  return edit(replica, [], now, (value) => ({ ...value,
+    children: value.children.filter((edge) => !isRowEdge(replica.store, edge) && !isChoiceEdge(replica.store, edge))
+  }))
 }
 
 export function deleteTask(replica: Replica, at: Scope, taskId: string, now: number): Replica {
