@@ -15,6 +15,7 @@
  *   manual relay codes (when no channel could be established)
  */
 
+import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
   addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
@@ -121,7 +122,7 @@ export type Notice = { kind: 'info' | 'error'; text: string; at: number }
 
 export type Credentials = { username: string; password: string }
 
-export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help' | 'phone' | 'work'
+export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help' | 'phone' | 'work' | 'virtual'
 
 /**
  * A peer in the context panel: the account server ("fos") with what it registered on the last sync, a member of the
@@ -175,6 +176,7 @@ export type AppState = {
   highlighted: string[]
   canAutoLogin: boolean
   menuOpen: boolean
+  virtual?: { name: string; hostName: string; capabilities: Capability[] }
   work?: { path: Scope; preview: WorkContext; busy: boolean; error?: string }
   modal: ModalKind | null
   connectFlow: ConnectFlow
@@ -254,6 +256,9 @@ function loadSession(raw: unknown, baseUrl: string): Session | null {
 
 export class App {
   state: AppState
+  private virtualPeers: VirtualPeers | null = null
+  private virtualCapabilities: Capability[] = []
+  private virtualWelcomed = false
   private history = new EditHistory()
   private observedHead: string
   private config: AppConfig
@@ -340,6 +345,7 @@ export class App {
       if (patch.replica.store !== previous.replica.store || JSON.stringify(patch.replica.meta.scope) !== JSON.stringify(previous.replica.meta.scope)) this.history.clear()
       this.observedHead = headCid(patch.replica)
     }
+    if (patch.replica) this.virtualPeers?.changed()
     if (patch.session && previous.session && patch.session.username !== previous.session.username) this.history.clear()
     this.state = { ...previous, ...patch }
     if (patch.replica && patch.replica !== previous.replica) {
@@ -390,7 +396,8 @@ export class App {
   }
 
   /** What this device is currently syncing with, if anything. */
-  transport(): 'account' | 'direct' | null {
+  transport(): 'account' | 'direct' | 'virtual' | null {
+    if (this.virtualPeers?.guest) return this.virtualPeers.connected ? 'virtual' : null
     if (this.state.session) return 'account'
     if (this.link?.open && this.state.direct?.role === 'guest' && this.state.direct.phase === 'connected') return 'direct'
     return null
@@ -410,7 +417,10 @@ export class App {
     })
     window.addEventListener('focus', () => void this.checkPendingIntegration())
     document.addEventListener('visibilitychange', () => void this.checkPendingIntegration())
-    if (this.pendingSession) {
+    if (this.virtualPeers?.guest) {
+      this.pendingSession = null
+      if (this.config.storage.loadSession()) this.set({ session: loadSession(this.config.storage.loadSession(), this.config.baseUrl) })
+    } else if (this.pendingSession) {
       void this.resume(this.pendingSession)
       this.pendingSession = null
     } else if (this.autoCredentials) {
@@ -459,6 +469,12 @@ export class App {
    * attaches (root by default, or the node it was invited to), then sync.
    */
   private async afterConnect(session: Session): Promise<void> {
+    if (this.virtualPeers?.guest) {
+      this.set({ session })
+      void this.refreshIntegrations()
+      await this.syncNow('virtual sign-in')
+      return
+    }
     const attachment = await getAttachment(session, this.state.replica.meta.peerId)
     let replica = this.state.replica
     const same = replica.meta.scope.length === attachment.scope.length && replica.meta.scope.every((s, i) => attachment.scope[i] === s)
@@ -484,11 +500,12 @@ export class App {
     this.clearTimer('poll')
     this.closeEvents?.()
     this.closeEvents = null
-    this.set({ session: null, connection: 'offline', loginError: null, canAutoLogin: false, requests: [], invite: null, menuOpen: false })
+    this.set({ session: null, connection: this.virtualPeers?.connected ? 'online' : 'offline', loginError: null, canAutoLogin: false, requests: [], invite: null, menuOpen: false })
   }
 
   reconnect(reason: string): void {
     this.clearTimer('retry')
+    if (this.virtualPeers?.guest) { void this.syncNow(reason); return }
     if (this.pendingSession) { void this.resume(this.pendingSession); return }
     if (this.state.session) {
       if (this.state.connection === 'offline') this.set({ connection: 'connecting' })
@@ -564,24 +581,24 @@ export class App {
 
     const session = this.state.session
     try {
-      let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !policy || policy.to.includes('autopush') })
+      let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush') })
       const send = (packet: SyncRequest) => transport === 'account'
         ? peerSync(session as Session, packet)
-        : (this.link as DirectLink).sync(packet)
+        : transport === 'virtual' ? this.virtualPeers!.sync(packet) : (this.link as DirectLink).sync(packet)
       let response
       try { response = await send(request) }
       catch (error) {
         const missing = error instanceof ApiError && (error.code === 'missing-nodes' || error.message.startsWith('head node not provided'))
         if (!missing || this.state.session !== session) throw error
         // Keep the agreed merge base. A reset server needs its closure too.
-        request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !policy || policy.to.includes('autopush'), full: true })
+        request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush'), full: true })
         response = await send(request)
       }
       if (this.state.session !== session) return
       const done = completeSync(this.state.replica, request, response, this.now())
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online' }
       if (response.presence) patch.onlinePeers = response.presence
-      if (response.capabilities) patch.serverCapabilities = response.capabilities
+      if (response.capabilities && transport === 'account') patch.serverCapabilities = response.capabilities
       if (transport === 'account') { void this.refreshPoints(); if (!this.state.integrations.length) void this.refreshIntegrations() }
       const n = done.newChoiceIds.length
       if (n > 0) {
@@ -631,7 +648,7 @@ export class App {
   }
 
   canResetHome(): boolean {
-    return !this.config.project && this.state.replica.meta.scope.length === 0 && (!this.state.session || this.state.session.kind === 'user')
+    return !this.virtualPeers?.guest && !this.config.project && this.state.replica.meta.scope.length === 0 && (!this.state.session || this.state.session.kind === 'user')
   }
   resetHome(): void {
     if (!this.canResetHome()) return
@@ -1397,12 +1414,19 @@ export class App {
   /** Can the current identity approve proposals on the node being viewed? */
   canApprove(node: NodeView | null = this.currentView()): boolean {
     const session = this.state.session
-    if (!session) return false
+    if (this.virtualPeers?.guest) return this.virtualCapabilities.includes('approve')
+    if (!session) return true
     if (session.kind === 'user') return true
     return !!node?.members.some((m) => m.peerId === this.state.replica.meta.peerId && m.capabilities.includes('approve'))
   }
 
   async decideProposal(proposalId: string, decision: 'approve' | 'reject'): Promise<void> {
+    if (this.virtualPeers?.guest) {
+      if (!this.canApprove()) { this.notify('error', 'This role cannot approve proposals.'); return }
+      try { await this.virtualPeers.decide(this.state.view, proposalId, decision); await this.syncNow('virtual decision') }
+      catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+      return
+    }
     const session = this.state.session
     if (session) {
       try {
@@ -1464,7 +1488,7 @@ export class App {
 
   isOnline(peerId: string): boolean {
     if (peerId === this.state.replica.meta.peerId) return this.transport() !== null
-    return this.state.onlinePeers.includes(peerId)
+    return !!this.virtualPeers?.isOnline(peerId) || this.state.onlinePeers.includes(peerId)
   }
 
   /** Move the selected task one step up or down among its siblings. */
@@ -1559,7 +1583,7 @@ export class App {
 
   canAttach(scope: Scope): boolean {
     const { replica, connection, session } = this.state
-    if (session?.kind === 'peer') return false // a peer credential is fixed to its node
+    if (this.virtualPeers?.guest || session?.kind === 'peer') return false // a peer credential is fixed to its node
     const same = replica.meta.scope.length === scope.length && replica.meta.scope.every((s, i) => scope[i] === s)
     return (connection === 'online' || connection === 'syncing') && !isDirty(replica) && replica.meta.baseCid !== null && !same
   }
@@ -1660,6 +1684,66 @@ export class App {
       }
       this.pollConnectApproval(requestId)
     }, 2000)
+  }
+
+  // Virtual browser peers use the same replica/proposal protocol as normal peers.
+  enableVirtualPeers(guest: VirtualPeer | null): void {
+    if (!('BroadcastChannel' in window)) return
+    this.virtualPeers = new VirtualPeers(guest, {
+      decide: async (peer, scope, proposalId, decision) => {
+        if (!this.virtualGrants(peer)?.includes('approve') || !Array.isArray(scope) || scope.some((id) => typeof id !== 'string') || !['approve', 'reject'].includes(decision)) throw new Error('This role cannot decide this proposal.')
+        const at = [...peer.scope, ...scope]
+        if (!view(this.state.replica, at)?.proposals.some((p) => p.id === proposalId && p.status === 'open')) throw new Error('Proposal no longer available.')
+        if (this.virtualPeers?.guest) { await this.virtualPeers.decide(at, proposalId, decision); await this.syncNow('nested virtual decision'); return }
+        this.edit(decision === 'approve' ? applyProposalAt(this.state.replica, at, proposalId, peer.id, this.now()) : rejectProposalAt(this.state.replica, at, proposalId, this.now()))
+      },
+      grants: (peer) => this.virtualGrants(peer),
+      serve: (peer, request) => {
+        const capabilities = this.virtualGrants(peer)
+        if (!capabilities || !capabilities.includes('read')) return { error: 'This virtual peer no longer has access to the node.', code: 'scope-not-found' }
+        if (request.peerId !== peer.id || request.scope.length) return { error: 'Virtual peer scope mismatch', code: 'bad-request' }
+        if (!capabilities.includes('edit') && request.headCid !== request.baseCid && !(request.baseCid === null && request.nodes[request.headCid]?.children.length === 0 && Object.keys(request.nodes[request.headCid]?.data ?? {}).length === 0)) return { error: 'This role is read-only.', code: 'bad-request' }
+        const served = serveSync(this.state.replica.store, { ...request, scope: peer.scope }, this.state.replica.meta.peerId, this.now(),
+          { proposeOnly: capabilities.includes('edit') && !capabilities.includes('autopush'), peerName: peer.name, capabilities })
+        if (!('error' in served) && served.changed) { this.set({ replica: { ...this.state.replica } }); this.scheduleSync() }
+        return 'error' in served ? served : { ...served, response: { ...served.response, scope: request.scope } }
+      },
+      welcome: (capabilities, hostName, session) => {
+        const changed = JSON.stringify(capabilities) !== JSON.stringify(this.virtualCapabilities)
+        this.virtualCapabilities = capabilities
+        if (changed || !this.state.virtual || this.state.virtual.hostName !== hostName || session) this.set({ virtual: { name: guest!.name, hostName, capabilities }, ...(session ? { session } : {}) })
+        if (!this.virtualWelcomed || changed || this.state.connection === 'offline') {
+          this.virtualWelcomed = true
+          void this.syncNow('virtual connected')
+        }
+      },
+      changed: () => {
+        if (!this.virtualPeers?.connected) { if (guest) this.set({ connection: 'offline' }); return }
+        void this.syncNow('virtual change')
+      },
+      revision: () => headCid(this.state.replica),
+      session: () => this.state.session,
+      name: () => this.state.deviceName
+    })
+    window.addEventListener('pagehide', (event) => { if (!event.persisted) this.virtualPeers?.close() })
+  }
+  private virtualGrants(peer: VirtualPeer): Capability[] | null {
+    const member = view(this.state.replica, peer.scope)?.members.find((m) => m.peerId === peer.id)
+    return member ? member.capabilities.filter((c) => !member.disabled?.includes(c)) : null
+  }
+  canSpawnVirtualPeer(): boolean { return !this.config.project && !!this.virtualPeers && this.canApprove() }
+  spawnVirtualPeer(name: string, role: 'editor' | 'proposer' | 'reviewer' | 'viewer', shareAccount: boolean): void {
+    if (!this.canSpawnVirtualPeer() || !name.trim()) return
+    const token = crypto.randomUUID()
+    const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.state.view], name: name.trim().slice(0, 80), shareAccount }
+    const capabilities: Capability[] = role === 'viewer' ? ['read'] : role === 'proposer' ? ['read', 'edit'] : role === 'reviewer' ? ['read', 'edit', 'approve'] : ['read', 'edit', 'autopush']
+    this.virtualPeers!.register(peer)
+    const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('virtual', token)
+    const tab = window.open(url.href, '_blank')
+    if (!tab) { this.virtualPeers!.unregister(peer); this.notify('error', 'Allow popups for this site to spawn a virtual peer.'); return }
+    this.edit(addMemberAt(this.state.replica, peer.scope, peer.id, peer.name, capabilities, this.now()))
+    this.closeModal()
+    this.notify('info', `${peer.name} opened as a ${role} at this node.`)
   }
 
   // -------------------------------------------------------------------------

@@ -179,6 +179,7 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   const session = state.session
   if (!session) item('Connect…', () => app.openModal('connect'), 'primary-text')
   item('⚙ Settings', () => app.goToRoot())
+  if (app.canSpawnVirtualPeer()) item('Spawn virtual peer…', () => app.openModal('virtual'))
   if (app.canUndo) item('Undo (Ctrl/⌘ Z)', () => runHistory(app, false))
   if (app.canRedo) item('Redo (Ctrl/⌘ Shift Z)', () => runHistory(app, true))
   item('Keys and row syntax (Ctrl+H)', () => app.openModal('help'))
@@ -1216,6 +1217,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     const type = document.createElement('select')
     type.setAttribute('aria-label', 'Peer connection type')
     type.append(new Option('Choose a connection…', ''), new Option('Fos account member', 'member'), new Option('Direct device connection', 'direct'), new Option('Invite device', 'invite'))
+    if (app.canSpawnVirtualPeer()) type.append(new Option('Virtual peer (new tab)', 'virtual'))
     for (const p of peers.filter((p) => p.integration && !p.integration.connected)) {
       const option = new Option(`${p.integration!.kind === 'oauth' ? 'OAuth: ' : ''}${p.name}`, p.id)
       option.disabled = !state.session || !p.integration!.configured || p.integration!.kind === 'platform'
@@ -1234,6 +1236,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     form.addEventListener('submit', (e) => {
       e.preventDefault()
       if (type.value === 'member') { if (owner) app.addPeerHere(input.value); else app.notify('error', 'Sign in as the owner to add a member.'); input.value = '' }
+      else if (type.value === 'virtual') app.openModal('virtual')
       else if (type.value === 'direct') app.openModal('direct')
       else if (type.value === 'invite') void app.startInvite()
       else if (type.value.startsWith('integration:')) void app.connectIntegration(type.value.slice('integration:'.length))
@@ -1261,6 +1264,7 @@ function renderFooter(el: HTMLElement, state: AppState, app: App): void {
     history.append(control)
   }
   items.push(history)
+  if (state.virtual) items.push(div('muted', `${state.virtual.name} · virtual peer of ${state.virtual.hostName}${!state.virtual.capabilities.includes('edit') ? ' · read-only (local edits stay here)' : ''}`))
   if (state.notice) items.push(div(`notice ${state.notice.kind}`, state.notice.text))
   const meta = div('meta', '')
   meta.append(span('muted', `${state.deviceName} · ${state.replica.meta.peerId.slice(0, 8)}`))
@@ -1301,6 +1305,7 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   if (kind === 'connect') renderConnect(body, state, app)
   if (kind === 'invite') renderInvite(body, state, app)
   if (kind === 'requests') renderRequests(body, state, app)
+  if (kind === 'virtual') renderVirtual(body, state, app)
   if (kind === 'direct') renderDirect(body, state, app)
   if (kind === 'device') renderDevice(body, state, app)
   if (kind === 'market') renderMarket(body, state, app)
@@ -1309,6 +1314,23 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
   if (kind === 'phone') renderPhone(body, state, app)
   card.append(body)
   el.replaceChildren(card)
+}
+
+function renderVirtual(body: HTMLElement, state: AppState, app: App): void {
+  body.append(div('muted', 'Open an independent peer at this node in a new tab. Keep this tab open for the connection.'))
+  const form = document.createElement('form')
+  const name = document.createElement('input'); name.required = true; name.placeholder = 'Role name'; name.setAttribute('aria-label', 'Virtual peer name')
+  const role = document.createElement('select'); role.setAttribute('aria-label', 'Virtual peer role')
+  role.append(new Option('Editor — changes sync automatically', 'editor'), new Option('Proposer — changes need approval', 'proposer'), new Option('Reviewer — can approve proposals', 'reviewer'), new Option('Viewer — reads only', 'viewer'))
+  const label = document.createElement('label')
+  const account = document.createElement('input'); account.type = 'checkbox'; account.checked = !!state.session; account.disabled = !state.session
+  label.append(account, document.createTextNode(' Use current sign-in (sign-out stays independent)'))
+  const submit = button('primary', 'Spawn peer', () => undefined); submit.type = 'submit'
+  form.append(name, role, label, submit)
+  form.className = 'virtual-peer-form'
+  form.addEventListener('submit', (event) => { event.preventDefault(); app.spawnVirtualPeer(name.value, role.value as 'editor' | 'proposer' | 'reviewer' | 'viewer', account.checked) })
+  body.append(form)
+  queueMicrotask(() => name.focus())
 }
 
 /** Link a phone: the number, then the code that was texted to it. */
@@ -1376,7 +1398,7 @@ function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
 }
 
 function modalTitle(kind: AppState['modal']): string {
-  return kind === 'work' ? 'Delegate and review' : kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : kind === 'help' ? 'Keys and row syntax' : kind === 'phone' ? 'Link your phone' : 'Direct connect'
+  return kind === 'virtual' ? 'Spawn virtual peer' : kind === 'work' ? 'Delegate and review' : kind === 'connect' ? 'Connect this device' : kind === 'invite' ? 'Invite a device' : kind === 'requests' ? 'Connection requests' : kind === 'device' ? 'Approve a sign-in' : kind === 'market' ? 'Market listing' : kind === 'help' ? 'Keys and row syntax' : kind === 'phone' ? 'Link your phone' : 'Direct connect'
 }
 
 function renderWork(body: HTMLElement, state: AppState, app: App): void {

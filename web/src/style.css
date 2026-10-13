@@ -319,3 +319,6 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .add-peer select { max-width: 100%; min-width: 0; }
 .add-peer { flex-wrap: wrap; }
 .reset-data-row { padding: .75rem; }
+
+.virtual-peer-form { display: flex; flex-direction: column; gap: .75rem; }
+.virtual-peer-form input[type=checkbox] { width: auto; }
