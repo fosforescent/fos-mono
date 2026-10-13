@@ -6,18 +6,11 @@
  * the fos server's own capability (its keys), not something a user connects.
  */
 
-import type { Capability } from '@fosforescent/shared/sync/index'
+import { INTEGRATION_PEERS, type IntegrationPeer } from '@fosforescent/shared/sync/index'
 
-export type ProviderKind = 'oauth' | 'platform' | 'channel'
+export type ProviderKind = IntegrationPeer['kind']
 
-export type Provider = {
-  id: string
-  name: string
-  kind: ProviderKind
-  /** What the peer hands to the tree once connected (handlers for the matching requirements). */
-  provides: Capability[]
-  /** What the peer reads from or does to the tree. */
-  consumes: Capability[]
+export type Provider = IntegrationPeer & {
   oauth?: {
     authorizeUrl: string
     tokenUrl: string
@@ -32,24 +25,15 @@ export type Provider = {
   }
 }
 
-export const PROVIDERS: Provider[] = [
-  {
-    id: 'github', name: 'GitHub', kind: 'oauth', provides: ['repo', 'search'], consumes: ['read', 'edit'],
-    oauth: { authorizeUrl: 'https://github.com/login/oauth/authorize', tokenUrl: 'https://github.com/login/oauth/access_token', scopes: ['repo', 'read:user'], clientIdEnv: 'GITHUB_CLIENT_ID', clientSecretEnv: 'GITHUB_CLIENT_SECRET', tokenAccept: 'application/json' }
-  },
-  {
-    id: 'google', name: 'Google', kind: 'oauth', provides: ['calendar', 'mail', 'search'], consumes: ['read', 'edit'],
-    oauth: { authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: 'https://oauth2.googleapis.com/token', scopes: ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/userinfo.email'], extra: { access_type: 'offline', prompt: 'consent' }, clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID', clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET' }
-  },
-  {
-    id: 'discord', name: 'Discord', kind: 'oauth', provides: ['mail', 'relay'], consumes: ['read'],
-    oauth: { authorizeUrl: 'https://discord.com/api/oauth2/authorize', tokenUrl: 'https://discord.com/api/oauth2/token', scopes: ['identify'], clientIdEnv: 'DISCORD_CLIENT_ID', clientSecretEnv: 'DISCORD_CLIENT_SECRET' }
-  },
-  // payments are platform-level (the account's Stripe customer / connected account); nothing to connect by hand
-  { id: 'stripe', name: 'Stripe', kind: 'platform', provides: ['market'], consumes: ['read'] },
-  // a phone number: text notifications out, commands and notes in (through the platform's Twilio number)
-  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', provides: ['notify'], consumes: [] }
-]
+const OAUTH: Record<string, Provider['oauth']> = {
+  github: { authorizeUrl: 'https://github.com/login/oauth/authorize', tokenUrl: 'https://github.com/login/oauth/access_token', scopes: ['repo', 'read:user'], clientIdEnv: 'GITHUB_CLIENT_ID', clientSecretEnv: 'GITHUB_CLIENT_SECRET', tokenAccept: 'application/json' },
+  google: { authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: 'https://oauth2.googleapis.com/token', scopes: ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/userinfo.email'], extra: { access_type: 'offline', prompt: 'consent' }, clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID', clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET' },
+  discord: { authorizeUrl: 'https://discord.com/api/oauth2/authorize', tokenUrl: 'https://discord.com/api/oauth2/token', scopes: ['identify'], clientIdEnv: 'DISCORD_CLIENT_ID', clientSecretEnv: 'DISCORD_CLIENT_SECRET' }
+}
+
+export const PROVIDERS: Provider[] = INTEGRATION_PEERS.map((peer) => ({
+  ...peer, ...(OAUTH[peer.id] ? { oauth: OAUTH[peer.id] } : {})
+}))
 
 export function providerById(id: string): Provider | undefined {
   return PROVIDERS.find((p) => p.id === id)

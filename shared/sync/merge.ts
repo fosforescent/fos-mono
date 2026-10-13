@@ -56,7 +56,7 @@ export function mergeNodes(
 ): MergeResult {
   const newChoiceCids: string[] = []
   const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true)
-  if (outcome.kind !== 'node') throw new Error('unreachable: top-level merge cannot conflict')
+  if (outcome.kind !== 'node') throw new Error('conflicting typed refs must be merged through their owning node to resolve the choice')
   return { cid: outcome.cid, newChoiceCids }
 }
 
@@ -92,8 +92,18 @@ function mergeNode(
     const valueOf = (r: { node: FosNodeContent } | null): string | null => (r ? refValueCid(store, r.node) : null)
     const oursValue = valueOf(o) ?? put(store, stripLink(store, ours))
     const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs))
-    const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true)
-    const mergedValue = merged.kind === 'node' ? merged.cid : oursValue
+    const typed = refTypeCid(store, o.node) || refTypeCid(store, t.node)
+    if (typed && refTypeCid(store, o.node) !== refTypeCid(store, t.node)) return { kind: 'conflict' }
+    let mergedValue: string | null
+    if (typed) {
+      const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b)
+      if (ov === tv || tv === bv) mergedValue = ov
+      else if (ov === bv) mergedValue = tv
+      else return { kind: 'conflict' }
+    } else {
+      const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true)
+      mergedValue = merged.kind === 'node' ? merged.cid : oursValue
+    }
     const book = (r: { node: FosNodeContent } | null): FosNodeContent => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] })
     const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids)
     // History: a merge that changed the value is a new version with both parents; a merge of

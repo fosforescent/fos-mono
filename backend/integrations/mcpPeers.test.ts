@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { addRow, addTask, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
+import { addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 import { createMcpPeerHandlers, mcpMembersAbove, type McpPeerDeps, type McpServerInfo } from './mcpPeers'
 
 function setup(servers: McpServerInfo[]) {
@@ -63,4 +63,87 @@ test('running a tool requirement calls the attached server and records the answe
   expect(n).toBe(1)
   expect(calls.at(-1)).toEqual([5, 'weather', 'anything'])
   expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toBeUndefined()
+})
+
+test('failed calls retain their binding, retries cannot silently switch to a nearer provider', async () => {
+  const other = { ...weather, id: 6, name: 'Other weather' }
+  const { deps, replica, saved } = setup([weather, other])
+  const h = createMcpPeerHandlers(deps)
+  await call(h.attach, { scope: ['proj'], serverId: 5 })
+  const invoked: number[] = []
+  deps.callTool = async (server) => { invoked.push(server.id); throw new Error('offline') }
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
+  const firstSaves = saved.length
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
+  expect(saved.length).toBe(firstSaves) // no endless after-save retry loop
+  await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
+  deps.callTool = async (server) => { invoked.push(server.id); return 'returned' }
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(200)
+  expect(invoked).toEqual([5, 5, 5])
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
+  expect(invoked).toHaveLength(3)
+  expect(view(replica(), ['proj', 'trip'])!.tasks[0]!.requirement!.satisfied).toBe(true)
+})
+
+test('an unavailable bound provider does not fall back and unsatisfied dependencies block calls', async () => {
+  const { deps, replica, calls } = setup([weather])
+  const h = createMcpPeerHandlers(deps)
+  await call(h.attach, { scope: ['proj'], serverId: 5 })
+  let r = replica()
+  r = addRow(r, ['proj', 'trip', 'rq'], 'requirement', 'Confirm', 20, { id: 'confirm', requirement: { capability: 'confirmation' } })
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).json.error).toMatch(/dependencies/)
+  expect(calls).toHaveLength(0)
+  // Use the second request to test a bound provider disappearing.
+  deps.callTool = async () => { throw new Error('offline') }
+  await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq2' })
+  deps.servers = async () => [{ ...weather, id: 6 }]
+  await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq2' })).json.error).toMatch(/bound MCP handler is unavailable/)
+})
+
+
+test('an explicit handler ref is honored and the return ref addresses the result note', async () => {
+  const other = { ...weather, id: 6, name: 'Other weather' }
+  const { deps, replica, calls } = setup([weather, other])
+  const h = createMcpPeerHandlers(deps)
+  await call(h.attach, { scope: ['proj'], serverId: 5 })
+  await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
+  let r = replica()
+  const store = r.store, scope = ['proj', 'trip', 'rq']
+  const ads = memberHandlers(store, content(store, resolveScope(store, headCid(r), ['proj'])!), 'mcp:5')
+  expect(ads).toHaveLength(2)
+  const handler = ads.find((cid) => valueContent(store, cid).data.description?.content === 'weather')!
+  r = addRefAt(r, scope, 'selected-provider', capabilityTarget(store, 'tool'), 20)
+  const proposal = proposeRefAt(r, [...scope, 'selected-provider'], handler, 'owner', 21)
+  r = applyProposalAt(proposal.replica, [...scope, 'selected-provider'], proposal.proposalCid, 'owner', 22)
+  // Editing grants must preserve handler refs, including template-backed ones.
+  r = setMemberCapabilitiesAt(r, ['proj'], 'mcp:5', ['tool', 'read'], [], 23)
+  expect(memberHandlers(store, content(store, resolveScope(store, headCid(r), ['proj'])!), 'mcp:5')).toEqual(ads)
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(200)
+  expect(calls[0]![0]).toBe(5)
+  r = replica()
+  const request = valueContent(store, resolveScope(store, headCid(r), scope)!)
+  expect(refArguments(store, request, capabilityTarget(store, 'tool'))[0]!.targetCid).toBe(handler)
+  const returned = refArguments(store, request, store.primitive.documentField.getId())
+  expect(returned).toHaveLength(1)
+  expect(content(store, returned[0]!.targetCid!).data.description!.content).toBe('weather(Paris next week) = sunny')
+})
+
+test('manual and listener runs share the user lock and reload completed work', async () => {
+  const { deps, replica, calls } = setup([weather])
+  let tail: Promise<unknown> = Promise.resolve()
+  deps.withUserLock = (_key, fn) => {
+    const pending = tail.then(fn)
+    tail = pending.catch(() => undefined)
+    return pending
+  }
+  const h = createMcpPeerHandlers(deps)
+  await call(h.attach, { scope: ['proj'], serverId: 5 })
+  const [manual, listened] = await Promise.all([
+    call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' }),
+    h.runOpenToolRequests({ id: 1, username: 'ada' }, replica().store)
+  ])
+  expect([200, 409]).toContain(manual.status)
+  expect(listened).toBe(manual.status === 200 ? 1 : 2)
+  expect(calls).toEqual([[5, 'weather', 'Paris next week'], [5, 'weather', 'anything']])
 })

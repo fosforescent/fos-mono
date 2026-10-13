@@ -1096,7 +1096,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     expect(view(r, ['t', 'rm'])!.tasks[0]).toMatchObject({ kind: 'supply', title: 'listed on the market by fos' })
   })
 
-  it('a template row keeps requirements; a task that executes it gets copies of them, unfilled, and remembers the template', () => {
+  it('a template copies its subtree with unfilled requirements and remembers its source', () => {
     let r = createReplica('d')
     r = addRow(r, [], 'template', 'Trip', 1, { id: 'tpl' })
     r = addRow(r, ['tpl'], 'requirement', 'budget', 2, { id: 'r1', requirement: { capability: 'allocation', resource: 'account', amount: 300, unit: 'USD' } })
@@ -1114,7 +1114,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     expect(oslo.template).toEqual({ id: 'tpl', name: 'Trip' })
     expect(oslo.blockedBy).toEqual(['account 300 USD', 'task'])
     const copies = view(r, ['e1'])!.tasks
-    expect(copies.map((c) => [c.kind, c.title, c.requirement?.satisfied])).toEqual([['requirement', 'budget', false], ['requirement', 'book transport', false]])
+    expect(copies.map((c) => [c.kind, c.title, c.requirement?.satisfied])).toEqual([['requirement', 'budget', false], ['requirement', 'book transport', false], ['plain', 'packing notes', undefined]])
     expect(copies.map((c) => c.id)).not.toContain('r1')
     expect(view(r, ['e2'])!.tasks.map((c) => c.id)).not.toEqual(copies.map((c) => c.id))
     // filling one execution leaves the other and the template untouched
