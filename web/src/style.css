@@ -306,3 +306,9 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 
 .work-context { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; font: inherit; padding: .75rem; }
 .work-result { border-top: 1px solid var(--border, #ccc); margin-top: 1rem; padding-top: 1rem; }
+
+/* Keep deep paths from squeezing the current title into a column on phones. */
+.crumb-path { min-width: 0; flex: 1 1 100%; flex-wrap: wrap; }
+.crumb-path .crumb { max-width: 100%; overflow-wrap: anywhere; }
+.crumb-path .crumb:not(.current) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(16rem, 65vw); }
+.crumb-path .crumb.current { flex: 1 1 12rem; min-width: 0; text-align: left; }

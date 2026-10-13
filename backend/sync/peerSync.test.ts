@@ -112,3 +112,36 @@ describe('peer-sync handler', () => {
     expect((rb.sent().body as { action: string }).action).toBe('merge')
   })
 })
+
+it('returns a machine-readable missing-node response with complete IDs', async () => {
+  const { deps } = makeDeps()
+  const device = addTask(createReplica('phone'), [], 'unsent child', 1, 'child')
+  const request = buildSyncRequest(device)
+  const response = fakeRes()
+  await createPeerSyncHandler(deps)(fakeReq({ ...request, nodes: {} }), response.res)
+  expect(response.sent().status).toBe(400)
+  expect(response.sent().body).toMatchObject({ code: 'missing-nodes', missingNodeIds: [request.headCid] })
+})
+
+it('concurrent user2 and user3 requests remain in their own account stores', async () => {
+  const stores = new Map<string, FosStore>()
+  const deps: PeerSyncDeps = {
+    async loadStore(username) {
+      const id = username === 'user2' ? 2 : username === 'user3' ? 3 : null
+      if (!id) return null
+      const store = stores.get(username) ?? new FosStore()
+      stores.set(username, store)
+      return { user: { id, username }, store }
+    },
+    async saveStore(user, store) { stores.set(user.username, store) },
+    now: () => 10
+  }
+  const handler = createPeerSyncHandler(deps)
+  const responses = [fakeRes(), fakeRes()]
+  await Promise.all(['user2', 'user3'].map((username, i) => handler(
+    fakeReq(buildSyncRequest(addTask(createReplica(username), [], `${username} private work`, 1)), username), responses[i]!.res
+  )))
+  expect(responses.map((r) => r.sent().status)).toEqual([200, 200])
+  expect(serverTitles(stores.get('user2')!)).toEqual(['user2 private work'])
+  expect(serverTitles(stores.get('user3')!)).toEqual(['user3 private work'])
+})

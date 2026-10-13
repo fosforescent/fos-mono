@@ -245,6 +245,7 @@ function defaultDeviceName(): string {
 function loadSession(raw: unknown, baseUrl: string): Session | null {
   if (!raw || typeof raw !== 'object') return null
   const s = raw as Partial<Session>
+  if (s.baseUrl !== undefined && (typeof s.baseUrl !== 'string' || s.baseUrl.replace(/\/$/, '') !== baseUrl.replace(/\/$/, ''))) return null
   if (typeof s.jwt !== 'string' || typeof s.username !== 'string' || !s.jwt) return null
   return { baseUrl, jwt: s.jwt, username: s.username, kind: s.kind === 'peer' ? 'peer' : 'user' }
 }
@@ -335,8 +336,8 @@ export class App {
       this.config.storage.saveReplica(serializeReplica(this.state.replica))
     }
     if (patch.view && patch.view !== previous.view) this.savePrefs()
-    if ('session' in patch && patch.session !== previous.session) {
-      this.config.storage.saveSession(patch.session ? { jwt: patch.session.jwt, username: patch.session.username, kind: patch.session.kind } : null)
+    if ('session' in patch && (patch.session !== previous.session || patch.session === null)) {
+      this.config.storage.saveSession(patch.session ? { jwt: patch.session.jwt, username: patch.session.username, kind: patch.session.kind, baseUrl: patch.session.baseUrl } : null)
     }
     for (const listener of this.listeners) listener(this.state)
   }
@@ -412,11 +413,14 @@ export class App {
     this.set({ connection: 'connecting' })
     try {
       await this.afterConnect(session)
+      this.pendingSession = null
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', modal: null })
+        this.pendingSession = null
+        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', notice: { kind: 'error', text: 'Your session expired. Click Offline to sign in again. Local changes are safe.', at: this.now() }, modal: null })
       } else {
-        // Server unreachable: keep the session and retry; the replica keeps working locally.
+        // Attachment lookup must also be retried before syncing a restored session.
+        this.pendingSession = session
         this.set({ session, connection: 'offline' })
         this.notify('error', `Could not reach the server: ${error instanceof Error ? error.message : String(error)}`)
         this.scheduleRetry()
@@ -463,6 +467,7 @@ export class App {
   }
 
   logout(): void {
+    this.pendingSession = null
     this.autoCredentials = null
     this.clearTimer('retry')
     this.clearTimer('poll')
@@ -473,6 +478,7 @@ export class App {
 
   reconnect(reason: string): void {
     this.clearTimer('retry')
+    if (this.pendingSession) { void this.resume(this.pendingSession); return }
     if (this.state.session) {
       if (this.state.connection === 'offline') this.set({ connection: 'connecting' })
       void this.syncNow(reason)
@@ -545,11 +551,22 @@ export class App {
     this.clearTimer('debounce')
     this.set({ connection: 'syncing' })
 
-    const request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !policy || policy.to.includes('autopush') })
+    const session = this.state.session
     try {
-      const response = transport === 'account'
-        ? await peerSync(this.state.session as Session, request)
-        : await (this.link as DirectLink).sync(request)
+      let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !policy || policy.to.includes('autopush') })
+      const send = (packet: SyncRequest) => transport === 'account'
+        ? peerSync(session as Session, packet)
+        : (this.link as DirectLink).sync(packet)
+      let response
+      try { response = await send(request) }
+      catch (error) {
+        const missing = error instanceof ApiError && (error.code === 'missing-nodes' || error.message.startsWith('head node not provided'))
+        if (!missing || this.state.session !== session) throw error
+        // Keep the agreed merge base. A reset server needs its closure too.
+        request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !policy || policy.to.includes('autopush'), full: true })
+        response = await send(request)
+      }
+      if (this.state.session !== session) return
       const done = completeSync(this.state.replica, request, response, this.now())
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online' }
       if (response.presence) patch.onlinePeers = response.presence
@@ -565,11 +582,12 @@ export class App {
       this.set(patch)
       this.retryDelay = MIN_RETRY_MS
     } catch (error) {
+      if (this.state.session !== session) return
       if (error instanceof ApiError && error.status === 401) {
         this.closeEvents?.()
         this.closeEvents = null
         this.clearTimer('poll')
-        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', modal: null })
+        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', notice: { kind: 'error', text: 'Your session expired. Click Offline to sign in again. Local changes are safe.', at: this.now() }, modal: null })
       } else if (error instanceof ApiError && error.status === 409) {
         this.clearTimer('poll')
         this.set({ connection: 'offline', loginError: `This app cannot sync with the server: ${error.message}. Please update the app.` })

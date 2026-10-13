@@ -35,21 +35,21 @@ export type ConnectPoll =
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  code?: string
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
-async function readError(response: Response): Promise<string> {
+async function responseError(response: Response): Promise<ApiError> {
   try {
-    const data = (await response.json()) as { error?: unknown }
-    if (typeof data?.error === 'string') return data.error
-  } catch {
-    // not JSON
-  }
-  return `${response.status} ${response.statusText}`.trim()
+    const data = await response.json() as { error?: string; code?: string }
+    return new ApiError(response.status, typeof data.error === 'string' ? data.error : response.statusText, data.code)
+  } catch { return new ApiError(response.status, response.statusText) }
 }
+
 
 export async function login(baseUrl: string, username: string, password: string): Promise<Session> {
   const response = await fetch(`${baseUrl}/auth/login`, {
@@ -57,7 +57,7 @@ export async function login(baseUrl: string, username: string, password: string)
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
   })
-  if (!response.ok) throw new ApiError(response.status, await readError(response))
+  if (!response.ok) throw await responseError(response)
   const data = (await response.json()) as { access_token?: string }
   if (!data.access_token) throw new ApiError(500, 'login response had no token')
   return { baseUrl, jwt: data.access_token, username, kind: 'user' }
@@ -69,7 +69,7 @@ async function authed<T>(session: Session, method: 'GET' | 'POST' | 'DELETE', pa
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.jwt}` },
     body: body === undefined ? undefined : JSON.stringify(body)
   })
-  if (!response.ok) throw new ApiError(response.status, await readError(response))
+  if (!response.ok) throw await responseError(response)
   return (await response.json()) as T
 }
 
@@ -102,13 +102,13 @@ export async function claimInvite(baseUrl: string, token: string, peerId: string
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: token.trim(), peerId, name })
   })
-  if (!response.ok) throw new ApiError(response.status, await readError(response))
+  if (!response.ok) throw await responseError(response)
   return (await response.json()) as { requestId: string; scope: string[]; scopeNames: string[] }
 }
 
 export async function pollConnect(baseUrl: string, requestId: string, peerId: string): Promise<ConnectPoll> {
   const response = await fetch(`${baseUrl}/peer/connect/${encodeURIComponent(requestId)}?peerId=${encodeURIComponent(peerId)}`)
-  if (!response.ok) throw new ApiError(response.status, await readError(response))
+  if (!response.ok) throw await responseError(response)
   return (await response.json()) as ConnectPoll
 }
 
@@ -121,7 +121,7 @@ export async function peerSync(session: Session, request: SyncRequest): Promise<
     },
     body: JSON.stringify(request)
   })
-  if (!response.ok) throw new ApiError(response.status, await readError(response))
+  if (!response.ok) throw await responseError(response)
   return (await response.json()) as SyncResponse
 }
 
@@ -191,7 +191,7 @@ export async function transcribeVoice(session: Session, audio: Blob): Promise<Vo
     headers: { 'Content-Type': audio.type || 'audio/webm', Authorization: `Bearer ${session.jwt}` },
     body: audio
   })
-  if (!response.ok) throw new ApiError(response.status, await readError(response))
+  if (!response.ok) throw await responseError(response)
   return (await response.json()) as VoiceNote
 }
 

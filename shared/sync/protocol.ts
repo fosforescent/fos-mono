@@ -106,7 +106,7 @@ export type SyncResponse = {
   capabilities?: Capability[]
 }
 
-export type SyncError = { error: string; code: 'bad-request' | 'scope-not-found' | 'missing-nodes' | 'version-mismatch' }
+export type SyncError = { error: string; code: 'bad-request' | 'scope-not-found' | 'missing-nodes' | 'version-mismatch'; missingNodeIds?: string[] }
 
 export function parseSyncRequest(body: unknown): SyncRequest | SyncError {
   if (!body || typeof body !== 'object') return { error: 'request body must be an object', code: 'bad-request' }
@@ -142,9 +142,11 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
   importNodes(store, request.nodes)
   if (!hasNode(store, request.headCid)) {
     const sent = request.nodes[request.headCid]
-    const missing = sent ? sent.children.flat().filter((cid) => !store.table.has(cid)) : []
+    const references = (node: typeof sent): string[] => node && Array.isArray(node.children) ? node.children.flat().filter((cid): cid is string => typeof cid === 'string') : []
+    const missing = references(sent).filter((cid) => !store.table.has(cid))
     const detail = !sent ? 'the head node itself was not sent' : missing.length ? `head references unknown nodes: ${missing.map((c) => c.slice(0, 16)).join(', ')}` : 'the head node did not verify'
-    return { error: `head node not provided (${detail})`, code: 'missing-nodes' }
+    const missingNodeIds = [...new Set([request.headCid, ...Object.values(request.nodes).flatMap(references)])].filter((cid) => !store.table.has(cid) && !request.nodes[cid])
+    return { error: `head node not provided (${detail})`, code: 'missing-nodes', missingNodeIds }
   }
 
   const rootTarget = rootTargetCid(store)

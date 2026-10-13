@@ -236,6 +236,7 @@ protectedRoutes.use((req, res, next) => {
 protectedRoutes.use(clientDetailsMiddleware)
 
 app.get('/', getHealthCheck)
+app.get('/health', getHealthCheck)
 app.post('/auth/register', slowDown({
   windowMs: 10 * 60 * 1000, // 15 minutes,
   delayAfter: 1, // allow 3 requests per 15 minutes, then...

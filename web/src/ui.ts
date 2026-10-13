@@ -374,10 +374,13 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     if (k === 'Enter') {
       // the typed row becomes the first row here; the blank row stays on top, ready for the next one (no extra blank row below)
       event.preventDefault()
-      if (commit()) focusGhost = true
+      event.stopPropagation()
+      focusGhost = true // Set before commit: adding the first row renders synchronously.
+      const created = commit()
+      if (created && (event.ctrlKey || event.metaKey) && event.shiftKey) { focusGhost = false; app.addRowInside([], created) }
       return
     }
-    if (k === 'ArrowDown' && !event.altKey) { event.preventDefault(); const created = commit(); if (created) focusGhost = true; else if (node.tasks.length) moveSelection(app, 1); return }
+    if (k === 'ArrowDown' && !event.altKey) { event.preventDefault(); event.stopPropagation(); focusGhost = true; const created = commit(); if (!created && node.tasks.length) moveSelection(app, 1); return }
     if (k === 'Escape') { event.preventDefault(); input.value = ''; input.blur(); return }
     event.stopPropagation()
   })
@@ -388,7 +391,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     focusGhost = false
     queueMicrotask(() => {
       const active = document.activeElement
-      if (active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
+      if (input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
     })
   }
   return li
@@ -422,7 +425,10 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   const rows: HTMLElement[] = []
   node.tasks.forEach((task, index) => {
     rows.push(renderRow(task, at, depth, index, node.tasks.length, state, app))
-    const expanded = !state.collapsed.includes(task.id) && depth + 1 < maxDepth()
+    const path = [...at, task.id]
+    const editingBelow = !!state.selected && state.selected.length > path.length && path.every((id, i) => state.selected![i] === id)
+    // Responsive depth limits must not hide the child the user just opened for editing.
+    const expanded = editingBelow || (!state.collapsed.includes(task.id) && depth + 1 < maxDepth())
     if (expanded && (task.childCount > 0 || task.childChoices > 0)) {
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
@@ -665,7 +671,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   input.addEventListener('blur', () => { commit() })
   // keep the focus on the editor when the row is (re)rendered as selected
   queueMicrotask(() => {
-    if (document.activeElement !== input && !state.modal && !state.contextMenu) {
+    if (input.isConnected && document.activeElement !== input && !state.modal && !state.contextMenu) {
       input.focus()
       const end = input.value.length
       try { input.setSelectionRange(end, end) } catch { /* not all inputs */ }
