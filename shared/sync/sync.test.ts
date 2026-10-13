@@ -4,6 +4,11 @@ import type { FosPathElem } from '../types'
 import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from './project'
 import {
   acceptsFrom,
+  CAPABILITIES,
+  SERVER_CAPABILITIES,
+  INTEGRATION_PEERS,
+  readMembers,
+  withMember,
   bookkeepingOf,
   commitRoot,
   content,
@@ -1252,5 +1257,20 @@ describe('peer capabilities', () => {
     const served = serveSync(server.store, buildSyncRequest(device), 'user:ada', 2, { capabilities: ['http', 'ws', 'relay', 'search'] })
     expect('error' in served).toBe(false)
     if (!('error' in served)) expect(served.response.capabilities).toEqual(['http', 'ws', 'relay', 'search'])
+  })
+})
+
+
+describe('service capability registration', () => {
+  it('round-trips every advertised capability through member graph edges in both directions', () => {
+    const store = new FosStore()
+    const root = partitionContent('home', 'Home')
+    const member = withMember(store, root, 'user:services', 'Services', CAPABILITIES, [], CAPABILITIES)
+    expect(readMembers(store, member)[0]).toEqual({ peerId: 'user:services', name: 'Services', capabilities: CAPABILITIES, accepts: CAPABILITIES })
+  })
+
+  it('advertises payment and allocation services on fos and only notifications on the phone', () => {
+    expect(SERVER_CAPABILITIES).toEqual(expect.arrayContaining(['send-payment', 'receive-payment', 'allocate', 'request-payment']))
+    expect(INTEGRATION_PEERS.find((p) => p.id === 'phone')).toMatchObject({ provides: ['notify'], consumes: [] })
   })
 })

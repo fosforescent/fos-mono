@@ -984,8 +984,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1002,16 +1002,17 @@ export const INTEGRATION_PEERS: IntegrationPeer[] = [
   { id: 'google', name: 'Google', kind: 'oauth', provides: ['calendar', 'mail', 'search'], consumes: ['read', 'edit'] },
   { id: 'discord', name: 'Discord', kind: 'oauth', provides: ['mail', 'relay'], consumes: ['read'] },
   { id: 'stripe', name: 'Stripe', kind: 'platform', provides: ['market'], consumes: ['read'] },
-  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', provides: ['mail', 'relay'], consumes: ['read', 'edit'] }
+  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', provides: ['notify'], consumes: [] }
 ]
 export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'relay']
-/** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market, mail and language-model services. */
-export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail', 'llm']
+/** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market, mail, language-model and payment/allocation services. */
+export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail', 'llm', 'send-payment', 'receive-payment', 'allocate', 'request-payment']
 /** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
 export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'submit proposals', approve: 'approve proposals', autopush: 'autopush',
   direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
-  calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools'
+  calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1144,6 +1145,11 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'llm': return p.llmCapability.getId()
     case 'repo': return p.repoCapability.getId()
     case 'tool': return p.toolCapability.getId()
+    case 'send-payment': return p.sendPaymentCapability.getId()
+    case 'receive-payment': return p.receivePaymentCapability.getId()
+    case 'allocate': return p.allocateCapability.getId()
+    case 'request-payment': return p.requestPaymentCapability.getId()
+    case 'notify': return p.notifyCapability.getId()
   }
 }
 

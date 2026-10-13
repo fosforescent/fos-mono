@@ -48,7 +48,7 @@ export const PROVIDERS: Provider[] = [
   // payments are platform-level (the account's Stripe customer / connected account); nothing to connect by hand
   { id: 'stripe', name: 'Stripe', kind: 'platform', provides: ['market'], consumes: ['read'] },
   // a phone number: text notifications out, commands and notes in (through the platform's Twilio number)
-  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', provides: ['mail', 'relay'], consumes: ['read', 'edit'] }
+  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', provides: ['notify'], consumes: [] }
 ]
 
 export function providerById(id: string): Provider | undefined {
