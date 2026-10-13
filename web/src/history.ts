@@ -10,10 +10,10 @@ export class EditHistory {
   get canRedo(): boolean { return this.future.length > 0 }
   clear(): void { this.past = []; this.future = [] }
 
-  record(replica: Replica, before: string, settings: boolean): void {
+  record(replica: Replica, before: string, settings: boolean, preferred?: Scope): void {
     const after = headCid(replica)
     if (before === after) return
-    this.past.push({ from: after, to: before, path: changedPath(replica, after, before), settings })
+    this.past.push({ from: after, to: before, path: changedPath(replica, after, before, preferred), settings })
     if (this.past.length > 100) this.past.shift()
     this.future = []
   }
@@ -27,14 +27,14 @@ export class EditHistory {
     const result = mergeNodes(replica.store, change.from, before, change.to, { ours: 'Current edits', theirs: redo ? 'Redo' : 'Undo' })
     commitRoot(replica.store, result.cid, now)
     source.pop()
-    destination.push({ from: result.cid, to: before, path: changedPath(replica, result.cid, before), settings: change.settings })
+    destination.push({ from: result.cid, to: before, path: changedPath(replica, result.cid, before, change.path), settings: change.settings })
     return { replica: { ...replica }, path: change.path, settings: change.settings, conflicts: result.newChoiceCids.length > 0 }
   }
 }
 
 /** Prefer a changed row in the destination; for a deletion focus its surviving parent. */
-function changedPath(replica: Replica, before: string, after: string): Scope {
-  return addedPath(replica, before, after, []) ?? modifiedPath(replica, before, after)
+function changedPath(replica: Replica, before: string, after: string, preferred?: Scope): Scope {
+  return addedPath(replica, before, after, []) ?? modifiedPath(replica, before, after, [], preferred)
 }
 
 // Search additions first across the changed branches: a move should follow the row to its destination.
@@ -53,7 +53,7 @@ function addedPath(replica: Replica, before: string, after: string, path: Scope)
   return null
 }
 
-function modifiedPath(replica: Replica, before: string, after: string, path: Scope = []): Scope {
+function modifiedPath(replica: Replica, before: string, after: string, path: Scope = [], preferred?: Scope): Scope {
   const oldCid = resolveScope(replica.store, before, path)
   const newCid = resolveScope(replica.store, after, path)
   if (!oldCid || !newCid) return path
@@ -64,7 +64,15 @@ function modifiedPath(replica: Replica, before: string, after: string, path: Sco
   }
   for (const row of newRows) {
     const child = [...path, row.id]
-    if (resolveScope(replica.store, before, child) !== resolveScope(replica.store, after, child)) return modifiedPath(replica, before, after, child)
+    if (resolveScope(replica.store, before, child) !== resolveScope(replica.store, after, child)) return modifiedPath(replica, before, after, child, preferred)
+  }
+  // Sibling reorders keep every child CID unchanged. Prefer the row the user moved.
+  if (oldRows.length === newRows.length && newRows.some((row, i) => row.id !== oldRows[i]?.id)) {
+    const selectedId = preferred?.[path.length]
+    const selectedHere = preferred?.length === path.length + 1 && path.every((id, i) => preferred[i] === id)
+    if (selectedHere && newRows.some((row) => row.id === selectedId)) return [...path, selectedId!]
+    const moved = newRows.find((row, i) => row.id !== oldRows[i]?.id)
+    if (moved) return [...path, moved.id]
   }
   return path
 }
