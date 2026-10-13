@@ -12,9 +12,14 @@
  */
 
 import type { Request, Response } from 'express'
-import { addMemberAt, addRow, addSupply, MCP_PEER_PREFIX, resolveScope, headCid, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
+import {
+  addMemberAt, addRefAt, addRow, addSupply, applyProposalAt, capabilityTarget,
+  content, headCid, memberHandlers, MCP_PEER_PREFIX, newId, proposeRefAt, put,
+  refArguments, refNodeContent, refTypeCid, refValueCid, resolveScope,
+  setMemberHandlersAt, valueContent, view, type Replica, type Scope, type TaskView
+} from '@fosforescent/shared/sync/index'
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { editTree, replicaOf, walkRows, type StoreDeps } from './store'
+import { editTree, walkRows, type StoreDeps } from './store'
 import type { PeerSyncUser } from '../sync/peerSync'
 
 export type McpServerInfo = { id: number; name: string; endpoint: string; credentials: Record<string, unknown>; tools: Array<{ name: string; description: string | null }> }
@@ -29,9 +34,12 @@ export type McpPeerDeps = StoreDeps & {
 /** The MCP members on the path to `at` (nearest first), as peer ids and server ids. */
 export function mcpMembersAbove(replica: Replica, at: Scope): Array<{ serverId: number; peerId: string }> {
   const out: Array<{ serverId: number; peerId: string }> = []
+  const seen = new Set<string>()
   for (let i = at.length; i >= 0; i--) {
     const node = view(replica, at.slice(0, i))
     for (const m of node?.members ?? []) {
+      if (seen.has(m.peerId)) continue
+      seen.add(m.peerId)
       if (!m.peerId.startsWith(MCP_PEER_PREFIX) || !m.capabilities.includes('tool') || (m.disabled ?? []).includes('tool')) continue
       const serverId = Number(m.peerId.slice(MCP_PEER_PREFIX.length))
       if (Number.isFinite(serverId) && !out.some((o) => o.serverId === serverId)) out.push({ serverId, peerId: m.peerId })
@@ -40,20 +48,78 @@ export function mcpMembersAbove(replica: Replica, at: Scope): Array<{ serverId: 
   return out
 }
 
-/** Run one open tool requirement: pick the nearest attached server that has the tool, call it, record the answer. */
+/** The nearest membership shadows the same peer's ancestor advertisements. */
+function handlersAbove(replica: Replica, at: Scope, peerId: string): string[] {
+  for (let i = at.length; i >= 0; i--) {
+    const scope = at.slice(0, i)
+    if (!view(replica, scope)?.members.some((member) => member.peerId === peerId)) continue
+    const cid = resolveScope(replica.store, headCid(replica), scope)!
+    return memberHandlers(replica.store, content(replica.store, cid), peerId)
+  }
+  return []
+}
+
+/** Create the native handler as a value behind the same ref that can hold a template. */
+function toolHandler(replica: Replica, server: McpServerInfo, tool: string): string {
+  const store = replica.store
+  const value = put(store, { data: { peerId: { content: `${MCP_PEER_PREFIX}${server.id}` }, description: { content: tool } }, children: [] })
+  return put(store, refNodeContent(store, { alias: { id: `${MCP_PEER_PREFIX}${server.id}/${tool}` } }, value, [], capabilityTarget(store, 'tool')))
+}
+
+/** Resolve the pinned handler; unavailable explicit bindings never fall back to a different peer. */
 async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyncUser, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): Promise<{ replica: Replica; text: string } | { error: string }> {
   const r = req.requirement
   if (!r || r.capability !== 'tool' || r.satisfied) return { error: 'not an open tool requirement' }
-  const attached = mcpMembersAbove(replica, at)
-  const candidates = attached.map((a) => servers.find((s) => s.id === a.serverId)).filter((s): s is McpServerInfo => !!s)
-  const server = candidates.find((s) => !r.tool || s.tools.some((t) => t.name === r.tool))
-  if (!server) return { error: attached.length ? `no attached MCP peer has a tool called “${r.tool ?? '(any)'}”` : 'no MCP peer is attached to this node or above it' }
-  const tool = r.tool ?? server.tools[0]?.name
-  if (!tool) return { error: `${server.name} advertises no tools` }
+  const store = replica.store
+  const scope = [...at, req.id]
+  const requestView = view(replica, scope)
+  if (requestView?.choices.length) return { error: 'tool requirement has unresolved choices' }
+  if (requestView?.tasks.some((row) => row.kind === 'requirement' && !row.requirement?.satisfied)) return { error: 'tool requirement has unresolved dependencies' }
+  const before = headCid(replica)
+  const request = valueContent(store, resolveScope(store, before, scope)!)
+  const argumentsOfType = refArguments(store, request, capabilityTarget(store, 'tool'))
+  if (argumentsOfType.length > 1) return { error: 'tool requirement has ambiguous handler arguments' }
+  const bindingId = argumentsOfType[0]?.id ?? newId()
+  const bindingPath = [...scope, bindingId]
+  const bindingCid = resolveScope(store, headCid(replica), bindingPath)
+  let handlerCid = bindingCid ? refValueCid(store, content(store, bindingCid)) : null
+  const attached = mcpMembersAbove(replica, scope)
+  if (!handlerCid) {
+    for (const { serverId, peerId } of attached) {
+      const server = servers.find((s) => s.id === serverId)
+      const tool = server?.tools.find((t) => !r.tool || t.name === r.tool)?.name
+      if (!server || !tool) continue
+      const advertised = handlersAbove(replica, scope, peerId)
+      handlerCid = advertised.find((h) => valueContent(store, h).data.description?.content === tool) ?? null
+      // Only primitive-only legacy memberships use the compatibility adapter.
+      if (!advertised.length) handlerCid = toolHandler(replica, server, tool)
+      if (handlerCid) break
+    }
+    if (!handlerCid) return { error: 'no attached MCP peer provides the requested tool' }
+    replica = addRefAt(replica, scope, bindingId, capabilityTarget(store, 'tool'), now)
+    const proposed = proposeRefAt(replica, bindingPath, handlerCid, replica.meta.peerId, now)
+    replica = applyProposalAt(proposed.replica, bindingPath, proposed.proposalCid, replica.meta.peerId, now)
+  }
+  if (refTypeCid(store, content(store, handlerCid)) !== capabilityTarget(store, 'tool')) return { error: 'bound handler is not a tool handler' }
+  const handler = valueContent(store, handlerCid)
+  const peerId = handler.data.peerId?.content
+  const tool = handler.data.description?.content
+  const server = servers.find((s) => `${MCP_PEER_PREFIX}${s.id}` === peerId)
+  if (!server || !attached.some((a) => a.peerId === peerId) || !tool || !server.tools.some((t) => t.name === tool) || (r.tool && tool !== r.tool)) return { error: 'bound MCP handler is unavailable or does not match the requirement' }
+  // Persist the binding before calling an external handler, including on failure.
+  const returns = refArguments(store, request, store.primitive.documentField.getId())
+  if (returns.length > 1) return { error: 'tool requirement has ambiguous return arguments' }
+  const returnId = returns[0]?.id ?? newId()
+  replica = addRefAt(replica, scope, returnId, store.primitive.documentField.getId(), now)
+  if (headCid(replica) !== before) await deps.saveStore(user, replica.store)
   let text: string
   try { text = await deps.callTool(server, tool, req.title) } catch (error) { return { error: `${server.name}/${tool}: ${error instanceof Error ? error.message : String(error)}` } }
-  let next = addRow(replica, [...at, req.id], 'note', text.slice(0, 20_000) || '(empty result)', now)
-  next = addSupply(next, at, req.id, { capability: 'tool', by: `${MCP_PEER_PREFIX}${server.id}` }, now)
+  const resultId = newId()
+  let next = addRow(replica, scope, 'note', text.slice(0, 20_000) || '(empty result)', now, { id: resultId })
+  const resultCid = resolveScope(store, headCid(next), [...scope, resultId])!
+  const returned = proposeRefAt(next, [...scope, returnId], resultCid, peerId!, now)
+  next = applyProposalAt(returned.replica, [...scope, returnId], returned.proposalCid, replica.meta.peerId, now)
+  next = addSupply(next, at, req.id, { capability: 'tool', by: peerId!, ref: resultId }, now)
   return { replica: next, text }
 }
 
@@ -77,7 +143,10 @@ export function createMcpPeerHandlers(deps: McpPeerDeps) {
       if (!server) return fail(res, 404, 'no such MCP server on this account')
       const done = await editTree(deps, userId, async (replica) => {
         if (!resolveScope(replica.store, headCid(replica), scope)) return { replica: null, result: false }
-        return { replica: addMemberAt(replica, scope, `${MCP_PEER_PREFIX}${server.id}`, server.name, ['tool', 'read', 'edit'], now()), result: true }
+        const peerId = `${MCP_PEER_PREFIX}${server.id}`
+        let next = addMemberAt(replica, scope, peerId, server.name, ['tool', 'read', 'edit'], now())
+        next = setMemberHandlersAt(next, scope, peerId, 'tool', server.tools.map((tool) => toolHandler(next, server, tool.name)), now())
+        return { replica: next, result: true }
       })
       if (!done) return fail(res, 404, 'node not found')
       return res.json({ ok: true, peerId: `${MCP_PEER_PREFIX}${server.id}`, tools: server.tools.map((t) => t.name) })
@@ -102,21 +171,21 @@ export function createMcpPeerHandlers(deps: McpPeerDeps) {
     },
 
     /** Listener: every open tool requirement under an attached node, run in turn. Returns how many ran. */
-    async runOpenToolRequests(user: PeerSyncUser, store: FosStore): Promise<number> {
+    async runOpenToolRequests(user: PeerSyncUser, _store: FosStore): Promise<number> {
       const servers = await deps.servers(user.id)
       if (!servers.length) return 0
-      let replica = replicaOf(store, user.username)
-      let ran = 0
-      for (const { at, row } of walkRows(replica)) {
-        if (row.kind !== 'requirement' || row.requirement?.capability !== 'tool' || row.requirement.satisfied) continue
-        if (!mcpMembersAbove(replica, at).length) continue
-        const result = await runRequirement(deps, replica, user, at, row, servers, now())
-        if ('error' in result) { console.warn(`[mcp] ${user.username}: ${result.error}`); continue }
-        replica = result.replica
-        ran++
-      }
-      if (ran) await deps.saveStore(user, replica.store)
-      return ran
+      return await editTree(deps, user.id, async (replica, currentUser) => {
+        let ran = 0
+        for (const { at, row } of walkRows(replica)) {
+          if (row.kind !== 'requirement' || row.requirement?.capability !== 'tool' || row.requirement.satisfied) continue
+          if (!mcpMembersAbove(replica, [...at, row.id]).length) continue
+          const result = await runRequirement(deps, replica, currentUser, at, row, servers, now())
+          if ('error' in result) { console.warn(`[mcp] ${user.username}: ${result.error}`); continue }
+          replica = result.replica
+          ran++
+        }
+        return { replica, result: ran }
+      }) ?? 0
     }
   }
 }

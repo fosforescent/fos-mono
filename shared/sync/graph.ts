@@ -70,9 +70,9 @@ export function aliasIdOf(value: FosNodeContent): string | null {
 // ---------------------------------------------------------------------------
 // Mutable references (ALIAS nodes)
 
-/** A node with a TARGETPOINTER edge: the root alias, a link row's identity node, or a reference row. */
+/** A bound ref has TARGETPOINTER; an unbound typed ref has alias + INSTRUCTIONPOINTER. */
 export function isRefNode(store: FosStore, value: FosNodeContent): boolean {
-  return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
+  return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId() || (!!value.data.alias && i === store.primitive.instructionPointerConstructor.getId()))
 }
 
 /** A reference row: a ref node standing for another row (data.ref.id); its own value is not followed. */
@@ -106,11 +106,27 @@ export function valueCidOf(store: FosStore, cid: string): string {
   return target && store.table.has(target) ? target : cid
 }
 
+/** Version against which a binding was offered. Adding offers does not invalidate other offers. */
+export function refBindingBaseCid(store: FosStore, value: FosNodeContent): string {
+  return put(store, { ...value, children: value.children.filter((edge) => !isProposalEdge(store, edge)) })
+}
+
 /** Build a ref node for `valueCid` with the given identity and bookkeeping edges. */
-export function refNodeContent(store: FosStore, data: FosNodeContent['data'], valueCid: string, bookkeeping: FosPathElem[] = [], typeCid: string | null = null): FosNodeContent {
-  const children: FosPathElem[] = [[store.primitive.targetPointerConstructor.getId(), valueCid]]
+export function refNodeContent(store: FosStore, data: FosNodeContent['data'], valueCid: string | null, bookkeeping: FosPathElem[] = [], typeCid: string | null = null): FosNodeContent {
+  const children: FosPathElem[] = valueCid ? [[store.primitive.targetPointerConstructor.getId(), valueCid]] : []
   if (typeCid) children.push([store.primitive.instructionPointerConstructor.getId(), typeCid])
   return { data, children: [...children, ...bookkeeping] }
+}
+
+/** Locally owned argument refs; the field is their type, their alias is the instance identity. */
+export function refArguments(store: FosStore, value: FosNodeContent, typeCid: string): Array<{ id: string; cid: string; targetCid: string | null }> {
+  return value.children.flatMap((edge) => {
+    if (edge[0] !== typeCid) return []
+    const cid = identityCid(store, edge)
+    const ref = content(store, cid)
+    const id = aliasIdOf(ref)
+    return id && refTypeCid(store, ref) === typeCid ? [{ id, cid, targetCid: refValueCid(store, ref) }] : []
+  })
 }
 
 export function newId(): string {
@@ -684,7 +700,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   const created = value.data.todo?.time ?? value.data.updated?.time ?? 0
   const sub = countNode(store, nodeCid)
   const view: TaskView = {
-    id: aliasIdOf(value) ?? nodeCid,
+    id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
     title: value.data.description?.content ?? '',
     kind,
     checkable: kind === 'task',
@@ -820,13 +836,6 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
       }
     }
   })
-}
-
-/** Requirement rows directly under a template (or any row), as data to copy under a task that executes it. */
-export function templateRequirements(store: FosStore, templateCid: string): Array<{ text: string; requirement: NonNullable<FosDataContent['requirement']> }> {
-  return childRows(store, templateCid, 'requirement')
-    .filter(({ value }) => !!value.data.requirement)
-    .map(({ value }) => ({ text: value.data.description?.content ?? '', requirement: value.data.requirement as NonNullable<FosDataContent['requirement']> }))
 }
 
 /** The first template row named `name` (case-insensitive) below `rootCid`, depth-first. */
@@ -1154,7 +1163,8 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
 }
 
 function capabilityOfTarget(store: FosStore, target: string): Capability | null {
-  return CAPABILITIES.find((c) => target === capabilityTarget(store, c)) ?? null
+  const type = refTypeCid(store, content(store, target)) ?? target
+  return CAPABILITIES.find((c) => type === capabilityTarget(store, c)) ?? null
 }
 
 /** The capability a [CAPABILITY, x] edge grants (the `to` direction), or null for any other edge. */
@@ -1193,7 +1203,7 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
     const ref = content(store, edge[1])
     const peerId = ref.data.peerId?.content
     if (!peerId) continue
-    const caps = ref.children.map((e) => capabilityOf(store, e)).filter((c): c is Capability => c !== null)
+    const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c): c is Capability => c !== null))]
     const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => (CAPABILITIES as string[]).includes(c) && caps.includes(c as Capability))
     const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c): c is Capability => c !== null)
     out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...(off.length ? { disabled: off } : {}), ...(accepts.length ? { accepts } : {}) })
@@ -1201,9 +1211,22 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
   return out
 }
 
+/** Handler advertisements are ordinary typed refs on the member's CAPABILITY edges. */
+export function memberHandlers(store: FosStore, value: FosNodeContent, peerId: string): string[] {
+  const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)
+  return member ? content(store, member[1]).children.filter((e) => e[0] === store.primitive.capabilityNode.getId() && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : []
+}
+
 /** Add or replace the member entry for `peerId`. */
 export function withMember(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
-  const refCid = put(store, memberRefContent(store, peerId, name, capabilities, disabled, accepts))
+  const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts)
+  const handlers = memberHandlers(store, value, peerId)
+  next.children = next.children.flatMap((edge) => {
+    const capability = capabilityOf(store, edge)
+    const matching = capability ? handlers.filter((cid) => capabilityOfTarget(store, cid) === capability) : []
+    return matching.length ? matching.map((cid): FosPathElem => [edge[0], cid]) : [edge]
+  })
+  const refCid = put(store, next)
   const children = value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId))
   return { ...value, children: [...children, [store.primitive.memberField.getId(), refCid]] }
 }
@@ -1376,17 +1399,52 @@ export function findRowByAlias(store: FosStore, rootCid: string, aliasId: string
   return null
 }
 
-/** Deep copy of a row's node with fresh alias ids everywhere (peers, members, proposals and history are not copied). */
-export function copyRowContent(store: FosStore, nodeCid: string, now: number, freshId: () => string): string {
-  const value = stripLink(store, content(store, nodeCid))
-  const children: FosPathElem[] = []
-  for (const edge of value.children) {
+/** Copy owned rows and argument refs through one path. Internal aliases are remapped;
+ * external targets stay pinned. History, proposals and membership are not inherited. */
+export function copyRowContent(store: FosStore, nodeCid: string, now: number, freshId: () => string, options: { instantiate?: boolean; rootId?: string } = {}): string {
+  const { instantiate = false } = options
+  const ids = new Map<string, string>()
+  const owned = new Set<string>()
+  const childEdges = (value: FosNodeContent) => value.children.filter((edge) => {
     const kind = rowKindOf(store, edge)
-    if (!kind) continue // choices and bookkeeping are not copied
-    const copied = copyRowContent(store, identityCid(store, edge), now, freshId)
-    children.push(isPartitionEdge(store, edge) ? rowEdge(store, 'plain', copied) : withIdentity(store, edge, copied))
+    if (kind) return !(instantiate && kind === 'supply')
+    if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
+    return isRefNode(store, content(store, identityCid(store, edge)))
+  })
+  const collect = (cid: string) => {
+    if (owned.has(cid)) return
+    owned.add(cid)
+    const identity = content(store, cid)
+    const id = aliasIdOf(identity)
+    if (id && !ids.has(id)) ids.set(id, cid === nodeCid && options.rootId ? options.rootId : freshId())
+    // Typed refs are slots, not ownership of their bound value.
+    if (refTypeCid(store, identity)) return
+    for (const edge of childEdges(stripLink(store, identity))) collect(identityCid(store, edge))
   }
-  return put(store, { ...value, data: { ...value.data, alias: { id: freshId() }, updated: { time: now } }, children })
+  collect(nodeCid)
+  const copied = new Map<string, string>()
+  const copy = (cid: string): string => {
+    const cached = copied.get(cid)
+    if (cached) return cached
+    const identity = content(store, cid)
+    const type = refTypeCid(store, identity)
+    const value = type ? identity : stripLink(store, identity)
+    const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? '') ?? freshId() }, updated: { time: now } }
+    if (instantiate && data.todo) data.todo = { ...data.todo, completed: false, time: now }
+    if (instantiate && data.query) data.query = { market: data.query.market }
+    if (data.ref && !data.ref.owner) data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id }
+    if (data.supply?.ref) data.supply = { ...data.supply, ref: ids.get(data.supply.ref) ?? data.supply.ref }
+    if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource }
+    if (data.template) data.template = { ...data.template, id: ids.get(data.template.id) ?? data.template.id }
+    // Typed arguments keep defaults, including ref-to-ref defaults. They get a fresh identity.
+    const target = refValueCid(store, identity)
+    const children = type ? [] : childEdges(value).map((edge) => withIdentity(store, edge, copy(identityCid(store, edge))))
+    if (!type && isHandle(identity) && target) children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target])
+    const result = put(store, type ? refNodeContent(store, data, target && owned.has(target) ? copy(target) : target, [], type) : { data, children })
+    copied.set(cid, result)
+    return result
+  }
+  return copy(nodeCid)
 }
 
 export type MovePosition = { relativeTo: string; position: 'above' | 'below' } | { into: string; index?: number }

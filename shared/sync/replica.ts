@@ -29,7 +29,17 @@ import {
   findEdge,
   findRowByAlias,
   findTemplate,
-  templateRequirements,
+  refNodeContent,
+  refTypeCid,
+  refBindingBaseCid,
+  isRefNode,
+  proposalContent,
+  withProposal,
+  readProposals,
+  withPrev,
+  bookkeepingOf,
+  isMemberEdge,
+  capabilityOf,
   identityCid,
   isPartitionEdge,
   isRowEdge,
@@ -305,8 +315,8 @@ export function findTemplateByName(replica: Replica, name: string): { path: Scop
 }
 
 /**
- * Make the task `taskId` (under `at`) an execution of the template `templateId`: the template's requirement
- * rows are copied under the task (fresh ids, unfilled) and the task remembers the template.
+ * Instantiate a template's owned subtree with fresh identities, reset completion and no supplies.
+ * Copy and instantiation share the same traversal and internal-reference remapping.
  */
 export function instantiateTemplate(replica: Replica, at: Scope, taskId: string, templateId: string, now: number): Replica {
   const template = resolveRef(replica, templateId)
@@ -314,10 +324,12 @@ export function instantiateTemplate(replica: Replica, at: Scope, taskId: string,
   const templateCid = resolveScope(replica.store, headCid(replica), [...template.path, templateId])
   const taskCid = resolveScope(replica.store, headCid(replica), [...at, taskId])
   if (!templateCid || !taskCid || !valueContent(replica.store, taskCid).data.todo) return replica
-  const requirements = templateRequirements(replica.store, templateCid)
-  let r = updateTask(replica, at, taskId, now, (task) => (task.data.todo ? { ...task, data: { ...task.data, template: { id: templateId, name: template.row.title } } } : null))
-  for (const req of requirements) r = addRow(r, [...at, taskId], 'requirement', req.text, now, { requirement: { ...req.requirement } })
-  return r
+  const copied = content(replica.store, copyRowContent(replica.store, templateCid, now, newId, { instantiate: true, rootId: taskId }))
+  return updateTask(replica, at, taskId, now, (task) => ({
+    ...task,
+    data: { ...task.data, template: { id: templateId, name: template.row.title } },
+    children: [...task.children, ...copied.children]
+  }))
 }
 
 /** List (or delist) a link row on the market: a flag on its ref node, no content version. */
@@ -456,6 +468,38 @@ export function removeMemberAt(replica: Replica, at: Scope, peerId: string, now:
   return editNode(replica, at, now, (node) => withoutMember(replica.store, node, peerId))
 }
 
+/** Replace a member's advertisements for one capability, retaining its other grants. */
+export function setMemberHandlersAt(replica: Replica, at: Scope, peerId: string, capability: Capability, handlers: string[], now: number): Replica {
+  return editNode(replica, at, now, (node) => ({ ...node, children: node.children.map((edge) => {
+    if (!isMemberEdge(replica.store, edge)) return edge
+    const member = content(replica.store, edge[1])
+    if (member.data.peerId?.content !== peerId) return edge
+    const children = handlers.map((cid): [string, string] => [replica.store.primitive.capabilityNode.getId(), cid])
+    children.push(...member.children.filter((e) => capabilityOf(replica.store, e) !== capability))
+    return [edge[0], put(replica.store, { ...member, children })]
+  }) }))
+}
+
+/** Add a typed mutable argument using the existing ref shape. No separate binding record. */
+export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: string, now: number, defaultCid: string | null = null): Replica {
+  return edit(replica, at, now, (value) => {
+    if (findEdge(replica.store, value, `a:${id}`)) return value
+    const ref = put(replica.store, refNodeContent(replica.store, { alias: { id }, updated: { time: now } }, defaultCid, [], typeCid))
+    return { ...value, children: [...value.children, [typeCid, ref]] }
+  })
+}
+
+/** Submit a value (which can itself be a ref) through the ordinary proposal format. */
+export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, peerId: string, now: number): { replica: Replica; proposalCid: string } {
+  const store = replica.store
+  const cid = resolveScope(store, headCid(replica), at)
+  if (!cid || !store.table.has(targetCid)) throw new Error('ref or proposed value not found')
+  const ref = content(store, cid)
+  if (!isRefNode(store, ref) || !refTypeCid(store, ref)) throw new Error('expected a typed ref')
+  const proposalCid = put(store, proposalContent(store, peerId, 'binding', targetCid, refBindingBaseCid(store, ref), now))
+  return { replica: editNode(replica, at, now, (node) => withProposal(store, node, peerId, proposalCid, 'binding')), proposalCid }
+}
+
 /**
  * Apply a proposal at the link node `at`: three-way merge its content onto the
  * main content (fast-forward when it was rebased onto the current main), record
@@ -465,8 +509,14 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
   const store = replica.store
   return editNode(replica, at, now, (value) => {
     const proposal = readProposal(store, proposalCid)
-    if (!proposal) return value
+    if (!proposal || proposal.status !== 'open' || !readProposals(store, value).some((p) => p.cid === proposalCid)) return value
     const main = putStripped(store, value)
+    // A typed slot accepts a value atomically; merging two handlers would invent a handler.
+    if (refTypeCid(store, value)) {
+      if (proposal.baseCid !== refBindingBaseCid(store, value)) return value
+      const next = refNodeContent(store, { ...value.data, updated: { time: now } }, proposal.contentCid, bookkeepingOf(store, value), refTypeCid(store, value))
+      return removeProposalByCid(store, withPrev(store, next, put(store, value)), proposalCid)
+    }
     const mergedCid = proposal.baseCid === main
       ? proposal.contentCid
       : mergeNodes(store, proposal.baseCid, main, proposal.contentCid, { ours: approverPeerId, theirs: proposal.peerId }).cid
