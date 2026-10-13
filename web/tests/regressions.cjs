@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
-const { App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage } = require(path.join(dir, 'app.cjs'))
+const { App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const reply = (data, status = 200) => ({ ok: status < 400, status, statusText: String(status), json: async () => data })
 const apps = []
@@ -190,6 +190,106 @@ async function main() {
   await tick()
   assert(view(a.state.replica, []).tasks.some((row) => row.id === keyboardRow))
   assert.equal(document.activeElement.value.includes('Keyboard undo'), true, 'redo focuses restored row')
+  // Accounts and offline sessions never share an implicit outbox.
+  const accountStores = { alice: createReplica('alice-server'), bob: createReplica('bob-server') }
+  accountStores.alice = addTask(accountStores.alice, [], 'Alice server data', 1, 'alice-root')
+  accountStores.bob = addTask(accountStores.bob, [], 'Bob server data', 1, 'bob-root')
+  let deferLogin = null
+  globalThis.fetch = async (url, init) => {
+    if (url.endsWith('/auth/login')) {
+      const { username } = JSON.parse(init.body)
+      if (username === 'delayed') return new Promise(resolve => { deferLogin = () => resolve(reply({ access_token: 'alice' })) })
+      return reply({ access_token: username })
+    }
+    const username = init.headers.Authorization.replace('Bearer ', '')
+    if (url.includes('/attachment')) return reply({ scope: [], scopeNames: [] })
+    const result = serveSync(accountStores[username].store, JSON.parse(init.body), `${username}-server`)
+    return 'error' in result ? reply(result, 400) : reply(result.response)
+  }
+  const isolated = app()
+  isolated.addRowAt([], 'task', 'Unclaimed offline data', { id: 'unclaimed' })
+  const offlineId = isolated.activeDataSession().id
+  await isolated.login('alice', 'test')
+  const aliceId = isolated.activeDataSession().id
+  assert.notEqual(aliceId, offlineId)
+  assert(!view(accountStores.alice, []).tasks.some(row => row.id === 'unclaimed'))
+  isolated.addRowAt([], 'task', 'Alice local data', { id: 'alice-local' }); await isolated.syncNow('test')
+  isolated.logout()
+  assert.equal(isolated.currentView().tasks.length, 0, 'sign-out starts fresh offline content')
+  assert.notEqual(isolated.activeDataSession().id, aliceId)
+  isolated.addRowAt([], 'task', 'Fresh scratch data', { id: 'scratch' })
+  await isolated.login('bob', 'test')
+  assert(!isolated.currentView().tasks.some(row => ['alice-root', 'alice-local', 'scratch'].includes(row.id)))
+  assert(!view(accountStores.bob, []).tasks.some(row => row.id === 'alice-local'))
+  const bobId = isolated.activeDataSession().id
+  isolated.logout(); await isolated.login('alice', 'test')
+  assert.equal(isolated.activeDataSession().id, aliceId, 'returning to Alice restores her data session')
+  assert(isolated.currentView().tasks.some(row => row.id === 'alice-local'))
+  const alicePeer = isolated.state.replica.meta.peerId
+  isolated.disconnect()
+  assert.equal(isolated.state.replica.meta.peerId, alicePeer)
+  assert.equal(isolated.activeDataSession().id, aliceId)
+  isolated.addRowAt([], 'task', 'Alice offline edit', { id: 'alice-offline' })
+  assert.equal(isolated.canMergeOffline(), false, 'owned data cannot be imported into another account')
+  await isolated.login('bob', 'test', false, true)
+  assert.equal(isolated.activeDataSession().id, bobId)
+  assert(!view(accountStores.bob, []).tasks.some(row => row.id === 'alice-offline'))
+  isolated.switchDataSession(aliceId)
+  assert(isolated.currentView().tasks.some(row => row.id === 'alice-offline'))
+  await isolated.login('alice', 'test')
+  assert(view(accountStores.alice, []).tasks.some(row => row.id === 'alice-offline'))
+  isolated.logout()
+  isolated.addRowAt([], 'task', 'Deliberate offline import', { id: 'explicit-import' })
+  await isolated.login('bob', 'test', false, true)
+  assert(view(accountStores.bob, []).tasks.some(row => row.id === 'explicit-import'))
+  isolated.set({ replica: { ...isolated.state.replica, meta: { ...isolated.state.replica.meta, scope: ['attached-subtree'], scopeNames: ['Attached subtree'] } } })
+  assert(isolated.canResetHome(), 'scoped user replicas expose a reset')
+  await isolated.resetAccount()
+  assert.equal(view(accountStores.bob, []).tasks.length, 0, 'whole-account reset clears the server root from a scoped device')
+  assert.deepEqual(isolated.state.replica.meta.scope, [])
+  assert(isolated.canUndo)
+  isolated.undo(); await isolated.syncNow('test')
+  assert(view(accountStores.bob, []).tasks.some(row => row.id === 'bob-root'), 'account reset is undoable after sync')
+  const normalFetch = globalThis.fetch
+  let holdNextPush = true, releasePush = null
+  globalThis.fetch = async (url, init) => {
+    const response = await normalFetch(url, init)
+    if (holdNextPush && url.endsWith('/peer-sync')) { holdNextPush = false; return new Promise(resolve => { releasePush = () => resolve(response) }) }
+    return response
+  }
+  isolated.addRowAt([], 'task', 'Old pending sync', { id: 'old-sync' })
+  const oldPush = isolated.syncNow('held push'); await tick()
+  assert(releasePush)
+  await isolated.resetAccount()
+  releasePush(); await oldPush
+  assert.equal(isolated.currentView().tasks.length, 0, 'a pre-reset sync response cannot restore stale data')
+  assert.equal(view(accountStores.bob, []).tasks.length, 0)
+  globalThis.fetch = normalFetch
+  isolated.logout()
+  const delayed = isolated.login('delayed', 'test'); await tick()
+  assert(deferLogin)
+  isolated.logout(); const newOffline = isolated.activeDataSession().id
+  deferLogin(); await delayed
+  assert.equal(isolated.state.session, null)
+  assert.equal(isolated.activeDataSession().id, newOffline, 'late login responses cannot reconnect after sign-out')
+  console.log('PASS: account namespace isolation, fresh sign-out, disconnect preserving data, cached return, explicit import, scoped/whole reset with undo and late login cancellation')
+
+  const persistedDom = new JSDOM('', { url: 'https://sessions.test' })
+  const persistedStorage = persistedDom.window.localStorage
+  const aliceStorage = createLocalStorageAdapter(persistedStorage)
+  aliceStorage.selectAccount({ baseUrl: 'http://localhost', username: 'alice', kind: 'user' })
+  aliceStorage.saveReplica(serializeReplica(addTask(createReplica(), [], 'Alice persisted', 1, 'stored-alice')))
+  const bobStorage = createLocalStorageAdapter(persistedStorage)
+  bobStorage.selectAccount({ baseUrl: 'http://localhost', username: 'bob', kind: 'user' })
+  bobStorage.saveReplica(serializeReplica(addTask(createReplica(), [], 'Bob persisted', 1, 'stored-bob')))
+  aliceStorage.savePrefs({ view: ['alice-view'] })
+  const reloaded = createLocalStorageAdapter(persistedStorage)
+  assert.equal(view(loadReplica(reloaded.loadReplica()), []).tasks[0].id, 'stored-bob')
+  reloaded.selectAccount({ baseUrl: 'http://localhost', username: 'alice', kind: 'user' })
+  assert.equal(view(loadReplica(reloaded.loadReplica()), []).tasks[0].id, 'stored-alice')
+  assert.deepEqual(reloaded.loadPrefs().view, ['alice-view'], 'another tab changing active session does not redirect writes')
+  persistedDom.window.close()
+
   // Real BroadcastChannels with separate replica namespaces; browser tab behavior is checked separately.
   window.BroadcastChannel = globalThis.BroadcastChannel
   const host = app(); host.enableVirtualPeers(null)

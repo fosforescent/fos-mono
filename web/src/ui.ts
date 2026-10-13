@@ -194,7 +194,7 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
     items.push(toRoot)
   }
   if (session) item(`Sign out (${session.username})`, () => app.logout())
-  if (session) item('Detach this device from its node', () => void app.detach(), 'danger')
+  if (session && !state.virtual) item('Remove this device’s server attachment…', () => { if (window.confirm('Remove this device’s assigned sync location? This does not delete account content. You will be signed out into a fresh offline session.')) void app.detach() }, 'danger')
   const name = document.createElement('div')
   name.className = 'menu-meta'
   name.append(span('muted', `This device: ${state.deviceName}`), button('link small', 'rename', () => {
@@ -1150,6 +1150,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     const title = span('title peer-title', '')
     title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp ? p.name : peerLabel(p.id, state)))
     if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
+    if (p.isAccount && p.policy && state.session && !state.virtual) title.append(button('link small', 'Disconnect (keep data)', () => app.disconnect()))
     if (p.isAccount && p.points !== null && p.points !== undefined) { const pts = span('alloc-tag points', `✦ ${p.points} fos points`); pts.title = 'The account\'s balance: the default pool for "ff" allocations'; title.append(pts) }
     const connection = div('peer-connection', '')
     if (p.integration) {
@@ -1245,10 +1246,25 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     rows.push(li)
   }
   if (app.canResetHome()) {
+    const scoped = state.replica.meta.scope.length > 0
     const li = rowShell('reset-data-row')
-    li.append(button('danger small', 'Reset Home content…', () => {
-      if (window.confirm('Clear all Home rows and choices? This change syncs to connected devices. Your account, peer connections and version history remain. You can undo this during this session.')) app.resetHome()
+    li.append(button('danger small', scoped ? 'Reset attached node content…' : 'Reset Home content…', () => {
+      if (window.confirm('Clear all rows and choices in this device’s attached node? This change syncs to connected devices. Account, peer connections and version history remain. You can undo this during this session.')) app.resetHome()
     }))
+    if (state.session?.kind === 'user') li.append(button('danger small', 'Reset entire account content…', () => {
+      if (window.confirm('Clear ALL rows and choices in this account, including outside this device’s attached subtree? This syncs to other devices. Account and peer connections remain. You can undo this during this session.')) void app.resetAccount()
+    }))
+    rows.push(li)
+  }
+  const sessions = app.dataSessions()
+  if (sessions.length) {
+    const li = rowShell('data-sessions-row')
+    const label = document.createElement('label'); label.textContent = 'Saved data session: '
+    const select = document.createElement('select'); select.setAttribute('aria-label', 'Saved data session')
+    for (const session of sessions) select.append(new Option(`${session.owner ? session.owner.username : 'Offline'} · ${session.id.slice(0, 8)}`, session.id))
+    select.value = app.activeDataSession()?.id ?? ''
+    select.addEventListener('change', () => app.switchDataSession(select.value))
+    label.append(select); li.append(label, div('muted', 'Switching keeps each session’s data separate and disconnects sync. Sign in to reconnect its account.'))
     rows.push(li)
   }
   return rows
@@ -1523,7 +1539,7 @@ function renderDevice(body: HTMLElement, state: AppState, app: App): void {
 
 function renderConnect(body: HTMLElement, state: AppState, app: App): void {
   if (state.device) body.append(div('pending-box', `Sign in to approve the sign-in request from “${state.device.name ?? 'a device'}” (code ${state.device.code}).`))
-  body.append(div('muted', 'You are working locally. Connect to sync with your account or another device; your local tasks merge in.'))
+  body.append(div('muted', state.virtual ? 'Sign-in is independent of this virtual peer’s document connection.' : 'Sign in to open that account’s separate data session. Offline data stays here unless you choose to merge it.'))
 
   // --- sign in
   body.append(h4('Sign in'))
@@ -1534,10 +1550,16 @@ function renderConnect(body: HTMLElement, state: AppState, app: App): void {
     <input name="password" type="password" placeholder="password" autocomplete="current-password" required />
     <button type="submit" class="primary">Sign in</button>
   `
+  if (app.canMergeOffline()) {
+    const label = document.createElement('label')
+    const merge = document.createElement('input'); merge.type = 'checkbox'; merge.name = 'mergeOffline'
+    label.append(merge, document.createTextNode(' Merge this offline session’s data into the account'))
+    form.append(label)
+  }
   form.addEventListener('submit', (event) => {
     event.preventDefault()
     const data = new FormData(form)
-    void app.login(String(data.get('username') ?? ''), String(data.get('password') ?? ''))
+    void app.login(String(data.get('username') ?? ''), String(data.get('password') ?? ''), false, data.get('mergeOffline') === 'on')
   })
   body.append(form, div('error', state.loginError ?? '', 'error'))
   body.append(legalLinks('By signing in you agree to the'))

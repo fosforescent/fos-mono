@@ -11,7 +11,16 @@ const REPLICA_KEY = 'fos.replica.v1'
 const PREFS_KEY = 'fos.prefs.v1'
 const SESSION_KEY = 'fos.session.v1'
 
+export type DataOwner = { baseUrl: string; username: string; kind: 'user' | 'peer' }
+export type DataSession = { id: string; owner: DataOwner | null; legacy?: boolean }
+export function dataOwner(session: DataOwner): DataOwner { return { baseUrl: session.baseUrl.replace(/\/$/, ''), username: session.username, kind: session.kind } }
+
 export interface ReplicaStorage {
+  dataSession?(): DataSession
+  selectAccount?(owner: DataOwner): boolean
+  startOffline?(): void
+  listDataSessions?(): DataSession[]
+  selectDataSession?(id: string): void
   loadReplica(): unknown
   saveReplica(value: unknown): void
   loadPrefs(): unknown
@@ -52,34 +61,57 @@ export function createLocalStorageAdapter(storage: Storage): ReplicaStorage {
     storage.removeItem('web-mini.token')
     storage.removeItem('web-mini.jwt')
   } catch { /* restricted storage is handled by the adapter */ }
+  return routedStorage((key) => readJson(storage, key), (key, value) => writeJson(storage, key, value), (key) => storage.removeItem(key))
+}
+
+/** Shared routing for browser persistence and the in-memory fallback. */
+function routedStorage(read: (key: string) => unknown, write: (key: string, value: unknown) => void, remove: (key: string) => void): ReplicaStorage {
+  const activeKey = 'fos.data-session.v1'
+  const indexKey = 'fos.data-sessions.v1'
+  const ownerKey = (owner: DataOwner) => JSON.stringify(dataOwner(owner))
+  const valid = (value: unknown): value is DataSession => {
+    const session = value as DataSession | null
+    return !!session && typeof session.id === 'string' && (session.owner === null || (!!session.owner && typeof session.owner.username === 'string' && typeof session.owner.baseUrl === 'string'))
+  }
+  const index = () => { const value = read(indexKey); return Array.isArray(value) ? value.filter(valid) : [] }
+  const prefix = (id: string) => `fos.data.${id}.`
+  let active = read(activeKey) as DataSession | null
+  const activate = (next: DataSession) => {
+    active = next
+    const sessions = index()
+    write(indexKey, [...sessions.filter((s) => s.id !== next.id), next])
+    write(activeKey, next)
+  }
+  if (!valid(active)) {
+    const legacy = read(SESSION_KEY) as Partial<DataOwner> | null
+    const owner = legacy && typeof legacy.username === 'string' && typeof legacy.baseUrl === 'string' ? dataOwner({ ...legacy, kind: legacy.kind === 'peer' ? 'peer' : 'user' } as DataOwner) : null
+    // Keep the old slot in place: copying a large replica can exceed localStorage quota.
+    const legacySlot = [REPLICA_KEY, PREFS_KEY, SESSION_KEY].some((key) => read(key) !== null)
+    activate({ id: crypto.randomUUID(), owner, ...(legacySlot ? { legacy: true } : {}) })
+  }
+  const key = (name: string) => active!.legacy ? name : prefix(active!.id) + name
   return {
-    loadReplica: () => readJson(storage, REPLICA_KEY),
-    saveReplica: (value) => writeJson(storage, REPLICA_KEY, value),
-    loadPrefs: () => readJson(storage, PREFS_KEY),
-    savePrefs: (value) => writeJson(storage, PREFS_KEY, value),
-    loadSession: () => readJson(storage, SESSION_KEY),
-    saveSession: (value) => {
-      if (value === null) {
-        try { storage.removeItem(SESSION_KEY) } catch { /* ignore */ }
-      } else {
-        writeJson(storage, SESSION_KEY, value)
-      }
-    }
+    dataSession: () => ({ ...active! }),
+    selectAccount: (owner) => {
+      owner = dataOwner(owner)
+      if (active!.owner && ownerKey(active!.owner) === ownerKey(owner)) return false
+      const existing = index().find((session) => session.owner && ownerKey(session.owner) === ownerKey(owner))
+      activate(existing ?? { id: crypto.randomUUID(), owner })
+      return true
+    },
+    startOffline: () => activate({ id: crypto.randomUUID(), owner: null }),
+    listDataSessions: () => index(),
+    selectDataSession: (id) => { const session = index().find((s) => s.id === id); if (session) activate(session) },
+    loadReplica: () => read(key(REPLICA_KEY)), saveReplica: (value) => write(key(REPLICA_KEY), value),
+    loadPrefs: () => read(key(PREFS_KEY)), savePrefs: (value) => write(key(PREFS_KEY), value),
+    loadSession: () => read(key(SESSION_KEY)),
+    saveSession: (value) => { if (value === null) remove(key(SESSION_KEY)); else write(key(SESSION_KEY), value) }
   }
 }
 
 export function createMemoryStorage(): ReplicaStorage {
-  let replica: unknown = null
-  let prefs: unknown = null
-  let session: unknown = null
-  return {
-    loadReplica: () => replica,
-    saveReplica: (value) => { replica = value },
-    loadPrefs: () => prefs,
-    savePrefs: (value) => { prefs = value },
-    loadSession: () => session,
-    saveSession: (value) => { session = value }
-  }
+  const values = new Map<string, unknown>()
+  return routedStorage((key) => values.get(key) ?? null, (key, value) => { values.set(key, value) }, (key) => { values.delete(key) })
 }
 
 /** localStorage when usable (it throws in some private/webview contexts), memory otherwise. */

@@ -322,3 +322,8 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 
 .virtual-peer-form { display: flex; flex-direction: column; gap: .75rem; }
 .virtual-peer-form input[type=checkbox] { width: auto; }
+
+.reset-data-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.data-sessions-row { display: block; padding: .75rem; }
+.data-sessions-row select { max-width: 100%; }
+.login label input[type=checkbox] { width: auto; }

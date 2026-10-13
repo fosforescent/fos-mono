@@ -20,6 +20,11 @@ import { EditHistory } from './history'
 import {
   addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
+  createReplica,
+  importNodes,
+  reachableNodes,
+  commitRoot,
+  mergeNodes,
   addRow,
   addMemberAt,
   addSupply,
@@ -259,6 +264,7 @@ export class App {
   private virtualPeers: VirtualPeers | null = null
   private virtualCapabilities: Capability[] = []
   private virtualWelcomed = false
+  private authGeneration = 0
   private history = new EditHistory()
   private observedHead: string
   private config: AppConfig
@@ -430,11 +436,14 @@ export class App {
 
   /** Reconnect with a session stored by a previous run. */
   private async resume(session: Session): Promise<void> {
+    const generation = this.authGeneration
     this.set({ connection: 'connecting' })
     try {
-      await this.afterConnect(session)
+      await this.afterConnect(session, false, generation)
+      if (generation !== this.authGeneration) return
       this.pendingSession = null
     } catch (error) {
+      if (generation !== this.authGeneration) return
       if (error instanceof ApiError && error.status === 401) {
         this.pendingSession = null
         this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', notice: { kind: 'error', text: 'Your session expired. Click Offline to sign in again. Local changes are safe.', at: this.now() }, modal: null })
@@ -448,16 +457,20 @@ export class App {
     }
   }
 
-  async login(username: string, password: string, automatic = false): Promise<void> {
+  async login(username: string, password: string, automatic = false, mergeOffline = false): Promise<void> {
+    const generation = ++this.authGeneration
     this.clearTimer('retry')
     this.set({ connection: 'connecting', loginError: null })
     try {
       const session = await login(this.config.baseUrl, username.trim(), password)
+      if (generation !== this.authGeneration) return
       if (!automatic) this.autoCredentials = null
       this.retryDelay = MIN_RETRY_MS
-      await this.afterConnect(session)
+      await this.afterConnect(session, mergeOffline, generation)
+      if (generation !== this.authGeneration) return
       this.set({ modal: null, connectFlow: { phase: 'idle' } })
     } catch (error) {
+      if (generation !== this.authGeneration) return
       const message = error instanceof Error ? error.message : String(error)
       this.set({ connection: 'offline', loginError: message, session: null })
       if (automatic) this.scheduleRetry()
@@ -468,14 +481,20 @@ export class App {
    * Common path after obtaining a session: ask the account where this device
    * attaches (root by default, or the node it was invited to), then sync.
    */
-  private async afterConnect(session: Session): Promise<void> {
+  private async afterConnect(session: Session, mergeOffline = false, generation = this.authGeneration): Promise<void> {
     if (this.virtualPeers?.guest) {
       this.set({ session })
       void this.refreshIntegrations()
       await this.syncNow('virtual sign-in')
       return
     }
+    const offline = mergeOffline && this.canMergeOffline() ? serializeReplica(this.state.replica) : null
+    if (this.config.storage.selectAccount?.(session)) {
+      this.stopAccountConnection()
+      this.loadDataSession(true)
+    }
     const attachment = await getAttachment(session, this.state.replica.meta.peerId)
+    if (generation !== this.authGeneration) return
     let replica = this.state.replica
     const same = replica.meta.scope.length === attachment.scope.length && replica.meta.scope.every((s, i) => attachment.scope[i] === s)
     if (!same && (!hasSynced(replica) || session.kind === 'peer')) {
@@ -483,6 +502,13 @@ export class App {
       replica = { store: replica.store, meta: { ...replica.meta, scope: attachment.scope, scopeNames: attachment.scopeNames, baseCid: null } }
     } else if (same && replica.meta.scopeNames.length !== attachment.scopeNames.length) {
       replica = { store: replica.store, meta: { ...replica.meta, scopeNames: attachment.scopeNames } }
+    }
+    if (offline) {
+      const source = loadReplica(offline)
+      const sourceHead = headCid(source)
+      importNodes(replica.store, reachableNodes(source.store, [sourceHead]))
+      commitRoot(replica.store, mergeNodes(replica.store, null, headCid(replica), sourceHead, { ours: session.username, theirs: 'Offline session' }).cid, this.now())
+      replica = { ...replica }
     }
     this.set({ session, replica, connection: 'online', loginError: null, view: [] })
     this.openEvents()
@@ -492,15 +518,51 @@ export class App {
     await this.syncNow('connect')
   }
 
-  logout(): void {
-    this.history.clear()
+  private stopAccountConnection(): void {
     this.pendingSession = null
     this.autoCredentials = null
-    this.clearTimer('retry')
-    this.clearTimer('poll')
-    this.closeEvents?.()
-    this.closeEvents = null
-    this.set({ session: null, connection: this.virtualPeers?.connected ? 'online' : 'offline', loginError: null, canAutoLogin: false, requests: [], invite: null, menuOpen: false })
+    this.clearTimer('retry'); this.clearTimer('poll'); this.clearTimer('debounce'); this.clearTimer('connectPoll')
+    this.closeEvents?.(); this.closeEvents = null
+  }
+  disconnect(): void {
+    ++this.authGeneration
+    this.stopAccountConnection()
+    this.recorder?.stop(); this.recorder = null
+    this.set({ voice: null, session: null, connection: this.virtualPeers?.connected ? 'online' : 'offline', loginError: null, canAutoLogin: false,
+      requests: [], invite: null, points: null, integrations: [], mcpPeers: [], menuOpen: false })
+  }
+  logout(): void {
+    this.history.clear()
+    this.disconnect()
+    // A virtual peer's document belongs to its host connection, independently of account sign-in.
+    if (this.virtualPeers?.guest || this.config.project) return
+    this.cancelDirect()
+    this.config.storage.startOffline?.()
+    this.loadDataSession()
+  }
+  private loadDataSession(keepModal = false): void {
+    this.cancelDirect()
+    this.history.clear()
+    this.virtualPeers?.close(); this.virtualPeers = null
+    const replica = loadReplica(this.config.storage.loadReplica())
+    const prefs = (this.config.storage.loadPrefs() ?? {}) as { view?: Scope; collapsed?: string[]; policy?: unknown; deviceName?: string }
+    this.set({ replica, session: null, view: Array.isArray(prefs.view) && view(replica, prefs.view) ? prefs.view : [], selected: null, atRoot: false,
+      modal: keepModal ? this.state.modal : null, connectFlow: { phase: 'idle' }, manual: {}, device: null, voice: null, requests: [], invite: null,
+      collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed : [], contextMenu: null, work: undefined, highlighted: [], notice: null,
+      onlinePeers: [], serverCapabilities: null, policy: parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
+      deviceName: prefs.deviceName ?? defaultDeviceName(), connection: 'offline', points: null, integrations: [], mcpPeers: [], phone: null, market: null })
+    this.enableVirtualPeers(null)
+  }
+  canMergeOffline(): boolean { return !this.virtualPeers?.guest && !this.config.project && this.config.storage.dataSession?.().owner === null && isDirty(this.state.replica) }
+  dataSessions() { return this.virtualPeers?.guest || this.config.project ? [] : this.config.storage.listDataSessions?.() ?? [] }
+  activeDataSession() { return this.config.storage.dataSession?.() ?? null }
+  switchDataSession(id: string): void {
+    if (!this.dataSessions().some((session) => session.id === id)) return
+    this.disconnect(); this.cancelDirect()
+    this.config.storage.selectDataSession?.(id)
+    this.config.storage.saveSession(null)
+    this.loadDataSession()
+    this.goToRoot()
   }
 
   reconnect(reason: string): void {
@@ -580,6 +642,7 @@ export class App {
     this.set({ connection: 'syncing' })
 
     const session = this.state.session
+    const generation = this.authGeneration
     try {
       let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush') })
       const send = (packet: SyncRequest) => transport === 'account'
@@ -589,12 +652,12 @@ export class App {
       try { response = await send(request) }
       catch (error) {
         const missing = error instanceof ApiError && (error.code === 'missing-nodes' || error.message.startsWith('head node not provided'))
-        if (!missing || this.state.session !== session) throw error
+        if (!missing || (this.state.session !== session || generation !== this.authGeneration)) throw error
         // Keep the agreed merge base. A reset server needs its closure too.
         request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush'), full: true })
         response = await send(request)
       }
-      if (this.state.session !== session) return
+      if ((this.state.session !== session || generation !== this.authGeneration)) return
       const done = completeSync(this.state.replica, request, response, this.now())
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online' }
       if (response.presence) patch.onlinePeers = response.presence
@@ -610,7 +673,7 @@ export class App {
       this.set(patch)
       this.retryDelay = MIN_RETRY_MS
     } catch (error) {
-      if (this.state.session !== session) return
+      if ((this.state.session !== session || generation !== this.authGeneration)) return
       if (error instanceof ApiError && error.status === 401) {
         this.closeEvents?.()
         this.closeEvents = null
@@ -648,13 +711,42 @@ export class App {
   }
 
   canResetHome(): boolean {
-    return !this.virtualPeers?.guest && !this.config.project && this.state.replica.meta.scope.length === 0 && (!this.state.session || this.state.session.kind === 'user')
+    return !this.virtualPeers?.guest && !this.config.project && (!this.state.session || this.state.session.kind === 'user')
   }
   resetHome(): void {
     if (!this.canResetHome()) return
     this.edit(resetHomeContent(this.state.replica, this.now()), false)
     this.set({ view: [], selected: null })
-    this.notify('info', 'Home content reset. You can undo this. The change syncs under your current peer policy.')
+    this.notify('info', 'Attached node content reset. You can undo this. The change syncs under your current peer policy.')
+  }
+
+  async resetAccount(): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user' || this.virtualPeers?.guest || this.config.project) return
+    this.disconnect()
+    const generation = this.authGeneration
+    this.set({ connection: 'connecting' })
+    try {
+      let replica = createReplica()
+      const request = buildSyncRequest(replica, undefined, { push: false })
+      const response = await peerSync(session, request)
+      if (generation !== this.authGeneration) return
+      replica = completeSync(replica, request, response, this.now()).replica
+      const before = headCid(replica)
+      replica = resetHomeContent(replica, this.now())
+      const reset = buildSyncRequest(replica)
+      const saved = await peerSync(session, reset)
+      if (generation !== this.authGeneration) return
+      replica = completeSync(replica, reset, saved, this.now()).replica
+      this.virtualPeers?.close(); this.virtualPeers = null
+      this.set({ replica, session, view: [], selected: null, connection: 'online', atRoot: true })
+      this.history.record(replica, before, false)
+      this.enableVirtualPeers(null)
+      this.openEvents(); this.startPolling()
+      this.notify('info', 'Account content reset. This device now syncs the whole account. You can undo this.')
+    } catch (error) {
+      if (generation === this.authGeneration) { this.set({ connection: 'offline' }); this.notify('error', `Reset failed: ${error instanceof Error ? error.message : String(error)}. Local data was kept.`) }
+    }
   }
 
   get canUndo(): boolean { return this.history.canUndo }
@@ -876,7 +968,7 @@ export class App {
     if (!session || session.kind !== 'user') { if (this.state.integrations.length || this.state.mcpPeers.length) this.set({ integrations: [], mcpPeers: [] }); return }
     try {
       const [{ providers }, mcp] = await Promise.all([listIntegrations(session), listMcpPeers(session).catch(() => ({ peers: [] as McpPeerInfo[] }))])
-      this.set({ integrations: providers, mcpPeers: mcp.peers })
+      if (this.state.session === session) this.set({ integrations: providers, mcpPeers: mcp.peers })
     } catch { /* the rows fall back to the static registry */ }
   }
   /** Sign in with an OAuth peer (the browser leaves for the provider and comes back with ?integration=…), or link the phone. */
@@ -960,7 +1052,7 @@ export class App {
     if (!session || session.kind !== 'user') { if (this.state.points !== null) this.set({ points: null }); return }
     try {
       const { balance } = await getTokenBalance(session)
-      if (typeof balance === 'number' && balance !== this.state.points) this.set({ points: balance })
+      if (this.state.session === session && typeof balance === 'number' && balance !== this.state.points) this.set({ points: balance })
     } catch { /* the balance is informational; keep the last value */ }
   }
   /** Owner side: the capability rows under the peer `peerId` on the viewed node: `to` (granted, and which are switched off) and `from` (accepted). */
@@ -1311,8 +1403,10 @@ export class App {
     if (!this.state.session) { this.notify('error', 'Connect to your account to transcribe voice notes.'); this.openModal('connect'); return }
     if (!this.canRecordVoice()) { this.notify('error', 'This browser cannot record audio.'); return }
     const at = [...this.state.view]
+    const generation = this.authGeneration
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (generation !== this.authGeneration) { stream.getTracks().forEach((t) => t.stop()); return }
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported(m))
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
       this.recorded = []
@@ -1321,7 +1415,7 @@ export class App {
         stream.getTracks().forEach((t) => t.stop())
         const blob = new Blob(this.recorded, { type: recorder.mimeType || 'audio/webm' })
         this.recorder = null
-        void this.submitVoice(blob, at)
+        if (generation === this.authGeneration) void this.submitVoice(blob, at)
       })
       recorder.start(1000)
       this.recorder = recorder
@@ -1334,15 +1428,18 @@ export class App {
   private async submitVoice(blob: Blob, at: Scope): Promise<void> {
     const session = this.state.session
     if (!session || blob.size < 1000) { this.set({ voice: null }); if (blob.size < 1000) this.notify('error', 'The recording was empty.'); return }
+    const generation = this.authGeneration
     this.set({ voice: { phase: 'uploading' } })
     try {
       const note = await transcribeVoice(session, blob)
+      if (generation !== this.authGeneration || this.state.session !== session) return
       this.insertVoiceNote(note, at)
       this.notify('info', `Voice note added: ${note.clusters.length} cluster${note.clusters.length === 1 ? '' : 's'}.`)
     } catch (error) {
+      if (generation !== this.authGeneration) return
       this.notify('error', error instanceof Error ? error.message : String(error))
     } finally {
-      this.set({ voice: null })
+      if (generation === this.authGeneration) this.set({ voice: null })
     }
   }
 
@@ -1627,7 +1724,7 @@ export class App {
     if (!session || session.kind !== 'user') return
     try {
       const { requests } = await listInviteRequests(session)
-      this.set({ requests })
+      if (this.state.session === session) this.set({ requests })
     } catch { /* non-fatal */ }
   }
 
@@ -1690,6 +1787,7 @@ export class App {
   enableVirtualPeers(guest: VirtualPeer | null): void {
     if (!('BroadcastChannel' in window)) return
     this.virtualPeers = new VirtualPeers(guest, {
+      dataSessionId: () => this.activeDataSession()?.id,
       decide: async (peer, scope, proposalId, decision) => {
         if (!this.virtualGrants(peer)?.includes('approve') || !Array.isArray(scope) || scope.some((id) => typeof id !== 'string') || !['approve', 'reject'].includes(decision)) throw new Error('This role cannot decide this proposal.')
         const at = [...peer.scope, ...scope]
@@ -1728,6 +1826,7 @@ export class App {
     window.addEventListener('pagehide', (event) => { if (!event.persisted) this.virtualPeers?.close() })
   }
   private virtualGrants(peer: VirtualPeer): Capability[] | null {
+    if (peer.dataSessionId && peer.dataSessionId !== this.activeDataSession()?.id) return null
     const member = view(this.state.replica, peer.scope)?.members.find((m) => m.peerId === peer.id)
     return member ? member.capabilities.filter((c) => !member.disabled?.includes(c)) : null
   }
@@ -1735,7 +1834,7 @@ export class App {
   spawnVirtualPeer(name: string, role: 'editor' | 'proposer' | 'reviewer' | 'viewer', shareAccount: boolean): void {
     if (!this.canSpawnVirtualPeer() || !name.trim()) return
     const token = crypto.randomUUID()
-    const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.state.view], name: name.trim().slice(0, 80), shareAccount }
+    const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.state.view], dataSessionId: this.activeDataSession()?.id, name: name.trim().slice(0, 80), shareAccount }
     const capabilities: Capability[] = role === 'viewer' ? ['read'] : role === 'proposer' ? ['read', 'edit'] : role === 'reviewer' ? ['read', 'edit', 'approve'] : ['read', 'edit', 'autopush']
     this.virtualPeers!.register(peer)
     const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('virtual', token)
@@ -1798,7 +1897,7 @@ export class App {
         this.notify('info', 'Direct connection closed.')
       }
     }
-    link.onMessage = (message) => this.onLinkMessage(message, role)
+    link.onMessage = (message) => { if (this.link === link) this.onLinkMessage(message, role) }
   }
 
   private onLinkMessage(message: ChannelMessage, role: 'host' | 'guest'): void {
