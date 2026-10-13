@@ -37,6 +37,7 @@ type Regions = {
  * expand/collapse a few levels in place.
  */
 const KEY_HELP: Array<[string, string]> = [
+  ['Ctrl/⌘ Z · Ctrl/⌘ Shift Z', 'undo / redo committed edits (last 100 this session); while typing, undo draft text'],
   ['↑ / ↓', 'move between rows (↑ from the first row returns to the blank row at the top)'],
   ['Enter', 'new row below (on a requirement, bank or allocation: edit its text)'],
   ['Ctrl+Enter', 'mark a task done or open; on other rows, new row below'],
@@ -178,6 +179,8 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   const session = state.session
   if (!session) item('Connect…', () => app.openModal('connect'), 'primary-text')
   item('⚙ Settings', () => app.goToRoot())
+  if (app.canUndo) item('Undo (Ctrl/⌘ Z)', () => runHistory(app, false))
+  if (app.canRedo) item('Redo (Ctrl/⌘ Shift Z)', () => runHistory(app, true))
   item('Keys and row syntax (Ctrl+H)', () => app.openModal('help'))
   if (session?.kind === 'user') {
     item('Invite a device here', () => void app.startInvite())
@@ -367,10 +370,12 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     committed = false
     return created
   }
+  input.addEventListener('commit-edit', () => commit())
   input.addEventListener('keydown', (e: Event) => {
     const event = e as KeyboardEvent
     if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
     const k = event.key
+    if (historyShortcut(event) !== null && input.value === '') { event.preventDefault(); event.stopPropagation(); runHistory(app, historyShortcut(event)!); return }
     if (k === 'Enter') {
       // the typed row becomes the first row here; the blank row stays on top, ready for the next one (no extra blank row below)
       event.preventDefault()
@@ -646,9 +651,11 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     app.rewriteRowAt(at, task.id, parsed)
   }
   const path: Scope = [...at, task.id]
+  input.addEventListener('commit-edit', () => commit())
   input.addEventListener('keydown', (e: Event) => {
     const event = e as KeyboardEvent
     const k = event.key
+    if (historyShortcut(event) !== null && input.value === raw) { event.preventDefault(); event.stopPropagation(); runHistory(app, historyShortcut(event)!); return }
     const alt = event.altKey
     const ctrl = event.ctrlKey || event.metaKey
     if (isHelpKey(event)) { event.preventDefault(); commit(); toggleHelp(app); return }
@@ -922,10 +929,23 @@ function renderContextMenu(el: HTMLElement, state: AppState, app: App): void {
   el.style.right = `${Math.max(8, window.innerWidth - (rect ? rect.right : window.innerWidth - 16))}px`
 }
 
+function historyShortcut(event: KeyboardEvent): boolean | null {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return null
+  const key = event.key.toLowerCase()
+  return key === 'z' ? event.shiftKey : key === 'y' && !event.shiftKey ? true : null
+}
+
+function runHistory(app: App, redo: boolean): void {
+  document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+  focusGhost = true
+  if (redo) app.redo(); else app.undo()
+}
+
 function handleKey(event: KeyboardEvent, app: App): void {
   if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
   const target = event.target as HTMLElement | null
   if (target && target.closest('input, textarea, select, [contenteditable]')) return
+  if (!app.state.modal && historyShortcut(event) !== null) { event.preventDefault(); runHistory(app, historyShortcut(event)!); return }
   if (app.state.modal) { if (event.key === 'Escape') app.closeModal(); return }
   if (event.key === 'Escape') { app.closeContextMenu(); app.toggleMenu(false); return }
   const state = app.state
@@ -1121,31 +1141,33 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     line.append(l, ...els)
     return line
   }
-  for (const p of peers) {
+  for (const p of peers.filter((p) => !p.integration || p.integration.connected || p.integration.pending)) {
     const li = rowShell('peer')
     li.dataset.peer = p.id
     const dot = span('presence' + (p.online ? ' online' : ''), '')
     dot.title = p.online ? 'online' : p.isAccount ? 'offline: what it registered shows as offline until it connects again' : 'offline (still a member; its capabilities show as offline)'
     const title = span('title peer-title', '')
-    title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : peerLabel(p.id, state)))
+    title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp ? p.name : peerLabel(p.id, state)))
     if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
     if (p.isAccount && p.points !== null && p.points !== undefined) { const pts = span('alloc-tag points', `✦ ${p.points} fos points`); pts.title = 'The account\'s balance: the default pool for "ff" allocations'; title.append(pts) }
+    const connection = div('peer-connection', '')
     if (p.integration) {
       const i = p.integration
+      connection.append(span('muted', `${i.kind === 'oauth' ? 'OAuth' : i.kind === 'channel' ? 'SMS' : 'Account'} connection: `))
       if (i.kind === 'platform') {
-        title.append(span('muted', i.connected ? ` set up on the account${i.accountName ? ` (${i.accountName})` : ''}` : ' not set up on the account (subscription or payouts)'))
+        connection.append(span('muted', i.connected ? ` set up on the account${i.accountName ? ` (${i.accountName})` : ''}` : ' not set up on the account (subscription or payouts)'))
       } else if (i.connected) {
-        title.append(span('muted', ` ${i.accountName ?? 'connected'}`), button('link small', 'Disconnect', () => void app.disconnectIntegration(p.id.replace(/^integration:/, ''))))
+        connection.append(span('muted', ` ${i.accountName ?? 'connected'}`), button('link small', 'Disconnect', () => void app.disconnectIntegration(p.id.replace(/^integration:/, ''))))
       } else if (i.kind === 'channel') {
         const link = button('secondary small', i.pending ? 'Enter the code' : 'Link phone', () => void app.connectIntegration('phone'))
         link.title = i.configured ? 'Texts about proposals reach it; texts you send become rows' : 'Texting is not configured on the server (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)'
         link.disabled = !i.configured
-        title.append(link, span('muted', i.pending ? ` ${i.accountName ?? ''}: waiting for the code` : ' not linked'))
+        connection.append(link, span('muted', i.pending ? ` ${i.accountName ?? ''}: waiting for the code` : ' not linked'))
       } else {
         const connect = button('secondary small', `Sign in with ${p.name}`, () => void app.connectIntegration(p.id.replace(/^integration:/, '')))
         connect.disabled = !i.configured || !state.session
         connect.title = !state.session ? 'Sign in to your fos account first' : i.configured ? `Opens ${p.name}'s sign-in; you come back here connected` : `${p.name} sign-in is not configured on the server (client id and secret)`
-        title.append(connect, span('muted', ' not connected'))
+        connection.append(connect, span('muted', ' not connected'))
       }
     }
     if (p.mcp) {
@@ -1176,26 +1198,54 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     }
     const meta = span('row-meta', '')
     if (p.member && owner) { const remove = button('icon more small-icon', '×', () => app.removePeerHere(p.id)); remove.title = `Remove @${p.name} from Home`; meta.append(remove) }
-    else if (state.session?.kind === 'user' && !p.isAccount && !p.member && p.id !== state.replica.meta.peerId) { const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p.id })); more.title = 'Device actions'; meta.append(more) }
+    else if (state.session?.kind === 'user' && !p.isAccount && !p.member && !p.integration && !p.mcp && p.id !== state.replica.meta.peerId) { const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p.id })); more.title = 'Device actions'; meta.append(more) }
     const body = div('peer-body', '')
-    body.append(title, lines)
+    const details = document.createElement('details')
+    const summary = document.createElement('summary')
+    summary.textContent = 'Connection and capabilities'
+    details.append(summary, connection, lines)
+    details.className = 'peer-details'
+    body.append(title, details)
     li.append(span('zoom-dot', ''), span('handle', ''), dot, body, meta)
     rows.push(li)
   }
-  if (owner && state.session?.kind === 'user') {
+  {
     const li = rowShell('add-peer-row')
     const form = document.createElement('form')
     form.className = 'row add-peer'
+    const type = document.createElement('select')
+    type.setAttribute('aria-label', 'Peer connection type')
+    type.append(new Option('Choose a connection…', ''), new Option('Fos account member', 'member'), new Option('Direct device connection', 'direct'), new Option('Invite device', 'invite'))
+    for (const p of peers.filter((p) => p.integration && !p.integration.connected)) {
+      const option = new Option(`${p.integration!.kind === 'oauth' ? 'OAuth: ' : ''}${p.name}`, p.id)
+      option.disabled = !state.session || !p.integration!.configured || p.integration!.kind === 'platform'
+      if (option.disabled) option.text += ' (unavailable)'
+      type.append(option)
+    }
     const input = document.createElement('input')
-    input.type = 'text'
-    input.placeholder = '@username: add a peer row (they become a member of Home)'
+    input.placeholder = '@username'
     input.autocomplete = 'off'
     input.id = 'add-peer-name'
+    input.hidden = true
+    type.addEventListener('change', () => { input.hidden = type.value !== 'member' })
     const go = button('secondary small', 'Add peer', () => undefined)
     go.type = 'submit'
-    form.append(input, go)
-    form.addEventListener('submit', (e) => { e.preventDefault(); app.addPeerHere(input.value); input.value = '' })
+    form.append(type, input, go)
+    form.addEventListener('submit', (e) => {
+      e.preventDefault()
+      if (type.value === 'member') { if (owner) app.addPeerHere(input.value); else app.notify('error', 'Sign in as the owner to add a member.'); input.value = '' }
+      else if (type.value === 'direct') app.openModal('direct')
+      else if (type.value === 'invite') void app.startInvite()
+      else if (type.value.startsWith('integration:')) void app.connectIntegration(type.value.slice('integration:'.length))
+    })
     li.append(span('zoom-dot', ''), span('handle', ''), form)
+    rows.push(li)
+  }
+  if (app.canResetHome()) {
+    const li = rowShell('reset-data-row')
+    li.append(button('danger small', 'Reset Home content…', () => {
+      if (window.confirm('Clear all Home rows and choices? This change syncs to connected devices. Your account, peer connections and version history remain. You can undo this during this session.')) app.resetHome()
+    }))
     rows.push(li)
   }
   return rows
@@ -1203,6 +1253,14 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
 
 function renderFooter(el: HTMLElement, state: AppState, app: App): void {
   const items: HTMLElement[] = []
+  const history = div('row', '')
+  for (const redo of [false, true]) {
+    const control = button('secondary small', redo ? 'Redo' : 'Undo', () => runHistory(app, redo))
+    control.disabled = redo ? !app.canRedo : !app.canUndo
+    control.addEventListener('mousedown', (event) => event.preventDefault())
+    history.append(control)
+  }
+  items.push(history)
   if (state.notice) items.push(div(`notice ${state.notice.kind}`, state.notice.text))
   const meta = div('meta', '')
   meta.append(span('muted', `${state.deviceName} · ${state.replica.meta.peerId.slice(0, 8)}`))
