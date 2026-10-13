@@ -191,8 +191,9 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
     async llm(req: Request, res: Response): Promise<Response> {
       await deps.userId(req)
       const body = (req.body ?? {}) as { prompt?: unknown; system?: unknown }
-      const prompt = typeof body.prompt === 'string' ? body.prompt.trim().slice(0, 20_000) : ''
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
       if (!prompt) return fail(res, 400, 'prompt required')
+      if (prompt.length > 20_000) return fail(res, 400, 'prompt exceeds 20,000 characters; narrow the task context')
       const system = typeof body.system === 'string' ? body.system.slice(0, 4000) : 'You help with a task list. Answer briefly and concretely; use markdown lists when listing.'
       try {
         const text = (await deps.complete(system, prompt)).trim()
