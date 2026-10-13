@@ -102,7 +102,7 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
             capabilities: SERVER_CAPABILITIES
           }
           const served = serveSync(store, parsed, serverPeerIdFor(user.username), deps.now ? deps.now() : Date.now(), options)
-          if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error } } as const
+          if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error, code: served.code, ...(served.missingNodeIds ? { missingNodeIds: served.missingNodeIds } : {}) } } as const
           if (served.changed) await deps.saveStore(user, store)
           return { status: 200, body: served.response, changed: served.changed, userId: user.id } as const
         }

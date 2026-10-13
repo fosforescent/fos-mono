@@ -544,11 +544,11 @@ export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: strin
  * peer only serves what it has and nothing but the connection leaves the device; local edits stay local, re-merged
  * over whatever comes back (`completeSync` merges sent head → local head → result).
  */
-export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean } = {}): SyncRequest {
+export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean; full?: boolean } = {}): SyncRequest {
   const base = replica.meta.baseCid
   const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : headCid(replica)
   // The server already holds everything reachable from the agreed base.
-  const known = base ? reachableSet(replica.store, [base]) : new Set<string>()
+  const known = base && !options.full ? reachableSet(replica.store, [base]) : new Set<string>()
   return {
     version: SYNC_FORMAT_VERSION,
     cidVersion: CURRENT_CID_VERSION,
@@ -556,7 +556,7 @@ export function buildSyncRequest(replica: Replica, branch?: string, options: { p
     scope: replica.meta.scope,
     baseCid: base,
     headCid: head,
-    nodes: reachableNodes(replica.store, [head], known),
+    nodes: reachableNodes(replica.store, options.full ? [head, base] : [head], known),
     ...(branch ? { branch } : {})
   }
 }

@@ -39,6 +39,19 @@ function writeJson(storage: Storage, key: string, value: unknown): void {
 }
 
 export function createLocalStorageAdapter(storage: Storage): ReplicaStorage {
+  // Older web-mini builds persisted a password. Never read or use it to authenticate.
+  try {
+    storage.removeItem('web-mini.password')
+    if (!readJson(storage, SESSION_KEY)) {
+      const jwt = storage.getItem('web-mini.token') || storage.getItem('web-mini.jwt')
+      const username = storage.getItem('web-mini.username')
+      const baseUrl = storage.getItem('web-mini.api-url')
+      // Bind legacy credentials to their original endpoint rather than sending them elsewhere.
+      if (jwt && username && baseUrl) writeJson(storage, SESSION_KEY, { jwt, username, baseUrl, kind: 'user' })
+    }
+    storage.removeItem('web-mini.token')
+    storage.removeItem('web-mini.jwt')
+  } catch { /* restricted storage is handled by the adapter */ }
   return {
     loadReplica: () => readJson(storage, REPLICA_KEY),
     saveReplica: (value) => writeJson(storage, REPLICA_KEY, value),
