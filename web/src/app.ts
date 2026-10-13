@@ -700,9 +700,9 @@ export class App {
   // -------------------------------------------------------------------------
   // Local edits (always allowed)
 
-  private edit(next: Replica, settings = this.state.atRoot): void {
+  private edit(next: Replica, settings = this.state.atRoot, preferred = this.state.selected ? [...this.state.view, ...this.state.selected] : undefined): void {
     if (next === this.state.replica) return
-    this.history.record(next, this.observedHead, settings)
+    this.history.record(next, this.observedHead, settings, preferred)
     this.set({ replica: next })
     this.scheduleSync()
     if (this.link?.open && this.state.direct?.role === 'host') {
@@ -758,8 +758,11 @@ export class App {
     if (!result) return
     const path = [...result.path]
     while (path.length && !view(result.replica, path)) path.pop()
-    const parent = path.slice(0, -1)
-    this.set({ replica: result.replica, view: parent, selected: path.length ? [path[path.length - 1]!] : null,
+    const current = this.state.view
+    const keepView = current.length <= path.length && current.every((id, i) => path[i] === id) && !!view(result.replica, current)
+    const parent = keepView ? current : path.slice(0, -1)
+    const selected = path.slice(parent.length)
+    this.set({ replica: result.replica, view: parent, selected: selected.length ? selected : null,
       atRoot: result.settings, collapsed: this.state.collapsed.filter((id) => !path.includes(id)), menuOpen: false, contextMenu: null })
     this.scheduleSync()
     if (this.link?.open && this.state.direct?.role === 'host') {
@@ -1499,7 +1502,7 @@ export class App {
   /** Drag and drop / indent: move the task `id` from `fromAt` to `toAt` (both relative to the view). */
   moveTask(fromAt: Scope, id: string, toAt: Scope, position: MovePosition): void {
     const base = this.state.view
-    this.edit(moveNode(this.state.replica, [...base, ...fromAt], id, [...base, ...toAt], position, this.now()))
+    this.edit(moveNode(this.state.replica, [...base, ...fromAt], id, [...base, ...toAt], position, this.now()), this.state.atRoot, [...base, ...fromAt, id])
   }
 
   toggleCollapsed(id: string): void {

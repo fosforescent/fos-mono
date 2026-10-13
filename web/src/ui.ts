@@ -333,9 +333,30 @@ let pointerDown = false
 const noteHtml = new Map<string, string>()
 document.addEventListener('mouseup', () => { pointerDown = false })
 
+const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
+
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
   if (state.atRoot) { el.replaceChildren(...renderRootRows(state, app)); return }
-  el.replaceChildren(renderGhostRow(node, state, app), ...renderRows(node, [], 0, state, app))
+  const cached = ghostRows.get(el)
+  const path = JSON.stringify(state.view)
+  const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
+  const ghost = reuse ? cached.row : renderGhostRow(node, state, app)
+  if (reuse) {
+    // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
+    for (const child of Array.from(el.children)) if (child !== ghost) child.remove()
+    el.append(...renderRows(node, [], 0, state, app))
+  } else {
+    el.replaceChildren(ghost, ...renderRows(node, [], 0, state, app))
+    ghostRows.set(el, { row: ghost, store: state.replica.store, path })
+  }
+  if (focusGhost && !state.selected && !state.modal && !state.contextMenu && !state.menuOpen) {
+    focusGhost = false
+    const input = ghost.querySelector<HTMLInputElement>('input.edit')!
+    queueMicrotask(() => {
+      const active = document.activeElement
+      if (input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
+    })
+  }
 }
 
 /**
@@ -359,7 +380,10 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   input.autocomplete = 'off'
   let committed = false
   /** Make the typed row; null when nothing was typed or the row could not be made (e.g. an allocation with no bank). */
+  const store = state.replica.store
+  const path = JSON.stringify(state.view)
   const commit = (): string | null => {
+    if (app.state.replica.store !== store || JSON.stringify(app.state.view) !== path) return null
     if (committed) return null
     const raw = input.value
     if (!raw.trim()) return null
@@ -390,16 +414,9 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     if (k === 'Escape') { event.preventDefault(); input.value = ''; input.blur(); return }
     event.stopPropagation()
   })
-  input.addEventListener('focus', () => { if (state.selected) { focusGhost = true; app.select(null) } })
+  input.addEventListener('focus', () => { if (app.state.selected) { focusGhost = true; app.select(null) } })
   input.addEventListener('blur', () => { commit() })
   li.append(span('zoom-dot', ''), span('handle', ''), toggle, input, preview)
-  if (focusGhost && !state.selected && !state.modal && !state.contextMenu && !state.menuOpen) {
-    focusGhost = false
-    queueMicrotask(() => {
-      const active = document.activeElement
-      if (input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
-    })
-  }
   return li
 }
 
