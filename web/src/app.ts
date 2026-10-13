@@ -15,6 +15,7 @@
  *   manual relay codes (when no channel could be established)
  */
 
+import { EditHistory } from './history'
 import {
   addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
@@ -43,6 +44,7 @@ import {
   buildSyncRequest,
   completeSync,
   deleteTask,
+  resetHomeContent,
   hasSynced,
   headCid,
   isDirty,
@@ -252,6 +254,8 @@ function loadSession(raw: unknown, baseUrl: string): Session | null {
 
 export class App {
   state: AppState
+  private history = new EditHistory()
+  private observedHead: string
   private config: AppConfig
   private listeners = new Set<(state: AppState) => void>()
   private syncInFlight = false
@@ -312,6 +316,7 @@ export class App {
       voice: null,
       market: null
     }
+    this.observedHead = headCid(replica)
     this.pendingSession = session
     this.connectDismissed = prefs.connectDismissed === true
   }
@@ -331,6 +336,11 @@ export class App {
 
   private set(patch: Partial<AppState>): void {
     const previous = this.state
+    if (patch.replica) {
+      if (patch.replica.store !== previous.replica.store || JSON.stringify(patch.replica.meta.scope) !== JSON.stringify(previous.replica.meta.scope)) this.history.clear()
+      this.observedHead = headCid(patch.replica)
+    }
+    if (patch.session && previous.session && patch.session.username !== previous.session.username) this.history.clear()
     this.state = { ...previous, ...patch }
     if (patch.replica && patch.replica !== previous.replica) {
       this.config.storage.saveReplica(serializeReplica(this.state.replica))
@@ -467,6 +477,7 @@ export class App {
   }
 
   logout(): void {
+    this.history.clear()
     this.pendingSession = null
     this.autoCredentials = null
     this.clearTimer('retry')
@@ -609,13 +620,43 @@ export class App {
   // -------------------------------------------------------------------------
   // Local edits (always allowed)
 
-  private edit(next: Replica): void {
+  private edit(next: Replica, settings = this.state.atRoot): void {
     if (next === this.state.replica) return
+    this.history.record(next, this.observedHead, settings)
     this.set({ replica: next })
     this.scheduleSync()
     if (this.link?.open && this.state.direct?.role === 'host') {
       try { this.link.send({ t: 'changed' }) } catch { /* ignore */ }
     }
+  }
+
+  canResetHome(): boolean {
+    return !this.config.project && this.state.replica.meta.scope.length === 0 && (!this.state.session || this.state.session.kind === 'user')
+  }
+  resetHome(): void {
+    if (!this.canResetHome()) return
+    this.edit(resetHomeContent(this.state.replica, this.now()), false)
+    this.set({ view: [], selected: null })
+    this.notify('info', 'Home content reset. You can undo this. The change syncs under your current peer policy.')
+  }
+
+  get canUndo(): boolean { return this.history.canUndo }
+  get canRedo(): boolean { return this.history.canRedo }
+  undo(): void { this.restoreEdit(false) }
+  redo(): void { this.restoreEdit(true) }
+  private restoreEdit(redo: boolean): void {
+    const result = this.history.apply(this.state.replica, redo, this.now())
+    if (!result) return
+    const path = [...result.path]
+    while (path.length && !view(result.replica, path)) path.pop()
+    const parent = path.slice(0, -1)
+    this.set({ replica: result.replica, view: parent, selected: path.length ? [path[path.length - 1]!] : null,
+      atRoot: result.settings, collapsed: this.state.collapsed.filter((id) => !path.includes(id)), menuOpen: false, contextMenu: null })
+    this.scheduleSync()
+    if (this.link?.open && this.state.direct?.role === 'host') {
+      try { this.link.send({ t: 'changed' }) } catch { /* next sync retries */ }
+    }
+    if (result.conflicts) this.notify('info', 'This change overlaps newer edits. Choose which version to keep.')
   }
 
   addTask(title: string): void { this.edit(addTask(this.state.replica, this.state.view, title, this.now())) }
@@ -1393,7 +1434,7 @@ export class App {
   goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null, atRoot: false }) }
   /** Zoom out within Home; device settings are reached through the menu. */
   zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)) }
-  goToRoot(): void { this.set({ atRoot: true, selected: null, contextMenu: null }) }
+  goToRoot(): void { this.set({ atRoot: true, view: [], selected: null, contextMenu: null }) }
   /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
   knownPeers(): Array<{ id: string; name: string }> {
     return this.contextPeers().map((p) => ({ id: p.id, name: p.name }))
