@@ -1,6 +1,7 @@
 import './style.css'
+import { virtualPeerFromUrl, virtualStorage } from './virtual'
 import { App } from './app'
-import { pickStorage } from './storage'
+import { pickStorage, createMemoryStorage } from './storage'
 import { createProjectStorage, findProject, saveDevice } from './project'
 import { serverPolicyOf } from '../../shared/sync/index'
 import { mountUi } from './ui'
@@ -20,8 +21,10 @@ if (!root) throw new Error('missing #app root')
 
 // Project mode: inside the desktop shell, a directory with fos.config.toml
 // decides the server, the device name and where state lives (.fos/).
-const project = await findProject()
-const storage = project ? await createProjectStorage(project) : pickStorage()
+const virtualRequested = new URL(location.href).searchParams.has('virtual')
+const virtual = virtualPeerFromUrl()
+const project = virtualRequested ? null : await findProject()
+const storage = virtual ? virtualStorage(virtual) : virtualRequested ? createMemoryStorage() : project ? await createProjectStorage(project) : pickStorage()
 const baseUrl = (project?.config.attach?.server ?? env.VITE_API_URL ?? 'http://localhost:4000').replace(/\/$/, '')
 
 const app = new App({
@@ -32,8 +35,11 @@ const app = new App({
   project: project ? { dir: project.dir, branch: () => (storage as { branch?: () => string }).branch?.() ?? null, deviceName: project.config.attach?.name ?? project.dir.split(/[\\/]/).filter(Boolean).pop(), policy: serverPolicyOf(project.config) } : undefined
 })
 
+if (!project) app.enableVirtualPeers(virtual)
+if (virtual) document.title = `${virtual.name} — Fosforescent`
 mountUi(root, app)
-app.start()
+if (virtualRequested && !virtual) app.notify('error', 'This virtual peer connection is unavailable. Spawn a new peer from the original tab.')
+else app.start()
 
 // A `fos` CLI opened this page to have its sign-in approved (?device=CODE).
 const params = new URL(location.href).searchParams
