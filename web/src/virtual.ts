@@ -3,7 +3,7 @@ import type { Session } from './api'
 import { ApiError } from './api'
 import { createLocalStorageAdapter, type ReplicaStorage } from './storage'
 
-export type VirtualPeer = { id: string; token: string; hostTab: string; name: string; scope: Scope; shareAccount: boolean }
+export type VirtualPeer = { id: string; token: string; hostTab: string; name: string; scope: Scope; dataSessionId?: string; shareAccount: boolean }
 const PREFIX = 'fos.virtual.'
 
 export function virtualPeerFromUrl(): VirtualPeer | null {
@@ -27,6 +27,7 @@ export function virtualStorage(peer: VirtualPeer): ReplicaStorage {
 }
 
 type Hooks = {
+  dataSessionId: () => string | undefined
   decide: (peer: VirtualPeer, scope: Scope, proposalId: string, decision: 'approve' | 'reject') => Promise<void>
   grants: (peer: VirtualPeer) => Capability[] | null
   serve: (peer: VirtualPeer, request: SyncRequest) => ServeResult
@@ -48,7 +49,7 @@ export class VirtualPeers {
   private serial = 0
   private decisions = new Map<number, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private pending = new Map<number, { resolve: (response: SyncResponse) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
-  private heartbeat: ReturnType<typeof setInterval>
+  private heartbeat: ReturnType<typeof setInterval> | null = null
   constructor(readonly guest: VirtualPeer | null, private hooks: Hooks) {
     // A window opened by window.open initially inherits its opener's sessionStorage.
     const tabKey = PREFIX + 'tab' + (guest ? '.' + guest.token : '')
@@ -59,7 +60,10 @@ export class VirtualPeers {
       if (!key?.endsWith('.connection') || !key.startsWith(PREFIX)) continue
       try {
         const peer = JSON.parse(localStorage.getItem(key)!) as VirtualPeer
-        if (peer.hostTab === this.hostTab) this.host(peer)
+        if (peer.hostTab === this.hostTab) {
+          if (!peer.dataSessionId) { peer.dataSessionId = hooks.dataSessionId(); localStorage.setItem(key, JSON.stringify(peer)) }
+          if (peer.dataSessionId === hooks.dataSessionId()) this.host(peer)
+        }
       } catch { /* ignore damaged descriptors */ }
     }
     if (guest) {
@@ -89,7 +93,7 @@ export class VirtualPeers {
         }
       }
     }
-    this.heartbeat = setInterval(() => this.hello(), 3000)
+    if (guest) this.heartbeat = setInterval(() => this.hello(), 3000)
     this.hello()
   }
   get connected(): boolean { return !this.closed && !!this.guest && Date.now() - this.seen < 12_000 }
@@ -152,7 +156,7 @@ export class VirtualPeers {
   close(): void {
     this.closed = true
     this.seen = 0
-    clearInterval(this.heartbeat); this.channel?.close(); this.channel = null
+    if (this.heartbeat) clearInterval(this.heartbeat); this.channel?.close(); this.channel = null
     for (const room of this.rooms.values()) room.channel.close()
     this.rooms.clear()
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('Virtual connection closed')) }
