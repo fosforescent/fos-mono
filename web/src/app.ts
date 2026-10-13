@@ -7,7 +7,7 @@
  * Startup
  *   stored session (token, never a password) → reconnect, ask the account where
  *   this device attaches, sync. Otherwise: local mode, red "local" badge and a
- *   dismissable Connect modal (sign in / invite token or QR / direct).
+ *   Connect flow opened from Offline or the menu (sign in / invite token or QR / direct).
  *
  * Transports for sync, in order of preference
  *   account over HTTP (user session or peer credential from an invite)
@@ -402,8 +402,6 @@ export class App {
       this.pendingSession = null
     } else if (this.autoCredentials) {
       void this.login(this.autoCredentials.username, this.autoCredentials.password, true)
-    } else if (!this.connectDismissed) {
-      this.set({ modal: 'connect' })
     }
   }
 
@@ -414,7 +412,7 @@ export class App {
       await this.afterConnect(session)
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', modal: this.connectDismissed ? null : 'connect' })
+        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', modal: null })
       } else {
         // Server unreachable: keep the session and retry; the replica keeps working locally.
         this.set({ session, connection: 'offline' })
@@ -569,7 +567,7 @@ export class App {
         this.closeEvents?.()
         this.closeEvents = null
         this.clearTimer('poll')
-        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', modal: 'connect' })
+        this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', modal: null })
       } else if (error instanceof ApiError && error.status === 409) {
         this.clearTimer('poll')
         this.set({ connection: 'offline', loginError: `This app cannot sync with the server: ${error.message}. Please update the app.` })
@@ -1198,6 +1196,7 @@ export class App {
     if (this.state.voice) return
     if (!this.state.session) { this.notify('error', 'Connect to your account to transcribe voice notes.'); this.openModal('connect'); return }
     if (!this.canRecordVoice()) { this.notify('error', 'This browser cannot record audio.'); return }
+    const at = [...this.state.view]
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported(m))
@@ -1208,7 +1207,7 @@ export class App {
         stream.getTracks().forEach((t) => t.stop())
         const blob = new Blob(this.recorded, { type: recorder.mimeType || 'audio/webm' })
         this.recorder = null
-        void this.submitVoice(blob)
+        void this.submitVoice(blob, at)
       })
       recorder.start(1000)
       this.recorder = recorder
@@ -1218,13 +1217,13 @@ export class App {
     }
   }
 
-  private async submitVoice(blob: Blob): Promise<void> {
+  private async submitVoice(blob: Blob, at: Scope): Promise<void> {
     const session = this.state.session
     if (!session || blob.size < 1000) { this.set({ voice: null }); if (blob.size < 1000) this.notify('error', 'The recording was empty.'); return }
     this.set({ voice: { phase: 'uploading' } })
     try {
       const note = await transcribeVoice(session, blob)
-      this.insertVoiceNote(note)
+      this.insertVoiceNote(note, at)
       this.notify('info', `Voice note added: ${note.clusters.length} cluster${note.clusters.length === 1 ? '' : 's'}.`)
     } catch (error) {
       this.notify('error', error instanceof Error ? error.message : String(error))
@@ -1234,8 +1233,8 @@ export class App {
   }
 
   /** Note blocks from a transcription: one parent note (summary) with a note per cluster and its points as rows, plus the transcript. */
-  insertVoiceNote(note: VoiceNote): void {
-    const at = this.state.view
+  insertVoiceNote(note: VoiceNote, at: Scope = this.state.view): void {
+    if (!view(this.state.replica, at)) throw new Error('The recording location was removed. Voice note could not be added.')
     const stamp = new Date(this.now()).toLocaleString()
     const parentId = crypto.randomUUID()
     let replica = addRow(this.state.replica, at, 'note', `# ${note.title || 'Voice note'}\n\n_${stamp}_\n\n${note.summary}`, this.now(), { id: parentId })
@@ -1336,8 +1335,8 @@ export class App {
   /** Zoom into a descendant: `at` is its path relative to the current view (any depth). */
   zoomTo(at: Scope): void { this.goTo([...this.state.view, ...at]) }
   goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null, atRoot: false }) }
-  /** Zoom out of Home shows the device's root: the peers it reaches and the Home row. */
-  zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)); else if (!this.state.atRoot) this.set({ atRoot: true, selected: null, contextMenu: null }) }
+  /** Zoom out within Home; device settings are reached through the menu. */
+  zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)) }
   goToRoot(): void { this.set({ atRoot: true, selected: null, contextMenu: null }) }
   /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
   knownPeers(): Array<{ id: string; name: string }> {

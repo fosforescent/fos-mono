@@ -137,6 +137,11 @@ export const getCalendarCapabilityNode = (store: FosStore) => generateConstructo
 export const getLlmCapabilityNode = (store: FosStore) => generateConstructor(store, "LLMCAPABILITY", { description: { content: 'Capability - a language model that can answer or act on rows' } }, [])
 export const getRepoCapabilityNode = (store: FosStore) => generateConstructor(store, "REPOCAPABILITY", { description: { content: 'Capability - code repositories (issues, pull requests) as rows' } }, [])
 export const getToolCapabilityNode = (store: FosStore) => generateConstructor(store, "TOOLCAPABILITY", { description: { content: 'Capability - runs tools (an MCP server attached to the node) for tool requirements under it' } }, [])
+export const getSendPaymentCapabilityNode = (store: FosStore) => generateConstructor(store, "SENDPAYMENTCAPABILITY", { description: { content: "Capability - send payment" } }, [])
+export const getReceivePaymentCapabilityNode = (store: FosStore) => generateConstructor(store, "RECEIVEPAYMENTCAPABILITY", { description: { content: "Capability - receive payment" } }, [])
+export const getAllocateCapabilityNode = (store: FosStore) => generateConstructor(store, "ALLOCATECAPABILITY", { description: { content: "Capability - allocate" } }, [])
+export const getRequestPaymentCapabilityNode = (store: FosStore) => generateConstructor(store, "REQUESTPAYMENTCAPABILITY", { description: { content: "Capability - request payment" } }, [])
+export const getNotifyCapabilityNode = (store: FosStore) => generateConstructor(store, "NOTIFYCAPABILITY", { description: { content: "Capability - notify" } }, [])
 // [ACCEPTS, capability] on a member reference: what the owner accepts from that peer (the other direction of CAPABILITY)
 export const getAcceptsNode = (store: FosStore) => generateConstructor(store, "ACCEPTS", { description: { content: 'Accepts - the owner accepts this capability from the member (what may flow in from that peer)' } }, [])
 
@@ -769,6 +774,11 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const llmCapability = getLlmCapabilityNode(store)
   const repoCapability = getRepoCapabilityNode(store)
   const toolCapability = getToolCapabilityNode(store)
+  const sendPaymentCapability = getSendPaymentCapabilityNode(store)
+  const receivePaymentCapability = getReceivePaymentCapabilityNode(store)
+  const allocateCapability = getAllocateCapabilityNode(store)
+  const requestPaymentCapability = getRequestPaymentCapabilityNode(store)
+  const notifyCapability = getNotifyCapabilityNode(store)
   const approveAction = getApproveActionNode(store)
   const effectNode = getEffectNode(store)
   const handlerNode = getHandlerNode(store)
@@ -971,6 +981,11 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     llmCapability,
     repoCapability,
     toolCapability,
+    sendPaymentCapability,
+    receivePaymentCapability,
+    allocateCapability,
+    requestPaymentCapability,
+    notifyCapability,
     effectNode,
     handlerNode,
 
@@ -1165,6 +1180,11 @@ export type PrimitiveAliases = {
   llmCapability: FosNode,
   repoCapability: FosNode,
   toolCapability: FosNode,
+  sendPaymentCapability: FosNode,
+  receivePaymentCapability: FosNode,
+  allocateCapability: FosNode,
+  requestPaymentCapability: FosNode,
+  notifyCapability: FosNode,
   effectNode: FosNode,
   handlerNode: FosNode,
 }

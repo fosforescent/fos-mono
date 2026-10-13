@@ -73,7 +73,6 @@ export function mountUi(root: HTMLElement, app: App): void {
         <button type="button" class="icon menu-button" data-region="menu-button" aria-label="Menu">☰</button>
         <span class="local-badge" data-region="local-badge" hidden>local</span>
         <div class="brand">Fosforescent</div>
-        <button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button>
         <button type="button" class="icon help-button" data-region="help-button" title="Keys and row syntax (Ctrl+H)" aria-label="Keys and row syntax">?</button>
       </div>
       <div class="status" data-region="status"></div>
@@ -81,6 +80,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     </header>
     <section class="banner" data-region="banner" hidden></section>
     <nav class="crumbs" data-region="crumbs"></nav>
+    <div class="voice-controls"><button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button></div>
     <section class="choices" data-region="choices"></section>
     <section class="link-panel" data-region="link" hidden></section>
     <section class="tasks">
@@ -132,7 +132,7 @@ export function mountUi(root: HTMLElement, app: App): void {
 }
 
 function render(regions: Regions, state: AppState, app: App): void {
-  renderStatus(regions.status, state)
+  renderStatus(regions.status, state, app)
   regions.localBadge.hidden = !app.isLocal()
   renderMenu(regions.menu, state, app)
   renderBanner(regions.banner, state, app)
@@ -154,14 +154,16 @@ function render(regions: Regions, state: AppState, app: App): void {
 
 // ---------------------------------------------------------------------------
 
-function renderStatus(el: HTMLElement, state: AppState): void {
+function renderStatus(el: HTMLElement, state: AppState, app: App): void {
   const dirty = isDirty(state.replica)
   const labels: Record<AppState['connection'], string> = { offline: 'Offline', connecting: 'Connecting…', online: 'Online', syncing: 'Syncing…' }
   const lastSync = state.replica.meta.lastSyncAt
   el.className = `status status-${state.connection}`
   el.replaceChildren(
     span('dot', ''),
-    span('status-text', labels[state.connection]),
+    state.connection === 'offline'
+      ? button('link status-text', labels[state.connection], () => app.openModal('connect'))
+      : span('status-text', labels[state.connection]),
     ...(dirty ? [span('badge', state.connection === 'offline' ? 'unsynced changes' : 'pending')] : []),
     ...(lastSync && !dirty ? [span('muted', `synced ${ago(lastSync)}`)] : [])
   )
@@ -175,6 +177,7 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   const item = (label: string, onClick: () => void, cls = '') => items.push(button(`menu-item ${cls}`, label, () => { if (cls !== 'hint') app.toggleMenu(false); onClick() }))
   const session = state.session
   if (!session) item('Connect…', () => app.openModal('connect'), 'primary-text')
+  item('⚙ Settings', () => app.goToRoot())
   item('Keys and row syntax (Ctrl+H)', () => app.openModal('help'))
   if (session?.kind === 'user') {
     item('Invite a device here', () => void app.startInvite())
@@ -241,16 +244,17 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
 
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
-  // the device's root (peers) › Home (the replica: the account's tree, or the node this device attaches to) › …
-  const deviceCrumb = button('crumb', 'root', () => app.goToRoot())
-  deviceCrumb.title = 'This device: the peers it reaches, and Home'
   const homeCrumb = button('crumb', labels.scope.length ? pathLabel(labels.scope) : 'Home', () => app.goTo([]))
-  crumbs.append(deviceCrumb, span('sep', '›'), homeCrumb)
-  view.forEach((_id, index) => {
-    crumbs.append(span('sep', '›'), button('crumb', labels.view[index] ?? '…', () => app.goTo(view.slice(0, index + 1))))
-  })
-  if (state.atRoot) deviceCrumb.classList.add('current')
-  else (crumbs.lastElementChild as HTMLElement).classList.add('current')
+  crumbs.append(homeCrumb)
+  if (state.atRoot) {
+    crumbs.append(span('sep', '›'), span('crumb current', 'Settings'))
+  } else {
+    view.forEach((_id, index) => {
+      crumbs.append(span('sep', '›'), button('crumb', labels.view[index] ?? '…', () => app.goTo(view.slice(0, index + 1))))
+    })
+    const current = crumbs.lastElementChild as HTMLElement
+    current.classList.add('current')
+  }
 
   const controls: HTMLElement[] = []
   if (view.length > 0 && state.session?.kind === 'user') {
@@ -326,7 +330,7 @@ const noteHtml = new Map<string, string>()
 document.addEventListener('mouseup', () => { pointerDown = false })
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (state.atRoot) { el.replaceChildren(...renderRootRows(node, state, app)); return }
+  if (state.atRoot) { el.replaceChildren(...renderRootRows(state, app)); return }
   el.replaceChildren(renderGhostRow(node, state, app), ...renderRows(node, [], 0, state, app))
 }
 
@@ -1047,12 +1051,12 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
 }
 
 /**
- * The device's root, one level above Home: a Home row (zoom in) and one row per peer this device reaches: the fos
+ * Settings at the device's root: one row per peer this device reaches, including the fos
  * account server (sign-in happens on its row when not connected; its policy lines below it) and the members and
  * attached devices of the Home node, with the capability rows the owner exposes to each (`to`) and accepts from each
  * (`from`). Nothing here is a stored row.
  */
-function renderRootRows(node: NodeView, state: AppState, app: App): HTMLElement[] {
+function renderRootRows(state: AppState, app: App): HTMLElement[] {
   const rows: HTMLElement[] = []
   const rowShell = (cls: string): HTMLLIElement => {
     const li = document.createElement('li')
@@ -1060,15 +1064,6 @@ function renderRootRows(node: NodeView, state: AppState, app: App): HTMLElement[
     li.style.setProperty('--depth', '0')
     return li
   }
-  // Home: the replica (the account's tree, or the node this device attaches to)
-  const home = rowShell('home')
-  const homeZoom = button('icon zoom-dot', '◉', () => app.goTo([]))
-  homeZoom.title = 'Open Home'
-  const homeTitle = span('title', '')
-  homeTitle.append(button('link ref-link', node.name && state.replica.meta.scopeNames.length ? node.name : 'Home', () => app.goTo([])), span('muted', ` · ${node.tasks.length} row${node.tasks.length === 1 ? '' : 's'}; the group of all your devices`))
-  home.append(homeZoom, span('handle', ''), button('icon toggle', '', () => undefined), homeTitle)
-  rows.push(home)
-
   const peers = app.contextPeers()
   const owner = app.canApprove()
   const capTitle: Record<string, string> = {
@@ -1256,7 +1251,7 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
 /** Link a phone: the number, then the code that was texted to it. */
 function renderPhone(body: HTMLElement, state: AppState, app: App): void {
   const flow = state.phone ?? { phase: 'number' as const }
-  body.append(div('muted', 'Your phone becomes a peer: fos texts you about proposals, and texts you send become rows (“done <words>” checks a task off, “list” shows open tasks, anything else is added).'))
+  body.append(div('muted', 'Link your phone to receive SMS notifications about proposals.'))
   if (flow.error) body.append(div('error', flow.error))
   const form = document.createElement('form')
   form.className = 'row'
@@ -1417,13 +1412,18 @@ function renderConnect(body: HTMLElement, state: AppState, app: App): void {
   body.append(form, div('error', state.loginError ?? '', 'error'))
   body.append(legalLinks('By signing in you agree to the'))
 
+  const other = document.createElement('details')
+  const summary = document.createElement('summary')
+  summary.textContent = 'Other connection options'
+  other.append(summary)
+  other.open = state.connectFlow.phase !== 'idle'
   // --- invite token
-  body.append(h4('Connection token or QR code'))
-  body.append(div('muted', 'Someone invites this device to one of their nodes; paste the token or scan their QR code, then wait for them to approve.'))
+  other.append(h4('Connection token or QR code'))
+  other.append(div('muted', 'Someone invites this device to one of their nodes; paste the token or scan their QR code, then wait for them to approve.'))
   const flow = state.connectFlow
   if (flow.phase === 'waiting') {
-    body.append(div('pending-box', `Waiting for approval to attach to ${pathLabel(flow.scopeNames)}…`))
-    body.append(button('secondary small', 'Cancel', () => app.closeModal()))
+    other.append(div('pending-box', `Waiting for approval to attach to ${pathLabel(flow.scopeNames)}…`))
+    other.append(button('secondary small', 'Cancel', () => app.closeModal()))
   } else {
     const tokenRow = document.createElement('div')
     tokenRow.className = 'row'
@@ -1434,18 +1434,18 @@ function renderConnect(body: HTMLElement, state: AppState, app: App): void {
     const go = button('primary', flow.phase === 'claiming' ? 'Connecting…' : 'Connect', () => void app.connectWithToken(input.value))
     go.disabled = flow.phase === 'claiming'
     tokenRow.append(input, go)
-    body.append(tokenRow)
-    body.append(scanButton((text) => { input.value = text; void app.connectWithToken(text) }, body))
-    if (flow.phase === 'error') body.append(div('error', flow.message))
-    if (flow.phase === 'denied') body.append(div('error', 'The owner denied this device.'))
-    if (flow.phase === 'expired') body.append(div('error', 'That invite expired. Ask for a new one.'))
+    other.append(tokenRow)
+    other.append(scanButton((text) => { input.value = text; void app.connectWithToken(text) }, other))
+    if (flow.phase === 'error') other.append(div('error', flow.message))
+    if (flow.phase === 'denied') other.append(div('error', 'The owner denied this device.'))
+    if (flow.phase === 'expired') other.append(div('error', 'That invite expired. Ask for a new one.'))
   }
 
   // --- direct
-  body.append(h4('Direct, device to device'))
-  body.append(div('muted', 'No account needed: connect straight to another device nearby, with a QR code or by pasting codes.'))
-  body.append(button('secondary', 'Direct connect…', () => app.openModal('direct')))
-  body.append(div('muted small-print', 'You can keep working locally and connect later from the ☰ menu.'))
+  other.append(h4('Direct, device to device'))
+  other.append(div('muted', 'No account needed: connect straight to another device nearby, with a QR code or by pasting codes.'))
+  other.append(button('secondary', 'Direct connect…', () => app.openModal('direct')))
+  body.append(other)
 }
 
 function renderInvite(body: HTMLElement, state: AppState, app: App): void {

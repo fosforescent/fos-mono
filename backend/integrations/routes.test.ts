@@ -69,7 +69,7 @@ test('list shows every peer with configuration and connection status', async () 
   expect(byId.github).toMatchObject({ kind: 'oauth', configured: true, connected: false, provides: ['repo', 'search'] })
   expect(byId.discord).toMatchObject({ kind: 'oauth', configured: false, connected: false })
   expect(byId.stripe).toMatchObject({ kind: 'platform', connected: true, accountName: 'cus_1' })
-  expect(byId.phone).toMatchObject({ kind: 'channel', configured: true, connected: false, pending: false })
+  expect(byId.phone).toMatchObject({ kind: 'channel', configured: true, connected: false, pending: false, provides: ['notify'], consumes: [] })
 })
 
 test('OAuth: start builds the authorize URL, the callback exchanges the code, stores encrypted tokens and redirects back', async () => {
