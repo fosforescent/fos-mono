@@ -65,6 +65,7 @@ model UserModel {
   FosNodeUserAccessLink         FosNodeUserAccessLinkModel[]
   UserMCPServerAccess           UserMCPServerAccessModel[]
   ApiTokens                     ApiTokenModel[]
+  IntegrationConnections        IntegrationConnectionModel[]
   UserPrompts                   UserPromptModel[]
   ToolUsesAsCaller              ToolUseModel[]                   @relation("ToolUseCallerUser")
   ToolUsesAsTarget              ToolUseModel[]                   @relation("ToolUseTargetUser")
