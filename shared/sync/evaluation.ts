@@ -31,6 +31,20 @@ export function writeNodeValue(r: Replica, path: Scope, name: string, value: unk
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [type, next] : edge) })), now)
   return { ...r }
 }
+/** A stored value may reference local or foreign nodes without importing their private context. */
+export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, value: unknown, now: number, links: Record<string, { id: string; owner?: string }>): Replica {
+  r = writeNodeValue(r, path, name, value, now)
+  const cid = resolveScope(r.store, headCid(r), path)!
+  const arg = argumentRefs(r.store, cid).find(a => a.name === name)!
+  const ref = content(r.store, arg.cid), target = valueContent(r.store, arg.cid)
+  const children: typeof target.children = Object.entries(links).map(([key, link]) => [r.store.primitive.linkField.getId(), put(r.store, {
+    data: { alias: { id: `${ref.data.alias!.id}:${key}` }, name: { content: key }, ref: link }, children: []
+  })])
+  const next = put(r.store, refNodeContent(r.store, ref.data, put(r.store, { ...target, children }), [[r.store.primitive.previousVersion.getId(), arg.cid]], arg.type))
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [arg.type, next] : edge) })), now)
+  return { ...r }
+}
+
 export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | null {
   const record = readNodeValue<EvaluationRecord>(r, path, EVALUATION_ARGUMENT)
   return record && typeof record.id === 'string' && Array.isArray(record.effects) && typeof record.status === 'string' ? record : null

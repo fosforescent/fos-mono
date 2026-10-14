@@ -1,3 +1,4 @@
+import { createSharingHandlers } from './sync/sharing'
 import { createEvaluationService } from './sync/evaluation'
 import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
@@ -222,6 +223,7 @@ app.use('/subscription/webhook', stripeRoute)
 // protectedRoutes.use(express.json());
 // dataRoutes.use(express.json());
 // Sync requests carry whole subtrees of nodes; the default 100kb limit rejected them (413) once an account grew.
+app.use('/public/node', express.json({ limit: '64kb' }))
 app.use(express.json({ limit: '50mb' }))
 
 protectedRoutes.use((req, res, next) => {
@@ -278,6 +280,12 @@ app.post('/auth/check-username', slowDown({
   delayMs: (used) => (2 ** used) * 50 // begin adding 500ms of delay per request above 100:
 }), checkUsernameExists)
 app.put('/error', maxRequests(10), putError)
+
+// Public links use audience-scoped guest receipts; they never grant account-sync credentials.
+const sharingHandlers = createSharingHandlers(prismaPeerSyncDeps, process.env.JWT_SECRET!)
+const guestThrottle = slowDown({ windowMs: 60_000, delayAfter: 30, delayMs: 500 })
+app.post('/public/node/visit', guestThrottle, sharingHandlers.visit)
+app.post('/public/node/input', guestThrottle, sharingHandlers.submit)
 
 // Device connection through an invite token (no session yet): claim, then poll for approval.
 app.post('/peer/connect', slowDown({
@@ -371,6 +379,9 @@ dataRoutes.post('/search', searchHandlers.search)
 dataRoutes.post('/search/reindex', searchHandlers.reindex)
 dataRoutes.get('/market/node', searchHandlers.marketNode)
 dataRoutes.post('/market/proposals', searchHandlers.marketProposal)
+dataRoutes.post('/sharing', sharingHandlers.configure)
+dataRoutes.post('/sharing/visit', sharingHandlers.visit)
+dataRoutes.post('/sharing/input', sharingHandlers.submit)
 dataRoutes.post('/peer-invite', peerInviteHandlers.createInvite)
 dataRoutes.get('/peer-invite/requests', peerInviteHandlers.listRequests)
 dataRoutes.post('/peer-invite/:id/approve', peerInviteHandlers.approveRequest)

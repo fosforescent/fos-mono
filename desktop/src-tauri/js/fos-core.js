@@ -2457,7 +2457,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll"];
   var INTEGRATION_PEERS = [
     { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
     { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
@@ -2465,7 +2465,7 @@
     { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
     { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
   ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment"];
+  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll"];
   function isLink(store, value) {
     if (isHandle(value))
       return false;
@@ -2571,6 +2571,8 @@
         return p.requestPaymentCapability.getId();
       case "notify":
         return p.notifyCapability.getId();
+      case "rank":
+      case "poll":
       case "timer":
       case "cron":
       case "task-completion":
@@ -8847,6 +8849,9 @@
   init_prelude();
 
   // ../shared/sync/triggers.ts
+  init_prelude();
+
+  // ../shared/sync/sharing.ts
   init_prelude();
 
   // ../shared/sync/embed.ts

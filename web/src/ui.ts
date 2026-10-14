@@ -5,6 +5,7 @@
  */
 
 import QRCode from 'qrcode'
+import { sharingControls } from './sharing'
 import { resolveText, put, content, headCid, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
@@ -436,7 +437,7 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   rows.append(...renderRootRows(state, app, prefs.tab)); panel.append(rows)
   if (prefs.tab === 'peers') {
     const invite = button('secondary small', 'Devices · invite with QR', () => void app.startInvite()); invite.disabled = state.session?.kind !== 'user'
-    panel.append(invite)
+    panel.append(invite, sharingControls(app))
     const phone = state.integrations.find(p => p.id === 'phone')
     const phoneButton = button('secondary small', 'Connect phone (SMS)', () => void app.connectIntegration('phone')); phoneButton.disabled = !phone?.configured || !app.isOnline('fos'); phoneButton.title = 'Link a phone number for SMS notifications; use the QR invitation for app access'; panel.append(phoneButton)
     if (app.canSpawnVirtualPeer()) panel.append(button('secondary small', 'New virtual peer', () => app.openModal('virtual')))
@@ -1094,6 +1095,10 @@ function firstLine(text: string): string {
 function renderRefBody(task: TaskView, app: App): HTMLElement {
   const body = span('title ref', '')
   const arrow = span('ref-arrow', '→')
+  if (app.sharedLink(task.id)) {
+    body.append(arrow, button('link ref-link', firstLine(task.title) || 'Shared node', () => app.openSharedLink(task.id)))
+    return body
+  }
   if (task.refOwner) {
     // a market result: the node lives in another account; open it to read it and propose
     const link = button('link ref-link', `🛒 ${firstLine(task.title) || '(untitled)'}`, () => void app.openMarket(task.refOwner!, task.refId ?? '', task.title))
@@ -1324,7 +1329,7 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     { label: 'Zoom in', keys: 'Alt+→', run: () => app.zoomTo([...at, task.id]) },
     ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Ctrl+Enter', run: () => app.toggleTaskAt(at, task) }] : []),
     { label: 'Add row below', keys: 'Enter', run: () => app.addRowBelow(at, task.id) },
-    ...(task.kind === 'ref' ? [{ label: 'Go to the referenced row', run: () => app.followRef(task.refId ?? '') }] : []),
+    ...(task.kind === 'ref' ? [{ label: 'Go to the referenced row', run: () => app.sharedLink(task.id) ? app.openSharedLink(task.id) : app.followRef(task.refId ?? '') }] : []),
     { label: 'Add comment', run: () => app.addRowInside(at, task.id, 'comment') },
     ...(task.kind === 'task' ? [{ label: 'Add requirement (type - inside: -[ ] task · -$ 50 · -@calendar 1h · -? search · -@peer …)', run: () => app.addRowInside(at, task.id) }] : []),
     ...(state.session?.kind === 'user' && task.kind !== 'ref' && task.kind !== 'supply' ? [{ label: task.market ? 'Remove from market' : 'List on market', run: () => app.setMarketAtRow(at, task.id, !task.market) }] : []),

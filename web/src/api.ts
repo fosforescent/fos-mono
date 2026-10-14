@@ -288,3 +288,15 @@ export function createRepositoryBranch(session: Session, repo: string, name: str
 export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover'): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord }> {
   return authed(session, 'POST', '/user/integrations/evaluate', { path, expected, branches, action })
 }
+
+export type ShareAddress = import('../../shared/sync/sharing').SharedAddress
+export type GuestResult = { node: import('../../shared/sync/sharing').SharedNode; visitorToken?: string }
+export function configureSharing(session: Session, body: { path: string[]; expected: string; audience: 'public' | 'users'; enabled: boolean; poll: 'approval' | 'rank' | null }): Promise<ShareAddress> {
+  return authed(session, 'POST', '/user/data/sharing', body)
+}
+export async function sharedRequest(baseUrl: string, session: Session | null, action: 'visit' | 'input', body: unknown): Promise<GuestResult> {
+  if (session?.kind === 'user') return authed(session, 'POST', `/user/data/sharing/${action}`, body)
+  const response = await fetch(`${baseUrl}/public/node/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!response.ok) throw await responseError(response)
+  return response.json() as Promise<GuestResult>
+}

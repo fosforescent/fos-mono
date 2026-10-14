@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node tests/regressions.cjs"
+    "test": "node tests/regressions.cjs && node tests/sharing.cjs"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.6",
