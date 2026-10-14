@@ -1,4 +1,4 @@
-import { addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
+import { capabilityTarget, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
 
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
 
@@ -76,4 +76,36 @@ test('a disabled or removed Fos binding cannot enable a previously available act
   expect(workHandler(r, ['task']).status).toBe('ready')
   r = addMemberAt(r, ['task'], 'fos', 'fos', [], 3)
   expect(workHandler(r, ['task']).status).toBe('missing')
+})
+
+test('offline peers cannot satisfy explicit or transitive handler dependencies', () => {
+  const r = createReplica('device'), store = r.store
+  const type = capabilityTarget(store, 'llm')
+  const peer = put(store, { data: { peerId: { content: 'fos' }, description: { content: 'llm' } }, children: [] })
+  const bound = put(store, refNodeContent(store, { alias: { id: 'handler' } }, peer, [], type))
+  expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
+  expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => true }).status).toBe('ready')
+  const higherOrder = put(store, { data: {}, children: [[type, bound]] })
+  expect(resolveBinding(store, store.primitive.documentField.getId(), higherOrder, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
+})
+
+test('disabling an offered handler removes availability without removing its configuration', async () => {
+  const { capabilityPeers, setMemberCapabilitiesAt } = await import('./index')
+  let r = addMemberAt(createReplica('device'), [], 'integration:github', 'GitHub', [], 1)
+  r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 2, ['repo'])
+  expect(capabilityPeers(r, [], 'repo')).toEqual(['integration:github'])
+  r = setMemberCapabilitiesAt(r, [], 'integration:github', [], ['repo'], 3, ['repo'])
+  expect(capabilityPeers(r, [], 'repo')).toEqual([])
+  expect(view(r, [])!.members[0]!.accepts).toContain('repo')
+})
+
+test('editing memberships preserves typed handlers in their original direction', async () => {
+  const { withMember, memberHandlers } = await import('./index')
+  const r = createReplica(), store = r.store, type = capabilityTarget(store, 'llm')
+  const to = put(store, refNodeContent(store, { alias: { id: 'to' } }, literal(r, 'to'), [], type))
+  const from = put(store, refNodeContent(store, { alias: { id: 'from' } }, literal(r, 'from'), [], type))
+  const member = put(store, { data: { peerId: { content: 'peer' } }, children: [[store.primitive.capabilityNode.getId(), to], [store.primitive.acceptsNode.getId(), from]] })
+  const updated = withMember(store, { data: {}, children: [[store.primitive.memberField.getId(), member]] }, 'peer', 'Peer', ['llm'], [], ['llm'])
+  expect(memberHandlers(store, updated, 'peer', store.primitive.capabilityNode.getId())).toEqual([to])
+  expect(memberHandlers(store, updated, 'peer', store.primitive.acceptsNode.getId())).toEqual([from])
 })

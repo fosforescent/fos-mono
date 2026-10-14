@@ -159,3 +159,9 @@ The backend directory contains the Node.js/Express API server that provides the 
 - [x] Implemented parameter validation utility pattern
 - [x] Fixed Express middleware type compatibility
 - [x] Added missing database schema fields for Stripe integration
+## Graph evaluation and cron
+`sync/evaluation.ts` provides owner-only `POST /user/integrations/evaluate`. It checks the submitted content version and branch selections under the existing per-user load/save lock, then uses the shared evaluator. GitHub issue creation reuses the integration handler and encrypted OAuth connection. The journal is saved before dispatch; uncertainty becomes manual recovery rather than a duplicate retry. Invited peer credentials cannot initiate account integration effects.
+
+`sync/cron.ts` is opt-in with `FOS_ENABLE_CRON=true`. **Run only on one always-on backend instance**: the existing per-user store lock is process-local. The runner scans paginated accounts every 30 seconds, claims occurrences in the graph, and uses the same evaluator. It checks the current UTC minute, has no missed-run catch-up, and uses the server's default branch selections. The flag is deliberately off for the default autoscaled deployment; the server advertises `cron` only when enabled. A distributed scheduler/lease is still required before enabling this on multiple instances or a scale-to-zero service.
+
+`util.ts` now advances the visible account root with an atomic compare-and-swap against the version observed by `dbToStore` (`sync/storeVersion.ts`). A stale writer cannot overwrite another instance's commit, and a rejected evaluation claim cannot dispatch effects. If another instance changes the tree during an external effect, the attempt remains uncertain and requires recovery; it is not automatically repeated. Integration HTTP calls have a 15-second deadline, evaluation stops starting work after two minutes, and recovery of an interrupted run waits three minutes from its start.

@@ -44,3 +44,11 @@ cd web && VITE_API_URL=http://localhost:4000 npx vite --port 5199
 - [ ] Deliver `-@name` assignments into the assignee's replica (today they only show in the assigner's context panel)
 - [ ] A mail handler for the `mail` capability (registered on `fos`, button disabled)
 - [ ] Devices could register capabilities too (today only the account server does)
+
+## Zoomed nodes and evaluation
+The zoomed node has a persistent full-text textarea above its children. Its draft/caret survive sync; saving uses the existing three-way merge. Child filters keep matching subtrees visible, and node search links compatible local values using existing refs/supplies. Template placeholders are neutral until instantiated. Peer-backed actions use live availability as well as the node's inherited offers.
+
+The green Evaluate action uses the shared evaluator. Local tasks run in the client; GitHub issue effects run at the account server after syncing and validating the reviewed node. LLM results still require the existing human review flow; other unimplemented executors block rather than mark requirements fulfilled. Evaluation journals are not ordinary undo entries. Review recovery creates/checks manual compensation tasks before unlocking a failed transaction.
+
+Device timers, parent-completion, and on-request triggers run while that owning app is open. They do not replay failed/uncertain occurrences automatically. Server cron appears only when advertised by an enabled scheduler. Trigger settings and execution records are typed document refs, not additional row kinds.
+Device trigger execution requires the browser's Web Locks API (available in supported browsers on secure origins). It holds a lock for the device and checks persisted occurrence state so duplicate tabs do not run the same trigger concurrently. The poller caches configured triggers by graph head and checks only due occurrences.

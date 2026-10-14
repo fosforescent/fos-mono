@@ -1,5 +1,7 @@
+import { nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
+import { recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withBranches, scopeBranches, bindRepository, repositoryAt, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid } from '../../shared/sync/index'
-import { createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
+import { evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
  * group's document or to another device's node), the connection state, the
@@ -20,7 +22,7 @@ import { createRepositoryBranch, readRepository, proposeRepositoryMerge, decideR
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  allocationMatches, capabilityPeers, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -440,7 +442,15 @@ export class App {
   // -------------------------------------------------------------------------
   // Lifecycle
 
+  private triggerTimer: ReturnType<typeof setInterval> | null = null
+  private runningTriggers = false
+  private triggerScanKey = ''
+  private triggerCandidates: ReturnType<typeof configuredTriggers> = []
   start(): void {
+    if (!this.triggerTimer) {
+      this.triggerTimer = setInterval(() => void this.runTriggers(), 1000)
+      window.addEventListener('pagehide', () => { if (this.triggerTimer) clearInterval(this.triggerTimer); this.triggerTimer = null })
+    }
     window.addEventListener('online', () => this.reconnect('network back'))
     window.addEventListener('offline', () => {
       if (this.state.connection !== 'offline') this.set({ connection: 'offline' })
@@ -995,31 +1005,31 @@ export class App {
    * (`SERVER_CAPABILITIES` until then), the node's members with the capability rows this node's owner exposes to each
    * (editable here by the owner), and devices attached here (a direct-connected one is reachable `direct`).
    */
-  contextPeers(): ContextPeer[] {
+  contextPeers(path = this.state.view): ContextPeer[] {
     const peers: ContextPeer[] = []
     const session = this.state.session
     const me = this.state.replica.meta.peerId
-    const local = this.currentView()
+    const local = view(this.state.replica, path)
     // Constructor arguments are the surrounding context; nearer peer bindings shadow ancestors.
     const members = new Map<string, NonNullable<NodeView>['members'][number]>()
-    for (let i = 0; i <= this.state.view.length; i++) for (const member of view(this.state.replica, this.state.view.slice(0, i))?.members ?? []) members.set(member.peerId, member)
+    for (let i = 0; i <= path.length; i++) for (const member of view(this.state.replica, path.slice(0, i))?.members ?? []) members.set(member.peerId, member)
     const node = local ? { ...local, members: [...members.values()] } : local
     const nameOf = (id: string) => (id.startsWith('user:') ? id.slice(5) : id.slice(0, 8))
     // the fos account server is always a peer of the root context (sign in happens on its row when not connected)
     if (!this.config.scopedDocument && !this.virtualIdentity && (session?.kind === 'user' || this.state.view.length <= homePath(this.state.replica).length)) {
       const id = this.state.replica.meta.serverPeerId ?? (session ? `user:${session.username}` : 'fos')
-      const online = !!session && this.transport() === 'account' && this.state.connection !== 'offline'
+      const online = this.isOnline('fos')
       peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
     }
     // integration peers (sign in with GitHub, Google, Discord; Stripe on the account; the phone): the server's status when signed in, the registry otherwise
     if (!this.virtualIdentity && (this.state.atRoot || (!this.config.scopedDocument && (homePath(this.state.replica).length || node?.members.some(member => member.peerId.startsWith('integration:')))))) {
       for (const i of INTEGRATION_PEERS) {
         const s = this.state.integrations.find((p) => p.id === i.id)
-        peers.push({ id: `integration:${i.id}`, name: i.name, online: !!s?.connected, capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { kind: i.kind, provides: [...i.provides], consumes: [...i.consumes], configured: s?.configured ?? false, connected: s?.connected ?? false, pending: s?.pending ?? false, accountName: s?.accountName ?? null } })
+        peers.push({ id: `integration:${i.id}`, name: i.name, online: this.isOnline(`integration:${i.id}`), capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { kind: i.kind, provides: [...i.provides], consumes: [...i.consumes], configured: s?.configured ?? false, connected: s?.connected ?? false, pending: s?.pending ?? false, accountName: s?.accountName ?? null } })
       }
       for (const m of this.state.mcpPeers) {
         if (peers.some((x) => x.id === m.id)) continue
-        peers.push({ id: m.id, name: m.name, online: true, capabilities: ['tool', 'read', 'edit'], disabled: [], accepts: [], isAccount: false, member: false, mcp: { serverId: m.serverId, tools: m.tools } })
+        peers.push({ id: m.id, name: m.name, online: this.isOnline(m.id), capabilities: ['tool', 'read', 'edit'], disabled: [], accepts: [], isAccount: false, member: false, mcp: { serverId: m.serverId, tools: m.tools } })
       }
     }
     for (const m of node?.members ?? []) {
@@ -1037,13 +1047,26 @@ export class App {
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
   allCapabilities(): Capability[] { return [...CAPABILITIES] }
+  private withIntegrationPeer(replica: Replica, path: Scope, id: string): Replica {
+    const integration = INTEGRATION_PEERS.find(peer => peer.id === id)
+    if (!integration || view(replica, path)?.members.some(peer => peer.peerId === `integration:${id}`)) return replica
+    replica = addMemberAt(replica, path, `integration:${id}`, integration.name, [], this.now())
+    return setMemberCapabilitiesAt(replica, path, `integration:${id}`, [], [], this.now(), [...integration.provides])
+  }
   /** Integration peers and MCP peers as the server sees them for this account. */
   async refreshIntegrations(): Promise<void> {
     const session = this.state.session
     if (!session || session.kind !== 'user') { if (this.state.integrations.length || this.state.mcpPeers.length) this.set({ integrations: [], mcpPeers: [] }); return }
     try {
       const [{ providers }, mcp] = await Promise.all([listIntegrations(session), listMcpPeers(session).catch(() => ({ peers: [] as McpPeerInfo[] }))])
-      if (this.state.session === session) { this.set({ integrations: providers, mcpPeers: mcp.peers }); void this.refreshRepositories() }
+      if (this.state.session === session) {
+        let replica = this.state.replica
+        // Existing OAuth connections were formerly only synthetic Settings rows; persist their root offers.
+        if (!this.virtualIdentity && !this.config.scopedDocument && !replica.meta.scope.length) for (const provider of providers.filter(p => p.connected)) replica = this.withIntegrationPeer(replica, [], provider.id)
+        this.set({ integrations: providers, mcpPeers: mcp.peers, ...(replica !== this.state.replica ? { replica } : {}) })
+        if (isDirty(replica)) this.scheduleSync()
+        void this.refreshRepositories()
+      }
     } catch { /* the rows fall back to the static registry */ }
   }
   /** Sign in with an OAuth peer (the browser leaves for the provider and comes back with ?integration=…), or link the phone. */
@@ -1051,6 +1074,7 @@ export class App {
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your fos account first; integrations attach to it.'); this.openModal('connect'); return }
     const status = this.state.integrations.find((p) => p.id === id)
+    this.edit(this.withIntegrationPeer(this.state.replica, this.state.view, id))
     if (id === 'phone') { this.set({ phone: { phase: 'number' } }); this.openModal('phone'); return }
     if (status?.kind === 'platform') { this.notify('info', `${status.name} is set up on the account itself (payments); there is nothing to connect here.`); return }
     try {
@@ -1217,7 +1241,7 @@ export class App {
   /** Who this device acts as when it confirms: the account username, else the device name. */
   actorName(): string { return this.state.session?.username ?? this.state.deviceName }
   async createNodeBranch(at: Scope, id: string, name: string, absolute = false): Promise<void> {
-    if (this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
+    if (this.evaluating || this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
     try {
       const path = absolute ? [...at, id] : [...this.state.view, ...at, id], info = this.repositoryInfo(path)
       const session = this.state.session, generation = this.authGeneration
@@ -1236,7 +1260,8 @@ export class App {
     } catch (error) { this.notify('error', String(error)) }
   }
   selectNodeBranch(at: Scope, id: string, name: string, absolute = false): void {
-    if (this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
+    document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+    if (this.evaluating || this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
     const path = absolute ? [...at, id] : [...this.state.view, ...at, id]
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id)
     if (!row?.branches?.names.includes(name)) return
@@ -1271,13 +1296,9 @@ export class App {
     if (this.transport()) void this.syncNow('checkout complete')
   }
   hasRepositoryPeer(path: Scope): boolean {
-    let enabled = false
-    for (let i = 0; i <= path.length; i++) {
-      const member = view(this.state.replica, path.slice(0, i))?.members.find(m => m.peerId === 'integration:github')
-      if (member) enabled = !member.disabled?.includes('repo') && (member.capabilities.includes('repo') || !!member.accepts?.includes('repo'))
-    }
-    return enabled
+    return this.capabilityAvailable('repo', path)
   }
+
   repositoryInfo(path: Scope = this.state.view): { repo: string; snapshot?: RepositorySnapshot } | null {
     const repo = repositoryAt(this.state.replica, path)
     return repo ? { repo, snapshot: this.repositories.get(repo) } : null
@@ -1286,8 +1307,7 @@ export class App {
     const path = [...this.state.view, ...at, id]
     try {
       let next = bindRepository(this.state.replica, path, repo.trim(), this.now())
-      next = addMemberAt(next, path, 'integration:github', 'GitHub', [], this.now())
-      next = setMemberCapabilitiesAt(next, path, 'integration:github', [], [], this.now(), ['repo', 'search'])
+      next = this.withIntegrationPeer(next, path, 'github')
       this.edit(next)
       this.repositoryPollAt = 0
       void this.refreshRepositories()
@@ -1399,11 +1419,196 @@ export class App {
       await this.refreshRepositories(true)
     } catch (error) { this.notify('error', String(error)) }
   }
+  /** Reachability is runtime state; keeping a configured peer does not make it available. */
+  capabilityAvailable(capability: Capability, path = this.state.view): boolean {
+    return capabilityPeers(this.state.replica, path, capability).some(id => this.isOnline(id))
+  }
+
+  currentRow(): TaskView | null {
+    const path = this.state.view
+    return path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) ?? null : null
+  }
+  /** The full text editor uses the same three-way merge as cells, preserving remote edits. */
+  editCurrentText(text: string, draft: { store: Replica['store']; head: string; path: Scope }): void {
+    if (draft.store !== this.state.replica.store || !draft.path.length) return
+    const parent = draft.path.slice(0, -1), id = draft.path.at(-1)!
+    if (headCid(this.state.replica) === draft.head) { this.edit(renameTask(this.state.replica, parent, id, text, this.now())); return }
+    const branch = createReplica(this.state.replica.meta.peerId)
+    importNodes(branch.store, reachableNodes(draft.store, [draft.head])); commitRoot(branch.store, draft.head, this.now())
+    for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(branch.store, id, name)
+    const next = renameTask(branch, parent, id, text, this.now())
+    const current = this.state.replica
+    importNodes(current.store, reachableNodes(next.store, [headCid(next)]))
+    const merged = mergeNodes(current.store, draft.head, headCid(current), headCid(next), { ours: 'Incoming edit', theirs: this.state.deviceName })
+    commitRoot(current.store, merged.cid, this.now()); this.edit({ ...current })
+    if (merged.newChoiceCids.length) this.notify('info', 'This text changed in two places. Choose which version to keep.')
+  }
+  changeCurrentKind(kind: RowKind): void {
+    const path = this.state.view
+    if (path.length && path.at(-1) !== 'fos:home') this.edit(setRowKind(this.state.replica, path.slice(0, -1), path.at(-1)!, kind, this.now()))
+  }
+  searchLocalNodes(query: string): Array<{ row: TaskView; path: Scope }> {
+    const found: Array<{ row: TaskView; path: Scope }> = [], visited = new Set<string>()
+    const walk = (path: Scope) => {
+      if (path.length > 64 || visited.size > 5000) return
+      for (const row of view(this.state.replica, path)?.tasks ?? []) {
+        if (visited.has(row.id)) continue
+        visited.add(row.id)
+        const full = [...path, row.id]
+        if (row.title.toLowerCase().includes(query.toLowerCase()) && row.kind !== 'ref' && !this.state.view.includes(row.id)) found.push({ row, path: full })
+        if (row.childCount) walk(full)
+      }
+    }
+    walk([]); return found.slice(0, 50)
+  }
+  canLinkNode(id: string, destination = this.state.view): boolean {
+    const target = resolveRef(this.state.replica, id)?.row
+    if (!target || destination.includes(id)) return false
+    const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
+    if (!req) return true
+    if (req.capability === 'allocation') return target.kind === 'allocation' && allocationMatches(req, target.allocation)
+    if (req.capability === 'task') return target.kind === 'task' && target.done
+    if (req.capability === 'search') return target.kind === 'query' && !!target.query?.executedAt
+    return false
+  }
+  linkNode(id: string, destination = this.state.view): void {
+    if (!this.canLinkNode(id, destination)) { this.notify('error', 'This value does not match the destination requirement.'); return }
+    const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
+    this.edit(req ? addSupply(this.state.replica, destination.slice(0, -1), destination.at(-1)!, { capability: req.capability, by: this.actorName(), ref: id }, this.now()) : addRef(this.state.replica, destination, id, this.now()))
+  }
+  private evaluationBranches(path: Scope): Record<string, string> {
+    const r = this.state.replica
+    return { ...r.meta.branches, ...(r.meta.branch && r.meta.scope.length ? { [r.meta.scope.at(-1)!]: r.meta.branch } : {}), ...scopeBranches(r.store, headCid(r), path) }
+  }
+  evaluating = false
+  evaluationStatus() { return evaluationRecord(this.state.replica, this.state.view) }
+  async evaluateCurrent(): Promise<void> { await this.evaluateAt([...this.state.view]) }
+  async evaluateAt(path: Scope, triggered = false): Promise<void> {
+    if (!triggered) document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+    if (this.evaluating) { if (triggered) throw new Error('Another evaluation is running.'); return }
+    this.evaluating = true; this.refresh()
+    const store = this.state.replica.store, generation = this.authGeneration
+    const valid = () => { if (this.state.replica.store !== store || generation !== this.authGeneration) throw new Error('The data session changed during evaluation.') }
+    try {
+      const needsServer = evaluationSteps(this.state.replica, path).some(step => step.row?.requirement?.capability === 'repo' && !step.row.requirement.satisfied)
+      if (needsServer) {
+        if (!this.isOnline('fos') || this.state.session?.kind !== 'user' || this.virtualIdentity) throw new Error('Connect to the account server to evaluate integration effects.')
+        await this.syncNow('before evaluation'); valid()
+        if (isDirty(this.state.replica) || !this.isOnline('fos')) throw new Error('Sync these changes before evaluating them.')
+        const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
+        if (!cid) throw new Error('The node no longer exists.')
+        try { await evaluateOnServer(this.state.session!, [...r.meta.scope, ...path], put(r.store, valueContent(r.store, cid)), this.evaluationBranches(path)) }
+        finally { if (generation === this.authGeneration) await this.syncNow('evaluation results') }
+        valid()
+        this.notify('info', 'Evaluation committed.'); return
+      }
+      const record = await evaluateNode(path, {
+        get: () => { valid(); return this.state.replica },
+        save: replica => { valid(); this.set({ replica }); this.scheduleSync() },
+        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: () => false,
+        check: () => []
+      })
+      if (record.status !== 'committed') throw new Error(record.error ?? 'Evaluation needs recovery.')
+      this.notify('info', 'Evaluation committed.')
+    } catch (error) { if (triggered) throw error; this.notify('error', error instanceof Error ? error.message : String(error)) }
+    finally { this.evaluating = false; this.refresh() }
+  }
+  async recoverCurrentEvaluation(): Promise<void> {
+    if (this.evaluating) return
+    const path = [...this.state.view], r = this.state.replica, generation = this.authGeneration
+    try {
+      if (this.state.session?.kind === 'user' && !this.virtualIdentity && this.isOnline('fos')) {
+        await this.syncNow('before recovery')
+        if (r.store !== this.state.replica.store || generation !== this.authGeneration) throw new Error('The data session changed during recovery.')
+        if (isDirty(this.state.replica)) throw new Error('Sync these changes before recovery.')
+        const cid = resolveScope(r.store, headCid(this.state.replica), path)
+        if (!cid) return
+        try { await evaluateOnServer(this.state.session, [...r.meta.scope, ...path], put(r.store, valueContent(r.store, cid)), this.evaluationBranches(path), 'recover') }
+        finally { await this.syncNow('recovery results') }
+      } else {
+        if (evaluationRecord(r, path)?.effects.length) throw new Error('Reconnect to the executor before recovering external effects.')
+        this.set({ replica: recoverEvaluation(r, path, this.now()) })
+      }
+      this.notify('info', 'Complete each manual recovery task, then choose Review recovery again to unlock evaluation.')
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  retryCurrentTrigger(): void {
+    const state = this.currentTriggerState()
+    if (!state) return
+    const evaluation = evaluationRecord(this.state.replica, state.target)
+    if (evaluation && !['committed', 'rolled-back'].includes(evaluation.status)) {
+      this.goTo(state.target); this.notify('info', 'Review recovery before rearming this trigger.'); return
+    }
+    this.edit(writeNodeValue(this.state.replica, this.state.view, 'fos:trigger-state', { ...state, occurrence: '', status: 'finished', error: undefined }, this.now()))
+  }
+  currentTrigger() { return nodeTrigger(this.state.replica, this.state.view) }
+  currentTriggerState() { return triggerState(this.state.replica, this.state.view) }
+  triggerKinds(): TriggerKind[] { return [...(navigator.locks ? ['timer', 'task-completion', 'request'] as TriggerKind[] : []), ...(this.isOnline('fos') && this.state.serverCapabilities?.includes('cron') ? ['cron' as const] : [])] }
+  configureTrigger(kind: TriggerKind, value?: string): void {
+    try {
+      const peer = kind === 'cron' ? 'fos' : this.state.replica.meta.peerId
+      if (!this.triggerKinds().includes(kind)) throw new Error('The trigger provider is not active.')
+      let r = this.state.replica
+      if (peer === 'fos') {
+        const member = view(r, [])?.members.find(m => m.peerId === 'fos')
+        if (member) r = setMemberCapabilitiesAt(r, [], 'fos', member.capabilities, member.disabled ?? [], this.now(), [...new Set([...(member.accepts ?? []), 'cron'] as Capability[])])
+      } else {
+        const home = homePath(r), member = view(r, home)?.members.find(m => m.peerId === peer)
+        if (!member) r = addMemberAt(r, home, peer, this.state.deviceName, [], this.now())
+        r = setMemberCapabilitiesAt(r, home, peer, member?.capabilities ?? [], member?.disabled ?? [], this.now(), [...new Set([...(member?.accepts ?? []), 'timer', 'task-completion', 'request'] as Capability[])])
+      }
+      const trigger = { kind, peer, enabled: true, created: this.now(), ...(kind === 'timer' ? { due: Date.parse(value ?? '') } : {}), ...(kind === 'cron' ? { expression: value ?? '' } : {}) }
+      this.edit(setNodeTrigger(r, this.state.view, trigger, this.now()))
+      this.notify('info', kind === 'cron' ? 'Cron configured on fos (UTC).' : 'Trigger configured on this device; it runs while this app is open.')
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  toggleTrigger(): void {
+    const trigger = this.currentTrigger()
+    if (!trigger) return
+    this.edit(writeNodeValue(this.state.replica, this.state.view, 'fos:trigger', { ...trigger, enabled: !trigger.enabled }, this.now()))
+  }
+  async runTriggers(): Promise<void> {
+    if (this.runningTriggers || this.evaluating || this.projectSwitching || !navigator.locks) return
+    const scanKey = headCid(this.state.replica) + JSON.stringify(this.branchSelections)
+    if (scanKey !== this.triggerScanKey) { this.triggerScanKey = scanKey; this.triggerCandidates = configuredTriggers(this.state.replica) }
+    const due = this.triggerCandidates.some(({ path, trigger }) => {
+      if (!trigger.enabled || trigger.peer !== this.state.replica.meta.peerId || trigger.kind === 'cron') return false
+      const prior = triggerState(this.state.replica, path)
+      if (prior && prior.status !== 'finished') return false
+      const occurrence = triggerOccurrence(this.state.replica, path, trigger, this.now())
+      return occurrence ? occurrence !== prior?.occurrence : trigger.kind === 'task-completion' && !!prior?.occurrence
+    })
+    if (!due) return
+    this.runningTriggers = true
+    const store = this.state.replica.store
+    try {
+      await navigator.locks.request(`fos:triggers:${this.state.replica.meta.peerId}`, { ifAvailable: true }, async lock => {
+        if (!lock) return
+        const persisted = loadReplica(this.config.storage.loadReplica())
+        for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(persisted.store, id, name)
+        await runNodeTriggers({
+        get: () => { if (this.state.replica.store !== store) throw new Error('Data session changed'); return this.state.replica },
+        save: replica => { if (this.state.replica.store !== store) throw new Error('Data session changed'); this.set({ replica }); this.scheduleSync() },
+        now: () => this.now(),
+        available: (peer, kind, path) => {
+          if (peer !== this.state.replica.meta.peerId || kind === 'cron' || !capabilityPeers(this.state.replica, path, kind).includes(peer)) return false
+          const saved = triggerState(persisted, path), current = nodeTrigger(this.state.replica, path)
+          const own = triggerState(this.state.replica, path)
+          if (kind === 'request' && saved && current && triggerOccurrence(persisted, path, current, this.now()) !== triggerOccurrence(this.state.replica, path, current, this.now())) return false
+          if (saved && saved.occurrence !== own?.occurrence && (saved.status !== 'finished' || (current && saved.occurrence === triggerOccurrence(this.state.replica, path, current, this.now())))) return false
+          return true
+        },
+        evaluate: path => this.evaluateAt(path, true)
+        })
+      })
+    } catch (error) { this.notify('error', String(error)) }
+    finally { this.runningTriggers = false }
+  }
   textArguments(at: Scope) {
     const path = [...this.state.view, ...at], r = this.state.replica
     const cid = resolveScope(r.store, headCid(r), path)
     if (!cid) return []
-    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && content(r.store, arg.cid).data.name?.content).map(arg => {
+    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && content(r.store, arg.cid).data.name?.content && !arg.name?.startsWith('fos:')).map(arg => {
       const result = resolveText(r, path, `{{${arg.name}}}`)
       return { id: content(r.store, arg.cid).data.alias!.id, name: arg.name!, text: result.bindings[0]?.status === 'ready' ? result.text : '', problems: result.bindings.flatMap(b => b.problems) }
     })
@@ -1422,10 +1627,11 @@ export class App {
     this.notify('info', `Text argument ${name} added. Use {{${name}}} in notes in this context.`)
   }
   subtasksAvailability(at: Scope) {
-    return workHandler(this.state.replica, [...this.state.view, ...at])
+    return workHandler(this.state.replica, [...this.state.view, ...at], { isPeerActive: id => this.isOnline(id) })
   }
   generateSubtasks(at: Scope): void {
     try {
+      if (this.subtasksAvailability(at).status !== 'ready') throw new Error('Connect an active language-model peer first.')
       const result = addSubtasksTemplate(this.state.replica, [...this.state.view, ...at], this.now())
       this.edit(result.replica)
       this.openWork(at, result.requestId)
@@ -1438,10 +1644,10 @@ export class App {
       this.notify('info', 'Fill in the specification and acceptance examples, then confirm readiness and preview the agent context.')
     } catch (error) { this.notify('error', String(error)) }
   }
-  openWork(at: Scope, id: string): void {
+  openWork(at: Scope, id: string, absolute = false): void {
     if (this.state.work?.busy) { this.notify('info', 'An agent request is still running.'); return }
     try {
-      const path = [...this.state.view, ...at, id]
+      const path = absolute ? [...at, id] : [...this.state.view, ...at, id]
       this.set({ work: { path, preview: taskWorkContext(this.state.replica, path), busy: false }, modal: 'work', contextMenu: null })
     } catch (error) { this.notify('error', String(error)) }
   }
@@ -1457,6 +1663,8 @@ export class App {
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to use the fos model.'); return }
     this.set({ work: { ...work, busy: true, error: undefined } })
     try {
+      const handler = workHandler(this.state.replica, work.path, { isPeerActive: id => this.isOnline(id) })
+      if (handler.status !== 'ready') throw new Error(handler.problems.join('; '))
       const run = beginTaskWork(this.state.replica, work.path, work.preview, this.now())
       this.edit(run.replica)
       this.set({ collapsed: [...this.state.collapsed, run.path.at(-1)!] })
@@ -1553,10 +1761,10 @@ export class App {
     return out
   }
   /** Supply a requirement: a confirmation by this user, a choice, or a reference to an allocation/query row. */
-  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: CapabilityKind; ref?: string; choice?: number }): void {
+  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: CapabilityKind; ref?: string; choice?: number }, absolute = false): void {
     if ((supply.capability === 'confirmation' || supply.capability === 'peer') && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
     const by = this.state.session?.username ?? this.state.deviceName
-    this.edit(addSupply(this.state.replica, [...this.state.view, ...at], requirementId, { ...supply, by }, this.now()))
+    this.edit(addSupply(this.state.replica, absolute ? at : [...this.state.view, ...at], requirementId, { ...supply, by }, this.now()))
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirementId) })
   }
   /** Run a query row: semantic search through the account; results become reference rows under it (replacing the previous ones). */
@@ -1691,14 +1899,14 @@ export class App {
   private recorded: Blob[] = []
 
   canRecordVoice(): boolean {
-    return !!this.state.session && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
+    return this.capabilityAvailable('llm') && this.state.session?.kind === 'user' && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
   }
 
   async toggleVoice(): Promise<void> {
     if (this.state.voice?.phase === 'recording') { this.recorder?.stop(); return }
     if (this.state.voice) return
     if (!this.state.session) { this.notify('error', 'Connect to your account to transcribe voice notes.'); this.openModal('connect'); return }
-    if (!this.canRecordVoice()) { this.notify('error', 'This browser cannot record audio.'); return }
+    if (!this.canRecordVoice()) { this.notify('error', 'Recording needs an active Fos peer and a browser with audio recording support.'); return }
     const at = [...this.state.view]
     const generation = this.authGeneration
     try {
@@ -1854,7 +2062,7 @@ export class App {
 
   /** Zoom into a descendant: `at` is its path relative to the current view (any depth). */
   zoomTo(at: Scope): void { this.goTo([...this.state.view, ...at]) }
-  goTo(path: Scope): void { const home = homePath(this.state.replica); if (!path.length) path = home; this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false }) }
+  goTo(path: Scope): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); const home = homePath(this.state.replica); if (!path.length) path = home; this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false }) }
   /** Zoom out within Home; device settings are reached through the menu. */
   zoomOut(): void { if (this.state.view.length > homePath(this.state.replica).length) this.goTo(this.state.view.slice(0, -1)) }
   goToRoot(): void { this.set({ atRoot: true, view: [], selected: null, contextMenu: null }) }
@@ -1886,9 +2094,10 @@ export class App {
   }
 
   isOnline(peerId: string): boolean {
-    if (peerId === 'fos') return this.transport() === 'account' && this.state.connection !== 'offline'
-    if (peerId.startsWith('integration:')) return !!this.state.integrations.find(peer => `integration:${peer.id}` === peerId)?.connected
-    if (peerId === this.state.replica.meta.peerId) return this.transport() !== null
+    if (peerId === 'fos' || peerId === this.state.replica.meta.serverPeerId) return this.transport() === 'account' && ['online', 'syncing'].includes(this.state.connection)
+    if (peerId.startsWith('integration:')) return this.isOnline('fos') && !!this.state.integrations.find(peer => `integration:${peer.id}` === peerId)?.connected
+    if (peerId.startsWith('mcp:')) return this.isOnline('fos') && this.state.mcpPeers.some(peer => peer.id === peerId)
+    if (peerId === this.state.replica.meta.peerId) return true
     return !!this.virtualPeers?.isOnline(peerId) || this.state.onlinePeers.includes(peerId)
   }
 

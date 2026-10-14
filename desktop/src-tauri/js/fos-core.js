@@ -2257,10 +2257,10 @@
     return out;
   }
   function allocationFills(req, a) {
-    return !!a && (!req.resource || a.type === req.resource) && (req.amount === void 0 || a.amount >= req.amount);
+    return allocationMatches(req, a) && (req.amount === void 0 || a.amount >= req.amount);
   }
   function allocationMatches(req, a) {
-    return !!a && (!req.resource || a.type === req.resource);
+    return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit === req.unit) && (req.start === void 0 || a.start !== void 0 && a.start <= req.start) && (req.end === void 0 || a.end === void 0 || a.end >= req.end) && (!req.peer || a.person === req.peer);
   }
   function requirementProgress(store, requirementCid, root) {
     const req = demandOf(valueContent(store, requirementCid));
@@ -2448,7 +2448,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request"];
   var INTEGRATION_PEERS = [
     { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
     { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
@@ -2562,6 +2562,11 @@
         return p.requestPaymentCapability.getId();
       case "notify":
         return p.notifyCapability.getId();
+      case "timer":
+      case "cron":
+      case "task-completion":
+      case "request":
+        return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] });
     }
   }
   function capabilityOfTarget(store, target) {
@@ -2580,8 +2585,8 @@
   }
   function memberRefContent(store, peerId, name, capabilities, disabled = [], accepts = []) {
     const unique = [...new Set(capabilities)];
-    const off = [...new Set(disabled)].filter((c) => unique.includes(c));
     const from = [...new Set(accepts)];
+    const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c));
     return {
       data: {
         peerId: { content: peerId },
@@ -2609,27 +2614,26 @@
       if (!peerId)
         continue;
       const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c) => c !== null))];
-      const off = (ref.data.disabledCapabilities?.content ?? []).filter((c) => CAPABILITIES.includes(c) && caps.includes(c));
       const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c) => c !== null);
+      const off = (ref.data.disabledCapabilities?.content ?? []).filter((c) => CAPABILITIES.includes(c) && (caps.includes(c) || accepts.includes(c)));
       out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...off.length ? { disabled: off } : {}, ...accepts.length ? { accepts } : {} });
     }
     return out;
   }
-  function memberHandlers(store, value, peerId) {
+  function memberHandlers(store, value, peerId, direction) {
     if (isBranchChoice(store, value)) {
       const edge = branchEdge(store, put(store, value));
       if (edge)
-        return memberHandlers(store, content(store, identityCid(store, edge)), peerId);
+        return memberHandlers(store, content(store, identityCid(store, edge)), peerId, direction);
     }
     const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId);
-    return member ? content(store, member[1]).children.filter((e) => e[0] === store.primitive.capabilityNode.getId() && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : [];
+    return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && (e[0] === store.primitive.capabilityNode.getId() || e[0] === store.primitive.acceptsNode.getId()) && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : [];
   }
   function withMember(store, value, peerId, name, capabilities, disabled = [], accepts = []) {
     const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts);
-    const handlers = memberHandlers(store, value, peerId);
     next.children = next.children.flatMap((edge) => {
-      const capability = capabilityOf(store, edge);
-      const matching = capability ? handlers.filter((cid) => capabilityOfTarget(store, cid) === capability) : [];
+      const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge);
+      const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : [];
       return matching.length ? matching.map((cid) => [edge[0], cid]) : [edge];
     });
     const refCid = put(store, next);
@@ -2778,6 +2782,9 @@
     const owned = /* @__PURE__ */ new Set();
     const childEdges = (value) => value.children.filter((edge) => {
       const kind = rowKindOf(store, edge);
+      const name = content(store, identityCid(store, edge)).data.name?.content;
+      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && name === "fos:trigger")
+        return false;
       if (kind)
         return !(instantiate && kind === "supply");
       if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId())
@@ -8825,6 +8832,12 @@
   init_prelude();
 
   // ../shared/sync/repository.ts
+  init_prelude();
+
+  // ../shared/sync/evaluation.ts
+  init_prelude();
+
+  // ../shared/sync/triggers.ts
   init_prelude();
 
   // ../shared/sync/embed.ts

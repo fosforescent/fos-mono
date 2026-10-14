@@ -106,7 +106,7 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
             ...(claims.kind === 'peer' ? { proposeOnly: true, peerName: claims.name } : {}),
             onlinePeers: deps.onlinePeers ? deps.onlinePeers(user.id) : undefined,
             // what this server registers with the peer: reachable over http/ws, a relay for peers that cannot connect directly, and its services
-            capabilities: SERVER_CAPABILITIES
+            capabilities: process.env.FOS_ENABLE_CRON === 'true' ? [...SERVER_CAPABILITIES, 'cron' as const] : SERVER_CAPABILITIES
           }
           const served = serveSync(store, parsed, serverPeerIdFor(user.username), deps.now ? deps.now() : Date.now(), options)
           if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error, code: served.code, ...(served.missingNodeIds ? { missingNodeIds: served.missingNodeIds } : {}) } } as const

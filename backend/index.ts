@@ -1,3 +1,5 @@
+import { createEvaluationService } from './sync/evaluation'
+import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
 import http from 'http'
 
@@ -540,6 +542,15 @@ const integrationDeps = prismaIntegrationDeps(prisma, getUserId, {
   rows: rowsDeps(storeDeps)
 })
 const integrations = createIntegrationHandlers(integrationDeps)
+const evaluationService = createEvaluationService(prismaPeerSyncDeps, {
+  githubConnected: async id => !!await integrationDeps.connections.get(id, 'github'),
+  createIssue: integrations.createIssue
+})
+startCronRunner({
+  enabled: process.env.FOS_ENABLE_CRON === 'true',
+  users: async after => (await prisma.userModel.findMany({ where: after ? { user_name: { gt: after } } : {}, orderBy: { user_name: 'asc' }, take: 100, select: { user_name: true } })).map(user => user.user_name),
+  run: username => evaluationService.runCron(username)
+})
 const integrationRoutes = express.Router()
 integrationRoutes.use(verifyJWTMiddleware)
 integrationRoutes.get('/', (req, res) => void integrations.list(req, res))
@@ -547,6 +558,7 @@ integrationRoutes.get('/:provider/start', (req, res) => void integrations.start(
 integrationRoutes.delete('/:provider', (req, res) => void integrations.disconnect(req, res))
 integrationRoutes.post('/phone', (req, res) => void integrations.phoneStart(req, res))
 integrationRoutes.post('/phone/verify', (req, res) => void integrations.phoneVerify(req, res))
+integrationRoutes.post('/evaluate', (req, res) => void evaluationService.handler(req, res))
 integrationRoutes.post('/llm', (req, res) => void integrations.llm(req, res))
 integrationRoutes.post('/repo/issue', (req, res) => void integrations.repoIssue(req, res))
 integrationRoutes.post('/repo', (req, res) => void integrations.repository(req, res))

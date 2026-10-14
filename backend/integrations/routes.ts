@@ -100,7 +100,18 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
 
   function fail(res: Response, status: number, error: string): Response { return res.status(status).json({ error }) }
 
+  async function createIssue(userId: number, input: { repo: string; title: string; body?: string }): Promise<{ url: string; number: number }> {
+    const token = await accessToken(userId, providerById('github') as Provider)
+    if (!token) throw new Error('GitHub is not connected: sign in with it on its peer row')
+    if (!/^[\w.-]+\/[\w.-]+$/.test(input.repo) || !input.title.trim()) throw new Error('repo (owner/name) and title required')
+    const response = await deps.fetch(`https://api.github.com/repos/${input.repo}/issues`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'fosforescent' }, body: JSON.stringify({ title: input.title.trim().slice(0, 256), body: input.body?.slice(0, 60_000) ?? '' }) })
+    const result = await response.json() as { html_url?: string; number?: number; message?: string }
+    if (!response.ok || !result.html_url || !result.number) throw new Error(`GitHub: ${result.message ?? response.status}`)
+    return { url: result.html_url, number: result.number }
+  }
+
   return {
+    createIssue,
     /** Every peer, with whether the server can run its flow and whether this account is connected. */
     async list(req: Request, res: Response): Promise<Response> {
       const userId = await deps.userId(req)
@@ -207,16 +218,13 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
     /** The repo capability: a GitHub issue from a task. */
     async repoIssue(req: Request, res: Response): Promise<Response> {
       const userId = await deps.userId(req)
-      const token = await accessToken(userId, providerById('github') as Provider)
-      if (!token) return fail(res, 409, 'GitHub is not connected: sign in with it on its peer row')
-      const body = (req.body ?? {}) as { repo?: unknown; title?: unknown; body?: unknown }
-      const repo = typeof body.repo === 'string' && /^[\w.-]+\/[\w.-]+$/.test(body.repo) ? body.repo : ''
-      const title = typeof body.title === 'string' ? body.title.trim().slice(0, 256) : ''
-      if (!repo || !title) return fail(res, 400, 'repo (owner/name) and title required')
-      const r = await deps.fetch(`https://api.github.com/repos/${repo}/issues`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'fosforescent' }, body: JSON.stringify({ title, body: typeof body.body === 'string' ? body.body.slice(0, 60_000) : '' }) })
-      const j = (await r.json()) as { html_url?: string; number?: number; message?: string }
-      if (!r.ok || !j.html_url) return fail(res, 502, `GitHub: ${j.message ?? r.status}`)
-      return res.json({ url: j.html_url, number: j.number })
+      try {
+        const body = req.body ?? {}
+        return res.json(await createIssue(userId, { repo: typeof body.repo === 'string' ? body.repo : '', title: typeof body.title === 'string' ? body.title : '', body: typeof body.body === 'string' ? body.body : undefined }))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return fail(res, message.startsWith('GitHub is not connected') ? 409 : message === 'repo (owner/name) and title required' ? 400 : 502, message)
+      }
     },
 
     /** Repository metadata uses the same GitHub OAuth peer as issue creation. */
@@ -297,7 +305,7 @@ export function prismaIntegrationDeps(prisma: { integrationConnectionModel: any;
   const toStored = (row: any): StoredConnection => ({ provider: row.provider, kind: row.kind, accountName: row.accountName ?? null, secret: row.secret, scopes: row.scopes ?? '', expiresAt: row.expiresAt ?? null, metadata: (row.metadata ?? {}) as Record<string, unknown> })
   return {
     env: process.env,
-    fetch: (url, init) => fetch(url, init) as Promise<any>,
+    fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15000) }) as Promise<any>,
     userId,
     ...extra,
     async platformConnected(id, provider) {
