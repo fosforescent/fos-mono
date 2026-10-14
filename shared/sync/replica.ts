@@ -11,6 +11,9 @@ import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
+  HOME_ID,
+  homeContextCid,
+  canonicalRowData,
   type Capability,
   type CapabilityKind,
   type MovePosition,
@@ -96,9 +99,9 @@ export type Replica = { store: FosStore; meta: ReplicaMeta }
 
 export type SerializedReplica = { meta: ReplicaMeta; context: FosContextData }
 
-export function createReplica(peerId: string = newId()): Replica {
+export function createReplica(peerId: string = newId(), store: FosStore = new FosStore()): Replica {
   return {
-    store: new FosStore(),
+    store,
     meta: { version: SYNC_FORMAT_VERSION, peerId, scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null }
   }
 }
@@ -151,6 +154,21 @@ export function loadReplica(input: unknown): Replica {
       serverPeerId: typeof meta.serverPeerId === 'string' ? meta.serverPeerId : null
     }
   }
+}
+
+/** Home is an ordinary constructor child of the account root, with a stable identity. */
+export function homePath(replica: Replica): Scope {
+  return findChild(replica.store, headCid(replica), HOME_ID) ? [HOME_ID] : []
+}
+
+/** Move legacy document rows into Home without copying their identities or losing root bookkeeping. */
+export function ensureHomeContext(replica: Replica, now: number): Replica {
+  if (replica.meta.scope.length) return replica
+  const before = headCid(replica)
+  const next = homeContextCid(replica.store, before, now)
+  if (next === before) return replica
+  commitRoot(replica.store, next, now)
+  return { ...replica }
 }
 
 export function headCid(replica: Replica): string {
@@ -224,7 +242,7 @@ export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition
 /** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
 export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
   const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
-  if (!body && !['ref', 'plain', 'comment', 'supply', 'allocation'].includes(kind)) return replica // blank plain rows and comments are fine (Enter / "Add comment" create one to type into); supplies/allocations describe themselves
+  if (!body && !['ref', 'plain', 'comment', 'requirement', 'supply', 'allocation'].includes(kind)) return replica // blank plain rows and comments are fine (Enter / "Add comment" create one to type into); supplies/allocations describe themselves
   if (kind === 'ref' && !options.refId) return replica
   const id = options.id ?? newId()
   return edit(replica, at, now, (value) => {
@@ -257,12 +275,16 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
     const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
     const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
     if (kind === 'task') data.todo = { completed: !!extras.done, time: node.data.todo?.time ?? now }
-    if (kind === 'requirement' && extras.requirement) data.requirement = extras.requirement
+    if (kind === 'requirement' && extras.requirement) {
+      const canonical = rowContent(kind, aliasId, body, now, extras).data
+      if (canonical.allocation) { data.allocation = canonical.allocation; delete data.requirement }
+      else data.requirement = extras.requirement
+    }
     if (kind === 'allocation' && extras.allocation) data.allocation = extras.allocation
     if (kind === 'resource' && extras.resource) data.resource = extras.resource
     if (kind === 'query' && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
     if (kind === 'comment' && node.data.comment) data.comment = { ...node.data.comment, content: body }
-    const next = withChildValue(replica.store, edge, { ...converted, data }, now)
+    const next = withChildValue(replica.store, edge, { ...converted, data: canonicalRowData(data) }, now)
     return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, next)))
   })
 }
@@ -415,7 +437,7 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
 
 /** Clear the attached Home's rows and choices as one ordinary, syncable edit. */
 export function resetHomeContent(replica: Replica, now: number): Replica {
-  return edit(replica, [], now, (value) => ({ ...value,
+  return edit(replica, homePath(replica), now, (value) => ({ ...value,
     children: value.children.filter((edge) => !isRowEdge(replica.store, edge) && !isChoiceEdge(replica.store, edge))
   }))
 }

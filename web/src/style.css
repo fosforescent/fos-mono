@@ -206,8 +206,8 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
 /* Workflowy-style editing: the selected row's editor looks like the text it replaces */
-.task input.edit { flex: 1; border: none; background: transparent; outline: none; font: inherit; color: inherit; padding: 0; margin: 0; min-width: 0; }
-.task textarea.edit { flex: 1; }
+.task input.edit, .task textarea.edit { flex: 1; border: none; background: transparent; outline: none; font: inherit; color: inherit; padding: 0; margin: 0; min-width: 0; }
+.task textarea.edit { flex: 1; border-radius: 0; resize: none; overflow-y: auto; }
 .task .toggle.zoom { font-weight: 700; }
 @media (max-width: 640px) {
   .task { padding: 12px 4px; }
@@ -240,7 +240,7 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .mic.busy { opacity: 0.6; }
 .tree .task.ghost { border-bottom: 1px dashed var(--line); }
 .tree .task.ghost .handle { visibility: hidden; }
-.tree .task.ghost input.edit::placeholder { color: var(--muted); opacity: 0.8; }
+.tree .task.ghost .edit::placeholder { color: var(--muted); opacity: 0.8; }
 .tree .task.ghost:focus-within { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .help-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 .help-table td { padding: 4px 6px; vertical-align: top; border-bottom: 1px solid var(--line); }

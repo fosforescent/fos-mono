@@ -1,6 +1,6 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
 import {
-  capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
+  demandOf, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope, rowContent,
   rowEdge, rowKindOf, updateAtScope, valueContent, type Scope
 } from './graph'
@@ -26,7 +26,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   const store = r.store, sources = new Set<string>(), blockers = new Set<string>(), lines: string[] = []
   const active = new Set<string>(), included = new Set<string>()
   const request = nodeAt(r, requestPath)
-  if (request.value.data.requirement?.capability !== 'llm') throw new Error('Select a language-model requirement.')
+  if (demandOf(request.value)?.capability !== 'llm') throw new Error('Select a language-model requirement.')
   const emit = (cid: string, label: string, depth: number, external = false, ancestorNotes = false) => {
     if (depth > 30) { blockers.add('An input is nested too deeply.'); return }
     if (active.has(cid)) { blockers.add('An input reference contains a cycle.'); return }
@@ -58,7 +58,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       if (ancestorNotes && !['note', 'plain', 'ref'].includes(kind)) continue
       const child = identityCid(store, edge)
       // Other work requests are context only once accepted, when explicitly referenced.
-      if (kind === 'requirement' && valueContent(store, child).data.requirement?.capability === 'llm' && child !== request.cid && !external) continue
+      if (kind === 'requirement' && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue
       emit(child, kind, depth + 1, external, ancestorNotes)
     }
     active.delete(cid)

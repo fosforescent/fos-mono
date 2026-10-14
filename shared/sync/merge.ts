@@ -119,9 +119,7 @@ function mergeNode(
     return { kind: 'node', cid: put(store, refNodeContent(store, data, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) }
   }
 
-  const isContainer = ours.children.length > 0 || theirs.children.length > 0 || base.children.length > 0
-
-  const data = mergeData(base.data, ours.data, theirs.data, isContainer || isTop)
+  const data = mergeData(base.data, ours.data, theirs.data, isTop)
   if (!data) return { kind: 'conflict' }
 
   const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids)

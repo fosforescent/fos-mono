@@ -10,6 +10,7 @@ import {
   readMembers,
   withMember,
   bookkeepingOf,
+  SYNC_FORMAT_VERSION,
   commitRoot,
   content,
   edgeKey,
@@ -235,14 +236,14 @@ describe('protocol', () => {
   it('validates requests', () => {
     expect(parseSyncRequest(null)).toHaveProperty('error')
     expect(parseSyncRequest({ version: 2 })).toHaveProperty('error')
-    expect(parseSyncRequest({ version: 1, peerId: '', scope: [], headCid: 'x' })).toHaveProperty('error')
-    expect(parseSyncRequest({ version: 1, peerId: 'p', scope: ['a', 3], headCid: 'x' })).toHaveProperty('error')
-    expect(parseSyncRequest({ version: 1, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], headCid: 'x', nodes: {} })).not.toHaveProperty('error')
+    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, peerId: '', scope: [], headCid: 'x' })).toHaveProperty('error')
+    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, peerId: 'p', scope: ['a', 3], headCid: 'x' })).toHaveProperty('error')
+    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], headCid: 'x', nodes: {} })).not.toHaveProperty('error')
   })
 
   it('rejects a head whose nodes were not provided and an unknown scope', () => {
     const server = new FosStore()
-    const missing = serveSync(server, { version: 1, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], baseCid: null, headCid: 'nope', nodes: {} }, SERVER)
+    const missing = serveSync(server, { version: SYNC_FORMAT_VERSION, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], baseCid: null, headCid: 'nope', nodes: {} }, SERVER)
     expect(missing).toMatchObject({ code: 'missing-nodes' })
 
     const device = createReplica('p')
@@ -254,12 +255,12 @@ describe('protocol', () => {
     const server = new FosStore()
     const request = { ...buildSyncRequest(addTask(createReplica('p'), [], 'x', 1)), cidVersion: 0 }
     expect(serveSync(server, request, SERVER)).toMatchObject({ code: 'version-mismatch' })
-    expect(parseSyncRequest({ version: 1, peerId: 'p', scope: [], headCid: 'x' })).toMatchObject({ error: expect.stringMatching(/cidVersion/) })
+    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, peerId: 'p', scope: [], headCid: 'x' })).toMatchObject({ error: expect.stringMatching(/cidVersion/) })
   })
 
   it('ignores nodes whose cid does not match their content', () => {
     const server = new FosStore()
-    const req = { version: 1 as const, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], baseCid: null, headCid: 'deadbeef', nodes: { deadbeef: { data: { description: { content: 'x' } }, children: [] } } }
+    const req = { version: SYNC_FORMAT_VERSION, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], baseCid: null, headCid: 'deadbeef', nodes: { deadbeef: { data: { description: { content: 'x' } }, children: [] } } }
     expect(serveSync(server, req, SERVER)).toMatchObject({ code: 'missing-nodes' })
     expect(server.table.has('deadbeef')).toBe(false)
   })
@@ -887,7 +888,7 @@ describe('approval convergence', () => {
     const proposals = view(owner, ['proj'])!.proposals
     expect(proposals).toHaveLength(1)
     // the server applies the proposal (what POST /peer-sync/proposals does), then the owner syncs
-    const serverReplica: Replica = { store: world.server, meta: { version: 1, peerId: 'user:alice', scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
+    const serverReplica: Replica = { store: world.server, meta: { version: SYNC_FORMAT_VERSION, peerId: 'user:alice', scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
     applyProposalAt(serverReplica, ['proj'], proposals[0]!.id, 'user:alice', 8)
     owner = world.sync(owner, 9)
     expect(world.log.at(-1)).toBe('owner:pull')

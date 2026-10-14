@@ -5,7 +5,7 @@
  */
 
 import QRCode from 'qrcode'
-import { content, headCid, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { content, headCid, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
@@ -40,6 +40,7 @@ let renderDepth = 0
 const KEY_HELP: Array<[string, string]> = [
   ['Ctrl/⌘ Z · Ctrl/⌘ Shift Z', 'undo / redo committed edits (last 100 this session); while typing, undo draft text'],
   ['↑ / ↓', 'move between rows (↑ from the first row returns to the blank row at the top)'],
+  ['Shift+Enter', 'new line in a cell; indent lines to create child rows'],
   ['Enter', 'new row below (on a requirement, bank or allocation: edit its text)'],
   ['Ctrl+Enter', 'mark a task done or open; on other rows, new row below'],
   ['Ctrl+Shift+Enter', 'new row inside'],
@@ -205,7 +206,6 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
     items.push(toRoot)
   }
   if (session) item(`Sign out (${session.username})`, () => app.logout())
-  if (session && !state.virtual) item('Remove this device’s server attachment…', () => { if (window.confirm('Remove this device’s assigned sync location? This does not delete account content. You will be signed out into a fresh offline session.')) void app.detach() }, 'danger')
   const name = document.createElement('div')
   name.className = 'menu-meta'
   name.append(span('muted', `This device: ${state.deviceName}`), button('link small', 'rename', () => {
@@ -267,6 +267,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
     crumbs.append(span('sep', '›'), span('crumb current', 'Settings'))
   } else {
     view.forEach((_id, index) => {
+      if (_id === HOME_ID) return
       crumbs.append(span('sep', '›'), button('crumb', labels.view[index] ?? '…', () => app.goTo(view.slice(0, index + 1))))
     })
     const current = crumbs.lastElementChild as HTMLElement
@@ -350,23 +351,23 @@ document.addEventListener('mouseup', () => { pointerDown = false })
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (state.atRoot) { el.replaceChildren(...renderRootRows(state, app)); return }
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
   if (!reuse && !state.selected) focusGhost = true
   const ghost = reuse ? cached.row : renderGhostRow(node, state, app)
+  const rows = state.atRoot ? renderRootRows(state, app) : renderRows(node, [], 0, state, app)
   if (reuse) {
     // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
     for (const child of Array.from(el.children)) if (child !== ghost && child.parentNode === el) child.remove()
-    el.append(...renderRows(node, [], 0, state, app))
+    if (state.atRoot) ghost.before(...rows); else el.append(...rows)
   } else {
-    el.replaceChildren(ghost, ...renderRows(node, [], 0, state, app))
+    el.replaceChildren(...(state.atRoot ? [...rows, ghost] : [ghost, ...rows]))
     ghostRows.set(el, { row: ghost, store: state.replica.store, path })
   }
   if (focusGhost && !state.selected && !state.modal && !state.contextMenu && !state.menuOpen) {
     focusGhost = false
-    const input = ghost.querySelector<HTMLInputElement>('input.edit')!
+    const input = ghost.querySelector<HTMLTextAreaElement>('textarea.edit')!
     queueMicrotask(() => {
       const active = document.activeElement
       if (input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
@@ -386,8 +387,8 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   const toggle = button('icon toggle', '', () => undefined)
   toggle.disabled = true
   toggle.tabIndex = -1
-  const input = document.createElement('input')
-  input.type = 'text'
+  const input = document.createElement('textarea')
+  input.rows = 1
   input.className = 'edit'
   input.placeholder = window.innerWidth < 640 ? 'New row…' : 'New row… (ctrl + H for tips)'
   void node
@@ -415,10 +416,11 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   input.addEventListener('keydown', (e: Event) => {
     const event = e as KeyboardEvent
     if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
+    if (indentDraft(event, input)) return
     const k = event.key
     if (historyShortcut(event) !== null && input.value === '') { event.preventDefault(); event.stopPropagation(); runHistory(app, historyShortcut(event)!); return }
     if (k === 'ArrowLeft' && event.altKey) { event.preventDefault(); commit(); focusGhost = true; app.zoomOut(); return }
-    if (k === 'Enter') {
+    if (k === 'Enter' && (!event.shiftKey || event.ctrlKey || event.metaKey)) {
       // the typed row becomes the first row here; the blank row stays on top, ready for the next one (no extra blank row below)
       event.preventDefault()
       event.stopPropagation()
@@ -442,10 +444,23 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
  * A small badge after an editor that says what the typed line is recognized as ("requirement · money 50 USD",
  * "allocation · time 1 h", "task", "bank · fos points"), updated as the text changes; empty for plain text.
  */
+/** Tab edits indentation inside a multiline draft; outside a draft it moves the row. */
+function indentDraft(event: KeyboardEvent, input: HTMLInputElement | HTMLTextAreaElement): boolean {
+  if (event.key !== 'Tab' || !input.value.includes('\n')) return false
+  event.preventDefault(); event.stopPropagation()
+  const caret = input.selectionStart ?? 0
+  const line = input.value.lastIndexOf('\n', caret - 1) + 1
+  const remove = event.shiftKey ? (input.value.slice(line).match(/^(?: {1,2}|\t)/)?.[0].length ?? 0) : 0
+  input.setRangeText(event.shiftKey ? '' : '  ', line, line + remove, 'preserve')
+  input.dispatchEvent(new window.Event('input'))
+  return true
+}
+
 function kindPreview(input: HTMLInputElement | HTMLTextAreaElement): HTMLElement {
   const badge = span('kind-preview', '')
   const update = () => {
     const text = input.value
+    if (input instanceof HTMLTextAreaElement) input.rows = Math.min(16, Math.max(1, text.split('\n').length))
     const what = text.trim() ? describeParsed(parseRowInput(text)) : ''
     badge.textContent = what
     badge.hidden = !what
@@ -501,7 +516,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   li.addEventListener('mousedown', () => { pointerDown = true })
   li.addEventListener('click', (event) => {
     pointerDown = false
-    if ((event.target as HTMLElement).closest('input, button')) return
+    if ((event.target as HTMLElement).closest('input, textarea, button')) return
     if (!selected) app.select(path)
   })
   li.addEventListener('contextmenu', (event) => { event.preventDefault(); app.select(path); app.openContextMenu({ kind: 'task', at, task }) })
@@ -594,7 +609,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body = renderNoteBody(task, at, state, app)
   } else if (SPECIAL_KINDS.has(task.kind)) {
     body = renderSpecialBody(task, at, state, app)
-    body.addEventListener('dblclick', (event) => { event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
+    body.addEventListener('click', (event) => { if ((event.target as HTMLElement).closest('a,button')) return; event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
   } else {
     body = span('title', '')
     if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
@@ -671,9 +686,8 @@ function caretOnEdge(input: HTMLInputElement | HTMLTextAreaElement, edge: 'first
  *  Ctrl+Shift+Enter row inside, Tab/⇧Tab indent, Alt+↑/↓ move, Alt+→ zoom in, Alt+← zoom out, Backspace on blank deletes, Esc leaves. */
 function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
   const multiline = task.kind === 'note'
-  const input = multiline ? document.createElement('textarea') : document.createElement('input')
-  if (!multiline) (input as HTMLInputElement).type = 'text'
-  else (input as HTMLTextAreaElement).rows = Math.min(16, Math.max(2, task.title.split('\n').length + 1))
+  const input = document.createElement('textarea')
+  input.rows = multiline ? Math.min(16, Math.max(2, task.title.split('\n').length + 1)) : 1
   input.className = 'edit'
   // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
   const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...at] }
@@ -698,6 +712,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   input.addEventListener('keydown', (e: Event) => {
     const event = e as KeyboardEvent
     const k = event.key
+    if (indentDraft(event, input)) return
     if (historyShortcut(event) !== null && input.value === raw) { event.preventDefault(); event.stopPropagation(); runHistory(app, historyShortcut(event)!); return }
     const alt = event.altKey
     const ctrl = event.ctrlKey || event.metaKey
@@ -711,7 +726,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if (k === 'ArrowDown' && !event.shiftKey && caretOnEdge(input, 'last')) { event.preventDefault(); commit(); moveSelection(app, 1); return }
     if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id); return }
     if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); const current = app.rowAt(path); if (current?.kind === 'task') { app.toggleTaskAt(at, current); app.refresh() } else if (current) app.addRowBelow(at, task.id); return }
-    if (k === 'Enter' && !multiline) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
+    if (k === 'Enter' && !multiline && !event.shiftKey) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
     if (k === 'Tab') { event.preventDefault(); commit(); app.select(path); app.indentSelected(event.shiftKey); return }
     if (k === 'Backspace' && input.value === '' && (ctrl || !multiline)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
     if (k === 'Backspace' && ctrl && event.shiftKey) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
@@ -777,7 +792,7 @@ function noteChildren(task: TaskView, at: Scope, state: AppState, app: App): Not
 /** A note block: markdown with variables expanded; math and diagrams fill in asynchronously. */
 function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
   const body = div('title note-body', '')
-  body.title = 'Double-click or press Enter to edit (Ctrl+Enter saves)'
+  body.title = 'Click or press Enter to edit (Ctrl+Enter saves)'
   const ctx = noteContext(task.title, noteChildren(task, at, state, app))
   const expanded = ctx.body.trim() ? expandNoteText(ctx) : ''
   if (!expanded) { body.append(span('muted', '(empty note)')); return body }
@@ -892,7 +907,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
     const when = a.start ? ` ${new Date(a.start).toLocaleDateString()}${a.end ? '–' + new Date(a.end).toLocaleDateString() : ''}` : ''
     body.append(document.createTextNode(` ${task.title}${when}${a.by ? ` · ${a.by}` : ''}`))
   }
-  body.title = 'Double-click (or Enter) to edit the text'
+  body.title = 'Click (or Enter) to edit the text'
   return body
 }
 
@@ -916,16 +931,19 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     ...(task.kind === 'task' && !task.template ? [{ label: 'Use Implement and verify template', run: () => app.addWorkTemplate(at, task.id) }] : []),
     { label: 'Add row inside', keys: 'Ctrl+Shift+Enter', run: () => app.addRowInside(at, task.id) },
     // typed markers, opened from the menu: the row starts with the marker and the editor takes it from there
-    ...(task.kind === 'task' ? [
+    ...[
       { label: 'Add requirement inside: money (-$ 50 …)', run: () => app.addRowInside(at, task.id, 'plain', '-$ ') },
       { label: 'Add requirement inside: time (-: 1h …)', run: () => app.addRowInside(at, task.id, 'plain', '-: ') },
       { label: 'Add requirement inside: things (-# 2 …)', run: () => app.addRowInside(at, task.id, 'plain', '-# ') },
       { label: 'Add requirement inside: a person (-@name …)', run: () => app.addRowInside(at, task.id, 'plain', '-@') },
       { label: 'Add requirement inside: confirmation / task / search (- … · -[ ] … · -? …)', run: () => app.addRowInside(at, task.id, 'plain', '-') }
-    ] : []),
+    ],
     ...(task.kind === 'requirement' && task.requirement?.capability === 'allocation' ? [{ label: `Add allocation inside (${({ account: '$', calendar: ':', inventory: '#', person: '@' } as Record<string, string>)[task.requirement.resource ?? 'account']} amount …)`, run: () => app.addRowInside(at, task.id, 'plain', `${({ account: '$ ', calendar: ': ', inventory: '# ', person: '@' } as Record<string, string>)[task.requirement?.resource ?? 'account']}`) }] : []),
     ...(task.kind === 'resource' ? [{ label: `Add allocation inside (${({ account: '$', calendar: ':', inventory: '#', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account']} amount …)`, run: () => app.addRowInside(at, task.id, 'plain', ({ account: '$ ', calendar: ': ', inventory: '# ', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account'] ?? '$ ') }] : []),
-    { label: 'Add bank below (@money · @calendar · @inventory · @person name …)', run: () => app.addRowBelowWith(at, task.id, '@money ') },
+    ...(task.kind !== 'resource' && task.kind !== 'requirement' ? [{ label: 'Add allocation inside ($ amount …)', run: () => app.addRowInside(at, task.id, 'plain', '$ ') }] : []),
+    ...(task.kind !== 'ref' && task.kind !== 'supply' ? ['money', 'calendar', 'inventory', 'person'].map((type) => ({ label: `Change to ${type} bank`, run: () => app.rewriteRowAt(at, task.id, { ...parseRowInput(`@${type} `), text: task.title }) })) : []),
+    { label: 'Connect peer here…', run: () => { app.zoomTo([...at, task.id]); app.openModal('direct') } },
+    ...(app.canSpawnVirtualPeer() ? [{ label: 'Spawn virtual peer here…', run: () => { app.zoomTo([...at, task.id]); app.openModal('virtual') } }] : []),
     ...(state.session?.kind === 'user' ? app.knownPeers().filter((p) => !p.id.startsWith('integration:') && !p.id.startsWith('mcp:')).slice(0, 6).map((p) => ({ label: `Add @${p.name} as a member (make this a group)`, run: () => app.addPeerToRow(at, task.id, p.id, p.name) })) : []),
     ...(state.session?.kind === 'user' ? state.mcpPeers.slice(0, 6).map((m) => ({ label: `Attach MCP peer ${m.name} here (runs ${m.tools.slice(0, 3).join(', ') || 'its tools'})`, run: () => void app.attachMcpPeer(m.serverId, [...at, task.id]) })) : []),
     { label: 'Zoom in', keys: 'Alt+→', run: () => app.zoomTo([...at, task.id]) },
@@ -957,7 +975,7 @@ function renderContextMenu(el: HTMLElement, state: AppState, app: App): void {
   const actions: Action[] = menu.kind === 'task'
     ? taskActions(menu.at, app.rowAt([...menu.at, menu.task.id]) ?? menu.task, app)
     : [{ label: 'Remove this device from the node', run: () => app.removePeer(menu.peerId), danger: true }]
-  const groupOf = (label: string) => /^Delete/.test(label) ? 'Delete' : /^Change to/.test(label) ? 'Change type' : /^(Move|Indent|Outdent|Zoom|Go to)/.test(label) ? 'Move' : /^(Invite|Sync|Send|List|Remove from market|Add @|Attach MCP)/.test(label) ? 'Sharing' : 'Add and edit'
+  const groupOf = (label: string) => /^Delete/.test(label) ? 'Delete' : /^Change to/.test(label) ? 'Change type' : /^(Move|Indent|Outdent|Zoom|Go to)/.test(label) ? 'Move' : /^(Connect peer|Spawn virtual|Invite|Sync|Send|List|Remove from market|Add @|Attach MCP)/.test(label) ? 'Sharing' : 'Add and edit'
   const items: HTMLElement[] = []
   for (const group of ['Add and edit', 'Change type', 'Move', 'Sharing', 'Delete']) {
     const grouped = actions.filter((action) => groupOf(action.label) === group)
@@ -1130,7 +1148,7 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
  * Settings at the device's root: one row per peer this device reaches, including the fos
  * account server (sign-in happens on its row when not connected; its policy lines below it) and the members and
  * attached devices of the Home node, with the capability rows the owner exposes to each (`to`) and accepts from each
- * (`from`). Nothing here is a stored row.
+ * (`from`). Constructors beneath the root use the ordinary row editor.
  */
 function renderRootRows(state: AppState, app: App): HTMLElement[] {
   const rows: HTMLElement[] = []
@@ -1193,7 +1211,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     line.append(l, ...els)
     return line
   }
-  for (const p of peers.filter((p) => !p.integration || p.integration.connected || p.integration.pending)) {
+  for (const p of peers) {
     const li = rowShell('peer')
     li.dataset.peer = p.id
     const dot = span('presence' + (p.online ? ' online' : ''), '')
@@ -1214,7 +1232,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
         connection.append(span('muted', ` ${i.accountName ?? 'connected'}`), button('link small', 'Disconnect', () => void app.disconnectIntegration(p.id.replace(/^integration:/, ''))))
       } else if (i.kind === 'channel') {
         const link = button('secondary small', i.pending ? 'Enter the code' : 'Link phone', () => void app.connectIntegration('phone'))
-        link.title = i.configured ? 'Texts about proposals reach it; texts you send become rows' : 'Texting is not configured on the server (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)'
+        link.title = i.configured ? 'Receive SMS notifications about proposals' : 'Texting is not configured on the server (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)'
         link.disabled = !i.configured
         connection.append(link, span('muted', i.pending ? ` ${i.accountName ?? ''}: waiting for the code` : ' not linked'))
       } else {
@@ -1318,6 +1336,11 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     select.addEventListener('change', () => app.switchDataSession(select.value))
     label.append(select); li.append(label, div('muted', 'Switching keeps each session’s data separate and disconnects sync. Sign in to reconnect its account.'))
     rows.push(li)
+  }
+  const constructors = app.currentView()
+  if (constructors) {
+    const visible = { ...constructors, tasks: constructors.tasks.filter((row) => row.id !== HOME_ID) }
+    rows.push(...renderRows(visible, [], 0, state, app))
   }
   return rows
 }

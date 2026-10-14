@@ -4,7 +4,7 @@
  */
 
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addRow, addSupply, addTask, headCid, setTaskDone, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
+import { createReplica, homePath, addRow, addSupply, addTask, headCid, setTaskDone, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
 import type { PeerSyncDeps, PeerSyncUser } from '../sync/peerSync'
 
 /** The account's peer id (as `serverPeerIdFor` in peerSync; repeated here so this module loads without express/prisma in tests). */
@@ -17,7 +17,7 @@ export type StoreDeps = Pick<PeerSyncDeps, 'loadStore' | 'saveStore'> & {
 }
 
 export function replicaOf(store: FosStore, username: string): Replica {
-  return { store, meta: { version: 1, peerId: serverPeerIdFor(username), scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
+  return createReplica(serverPeerIdFor(username), store)
 }
 
 /** Load a user's tree, change it, save it: `fn` returns the new replica (or null to leave it). */
@@ -54,7 +54,7 @@ export function rowsDeps(deps: StoreDeps) {
     async add(userId: number, text: string): Promise<string> {
       const task = text.match(/^(?:\[\s?\]|todo|task)\s*:?\s+(.+)$/is)
       const title = (task ? (task[1] as string) : text).trim().slice(0, 500)
-      await editTree(deps, userId, async (replica) => ({ replica: task ? addTask(replica, [], title, now()) : addRow(replica, [], 'plain', title, now()), result: title }))
+      await editTree(deps, userId, async (replica) => ({ replica: task ? addTask(replica, homePath(replica), title, now()) : addRow(replica, homePath(replica), 'plain', title, now()), result: title }))
       return title
     },
     async listOpen(userId: number, limit: number): Promise<string[]> {

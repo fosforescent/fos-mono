@@ -51,6 +51,9 @@ import {
   completeSync,
   deleteTask,
   resetHomeContent,
+  ensureHomeContext,
+  homePath,
+  contextScope,
   hasSynced,
   headCid,
   isDirty,
@@ -205,8 +208,8 @@ export type AppState = {
   /** Keyboard selection: path (relative to the view) of the selected task. */
   selected: Scope | null
   /**
-   * The device's own root, one level above the replica (above Home): the fos server and the other peers this device
-   * reaches, each as a row, plus the Home row. Not a node; nothing is stored there. The app starts in Home.
+   * The stored root context: the fos server and the other peers this device
+   * reaches. Root constructors use ordinary stored rows; Home is the initial constructor instance.
    */
   atRoot: boolean
   /** The account's fos points (token balance) from the last fetch; null before the first or when signed out. */
@@ -231,6 +234,8 @@ export type AppConfig = {
   baseUrl: string
   autoLogin: Credentials | null
   storage: ReplicaStorage
+  /** A peer/project replica is already attached to a constructor instance. */
+  scopedDocument?: boolean
   pollIntervalMs?: number
   now?: () => number
   /** Project mode (desktop shell in a directory with fos.config.toml). `policy` is the config's `[server]` table, when present. */
@@ -268,6 +273,7 @@ export class App {
   private virtualWelcomed = false
   private authGeneration = 0
   private history = new EditHistory()
+  private groupedEdit = false
   private observedHead: string
   private config: AppConfig
   private listeners = new Set<(state: AppState) => void>()
@@ -291,14 +297,14 @@ export class App {
   constructor(config: AppConfig) {
     this.config = config
     this.autoCredentials = config.autoLogin
-    const replica = loadReplica(config.storage.loadReplica())
+    const replica = config.scopedDocument || config.project ? loadReplica(config.storage.loadReplica()) : ensureHomeContext(loadReplica(config.storage.loadReplica()), 0)
     const prefs = (config.storage.loadPrefs() ?? {}) as { view?: unknown; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
     const configPolicy = config.project?.policy ?? null
     const savedView = Array.isArray(prefs.view) ? prefs.view.filter((s): s is string => typeof s === 'string') : []
     const session = loadSession(config.storage.loadSession(), config.baseUrl)
     this.state = {
       replica,
-      view: view(replica, savedView) ? savedView : [],
+      view: savedView.length && view(replica, savedView) ? contextScope(replica.store, headCid(replica), savedView) : homePath(replica),
       connection: 'offline',
       session: null,
       loginError: null,
@@ -377,6 +383,10 @@ export class App {
   // -------------------------------------------------------------------------
   // Derived views for the UI
 
+  private documentReplica(replica: Replica): Replica {
+    return this.config.scopedDocument || this.config.project || this.virtualIdentity || replica.meta.scope.length ? replica : ensureHomeContext(replica, this.now())
+  }
+
   currentView(): NodeView | null {
     return view(this.state.replica, this.state.view)
   }
@@ -397,8 +407,8 @@ export class App {
 
   /** Project mode: the directory switched git branch; show that branch's replica. */
   reloadReplica(): void {
-    const replica = loadReplica(this.config.storage.loadReplica())
-    this.set({ replica, view: [], selected: null, contextMenu: null })
+    const replica = this.documentReplica(loadReplica(this.config.storage.loadReplica()))
+    this.set({ replica, view: homePath(replica), selected: null, contextMenu: null })
     this.notify('info', `Now on branch ${this.currentBranch() ?? 'local'}.`)
     if (this.transport()) void this.syncNow('branch switch')
   }
@@ -512,7 +522,8 @@ export class App {
       commitRoot(replica.store, mergeNodes(replica.store, null, headCid(replica), sourceHead, { ours: session.username, theirs: 'Offline session' }).cid, this.now())
       replica = { ...replica }
     }
-    this.set({ session, replica, connection: 'online', loginError: null, view: [] })
+    replica = this.documentReplica(replica)
+    this.set({ session, replica, connection: 'online', loginError: null, view: homePath(replica) })
     this.openEvents()
     this.startPolling()
     if (session.kind === 'user') void this.refreshRequests()
@@ -546,9 +557,9 @@ export class App {
     this.cancelDirect()
     this.history.clear()
     this.virtualPeers?.close(); this.virtualPeers = null
-    const replica = loadReplica(this.config.storage.loadReplica())
+    const replica = this.documentReplica(loadReplica(this.config.storage.loadReplica()))
     const prefs = (this.config.storage.loadPrefs() ?? {}) as { view?: Scope; collapsed?: string[]; policy?: unknown; deviceName?: string }
-    this.set({ replica, session: null, view: Array.isArray(prefs.view) && view(replica, prefs.view) ? prefs.view : [], selected: null, atRoot: false,
+    this.set({ replica, session: null, view: Array.isArray(prefs.view) && view(replica, prefs.view) ? prefs.view : homePath(replica), selected: null, atRoot: false,
       modal: keepModal ? this.state.modal : null, connectFlow: { phase: 'idle' }, manual: {}, device: null, voice: null, requests: [], invite: null,
       collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed : [], contextMenu: null, work: undefined, highlighted: [], notice: null,
       onlinePeers: [], serverCapabilities: null, policy: parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
@@ -661,7 +672,9 @@ export class App {
       }
       if ((this.state.session !== session || generation !== this.authGeneration)) return
       const done = completeSync(this.state.replica, request, response, this.now())
+      done.replica = this.documentReplica(done.replica)
       const patch: Partial<AppState> = { replica: done.replica, connection: 'online', ...(this.state.notice?.kind === 'error' && (this.state.notice.text.startsWith('Sync failed:') || this.state.notice.text.includes('no longer has access')) ? { notice: null } : {}) }
+      if (!this.state.atRoot && !this.state.view.length && homePath(done.replica).length) patch.view = homePath(done.replica)
       if (response.presence) patch.onlinePeers = response.presence
       if (response.capabilities && transport === 'account') patch.serverCapabilities = response.capabilities
       if (transport === 'account') { void this.refreshPoints(); if (!this.state.integrations.length) void this.refreshIntegrations() }
@@ -702,7 +715,14 @@ export class App {
   // -------------------------------------------------------------------------
   // Local edits (always allowed)
 
+  private together<T>(run: () => T): T {
+    if (this.groupedEdit) return run()
+    this.groupedEdit = true
+    try { return run() }
+    finally { this.groupedEdit = false; this.edit({ ...this.state.replica }) }
+  }
   private edit(next: Replica, settings = this.state.atRoot, preferred = this.state.selected ? [...this.state.view, ...this.state.selected] : undefined): void {
+    if (this.groupedEdit) return
     if (next === this.state.replica) return
     this.history.record(next, this.observedHead, settings, preferred)
     this.set({ replica: next })
@@ -718,7 +738,7 @@ export class App {
   resetHome(): void {
     if (!this.canResetHome()) return
     this.edit(resetHomeContent(this.state.replica, this.now()), false)
-    this.set({ view: [], selected: null })
+    this.set({ view: homePath(this.state.replica), selected: null })
     this.notify('info', 'Attached node content reset. You can undo this. The change syncs under your current peer policy.')
   }
 
@@ -780,31 +800,35 @@ export class App {
    * draws from the parent context (`bankFor`); a task naming a template executes it (its requirements are copied
    * underneath); a task requirement naming a template gets that execution as its child right away.
    */
-  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string } = {}): string {
+  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string; replica?: Replica } = {}): string {
     const author = kind === 'comment' ? { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName } : undefined
     const id = options.id ?? crypto.randomUUID()
-    const { extras, templateName, ...rest } = options
+    const { extras, templateName, replica: branch, ...rest } = options
+    const replica = branch ?? this.state.replica
     let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
     if (kind === 'allocation') {
-      const resolved = this.allocationWithBank(at, data.allocation)
+      const resolved = this.allocationWithBank(at, data.allocation, replica)
       if (!resolved) return id
       data = { ...data, allocation: resolved }
     }
-    this.edit(addRow(this.state.replica, [...this.state.view, ...at], kind, text, this.now(), { ...rest, ...data, author, id }))
-    if (templateName && kind === 'task') this.applyTemplate(at, id, templateName)
+    const next = addRow(replica, [...this.state.view, ...at], kind, text, this.now(), { ...rest, ...data, author, id })
+    if (!branch) this.edit(next)
+    if (templateName && kind === 'task') this.applyTemplate(at, id, templateName, branch)
     if (templateName && kind === 'requirement' && data.requirement?.capability === 'task') {
       // "-[ ] `name`": the required task is created at once as an execution of the template
-      const child = this.addRowAt([...at, id], 'task', templateName, { templateName })
-      this.set({ collapsed: this.state.collapsed.filter((c) => c !== id && c !== child) })
+      const child = this.addRowAt([...at, id], 'task', templateName, { templateName, replica: branch })
+      if (!branch) this.set({ collapsed: this.state.collapsed.filter((c) => c !== id && c !== child) })
     }
     return id
   }
   /** Make the task `taskId` an execution of the template called `name`: its requirement rows are copied underneath, unfilled. */
-  applyTemplate(at: Scope, taskId: string, name: string): void {
-    const template = findTemplateByName(this.state.replica, name)
+  applyTemplate(at: Scope, taskId: string, name: string, branch?: Replica): void {
+    const replica = branch ?? this.state.replica
+    const template = findTemplateByName(replica, name)
     if (!template) { this.notify('error', `No template called “${name}”. Make one with a \`${name} row and put its requirements (- …) inside.`); return }
-    this.edit(instantiateTemplate(this.state.replica, [...this.state.view, ...at], taskId, template.row.id, this.now()))
-    this.set({ collapsed: this.state.collapsed.filter((c) => c !== taskId) })
+    const next = instantiateTemplate(replica, [...this.state.view, ...at], taskId, template.row.id, this.now())
+    if (!branch) this.edit(next)
+    if (!branch) this.set({ collapsed: this.state.collapsed.filter((c) => c !== taskId) })
   }
   /** The closest resource-bank row on the path `at` (relative to the view), if any. */
   nearestBank(at: Scope): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
@@ -828,15 +852,16 @@ export class App {
    * the default pool of the type (the first bank of that type at the top level, else the first anywhere); with no
    * type (legacy), the nearest bank above or the only bank there is.
    */
-  bankFor(at: Scope, type?: ResourceType | null, person?: string): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
+  bankFor(at: Scope, type?: ResourceType | null, person?: string, replica = this.state.replica): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
     type Bank = TaskView & { resource: NonNullable<TaskView['resource']> }
     const fits = (b: Bank) => (!type || b.resource.type === type) && (type !== 'person' || !person || b.title.trim().toLowerCase() === person.toLowerCase())
-    for (let i = at.length; i > 0; i--) {
-      const row = this.rowAt(at.slice(0, i))
+    const path = [...this.state.view, ...at]
+    for (let i = path.length; i > 0; i--) {
+      const row = view(replica, path.slice(0, i - 1))?.tasks.find(row => row.id === path[i - 1])
       if (row?.kind === 'resource' && row.resource && fits(row as Bank)) return row as Bank
     }
-    const all = this.banks()
-    const parent = this.rowAt(at)
+    const all = this.banks(replica)
+    const parent = view(replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find(row => row.id === at[at.length - 1])
     const req = parent?.kind === 'requirement' ? parent.requirement : undefined
     if (req?.capability === 'allocation' && req.resource && (!type || req.resource === type)) {
       const match = all.find(({ row }) => row.resource.type === req.resource && fits(row))
@@ -852,12 +877,12 @@ export class App {
    * An allocation with its bank resolved from the parent context (`bankFor`), or null (with a notice) when there is
    * none. A person allocation needs that person's bank only when it holds a window; otherwise it stands on its own.
    */
-  allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined): NonNullable<RowExtras['allocation']> | null {
+  allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined, replica = this.state.replica): NonNullable<RowExtras['allocation']> | null {
     const by = this.state.session?.username ?? this.state.deviceName
     const base = allocation ?? { resource: '', type: 'inventory' as ResourceType, amount: 0, unit: 'unit' }
     const windowed = base.start !== undefined || base.end !== undefined
     if (base.type === 'person' && !windowed) return { ...base, by }
-    const bank = this.bankFor(at, allocation ? base.type : null, base.person)
+    const bank = this.bankFor(at, allocation ? base.type : null, base.person, replica)
     if (!bank && base.type === 'points') {
       // fos points without a bank row draw from the account's balance (the fos peer is the pool); it is checked server-side when spent
       if (this.state.points !== null && base.amount > this.state.points) this.notify('error', `That is more than the ${this.state.points} fos points on the account; the allocation is recorded anyway.`)
@@ -879,7 +904,8 @@ export class App {
     const row = view(this.state.replica, parent)?.tasks.find((t) => t.id === id)
     if (row && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
-  rewriteRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
+  rewriteRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string; children?: import('./rows').ParsedInput[] }, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
+    if (parsed.children?.length && !this.groupedEdit) { this.together(() => this.rewriteRowAt(at, id, parsed, draft)); return }
     if (draft && draft.store !== this.state.replica.store) return
     let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
     if (parsed.kind === 'allocation') {
@@ -888,11 +914,13 @@ export class App {
       extras = { ...extras, allocation: resolved }
     }
     const before = this.rowAt([...at, id])
-    if (draft && draft.head !== headCid(this.state.replica)) {
+    const rebasing = !!draft && draft.head !== headCid(this.state.replica)
+    if (rebasing) {
       let branch = createReplica(this.state.replica.meta.peerId)
       importNodes(branch.store, reachableNodes(draft.store, [draft.head]))
       commitRoot(branch.store, draft.head, this.now())
       branch = parsed.kind === 'ref' || parsed.kind === 'supply' ? renameTask(branch, draft.parent, id, parsed.text, this.now()) : setRowContentAt(branch, draft.parent, id, parsed.kind, parsed.text, extras, this.now())
+      if (parsed.children?.length) this.addParsedChildren([...at, id], parsed.children, branch)
       const current = this.state.replica
       importNodes(current.store, reachableNodes(branch.store, [headCid(branch)]))
       const merged = mergeNodes(current.store, draft.head, headCid(current), headCid(branch), { ours: 'Incoming edit', theirs: this.state.deviceName })
@@ -902,6 +930,7 @@ export class App {
     } else {
       this.edit(parsed.kind === 'ref' || parsed.kind === 'supply' ? renameTask(this.state.replica, [...this.state.view, ...at], id, parsed.text, this.now()) : setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.kind, parsed.text, extras, this.now()))
     }
+    if (parsed.children?.length && !rebasing) this.addParsedChildren([...at, id], parsed.children)
     if (parsed.templateName && parsed.kind === 'task' && before?.template?.name !== parsed.templateName) this.applyTemplate(at, id, parsed.templateName)
     if (parsed.templateName && parsed.kind === 'requirement' && extras.requirement?.capability === 'task') {
       const inside = view(this.state.replica, [...this.state.view, ...at, id])?.tasks ?? []
@@ -925,10 +954,10 @@ export class App {
     this.notify('info', `@${name} is a member of “${node.name ?? 'this row'}” (a group: its members see it and may propose).`)
   }
   /** Resource banks anywhere in the replica, with their paths. */
-  banks(): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
+  banks(replica = this.state.replica): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
     const out: Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> = []
     const walk = (path: Scope) => {
-      const node = view(this.state.replica, path)
+      const node = view(replica, path)
       if (!node) return
       for (const row of node.tasks) {
         if (row.kind === 'resource' && row.resource) out.push({ row: row as TaskView & { resource: NonNullable<TaskView['resource']> }, path })
@@ -952,16 +981,20 @@ export class App {
     const peers: ContextPeer[] = []
     const session = this.state.session
     const me = this.state.replica.meta.peerId
-    const node = this.currentView()
+    const local = this.currentView()
+    // Constructor arguments are the surrounding context; nearer peer bindings shadow ancestors.
+    const members = new Map<string, NonNullable<NodeView>['members'][number]>()
+    for (let i = 0; i <= this.state.view.length; i++) for (const member of view(this.state.replica, this.state.view.slice(0, i))?.members ?? []) members.set(member.peerId, member)
+    const node = local ? { ...local, members: [...members.values()] } : local
     const nameOf = (id: string) => (id.startsWith('user:') ? id.slice(5) : id.slice(0, 8))
     // the fos account server is always a peer of the root context (sign in happens on its row when not connected)
-    if (session?.kind === 'user' || this.state.view.length === 0) {
+    if (!this.config.scopedDocument && !this.virtualIdentity && (session?.kind === 'user' || this.state.view.length <= homePath(this.state.replica).length)) {
       const id = this.state.replica.meta.serverPeerId ?? (session ? `user:${session.username}` : 'fos')
       const online = !!session && this.transport() === 'account' && this.state.connection !== 'offline'
       peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
     }
     // integration peers (sign in with GitHub, Google, Discord; Stripe on the account; the phone): the server's status when signed in, the registry otherwise
-    if (this.state.view.length === 0) {
+    if (!this.virtualIdentity && (this.state.atRoot || (!this.config.scopedDocument && (homePath(this.state.replica).length || node?.members.some(member => member.peerId.startsWith('integration:')))))) {
       for (const i of INTEGRATION_PEERS) {
         const s = this.state.integrations.find((p) => p.id === i.id)
         peers.push({ id: `integration:${i.id}`, name: i.name, online: !!s?.connected, capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { kind: i.kind, provides: [...i.provides], consumes: [...i.consumes], configured: s?.configured ?? false, connected: s?.connected ?? false, pending: s?.pending ?? false, accountName: s?.accountName ?? null } })
@@ -972,7 +1005,7 @@ export class App {
       }
     }
     for (const m of node?.members ?? []) {
-      if (m.peerId === me || peers.some((x) => x.id === m.peerId)) continue
+      if (m.peerId === me || m.peerId === 'fos' || peers.some((x) => x.id === m.peerId)) continue
       peers.push({ id: m.peerId, name: m.name ?? nameOf(m.peerId), online: this.isOnline(m.peerId), capabilities: [...m.capabilities], disabled: [...(m.disabled ?? [])], accepts: [...(m.accepts ?? [])], isAccount: m.peerId.startsWith('user:'), member: true })
     }
     const directPeer = this.state.direct?.phase === 'connected' ? this.state.replica.meta.serverPeerId ?? null : null
@@ -1391,8 +1424,16 @@ export class App {
     this.set({ selected: [...at, created] })
   }
   /** The blank row at the top of the view was typed into: a row of the parsed kind becomes the first row here. */
-  addRowAtTop(parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): string | null {
+  private addParsedChildren(at: Scope, children: import('./rows').ParsedInput[], replica?: Replica): void {
+    for (const child of children) {
+      const id = this.addRowAt(at, child.kind, child.text, { done: child.done, extras: child.extras, templateName: child.templateName, replica })
+      if (view(replica ?? this.state.replica, [...this.state.view, ...at])?.tasks.some(row => row.id === id) && child.children?.length) this.addParsedChildren([...at, id], child.children, replica)
+    }
+  }
+  addRowAtTop(parsed: import('./rows').ParsedInput): string | null {
+    if (parsed.children?.length && !this.groupedEdit) return this.together(() => this.addRowAtTop(parsed))
     const created = this.addRowAt([], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, templateName: parsed.templateName })
+    if (this.currentView()?.tasks.some((t) => t.id === created) && parsed.children?.length) this.addParsedChildren([created], parsed.children)
     return this.currentView()?.tasks.some((t) => t.id === created) ? created : null
   }
   setDoneAt(at: Scope, id: string, done: boolean): void {
@@ -1580,9 +1621,9 @@ export class App {
 
   /** Zoom into a descendant: `at` is its path relative to the current view (any depth). */
   zoomTo(at: Scope): void { this.goTo([...this.state.view, ...at]) }
-  goTo(path: Scope): void { this.set({ view: view(this.state.replica, path) ? path : [], selected: null, contextMenu: null, atRoot: false }) }
+  goTo(path: Scope): void { const home = homePath(this.state.replica); if (!path.length) path = home; this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false }) }
   /** Zoom out within Home; device settings are reached through the menu. */
-  zoomOut(): void { if (this.state.view.length) this.goTo(this.state.view.slice(0, -1)) }
+  zoomOut(): void { if (this.state.view.length > homePath(this.state.replica).length) this.goTo(this.state.view.slice(0, -1)) }
   goToRoot(): void { this.set({ atRoot: true, view: [], selected: null, contextMenu: null }) }
   /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
   knownPeers(): Array<{ id: string; name: string }> {
@@ -1612,6 +1653,8 @@ export class App {
   }
 
   isOnline(peerId: string): boolean {
+    if (peerId === 'fos') return this.transport() === 'account' && this.state.connection !== 'offline'
+    if (peerId.startsWith('integration:')) return !!this.state.integrations.find(peer => `integration:${peer.id}` === peerId)?.connected
     if (peerId === this.state.replica.meta.peerId) return this.transport() !== null
     return !!this.virtualPeers?.isOnline(peerId) || this.state.onlinePeers.includes(peerId)
   }
