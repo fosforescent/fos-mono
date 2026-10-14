@@ -1,5 +1,6 @@
+import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
-import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
+import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withBranches, scopeBranches, bindRepository, repositoryAt, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid } from '../../shared/sync/index'
 import { evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
@@ -2046,6 +2047,25 @@ export class App {
   /** Where a reference points, relative to the replica root (null when the target is gone). */
   refTarget(refId: string): { path: Scope; row: TaskView } | null {
     return resolveRef(this.state.replica, refId)
+  }
+  sharedLink(id: string): SharedAddress | null {
+    const found = resolveRef(this.state.replica, id)
+    return found ? readNodeValue(this.state.replica, [...found.path, found.row.id], 'fos:shared-link') : null
+  }
+  receiveSharedLink(address: SharedAddress, title: string): Scope {
+    const result = ensureSharedLink(this.state.replica, address, title, this.now(), this.state.session?.kind !== 'user')
+    this.edit(result.replica)
+    return result.path
+  }
+  rememberSharedSources(path: Scope, sources: Record<string, string>): void {
+    this.edit(writeLinkedNodeValue(this.state.replica, path, 'fos:input-links', sources, this.now(), Object.fromEntries(Object.entries(sources).map(([key, id]) => [key, { id }]))))
+  }
+  openSharedLink(id: string): void {
+    const address = this.sharedLink(id), found = resolveRef(this.state.replica, id)
+    if (!address || !found) return
+    location.hash = `share=${encodeURIComponent(JSON.stringify(address))}`
+    this.goTo([...found.path, found.row.id])
+    window.dispatchEvent(new window.HashChangeEvent('hashchange'))
   }
   /** Follow a reference: zoom to the target's parent and select it. */
   followRef(refId: string): void {

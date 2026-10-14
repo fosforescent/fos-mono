@@ -15,3 +15,5 @@ export * from './repository'
 export * from './evaluation'
 
 export * from './triggers'
+
+export * from './sharing'

@@ -396,3 +396,12 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 
 .node-values > *, .device-settings > *, .placeholder-form > * { min-width: 0; }
 .context-peers .task { display: flex; align-items: flex-start; gap: 6px; }
+
+.sharing-controls, .shared-node { overflow-wrap: anywhere; min-width: 0; }
+.sharing-controls label, .shared-node label { display: block; margin: .6rem 0; }
+.sharing-controls input, .shared-node input, .shared-node select { max-width: 100%; box-sizing: border-box; }
+.sharing-controls input[readonly] { display: block; width: 100%; }
+.sharing-controls pre { white-space: pre-wrap; }
+.shared-node { max-width: 900px; margin: 1rem auto; padding: 1rem; border: 1px solid var(--border, #555); border-radius: .5rem; }
+.shared-node button { min-height: 40px; margin: .2rem; }
+.shared-node fieldset { min-width: 0; margin: .7rem 0; }

@@ -5,6 +5,7 @@ import { pickStorage, createMemoryStorage } from './storage'
 import { createProjectStorage, findProject, saveDevice } from './project'
 import { serverPolicyOf } from '../../shared/sync/index'
 import { mountUi } from './ui'
+import { mountSharedNode } from './sharing'
 
 const env = import.meta.env as Record<string, string | undefined> & { DEV?: boolean }
 
@@ -44,6 +45,7 @@ if (virtual) {
 mountUi(root, app)
 if (virtualRequested && !virtual) app.notify('error', 'This virtual peer connection is unavailable. Spawn a new peer from the original tab.')
 else app.start()
+mountSharedNode(root, app, baseUrl)
 
 // A `fos` CLI opened this page to have its sign-in approved (?device=CODE).
 const params = new URL(location.href).searchParams
