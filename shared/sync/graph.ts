@@ -902,12 +902,15 @@ export function childRows(store: FosStore, cid: string, kind?: RowKind): Array<{
 
 /** Does an allocation fill an allocation requirement (resource type and amount)? */
 function allocationFills(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined): boolean {
-  return !!a && (!req.resource || a.type === req.resource) && (req.amount === undefined || a.amount >= req.amount)
+  return allocationMatches(req, a) && (req.amount === undefined || a!.amount >= req.amount)
 }
 
 /** Does an allocation count towards an allocation requirement at all (resource type matches), whatever its amount? */
-function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined): boolean {
-  return !!a && (!req.resource || a.type === req.resource)
+export function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined): boolean {
+  return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit === req.unit) &&
+    (req.start === undefined || (a.start !== undefined && a.start <= req.start)) &&
+    (req.end === undefined || a.end === undefined || a.end >= req.end) &&
+    (!req.peer || a.person === req.peer)
 }
 
 /**
@@ -1142,8 +1145,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1170,7 +1173,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'submit proposals', approve: 'approve proposals', autopush: 'autopush',
   direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
   calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify'
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1308,6 +1311,8 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'allocate': return p.allocateCapability.getId()
     case 'request-payment': return p.requestPaymentCapability.getId()
     case 'notify': return p.notifyCapability.getId()
+    case 'timer': case 'cron': case 'task-completion': case 'request':
+      return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
   }
 }
 
@@ -1330,8 +1335,8 @@ export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null
 
 export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
   const unique = [...new Set(capabilities)]
-  const off = [...new Set(disabled)].filter((c) => unique.includes(c))
   const from = [...new Set(accepts)]
+  const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c))
   return {
     data: {
       peerId: { content: peerId },
@@ -1354,27 +1359,26 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
     const peerId = ref.data.peerId?.content
     if (!peerId) continue
     const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c): c is Capability => c !== null))]
-    const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => (CAPABILITIES as string[]).includes(c) && caps.includes(c as Capability))
     const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c): c is Capability => c !== null)
+    const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => (CAPABILITIES as string[]).includes(c) && (caps.includes(c as Capability) || accepts.includes(c as Capability)))
     out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...(off.length ? { disabled: off } : {}), ...(accepts.length ? { accepts } : {}) })
   }
   return out
 }
 
-/** Handler advertisements are ordinary typed refs on the member's CAPABILITY edges. */
-export function memberHandlers(store: FosStore, value: FosNodeContent, peerId: string): string[] {
-  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return memberHandlers(store, content(store, identityCid(store, edge)), peerId) }
+/** Handler advertisements are ordinary typed refs in either member direction. */
+export function memberHandlers(store: FosStore, value: FosNodeContent, peerId: string, direction?: string): string[] {
+  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return memberHandlers(store, content(store, identityCid(store, edge)), peerId, direction) }
   const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)
-  return member ? content(store, member[1]).children.filter((e) => e[0] === store.primitive.capabilityNode.getId() && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : []
+  return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && (e[0] === store.primitive.capabilityNode.getId() || e[0] === store.primitive.acceptsNode.getId()) && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : []
 }
 
 /** Add or replace the member entry for `peerId`. */
 export function withMember(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
   const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts)
-  const handlers = memberHandlers(store, value, peerId)
   next.children = next.children.flatMap((edge) => {
-    const capability = capabilityOf(store, edge)
-    const matching = capability ? handlers.filter((cid) => capabilityOfTarget(store, cid) === capability) : []
+    const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge)
+    const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : []
     return matching.length ? matching.map((cid): FosPathElem => [edge[0], cid]) : [edge]
   })
   const refCid = put(store, next)
@@ -1384,7 +1388,7 @@ export function withMember(store: FosStore, value: FosNodeContent, peerId: strin
 
 /** Does the owner of this node accept `capability` from `peerId` (an ACCEPTS edge on its member reference)? */
 export function acceptsFrom(store: FosStore, value: FosNodeContent, peerId: string, capability: Capability): boolean {
-  return readMembers(store, value).some((m) => m.peerId === peerId && (m.accepts ?? []).includes(capability))
+  return readMembers(store, value).some((m) => m.peerId === peerId && (m.accepts ?? []).includes(capability) && !m.disabled?.includes(capability))
 }
 
 /** Drop the member entry for `peerId` (and so every capability it was granted). */
@@ -1558,6 +1562,8 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const owned = new Set<string>()
   const childEdges = (value: FosNodeContent) => value.children.filter((edge) => {
     const kind = rowKindOf(store, edge)
+    const name = content(store, identityCid(store, edge)).data.name?.content
+    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && name === 'fos:trigger')) return false
     if (kind) return !(instantiate && kind === 'supply')
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
     return isRefNode(store, content(store, identityCid(store, edge)))

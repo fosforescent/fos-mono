@@ -1,3 +1,4 @@
+import { rememberLoadedRoot, saveRootVersion } from './sync/storeVersion'
 import crypto from "crypto";
 import {
   AppState,
@@ -183,6 +184,7 @@ export const dbToStore = async (
   newStore.rootNodeId = rootNodeId
   newStore.trellisData = trellisData
 
+  rememberLoadedRoot(newStore, user.fosNodeId)
   return newStore
 
 };
@@ -316,12 +318,14 @@ export const storeToDb = async (
     })
   }
 
-  const updatedUser = await prisma.userModel.update({
-    where: { user_name: user.user_name },
-    data: { 
-      data: validateTrellisDataToDB(store.trellisData),
-      fosNodeId: store.rootNodeId
-    }
+  // A second backend instance must not overwrite a root loaded before another writer's commit.
+  // Nodes are immutable and can be inserted beforehand; the visible root advances atomically.
+  await saveRootVersion(store, user.fosNodeId, async (expected, next) => {
+    const saved = await prisma.userModel.updateMany({
+      where: { id: user.id, fosNodeId: expected },
+      data: { data: validateTrellisDataToDB(store.trellisData), fosNodeId: next }
+    })
+    return saved.count === 1
   })
 
   /**

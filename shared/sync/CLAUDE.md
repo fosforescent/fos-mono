@@ -35,3 +35,9 @@ cd shared && npx jest sync/
 - [x] User-controlled task ordering (cid v2 + order-preserving merge)
 - [ ] Prune root-alias history in the stored replica
 - [ ] Unify with `FosExpression.merge`/`resolveConflict` and `FosNode.addTodo`
+
+## Node evaluation and triggers
+- `bindings.ts` accepts a runtime `isPeerActive` predicate. Recursive binding resolution checks explicit and inherited handlers; connectivity is not stored as a permanent grant. `capabilityPeers` distinguishes handler offers from permissions granted to peers.
+- `evaluation.ts` checks bindings, conflicts, instructions, and overlapping resource allocations; opens parents first and commits children first. It stores its journal as a named document ref (`fos:evaluation`). Completion is staged until all commits succeed. Handler effects are journalled before dispatch; failed/uncertain effects without compensation produce ordinary recovery tasks. Interrupted evaluation cannot automatically repeat. Executor drivers must serialize evaluation and recovery, persist before dispatch, and revoke their own graph results when compensating.
+- `triggers.ts` uses the same typed refs for configuration and occurrence state. Timers belong to one device; parent-completion and incoming-proposal triggers use that device's observed events. A template trigger instantiates the existing template and evaluates the instance. Failed/interrupted occurrences require review. Runtime journals are not cloned; instantiated templates do not inherit scheduling declarations.
+- Cron supports five numeric UTC fields, lists/ranges/steps, and the day-of-month/day-of-week OR rule. The current scheduler checks the current minute (no missed-run replay) and the server's default branch selections.

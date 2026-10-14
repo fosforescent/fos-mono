@@ -2,10 +2,12 @@
 import { keyValueOf, splitFrontmatter } from './notes'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  put, childRows, requirementSatisfied, capabilityOf, acceptsOf, content, identityCid, isChoiceEdge, isMemberEdge, refTypeCid, refValueCid,
+  readMembers, type Capability, put, childRows, requirementSatisfied, capabilityOf, acceptsOf, content, identityCid, isChoiceEdge, isMemberEdge, refTypeCid, refValueCid,
   resolveScope, valueContent, type Scope
 } from './graph'
 import { headCid, type Replica } from './replica'
+
+export type BindingEnvironment = { isPeerActive?: (peerId: string) => boolean }
 
 export type BindingCandidate = { cid: string; type: string; name?: string }
 export type BindingResolution = {
@@ -24,7 +26,7 @@ export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
 }
 
 /** Only explicitly passed arguments and advertised peer handlers enter the context. */
-export function contextBindings(r: Replica, at: Scope): BindingCandidate[] {
+export function contextBindings(r: Replica, at: Scope, environment: BindingEnvironment = {}): BindingCandidate[] {
   const named = new Map<string, BindingCandidate[]>(), peers = new Map<string, BindingCandidate[]>()
   for (let i = 0; i <= at.length; i++) {
     const cid = resolveScope(r.store, headCid(r), at.slice(0, i))
@@ -54,6 +56,7 @@ export function contextBindings(r: Replica, at: Scope): BindingCandidate[] {
     for (const edge of content(r.store, cid).children.filter(edge => isMemberEdge(r.store, edge))) {
       const member = content(r.store, edge[1]), peer = member.data.peerId?.content
       if (!peer) continue
+      if (environment.isPeerActive && !environment.isPeerActive(peer)) { peers.set(peer, []); continue }
       const disabled = member.data.disabledCapabilities?.content ?? []
       // Direction/permission filtering is also performed by the invoking transport.
       const offers = member.children.filter(e => e[0] === r.store.primitive.capabilityNode.getId() || e[0] === r.store.primitive.acceptsNode.getId())
@@ -69,7 +72,7 @@ export function contextBindings(r: Replica, at: Scope): BindingCandidate[] {
 }
 
 /** Explicit targets win. Multiple candidates remain choices; no first-provider wins. */
-export function resolveBinding(store: FosStore, type: string, target: string | null, candidates: BindingCandidate[] = [], name?: string): BindingResolution {
+export function resolveBinding(store: FosStore, type: string, target: string | null, candidates: BindingCandidate[] = [], name?: string, environment: BindingEnvironment = {}): BindingResolution {
   const sources = new Set<string>(), active = new Set<string>()
   const fail = (status: BindingResolution['status'], message: string): BindingResolution => ({ status, sources: [...sources], problems: [message] })
   const choose = (wanted: string, label?: string, excluded?: string, anonymous = false): BindingResolution => {
@@ -106,6 +109,8 @@ export function resolveBinding(store: FosStore, type: string, target: string | n
         if (new Set(values.map(v => v.cid)).size > 1) return fail('conflict', 'Incompatible bindings for the same reference')
         return { ...values[0]!, sources: [...sources] }
       }
+      const peer = node.data.peerId?.content
+      if (peer && environment.isPeerActive && !environment.isPeerActive(peer)) return fail('missing', `Peer ${peer} is not active`)
       for (const child of childRows(store, cid, 'requirement')) {
         if (!requirementSatisfied(store, child.cid)) { sources.add(child.cid); return fail('missing', 'A required resource or confirmation is unresolved') }
       }
@@ -129,4 +134,15 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
     bindings.push(result)
     return result.status === 'ready' ? valueContent(r.store, result.cid!).data.description?.content ?? '' : placeholder
   }), bindings }
+}
+
+/** Nearest bindings shadow ancestors. Offers are distinct from permissions granted to a peer. */
+export function capabilityPeers(r: Replica, path: Scope, capability: Capability): string[] {
+  const members = new Map<string, ReturnType<typeof readMembers>[number]>()
+  for (let i = 0; i <= path.length; i++) {
+    const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
+    if (cid) for (const member of readMembers(r.store, content(r.store, cid))) members.set(member.peerId, member)
+  }
+  return [...members.values()].filter(m => !m.disabled?.includes(capability) &&
+    (m.accepts?.includes(capability) || ((m.peerId === 'fos' || (m.peerId.startsWith('mcp:') && capability === 'tool')) && m.capabilities.includes(capability)))).map(m => m.peerId)
 }

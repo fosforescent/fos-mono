@@ -347,3 +347,13 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .menu { min-width: min(260px, calc(100vw - 32px)); max-width: calc(100vw - 32px); }
 
 .blocked-badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+.node-detail { margin: 0.5rem 0 1rem; min-width: 0; }
+.node-detail[hidden] { display: none; }
+.node-text { box-sizing: border-box; width: 100%; min-height: 6rem; resize: vertical; font: inherit; color: inherit; background: transparent; border: 1px solid var(--border, #555); border-radius: 6px; padding: .6rem; }
+.node-actions, .node-filters, .node-results { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
+.node-filters, .evaluation-status { flex-basis: 100%; }
+.node-filters [aria-pressed=true] { border-color: #36ae6b; }
+.evaluate { color: #fff; background: #18733d; border: 1px solid #36ae6b; border-radius: 5px; padding: .4rem .7rem; }
+.node-results button { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+@media (max-width: 640px) { .node-actions button, .node-detail summary { min-height: 44px; } }

@@ -284,3 +284,7 @@ export function decideRepositoryPull(session: Session, repo: string, number: num
 export function createRepositoryBranch(session: Session, repo: string, name: string, from: string): Promise<{ ok: true }> {
   return authed(session, 'POST', '/user/integrations/repo', { action: 'branch', repo, name, from })
 }
+
+export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover'): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord }> {
+  return authed(session, 'POST', '/user/integrations/evaluate', { path, expected, branches, action })
+}
