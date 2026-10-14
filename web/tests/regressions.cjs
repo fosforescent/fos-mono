@@ -9,8 +9,8 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-web-tests-'))
 const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
-buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
-const { App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica } = require(path.join(dir, 'app.cjs'))
+buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
+const { App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const reply = (data, status = 200) => ({ ok: status < 400, status, statusText: String(status), json: async () => data })
 const apps = []
@@ -228,6 +228,46 @@ async function main() {
   assert.equal(document.querySelector('.ghost input.edit').value, '', 'a replacement replica cannot inherit another session draft')
   console.log('PASS: ghost draft/caret/focus through asynchronous sync and sibling move undo/redo focus')
 
+  const concurrent = a.addRowAt([], 'task', 'QA concurrent', { id: 'qa-concurrent' })
+  a.select([concurrent]); await tick()
+  document.activeElement.value = '[ ] Local unfinished edit'
+  assert.doesNotThrow(() => a.set({ replica: renameTask(a.state.replica, [], concurrent, 'Incoming saved edit', 321) }))
+  await tick()
+  const conflictNow = a.currentView().choices.find(choice => choice.options.some(option => option.task?.id === concurrent))
+  assert(conflictNow, 'a dirty draft and incoming edit produce a conflict without reload')
+  assert(conflictNow.options.some(option => option.task?.title === 'Local unfinished edit'))
+  assert(conflictNow.options.some(option => option.task?.title === 'Incoming saved edit'))
+  assert(document.querySelector('.conflict-row'))
+  a.resolveChoice(conflictNow.id, conflictNow.options.findIndex(option => option.task?.title === 'Local unfinished edit')); await tick()
+  a.select(null); await tick()
+  let newRow = document.querySelector('.ghost input.edit')
+  newRow.value = '[ ] QA completion'; newRow.dispatchEvent(new dom.window.Event('input'))
+  newRow.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); await tick()
+  const completed = a.currentView().tasks.find(task => task.title === 'QA completion')
+  assert(completed?.done, 'Ctrl+Enter in the ghost commits and completes a task')
+  assert(document.querySelector('.ghost .kind-preview').hidden, 'clearing a ghost also clears its type badge')
+  const countBeforeBlank = a.currentView().tasks.length
+  a.addRowBelow([], completed.id); await tick()
+  document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick()
+  assert.equal(a.currentView().tasks.length, countBeforeBlank, 'leaving an empty row discards it')
+  a.select([completed.id]); await tick()
+  document.activeElement.value = '[ ] Edited task text'
+  document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); await tick()
+  assert.equal(a.currentView().tasks.find(task => task.id === completed.id).done, true, 'completion uses the freshly parsed task type/state')
+  a.select([completed.id]); await tick()
+  document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true })); await tick()
+  assert.equal(document.activeElement, document.querySelector('.ghost input.edit'), 'zoom focuses the destination editor')
+  a.goTo([]); await tick()
+  console.log('PASS: live concurrent drafts, visible conflicts, task completion while typing, blank cleanup, preview reset and zoom focus')
+
+  const unsafeNote = await renderMarkdown('<img src="https://tracking.test/pixel"><svg><image href="https://tracking.test/svg"/></svg><span style="background:url(https://tracking.test/css)">text</span><a href="javascript:alert(1)">dead link</a>')
+  assert(!unsafeNote.includes('<img') && !unsafeNote.includes('<image') && !unsafeNote.includes('style='))
+  assert(!unsafeNote.includes('<a'), 'stripped links become plain text')
+  assert(unsafeNote.includes('dead link'))
+  const mediaLinks = renderInlineText('https://tracking.test/photo.jpg')
+  assert.equal(mediaLinks.querySelectorAll('img,iframe').length, 0, 'row media does not contact a host until explicitly loaded')
+  assert.equal(mediaLinks.querySelector('button').textContent, 'Load remote image')
+
   // Accounts and offline sessions never share an implicit outbox.
   const accountStores = { alice: createReplica('alice-server'), bob: createReplica('bob-server') }
   accountStores.alice = addTask(accountStores.alice, [], 'Alice server data', 1, 'alice-root')
@@ -377,6 +417,19 @@ async function main() {
   assert.equal(accountPeer.transport(), 'virtual')
   assert.equal(accountPeer.state.session.username, 'other-account')
   assert.equal(host.state.session.username, 'virtual-user')
+  const descriptor = accountPeer.virtualPeers.guest
+  dom.reconfigure({ url: `http://localhost/?virtual=${descriptor.token}` })
+  assert.equal(virtualPeerFromUrl().id, descriptor.id)
+  dom.reconfigure({ url: 'http://localhost/' })
+  assert.equal(virtualPeerFromUrl().id, descriptor.id, 're-entering the base URL remembers the tab identity')
+  sessionStorage.removeItem('fos.virtual.identity')
+  const broadcast = window.BroadcastChannel
+  delete window.BroadcastChannel
+  const unavailable = app(virtualStorage(descriptor)); unavailable.enableVirtualPeers(descriptor); unavailable.start()
+  assert.equal(unavailable.transport(), null)
+  assert.equal(unavailable.canApprove(), false)
+  assert.equal(unavailable.canResetHome(), false, 'unavailable virtual transport cannot become a full-account device')
+  window.BroadcastChannel = broadcast
   console.log('PASS: virtual peer identity/storage isolation, scoped channel sync, proposer/reviewer flow, read-only role, shared sign-in and independent sign-out')
   console.log('PASS: undo/redo focus, deletion, received edits, redo invalidation, reset, peer connection settings and keyboard shortcuts')
   console.log('PASS: login, password-free persistence and attachment lookup retry')

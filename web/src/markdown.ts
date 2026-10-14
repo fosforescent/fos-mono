@@ -55,7 +55,7 @@ export async function renderMarkdown(md: string): Promise<string> {
   const cached = cache.get(md)
   if (cached) return cached
   const { text, math } = extractMath(md)
-  let html = DOMPurify.sanitize(await marked.parse(text), { ADD_ATTR: ['target'], FORBID_TAGS: ['style'] })
+  let html = DOMPurify.sanitize(await marked.parse(text), { USE_PROFILES: { html: true }, ADD_ATTR: ['target'], FORBID_TAGS: ['style', 'img', 'picture', 'source', 'video', 'audio', 'input'], FORBID_ATTR: ['style', 'srcset', 'poster'] })
   if (math.length) {
     const katex = await loadKatex()
     html = html.replace(/@@MATH(\d+)@@/g, (_m, i: string) => {
@@ -65,7 +65,12 @@ export async function renderMarkdown(md: string): Promise<string> {
     })
   }
   // links open in a new tab
-  html = html.replace(/<a href=/g, '<a target="_blank" rel="noopener noreferrer" href=')
+  const template = document.createElement('template'); template.innerHTML = html
+  for (const link of template.content.querySelectorAll('a')) {
+    if (!link.hasAttribute('href')) link.replaceWith(...link.childNodes)
+    else { link.setAttribute('target', '_blank'); link.setAttribute('rel', 'noopener noreferrer') }
+  }
+  html = template.innerHTML
   cache.set(md, html)
   return html
 }
@@ -82,7 +87,13 @@ export async function hydrateDiagrams(container: HTMLElement): Promise<void> {
       const { svg } = await mermaid.render(`m${Math.random().toString(36).slice(2, 10)}`, source)
       const holder = document.createElement('div')
       holder.className = 'diagram'
-      holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })
+      holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true }, FORBID_TAGS: ['image', 'img', 'input', 'video', 'audio', 'source', 'picture'], FORBID_ATTR: ['srcset'] })
+      // Keep local SVG paint servers, but prevent CSS/paint URLs from loading remote resources.
+      const localUrlsOnly = (value: string) => value.replace(/@import[^;]+;/gi, '').replace(/url\((?!\s*['"]?#)[^)]+\)/gi, 'none')
+      for (const element of holder.querySelectorAll('*')) {
+        for (const attribute of Array.from(element.attributes)) if (/url\(/i.test(attribute.value)) element.setAttribute(attribute.name, localUrlsOnly(attribute.value))
+        if (element.tagName.toLowerCase() === 'style') element.textContent = localUrlsOnly(element.textContent ?? '')
+      }
       pre.replaceWith(holder)
     } catch (error) {
       pre.classList.add('diagram-error')

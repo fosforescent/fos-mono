@@ -327,3 +327,23 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .data-sessions-row { display: block; padding: .75rem; }
 .data-sessions-row select { max-width: 100%; }
 .login label input[type=checkbox] { width: auto; }
+
+.task, .task .title, .task .row-body, .task .row-main { min-width: 0; }
+.task .title, .task .note-body, .task .requirement-body { overflow-wrap: anywhere; word-break: break-word; }
+.task input.edit, .task textarea.edit { min-width: 0; max-width: 100%; }
+.context-menu { position: fixed; max-height: 70dvh; overflow-y: auto; max-width: calc(100vw - 16px); }
+@media (max-width: 640px) {
+  .context-menu { top: auto !important; right: 8px !important; bottom: 8px; left: 8px; max-height: 70dvh; min-width: 0; }
+  button, .context-menu .menu-item { min-height: 44px; }
+  button.icon { min-width: 44px; }
+  .task { min-height: 44px; }
+}
+
+.menu-group-label { padding: .35rem .75rem; font-size: .8rem; }
+.conflict-row { background: var(--warn-bg); gap: .5rem; }
+@media (max-width: 640px) { .tree .task[data-id] { flex-wrap: wrap; } .tree .task .row-meta { flex-basis: 100%; justify-content: flex-end; flex-wrap: wrap; } }
+
+.brand-row { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+.menu { min-width: min(260px, calc(100vw - 32px)); max-width: calc(100vw - 32px); }
+
+.blocked-badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }

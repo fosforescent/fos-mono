@@ -1,5 +1,5 @@
 import './style.css'
-import { virtualPeerFromUrl, virtualStorage } from './virtual'
+import { virtualPeerFromUrl, virtualPeerToken, virtualStorage } from './virtual'
 import { App } from './app'
 import { pickStorage, createMemoryStorage } from './storage'
 import { createProjectStorage, findProject, saveDevice } from './project'
@@ -21,7 +21,7 @@ if (!root) throw new Error('missing #app root')
 
 // Project mode: inside the desktop shell, a directory with fos.config.toml
 // decides the server, the device name and where state lives (.fos/).
-const virtualRequested = new URL(location.href).searchParams.has('virtual')
+const virtualRequested = !!virtualPeerToken()
 const virtual = virtualPeerFromUrl()
 const project = virtualRequested ? null : await findProject()
 const storage = virtual ? virtualStorage(virtual) : virtualRequested ? createMemoryStorage() : project ? await createProjectStorage(project) : pickStorage()
@@ -36,7 +36,10 @@ const app = new App({
 })
 
 if (!project) app.enableVirtualPeers(virtual)
-if (virtual) document.title = `${virtual.name} — Fosforescent`
+if (virtual) {
+  document.title = `${virtual.name} — Fosforescent`
+  const url = new URL(location.href); url.searchParams.set('virtual', virtual.token); history.replaceState(null, '', url)
+}
 mountUi(root, app)
 if (virtualRequested && !virtual) app.notify('error', 'This virtual peer connection is unavailable. Spawn a new peer from the original tab.')
 else app.start()
