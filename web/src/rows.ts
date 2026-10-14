@@ -352,25 +352,21 @@ export function renderInlineText(text: string): DocumentFragment {
     a.addEventListener('click', (e) => e.stopPropagation())
     frag.append(a)
     last = start + url.length
-    if (IMAGE_RE.test(url.split('#')[0] ?? '')) {
-      const img = document.createElement('img')
-      img.src = url
-      img.alt = ''
-      img.loading = 'lazy'
-      img.className = 'embed'
-      embeds.push(img)
-    } else {
-      const yt = youtubeId(url)
-      if (yt) {
-        const iframe = document.createElement('iframe')
-        iframe.className = 'embed video'
-        iframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(yt)}`
-        iframe.allow = 'accelerometer; encrypted-media; picture-in-picture'
-        iframe.referrerPolicy = 'strict-origin-when-cross-origin'
-        iframe.setAttribute('allowfullscreen', '')
-        iframe.loading = 'lazy'
-        embeds.push(iframe)
-      }
+    const image = IMAGE_RE.test(url.split('#')[0] ?? '')
+    const yt = image ? null : youtubeId(url)
+    if (image || yt) {
+      const holder = document.createElement('span')
+      const load = document.createElement('button'); load.type = 'button'; load.className = 'secondary small'
+      load.textContent = image ? 'Load remote image' : 'Load remote video'
+      load.title = 'Loading contacts the remote media host'
+      load.addEventListener('click', (event) => {
+        event.stopPropagation()
+        const media = document.createElement(image ? 'img' : 'iframe')
+        if (media instanceof HTMLImageElement) { media.src = url; media.alt = ''; media.className = 'embed'; media.referrerPolicy = 'no-referrer' }
+        else { const frame = media as HTMLIFrameElement; frame.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(yt!)}`; frame.className = 'embed video'; frame.referrerPolicy = 'no-referrer'; frame.allow = 'encrypted-media; picture-in-picture'; frame.setAttribute('allowfullscreen', '') }
+        holder.replaceChildren(media)
+      })
+      holder.append(load); embeds.push(holder)
     }
   }
   if (last < text.length) frag.append(document.createTextNode(text.slice(last)))

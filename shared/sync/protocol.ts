@@ -222,6 +222,7 @@ function serveProposal(store: FosStore, request: SyncRequest, serverPeerId: stri
   const existing = readProposals(store, linkValue).find((p) => p.peerId === request.peerId && p.name === branchName) ?? null
   const baseStripped = hasNode(store, request.baseCid) ? putStripped(store, content(store, request.baseCid)) : null
 
+  const peerEdited = baseStripped ? headStripped !== baseStripped : !existing || headStripped !== existing.contentCid
   let action: SyncAction = 'noop'
   let branchCid = headStripped
   let newChoiceCids: string[] = []
@@ -239,15 +240,21 @@ function serveProposal(store: FosStore, request: SyncRequest, serverPeerId: stri
     branchCid = merged.cid
     newChoiceCids = merged.newChoiceCids
   }
+  if (action === 'propose' && existing?.status === 'rejected' && peerEdited) {
+    // Only submit edits made after rejection; unchanged rejected rows must not ride along.
+    const fresh = mergeNodes(store, baseStripped ?? existing.contentCid, mainStripped, headStripped, { ours: serverPeerId, theirs: request.peerId })
+    branchCid = fresh.cid
+    newChoiceCids = fresh.newChoiceCids
+  }
   if (action === 'propose' && branchCid === mainStripped) {
     proposalCid = null
     action = 'pull'
   } else if (action === 'propose') {
     // Unchanged content (even if rejected) keeps the existing proposal node; an edit reopens it.
     // A rebase of a rejected proposal (main moved, the peer did not edit) stays rejected.
-    const unchanged = existing && existing.contentCid === branchCid && existing.baseCid === mainStripped
-    const peerEdited = !existing || headStripped !== existing.contentCid
+    const sameContent = existing && existing.contentCid === branchCid && existing.baseCid === mainStripped
     const status = existing?.status === 'rejected' && !peerEdited ? 'rejected' : 'open'
+    const unchanged = sameContent && existing.status === status
     proposalCid = unchanged
       ? existing.cid
       : put(store, proposalContent(store, request.peerId, branchName, branchCid, mainStripped, existing && !peerEdited ? existing.timestamp : now, status))

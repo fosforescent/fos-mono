@@ -6,8 +6,18 @@ import { createLocalStorageAdapter, type ReplicaStorage } from './storage'
 export type VirtualPeer = { id: string; token: string; hostTab: string; name: string; scope: Scope; dataSessionId?: string; shareAccount: boolean }
 const PREFIX = 'fos.virtual.'
 
+export function virtualPeerToken(): string | null {
+  const url = new URL(location.href)
+  const explicit = url.searchParams.get('virtual')
+  if (url.searchParams.has('virtual')) {
+    try { sessionStorage.setItem(PREFIX + 'identity', explicit || 'invalid') } catch { /* URL still binds this peer when tab storage is restricted */ }
+    return explicit || 'invalid'
+  }
+  try { return sessionStorage.getItem(PREFIX + 'identity') } catch { return null }
+}
+
 export function virtualPeerFromUrl(): VirtualPeer | null {
-  const token = new URL(location.href).searchParams.get('virtual')
+  const token = virtualPeerToken()
   if (!token || !/^[a-f0-9-]{36}$/.test(token)) return null
   try {
     const value = JSON.parse(localStorage.getItem(PREFIX + token + '.connection') ?? 'null') as VirtualPeer | null
@@ -27,6 +37,7 @@ export function virtualStorage(peer: VirtualPeer): ReplicaStorage {
 }
 
 type Hooks = {
+  presence: () => void
   dataSessionId: () => string | undefined
   decide: (peer: VirtualPeer, scope: Scope, proposalId: string, decision: 'approve' | 'reject') => Promise<void>
   grants: (peer: VirtualPeer) => Capability[] | null
@@ -77,7 +88,7 @@ export class VirtualPeers {
           this.revision = data.revision
           this.hooks.welcome(data.capabilities, data.name, first && guest.shareAccount ? data.session : undefined)
           if (previousRevision !== null && previousRevision !== data.revision) this.hooks.changed()
-        } else if (data.t === 'revoked') { this.seen = 0; this.hooks.welcome([], 'Parent tab'); this.hooks.changed() }
+        } else if (data.t === 'revoked') { this.seen = 0; this.hooks.welcome([], data.name); this.hooks.changed() }
         else if (data.t === 'changed') this.hooks.changed()
         else if (data.t === 'decision-result') {
           const pending = this.decisions.get(data.id)
@@ -114,12 +125,17 @@ export class VirtualPeers {
     const channel = new BroadcastChannel(PREFIX + peer.token)
     this.rooms.set(peer.token, { peer, channel, seen: 0 })
     channel.onmessage = ({ data }) => {
+      if (this.closed) return
       if (data.peerId !== peer.id) return
-      this.rooms.get(peer.token)!.seen = Date.now()
+      const room = this.rooms.get(peer.token)!
+      if (data.t === 'bye') { room.seen = 0; this.hooks.presence(); return }
+      const wasOnline = Date.now() - room.seen < 12_000
+      room.seen = Date.now()
+      if (!wasOnline) this.hooks.presence()
       if (data.t === 'hello') {
         // Resolve current grants through the host hook; no replica content is sent before this check.
         const capabilities = this.hooks.grants(peer)
-        if (!capabilities?.includes('read')) { channel.postMessage({ t: 'revoked' }); return }
+        if (!capabilities?.includes('read')) { channel.postMessage({ t: 'revoked', name: this.hooks.name() }); return }
         channel.postMessage({ t: 'welcome', revision: this.hooks.revision(), name: this.hooks.name(), capabilities, session: peer.shareAccount && data.requestAccount ? this.hooks.session() : undefined })
       } else if (data.t === 'decision') {
         void this.hooks.decide(peer, data.scope, data.proposalId, data.decision).then(
@@ -154,6 +170,8 @@ export class VirtualPeers {
     })
   }
   close(): void {
+    if (this.closed) return
+    this.channel?.postMessage({ t: 'bye', peerId: this.guest!.id })
     this.closed = true
     this.seen = 0
     if (this.heartbeat) clearInterval(this.heartbeat); this.channel?.close(); this.channel = null

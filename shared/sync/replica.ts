@@ -539,6 +539,15 @@ export function removePeerAt(replica: Replica, at: Scope, peerId: string, now: n
   return editNode(replica, at, now, (node) => withoutPeer(replica.store, node, peerId))
 }
 
+/** Discard a rejected local branch and return to its accepted base; the next sync clears its proposal. */
+export function discardOwnProposalAt(replica: Replica, at: Scope, proposalCid: string, now: number): Replica {
+  return editNode(replica, at, now, (node) => {
+    const proposal = readProposals(replica.store, node).find((p) => p.cid === proposalCid && p.peerId === replica.meta.peerId && p.status === 'rejected')
+    if (!proposal) return node
+    return refNodeContent(replica.store, { ...node.data, updated: { time: now } }, proposal.baseCid, bookkeepingOf(replica.store, node), refTypeCid(replica.store, node))
+  })
+}
+
 export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: string, now: number): Replica {
   return editNode(replica, at, now, (node) => markProposalRejected(replica.store, node, proposalCid))
 }

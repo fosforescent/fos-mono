@@ -36,6 +36,7 @@ type Regions = {
  * phones show one level and zoom into a row to see its children, larger screens
  * expand/collapse a few levels in place.
  */
+let renderDepth = 0
 const KEY_HELP: Array<[string, string]> = [
   ['Ctrl/⌘ Z · Ctrl/⌘ Shift Z', 'undo / redo committed edits (last 100 this session); while typing, undo draft text'],
   ['↑ / ↓', 'move between rows (↑ from the first row returns to the blank row at the top)'],
@@ -124,7 +125,16 @@ export function mountUi(root: HTMLElement, app: App): void {
     if (event.target === regions.modal) app.closeModal()
   })
 
-  app.subscribe((state) => render(regions, state, app))
+  let rendering = false
+  let pending: AppState | null = null
+  app.subscribe((state) => {
+    pending = state
+    if (rendering) return
+    rendering = true
+    try {
+      while (pending) { const next = pending; pending = null; renderDepth++; try { render(regions, next, app) } finally { renderDepth-- } }
+    } finally { rendering = false }
+  })
   let resizeTimer: ReturnType<typeof setTimeout> | null = null
   window.addEventListener('resize', () => {
     if (resizeTimer) clearTimeout(resizeTimer)
@@ -140,6 +150,7 @@ function render(regions: Regions, state: AppState, app: App): void {
   renderMic(regions.mic, state, app)
   renderModal(regions.modal, state, app)
 
+  document.activeElement?.dispatchEvent(new window.Event('render-commit'))
   const node = app.currentView()
   if (!node) {
     app.goTo([]) // the viewed node vanished (e.g. removed by a merge)
@@ -235,7 +246,9 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   const { replica, view } = state
   const labels = app.labels()
   const transport = app.transport()
-  const chipText = transport === 'direct'
+  const chipText = state.virtual
+    ? `${transport === 'virtual' ? 'Virtual peer' : 'Disconnected virtual peer'} of ${state.virtual.hostName}`
+    : transport === 'direct'
     ? `Syncing with ${state.direct?.remoteName ?? 'another device'}`
     : transport === 'account'
       ? `${state.session?.kind === 'peer' ? 'Invited to' : 'Device syncs'} ${pathLabel(labels.scope)}`
@@ -285,6 +298,7 @@ function renderChoice(choice: ChoiceView, state: AppState, app: App): HTMLElemen
 
 function renderChoiceCard(choice: ChoiceView, state: AppState, pick: (index: number | null) => void): HTMLElement {
   const card = document.createElement('article')
+  card.dataset.choice = choice.id
   card.className = 'choice' + (state.highlighted.includes(choice.id) ? ' highlighted' : '')
   const title = document.createElement('h3')
   title.textContent = `“${choice.subject}” was changed in two places`
@@ -340,10 +354,11 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
+  if (!reuse && !state.selected) focusGhost = true
   const ghost = reuse ? cached.row : renderGhostRow(node, state, app)
   if (reuse) {
     // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
-    for (const child of Array.from(el.children)) if (child !== ghost) child.remove()
+    for (const child of Array.from(el.children)) if (child !== ghost && child.parentNode === el) child.remove()
     el.append(...renderRows(node, [], 0, state, app))
   } else {
     el.replaceChildren(ghost, ...renderRows(node, [], 0, state, app))
@@ -374,7 +389,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   const input = document.createElement('input')
   input.type = 'text'
   input.className = 'edit'
-  input.placeholder = 'New row… (ctrl + H for tips)'
+  input.placeholder = window.innerWidth < 640 ? 'New row…' : 'New row… (ctrl + H for tips)'
   void node
   const preview = kindPreview(input)
   input.autocomplete = 'off'
@@ -392,6 +407,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     const created = app.addRowAtTop(parsed)
     if (!created) { committed = false; return null }
     input.value = ''
+    input.dispatchEvent(new window.Event('input'))
     committed = false
     return created
   }
@@ -401,21 +417,23 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
     const k = event.key
     if (historyShortcut(event) !== null && input.value === '') { event.preventDefault(); event.stopPropagation(); runHistory(app, historyShortcut(event)!); return }
+    if (k === 'ArrowLeft' && event.altKey) { event.preventDefault(); commit(); focusGhost = true; app.zoomOut(); return }
     if (k === 'Enter') {
       // the typed row becomes the first row here; the blank row stays on top, ready for the next one (no extra blank row below)
       event.preventDefault()
       event.stopPropagation()
       focusGhost = true // Set before commit: adding the first row renders synchronously.
       const created = commit()
+      if (created && (event.ctrlKey || event.metaKey) && !event.shiftKey) { const row = app.rowAt([created]); if (row?.kind === 'task') app.toggleTaskAt([], row) }
       if (created && (event.ctrlKey || event.metaKey) && event.shiftKey) { focusGhost = false; app.addRowInside([], created) }
       return
     }
     if (k === 'ArrowDown' && !event.altKey) { event.preventDefault(); event.stopPropagation(); focusGhost = true; const created = commit(); if (!created && node.tasks.length) moveSelection(app, 1); return }
-    if (k === 'Escape') { event.preventDefault(); input.value = ''; input.blur(); return }
+    if (k === 'Escape') { event.preventDefault(); input.value = ''; input.dispatchEvent(new window.Event('input')); input.blur(); return }
     event.stopPropagation()
   })
   input.addEventListener('focus', () => { if (app.state.selected) { focusGhost = true; app.select(null) } })
-  input.addEventListener('blur', () => { commit() })
+  input.addEventListener('blur', () => { if (!renderDepth) commit() })
   li.append(span('zoom-dot', ''), span('handle', ''), toggle, input, preview)
   return li
 }
@@ -460,6 +478,11 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
       }
     }
   })
+  if (!at.length) for (const choice of node.choices) {
+    const li = document.createElement('li'); li.className = 'task conflict-row'; li.style.setProperty('--depth', String(depth))
+    li.append(span('title', choice.subject), span('blocked-badge', 'Conflict'), button('secondary small', 'Resolve', () => { const card = document.querySelector<HTMLElement>(`[data-choice="${choice.id}"]`); card?.scrollIntoView({ block: 'start' }); card?.querySelector<HTMLButtonElement>('button')?.focus() }))
+    rows.push(li)
+  }
   return rows
 }
 
@@ -599,7 +622,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
   if (task.isLink) { const b = span('link-badge', '⛓'); b.title = 'Link node: other devices attach here; their changes arrive as proposals'; meta.append(b) }
   if (task.market) { const b = span('market-badge', '🛒'); b.title = 'Listed on the market: other accounts can find this and propose'; meta.append(b) }
-  if (task.blockedBy?.length) { const b = span('blocked-badge', `needs ${task.blockedBy.length}`); b.title = `Needs: ${task.blockedBy.join(', ')}`; meta.append(b) }
+  if (task.blockedBy?.length) { const b = span('blocked-badge', `Needs: ${task.blockedBy.join(', ')}`); b.title = `Needs: ${task.blockedBy.join(', ')}`; meta.append(b) }
 
   const more = button('icon more', '⋯', () => { app.select(path); app.openContextMenu({ kind: 'task', at, task }) })
   more.title = 'Actions (or right-click)'
@@ -653,6 +676,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   else (input as HTMLTextAreaElement).rows = Math.min(16, Math.max(2, task.title.split('\n').length + 1))
   input.className = 'edit'
   // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
+  const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...at] }
   const raw = task.kind === 'ref' || task.kind === 'supply' ? task.title : rawRowText(task)
   input.value = raw
   input.placeholder = task.kind === 'note' ? '> Markdown…' : task.kind === 'comment' ? '// Comment…' : 'ctrl + H for tips'
@@ -661,15 +685,16 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if (committed) return
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
-    if (input.value === raw) return
-    if (task.kind === 'ref' || task.kind === 'supply') { app.renameTaskAt(at, task.id, input.value); return }
+    if (input.value === raw) { if (!input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
+    if (task.kind === 'ref' || task.kind === 'supply') { app.rewriteRowAt(at, task.id, { kind: task.kind, text: input.value, done: task.done }, draft); return }
     // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
     const parsed = parseRowInput(input.value)
-    if (parsed.kind === 'plain' && !parsed.text) { app.renameTaskAt(at, task.id, ' '); return }
-    app.rewriteRowAt(at, task.id, parsed)
+    if (parsed.kind === 'plain' && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
+    app.rewriteRowAt(at, task.id, parsed, draft)
   }
   const path: Scope = [...at, task.id]
   input.addEventListener('commit-edit', () => commit())
+  input.addEventListener('render-commit', () => { if (input.value !== raw && input.value.trim()) commit() })
   input.addEventListener('keydown', (e: Event) => {
     const event = e as KeyboardEvent
     const k = event.key
@@ -679,21 +704,22 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if (isHelpKey(event)) { event.preventDefault(); commit(); toggleHelp(app); return }
     if (k === 'ArrowUp' && alt) { event.preventDefault(); commit(); app.select(path); app.moveSelected('up'); return }
     if (k === 'ArrowDown' && alt) { event.preventDefault(); commit(); app.select(path); app.moveSelected('down'); return }
-    if (k === 'ArrowRight' && alt) { event.preventDefault(); commit(); app.zoomTo(path); return }
-    if (k === 'ArrowLeft' && alt) { event.preventDefault(); commit(); app.zoomOut(); return }
+    if (k === 'ArrowRight' && alt) { event.preventDefault(); commit(); focusGhost = true; app.zoomTo(path); return }
+    if (k === 'ArrowLeft' && alt) { event.preventDefault(); commit(); focusGhost = true; app.zoomOut(); return }
+    if ((k === 'ArrowLeft' || k === 'ArrowRight') && !alt && !ctrl && !event.shiftKey && input.selectionStart === input.selectionEnd && (k === 'ArrowLeft' ? input.selectionStart === 0 : input.selectionEnd === input.value.length)) { event.preventDefault(); commit(); const collapsed = app.state.collapsed.includes(task.id); if ((k === 'ArrowLeft' && !collapsed) || (k === 'ArrowRight' && collapsed)) app.toggleCollapsed(task.id); return }
     if (k === 'ArrowUp' && !event.shiftKey && caretOnEdge(input, 'first')) { event.preventDefault(); commit(); moveSelection(app, -1); return }
     if (k === 'ArrowDown' && !event.shiftKey && caretOnEdge(input, 'last')) { event.preventDefault(); commit(); moveSelection(app, 1); return }
     if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id); return }
-    if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); if (task.kind === 'task') { app.toggleTaskAt(at, task); app.refresh() } else app.addRowBelow(at, task.id); return }
+    if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); const current = app.rowAt(path); if (current?.kind === 'task') { app.toggleTaskAt(at, current); app.refresh() } else if (current) app.addRowBelow(at, task.id); return }
     if (k === 'Enter' && !multiline) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
     if (k === 'Tab') { event.preventDefault(); commit(); app.select(path); app.indentSelected(event.shiftKey); return }
     if (k === 'Backspace' && input.value === '' && (ctrl || !multiline)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
     if (k === 'Backspace' && ctrl && event.shiftKey) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
-    if (k === 'Escape') { event.preventDefault(); commit(); focusGhost = true; app.select(null); input.blur(); return }
+    if (k === 'Escape') { event.preventDefault(); commit(); input.blur(); queueMicrotask(() => { const row = document.querySelector<HTMLElement>(`.tree .task[data-id="${task.id}"]`); if (row) row.focus(); else { focusGhost = true; app.select(null) } }); return }
     if (k === '.' && ctrl) { event.preventDefault(); app.openContextMenu({ kind: 'task', at, task }); return }
     event.stopPropagation()
   })
-  input.addEventListener('blur', () => { commit() })
+  input.addEventListener('blur', () => { if (!renderDepth) commit() })
   // keep the focus on the editor when the row is (re)rendered as selected
   queueMicrotask(() => {
     if (input.isConnected && document.activeElement !== input && !state.modal && !state.contextMenu) {
@@ -849,7 +875,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
     }
   } else if (task.kind === 'supply' && task.supply) {
     badge('supplied', 'ok')
-    body.append(document.createTextNode(` ${task.title} · ${task.supply.by}`))
+    body.append(document.createTextNode(` ${task.title}${task.title.includes(task.supply.by) ? '' : ` · ${task.supply.by}`}`))
     if (task.supply.ref) { const t = app.refTarget(task.supply.ref); if (t) body.append(stop(button('link small', firstLine(t.row.title) || t.row.kind, () => app.followRef(task.supply!.ref!)))) }
   } else if (task.kind === 'query') {
     badge('?' + (task.query?.market ? ' market' : ''), 'query')
@@ -916,8 +942,8 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     ...(task.kind === 'note' ? [{ label: 'Export note (.md)', run: () => { const ctx = noteContext(task.title, noteChildren(task, at, state, app)); downloadText(noteFilename(task.title), exportNote(ctx)) } }] : []),
     { label: 'Indent', keys: 'Tab', run: () => { app.select([...at, task.id]); app.indentSelected(false) } },
     { label: 'Outdent', keys: 'Shift+Tab', run: () => { app.select([...at, task.id]); app.indentSelected(true) }, disabled: at.length === 0 },
-    { label: 'Move up', keys: 'Alt+↑', run: () => { app.select([...at, task.id]); app.moveSelected('up') } },
-    { label: 'Move down', keys: 'Alt+↓', run: () => { app.select([...at, task.id]); app.moveSelected('down') } },
+    { label: 'Move up', disabled: (viewAt(state.replica, [...state.view, ...at])?.tasks.findIndex((t) => t.id === task.id) ?? 0) <= 0, keys: 'Alt+↑', run: () => { app.select([...at, task.id]); app.moveSelected('up') } },
+    { label: 'Move down', disabled: (() => { const rows = viewAt(state.replica, [...state.view, ...at])?.tasks ?? []; return rows.findIndex((t) => t.id === task.id) === rows.length - 1 })(), keys: 'Alt+↓', run: () => { app.select([...at, task.id]); app.moveSelected('down') } },
     ...(canInvite ? [{ label: 'Invite a device here', run: () => { app.zoomTo([...at, task.id]); void app.startInvite() } }] : []),
     ...(canInvite ? [{ label: 'Sync only this on this device', run: () => app.attachAt([...app.currentScope(), ...at, task.id]), disabled: !app.canAttach([...app.currentScope(), ...at, task.id]) }] : []),
     { label: 'Delete', keys: 'Ctrl+Shift+⌫', run: () => app.deleteTaskAt(at, task.id), danger: true }
@@ -929,21 +955,28 @@ function renderContextMenu(el: HTMLElement, state: AppState, app: App): void {
   el.hidden = !menu
   if (!menu) { el.replaceChildren(); return }
   const actions: Action[] = menu.kind === 'task'
-    ? taskActions(menu.at, menu.task, app)
+    ? taskActions(menu.at, app.rowAt([...menu.at, menu.task.id]) ?? menu.task, app)
     : [{ label: 'Remove this device from the node', run: () => app.removePeer(menu.peerId), danger: true }]
-  const items = actions.map((a) => {
-    const b = button('menu-item' + (a.danger ? ' danger' : ''), a.label, () => { app.closeContextMenu(); a.run() })
-    if (a.keys) b.append(span('key-hint', a.keys))
-    b.disabled = !!a.disabled
-    return b
-  })
+  const groupOf = (label: string) => /^Delete/.test(label) ? 'Delete' : /^Change to/.test(label) ? 'Change type' : /^(Move|Indent|Outdent|Zoom|Go to)/.test(label) ? 'Move' : /^(Invite|Sync|Send|List|Remove from market|Add @|Attach MCP)/.test(label) ? 'Sharing' : 'Add and edit'
+  const items: HTMLElement[] = []
+  for (const group of ['Add and edit', 'Change type', 'Move', 'Sharing', 'Delete']) {
+    const grouped = actions.filter((action) => groupOf(action.label) === group)
+    if (!grouped.length) continue
+    items.push(div('menu-group-label muted', group))
+    for (const a of grouped) {
+      const b = button('menu-item' + (a.danger ? ' danger' : ''), a.label, () => { app.closeContextMenu(); a.run() })
+      if (a.keys) b.append(span('key-hint', a.keys))
+      b.disabled = !!a.disabled
+      items.push(b)
+    }
+  }
   el.replaceChildren(...items)
   // place next to the selected row (or the peers list)
   const anchor = menu.kind === 'task'
     ? (document.querySelector(`.tree .task[data-id="${menu.task.id}"] .more`) as HTMLElement | null)
     : (document.querySelector(`.peer-row[data-peer="${menu.peerId}"] .more`) as HTMLElement | null)
   const rect = anchor?.getBoundingClientRect()
-  el.style.top = `${(rect ? rect.bottom : 80) + window.scrollY + 4}px`
+  el.style.top = `${Math.max(8, Math.min(rect ? rect.bottom + 4 : 80, window.innerHeight - Math.min(el.scrollHeight, window.innerHeight * .7) - 8))}px`
   el.style.right = `${Math.max(8, window.innerWidth - (rect ? rect.right : window.innerWidth - 16))}px`
 }
 
@@ -965,7 +998,7 @@ function handleKey(event: KeyboardEvent, app: App): void {
   if (target && target.closest('input, textarea, select, [contenteditable]')) return
   if (!app.state.modal && historyShortcut(event) !== null) { event.preventDefault(); runHistory(app, historyShortcut(event)!); return }
   if (app.state.modal) { if (event.key === 'Escape') app.closeModal(); return }
-  if (event.key === 'Escape') { app.closeContextMenu(); app.toggleMenu(false); return }
+  if (event.key === 'Escape') { const menu = app.state.contextMenu; app.closeContextMenu(); app.toggleMenu(false); if (menu?.kind === 'task') queueMicrotask(() => document.querySelector<HTMLElement>(`.task[data-id="${menu.task.id}"]`)?.focus()); return }
   const state = app.state
   const node = app.currentView()
   if (!node) return
@@ -989,7 +1022,7 @@ function handleKey(event: KeyboardEvent, app: App): void {
   if (event.key === 'ArrowUp' && !event.altKey) { event.preventDefault(); moveSelection(app, -1); return }
   void focusRow
   if (!sel || selectedIndex < 0) {
-    if (event.key === 'Backspace' || (event.key === 'ArrowLeft' && event.altKey)) { event.preventDefault(); app.zoomOut() }
+    if (event.key === 'Backspace' || (event.key === 'ArrowLeft' && event.altKey)) { event.preventDefault(); focusGhost = true; app.zoomOut() }
     return
   }
   const at = sel.slice(0, -1)
@@ -1017,13 +1050,13 @@ function handleKey(event: KeyboardEvent, app: App): void {
     case event.key === 'ArrowDown' && alt:
       event.preventDefault(); app.moveSelected('down'); break
     case event.key === 'ArrowRight' && alt:
-      event.preventDefault(); app.zoomTo([...at, task.id]); break
+      event.preventDefault(); focusGhost = true; app.zoomTo([...at, task.id]); break
     case event.key === 'ArrowLeft' && alt:
-      event.preventDefault(); app.zoomOut(); break
+      event.preventDefault(); focusGhost = true; app.zoomOut(); break
     case event.key === 'Backspace' && (event.ctrlKey || event.metaKey) && event.shiftKey:
       event.preventDefault(); app.deleteTaskAt(at, task.id); break
     case event.key === 'Backspace':
-      event.preventDefault(); app.zoomOut(); break
+      event.preventDefault(); focusGhost = true; app.zoomOut(); break
     case event.key === '.' || (event.key === 'F10' && event.shiftKey):
       event.preventDefault(); app.openContextMenu({ kind: 'task', at, task }); break
   }
@@ -1054,7 +1087,7 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
       const row = span('peer-row', '')
       const dot = span('presence' + (app.isOnline(m.peerId) ? ' online' : ''), '')
       dot.title = app.isOnline(m.peerId) ? 'online' : 'offline (still a member)'
-      row.append(dot, span('', `${m.name ?? peerLabel(m.peerId, state)}${m.capabilities.includes('approve') ? ' (can approve)' : ''}`))
+      row.append(dot, span('', `${m.name ?? peerLabel(m.peerId, state)} · ${m.peerId.slice(0, 8)}${app.isOnline(m.peerId) ? '' : ' · offline'}${m.capabilities.includes('approve') ? ' (can approve)' : ''}`))
       members.append(row)
     })
   } else {
@@ -1081,6 +1114,7 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
       if (p.summary.changed.length) parts.push(`changes ${p.summary.changed.map((t) => `“${t}”`).join(', ')}`)
       if (p.summary.removed.length) parts.push(`removes ${p.summary.removed.map((t) => `“${t}”`).join(', ')}`)
       card.append(div('muted', parts.length ? parts.join('; ') : 'no task changes (order or details)'))
+      if (mine && p.status === 'rejected') card.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(p.id)))
       if (mayApprove && p.status === 'open') {
         const row = div('row', '')
         row.append(button('primary small', 'Approve and merge', () => void app.decideProposal(p.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(p.id, 'reject')))
@@ -1165,6 +1199,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     const dot = span('presence' + (p.online ? ' online' : ''), '')
     dot.title = p.online ? 'online' : p.isAccount ? 'offline: what it registered shows as offline until it connects again' : 'offline (still a member; its capabilities show as offline)'
     const title = span('title peer-title', '')
+    if (!p.isAccount && !p.integration && !p.mcp) title.append(span('muted small', `${p.id.slice(0, 8)} · `))
     title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp ? p.name : peerLabel(p.id, state)))
     if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.openModal('connect')), span('muted', ' not connected: sign in to sync with your account and use its services'))
     if (p.isAccount && p.policy && state.session && !state.virtual) title.append(button('link small', 'Disconnect (keep data)', () => app.disconnect()))
@@ -1297,7 +1332,7 @@ function renderFooter(el: HTMLElement, state: AppState, app: App): void {
     history.append(control)
   }
   items.push(history)
-  if (state.virtual) items.push(div('muted', `${state.virtual.name} · virtual peer of ${state.virtual.hostName}${!state.virtual.capabilities.includes('edit') ? ' · read-only (local edits stay here)' : ''}`))
+  if (state.virtual) items.push(div('muted', `${state.virtual.name} · virtual peer of ${state.virtual.hostName}${state.virtual.capabilities.includes('read') && !state.virtual.capabilities.includes('edit') ? ' · read-only (local edits stay here)' : ''}`))
   if (state.notice) items.push(div(`notice ${state.notice.kind}`, state.notice.text))
   const meta = div('meta', '')
   meta.append(span('muted', `${state.deviceName} · ${state.replica.meta.peerId.slice(0, 8)}`))
@@ -1357,6 +1392,7 @@ function renderVirtual(body: HTMLElement, state: AppState, app: App): void {
   role.append(new Option('Editor — changes sync automatically', 'editor'), new Option('Proposer — changes need approval', 'proposer'), new Option('Reviewer — can approve proposals', 'reviewer'), new Option('Viewer — reads only', 'viewer'))
   const label = document.createElement('label')
   const account = document.createElement('input'); account.type = 'checkbox'; account.checked = !!state.session; account.disabled = !state.session
+  account.id = 'virtual-use-account'; account.setAttribute('aria-label', 'Use current sign-in'); label.htmlFor = account.id
   label.append(account, document.createTextNode(' Use current sign-in (sign-out stays independent)'))
   const submit = button('primary', 'Spawn peer', () => undefined); submit.type = 'submit'
   form.append(name, role, label, submit)

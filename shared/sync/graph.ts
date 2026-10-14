@@ -1495,6 +1495,15 @@ export function proposalView(store: FosStore, nodeValue: FosNodeContent, proposa
   const index = (value: FosNodeContent) => {
     const map = new Map<string, { title: string; cid: string }>()
     for (const edge of value.children) {
+      if (isChoiceEdge(store, edge)) {
+        const choice = readChoice(store, edge[1])
+        for (const option of [choice.base, ...choice.options.map((o) => o.edge)]) {
+          if (!option || !isRowEdge(store, option)) continue
+          const id = identityCid(store, option)
+          map.set(edgeKey(store, option), { title: valueContent(store, id).data.description?.content ?? '', cid: id })
+        }
+        continue
+      }
       if (!isRowEdge(store, edge)) continue
       const id = identityCid(store, edge)
       map.set(edgeKey(store, edge), { title: content(store, id).data.description?.content ?? '', cid: id })
