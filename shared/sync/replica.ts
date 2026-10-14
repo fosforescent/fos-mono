@@ -511,10 +511,10 @@ export function setMemberHandlersAt(replica: Replica, at: Scope, peerId: string,
 }
 
 /** Add a typed mutable argument using the existing ref shape. No separate binding record. */
-export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: string, now: number, defaultCid: string | null = null): Replica {
+export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: string, now: number, defaultCid: string | null = null, name?: string): Replica {
   return edit(replica, at, now, (value) => {
     if (findEdge(replica.store, value, `a:${id}`)) return value
-    const ref = put(replica.store, refNodeContent(replica.store, { alias: { id }, updated: { time: now } }, defaultCid, [], typeCid))
+    const ref = put(replica.store, refNodeContent(replica.store, { alias: { id }, ...(name ? { name: { content: name } } : {}), updated: { time: now } }, defaultCid, [], typeCid))
     return { ...value, children: [...value.children, [typeCid, ref]] }
   })
 }

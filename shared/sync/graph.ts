@@ -816,7 +816,7 @@ export function requirementSummary(req: NonNullable<FosDataContent['requirement'
 }
 
 /** Rows directly under `cid` of a given kind, with their identity cids. */
-function childRows(store: FosStore, cid: string, kind?: RowKind): Array<{ cid: string; kind: RowKind; value: FosNodeContent }> {
+export function childRows(store: FosStore, cid: string, kind?: RowKind): Array<{ cid: string; kind: RowKind; value: FosNodeContent }> {
   const out: Array<{ cid: string; kind: RowKind; value: FosNodeContent }> = []
   for (const edge of valueContent(store, cid).children) {
     const k = rowKindOf(store, edge)

@@ -1,11 +1,11 @@
 import {
-  addPlanningTemplate, addRef, addRow, addSupply, addTask, beginTaskWork,
+  addMemberAt, addPlanningTemplate, addRef, addRow, addSupply, addTask, beginTaskWork,
   createReplica, decideTaskResult, loadReplica, proposeTaskResult,
   renameTask, serializeReplica, setTaskDone, taskWorkContext, view, workAttempts
 } from './index'
 
 function setup() {
-  let r = createReplica('owner')
+  let r = addMemberAt(createReplica('owner'), [], 'fos', 'fos', ['llm'], 0)
   r = addRow(r, [], 'plain', 'Home', 1, { id: 'home' })
   r = addTask(r, ['home'], 'Rental app', 2, 'project')
   r = addRow(r, ['home', 'project'], 'note', 'Architecture: keep inventory in one database.', 3, { id: 'brief' })
@@ -79,7 +79,7 @@ test('changed criteria prevent accepting an old answer, and oversized context is
 })
 
 test('the reusable work template requires readiness and uses the existing instantiator', () => {
-  let r = createReplica('owner')
+  let r = addMemberAt(createReplica('owner'), [], 'fos', 'fos', ['llm'], 0)
   r = addTask(r, [], 'Build availability', 1, 'task')
   r = addPlanningTemplate(r, ['task'], 2)
   const rows = view(r, ['task'])!.tasks
@@ -105,4 +105,13 @@ test('the sent context stays pinned even if someone edits the visible snapshot n
   r = loadReplica(JSON.parse(JSON.stringify(serializeReplica(r))))
   expect(workAttempts(r, path)[0]!.context).toBe(preview.prompt)
   expect(workAttempts(r, path)[0]!.system).toBe(run.system)
+})
+
+test('planning uses a note’s own variable context as well as passed text arguments', () => {
+  let { r, path } = setup()
+  r = addRow(r, path.slice(0, -1), 'note', 'Required: {{subject}}', 7, { id: 'templated-note' })
+  r = addRow(r, [...path.slice(0, -1), 'templated-note'], 'plain', 'subject: prevent double bookings', 8)
+  const preview = taskWorkContext(r, path)
+  expect(preview.blockers).toEqual([])
+  expect(preview.prompt).toContain('Required: prevent double bookings')
 })

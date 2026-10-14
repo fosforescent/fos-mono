@@ -5,7 +5,7 @@
  */
 
 import QRCode from 'qrcode'
-import { content, headCid, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { resolveText, put, content, headCid, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
@@ -479,13 +479,22 @@ function toggleHelp(app: App): void {
 /** Rows for `node`'s tasks (and nested choices) at `depth`; `at` is the path relative to the view. */
 function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, app: App): HTMLElement[] {
   const rows: HTMLElement[] = []
+  for (const arg of app.textArguments(at)) {
+    const li = document.createElement('li'); li.className = 'task argument-row'; li.dataset.argument = arg.id; li.style.setProperty('--depth', String(depth))
+    li.append(button('title', `${arg.name}: ${arg.text || (arg.problems.length ? '(unfilled)' : '(empty text)')}`, () => {
+      const text = window.prompt(`Text for ${arg.name}`, arg.text)
+      if (text !== null) app.setTextArgument(at, arg.id, text)
+    }))
+    if (arg.problems.length) li.append(span('blocked-badge', arg.problems.join('; ')))
+    rows.push(li)
+  }
   node.tasks.forEach((task, index) => {
     rows.push(renderRow(task, at, depth, index, node.tasks.length, state, app))
     const path = [...at, task.id]
     const editingBelow = !!state.selected && state.selected.length > path.length && path.every((id, i) => state.selected![i] === id)
     // Responsive depth limits must not hide the child the user just opened for editing.
     const expanded = editingBelow || (!state.collapsed.includes(task.id) && depth + 1 < maxDepth())
-    if (expanded && (task.childCount > 0 || task.childChoices > 0)) {
+    if (expanded && (task.childCount > 0 || task.childChoices > 0 || app.textArguments(path).length > 0)) {
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
         child.choices.forEach((choice) => rows.push(renderNestedChoice(choice, [...at, task.id], depth + 1, state, app)))
@@ -581,7 +590,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const handle = span('handle', '⋮⋮')
   handle.title = 'Drag to move'
 
-  const hasChildren = task.childCount > 0 || task.childChoices > 0
+  const hasChildren = task.childCount > 0 || task.childChoices > 0 || app.textArguments(path).length > 0
   const canExpandHere = depth + 1 < maxDepth()
   // rows without children show no bullet; notes keep a middot so a note block reads as an item in the outline
   const toggle = hasChildren && !canExpandHere
@@ -632,8 +641,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
       if (child.kind === 'allocation' && child.allocation) { const t = span('alloc-tag', allocationTag(child.allocation)); t.title = `${child.title || 'allocation'}${child.allocation.by ? ` · ${child.allocation.by}` : ''}`; meta.append(t) }
     }
   }
-  if (task.kind === 'requirement' && task.requirement && !task.requirement.satisfied) li.classList.add('unmet')
-  if (task.kind === 'template' && task.childCount > 0 && (viewAt(state.replica, [...state.view, ...path])?.tasks ?? []).some((c) => c.kind === 'requirement' && !c.requirement?.satisfied)) li.classList.add('unmet')
+  if (!insideTemplate(state, [...state.view, ...path]) && task.kind === 'requirement' && task.requirement && !task.requirement.satisfied) li.classList.add('unmet')
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
   if (task.isLink) { const b = span('link-badge', '⛓'); b.title = 'Link node: other devices attach here; their changes arrive as proposals'; meta.append(b) }
   if (task.market) { const b = span('market-badge', '🛒'); b.title = 'Listed on the market: other accounts can find this and propose'; meta.append(b) }
@@ -794,7 +802,8 @@ function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): H
   const body = div('title note-body', '')
   body.title = 'Click or press Enter to edit (Ctrl+Enter saves)'
   const ctx = noteContext(task.title, noteChildren(task, at, state, app))
-  const expanded = ctx.body.trim() ? expandNoteText(ctx) : ''
+  const resolve = noteResolver(ctx, [...state.view, ...at, task.id], state)
+  const expanded = ctx.body.trim() ? expandNoteText(ctx, resolve) : ''
   if (!expanded) { body.append(span('muted', '(empty note)')); return body }
   const cached = noteHtml.get(expanded)
   if (cached) {
@@ -810,8 +819,24 @@ function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): H
   return body
 }
 
-function expandNoteText(ctx: ReturnType<typeof noteContext>): string {
-  return exportNote(ctx).replace(/^---\n[\s\S]*?\n---\n\n?/, '')
+function noteResolver(ctx: ReturnType<typeof noteContext>, path: Scope, state: AppState) {
+  const store = state.replica.store
+  const defaults = Object.entries(ctx.vars).map(([name, variable]) => ({
+    name, type: store.primitive.documentField.getId(),
+    cid: put(store, { data: { description: { content: Array.isArray(variable.value) ? variable.value.map(v => `- ${v}`).join('\n') : variable.value } }, children: [] })
+  }))
+  return (name: string) => {
+    const resolved = resolveText(state.replica, path, `{{${name}}}`, defaults)
+    return resolved.bindings.every(b => b.status === 'ready') ? resolved.text : undefined
+  }
+}
+
+function expandNoteText(ctx: ReturnType<typeof noteContext>, resolve: (name: string) => string | undefined): string {
+  return exportNote(ctx, resolve).replace(/^---\n[\s\S]*?\n---\n\n?/, '')
+}
+
+function insideTemplate(state: AppState, fullPath: Scope): boolean {
+  return fullPath.some((id, i) => id !== HOME_ID && viewAt(state.replica, fullPath.slice(0, i))?.tasks.some(row => row.id === id && row.kind === 'template'))
 }
 
 /** Requirement, supply, query, resource-bank and allocation rows: a kind badge, the text, and a status/balance. */
@@ -823,7 +848,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
     const r = task.requirement
     const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@' }
     const label = r.capability === 'peer' && r.peer ? `@${r.peer}` : r.capability === 'allocation' ? `${marker[r.resource ?? ''] ?? '$'}${r.amount !== undefined ? ' ' + formatAmount(r.amount, r.unit ?? '') : ''}` : r.capability === 'task' ? '[ ]' : r.capability === 'search' ? '?' : r.capability
-    badge(r.satisfied ? '✓ ' + label : '- ' + label, r.satisfied ? 'ok' : 'needs')
+    badge(r.satisfied ? '✓ ' + label : '- ' + label, r.satisfied ? 'ok' : insideTemplate(state, [...state.view, ...at, task.id]) ? 'tpl' : 'needs')
     body.append(document.createTextNode(' ' + task.title))
     if (r.have !== undefined && r.need !== undefined && r.need > 0) {
       // how much of the amount is covered: the green part of the bar
@@ -927,8 +952,16 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
   const siblings = app.currentView() && at.length === 0 ? app.currentView()!.tasks : null
   void siblings
   const canInvite = state.session?.kind === 'user'
+  const subtasks = task.kind === 'task' ? app.subtasksAvailability([...at, task.id]) : null
   return [
     ...(task.kind === 'task' && !task.template ? [{ label: 'Use Implement and verify template', run: () => app.addWorkTemplate(at, task.id) }] : []),
+    { label: 'Add text argument…', run: () => {
+      const name = window.prompt('Argument name (use {{name}} in notes)')
+      if (!name) return
+      const value = window.prompt('Default text (leave empty for a required argument)')
+      if (value !== null) app.addTextArgument([...at, task.id], name, value)
+    } },
+    ...(subtasks ? [{ label: subtasks.status === 'ready' ? 'Generate subtasks…' : `Generate subtasks — ${subtasks.problems.join('; ')}`, disabled: subtasks.status !== 'ready', run: () => app.generateSubtasks([...at, task.id]) }] : []),
     { label: 'Add row inside', keys: 'Ctrl+Shift+Enter', run: () => app.addRowInside(at, task.id) },
     // typed markers, opened from the menu: the row starts with the marker and the editor takes it from there
     ...[
@@ -957,7 +990,7 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     ...(state.session?.kind === 'user' && task.kind !== 'ref' && task.kind !== 'supply' ? app.knownListings().slice(0, 6).map((l) => ({ label: `Send to @${l.owner} (“${firstLine(l.title) || l.aliasId.slice(0, 8)}”) as a proposal`, run: () => void app.sendRowTo(at, task, l.owner, l.aliasId) })) : []),
     ...(task.kind === 'query' ? [{ label: task.query?.market ? 'Search my rows only' : 'Search the market too', run: () => app.toggleQueryMarket(at, task) }] : []),
     ...(task.kind !== 'ref' ? (['task', 'plain', 'note', 'comment', 'template'] as RowKind[]).filter((k) => k !== task.kind).map((k) => ({ label: `Change to ${ROW_KIND_LABEL[k].toLowerCase()}`, run: () => app.setRowKindAt(at, task.id, k) })) : []),
-    ...(task.kind === 'note' ? [{ label: 'Export note (.md)', run: () => { const ctx = noteContext(task.title, noteChildren(task, at, state, app)); downloadText(noteFilename(task.title), exportNote(ctx)) } }] : []),
+    ...(task.kind === 'note' ? [{ label: 'Export note (.md)', run: () => { const ctx = noteContext(task.title, noteChildren(task, at, state, app)); downloadText(noteFilename(task.title), exportNote(ctx, noteResolver(ctx, [...state.view, ...at, task.id], state))) } }] : []),
     { label: 'Indent', keys: 'Tab', run: () => { app.select([...at, task.id]); app.indentSelected(false) } },
     { label: 'Outdent', keys: 'Shift+Tab', run: () => { app.select([...at, task.id]); app.indentSelected(true) }, disabled: at.length === 0 },
     { label: 'Move up', disabled: (viewAt(state.replica, [...state.view, ...at])?.tasks.findIndex((t) => t.id === task.id) ?? 0) <= 0, keys: 'Alt+↑', run: () => { app.select([...at, task.id]); app.moveSelected('up') } },
@@ -1493,7 +1526,7 @@ function modalTitle(kind: AppState['modal']): string {
 function renderWork(body: HTMLElement, state: AppState, app: App): void {
   const work = state.work
   if (!work) return
-  body.append(div('muted', 'This sends the preview below to the fos model to propose a plan or specification. Accepting its result fulfills this request; you still decide when the task is done.'))
+  body.append(div('muted', work.preview.createsSubtasks ? 'This sends the preview to the fos model to propose subtasks. Accepting the result creates unchecked task rows inside the selected task.' : 'This sends the preview below to the fos model to propose a plan or specification. Accepting its result fulfills this request; you still decide when the task is done.'))
   if (work.error) body.append(div('error', work.error))
   for (const blocker of work.preview.blockers) body.append(div('error', blocker))
   const preview = document.createElement('details')

@@ -18,7 +18,7 @@
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -1198,6 +1198,38 @@ export class App {
   }
   /** Who this device acts as when it confirms: the account username, else the device name. */
   actorName(): string { return this.state.session?.username ?? this.state.deviceName }
+  textArguments(at: Scope) {
+    const path = [...this.state.view, ...at], r = this.state.replica
+    const cid = resolveScope(r.store, headCid(r), path)
+    if (!cid) return []
+    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && content(r.store, arg.cid).data.name?.content).map(arg => {
+      const result = resolveText(r, path, `{{${arg.name}}}`)
+      return { id: content(r.store, arg.cid).data.alias!.id, name: arg.name!, text: result.bindings[0]?.status === 'ready' ? result.text : '', problems: result.bindings.flatMap(b => b.problems) }
+    })
+  }
+  setTextArgument(at: Scope, id: string, text: string): void {
+    const r = this.state.replica, path = [...this.state.view, ...at, id]
+    const value = put(r.store, { data: { description: { content: text } }, children: [] })
+    const proposed = proposeRefAt(r, path, value, r.meta.peerId, this.now())
+    this.edit(applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now()))
+  }
+  addTextArgument(at: Scope, name: string, text: string): void {
+    if (!/^[A-Za-z_][\w.-]*$/.test(name)) { this.notify('error', 'Use letters, digits, underscores, dots or hyphens for the argument name.'); return }
+    const store = this.state.replica.store
+    const value = text ? put(store, { data: { description: { content: text } }, children: [] }) : null
+    this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), store.primitive.documentField.getId(), this.now(), value, name))
+    this.notify('info', `Text argument ${name} added. Use {{${name}}} in notes in this context.`)
+  }
+  subtasksAvailability(at: Scope) {
+    return workHandler(this.state.replica, [...this.state.view, ...at])
+  }
+  generateSubtasks(at: Scope): void {
+    try {
+      const result = addSubtasksTemplate(this.state.replica, [...this.state.view, ...at], this.now())
+      this.edit(result.replica)
+      this.openWork(at, result.requestId)
+    } catch (error) { this.notify('error', String(error)) }
+  }
   addWorkTemplate(at: Scope, id: string): void {
     try {
       this.edit(addPlanningTemplate(this.state.replica, [...this.state.view, ...at, id], this.now()))

@@ -13,7 +13,7 @@
 
 import type { Request, Response } from 'express'
 import {
-  addMemberAt, addRefAt, addRow, addSupply, applyProposalAt, capabilityTarget,
+  resolveBinding, contextBindings, addMemberAt, addRefAt, addRow, addSupply, applyProposalAt, capabilityTarget,
   content, headCid, memberHandlers, MCP_PEER_PREFIX, newId, proposeRefAt, put,
   refArguments, refNodeContent, refTypeCid, refValueCid, resolveScope,
   setMemberHandlersAt, valueContent, view, type Replica, type Scope, type TaskView
@@ -85,23 +85,29 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyn
   let handlerCid = bindingCid ? refValueCid(store, content(store, bindingCid)) : null
   const attached = mcpMembersAbove(replica, scope)
   if (!handlerCid) {
+    const candidates: Array<{ cid: string; type: string }> = []
     for (const { serverId, peerId } of attached) {
-      const server = servers.find((s) => s.id === serverId)
-      const tool = server?.tools.find((t) => !r.tool || t.name === r.tool)?.name
-      if (!server || !tool) continue
+      const server = servers.find(s => s.id === serverId)
+      if (!server) continue
       const advertised = handlersAbove(replica, scope, peerId)
-      handlerCid = advertised.find((h) => valueContent(store, h).data.description?.content === tool) ?? null
-      // Only primitive-only legacy memberships use the compatibility adapter.
-      if (!advertised.length) handlerCid = toolHandler(replica, server, tool)
-      if (handlerCid) break
+      for (const tool of server.tools.filter(t => !r.tool || t.name === r.tool)) {
+        const matches = advertised.filter(h => valueContent(store, h).data.description?.content === tool.name)
+        const ids = advertised.length ? matches : [toolHandler(replica, server, tool.name)]
+        for (const cid of ids) candidates.push({ cid, type: capabilityTarget(store, 'tool') })
+      }
     }
-    if (!handlerCid) return { error: 'no attached MCP peer provides the requested tool' }
+    const selected = resolveBinding(store, capabilityTarget(store, 'tool'), candidates.length === 1 ? candidates[0]!.cid : null, candidates.length === 1 ? contextBindings(replica, scope) : candidates)
+    if (selected.status !== 'ready') return { error: selected.problems.join('; ') }
+    // Pin the advertised ref, not only its terminal value.
+    handlerCid = candidates[0]!.cid
     replica = addRefAt(replica, scope, bindingId, capabilityTarget(store, 'tool'), now)
     const proposed = proposeRefAt(replica, bindingPath, handlerCid, replica.meta.peerId, now)
     replica = applyProposalAt(proposed.replica, bindingPath, proposed.proposalCid, replica.meta.peerId, now)
   }
   if (refTypeCid(store, content(store, handlerCid)) !== capabilityTarget(store, 'tool')) return { error: 'bound handler is not a tool handler' }
-  const handler = valueContent(store, handlerCid)
+  const resolved = resolveBinding(store, capabilityTarget(store, 'tool'), handlerCid, contextBindings(replica, scope))
+  if (resolved.status !== 'ready') return { error: resolved.problems.join('; ') }
+  const handler = content(store, resolved.cid!)
   const peerId = handler.data.peerId?.content
   const tool = handler.data.description?.content
   const server = servers.find((s) => `${MCP_PEER_PREFIX}${s.id}` === peerId)

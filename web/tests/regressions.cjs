@@ -476,6 +476,23 @@ async function main() {
   assert.equal(contextApp.state.modal, 'direct')
   contextApp.logout()
   assert.deepEqual(contextApp.state.view, [HOME_ID], 'a fresh offline session starts inside Home')
+  const argumentTask = contextApp.addRowAtTop(parseRowInput('[ ] Argument task'))
+  contextApp.addTextArgument([argumentTask], 'mytext', 'First text')
+  contextApp.zoomTo([argumentTask])
+  const noteId = contextApp.addRowAtTop(parseRowInput('> Hello {{mytext}}'))
+  assert(document.querySelector(`[data-id="${noteId}"] .note-body`).textContent.includes('First text'))
+  const arg = contextApp.textArguments([])[0]
+  assert(document.querySelector(`[data-argument="${arg.id}"]`), 'named refs are visible and editable')
+  contextApp.setTextArgument([], arg.id, 'Updated text')
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert(document.querySelector(`[data-id="${noteId}"] .note-body`).textContent.includes('Updated text'))
+  contextApp.addTextArgument([], 'mytext', 'Conflicting text')
+  assert.equal(contextApp.textArguments([]).filter(arg => arg.problems.some(p => p.includes('Incompatible'))).length, 2, 'both conflicting argument rows show the error')
+  contextApp.goTo([])
+  contextApp.generateSubtasks([argumentTask])
+  assert.equal(contextApp.state.modal, 'work')
+  assert(contextApp.state.work.preview.blockers.some(p => p.includes('Incompatible')), 'conflicting text blocks delegation')
+  contextApp.closeModal()
   console.log('PASS: stored root/Home constructor, root peer bindings, indented tree parsing, atomic undo, shared Settings editor and node connections')
 
 }
