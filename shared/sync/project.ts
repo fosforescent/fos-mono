@@ -36,7 +36,7 @@ export function peerPolicyOf(config: FosProjectConfig, name: string): PeerPolicy
 
 /** File-system-safe name for a branch (.fos/replicas/<name>.json). */
 export function branchFileName(branch: string): string {
-  return branch.replace(/[^A-Za-z0-9._-]+/g, '__')
+  return encodeURIComponent(branch).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 }
 
 /** Minimal TOML: comments, [tables], [a.b], key = string | number | bool | array of those. */

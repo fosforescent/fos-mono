@@ -3,7 +3,7 @@ import type { Session } from './api'
 import { ApiError } from './api'
 import { createLocalStorageAdapter, type ReplicaStorage } from './storage'
 
-export type VirtualPeer = { id: string; token: string; hostTab: string; name: string; scope: Scope; dataSessionId?: string; shareAccount: boolean }
+export type VirtualPeer = { id: string; token: string; hostTab: string; name: string; scope: Scope; branches?: Record<string, string>; dataSessionId?: string; shareAccount: boolean }
 const PREFIX = 'fos.virtual.'
 
 export function virtualPeerToken(): string | null {

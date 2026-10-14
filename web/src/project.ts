@@ -49,14 +49,14 @@ async function readFile(dir: string, name: string): Promise<unknown> {
   try {
     const text = await call
     return text ? JSON.parse(text) : null
-  } catch {
-    return null
+  } catch (error) {
+    throw new Error(`Could not read project state ${name}: ${String(error)}`)
   }
 }
 
-function writeFile(dir: string, name: string, value: unknown): void {
+function writeFile(dir: string, name: string, value: unknown): Promise<void> {
   const call = tauriInvoke<void>('write_project_file', { dir, name, content: JSON.stringify(value) })
-  call?.catch((error) => console.warn(`could not write ${name}`, error))
+  return call ?? Promise.resolve()
 }
 
 export type ProjectStorage = ReplicaStorage & {
@@ -69,21 +69,33 @@ export async function createProjectStorage(info: ProjectInfo): Promise<ProjectSt
   const dir = info.dir
   let branch = info.branch ?? 'local'
   const replicaFile = () => `replicas/${branchFileName(branch)}.json`
-  let replica = await readFile(dir, replicaFile())
+  let writes: Promise<void> = Promise.resolve()
+  const writeErrors = new Map<string, unknown>()
+  const save = (name: string, value: unknown) => {
+    writes = writes.then(async () => {
+      try { await writeFile(dir, name, value); writeErrors.delete(name) }
+      catch (error) { writeErrors.set(name, error); console.warn(`could not write ${name}`, error) }
+    })
+  }
+  const readReplica = async (name: string) => await readFile(dir, `replicas/${branchFileName(name)}.json`) ?? await readFile(dir, `replicas/${name.replace(/[^A-Za-z0-9._-]+/g, '__')}.json`)
+  let replica = await readReplica(branch)
   let session = await readFile(dir, 'session.json')
   let prefs = await readFile(dir, 'ui-prefs.json')
   const device = (await readFile(dir, 'device.json')) as { peerId?: string; name?: string } | null
 
   return {
     loadReplica: () => withDevice(replica, device),
-    saveReplica: (value) => { replica = value; writeFile(dir, replicaFile(), value) },
+    saveReplica: (value) => { replica = value; save(replicaFile(), value) },
     loadPrefs: () => prefs,
-    savePrefs: (value) => { prefs = value; writeFile(dir, 'ui-prefs.json', value) },
+    savePrefs: (value) => { prefs = value; save('ui-prefs.json', value) },
     loadSession: () => session,
-    saveSession: (value) => { session = value; if (value === null) writeFile(dir, 'session.json', null); else writeFile(dir, 'session.json', value) },
+    saveSession: (value) => { session = value; if (value === null) save('session.json', null); else save('session.json', value) },
     async useBranch(next) {
+      await writes
+      if (writeErrors.size) throw new Error(`Unsaved project files: ${[...writeErrors.keys()].join(', ')}`)
+      const loaded = await readReplica(next)
       branch = next
-      replica = await readFile(dir, replicaFile())
+      replica = loaded
     },
     branch: () => branch
   }
@@ -97,5 +109,5 @@ function withDevice(replica: unknown, device: { peerId?: string; name?: string }
 }
 
 export function saveDevice(info: ProjectInfo, device: { peerId: string; name: string }): void {
-  writeFile(info.dir, 'device.json', device)
+  void writeFile(info.dir, 'device.json', device).catch(error => console.warn('could not save device', error))
 }

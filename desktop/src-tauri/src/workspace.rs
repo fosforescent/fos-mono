@@ -111,6 +111,19 @@ impl Workspace {
 
     /// One sync round trip for the current branch. Returns a one-line summary.
     pub fn sync(&mut self) -> Result<String, String> {
+        self.sync_round_trip(true, false)
+    }
+
+    pub fn sync_with(&mut self, push: bool) -> Result<String, String> {
+        self.sync_round_trip(push, true)
+    }
+
+    fn sync_round_trip(&mut self, push: bool, explicit: bool) -> Result<String, String> {
+        self.refresh_branch()?;
+        if let Some(policy) = &self.project.config.server {
+            if !policy.from.iter().any(|c| c == "read") { return Err("server reads disabled by fos.config.toml".into()); }
+        }
+        let push = push && self.project.config.server.as_ref().map(|p| p.to.iter().any(|c| c == "autopush" || (explicit && c == "edit"))).unwrap_or(true);
         let session = match &self.session {
             Some(s) => s.clone(),
             None => return Err(if self.project.is_home { "not signed in: run `fos login`".to_string() } else { "not attached: run `fos attach <token>` (or `fos login` for your own account)".to_string() }),
@@ -124,7 +137,7 @@ impl Workspace {
             self.core.call("setScope", &[json!(HANDLE), json!(scope.to_string()), json!(names.to_string())]).map_err(|e| e.to_string())?;
         }
         let branch = if self.branch == NO_BRANCH { Value::Null } else { json!(self.branch) };
-        let request = self.core.call_json("buildSyncRequest", &[json!(HANDLE), branch]).map_err(|e| e.to_string())?;
+        let request = self.core.call_json("buildSyncRequest", &[json!(HANDLE), branch, json!(push)]).map_err(|e| e.to_string())?;
         let response = match client::peer_sync(&session, &request) {
             Ok(r) => r,
             Err(e) if e.contains("(401)") => {
@@ -179,6 +192,30 @@ pub fn parse_row_input(raw: &str) -> (&'static str, String, bool) {
 #[cfg(test)]
 mod row_tests {
     use super::parse_row_input;
+
+    #[test]
+    fn checkout_restores_independent_subtrees() {
+        use super::*;
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("fos-branches-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        Project::write_default_config(&dir, "http://localhost:4000", None, 4777).unwrap();
+        fs::write(dir.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let mut ws = Workspace::open(Project::locate(Some(&dir)).unwrap()).unwrap();
+        ws.add_task(&[], "[ ] Main task").unwrap();
+        fs::write(dir.join(".git/HEAD"), "ref: refs/heads/feature/x\n").unwrap();
+        assert_eq!(ws.refresh_branch().unwrap(), Some("feature/x".into()));
+        assert!(ws.tree().is_empty());
+        ws.add_task(&[], "[ ] Feature task").unwrap();
+        fs::write(dir.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        ws.refresh_branch().unwrap();
+        assert!(ws.tree()[0].contains("Main task"));
+        assert!(!ws.tree().iter().any(|line| line.contains("Feature task")));
+        fs::write(dir.join(".git/HEAD"), "ref: refs/heads/feature/x\n").unwrap();
+        ws.refresh_branch().unwrap();
+        assert!(ws.tree()[0].contains("Feature task"));
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn prefixes_pick_the_row_kind() {

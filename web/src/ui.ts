@@ -14,6 +14,7 @@ import { CAPABILITY_LABEL, type Capability, type PeerPolicy, type RowKind } from
 
 type Regions = {
   context: HTMLElement
+  repository: HTMLElement
   link: HTMLElement
   status: HTMLElement
   menuButton: HTMLButtonElement
@@ -84,6 +85,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     <section class="banner" data-region="banner" hidden></section>
     <nav class="crumbs" data-region="crumbs"></nav>
     <div class="voice-controls"><button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button></div>
+    <section class="repository" data-region="repository"></section>
     <section class="choices" data-region="choices"></section>
     <section class="link-panel" data-region="link" hidden></section>
     <section class="tasks">
@@ -96,6 +98,7 @@ export function mountUi(root: HTMLElement, app: App): void {
   const q = <T extends HTMLElement>(name: string): T => root.querySelector(`[data-region="${name}"]`) as T
   const regions: Regions = {
     context: q('context'),
+    repository: q('repository'),
     link: q('link'),
     status: q('status'),
     menuButton: q('menu-button'),
@@ -158,6 +161,7 @@ function render(regions: Regions, state: AppState, app: App): void {
     return
   }
   renderCrumbs(regions.crumbs, state, app)
+  renderRepository(regions.repository, state, app)
   renderChoices(regions.choices, node, state, app)
   renderLinkPanel(regions.link, node, state, app)
   renderTree(regions.list, node, state, app)
@@ -283,6 +287,55 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
     controls.push(attachHere)
   }
   el.replaceChildren(attached, ...(branchChip ? [branchChip] : []), crumbs, ...controls)
+}
+
+function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): HTMLSelectElement {
+  const select = document.createElement('select')
+  select.setAttribute('aria-label', `Branch of ${task.title}`)
+  for (const name of task.branches?.names ?? []) select.append(new Option(name, name))
+  select.value = task.branches?.selected ?? ''
+  select.disabled = !!app.state.voice || !!app.state.work?.busy
+  select.addEventListener('pointerdown', e => { e.stopPropagation(); document.activeElement?.dispatchEvent(new window.Event('commit-edit')) })
+  select.addEventListener('click', e => e.stopPropagation())
+  select.addEventListener('change', () => app.selectNodeBranch(at, task.id, select.value, absolute))
+  return select
+}
+
+function renderRepository(el: HTMLElement, state: AppState, app: App): void {
+  const path = state.view, id = path.at(-1)
+  const task = id ? viewAt(state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id) : null
+  const info = app.repositoryInfo()
+  const items: HTMLElement[] = []
+  if (task?.branches) {
+    const row = div('row', '')
+    row.append(span('muted', 'Branch '), branchSelector(task, path.slice(0, -1), app, true), button('secondary small', 'New branch…', () => {
+      const name = window.prompt('New branch name (copies the selected subtree)')
+      if (name) app.createNodeBranch(path.slice(0, -1), id!, name, true)
+    }))
+    if (info) row.append(button('secondary small', 'Propose merge…', () => {
+      const target = window.prompt('Target GitHub branch', info.snapshot?.defaultBranch ?? 'main')
+      if (target) void app.proposeRepoMerge([...path], target)
+    }))
+    items.push(row)
+  }
+  if (info) {
+    const row = div('row', '')
+    row.append(span('', `GitHub · ${info.repo}`), button('secondary small', 'Refresh branches and PRs', () => void app.refreshRepositories(true)))
+    if (!state.integrations.some(i => i.id === 'github' && i.connected)) row.append(button('secondary small', 'Connect GitHub', () => void app.connectIntegration('github')))
+    if (info.snapshot && !info.snapshot.canPush) row.append(span('muted', 'Read-only on GitHub · diffs are available below'))
+    items.push(row)
+    for (const pull of info.snapshot?.pulls ?? []) {
+      const card = document.createElement('article'); card.className = 'proposal'
+      const link = document.createElement('a'); link.href = pull.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = `#${pull.number} ${pull.title}`
+      card.append(link, div('muted', `${pull.head} → ${pull.base} · ${pull.state}`), div('muted', app.repositoryDiff(pull)))
+      if (pull.state === 'open' && info.snapshot?.canPush && app.hasRepositoryPeer(path)) card.append(button('primary small', 'Approve and merge on GitHub', () => {
+        if (window.confirm(`Merge GitHub PR #${pull.number} into ${pull.base}?`)) void app.decideRepoPull(pull, 'merge')
+      }), button('danger small', 'Close PR', () => void app.decideRepoPull(pull, 'close')))
+      items.push(card)
+    }
+  }
+  el.hidden = !items.length
+  el.replaceChildren(...items)
 }
 
 function renderChoices(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
@@ -630,6 +683,8 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.title = 'Click to edit'
   }
 
+  if (task.branches) body.append(branchSelector(task, at, app))
+
   const meta = span('row-meta', '')
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
@@ -955,6 +1010,18 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
   const subtasks = task.kind === 'task' ? app.subtasksAvailability([...at, task.id]) : null
   return [
     ...(task.kind === 'task' && !task.template ? [{ label: 'Use Implement and verify template', run: () => app.addWorkTemplate(at, task.id) }] : []),
+    { label: 'Connect GitHub repository…', run: () => {
+      const repo = window.prompt('Repository (owner/name)')
+      if (repo) app.bindNodeRepository(at, task.id, repo)
+    } },
+    { label: task.branches ? 'Create branch…' : 'Make editable choices…', run: () => {
+      const name = window.prompt('New branch name (copies the selected subtree)', 'alternative')
+      if (name) app.createNodeBranch(at, task.id, name)
+    } },
+    ...(task.branches ? [{ label: 'Merge selected branch…', run: () => {
+      const target = window.prompt('Merge into which branch?', 'main')
+      if (target) app.mergeNodeBranch(at, task.id, target)
+    } }] : []),
     { label: 'Add text argument…', run: () => {
       const name = window.prompt('Argument name (use {{name}} in notes)')
       if (!name) return

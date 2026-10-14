@@ -66,12 +66,19 @@ if (project) {
   const token = project.config.attach?.token
   if (!app.state.session && token) void app.connectWithToken(token)
   // Follow git branch switches: each branch has its own replica (and its own proposal).
+  let switching = false
   setInterval(async () => {
+    if (switching) return
     const now = await findProject()
     const branch = now?.branch ?? 'local'
-    if (now && branch !== projectStorage.branch()) {
-      await projectStorage.useBranch(branch)
-      app.reloadReplica()
+    if (!switching && now && branch !== projectStorage.branch()) {
+      switching = true
+      document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+      app.beginProjectSwitch()
+      root.inert = true
+      try { await projectStorage.useBranch(branch); app.reloadReplica() }
+      catch (error) { app.notify('error', `Could not switch project branch: ${String(error)}`) }
+      finally { root.inert = false; switching = false; app.endProjectSwitch() }
     }
   }, 3000)
 }

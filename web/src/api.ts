@@ -270,3 +270,17 @@ export function attachMcpPeer(session: Session, scope: string[], serverId: numbe
 export function runMcpRequirement(session: Session, scope: string[], requirementId: string): Promise<{ text: string }> {
   return authed(session, 'POST', '/user/data/mcp-peers/run', { scope, requirementId })
 }
+
+export function readRepository(session: Session, repo: string, tracked: number[] = []): Promise<import('../../shared/sync/repository').RepositorySnapshot> {
+  return authed(session, 'POST', '/user/integrations/repo', { action: 'read', repo, tracked })
+}
+export function proposeRepositoryMerge(session: Session, repo: string, head: string, base: string, title: string): Promise<import('../../shared/sync/repository').RepositoryPull> {
+  return authed(session, 'POST', '/user/integrations/repo', { action: 'propose', repo, head, base, title })
+}
+export function decideRepositoryPull(session: Session, repo: string, number: number, action: 'merge' | 'close', sha: string): Promise<{ ok: true }> {
+  return authed(session, 'POST', '/user/integrations/repo', { action, repo, number, sha })
+}
+
+export function createRepositoryBranch(session: Session, repo: string, name: string, from: string): Promise<{ ok: true }> {
+  return authed(session, 'POST', '/user/integrations/repo', { action: 'branch', repo, name, from })
+}

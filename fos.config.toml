@@ -1,0 +1,8 @@
+# Fosforescent project configuration (committed). Local state lives in .fos/ (ignored).
+
+[attach]
+server = "https://api.fosforescent.com"
+
+[serve]
+port = 4777
+host = "127.0.0.1"

@@ -88,6 +88,7 @@ pub fn handle_mcp(shared: &Shared, req: &Value) -> Option<Value> {
 
 fn call_tool(shared: &Shared, name: &str, args: &Value) -> Result<Value, (i64, String)> {
     let mut ws = shared.workspace.lock().unwrap();
+    ws.refresh_branch().map_err(|e| (-32000, e))?;
     let locate = |ws: &Workspace, prefix: Option<&str>| -> Result<Vec<String>, (i64, String)> {
         match prefix {
             Some(p) if !p.is_empty() => {
@@ -164,11 +165,16 @@ fn route(shared: &Shared, request: &mut Request) -> Response<std::io::Cursor<Vec
         (Method::Get, "/status") => json_response(200, &shared.workspace.lock().unwrap().status()),
         (Method::Post, "/peer-sync") => {
             let body = read_body(request);
-            let ws = shared.workspace.lock().unwrap();
+            let mut ws = shared.workspace.lock().unwrap();
+            if let Err(error) = ws.refresh_branch() { return json_response(500, &json!({ "error": error })); }
+            if body.get("branch").and_then(|b| b.as_str()).map(|b| b != ws.branch).unwrap_or(false) {
+                return json_response(409, &json!({ "error": "This checkout is serving another branch", "code": "scope-not-found", "branch": ws.branch }));
+            }
             let served = ws.core.call_json("serveSync", &[json!(HANDLE), json!(body.to_string()), json!(ws.device.peer_id), json!(now_ms()), Value::Null]);
             match served {
                 Ok(v) if v.get("error").is_some() => json_response(if v.get("code").and_then(|c| c.as_str()) == Some("scope-not-found") { 404 } else { 400 }, &v),
-                Ok(v) => {
+                Ok(mut v) => {
+                    if let Some(response) = v.get_mut("response").and_then(|r| r.as_object_mut()) { response.insert("branch".into(), json!(ws.branch)); }
                     if v.get("changed").and_then(|c| c.as_bool()).unwrap_or(false) {
                         let _ = ws.save();
                         drop(ws);

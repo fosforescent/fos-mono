@@ -11,6 +11,7 @@ import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
+  isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
   homeContextCid,
   canonicalRowData,
@@ -93,6 +94,8 @@ export type ReplicaMeta = {
   baseCid: string | null
   lastSyncAt: number | null
   serverPeerId: string | null
+  branch?: string
+  branches?: Record<string, string>
 }
 
 export type Replica = { store: FosStore; meta: ReplicaMeta }
@@ -151,7 +154,9 @@ export function loadReplica(input: unknown): Replica {
       scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
       baseCid,
       lastSyncAt: typeof meta.lastSyncAt === 'number' ? meta.lastSyncAt : null,
-      serverPeerId: typeof meta.serverPeerId === 'string' ? meta.serverPeerId : null
+      serverPeerId: typeof meta.serverPeerId === 'string' ? meta.serverPeerId : null,
+      ...(typeof meta.branch === 'string' ? { branch: meta.branch } : {}),
+      ...(meta.branches && typeof meta.branches === 'object' ? { branches: Object.fromEntries(Object.entries(meta.branches).filter(([, name]) => typeof name === 'string')) } : {})
     }
   }
 }
@@ -584,6 +589,7 @@ export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: strin
  * over whatever comes back (`completeSync` merges sent head → local head → result).
  */
 export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean; full?: boolean } = {}): SyncRequest {
+  branch ??= replica.meta.branch
   const base = replica.meta.baseCid
   const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : headCid(replica)
   // The server already holds everything reachable from the agreed base.
@@ -596,7 +602,8 @@ export function buildSyncRequest(replica: Replica, branch?: string, options: { p
     baseCid: base,
     headCid: head,
     nodes: reachableNodes(replica.store, options.full ? [head, base] : [head], known),
-    ...(branch ? { branch } : {})
+    ...(branch ? { branch } : {}),
+    ...(replica.meta.branches ? { branches: replica.meta.branches } : {})
   }
 }
 
@@ -610,7 +617,7 @@ export function completeSync(replica: Replica, request: SyncRequest, response: S
   return {
     replica: {
       store: replica.store,
-      meta: { ...replica.meta, baseCid: response.resultCid, lastSyncAt: now, serverPeerId: response.peerId }
+      meta: { ...replica.meta, baseCid: response.resultCid, lastSyncAt: now, serverPeerId: response.peerId, branch: response.branch ?? request.branch }
     },
     reMerged: applied.reMerged,
     newChoiceIds: applied.newChoiceIds
@@ -630,9 +637,14 @@ export function reattach(replica: Replica, newScope: Scope, now: number, names?:
   const target = isPrefix ? resolveScope(store, headCid(replica), relative) : null
   if (target) {
     const scopeNamesNext = names ?? pathNames(replica, relative)
-    commitRoot(store, target, now)
-    return { store, meta: { ...meta, scope: [...newScope], scopeNames: scopeNamesNext, baseCid: resolveScope(store, meta.baseCid, relative) } }
+    const branches = { ...meta.branches, ...scopeBranches(store, headCid(replica), relative) }
+    const selected = isBranchChoice(store, content(store, target)) ? branchEdge(store, target) : null
+    const branch = selected ? branchSelection(store, target) : undefined
+    const base = resolveScope(store, meta.baseCid, relative)
+    const baseEdge = branch && base && isBranchChoice(store, content(store, base)) ? readChoice(store, base).options.find(o => o.peerId === branch)?.edge : null
+    commitRoot(store, selected ? identityCid(store, selected) : target, now)
+    return { store, meta: { ...meta, scope: [...newScope], branch, branches, scopeNames: scopeNamesNext, baseCid: baseEdge ? identityCid(store, baseEdge) : base } }
   }
   commitRoot(store, put(store, { data: {}, children: [] }), now)
-  return { store, meta: { ...meta, scope: [...newScope], scopeNames: names ?? [...newScope], baseCid: null } }
+  return { store, meta: { ...meta, scope: [...newScope], branch: undefined, branches: undefined, scopeNames: names ?? [...newScope], baseCid: null } }
 }

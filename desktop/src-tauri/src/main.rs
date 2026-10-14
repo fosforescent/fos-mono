@@ -76,6 +76,10 @@ enum Commands {
     Ls,
     /// Sync with the account now
     Sync,
+    /// Fetch the checked-out branch without publishing local edits
+    Pull,
+    /// Publish and merge changes for the checked-out branch
+    Push,
     /// Add a row (quote it; "[ ] x" task, "[x] x" done task, "- x" note, "// x" comment, else plain; optionally under another row by id prefix)
     Add {
         title: String,
@@ -152,6 +156,8 @@ fn main() {
             Commands::Repl => commands::cmd_repl(ws),
             Commands::Ls => commands::cmd_ls(&ws),
             Commands::Sync => commands::cmd_sync(&mut ws),
+            Commands::Push => ws.sync_with(true).map(|summary| println!("{}", summary)),
+            Commands::Pull => ws.sync_with(false).map(|summary| println!("{}", summary)),
             Commands::Add { title, under } => commands::cmd_add(&mut ws, title.trim(), under.as_deref()),
             Commands::Done { id } => commands::cmd_done(&mut ws, &id, true),
             Commands::Open { id } => commands::cmd_done(&mut ws, &id, false),

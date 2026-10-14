@@ -1,3 +1,5 @@
+import { withBranches, scopeBranches, bindRepository, repositoryAt, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid } from '../../shared/sync/index'
+import { createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
  * group's document or to another device's node), the connection state, the
@@ -18,7 +20,7 @@
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -273,6 +275,11 @@ export class App {
   private virtualWelcomed = false
   private authGeneration = 0
   private history = new EditHistory()
+  private branchSelections: Record<string, string> = {}
+  private repositories = new Map<string, RepositorySnapshot>()
+  private repositoryPollAt = 0
+  private repositoryBusy = false
+  private projectSwitching = false
   private groupedEdit = false
   private observedHead: string
   private config: AppConfig
@@ -292,13 +299,17 @@ export class App {
   private link: DirectLink | null = null
   /** Node (relative to this replica) a direct guest is attached to. */
   private hostScope: Scope = []
+  private hostBranches: Record<string, string> = {}
   private manualRequest: SyncRequest | null = null
 
   constructor(config: AppConfig) {
     this.config = config
     this.autoCredentials = config.autoLogin
     const replica = config.scopedDocument || config.project ? loadReplica(config.storage.loadReplica()) : ensureHomeContext(loadReplica(config.storage.loadReplica()), 0)
-    const prefs = (config.storage.loadPrefs() ?? {}) as { view?: unknown; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
+    const prefs = (config.storage.loadPrefs() ?? {}) as { repositories?: Array<[string, RepositorySnapshot]>; branches?: Record<string, string>; view?: unknown; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
+    if (Array.isArray(prefs.repositories)) this.repositories = new Map(prefs.repositories.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && Array.isArray(entry[1]?.pulls)))
+    this.branchSelections = prefs.branches && typeof prefs.branches === 'object' ? Object.fromEntries(Object.entries(prefs.branches).filter(([, name]) => typeof name === 'string')) : {}
+    for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(replica.store, id, name)
     const configPolicy = config.project?.policy ?? null
     const savedView = Array.isArray(prefs.view) ? prefs.view.filter((s): s is string => typeof s === 'string') : []
     const session = loadSession(config.storage.loadSession(), config.baseUrl)
@@ -361,6 +372,7 @@ export class App {
     }
     if (patch.replica) this.virtualPeers?.changed()
     if (patch.session && previous.session && patch.session.username !== previous.session.username) this.history.clear()
+    if (patch.replica) for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(patch.replica.store, id, name)
     this.state = { ...previous, ...patch }
     if (patch.replica && patch.replica !== previous.replica) {
       this.config.storage.saveReplica(serializeReplica(this.state.replica))
@@ -373,7 +385,7 @@ export class App {
   }
 
   private savePrefs(): void {
-    this.config.storage.savePrefs({ view: this.state.view, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
+    this.config.storage.savePrefs({ repositories: [...this.repositories], branches: this.branchSelections, view: this.state.view, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
   notify(kind: Notice['kind'], text: string): void {
@@ -538,6 +550,7 @@ export class App {
     this.closeEvents?.(); this.closeEvents = null
   }
   disconnect(): void {
+    this.repositories.clear(); this.repositoryPollAt = 0
     ++this.authGeneration
     this.stopAccountConnection()
     this.recorder?.stop(); this.recorder = null
@@ -558,7 +571,10 @@ export class App {
     this.history.clear()
     this.virtualPeers?.close(); this.virtualPeers = null
     const replica = this.documentReplica(loadReplica(this.config.storage.loadReplica()))
-    const prefs = (this.config.storage.loadPrefs() ?? {}) as { view?: Scope; collapsed?: string[]; policy?: unknown; deviceName?: string }
+    const prefs = (this.config.storage.loadPrefs() ?? {}) as { branches?: Record<string, string>; view?: Scope; collapsed?: string[]; policy?: unknown; deviceName?: string }
+    this.branchSelections = prefs.branches ?? {}
+    this.repositories.clear()
+    this.repositoryPollAt = 0
     this.set({ replica, session: null, view: Array.isArray(prefs.view) && view(replica, prefs.view) ? prefs.view : homePath(replica), selected: null, atRoot: false,
       modal: keepModal ? this.state.modal : null, connectFlow: { phase: 'idle' }, manual: {}, device: null, voice: null, requests: [], invite: null,
       collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed : [], contextMenu: null, work: undefined, highlighted: [], notice: null,
@@ -643,6 +659,7 @@ export class App {
   }
 
   async syncNow(_reason: string): Promise<void> {
+    if (this.projectSwitching) { this.syncRequested = true; return }
     const transport = this.transport()
     if (!transport) return
     if (this.syncInFlight) { this.syncRequested = true; return }
@@ -677,7 +694,7 @@ export class App {
       if (!this.state.atRoot && !this.state.view.length && homePath(done.replica).length) patch.view = homePath(done.replica)
       if (response.presence) patch.onlinePeers = response.presence
       if (response.capabilities && transport === 'account') patch.serverCapabilities = response.capabilities
-      if (transport === 'account') { void this.refreshPoints(); if (!this.state.integrations.length) void this.refreshIntegrations() }
+      if (transport === 'account') { void this.refreshRepositories(); void this.refreshPoints(); if (!this.state.integrations.length) void this.refreshIntegrations() }
       const n = done.newChoiceIds.length
       if (n > 0) {
         patch.highlighted = done.newChoiceIds
@@ -919,6 +936,7 @@ export class App {
       let branch = createReplica(this.state.replica.meta.peerId)
       importNodes(branch.store, reachableNodes(draft.store, [draft.head]))
       commitRoot(branch.store, draft.head, this.now())
+      for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(branch.store, id, name)
       branch = parsed.kind === 'ref' || parsed.kind === 'supply' ? renameTask(branch, draft.parent, id, parsed.text, this.now()) : setRowContentAt(branch, draft.parent, id, parsed.kind, parsed.text, extras, this.now())
       if (parsed.children?.length) this.addParsedChildren([...at, id], parsed.children, branch)
       const current = this.state.replica
@@ -1025,7 +1043,7 @@ export class App {
     if (!session || session.kind !== 'user') { if (this.state.integrations.length || this.state.mcpPeers.length) this.set({ integrations: [], mcpPeers: [] }); return }
     try {
       const [{ providers }, mcp] = await Promise.all([listIntegrations(session), listMcpPeers(session).catch(() => ({ peers: [] as McpPeerInfo[] }))])
-      if (this.state.session === session) this.set({ integrations: providers, mcpPeers: mcp.peers })
+      if (this.state.session === session) { this.set({ integrations: providers, mcpPeers: mcp.peers }); void this.refreshRepositories() }
     } catch { /* the rows fall back to the static registry */ }
   }
   /** Sign in with an OAuth peer (the browser leaves for the provider and comes back with ?integration=…), or link the phone. */
@@ -1198,6 +1216,189 @@ export class App {
   }
   /** Who this device acts as when it confirms: the account username, else the device name. */
   actorName(): string { return this.state.session?.username ?? this.state.deviceName }
+  async createNodeBranch(at: Scope, id: string, name: string, absolute = false): Promise<void> {
+    if (this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
+    try {
+      const path = absolute ? [...at, id] : [...this.state.view, ...at, id], info = this.repositoryInfo(path)
+      const session = this.state.session, generation = this.authGeneration
+      if (info) {
+        if (!session || !info.snapshot || !this.hasRepositoryPeer(path)) throw new Error('Connect GitHub and refresh this repository first')
+        const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)!
+        const from = isBranchChoice(this.state.replica.store, content(this.state.replica.store, cid)) ? branchSelection(this.state.replica.store, cid) : info.snapshot.defaultBranch
+        await createRepositoryBranch(session, info.repo, name, from)
+        if (generation !== this.authGeneration) return
+      }
+      const next = createBranch(this.state.replica, path, name, this.now(), info?.snapshot?.defaultBranch ?? 'main')
+      this.branchSelections[id] = name
+      this.edit(next)
+      this.savePrefs()
+      this.set({ selected: null })
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  selectNodeBranch(at: Scope, id: string, name: string, absolute = false): void {
+    if (this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
+    const path = absolute ? [...at, id] : [...this.state.view, ...at, id]
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id)
+    if (!row?.branches?.names.includes(name)) return
+    this.branchSelections[id] = name
+    selectBranch(this.state.replica.store, id, name)
+    this.history.clear()
+    this.savePrefs()
+    this.set({ selected: null, contextMenu: null, work: undefined })
+  }
+  mergeNodeBranch(at: Scope, id: string, target: string): void {
+    if (repositoryAt(this.state.replica, [...this.state.view, ...at, id])) { void this.proposeRepoMerge([...this.state.view, ...at, id], target); return }
+    const row = this.rowAt([...at, id])
+    if (!row?.branches) return
+    try {
+      const next = mergeBranch(this.state.replica, [...this.state.view, ...at, id], row.branches.selected, target, this.now())
+      this.branchSelections[id] = target
+      this.edit(next)
+      this.savePrefs()
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  beginProjectSwitch(): void {
+    this.projectSwitching = true
+    this.clearTimer('debounce')
+    this.authGeneration++
+    this.recorder?.stop(); this.recorder = null
+    this.set({ voice: null })
+    this.history.clear()
+    this.set({ selected: null, work: undefined })
+  }
+  endProjectSwitch(): void {
+    this.projectSwitching = false
+    if (this.transport()) void this.syncNow('checkout complete')
+  }
+  hasRepositoryPeer(path: Scope): boolean {
+    let enabled = false
+    for (let i = 0; i <= path.length; i++) {
+      const member = view(this.state.replica, path.slice(0, i))?.members.find(m => m.peerId === 'integration:github')
+      if (member) enabled = !member.disabled?.includes('repo') && (member.capabilities.includes('repo') || !!member.accepts?.includes('repo'))
+    }
+    return enabled
+  }
+  repositoryInfo(path: Scope = this.state.view): { repo: string; snapshot?: RepositorySnapshot } | null {
+    const repo = repositoryAt(this.state.replica, path)
+    return repo ? { repo, snapshot: this.repositories.get(repo) } : null
+  }
+  bindNodeRepository(at: Scope, id: string, repo: string): void {
+    const path = [...this.state.view, ...at, id]
+    try {
+      let next = bindRepository(this.state.replica, path, repo.trim(), this.now())
+      next = addMemberAt(next, path, 'integration:github', 'GitHub', [], this.now())
+      next = setMemberCapabilitiesAt(next, path, 'integration:github', [], [], this.now(), ['repo', 'search'])
+      this.edit(next)
+      this.repositoryPollAt = 0
+      void this.refreshRepositories()
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  async refreshRepositories(force = false): Promise<void> {
+    const session = this.state.session, generation = this.authGeneration
+    if (this.projectSwitching || !session || session.kind !== 'user' || this.repositoryBusy || (!force && this.now() - this.repositoryPollAt < 30_000)) return
+    if (!this.state.integrations.some(i => i.id === 'github' && i.connected)) return
+    const found: Array<{ path: Scope; repo: string }> = []
+    const walk = (path: Scope) => {
+      const repo = repositoryAt(this.state.replica, path)
+      if (repo) {
+        if (this.hasRepositoryPeer(path)) found.push({ path, repo })
+        return
+      }
+      for (const row of view(this.state.replica, path)?.tasks ?? []) {
+        const child = [...path, row.id]
+        if (child.length < 32 && (row.childCount || repositoryAt(this.state.replica, child))) walk(child)
+      }
+    }
+    walk([])
+    if (!found.length) return
+    this.repositoryBusy = true; this.repositoryPollAt = this.now()
+    try {
+      for (const { path, repo } of found) {
+        const previous = this.repositories.get(repo)
+        const beforeCid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
+        const beforeOptions = beforeCid && isBranchChoice(this.state.replica.store, content(this.state.replica.store, beforeCid)) ? readChoice(this.state.replica.store, beforeCid).options : []
+        const snapshot = await readRepository(session, repo, previous?.pulls.filter(p => p.state === 'open').map(p => p.number) ?? [])
+        if (generation !== this.authGeneration || session !== this.state.session) return
+        if (repositoryAt(this.state.replica, path) !== repo || !this.hasRepositoryPeer(path)) continue
+        let next = this.state.replica
+        const id = path.at(-1)
+        if (id) {
+          let cid = resolveScope(next.store, headCid(next), path)!
+          const priorSelection = isBranchChoice(next.store, content(next.store, cid)) ? branchSelection(next.store, cid) : snapshot.defaultBranch
+          for (const branch of snapshot.branches) {
+            cid = resolveScope(next.store, headCid(next), path)!
+            const names = isBranchChoice(next.store, content(next.store, cid)) ? readChoice(next.store, cid).options.map(o => o.peerId) : [snapshot.defaultBranch]
+            if (names.includes(branch.name)) continue
+            selectBranch(next.store, id, snapshot.defaultBranch)
+            next = createBranch(next, path, branch.name, this.now(), snapshot.defaultBranch)
+          }
+          selectBranch(next.store, id, priorSelection)
+          this.branchSelections[id] = priorSelection
+        }
+        for (const pull of snapshot.pulls) {
+          if (pull.state !== 'merged' || previous?.pulls.find(p => p.number === pull.number)?.state !== 'open' || pull.headRepo.toLowerCase() !== repo.toLowerCase() || !path.length) continue
+          const cid = resolveScope(next.store, headCid(next), path)!
+          if (!isBranchChoice(next.store, content(next.store, cid))) continue
+          const names = readChoice(next.store, cid).options.map(o => o.peerId)
+          if (!names.includes(pull.head) || !names.includes(pull.base)) continue
+          const selected = branchSelection(next.store, cid)
+          const proposed = beforeOptions.find(o => o.peerId === pull.head)
+          if (!proposed) continue
+          next = mergeBranch(next, path, pull.head, pull.base, this.now(), proposed)
+          selectBranch(next.store, path.at(-1)!, selected)
+        }
+        snapshot.pulls.push(...(previous?.pulls ?? []).filter(p => p.state !== 'open' && !snapshot.pulls.some(current => current.number === p.number)).slice(-100))
+        this.repositories.set(repo, snapshot)
+        const changed = next !== this.state.replica
+        this.set({ replica: next })
+        this.savePrefs()
+        if (changed) this.scheduleSync()
+      }
+    } catch (error) { this.notify('error', `Repository sync: ${error instanceof Error ? error.message : String(error)}`) }
+    finally { this.repositoryBusy = false }
+  }
+  async proposeRepoMerge(path: Scope, target: string): Promise<void> {
+    const session = this.state.session, info = this.repositoryInfo(path), generation = this.authGeneration
+    if (!session || !info || !this.hasRepositoryPeer(path)) { this.notify('error', 'Connect your account and GitHub peer first.'); return }
+    const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
+    if (!cid || !isBranchChoice(this.state.replica.store, content(this.state.replica.store, cid))) return
+    const source = branchSelection(this.state.replica.store, cid)
+    try {
+      const pull = await proposeRepositoryMerge(session, info.repo, source, target, `Merge ${source} into ${target}`)
+      if (generation !== this.authGeneration) return
+      if (info.snapshot) this.repositories.set(info.repo, { ...info.snapshot, pulls: [...info.snapshot.pulls.filter(p => p.number !== pull.number), pull] })
+      this.notify('info', `GitHub PR #${pull.number} opened: ${pull.url}`)
+      await this.refreshRepositories(true)
+    } catch (error) { this.notify('error', String(error)) }
+  }
+  repositoryDiff(pull: RepositoryPull): string {
+    const r = this.state.replica, cid = resolveScope(r.store, headCid(r), this.state.view)
+    if (!cid || !isBranchChoice(r.store, content(r.store, cid))) return 'Connect the branch replicas to compare their Fos tasks.'
+    const choice = readChoice(r.store, cid)
+    const from = choice.options.find(o => o.peerId === pull.head)?.edge, to = choice.options.find(o => o.peerId === pull.base)?.edge
+    if (!from || !to || pull.headRepo.toLowerCase() !== this.repositoryInfo()?.repo.toLowerCase()) return 'External branch: review the code diff on GitHub.'
+    const proposal = put(r.store, proposalContent(r.store, 'integration:github', pull.title, identityCid(r.store, from), identityCid(r.store, to), 0))
+    const summary = proposalView(r.store, valueContent(r.store, identityCid(r.store, to)), readProposal(r.store, proposal)!).summary
+    return [`adds ${summary.added.length}`, `changes ${summary.changed.length}`, `removes ${summary.removed.length}`].join(' · ') + ' Fos rows'
+  }
+  async decideRepoPull(pull: RepositoryPull, decision: 'merge' | 'close'): Promise<void> {
+    const session = this.state.session, info = this.repositoryInfo(), path = [...this.state.view], generation = this.authGeneration
+    if (!session || !info || !this.hasRepositoryPeer(path)) return
+    const reviewedCid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
+    const reviewed = reviewedCid && isBranchChoice(this.state.replica.store, content(this.state.replica.store, reviewedCid)) ? readChoice(this.state.replica.store, reviewedCid).options.find(o => o.peerId === pull.head) : undefined
+    try {
+      await decideRepositoryPull(session, info.repo, pull.number, decision, pull.sha)
+      if (generation !== this.authGeneration) return
+      if (decision === 'merge' && reviewed && pull.headRepo.toLowerCase() === info.repo.toLowerCase()) {
+        this.edit(mergeBranch(this.state.replica, path, pull.head, pull.base, this.now(), reviewed))
+        this.branchSelections[path.at(-1)!] = pull.base
+      }
+      if (info.snapshot) this.repositories.set(info.repo, { ...info.snapshot, pulls: info.snapshot.pulls.map(p => p.number === pull.number ? { ...p, state: decision === 'merge' ? 'merged' : 'closed' } : p) })
+      this.savePrefs()
+      this.notify('info', `GitHub PR #${pull.number} ${decision === 'merge' ? 'merged' : 'closed'}.`)
+      await this.refreshRepositories(true)
+    } catch (error) { this.notify('error', String(error)) }
+  }
   textArguments(at: Scope) {
     const path = [...this.state.view, ...at], r = this.state.replica
     const cid = resolveScope(r.store, headCid(r), path)
@@ -1897,20 +2098,23 @@ export class App {
         decide: async (peer, scope, proposalId, decision) => {
           if (!this.virtualGrants(peer)?.includes('approve') || !Array.isArray(scope) || scope.some((id) => typeof id !== 'string') || !['approve', 'reject'].includes(decision)) throw new Error('This role cannot decide this proposal.')
           const at = [...peer.scope, ...scope]
-          if (!view(this.state.replica, at)?.proposals.some((p) => p.id === proposalId && p.status === 'open')) throw new Error('Proposal no longer available.')
+          if (!withBranches(this.state.replica.store, peer.branches ?? {}, () => view(this.state.replica, at)?.proposals.some((p) => p.id === proposalId && p.status === 'open'))) throw new Error('Proposal no longer available.')
           if (this.virtualPeers?.guest) { await this.virtualPeers.decide(at, proposalId, decision); await this.syncNow('nested virtual decision'); return }
-          this.edit(decision === 'approve' ? applyProposalAt(this.state.replica, at, proposalId, peer.id, this.now()) : rejectProposalAt(this.state.replica, at, proposalId, this.now()))
+          this.edit(withBranches(this.state.replica.store, peer.branches ?? {}, () => decision === 'approve' ? applyProposalAt(this.state.replica, at, proposalId, peer.id, this.now()) : rejectProposalAt(this.state.replica, at, proposalId, this.now())))
         },
         grants: (peer) => this.virtualGrants(peer),
         serve: (peer, request) => {
+          const served = withBranches<import('../../shared/sync/protocol').ServeResult>(this.state.replica.store, peer.branches ?? {}, () => {
           const capabilities = this.virtualGrants(peer)
           if (!capabilities || !capabilities.includes('read')) return { error: 'This virtual peer no longer has access to the node.', code: 'scope-not-found' }
           if (request.peerId !== peer.id || request.scope.length) return { error: 'Virtual peer scope mismatch', code: 'bad-request' }
           if (!capabilities.includes('edit') && request.headCid !== request.baseCid && !(request.baseCid === null && request.nodes[request.headCid]?.children.length === 0 && Object.keys(request.nodes[request.headCid]?.data ?? {}).length === 0)) return { error: 'This role is read-only.', code: 'bad-request' }
-          const served = serveSync(this.state.replica.store, { ...request, scope: peer.scope }, this.state.replica.meta.peerId, this.now(),
+          const served = serveSync(this.state.replica.store, { ...request, branches: undefined, branch: peer.branches?.[peer.scope.at(-1)!] ?? request.branch, scope: peer.scope }, this.state.replica.meta.peerId, this.now(),
             { proposeOnly: capabilities.includes('edit') && !capabilities.includes('autopush'), peerName: peer.name, capabilities })
-          if (!('error' in served) && served.changed) { this.set({ replica: { ...this.state.replica } }); this.scheduleSync() }
           return 'error' in served ? served : { ...served, response: { ...served.response, scope: request.scope } }
+          })
+          if (!('error' in served) && served.changed) { this.set({ replica: { ...this.state.replica } }); this.scheduleSync() }
+          return served
         },
         welcome: (capabilities, hostName, session) => {
           if (!capabilities.length && this.state.virtual) {
@@ -1939,14 +2143,14 @@ export class App {
   }
   private virtualGrants(peer: VirtualPeer): Capability[] | null {
     if (peer.dataSessionId && peer.dataSessionId !== this.activeDataSession()?.id) return null
-    const member = view(this.state.replica, peer.scope)?.members.find((m) => m.peerId === peer.id)
+    const member = withBranches(this.state.replica.store, peer.branches ?? {}, () => view(this.state.replica, peer.scope)?.members.find((m) => m.peerId === peer.id))
     return member ? member.capabilities.filter((c) => !member.disabled?.includes(c)) : null
   }
   canSpawnVirtualPeer(): boolean { return !this.config.project && !!this.virtualPeers && this.canApprove() }
   spawnVirtualPeer(name: string, role: 'editor' | 'proposer' | 'reviewer' | 'viewer', shareAccount: boolean): void {
     if (!this.canSpawnVirtualPeer() || !name.trim()) return
     const token = crypto.randomUUID()
-    const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.state.view], dataSessionId: this.activeDataSession()?.id, name: name.trim().slice(0, 80), shareAccount }
+    const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.state.view], branches: scopeBranches(this.state.replica.store, headCid(this.state.replica), this.state.view), dataSessionId: this.activeDataSession()?.id, name: name.trim().slice(0, 80), shareAccount }
     const capabilities: Capability[] = role === 'viewer' ? ['read'] : role === 'proposer' ? ['read', 'edit'] : role === 'reviewer' ? ['read', 'edit', 'approve'] : ['read', 'edit', 'autopush']
     this.virtualPeers!.register(peer)
     const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('virtual', token)
@@ -1963,6 +2167,7 @@ export class App {
   async startDirectHost(): Promise<void> {
     this.cancelDirect()
     this.hostScope = [...this.state.view]
+    this.hostBranches = scopeBranches(this.state.replica.store, headCid(this.state.replica), this.hostScope)
     this.set({ modal: 'direct', menuOpen: false, direct: { role: 'host', phase: 'creating' } })
     try {
       this.host = new DirectHost(this.state.replica.meta.peerId, this.state.deviceName)
@@ -2062,9 +2267,12 @@ export class App {
     } catch { /* link closed */ }
   }
 
-  private serveRequest(request: SyncRequest) {
-    const scoped: SyncRequest = { ...request, scope: [...this.hostScope, ...request.scope] }
-    const served = serveSync(this.state.replica.store, scoped, this.state.replica.meta.peerId, this.now())
+  private serveRequest(request: SyncRequest): import('../../shared/sync/protocol').ServeResult {
+    const branch = this.currentBranch()
+    if (branch && request.branch && request.branch !== branch) return { error: 'This checkout is serving another branch', code: 'scope-not-found' }
+    const scoped: SyncRequest = { ...request, branches: undefined, branch: this.hostBranches[this.hostScope.at(-1)!] ?? request.branch, scope: [...this.hostScope, ...request.scope] }
+    const served = withBranches(this.state.replica.store, this.hostBranches, () => serveSync(this.state.replica.store, scoped, this.state.replica.meta.peerId, this.now()))
+    if (!('error' in served) && branch) served.response.branch = branch
     if (!('error' in served) && served.changed) {
       this.set({ replica: { ...this.state.replica } })
       this.scheduleSync() // pass the guest's changes on to the account if we have one
