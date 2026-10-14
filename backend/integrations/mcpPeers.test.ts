@@ -7,7 +7,7 @@ function setup(servers: McpServerInfo[]) {
   r = addTask(r, [], 'research', 1, 'proj')
   r = addTask(r, ['proj'], 'weather for the trip', 2, 'trip')
   r = addRow(r, ['proj', 'trip'], 'requirement', 'Paris next week', 3, { id: 'rq', requirement: { capability: 'tool', tool: 'weather' } })
-  r = addRow(r, ['proj', 'trip'], 'requirement', 'anything', 4, { id: 'rq2', requirement: { capability: 'tool' } })
+  r = addRow(r, ['proj', 'trip'], 'requirement', 'anything', 4, { id: 'rq2', requirement: { capability: 'tool', tool: 'weather' } })
   const calls: Array<[number, string, string]> = []
   const saved: string[] = []
   const deps: McpPeerDeps = {
@@ -56,9 +56,9 @@ test('running a tool requirement calls the attached server and records the answe
   const rq = view(replica(), ['proj', 'trip'])!.tasks.find((t) => t.id === 'rq')!
   expect(rq.requirement?.satisfied).toBe(true)
   expect(view(replica(), ['proj', 'trip', 'rq'])!.tasks.map((t) => [t.kind, t.title])).toEqual([['note', 'weather(Paris next week) = sunny'], ['supply', 'run by mcp:5']])
-  expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toEqual(['tool']) // rq2 still open
+  expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toEqual(['tool weather']) // rq2 still open
   expect(saved.length).toBeGreaterThan(0)
-  // the listener runs what is still open (rq2 has no tool named: the server's first tool)
+  // the listener runs what is still open (rq2 explicitly requests weather too)
   const n = await h.runOpenToolRequests({ id: 1, username: 'ada' }, replica().store)
   expect(n).toBe(1)
   expect(calls.at(-1)).toEqual([5, 'weather', 'anything'])
@@ -146,4 +146,14 @@ test('manual and listener runs share the user lock and reload completed work', a
   expect([200, 409]).toContain(manual.status)
   expect(listened).toBe(manual.status === 200 ? 1 : 2)
   expect(calls).toEqual([[5, 'weather', 'Paris next week'], [5, 'weather', 'anything']])
+})
+
+test('multiple matching tools require a choice instead of silently choosing the first', async () => {
+  const { deps, replica, calls } = setup([weather])
+  const h = createMcpPeerHandlers(deps)
+  await call(h.attach, { scope: ['proj'], serverId: 5 })
+  addRow(replica(), ['proj', 'trip'], 'requirement', 'choose a tool', 20, { id: 'ambiguous', requirement: { capability: 'tool' } })
+  const result = await call(h.run, { scope: ['proj', 'trip'], requirementId: 'ambiguous' })
+  expect(result.json.error).toMatch(/Choose a binding/)
+  expect(calls).toEqual([])
 })
