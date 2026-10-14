@@ -2065,18 +2065,27 @@
       if (!readMembers(store, bindings).some((member) => member.peerId === `integration:${peer.id}`))
         bindings = withMember(store, bindings, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
     const homeCid = findChild(store, rootCid, HOME_ID);
+    if (homeCid && isBranchChoice(store, content(store, homeCid))) {
+      const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
+      const nextEdge = rowEdge(store, "plain", homeCid);
+      if (nextEdge[0] === edge[0] && nextEdge[1] === edge[1] && bindings === identity && identity === content(store, rootCid))
+        return rootCid;
+      const nextValue2 = put(store, { ...root, children: root.children.map((e) => e === edge ? nextEdge : e) });
+      return put(store, refNodeContent(store, identity.data, nextValue2, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
+    }
     const movable = homeCid ? [] : root.children.filter((edge) => isRowEdge(store, edge) && rowKindOf(store, edge) !== "template" || isChoiceEdge(store, edge));
-    const homeValue = homeCid ? valueContent(store, homeCid) : rowContent("template", HOME_ID, "Home", 0);
+    const homeValue = homeCid ? valueContent(store, homeCid) : rowContent("plain", HOME_ID, "Home", 0);
     let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0);
     const own = new Set(readMembers(store, home).map((member) => member.peerId));
     const argumentsFromRoot = bindings.children.filter((edge) => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ""));
     if (argumentsFromRoot.length)
       home = { ...home, children: [...home.children, ...argumentsFromRoot] };
     const nextHome = put(store, home);
-    if (homeCid === nextHome && bindings === identity && identity === content(store, rootCid))
+    const homeEdge = root.children.find((edge) => identityCid(store, edge) === homeCid);
+    if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid))
       return rootCid;
     const keep = root.children.filter((edge) => !movable.includes(edge) && (!homeCid || identityCid(store, edge) !== homeCid));
-    const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, "template", nextHome)] });
+    const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, "plain", nextHome)] });
     return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
   }
   function commitRoot(store, newTargetCid, now, mergeSourceCid = null) {

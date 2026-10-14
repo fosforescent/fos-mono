@@ -19,7 +19,6 @@ type Regions = {
   link: HTMLElement
   status: HTMLElement
   menuButton: HTMLButtonElement
-  localBadge: HTMLElement
   menu: HTMLElement
   banner: HTMLElement
   crumbs: HTMLElement
@@ -72,12 +71,12 @@ let scanner: { stop(): Promise<void> } | null = null
 let lastModalKey = ''
 
 export function mountUi(root: HTMLElement, app: App): void {
+  try { const theme = localStorage.getItem('fos.device.theme'); if (theme && ['light', 'dark', 'system'].includes(theme)) document.documentElement.dataset.theme = theme } catch { /* browser storage disabled */ }
   root.innerHTML = `
     <header class="topbar">
       <div class="brand-row">
         <button type="button" class="icon menu-button" data-region="menu-button" aria-label="Menu">☰</button>
-        <span class="local-badge" data-region="local-badge" hidden>local</span>
-        <div class="brand">Fosforescent</div>
+        <div class="brand"><img src="/icon-192.png" width="24" height="24" alt="">Fosforescent</div>
         <button type="button" class="icon help-button" data-region="help-button" title="Keys and row syntax (Ctrl+H)" aria-label="Keys and row syntax">?</button>
       </div>
       <div class="status" data-region="status"></div>
@@ -105,7 +104,6 @@ export function mountUi(root: HTMLElement, app: App): void {
     link: q('link'),
     status: q('status'),
     menuButton: q('menu-button'),
-    localBadge: q('local-badge'),
     menu: q('menu'),
     banner: q('banner'),
     crumbs: q('crumbs'),
@@ -116,8 +114,8 @@ export function mountUi(root: HTMLElement, app: App): void {
     modal: q('modal')
   }
 
-  regions.list.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) event.preventDefault() })
-  regions.list.addEventListener('drop', event => { if (event.target === regions.list && event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { event.preventDefault(); app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE)) } })
+  regions.list.addEventListener('dragover', event => { if (event.dataTransfer?.types.some(t => [NODE_DRAG_TYPE, 'application/x-fos-trigger'].includes(t))) event.preventDefault() })
+  regions.list.addEventListener('drop', event => { if (dropTrigger(event, app, app.state.view)) return; if (event.target === regions.list && event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { event.preventDefault(); app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE)) } })
   regions.mic.addEventListener('click', () => { void app.toggleVoice() })
   q<HTMLButtonElement>('help-button').addEventListener('click', () => toggleHelp(app))
   regions.menuButton.addEventListener('click', (event) => {
@@ -153,7 +151,6 @@ export function mountUi(root: HTMLElement, app: App): void {
 
 function render(regions: Regions, state: AppState, app: App): void {
   renderStatus(regions.status, state, app)
-  regions.localBadge.hidden = !app.isLocal()
   renderMenu(regions.menu, state, app)
   renderBanner(regions.banner, state, app)
   renderMic(regions.mic, state, app)
@@ -173,6 +170,10 @@ function render(regions: Regions, state: AppState, app: App): void {
   renderTree(regions.list, node, state, app)
   renderFooter(regions.footer, state, app)
   renderContextMenu(regions.context, state, app)
+  for (const [name, element] of [['repository', regions.repository], ['voice', regions.mic.parentElement!], ['link', regions.link]] as const) {
+    const slot = regions.node.querySelector(`[data-slot="${name}"]`)
+    if (slot && element.parentElement !== slot) slot.append(element)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +188,7 @@ function renderStatus(el: HTMLElement, state: AppState, app: App): void {
     state.connection === 'offline'
       ? button('link status-text', labels[state.connection], () => app.openModal('connect'))
       : span('status-text', labels[state.connection]),
+    ...(app.isLocal() ? [span('local-badge', 'Local')] : []),
     ...(dirty ? [span('badge', state.connection === 'offline' ? 'unsynced changes' : 'pending')] : []),
     ...(lastSync && !dirty ? [span('muted', `synced ${ago(lastSync)}`)] : [])
   )
@@ -202,36 +204,25 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   if (!session) item('Connect…', () => app.openModal('connect'), 'primary-text')
   item('⚙ Settings', () => app.goToRoot())
   if (app.canSpawnVirtualPeer()) item('Spawn virtual peer…', () => app.openModal('virtual'))
-  if (app.canUndo) item('Undo (Ctrl/⌘ Z)', () => runHistory(app, false))
-  if (app.canRedo) item('Redo (Ctrl/⌘ Shift Z)', () => runHistory(app, true))
-  item('Keys and row syntax (Ctrl+H)', () => app.openModal('help'))
   if (session?.kind === 'user') {
     item('Invite a device here', () => void app.startInvite())
     item(`Connection requests${state.requests.length ? ` (${state.requests.length})` : ''}`, () => app.openModal('requests'))
   }
-  item('Direct connect (device to device)…', () => app.openModal('direct'))
   if (state.replica.meta.scope.length > 0 && session?.kind === 'user') {
     const toRoot = button('menu-item', 'Sync whole account on this device', () => app.attachAt([]))
     toRoot.disabled = !app.canAttach([])
     items.push(toRoot)
   }
   if (session) item(`Sign out (${session.username})`, () => app.logout())
-  const name = document.createElement('div')
-  name.className = 'menu-meta'
-  name.append(span('muted', `This device: ${state.deviceName}`), button('link small', 'rename', () => {
-    const next = window.prompt('Name this device', state.deviceName)
-    if (next) app.setDeviceName(next)
-  }))
-  items.push(name, legalLinks('Fosforescent'))
   el.replaceChildren(...items)
 }
 
 function renderMic(el: HTMLButtonElement, state: AppState, app: App): void {
   const v = state.voice
-  el.hidden = !v && !app.canRecordVoice()
+  el.hidden = false
   el.classList.toggle('recording', v?.phase === 'recording')
   el.classList.toggle('busy', v?.phase === 'uploading')
-  el.disabled = v?.phase === 'uploading'
+  el.disabled = v?.phase === 'uploading' || (!v && !app.canRecordVoice())
   el.textContent = v?.phase === 'recording' ? '■' : v?.phase === 'uploading' ? '…' : '🎙'
   el.title = v?.phase === 'recording' ? 'Stop recording' : v?.phase === 'uploading' ? 'Transcribing and organizing…' : app.canRecordVoice() ? 'Record a voice note (transcribed and organized into notes)' : 'Connect to your account to record voice notes'
 }
@@ -254,22 +245,8 @@ function pathLabel(names: string[]): string {
 }
 
 function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
-  const { replica, view } = state
+  const { view } = state
   const labels = app.labels()
-  const transport = app.transport()
-  const chipText = state.virtual
-    ? `${transport === 'virtual' ? 'Virtual peer' : 'Disconnected virtual peer'} of ${state.virtual.hostName}`
-    : transport === 'direct'
-    ? `Syncing with ${state.direct?.remoteName ?? 'another device'}`
-    : transport === 'account'
-      ? `${state.session?.kind === 'peer' ? 'Invited to' : 'Device syncs'} ${pathLabel(labels.scope)}`
-      : 'Local only'
-  const attached = span('chip', chipText)
-  attached.title = `peer ${replica.meta.peerId}`
-  const branch = app.currentBranch()
-  const branchChip = branch ? span('chip', `⎇ ${branch}`) : null
-  if (branchChip) branchChip.title = 'git branch of this project directory; each branch keeps its own tasks and proposal'
-
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
   const homeCrumb = button('crumb', labels.scope.length ? pathLabel(labels.scope) : 'Home', () => app.goTo([]))
@@ -285,15 +262,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
     current.classList.add('current')
   }
 
-  const controls: HTMLElement[] = []
-  if (view.length > 0 && state.session?.kind === 'user') {
-    const here = app.currentScope()
-    const attachHere = button('secondary small', `Sync only ${pathLabel([...labels.scope, ...labels.view])} on this device`, () => app.attachAt(here))
-    attachHere.disabled = !app.canAttach(here)
-    attachHere.title = attachHere.disabled ? 'Available while online with no unsynced changes' : ''
-    controls.push(attachHere)
-  }
-  el.replaceChildren(attached, ...(branchChip ? [branchChip] : []), crumbs, ...controls)
+  el.replaceChildren(crumbs)
 }
 
 function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): HTMLSelectElement {
@@ -408,6 +377,122 @@ let pointerDown = false
 const noteHtml = new Map<string, string>()
 document.addEventListener('mouseup', () => { pointerDown = false })
 
+type NodeLayout = 'tree' | 'chat' | 'grid' | 'list'
+const workspacePrefs = new WeakMap<App, Map<string, { tab: 'peers' | 'integrations' | 'device'; layout: NodeLayout; actionTab: string; search: string; open: Record<string, boolean> }>>()
+function workspace(app: App) {
+  let map = workspacePrefs.get(app)
+  if (!map) { map = new Map(); workspacePrefs.set(app, map) }
+  const key = JSON.stringify([app.state.atRoot, app.state.view])
+  let prefs = map.get(key)
+  if (!prefs) { prefs = { tab: 'peers', layout: 'tree', actionTab: 'main', search: '', open: { actions: true } }; map.set(key, prefs) }
+  return prefs
+}
+function iconButton(icon: string, label: string, action: () => void): HTMLButtonElement {
+  const b = button('icon', icon, action); b.title = label; b.setAttribute('aria-label', label); return b
+}
+function accordion(app: App, key: string, label: string, ...children: HTMLElement[]): HTMLDetailsElement {
+  const d = document.createElement('details'), summary = document.createElement('summary')
+  d.className = 'node-accordion'; d.dataset.accordion = key; d.open = workspace(app).open[key] ?? false
+  summary.textContent = label; d.append(summary, ...children)
+  const prefs = workspace(app)
+  d.addEventListener('toggle', () => { prefs.open[key] = d.open })
+  return d
+}
+function dropTrigger(event: DragEvent, app: App, path: Scope): boolean {
+  const kind = event.dataTransfer?.getData('application/x-fos-trigger') as import('../../shared/sync/triggers').TriggerKind | undefined
+  if (!kind || !app.triggerKinds(path).includes(kind)) return false
+  event.preventDefault(); event.stopPropagation()
+  const value = kind === 'timer' ? window.prompt('When? Include a timezone, e.g. 2026-10-15T09:00:00-07:00') : kind === 'cron' ? window.prompt('Five-field UTC cron expression', '0 9 * * *') : ''
+  if (value !== null) app.configureTrigger(kind, value, true, path)
+  return true
+}
+function choiceButton(app: App, at: Scope, id: string, choice: number, label: string, absolute = false): HTMLButtonElement {
+  const b = button('secondary small', label, () => app.supplyRequirementAt(at, id, { capability: 'choice', choice }, absolute))
+  const connection = app.connectionOption([...(absolute ? at : [...app.state.view, ...at]), id], choice)
+  if (connection && !connection.enabled) { b.disabled = true; b.title = 'Requires an active Fos server and a configured provider' }
+  return b
+}
+function currentNodeActions(app: App): Action[] {
+  const row = app.currentRow(), state = app.state
+  return [
+    { label: 'Connect peer…', run: () => app.openModal('direct') },
+    ...(app.canSpawnVirtualPeer() ? [{ label: 'Spawn virtual peer…', run: () => app.openModal('virtual') }] : []),
+    ...(state.session?.kind === 'user' ? [{ label: 'Invite device here (QR)…', run: () => void app.startInvite() }] : []),
+    { label: 'Sync / persist node', run: () => void app.syncNow('node action') },
+    ...(state.session?.kind === 'user' ? [{ label: 'Sync only this node on this device', disabled: !app.canAttach(app.currentScope()), run: () => app.attachAt(app.currentScope()) }] : []),
+    ...(row && row.id !== HOME_ID ? [{ label: row.kind === 'template' ? 'Change to task' : 'Change to template', run: () => app.changeCurrentKind(row.kind === 'template' ? 'task' : 'template') }] : []),
+    ...(row ? [{ label: 'Create branch…', run: () => { const name = window.prompt('New branch name', 'alternative'); if (name) app.createNodeBranch(state.view.slice(0, -1), row.id, name, true) } }] : [])
+  ]
+}
+function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
+  const prefs = workspace(app), tabs = div('node-tabs', '')
+  tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Node context')
+  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device']] as const) {
+    const b = iconButton(icon, label, () => { prefs.tab = tab; app.refresh() })
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab)); tabs.append(b)
+  }
+  const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
+  const rows = document.createElement('ul'); rows.className = 'list context-peers'
+  rows.append(...renderRootRows(state, app, prefs.tab)); panel.append(rows)
+  if (prefs.tab === 'peers') {
+    const invite = button('secondary small', 'Devices · invite with QR', () => void app.startInvite()); invite.disabled = state.session?.kind !== 'user'
+    panel.append(invite)
+    const phone = state.integrations.find(p => p.id === 'phone')
+    const phoneButton = button('secondary small', 'Connect phone (SMS)', () => void app.connectIntegration('phone')); phoneButton.disabled = !phone?.configured || !app.isOnline('fos'); phoneButton.title = 'Link a phone number for SMS notifications; use the QR invitation for app access'; panel.append(phoneButton)
+    if (app.canSpawnVirtualPeer()) panel.append(button('secondary small', 'New virtual peer', () => app.openModal('virtual')))
+  }
+  if (prefs.tab === 'integrations') panel.prepend(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
+  if (prefs.tab === 'device') panel.append(renderDeviceSettings(state, app, false))
+  // Keep the link panel itself mounted while switching tabs or receiving sync updates.
+  let link = el.querySelector<HTMLElement>('[data-slot="link"]')
+  if (!link) { link = div('', ''); link.dataset.slot = 'link' }
+  link.hidden = prefs.tab !== 'peers'
+  const active = document.activeElement as HTMLElement | null
+  if (active && el.contains(active) && active.matches('input,select')) return
+  el.replaceChildren(tabs, panel, link)
+}
+function renderDeviceSettings(state: AppState, app: App, settings: boolean): HTMLElement {
+  const box = div('device-settings', '')
+  const transport = app.transport()
+  if (transport) box.append(div('muted', state.virtual ? `Virtual peer of ${state.virtual.hostName}` : `Device syncs ${pathLabel(app.labels().scope)}`))
+  if (!settings) return box
+  const name = document.createElement('input'); name.type = 'text'; name.value = state.deviceName; name.setAttribute('aria-label', 'Device name')
+  name.addEventListener('change', () => { if (name.value.trim()) app.setDeviceName(name.value.trim()) })
+  const nameLabel = document.createElement('label'); nameLabel.append('Device name ', name); box.append(nameLabel)
+  const theme = document.createElement('select'); theme.setAttribute('aria-label', 'Device theme')
+  for (const value of ['system', 'light', 'dark']) theme.append(new Option(value[0].toUpperCase() + value.slice(1), value))
+  theme.value = document.documentElement.dataset.theme || 'system'
+  theme.addEventListener('change', () => { document.documentElement.dataset.theme = theme.value; try { localStorage.setItem('fos.device.theme', theme.value) } catch { /* session-only preference */ } })
+  const label = document.createElement('label'); label.append('Device theme ', theme); box.append(label)
+  for (const [permission, label] of [['microphone', 'Voice / audio'], ['camera', 'Video'], ['geolocation', 'Location']] as const) {
+    const status = span('muted', 'Not checked')
+    const check = button('secondary small', `Check ${label.toLowerCase()} permission`, async () => {
+      try { const result = await navigator.permissions.query({ name: permission as PermissionName }); status.textContent = result.state }
+      catch { status.textContent = 'Status unavailable in this browser. Use the browser’s site permissions.' }
+    })
+    box.append(div('permission-label', label), check, status)
+  }
+  const connections = div('row', '')
+  connections.append(button('secondary small', 'Connect Server', () => app.openModal('connect')), button('secondary small', 'Direct Connect', () => app.openModal('direct')))
+  box.append(connections)
+  const rows = document.createElement('ul'); rows.className = 'list'; rows.append(...renderRootRows(state, app, 'settings')); box.append(rows)
+  return box
+}
+function placeholderForm(app: App): HTMLElement {
+  const form = document.createElement('form'); form.className = 'placeholder-form'
+  const name = document.createElement('input'); name.placeholder = 'Placeholder name'; name.setAttribute('aria-label', 'Placeholder name'); name.required = true
+  const type = document.createElement('select'); type.setAttribute('aria-label', 'Placeholder type')
+  type.append(new Option('Text', 'text'))
+  for (const cap of app.allCapabilities()) type.append(new Option(CAPABILITY_LABEL[cap] ?? cap, cap))
+  type.append(new Option('Create named type…', 'custom'))
+  const custom = document.createElement('input'); custom.placeholder = 'New type name'; custom.setAttribute('aria-label', 'New type name'); custom.hidden = true
+  type.addEventListener('change', () => { custom.hidden = type.value !== 'custom'; custom.required = !custom.hidden })
+  const add = button('secondary small', 'Create placeholder', () => undefined); add.type = 'submit'
+  form.append(name, type, custom, add)
+  form.addEventListener('submit', event => { event.preventDefault(); app.addPlaceholder(name.value.trim(), type.value === 'custom' ? custom.value.trim() : type.value); name.value = '' })
+  return form
+}
+
 const NODE_DRAG_TYPE = 'application/x-fos-node'
 const nodeFilters = new WeakMap<App, { key: string; value: string }>()
 const details = new WeakMap<HTMLElement, { key: string; store: AppState['replica']['store']; input: HTMLTextAreaElement; baseline: string; draft: { store: AppState['replica']['store']; head: string; path: Scope }; controls: HTMLElement }>()
@@ -417,15 +502,15 @@ function rowMatches(row: TaskView, filter: string, state: AppState, path: Scope)
 }
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const row = app.currentRow()
-  el.hidden = state.atRoot || !row
-  if (el.hidden || !row) { el.replaceChildren(); details.delete(el); return }
-  const key = JSON.stringify([state.view, row.branches?.selected])
+  el.hidden = false
+  const title = row?.title ?? (state.atRoot ? 'Settings' : 'Home')
+  const key = JSON.stringify([state.atRoot, state.view, row?.branches?.selected])
   let cached = details.get(el)
   if (!cached || cached.key !== key || cached.store !== state.replica.store) {
     const input = document.createElement('textarea'); input.className = 'node-text'; input.rows = 4
-    input.setAttribute('aria-label', 'Current node text'); input.value = row.title
+    input.setAttribute('aria-label', 'Current node text'); input.value = title; input.hidden = !row
     const controls = div('node-actions', '')
-    const entry = { key, store: state.replica.store, input, baseline: row.title, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls }
+    const entry = { key, store: state.replica.store, input, baseline: title, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls }
     const save = () => {
       if (entry.input.value === entry.baseline) return
       const text = entry.input.value; entry.baseline = text
@@ -439,61 +524,93 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
       if (event.key === 'Escape') { event.preventDefault(); input.value = entry.baseline; input.blur() }
     })
-    const search = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = 'Find a node to link'
+    const search = div('node-search', '')
     const query = document.createElement('input'); query.type = 'search'; query.placeholder = 'Search nodes…'; query.setAttribute('aria-label', 'Find a node to link')
-    const results = div('node-results', '')
+    const results = div('node-results', ''); results.id = 'node-search-results'; results.setAttribute('role', 'listbox'); query.setAttribute('aria-controls', results.id)
     const searchNow = () => {
       results.replaceChildren()
       if (!query.value.trim()) return
       for (const found of app.searchLocalNodes(query.value)) {
         const pick = button('secondary small', `${found.row.title} · ${found.row.kind}`, () => app.linkNode(found.row.id))
         pick.disabled = !app.canLinkNode(found.row.id)
-        const result = div('node-search-result', ''); result.draggable = true; result.append(pick)
+        const result = div('node-search-result', ''); result.setAttribute('role', 'option'); result.setAttribute('aria-selected', 'false'); result.draggable = true; result.append(pick)
         pick.title = pick.disabled ? 'Drag to a matching child requirement' : 'Click to link here, or drag to a child'
         result.addEventListener('dragstart', event => { event.dataTransfer?.setData(NODE_DRAG_TYPE, found.row.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'link' })
         results.append(result)
       }
     }
     query.addEventListener('input', searchNow); query.addEventListener('keydown', event => event.stopPropagation())
-    search.append(summary, query, results)
-    el.replaceChildren(input, controls, search)
+    query.setAttribute('role', 'combobox'); query.setAttribute('aria-autocomplete', 'list'); query.setAttribute('aria-expanded', 'false')
+    query.addEventListener('input', () => query.setAttribute('aria-expanded', String(!!results.children.length)))
+    query.addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); results.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() } if (event.key === 'Escape') { results.replaceChildren(); query.setAttribute('aria-expanded', 'false') } })
+    results.addEventListener('keydown', event => { const buttons = [...results.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement); if (event.key === 'ArrowDown') { event.preventDefault(); buttons[index + 1]?.focus() } if (event.key === 'ArrowUp') { event.preventDefault(); if (index > 0) buttons[index - 1].focus(); else query.focus() } if (event.key === 'Escape') query.focus() })
+    search.append(query, results)
+    const toolbar = div('node-toolbar', '')
+    toolbar.append(iconButton('⋯', 'Current node actions', () => app.openContextMenu({ kind: 'node' })))
+    toolbar.lastElementChild!.classList.add('more', 'node-menu-button')
+    const context = div('node-context', '')
+    const values = div('node-values', '')
+    const dynamicValues = div('node-values-dynamic', '')
+    values.append(search, placeholderForm(app), dynamicValues)
+    const voice = div('', ''); voice.dataset.slot = 'voice'
+    const repository = div('', ''); repository.dataset.slot = 'repository'
+    const settings = state.atRoot ? renderDeviceSettings(state, app, true) : div('', '')
+    el.replaceChildren(toolbar, input, accordion(app, 'context', 'Node context', context), accordion(app, 'actions', 'Node actions', controls, voice, repository), accordion(app, 'values', 'Node values', values), settings)
     details.set(el, entry); cached = entry
   } else if (cached.input.value === cached.baseline) {
-    cached.baseline = row.title; cached.input.value = row.title
+    cached.baseline = title; cached.input.value = title
     cached.draft.head = headCid(state.replica)
   }
+  renderNodeContext(el.querySelector<HTMLElement>('.node-context')!, state, app)
   const controls = cached.controls
   controls.replaceChildren()
-  if (row.kind !== 'template' || row.id === HOME_ID) {
+  if (!row || row.kind !== 'template' || row.id === HOME_ID) {
     const play = button('evaluate', app.evaluating ? 'Evaluating…' : '▶ Evaluate', () => { cached!.input.dispatchEvent(new window.Event('commit-edit')); void app.evaluateCurrent() })
     play.disabled = app.evaluating; controls.append(play)
   }
-  if (row.kind === 'task' && app.subtasksAvailability([]).status === 'ready') controls.append(button('secondary small', 'Generate subtasks…', () => app.generateSubtasks([])))
-  if (row.requirement?.capability === 'llm') controls.append(button('secondary small', 'Context & results', () => app.openWork(state.view.slice(0, -1), row.id, true)))
-  if (row.requirement && !row.requirement.satisfied && !insideTemplate(state, state.view)) {
+  if (row?.kind === 'task') { const generate = button('secondary small', 'Generate subtasks…', () => app.generateSubtasks([])); generate.dataset.capability = 'llm'; generate.disabled = app.subtasksAvailability([]).status !== 'ready'; generate.title = generate.disabled ? 'Requires an active language-model handler' : ''; controls.append(generate) }
+  if (row?.requirement?.capability === 'llm') { const work = button('secondary small', 'Context & results', () => app.openWork(state.view.slice(0, -1), row.id, true)); work.dataset.capability = 'llm'; controls.append(work) }
+  if (row?.requirement && !row.requirement.satisfied && !insideTemplate(state, state.view)) {
     if (row.requirement.capability === 'confirmation' && state.session) controls.append(button('secondary small', 'Confirm', () => app.supplyRequirementAt(state.view.slice(0, -1), row.id, { capability: 'confirmation' }, true)))
-    if (row.requirement.capability === 'choice') for (const [choice, label] of (row.requirement.options ?? []).entries()) controls.append(button('secondary small', label, () => app.supplyRequirementAt(state.view.slice(0, -1), row.id, { capability: 'choice', choice }, true)))
+    if (row.requirement.capability === 'choice') for (const [choice, label] of (row.requirement.options ?? []).entries()) controls.append(choiceButton(app, state.view.slice(0, -1), row.id, choice, label, true))
   }
-  controls.append(button('secondary small', 'Connect peer…', () => app.openModal('direct')))
-  if (app.canSpawnVirtualPeer()) controls.append(button('secondary small', 'Spawn virtual peer…', () => app.openModal('virtual')))
-  controls.append(button('secondary small', 'Add argument…', () => {
-    const name = window.prompt('Argument name (use {{name}} in text)')
-    if (name) app.addTextArgument([], name, '')
-  }))
-  if (row.id !== HOME_ID) controls.append(button('secondary small', row.kind === 'template' ? 'Change to task' : 'Make template', () => app.changeCurrentKind(row.kind === 'template' ? 'task' : 'template')))
-  const triggers = document.createElement('select'); triggers.className = 'small'; triggers.setAttribute('aria-label', 'Add trigger'); triggers.title = 'Use a template to create a new instance on each event. Device triggers run while this app is open.'
-  triggers.append(new Option('Add trigger…', ''))
+  for (const redo of [false, true]) {
+    const control = iconButton(redo ? '↪' : '↶', redo ? 'Redo in this node' : 'Undo in this node', () => { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); app.undoNode(redo) })
+    control.disabled = !app.canUndoNode(redo); control.addEventListener('mousedown', e => e.preventDefault()); controls.append(control)
+  }
+  const persist = iconButton('⟳', 'Sync / persist node', () => { cached!.input.dispatchEvent(new window.Event('commit-edit')); void app.syncNow('node action') })
+  persist.disabled = state.connection === 'syncing'; controls.append(persist)
+  if (row && !row.branches) controls.append(button('secondary small', 'Branches…', () => { const name = window.prompt('New branch name', 'alternative'); if (name) app.createNodeBranch(state.view.slice(0, -1), row.id, name, true) }))
+  const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
+  dynamicValues.replaceChildren()
+  for (const arg of app.placeholders()) {
+    const line = div('placeholder-row', '')
+    line.append(span('', `${arg.name} · ${arg.type}`), span('muted', insideTemplate(state, state.view) || row?.kind === 'template' ? 'template parameter' : arg.status))
+    const pick = document.createElement('select'); pick.setAttribute('aria-label', `Bind ${arg.name}`); pick.append(new Option('Choose matching value…', ''))
+    for (const candidate of arg.candidates) pick.append(new Option(candidate.label, candidate.cid))
+    pick.disabled = !arg.candidates.length; pick.addEventListener('change', () => app.bindPlaceholder(arg.id, pick.value)); line.append(pick); dynamicValues.append(line)
+  }
+  const triggers = document.createElement('select'); triggers.className = 'small'; triggers.setAttribute('aria-label', 'Add trigger workflow'); triggers.title = 'Use a template to create a new instance on each event. Device triggers run while this app is open.'
+  triggers.append(new Option('Create trigger workflow…', ''))
   for (const kind of app.triggerKinds()) triggers.append(new Option(kind === 'task-completion' ? 'When parent completes' : kind === 'request' ? 'On request / proposal' : kind === 'cron' ? 'Cron (server, UTC)' : 'Timer (this device)', kind))
   triggers.addEventListener('change', () => {
     const kind = triggers.value as import('../../shared/sync/triggers').TriggerKind
     if (!kind) return
     const value = kind === 'timer' ? window.prompt('When? Include a timezone, e.g. 2026-10-15T09:00:00-07:00') : kind === 'cron' ? window.prompt('Five-field UTC cron expression', '0 9 * * *') : ''
-    if (value !== null) app.configureTrigger(kind, value)
+    if (value !== null) app.configureTrigger(kind, value, true)
   })
-  controls.append(triggers)
+  dynamicValues.append(triggers)
+  const triggerPalette = div('trigger-palette row', '')
+  for (const kind of app.triggerKinds()) {
+    const tile = button('secondary small', kind, () => { triggers.value = kind; triggers.dispatchEvent(new window.Event('change')) })
+    tile.draggable = true; tile.title = 'Click or drag to a node to create a trigger workflow'
+    tile.addEventListener('dragstart', event => { event.dataTransfer?.setData('application/x-fos-trigger', kind); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
+    triggerPalette.append(tile)
+  }
+  dynamicValues.append(triggerPalette)
   const trigger = app.currentTrigger(), triggerState = app.currentTriggerState()
-  if (trigger) controls.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
-  if (triggerState && ['failed', 'running'].includes(triggerState.status)) controls.append(button('secondary small', 'Review / rearm trigger', () => app.retryCurrentTrigger()))
+  if (trigger) dynamicValues.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
+  if (triggerState && ['failed', 'running'].includes(triggerState.status)) dynamicValues.append(button('secondary small', 'Review / rearm trigger', () => app.retryCurrentTrigger()))
   const record = app.evaluationStatus()
   if (record) controls.append(span('evaluation-status', `Evaluation: ${record.status}${record.error ? ' — ' + record.error : ''}`))
   if (record && !['committed', 'rolled-back'].includes(record.status)) controls.append(button('secondary small', 'Review recovery', () => void app.recoverCurrentEvaluation()))
@@ -507,7 +624,29 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const tab = button('secondary small', tag === 'all' ? 'All children' : tag, () => { nodeFilters.set(app, { key: filterKey, value: tag }); app.refresh() })
     tab.setAttribute('aria-pressed', String(nodeFilters.get(app)?.value === tag)); tabs.append(tab)
   }
-  controls.append(tabs)
+  dynamicValues.append(tabs)
+  const actionTabs = div('node-tabs', ''); actionTabs.setAttribute('role', 'tablist'); actionTabs.setAttribute('aria-label', 'Node action capabilities')
+  const availableTabs: Array<[string, string, string]> = [['main', '⌂', 'Main actions']]
+  if (row?.kind === 'task' || row?.requirement?.capability === 'llm') availableTabs.push(['llm', '✦', 'Language model actions'])
+  if (app.repositoryInfo()) availableTabs.push(['repo', '⑂', 'Repository actions'])
+  if (!availableTabs.some(([key]) => key === workspace(app).actionTab)) workspace(app).actionTab = 'main'
+  for (const [key, icon, label] of availableTabs) {
+    const b = iconButton(icon, label, () => { workspace(app).actionTab = key; app.refresh() }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(workspace(app).actionTab === key)); actionTabs.append(b)
+  }
+  for (const control of Array.from(controls.children) as HTMLElement[]) control.hidden = workspace(app).actionTab !== 'main' && control.dataset.capability !== workspace(app).actionTab
+  controls.prepend(actionTabs)
+  el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = workspace(app).actionTab !== 'main'
+  el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !['main', 'repo'].includes(workspace(app).actionTab)
+  const layouts = div('node-tabs', ''); layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Child view')
+  for (const [layout, icon, label] of [['tree', '☷', 'Tree view'], ['chat', '☏', 'Chat view'], ['grid', '▦', 'Grid / pin view'], ['list', '≡', 'List view']] as const) {
+    const b = iconButton(icon, label, () => { workspace(app).layout = layout; app.refresh() }); b.setAttribute('aria-pressed', String(workspace(app).layout === layout)); layouts.append(b)
+  }
+  dynamicValues.append(layouts)
+  let filter = el.querySelector<HTMLInputElement>('.child-search')
+  if (!filter) {
+    filter = document.createElement('input'); filter.type = 'search'; filter.className = 'child-search'; filter.placeholder = 'Filter children…'; filter.setAttribute('aria-label', 'Filter children'); filter.value = workspace(app).search
+    filter.addEventListener('input', () => { workspace(app).search = filter!.value; app.refresh() }); el.querySelector('.node-values')!.prepend(filter)
+  }
 }
 
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
@@ -519,9 +658,24 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   if (!reuse && !state.selected) focusGhost = true
   const ghost = reuse ? cached.row : renderGhostRow(node, state, app)
   const filter = nodeFilters.get(app)
-  const matches = (row: TaskView): boolean => rowMatches(row, filter?.value ?? 'all', state, [...state.view, row.id])
-  const filtered = filter?.key === JSON.stringify(state.view) && filter.value !== 'all' ? { ...node, tasks: node.tasks.filter(matches) } : node
-  const rows = state.atRoot ? renderRootRows(state, app) : renderRows(filtered, [], 0, state, app)
+  const prefs = workspace(app)
+  el.className = `list tree layout-${prefs.layout}`
+  const textMatches = (row: TaskView, path: Scope): boolean => row.title.toLowerCase().includes(prefs.search.toLowerCase()) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
+  const matches = (row: TaskView): boolean => rowMatches(row, filter?.key === path ? filter.value : 'all', state, [...state.view, row.id]) && textMatches(row, [...state.view, row.id])
+  const filtered = ((filter?.key === path && filter.value !== 'all') || prefs.search) ? { ...node, tasks: node.tasks.filter(matches) } : node
+  let rows = renderRows(filtered, [], 0, state, app)
+  if (prefs.layout === 'chat') {
+    const comments: Array<{ row: TaskView; at: Scope }> = []
+    const collect = (node: NodeView, at: Scope) => {
+      if (at.length > 64 || comments.length >= 5000) return
+      for (const row of node.tasks) {
+        if (row.kind === 'comment' && row.title.toLowerCase().includes(prefs.search.toLowerCase())) comments.push({ row, at })
+        if (row.childCount) { const child = viewAt(state.replica, [...state.view, ...at, row.id]); if (child) collect(child, [...at, row.id]) }
+      }
+    }
+    collect(filtered, []); comments.sort((a, b) => (a.row.author?.time ?? a.row.createdAt) - (b.row.author?.time ?? b.row.createdAt))
+    rows = comments.map(({ row, at }, i) => { const el = renderRow(row, at, 0, i, comments.length, state, app); if (at.length) el.append(span('muted chat-path', at.map((id, index) => viewAt(state.replica, [...state.view, ...at.slice(0, index)])?.tasks.find(r => r.id === id)?.title ?? id).join(' › '))); return el })
+  }
   if (reuse) {
     // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
     for (const child of Array.from(el.children)) if (child !== ghost && child.parentNode === el) child.remove()
@@ -566,7 +720,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   const commit = (): string | null => {
     if (app.state.replica.store !== store || JSON.stringify(app.state.view) !== path) return null
     if (committed) return null
-    const raw = input.value
+    const raw = workspace(app).layout === 'chat' && input.value.trim() ? '// ' + input.value : input.value
     if (!raw.trim()) return null
     committed = true
     const parsed = parseRowInput(raw)
@@ -592,7 +746,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
       focusGhost = true // Set before commit: adding the first row renders synchronously.
       const created = commit()
       if (created && (event.ctrlKey || event.metaKey) && !event.shiftKey) { const row = app.rowAt([created]); if (row?.kind === 'task') app.toggleTaskAt([], row) }
-      if (created && (event.ctrlKey || event.metaKey) && event.shiftKey) { focusGhost = false; app.addRowInside([], created) }
+      if (created && (event.ctrlKey || event.metaKey) && event.shiftKey) { focusGhost = false; app.addRowInside([], created, workspace(app).layout === 'chat' ? 'comment' : 'plain') }
       return
     }
     if (k === 'ArrowDown' && !event.altKey) { event.preventDefault(); event.stopPropagation(); focusGhost = true; const created = commit(); if (!created && node.tasks.length) moveSelection(app, 1); return }
@@ -658,7 +812,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
     const path = [...at, task.id]
     const editingBelow = !!state.selected && state.selected.length > path.length && path.every((id, i) => state.selected![i] === id)
     // Responsive depth limits must not hide the child the user just opened for editing.
-    const expanded = editingBelow || (!state.collapsed.includes(task.id) && depth + 1 < maxDepth())
+    const expanded = editingBelow || (workspace(app).layout === 'tree' && !state.collapsed.includes(task.id) && depth + 1 < maxDepth())
     if (expanded && (task.childCount > 0 || task.childChoices > 0 || app.textArguments(path).length > 0)) {
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
@@ -684,6 +838,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   li.draggable = true
   li.tabIndex = 0
   li.dataset.id = task.id
+  li.dataset.path = JSON.stringify(path)
   // Selecting re-renders the list, which would destroy a row that is being dragged:
   // select on keyboard focus and on click (after any drag has ended), never on mouse-down focus.
   li.addEventListener('focus', () => { if (!selected && !pointerDown) app.select(path) })
@@ -715,7 +870,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   })
   const peerDrag = (event: DragEvent) => !!event.dataTransfer?.types.includes(PEER_DRAG_TYPE)
   li.addEventListener('dragover', (event) => {
-    if (event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { event.preventDefault(); li.classList.add('drop-into'); return }
+    if (event.dataTransfer?.types.some(t => [NODE_DRAG_TYPE, 'application/x-fos-trigger'].includes(t))) { event.preventDefault(); li.classList.add('drop-into'); return }
     if (peerDrag(event)) { event.preventDefault(); li.classList.add('drop-into'); return }
     if (!drag || drag.id === task.id) return
     event.preventDefault()
@@ -727,6 +882,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   })
   li.addEventListener('dragleave', () => clearDropMarks(li))
   li.addEventListener('drop', (event) => {
+    if (dropTrigger(event, app, [...app.state.view, ...at, task.id])) { clearDropMarks(li); return }
     event.preventDefault()
     clearDropMarks(li)
     if (event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE), [...app.state.view, ...at, task.id]); return }
@@ -788,7 +944,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.addEventListener('click', (event) => { if ((event.target as HTMLElement).closest('a,button')) return; event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
   } else {
     body = span('title', '')
-    if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
+    if (task.kind === 'template' && task.id !== HOME_ID) { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
     body.append(renderInlineText(task.title))
     if (task.kind === 'comment') {
       const who = span('author', task.author?.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'comment')
@@ -831,6 +987,7 @@ const PEER_DRAG_TYPE = 'application/x-fos-peer'
 function visibleRows(): Array<{ el: HTMLElement; path: Scope }> {
   const rows = [...document.querySelectorAll<HTMLElement>('.tree .task[data-id]')]
   return rows.map((row, index) => {
+    if (row.dataset.path) return { el: row, path: JSON.parse(row.dataset.path) as Scope }
     const path: string[] = [row.dataset.id as string]
     let depth = Number(row.style.getPropertyValue('--depth'))
     for (let i = index - 1; i >= 0 && depth > 0; i--) {
@@ -901,7 +1058,8 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if ((k === 'ArrowLeft' || k === 'ArrowRight') && !alt && !ctrl && !event.shiftKey && input.selectionStart === input.selectionEnd && (k === 'ArrowLeft' ? input.selectionStart === 0 : input.selectionEnd === input.value.length)) { event.preventDefault(); commit(); const collapsed = app.state.collapsed.includes(task.id); if ((k === 'ArrowLeft' && !collapsed) || (k === 'ArrowRight' && collapsed)) app.toggleCollapsed(task.id); return }
     if (k === 'ArrowUp' && !event.shiftKey && caretOnEdge(input, 'first')) { event.preventDefault(); commit(); moveSelection(app, -1); return }
     if (k === 'ArrowDown' && !event.shiftKey && caretOnEdge(input, 'last')) { event.preventDefault(); commit(); moveSelection(app, 1); return }
-    if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id); return }
+    if (k === 'Enter' && workspace(app).layout === 'chat' && !event.shiftKey) { event.preventDefault(); commit(); focusGhost = true; app.select(null); app.refresh(); return }
+    if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id, workspace(app).layout === 'chat' ? 'comment' : 'plain'); return }
     if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); const current = app.rowAt(path); if (current?.kind === 'task') { app.toggleTaskAt(at, current); app.refresh() } else if (current) app.addRowBelow(at, task.id); return }
     if (k === 'Enter' && !multiline && !event.shiftKey) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
     if (k === 'Tab') { event.preventDefault(); commit(); app.select(path); app.indentSelected(event.shiftKey); return }
@@ -914,6 +1072,8 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   input.addEventListener('blur', () => { if (!renderDepth) commit() })
   // keep the focus on the editor when the row is (re)rendered as selected
   queueMicrotask(() => {
+    const active = document.activeElement as HTMLElement | null
+    if (active?.matches('input,textarea,select') && !active.closest('.tree')) return
     if (input.isConnected && document.activeElement !== input && !state.modal && !state.contextMenu) {
       input.focus()
       const end = input.value.length
@@ -1034,7 +1194,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       const handler = (cap: 'search' | 'market' | 'mail') => app.capabilityAvailable(cap, [...state.view, ...at, task.id]) ? peers.find((p) => p.online && p.capabilities.includes(cap)) : undefined
       const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
-      if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(button('secondary small', opt, () => app.supplyRequirementAt(at, task.id, { capability: 'choice', choice: i })))))
+      if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
       if (r.capability === 'task') hint('add a [ ] task inside and check it off')
       if (r.capability === 'search') {
         const fos = handler('search')
@@ -1187,11 +1347,12 @@ function renderContextMenu(el: HTMLElement, state: AppState, app: App): void {
   const menu = state.contextMenu
   el.hidden = !menu
   if (!menu) { el.replaceChildren(); return }
-  const actions: Action[] = menu.kind === 'task'
+  const actions: Action[] = menu.kind === 'node' ? currentNodeActions(app) : menu.kind === 'task'
     ? taskActions(menu.at, app.rowAt([...menu.at, menu.task.id]) ?? menu.task, app)
     : [{ label: 'Remove this device from the node', run: () => app.removePeer(menu.peerId), danger: true }]
   const groupOf = (label: string) => /^Delete/.test(label) ? 'Delete' : /^Change to/.test(label) ? 'Change type' : /^(Move|Indent|Outdent|Zoom|Go to)/.test(label) ? 'Move' : /^(Connect peer|Spawn virtual|Invite|Sync|Send|List|Remove from market|Add @|Attach MCP)/.test(label) ? 'Sharing' : 'Add and edit'
   const items: HTMLElement[] = []
+  if (menu.kind === 'node' && app.transport()) items.push(div('menu-meta muted', state.virtual ? `Virtual peer of ${state.virtual.hostName}` : `Device syncs ${pathLabel(app.labels().scope)}`))
   for (const group of ['Add and edit', 'Change type', 'Move', 'Sharing', 'Delete']) {
     const grouped = actions.filter((action) => groupOf(action.label) === group)
     if (!grouped.length) continue
@@ -1205,7 +1366,7 @@ function renderContextMenu(el: HTMLElement, state: AppState, app: App): void {
   }
   el.replaceChildren(...items)
   // place next to the selected row (or the peers list)
-  const anchor = menu.kind === 'task'
+  const anchor = menu.kind === 'node' ? document.querySelector<HTMLElement>('.node-menu-button') : menu.kind === 'task'
     ? (document.querySelector(`.tree .task[data-id="${menu.task.id}"] .more`) as HTMLElement | null)
     : (document.querySelector(`.peer-row[data-peer="${menu.peerId}"] .more`) as HTMLElement | null)
   const rect = anchor?.getBoundingClientRect()
@@ -1365,7 +1526,7 @@ function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: 
  * attached devices of the Home node, with the capability rows the owner exposes to each (`to`) and accepts from each
  * (`from`). Constructors beneath the root use the ordinary row editor.
  */
-function renderRootRows(state: AppState, app: App): HTMLElement[] {
+function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations' | 'device' | 'settings'): HTMLElement[] {
   const rows: HTMLElement[] = []
   const rowShell = (cls: string): HTMLLIElement => {
     const li = document.createElement('li')
@@ -1373,7 +1534,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     li.style.setProperty('--depth', '0')
     return li
   }
-  const peers = app.contextPeers()
+  const peers = app.contextPeers().filter(p => mode === 'settings' ? false : mode === 'integrations' ? !!(p.integration || p.mcp) : mode === 'device' ? p.id === state.replica.meta.peerId : !(p.integration || p.mcp) && p.id !== state.replica.meta.peerId)
   const owner = app.canApprove()
   const capTitle: Record<string, string> = {
     read: 'May read the content of the node',
@@ -1483,6 +1644,11 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     } else if (p.capabilities.length) {
       lines.append(direction('offers:', 'How this device can reach the peer', chips(p.capabilities, [], p.online, null)))
     }
+    const offers = p.name === 'fos' ? p.capabilities : p.integration ? p.integration.provides : p.accepts
+    if (offers.length) lines.append(direction('available here:', 'Handlers available to this node and its children. Overrides inherit until another node overrides them.', offers.map(cap => {
+      const b = button('chip cap-chip' + (p.disabled.includes(cap) || !p.online ? ' off' : ''), CAPABILITY_LABEL[cap] ?? cap, () => app.setPeerOffers(p.name === 'fos' ? 'fos' : p.id, [cap], p.disabled.includes(cap)))
+      b.disabled = !owner; b.setAttribute('aria-pressed', String(!p.disabled.includes(cap))); return b
+    })))
     const meta = span('row-meta', '')
     if (p.member && owner) { const remove = button('icon more small-icon', '×', () => app.removePeerHere(p.id)); remove.title = `Remove @${p.name} from Home`; meta.append(remove) }
     else if (state.session?.kind === 'user' && !p.isAccount && !p.member && !p.integration && !p.mcp && p.id !== state.replica.meta.peerId) { const more = button('icon more small-icon', '⋯', () => app.openContextMenu({ kind: 'peer', peerId: p.id })); more.title = 'Device actions'; meta.append(more) }
@@ -1492,18 +1658,24 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     summary.textContent = 'Connection and capabilities'
     details.append(summary, connection, lines)
     details.className = 'peer-details'
+    const prefs = workspace(app); details.open = prefs.open[`peer:${p.id}`] ?? false
+    details.addEventListener('toggle', () => { prefs.open[`peer:${p.id}`] = details.open })
     body.append(title, details)
     li.append(span('zoom-dot', ''), span('handle', ''), dot, body, meta)
     rows.push(li)
   }
-  {
+  if (mode === 'peers' || mode === 'integrations') {
     const li = rowShell('add-peer-row')
     const form = document.createElement('form')
     form.className = 'row add-peer'
     const type = document.createElement('select')
     type.setAttribute('aria-label', 'Peer connection type')
-    type.append(new Option('Choose a connection…', ''), new Option('Fos account member', 'member'), new Option('Direct device connection', 'direct'), new Option('Invite device', 'invite'))
-    if (app.canSpawnVirtualPeer()) type.append(new Option('Virtual peer (new tab)', 'virtual'))
+    type.append(new Option('Choose a connection…', ''))
+    if (mode === 'peers') type.append(new Option('Fos account member', 'member'), new Option('Direct device connection', 'direct'), new Option('Invite device (QR)', 'invite'))
+    if (mode === 'integrations') {
+      for (const label of ['Custom OAuth (unavailable)', 'Custom API (unavailable)']) { const option = new Option(label, ''); option.disabled = true; type.append(option) }
+    }
+    if (mode === 'peers' && app.canSpawnVirtualPeer()) type.append(new Option('Virtual peer (new tab)', 'virtual'))
     for (const p of peers.filter((p) => p.integration && !p.integration.connected)) {
       const option = new Option(`${p.integration!.kind === 'oauth' ? 'OAuth: ' : ''}${p.name}`, p.id)
       option.disabled = !state.session || !p.integration!.configured || p.integration!.kind === 'platform'
@@ -1516,7 +1688,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     input.id = 'add-peer-name'
     input.hidden = true
     type.addEventListener('change', () => { input.hidden = type.value !== 'member' })
-    const go = button('secondary small', 'Add peer', () => undefined)
+    const go = button('secondary small', mode === 'integrations' ? 'Add integration choice' : 'Add peer', () => undefined)
     go.type = 'submit'
     form.append(type, input, go)
     form.addEventListener('submit', (e) => {
@@ -1525,12 +1697,13 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
       else if (type.value === 'virtual') app.openModal('virtual')
       else if (type.value === 'direct') app.openModal('direct')
       else if (type.value === 'invite') void app.startInvite()
-      else if (type.value.startsWith('integration:')) void app.connectIntegration(type.value.slice('integration:'.length))
+      else if (type.value.startsWith('integration:')) { const provider = type.value.slice('integration:'.length); if (['google', 'github', 'discord'].includes(provider)) app.addIntegrationChoice(provider); else void app.connectIntegration(provider) }
+      else if (mode === 'integrations') app.addIntegrationChoice()
     })
     li.append(span('zoom-dot', ''), span('handle', ''), form)
     rows.push(li)
   }
-  if (app.canResetHome()) {
+  if (mode === 'settings' && app.canResetHome()) {
     const scoped = state.replica.meta.scope.length > 0
     const li = rowShell('reset-data-row')
     li.append(button('danger small', scoped ? 'Reset attached node content…' : 'Reset Home content…', () => {
@@ -1542,7 +1715,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     rows.push(li)
   }
   const sessions = app.dataSessions()
-  if (sessions.length) {
+  if (mode === 'settings' && sessions.length) {
     const li = rowShell('data-sessions-row')
     const label = document.createElement('label'); label.textContent = 'Saved data session: '
     const select = document.createElement('select'); select.setAttribute('aria-label', 'Saved data session')
@@ -1552,28 +1725,17 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     label.append(select); li.append(label, div('muted', 'Switching keeps each session’s data separate and disconnects sync. Sign in to reconnect its account.'))
     rows.push(li)
   }
-  const constructors = app.currentView()
-  if (constructors) rows.push(...renderRows(constructors, [], 0, state, app))
   return rows
 }
 
 function renderFooter(el: HTMLElement, state: AppState, app: App): void {
   const items: HTMLElement[] = []
-  const history = div('row', '')
-  for (const redo of [false, true]) {
-    const control = button('secondary small', redo ? 'Redo' : 'Undo', () => runHistory(app, redo))
-    control.disabled = redo ? !app.canRedo : !app.canUndo
-    control.addEventListener('mousedown', (event) => event.preventDefault())
-    history.append(control)
-  }
-  items.push(history)
   if (state.virtual) items.push(div('muted', `${state.virtual.name} · virtual peer of ${state.virtual.hostName}${state.virtual.capabilities.includes('read') && !state.virtual.capabilities.includes('edit') ? ' · read-only (local edits stay here)' : ''}`))
   if (state.notice) items.push(div(`notice ${state.notice.kind}`, state.notice.text))
   const meta = div('meta', '')
-  meta.append(span('muted', `${state.deviceName} · ${state.replica.meta.peerId.slice(0, 8)}`))
+  meta.append(span('muted', state.deviceName))
   if (state.session) meta.append(span('muted', ` · ${state.session.username}${state.session.kind === 'peer' ? ' (invited)' : ''}`))
-  if (!state.session && app.isLocal()) meta.append(button('link small', 'Connect', () => app.openModal('connect')))
-  items.push(meta)
+  items.push(meta, legalLinks(''))
   el.replaceChildren(...items)
 }
 

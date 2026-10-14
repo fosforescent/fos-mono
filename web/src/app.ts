@@ -1,5 +1,5 @@
-import { nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
-import { recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
+import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
+import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withBranches, scopeBranches, bindRepository, repositoryAt, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid } from '../../shared/sync/index'
 import { evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
@@ -22,7 +22,7 @@ import { evaluateOnServer, createRepositoryBranch, readRepository, proposeReposi
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  allocationMatches, capabilityPeers, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -225,7 +225,7 @@ export type AppState = {
   /** The phone-linking modal: waiting for a number, then for the code texted to it. */
   phone: { phase: 'number' | 'code' | 'busy'; number?: string; error?: string } | null
   /** Open context menu, if any. */
-  contextMenu: { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
+  contextMenu: { kind: 'node' } | { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
   device: { code: string; name: string | null; status: 'loading' | 'ready' | 'approved' | 'denied' | 'error'; error?: string } | null
   /** Microphone capture: recording (with start time), uploading, or idle. */
@@ -332,7 +332,7 @@ export class App {
       direct: null,
       deviceName: typeof prefs.deviceName === 'string' && prefs.deviceName ? prefs.deviceName : (config.project?.deviceName ?? defaultDeviceName()),
       manual: {},
-      collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed.filter((s): s is string => typeof s === 'string') : [],
+      collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed.filter((s): s is string => typeof s === 'string') : [HOME_ID],
       onlinePeers: [],
       serverCapabilities: null,
       policy: configPolicy ?? parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
@@ -587,7 +587,7 @@ export class App {
     this.repositoryPollAt = 0
     this.set({ replica, session: null, view: Array.isArray(prefs.view) && view(replica, prefs.view) ? prefs.view : homePath(replica), selected: null, atRoot: false,
       modal: keepModal ? this.state.modal : null, connectFlow: { phase: 'idle' }, manual: {}, device: null, voice: null, requests: [], invite: null,
-      collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed : [], contextMenu: null, work: undefined, highlighted: [], notice: null,
+      collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed : [HOME_ID], contextMenu: null, work: undefined, highlighted: [], notice: null,
       onlinePeers: [], serverCapabilities: null, policy: parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
       deviceName: prefs.deviceName ?? defaultDeviceName(), connection: 'offline', points: null, integrations: [], mcpPeers: [], phone: null, market: null })
     this.enableVirtualPeers(null)
@@ -802,8 +802,10 @@ export class App {
   get canRedo(): boolean { return this.history.canRedo }
   undo(): void { this.restoreEdit(false) }
   redo(): void { this.restoreEdit(true) }
-  private restoreEdit(redo: boolean): void {
-    const result = this.history.apply(this.state.replica, redo, this.now())
+  canUndoNode(redo = false): boolean { return this.history.canApply(this.state.replica, redo, this.state.view) }
+  undoNode(redo = false): void { this.restoreEdit(redo, this.state.view) }
+  private restoreEdit(redo: boolean, scope?: Scope): void {
+    const result = this.history.apply(this.state.replica, redo, this.now(), scope)
     if (!result) return
     const path = [...result.path]
     while (path.length && !view(result.replica, path)) path.pop()
@@ -812,7 +814,7 @@ export class App {
     const parent = keepView ? current : path.slice(0, -1)
     const selected = path.slice(parent.length)
     this.set({ replica: result.replica, view: parent, selected: selected.length ? selected : null,
-      atRoot: result.settings, collapsed: this.state.collapsed.filter((id) => !path.includes(id)), menuOpen: false, contextMenu: null, notice: null })
+      atRoot: scope ? this.state.atRoot : result.settings, collapsed: this.state.collapsed.filter((id) => !path.includes(id)), menuOpen: false, contextMenu: null, notice: null })
     this.scheduleSync()
     if (this.link?.open && this.state.direct?.role === 'host') {
       try { this.link.send({ t: 'changed' }) } catch { /* next sync retries */ }
@@ -1043,6 +1045,11 @@ export class App {
       if (known) { if (p === directPeer && !known.capabilities.includes('direct')) known.capabilities.push('direct'); continue }
       peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false })
     }
+    peers.push({ id: me, name: this.state.deviceName, online: true, capabilities: [], disabled: [], accepts: ['timer', 'task-completion', 'request'], isAccount: false, member: false })
+    for (const p of peers) {
+      const member = members.get(p.name === 'fos' ? 'fos' : p.id)
+      if (member) { p.disabled = [...(member.disabled ?? [])]; p.accepts = [...(member.accepts ?? [])] }
+    }
     return peers
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
@@ -1069,7 +1076,24 @@ export class App {
       }
     } catch { /* the rows fall back to the static registry */ }
   }
-  /** Sign in with an OAuth peer (the browser leaves for the provider and comes back with ?integration=…), or link the phone. */
+  /** Integration selection is an ordinary choice with a typed server dependency. */
+  addIntegrationChoice(provider?: string): void {
+    const id = newId(), path = [...this.state.view, id]
+    let r = addRow(this.state.replica, this.state.view, 'requirement', 'Integration', this.now(), { id, requirement: { capability: 'choice', options: ['Google', 'GitHub', 'Discord', 'Custom OAuth (unavailable)', 'Custom API (unavailable)'] } })
+    r = writeNodeValue(r, path, 'fos:connection', { providers: ['google', 'github', 'discord'] }, this.now())
+    const server = put(r.store, { data: { peerId: { content: 'fos' } }, children: [] })
+    r = addRefAt(r, path, newId(), capabilityTarget(r.store, 'http'), this.now(), server, 'server')
+    this.edit(r)
+    if (provider) { const choice = ['google', 'github', 'discord'].indexOf(provider); if (choice >= 0) this.supplyRequirementAt([], id, { capability: 'choice', choice }) }
+  }
+  connectionOption(path: Scope, choice: number): { provider?: string; enabled: boolean } | null {
+    const config = readNodeValue<{ providers: string[] }>(this.state.replica, path, 'fos:connection')
+    if (!config || !Array.isArray(config.providers)) return null
+    const selected = config.providers[choice]
+    const provider = typeof selected === 'string' && ['google', 'github', 'discord'].includes(selected) ? selected : undefined, status = this.state.integrations.find(p => p.id === provider)
+    return { provider, enabled: !!provider && !!status?.configured && this.isOnline('fos') && this.state.session?.kind === 'user' }
+  }
+  /** Reuse the account OAuth or phone connection transport. */
   async connectIntegration(id: string): Promise<void> {
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your fos account first; integrations attach to it.'); this.openModal('connect'); return }
@@ -1097,7 +1121,7 @@ export class App {
     if (!id || document.visibilityState === 'hidden') return
     await this.refreshIntegrations()
     const status = this.state.integrations.find((p) => p.id === id)
-    if (status?.connected) { this.pendingIntegration = null; this.set({ atRoot: true }); this.notify('info', `${status.name} is connected.`) }
+    if (status?.connected) { this.pendingIntegration = null; this.notify('info', `${status.name} is connected.`) }
   }
   async disconnectIntegration(id: string): Promise<void> {
     const session = this.state.session
@@ -1108,7 +1132,6 @@ export class App {
   integrationReturned(provider: string, ok: boolean, message: string | null): void {
     const name = this.state.integrations.find((p) => p.id === provider)?.name ?? provider
     this.notify(ok ? 'info' : 'error', ok ? `${name} is connected.` : `${name}: ${message ?? 'sign-in failed'}`)
-    this.set({ atRoot: true })
     void this.refreshIntegrations()
   }
   async phoneStart(number: string): Promise<void> {
@@ -1158,6 +1181,25 @@ export class App {
   setPeerCapabilities(peerId: string, capabilities: Capability[], disabled: Capability[], accepts?: Capability[]): void {
     if (!this.canApprove()) { this.notify('error', 'Only the owner of this node (or a member who may approve) changes what peers get here.'); return }
     this.edit(setMemberCapabilitiesAt(this.state.replica, this.state.view, peerId, capabilities, disabled, this.now(), accepts))
+  }
+  /** A nearer member binding shadows inherited offers without changing the parent. */
+  setPeerOffers(peerId: string, offers: Capability[], enabled: boolean): void {
+    if (!this.canApprove()) return
+    const inherited = new Map<string, NodeView['members'][number]>()
+    for (let i = 0; i <= this.state.view.length; i++) for (const m of view(this.state.replica, this.state.view.slice(0, i))?.members ?? []) inherited.set(m.peerId, m)
+    const member = inherited.get(peerId)
+    const provider = this.contextPeers().find(p => p.id === peerId)
+    const accepts = member?.accepts ?? provider?.integration?.provides ?? provider?.accepts ?? offers
+    const disabled = enabled ? (member?.disabled ?? []).filter(c => !offers.includes(c)) : [...new Set([...(member?.disabled ?? []), ...offers])]
+    let r = this.state.replica
+    // Older Home constructors passed the exact root member as a default argument.
+    // Keep that default linked when changing root offers, but preserve Home overrides.
+    const home = homePath(r), passed = !this.state.view.length && home.length ? view(r, home)?.members.find(m => m.peerId === peerId) : null
+    const same = (a: readonly string[] = [], b: readonly string[] = []) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort())
+    const inheritedDefault = member && passed && same(member.capabilities, passed.capabilities) && same(member.accepts, passed.accepts) && same(member.disabled, passed.disabled)
+    r = setMemberCapabilitiesAt(r, this.state.view, peerId, member?.capabilities ?? [], disabled, this.now(), accepts)
+    if (inheritedDefault) r = setMemberCapabilitiesAt(r, home, peerId, passed.capabilities, disabled, this.now(), accepts)
+    this.edit(r)
   }
   /** This device's policy towards the account server (unless fos.config.toml fixed it). Turning `from: read` on syncs at once. */
   setServerPolicy(policy: PeerPolicy): void {
@@ -1543,11 +1585,16 @@ export class App {
   }
   currentTrigger() { return nodeTrigger(this.state.replica, this.state.view) }
   currentTriggerState() { return triggerState(this.state.replica, this.state.view) }
-  triggerKinds(): TriggerKind[] { return [...(navigator.locks ? ['timer', 'task-completion', 'request'] as TriggerKind[] : []), ...(this.isOnline('fos') && this.state.serverCapabilities?.includes('cron') ? ['cron' as const] : [])] }
-  configureTrigger(kind: TriggerKind, value?: string): void {
+  triggerKinds(path = this.state.view): TriggerKind[] {
+    const peers = this.contextPeers(path), device = peers.find(p => p.id === this.state.replica.meta.peerId), server = peers.find(p => p.name === 'fos')
+    return [...(navigator.locks ? (['timer', 'task-completion', 'request'] as TriggerKind[]).filter(kind => !device?.disabled.includes(kind)) : []), ...(this.isOnline('fos') && this.state.serverCapabilities?.includes('cron') && !server?.disabled.includes('cron') ? ['cron' as const] : [])]
+  }
+  configureTrigger(kind: TriggerKind, value?: string, newTemplate = false, destination = this.state.view): void {
     try {
       const peer = kind === 'cron' ? 'fos' : this.state.replica.meta.peerId
-      if (!this.triggerKinds().includes(kind)) throw new Error('The trigger provider is not active.')
+      if (!this.triggerKinds(destination).includes(kind)) throw new Error('The trigger provider is not active.')
+      if (kind === 'cron') cronMatches(value ?? '', this.now())
+      if (kind === 'timer' && (!Number.isFinite(Date.parse(value ?? '')) || Date.parse(value!) < this.now())) throw new Error('Choose a future time.')
       let r = this.state.replica
       if (peer === 'fos') {
         const member = view(r, [])?.members.find(m => m.peerId === 'fos')
@@ -1558,7 +1605,12 @@ export class App {
         r = setMemberCapabilitiesAt(r, home, peer, member?.capabilities ?? [], member?.disabled ?? [], this.now(), [...new Set([...(member?.accepts ?? []), 'timer', 'task-completion', 'request'] as Capability[])])
       }
       const trigger = { kind, peer, enabled: true, created: this.now(), ...(kind === 'timer' ? { due: Date.parse(value ?? '') } : {}), ...(kind === 'cron' ? { expression: value ?? '' } : {}) }
-      this.edit(setNodeTrigger(r, this.state.view, trigger, this.now()))
+      let path = [...destination]
+      if (newTemplate) {
+        const id = newId(); r = addRow(r, destination, 'template', `${kind} workflow`, this.now(), { id }); path = [...destination, id]
+      }
+      this.edit(setNodeTrigger(r, path, trigger, this.now()))
+      if (newTemplate) this.notify('info', 'Trigger workflow created. Add the tasks and requirements to run inside it.')
       this.notify('info', kind === 'cron' ? 'Cron configured on fos (UTC).' : 'Trigger configured on this device; it runs while this app is open.')
     } catch (error) { this.notify('error', String(error)) }
   }
@@ -1625,6 +1677,29 @@ export class App {
     const value = text ? put(store, { data: { description: { content: text } }, children: [] }) : null
     this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), store.primitive.documentField.getId(), this.now(), value, name))
     this.notify('info', `Text argument ${name} added. Use {{${name}}} in notes in this context.`)
+  }
+  addPlaceholder(name: string, typeName: string): void {
+    if (!/^[A-Za-z_][\w.-]*$/.test(name) || !typeName.trim()) { this.notify('error', 'Give the placeholder a name and type.'); return }
+    const r = this.state.replica
+    const type = typeName === 'text' ? r.store.primitive.documentField.getId() : CAPABILITIES.includes(typeName as Capability) ? capabilityTarget(r.store, typeName as Capability) : put(r.store, { data: { name: { content: `fos:type:${typeName.trim()}` } }, children: [] })
+    this.edit(addRefAt(r, this.state.view, newId(), type, this.now(), null, name))
+  }
+  placeholders() {
+    const r = this.state.replica, cid = resolveScope(r.store, headCid(r), this.state.view)
+    if (!cid) return []
+    const candidates = contextBindings(r, this.state.view, { isPeerActive: id => this.isOnline(id) })
+    return argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:')).map(a => ({
+      id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
+      type: a.type === r.store.primitive.documentField.getId() ? 'text' : (CAPABILITIES.find(c => capabilityTarget(r.store, c) === a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type').replace(/^fos:(capability|type):/, ''),
+      status: resolveBinding(r.store, a.type, refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id) }).status,
+      candidates: candidates.filter(c => c.type === a.type && c.cid !== a.cid).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
+    }))
+  }
+  bindPlaceholder(id: string, cid: string): void {
+    if (!this.placeholders().some(p => p.id === id && p.candidates.some(c => c.cid === cid))) return
+    const r = this.state.replica, path = [...this.state.view, id]
+    const proposed = proposeRefAt(r, path, cid, r.meta.peerId, this.now())
+    this.edit(applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now()))
   }
   subtasksAvailability(at: Scope) {
     return workHandler(this.state.replica, [...this.state.view, ...at], { isPeerActive: id => this.isOnline(id) })
@@ -1763,9 +1838,14 @@ export class App {
   /** Supply a requirement: a confirmation by this user, a choice, or a reference to an allocation/query row. */
   supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: CapabilityKind; ref?: string; choice?: number }, absolute = false): void {
     if ((supply.capability === 'confirmation' || supply.capability === 'peer') && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
+    const connection = supply.capability === 'choice' ? this.connectionOption([...(absolute ? at : [...this.state.view, ...at]), requirementId], supply.choice ?? -1) : null
+    if (connection && !connection.enabled) { this.notify('error', 'Connect to Fos and configure this integration first.'); return }
     const by = this.state.session?.username ?? this.state.deviceName
-    this.edit(addSupply(this.state.replica, absolute ? at : [...this.state.view, ...at], requirementId, { ...supply, by }, this.now()))
+    const parent = absolute ? at : [...this.state.view, ...at]
+    const replica = connection?.provider ? this.withIntegrationPeer(this.state.replica, parent, connection.provider) : this.state.replica
+    this.edit(addSupply(replica, parent, requirementId, { ...supply, by }, this.now()))
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirementId) })
+    if (connection?.provider && !this.state.integrations.some(p => p.id === connection.provider && p.connected)) void this.connectIntegration(connection.provider)
   }
   /** Run a query row: semantic search through the account; results become reference rows under it (replacing the previous ones). */
   async runQueryAt(at: Scope, query: TaskView): Promise<void> {
@@ -2065,7 +2145,7 @@ export class App {
   goTo(path: Scope): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); const home = homePath(this.state.replica); if (!path.length) path = home; this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false }) }
   /** Zoom out within Home; device settings are reached through the menu. */
   zoomOut(): void { if (this.state.view.length > homePath(this.state.replica).length) this.goTo(this.state.view.slice(0, -1)) }
-  goToRoot(): void { this.set({ atRoot: true, view: [], selected: null, contextMenu: null }) }
+  goToRoot(): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); this.set({ atRoot: true, view: [], selected: null, collapsed: [...new Set([...this.state.collapsed, HOME_ID])], contextMenu: null }) }
   /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
   knownPeers(): Array<{ id: string; name: string }> {
     return this.contextPeers().map((p) => ({ id: p.id, name: p.name }))
