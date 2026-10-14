@@ -84,7 +84,7 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
       if (!username) return res.status(401).json({ error: 'Unauthorized' })
 
       const parsed = parseSyncRequest(req.body)
-      if ('error' in parsed) return res.status(400).json({ error: parsed.error })
+      if ('error' in parsed) return res.status(STATUS_FOR_CODE[parsed.code]).json(parsed)
       const denied = peerCredentialError(claimsOf(req), parsed.peerId, parsed.scope)
       if (denied) return res.status(403).json({ error: denied })
 

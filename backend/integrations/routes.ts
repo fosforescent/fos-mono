@@ -1,3 +1,4 @@
+import { githubRepository } from './repository'
 /**
  * Integration peers: sign-in flows, the phone channel, and the handlers the peers provide.
  *
@@ -216,6 +217,26 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
       const j = (await r.json()) as { html_url?: string; number?: number; message?: string }
       if (!r.ok || !j.html_url) return fail(res, 502, `GitHub: ${j.message ?? r.status}`)
       return res.json({ url: j.html_url, number: j.number })
+    },
+
+    /** Repository metadata uses the same GitHub OAuth peer as issue creation. */
+    async repository(req: Request, res: Response): Promise<Response> {
+      const token = await accessToken(await deps.userId(req), providerById('github') as Provider)
+      if (!token) return fail(res, 409, 'GitHub is not connected: sign in with it on its peer row')
+      const body = (req.body ?? {}) as Record<string, unknown>
+      try {
+        const repo = githubRepository(deps.fetch, token, String(body.repo ?? ''))
+        if (body.action === 'branch') { await repo.createBranch(String(body.name ?? ''), String(body.from ?? '')); return res.json({ ok: true }) }
+        if (body.action === 'propose') return res.json(await repo.propose(String(body.head ?? ''), String(body.base ?? ''), String(body.title ?? '')))
+        if (body.action === 'merge' || body.action === 'close') {
+          await repo.decide(Number(body.number), body.action, String(body.sha ?? ''))
+          return res.json({ ok: true })
+        }
+        if (body.action !== 'read') return fail(res, 400, 'Unknown repository action')
+        const tracked = Array.isArray(body.tracked) ? body.tracked.filter((n): n is number => Number.isSafeInteger(n) && n > 0) : []
+        if (tracked.length > 100) return fail(res, 400, 'At most 100 tracked pull requests per request')
+        return res.json(await repo.snapshot(tracked))
+      } catch (error) { return fail(res, 502, error instanceof Error ? error.message : String(error)) }
     },
 
     /** The calendar capability: a Google Calendar event for a time allocation with a window. */

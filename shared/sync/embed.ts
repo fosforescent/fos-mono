@@ -132,7 +132,7 @@ export const api = {
     set(handle, reattach(get(handle), parse<Scope>(scopeJson, []), now, namesJson ? parse<string[]>(namesJson, []) : undefined))
   },
 
-  buildSyncRequest(handle: string, branch: string | null): string { return JSON.stringify(buildSyncRequest(get(handle), branch ?? undefined)) },
+  buildSyncRequest(handle: string, branch: string | null, push: boolean = true): string { return JSON.stringify(buildSyncRequest(get(handle), branch ?? undefined, { push })) },
   completeSync(handle: string, requestJson: string, responseJson: string, now: number): string {
     const done = completeSync(get(handle), JSON.parse(requestJson) as SyncRequest, JSON.parse(responseJson) as SyncResponse, now)
     set(handle, done.replica)

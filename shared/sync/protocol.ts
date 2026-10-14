@@ -41,6 +41,7 @@ import {
   importNodes,
   isBookkeepingEdge,
   isLink,
+  withBranches, isBranchChoice, branchSelection, readChoice, putBranches, identityCid, withIdentity,
   proposalContent,
   put,
   putStripped,
@@ -92,6 +93,8 @@ export type SyncRequest = {
    * several branches proposes several values for the same link node.
    */
   branch?: string
+  /** Selected ancestor alternatives for a scoped attachment. */
+  branches?: Record<string, string>
 }
 
 export type SyncResponse = {
@@ -101,6 +104,8 @@ export type SyncResponse = {
   scope: Scope
   action: SyncAction
   resultCid: string
+  /** The selected alternative, pinned for subsequent scoped requests. */
+  branch?: string
   nodes: FosNodesData
   newChoiceIds: string[]
   serverTime: number
@@ -115,7 +120,7 @@ export type SyncError = { error: string; code: 'bad-request' | 'scope-not-found'
 export function parseSyncRequest(body: unknown): SyncRequest | SyncError {
   if (!body || typeof body !== 'object') return { error: 'request body must be an object', code: 'bad-request' }
   const raw = body as Partial<SyncRequest>
-  if (raw.version !== SYNC_FORMAT_VERSION) return { error: `unsupported sync version ${String(raw.version)}`, code: 'bad-request' }
+  if (raw.version !== SYNC_FORMAT_VERSION) return { error: `unsupported sync version ${String(raw.version)}; update the app`, code: 'version-mismatch' }
   if (typeof raw.cidVersion !== 'number') return { error: 'cidVersion required', code: 'bad-request' }
   if (typeof raw.peerId !== 'string' || !raw.peerId || raw.peerId.length > 128) return { error: 'peerId must be a non-empty string', code: 'bad-request' }
   if (!Array.isArray(raw.scope) || raw.scope.length > 32 || !raw.scope.every((s) => typeof s === 'string' && s.length > 0 && s.length <= 128)) {
@@ -124,6 +129,7 @@ export function parseSyncRequest(body: unknown): SyncRequest | SyncError {
   if (typeof raw.headCid !== 'string' || !raw.headCid) return { error: 'headCid required', code: 'bad-request' }
   if (raw.baseCid !== null && raw.baseCid !== undefined && typeof raw.baseCid !== 'string') return { error: 'baseCid must be a cid or null', code: 'bad-request' }
   if (raw.nodes !== undefined && (typeof raw.nodes !== 'object' || raw.nodes === null)) return { error: 'nodes must be an object', code: 'bad-request' }
+  if (raw.branches !== undefined && (!raw.branches || typeof raw.branches !== 'object' || Array.isArray(raw.branches) || Object.keys(raw.branches).length > 32 || Object.entries(raw.branches).some(([id, name]) => !id || id.length > 128 || typeof name !== 'string' || !name || name.length > 200))) return { error: 'Invalid ancestor branch selections', code: 'bad-request' }
   return {
     version: SYNC_FORMAT_VERSION,
     cidVersion: raw.cidVersion,
@@ -132,6 +138,7 @@ export function parseSyncRequest(body: unknown): SyncRequest | SyncError {
     baseCid: raw.baseCid ?? null,
     headCid: raw.headCid,
     nodes: raw.nodes ?? {},
+    ...(raw.branches ? { branches: { ...raw.branches } } : {}),
     ...(typeof raw.branch === 'string' && raw.branch.length > 0 && raw.branch.length <= 200 ? { branch: raw.branch } : {})
   }
 }
@@ -140,6 +147,8 @@ export type ServeResult = { response: SyncResponse; changed: boolean } | SyncErr
 
 /** Serve a request against the receiving peer's store (mutates it on change). */
 export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: string, now: number = Date.now(), options: ServeOptions = {}): ServeResult {
+  if (request.branches) return withBranches(store, request.branches, () => serveSync(store, { ...request, branches: undefined }, serverPeerId, now, options))
+  if (request.version !== SYNC_FORMAT_VERSION) return { error: 'Sync format changed; update the app', code: 'version-mismatch' }
   if (request.cidVersion !== CURRENT_CID_VERSION) {
     return { error: `peer uses cid format v${request.cidVersion}, this side uses v${CURRENT_CID_VERSION}`, code: 'version-mismatch' }
   }
@@ -168,6 +177,29 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
   }
   const currentCid = resolveScope(store, rootTarget, request.scope)
   if (!currentCid) return { error: 'scope not found', code: 'scope-not-found' }
+  if (isBranchChoice(store, content(store, currentCid))) {
+    // Serve exactly one alternative. A temporary root lets the ordinary sync and
+    // permission/proposal path run unchanged, without a global selection mutation.
+    const choice = readChoice(store, currentCid)
+    const name = request.branch ?? branchSelection(store, currentCid)
+    const selected = choice.options.find(option => option.peerId === name)?.edge
+    if (!selected) return { error: `branch not found: ${name}`, code: 'scope-not-found' }
+    const branchStore = new FosStore()
+    importNodes(branchStore, reachableNodes(store, [identityCid(store, selected), request.headCid, request.baseCid]))
+    commitRoot(branchStore, identityCid(store, selected), now)
+    const served = serveSync(branchStore, { ...request, scope: [], branch: undefined, nodes: {} }, serverPeerId, now, options)
+    if ('error' in served) return served
+    const branchHead = rootTargetCid(branchStore)
+    importNodes(store, reachableNodes(branchStore, [branchHead, served.response.resultCid]))
+    if (served.changed) {
+      const replacement = putBranches(store, choice.id, choice.base, choice.options.map(option => option.peerId === name ? { ...option, edge: withIdentity(store, selected, branchHead) } : option), choice.defaultName)
+      const next = request.scope.length ? updateAtScope(store, rootTarget, request.scope.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === currentCid ? withIdentity(store, edge, replacement) : edge) })) : replacement
+      commitRoot(store, next, now)
+    }
+    served.response.scope = request.scope
+    served.response.branch = name
+    return served
+  }
   if (options.proposeOnly && isLink(store, content(store, currentCid))) {
     return serveProposal(store, request, serverPeerId, now, options, rootTarget, currentCid)
   }
@@ -326,6 +358,7 @@ export type ApplyResult = { reMerged: boolean; newChoiceIds: string[] }
  * the new base.
  */
 export function applySyncResponse(store: FosStore, request: SyncRequest, response: SyncResponse, localPeerId: string, now: number): ApplyResult {
+  if (response.version !== SYNC_FORMAT_VERSION) throw new Error('Sync format changed; update the app and server')
   if (response.cidVersion !== CURRENT_CID_VERSION) {
     throw new Error(`server uses cid format v${response.cidVersion}, this client uses v${CURRENT_CID_VERSION}`)
   }

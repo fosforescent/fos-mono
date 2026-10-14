@@ -549,6 +549,7 @@ integrationRoutes.post('/phone', (req, res) => void integrations.phoneStart(req,
 integrationRoutes.post('/phone/verify', (req, res) => void integrations.phoneVerify(req, res))
 integrationRoutes.post('/llm', (req, res) => void integrations.llm(req, res))
 integrationRoutes.post('/repo/issue', (req, res) => void integrations.repoIssue(req, res))
+integrationRoutes.post('/repo', (req, res) => void integrations.repository(req, res))
 integrationRoutes.post('/calendar/event', (req, res) => void integrations.calendarEvent(req, res))
 app.use('/user/integrations', integrationRoutes)
 app.get('/integrations/:provider/callback', (req, res) => void integrations.callback(req, res))

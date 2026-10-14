@@ -43,7 +43,7 @@ import type { FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosP
 
 export type Scope = string[] // alias ids of nested nodes (tasks or legacy plain nodes), [] = the node a replica is attached to
 
-export const SYNC_FORMAT_VERSION = 2 as const
+export const SYNC_FORMAT_VERSION = 3 as const
 
 // ---------------------------------------------------------------------------
 // Basics
@@ -93,6 +93,7 @@ export function refTypeCid(store: FosStore, value: FosNodeContent): string | nul
 /** The content a node stands for: its TARGETPOINTER value for ref nodes (not handles), the node itself otherwise. */
 export function valueContent(store: FosStore, cid: string): FosNodeContent {
   const value = content(store, cid)
+  if (isBranchChoice(store, value)) { const edge = branchEdge(store, cid); return edge ? valueContent(store, identityCid(store, edge)) : value }
   if (isHandle(value)) return value
   const target = refValueCid(store, value)
   return target && store.table.has(target) ? content(store, target) : value
@@ -101,6 +102,7 @@ export function valueContent(store: FosStore, cid: string): FosNodeContent {
 /** Cid of the content a node stands for (see valueContent). */
 export function valueCidOf(store: FosStore, cid: string): string {
   const value = content(store, cid)
+  if (isBranchChoice(store, value)) { const edge = branchEdge(store, cid); return edge ? valueCidOf(store, identityCid(store, edge)) : cid }
   if (isHandle(value)) return cid
   const target = refValueCid(store, value)
   return target && store.table.has(target) ? target : cid
@@ -193,6 +195,9 @@ export function rowPrimitive(store: FosStore, kind: RowKind): string {
 
 /** What kind of row an edge is, or null when it is not a row (choice, peer, member, …). */
 export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
+  if (isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))) {
+    const active = branchEdge(store, edge[1]); return active ? rowKindOf(store, active) : null
+  }
   if (isPartitionEdge(store, edge)) return 'plain' // legacy [LIST, node]
   const [, target] = edge
   const p = store.primitive
@@ -216,7 +221,7 @@ export function isRowEdge(store: FosStore, edge: FosPathElem): boolean {
 
 /** Rows of the [rowNode, KIND] shape carry their identity on the instruction side. */
 function identityOnInstruction(store: FosStore, edge: FosPathElem): boolean {
-  return !isPartitionEdge(store, edge) && rowKindOf(store, edge) !== null
+  return !isChoiceEdge(store, edge) && !isPartitionEdge(store, edge) && rowKindOf(store, edge) !== null
 }
 
 /** Legacy plain-row edge ([LIST, node]) from older data; identity on the target. */
@@ -226,6 +231,52 @@ export function isPartitionEdge(store: FosStore, edge: FosPathElem): boolean {
 
 export function isChoiceEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.choiceTarget.getId()
+}
+
+/** Persistent editable choices reuse CHOICE/OPTION pointers; selection is local UI state. */
+const branchSelections = new WeakMap<FosStore, Map<string, string>>()
+export function isBranchChoice(store: FosStore, node: FosNodeContent): boolean {
+  return !!node.data.option && !node.data.conflict && node.children.some(e => e[0] === store.primitive.optionNotSelectedConstructor.getId())
+}
+export function selectBranch(store: FosStore, id: string, name: string): void {
+  let selections = branchSelections.get(store)
+  if (!selections) { selections = new Map(); branchSelections.set(store, selections) }
+  selections.set(id, name)
+}
+/** Run a synchronous graph operation in a peer's pinned branch context. */
+export function withBranches<T>(store: FosStore, selections: Record<string, string>, run: () => T): T {
+  const previous = branchSelections.get(store)
+  const next = new Map(previous)
+  for (const [id, name] of Object.entries(selections)) next.set(id, name)
+  branchSelections.set(store, next)
+  try { return run() } finally { if (previous) branchSelections.set(store, previous); else branchSelections.delete(store) }
+}
+export function scopeBranches(store: FosStore, root: string, path: Scope): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (let i = 0; i <= path.length; i++) {
+    const cid = resolveScope(store, root, path.slice(0, i))
+    if (cid && isBranchChoice(store, content(store, cid))) result[readChoice(store, cid).id] = branchSelection(store, cid)
+  }
+  return result
+}
+export function branchSelection(store: FosStore, cid: string): string {
+  const choice = readChoice(store, cid)
+  const name = branchSelections.get(store)?.get(choice.id)
+  return choice.options.find(o => o.peerId === name)?.peerId ?? choice.defaultName ?? choice.options.map(o => o.peerId).sort()[0] ?? ''
+}
+export function branchEdge(store: FosStore, cid: string): FosPathElem | null {
+  const choice = readChoice(store, cid)
+  return choice.options.find(o => o.peerId === branchSelection(store, cid))?.edge ?? null
+}
+export function putBranches(store: FosStore, id: string, base: FosPathElem | null, options: ChoiceOption[], defaultName = 'main'): string {
+  const cid = putChoice(store, id, base, options), node = content(store, cid)
+  const { conflict: _conflict, ...data } = node.data
+  const selectedIndex = Math.max(0, readChoice(store, cid).options.findIndex(o => o.peerId === defaultName))
+  return put(store, { ...node, data: { ...data, option: { ...data.option!, selectedIndex } } })
+}
+export function updateBranch(store: FosStore, cid: string, edge: FosPathElem): string {
+  const record = readChoice(store, cid), name = branchSelection(store, cid)
+  return putBranches(store, record.id, record.base, record.options.map(o => o.peerId === name ? { ...o, edge } : o), record.defaultName)
 }
 
 export function isPeerEdge(store: FosStore, edge: FosPathElem): boolean {
@@ -314,6 +365,10 @@ export function canonicalRowData(data: FosNodeContent['data']): FosNodeContent['
 }
 
 export function rowEdge(store: FosStore, kind: RowKind, cid: string): FosPathElem {
+  if (isBranchChoice(store, content(store, cid))) {
+    const active = branchEdge(store, cid)
+    return [store.primitive.choiceTarget.getId(), active ? updateBranch(store, cid, rowEdge(store, kind, identityCid(store, active))) : cid]
+  }
   return [cid, rowPrimitive(store, valueContent(store, cid).data.allocation ? 'allocation' : kind)]
 }
 
@@ -351,9 +406,10 @@ export function partitionEdge(store: FosStore, partitionCid: string): FosPathEle
 // ---------------------------------------------------------------------------
 // Choice nodes
 
-export type ChoiceOption = { peerId: string; edge: FosPathElem | null }
+export type ChoiceOption = { peerId: string; edge: FosPathElem | null; base?: FosPathElem | null }
 
 export type ChoiceRecord = {
+  defaultName?: string
   cid: string
   id: string
   base: FosPathElem | null
@@ -388,7 +444,11 @@ function readPointer(store: FosStore, cid: string): { peerId: string | null; edg
 /** Build and insert a choice node; the alternatives are sorted so the cid is deterministic. */
 export function putChoice(store: FosStore, id: string, base: FosPathElem | null, options: ChoiceOption[]): string {
   const alternatives = options
-    .map((o) => ({ peerId: o.peerId, cid: put(store, pointerContent(o.peerId, o.edge, store)) }))
+    .map((o) => {
+      const pointer = pointerContent(o.peerId, o.edge, store)
+      if (o.base) pointer.children.push([store.primitive.conflictBaseNode.getId(), put(store, pointerContent(null, o.base, store))])
+      return { peerId: o.peerId, cid: put(store, pointer) }
+    })
     .sort((a, b) => (a.cid < b.cid ? -1 : a.cid > b.cid ? 1 : 0))
   const baseCid = put(store, pointerContent(null, base, store))
   const children: FosPathElem[] = [
@@ -414,10 +474,11 @@ export function readChoice(store: FosStore, choiceCid: string): ChoiceRecord {
       base = readPointer(store, target).edge
     } else if (instr === store.primitive.optionNotSelectedConstructor.getId()) {
       const pointer = readPointer(store, target)
-      options.push({ peerId: pointer.peerId ?? 'unknown', edge: pointer.edge })
+      const basePointer = content(store, target).children.find(e => e[0] === store.primitive.conflictBaseNode.getId())
+      options.push({ peerId: pointer.peerId ?? 'unknown', edge: pointer.edge, ...(basePointer ? { base: readPointer(store, basePointer[1]).edge } : {}) })
     }
   }
-  return { cid: choiceCid, id: aliasIdOf(value) ?? choiceCid, base, options }
+  return { cid: choiceCid, id: aliasIdOf(value) ?? choiceCid, base, options, defaultName: options[value.data.option?.selectedIndex ?? 0]?.peerId }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +542,12 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
   const canonical = contextScope(store, nodeCid, scope)
   if (canonical !== scope) return updateAtScope(store, nodeCid, canonical, fn, mode)
   const identity = content(store, nodeCid)
+  if (isBranchChoice(store, identity)) {
+    const active = branchEdge(store, nodeCid)
+    if (!active) throw new Error('No selected branch')
+    const next = updateAtScope(store, identityCid(store, active), scope, fn, mode)
+    return next === identityCid(store, active) ? nodeCid : updateBranch(store, nodeCid, withIdentity(store, active, next))
+  }
   const ref = isRefNode(store, identity) && !isHandle(identity)
   const value = ref ? valueContent(store, nodeCid) : identity
 
@@ -508,7 +575,7 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
   }
   const [step, ...rest] = scope as [string, ...string[]]
   const found = findAliasEdge(store, value, step)
-  if (!found || isChoiceEdge(store, found.edge)) throw new Error(`node ${step} not found`)
+  if (!found || (isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])))) throw new Error(`node ${step} not found`)
   const childCid = identityCid(store, found.edge)
   const nextChild = updateAtScope(store, childCid, rest, fn, mode)
   if (nextChild === childCid) return nodeCid
@@ -521,6 +588,10 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
 export function withChildValue(store: FosStore, edge: FosPathElem, nextValue: FosNodeContent, now: number): FosPathElem {
   const idCid = identityCid(store, edge)
   const identity = content(store, idCid)
+  if (isBranchChoice(store, identity)) {
+    const active = branchEdge(store, idCid)
+    return active ? withIdentity(store, edge, updateBranch(store, idCid, withChildValue(store, active, nextValue, now))) : edge
+  }
   if (isRefNode(store, identity) && !isHandle(identity)) {
     return withIdentity(store, edge, put(store, relinkContent(store, identity, idCid, nextValue, now)))
   }
@@ -676,6 +747,7 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 // View model: what the UI sees (opaque ids, no cids)
 
 export type TaskView = {
+  branches?: { selected: string; names: string[] }
   id: string
   title: string
   kind: RowKind
@@ -768,6 +840,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
   if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers; if (value.data.template) view.template = value.data.template }
+  if (isBranchChoice(store, identity)) view.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map(o => o.peerId) }
   const demand = demandOf(value)
   if (kind === 'requirement' && demand) {
     const progress = requirementProgress(store, nodeCid)
@@ -964,12 +1037,13 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
   let done = 0
   let choices = 0
   for (const edge of valueContent(store, cid).children) {
-    if (isTaskEdge(store, edge)) {
+    if (rowKindOf(store, edge) === 'task') {
       tasks++
-      if (content(store, edge[0]).data.todo?.completed) done++
-      const sub = countNode(store, edge[0])
+      const taskCid = identityCid(store, edge)
+      if (valueContent(store, taskCid).data.todo?.completed) done++
+      const sub = countNode(store, taskCid)
       tasks += sub.tasks; done += sub.done; choices += sub.choices
-    } else if (isChoiceEdge(store, edge)) {
+    } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) {
       choices++
     } else if (isRowEdge(store, edge)) {
       const sub = countNode(store, identityCid(store, edge))
@@ -980,6 +1054,7 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
 }
 
 export function viewNode(store: FosStore, cid: string): NodeView {
+  if (isBranchChoice(store, content(store, cid))) { const active = branchEdge(store, cid); if (active) return viewNode(store, identityCid(store, active)) }
   const identity = content(store, cid)      // ref node for link rows (bookkeeping lives here)
   const value = valueContent(store, cid)    // the content: text, rows
   const link = isLink(store, identity)
@@ -1014,6 +1089,10 @@ export function viewNode(store: FosStore, cid: string): NodeView {
 
 /** Where a peer is attached: the scope of the first node (depth-first) carrying a [PEER, ref] edge for `peerId`. */
 export function findPeerScope(store: FosStore, nodeCid: string, peerId: string, prefix: Scope = []): Scope | null {
+  if (isBranchChoice(store, content(store, nodeCid))) {
+    for (const option of readChoice(store, nodeCid).options) { const found = option.edge ? findPeerScope(store, identityCid(store, option.edge), peerId, prefix) : null; if (found) return found }
+    return null
+  }
   const identity = content(store, nodeCid)
   const value = valueContent(store, nodeCid)
   for (const edge of identity === value ? identity.children : [...identity.children, ...value.children]) {
@@ -1267,6 +1346,7 @@ export function memberRefContent(store: FosStore, peerId: string, name: string |
 }
 
 export function readMembers(store: FosStore, value: FosNodeContent): MemberRecord[] {
+  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return readMembers(store, content(store, identityCid(store, edge))) }
   const out: MemberRecord[] = []
   for (const edge of value.children) {
     if (!isMemberEdge(store, edge)) continue
@@ -1283,6 +1363,7 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
 
 /** Handler advertisements are ordinary typed refs on the member's CAPABILITY edges. */
 export function memberHandlers(store: FosStore, value: FosNodeContent, peerId: string): string[] {
+  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return memberHandlers(store, content(store, identityCid(store, edge)), peerId) }
   const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)
   return member ? content(store, member[1]).children.filter((e) => e[0] === store.primitive.capabilityNode.getId() && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : []
 }
@@ -1450,7 +1531,7 @@ export function findChild(store: FosStore, nodeCid: string, aliasId: string): st
   const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId)
   if (!found) return null
   const { edge } = found
-  if (isChoiceEdge(store, edge)) return null
+  if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) return null
   return identityCid(store, edge)
 }
 
@@ -1487,6 +1568,11 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     const identity = content(store, cid)
     const id = aliasIdOf(identity)
     if (id && !ids.has(id)) ids.set(id, cid === nodeCid && options.rootId ? options.rootId : freshId())
+    if (isBranchChoice(store, identity)) {
+      const choice = readChoice(store, cid)
+      for (const edge of [choice.base, ...choice.options.flatMap(o => [o.edge, o.base])]) if (edge) collect(identityCid(store, edge))
+      return
+    }
     // Typed refs are slots, not ownership of their bound value.
     if (refTypeCid(store, identity)) return
     for (const edge of childEdges(stripLink(store, identity))) collect(identityCid(store, edge))
@@ -1497,6 +1583,13 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     const cached = copied.get(cid)
     if (cached) return cached
     const identity = content(store, cid)
+    if (isBranchChoice(store, identity)) {
+      const choice = readChoice(store, cid)
+      const remap = (edge: FosPathElem | null | undefined) => edge ? withIdentity(store, edge, copy(identityCid(store, edge))) : null
+      const result = putBranches(store, ids.get(choice.id)!, remap(choice.base), choice.options.map(o => ({ ...o, edge: remap(o.edge), ...(o.base ? { base: remap(o.base) } : {}) })), choice.defaultName)
+      copied.set(cid, result)
+      return result
+    }
     const type = refTypeCid(store, identity)
     const value = type ? identity : stripLink(store, identity)
     const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? '') ?? freshId() }, updated: { time: now } }

@@ -9,7 +9,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-web-tests-'))
 const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
-buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
+buildSync({ stdin: { contents: `export {App} from './src/app'; export {createProjectStorage} from './src/project'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
 const { App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const reply = (data, status = 200) => ({ ok: status < 400, status, statusText: String(status), json: async () => data })
@@ -494,6 +494,66 @@ async function main() {
   assert(contextApp.state.work.preview.blockers.some(p => p.includes('Incompatible')), 'conflicting text blocks delegation')
   contextApp.closeModal()
   console.log('PASS: stored root/Home constructor, root peer bindings, indented tree parsing, atomic undo, shared Settings editor and node connections')
+
+  const branchApp = app()
+  document.querySelector('#app').replaceChildren(); mountUi(document.querySelector('#app'), branchApp)
+  const branchProject = branchApp.addRowAtTop(parseRowInput('[ ] Branch project'))
+  await branchApp.createNodeBranch([], branchProject, 'feature')
+  branchApp.zoomTo([branchProject])
+  branchApp.addRowAtTop(parseRowInput('[ ] Feature-only task'))
+  let picker = document.querySelector('[data-region="repository"] select')
+  assert(picker, 'the current node has its branch selector when zoomed in')
+  picker.value = 'main'; picker.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(branchApp.currentView().tasks.length, 0)
+  picker = document.querySelector('[data-region="repository"] select')
+  picker.value = 'feature'; picker.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(branchApp.currentView().tasks[0].title, 'Feature-only task')
+  const featureChild = branchApp.currentView().tasks[0].id
+  const draftOnFeature = { store: branchApp.state.replica.store, head: require(path.join(dir, 'app.cjs')).headCid(branchApp.state.replica), parent: [branchProject] }
+  branchApp.set({ replica: addTask(branchApp.state.replica, [branchProject], 'Incoming sibling', 99) })
+  branchApp.rewriteRowAt([], featureChild, parseRowInput('[ ] Draft on feature'), draftOnFeature)
+  assert(branchApp.currentView().tasks.some(row => row.title === 'Draft on feature'), 'rebasing a draft retains its selected branch')
+  branchApp.selectNodeBranch([], branchProject, 'main', true)
+  assert.equal(branchApp.currentView().tasks.length, 0, 'a feature draft never writes to main')
+  const repoApp = app()
+  const repoProject = repoApp.addRowAtTop(parseRowInput('Repository with no children'))
+  repoApp.bindNodeRepository([], repoProject, 'acme/project')
+  repoApp.state.session = { kind: 'user', username: 'test', jwt: 'token', baseUrl: 'http://localhost' }
+  repoApp.state.integrations = [{ id: 'github', connected: true }]
+  const repoCalls = []
+  globalThis.fetch = async (url, init) => {
+    assert(url.endsWith('/user/integrations/repo'))
+    repoCalls.push(JSON.parse(init.body))
+    return reply({ repo: 'acme/project', defaultBranch: 'trunk', canPush: false, branches: [{ name: 'trunk', sha: 'a' }, { name: 'feature', sha: 'b' }], pulls: [] })
+  }
+  await repoApp.refreshRepositories(true)
+  assert(repoCalls.length, 'a repository on an otherwise empty row is discovered')
+  assert.deepEqual(repoApp.currentView().tasks[0].branches.names.sort(), ['feature', 'trunk'])
+  repoApp.selectNodeBranch([], repoProject, 'feature')
+  await repoApp.refreshRepositories(true)
+  assert.equal(repoApp.currentView().tasks[0].branches.selected, 'feature', 'remote refresh preserves the local branch selection')
+  repoApp.zoomTo([repoProject])
+  assert.equal(repoApp.repositoryInfo().snapshot.canPush, false)
+  console.log('PASS: zoomed branch selection, subtree isolation and repository discovery/refresh with non-main default')
+
+  const { createProjectStorage } = require(path.join(dir, 'app.cjs'))
+  const files = new Map([['replicas/feature.json', JSON.stringify({ branch: 'feature' })]])
+  let finishWrite
+  window.__TAURI__ = { core: { invoke: async (command, args) => {
+    if (command === 'read_project_file') return files.get(args.name) ?? null
+    if (command === 'write_project_file') await new Promise(resolve => { finishWrite = () => { files.set(args.name, args.content); resolve() } })
+  } } }
+  const projectStorage = await createProjectStorage({ dir: '/project', branch: 'main', config: {} })
+  projectStorage.saveReplica({ branch: 'main', text: 'Last edit before checkout' })
+  const checkout = projectStorage.useBranch('feature')
+  await tick()
+  assert.equal(projectStorage.branch(), 'main', 'checkout waits for the old replica write')
+  finishWrite(); await checkout
+  assert.equal(projectStorage.branch(), 'feature')
+  assert.equal(projectStorage.loadReplica().branch, 'feature')
+  assert.equal(JSON.parse(files.get('replicas/main.json')).text, 'Last edit before checkout')
+  delete window.__TAURI__
+  console.log('PASS: native storage flushes the old branch before atomically switching replicas')
 
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(async () => { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); await tick(); for (const a of apps) a.logout(); dom.window.close(); rmSync(dir, { recursive: true, force: true }) })

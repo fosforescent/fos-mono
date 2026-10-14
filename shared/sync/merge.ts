@@ -17,7 +17,7 @@
 import { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
-  bookkeepingOf,
+  isBranchChoice, readChoice, putBranches, bookkeepingOf,
   content,
   edgeKey,
   identityCid,
@@ -76,6 +76,23 @@ function mergeNode(
   const base = baseCid ? content(store, baseCid) : EMPTY
   const ours = content(store, oursCid)
   const theirs = content(store, theirsCid)
+
+  if (isBranchChoice(store, ours) && isBranchChoice(store, theirs)) {
+    const o = readChoice(store, oursCid), t = readChoice(store, theirsCid)
+    const b = baseCid && isBranchChoice(store, base) ? readChoice(store, baseCid) : null
+    const options: ChoiceOption[] = []
+    for (const name of new Set([...o.options, ...t.options].map(option => option.peerId))) {
+      const oo = o.options.find(x => x.peerId === name), tt = t.options.find(x => x.peerId === name)
+      const oe = oo?.edge, te = tt?.edge
+      const be = b?.options.find(x => x.peerId === name)?.edge
+      if (!oe || !te) { const edge = oe ?? te; if (edge) options.push({ ...(oo ?? tt), peerId: name, edge }); continue }
+      if (!sameShape(store, oe, te)) return { kind: 'conflict' }
+      const merged = mergeNode(store, be ? identityCid(store, be) : null, identityCid(store, oe), identityCid(store, te), labels, newChoiceCids, false)
+      if (merged.kind === 'conflict') return merged
+      options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid) })
+    }
+    return { kind: 'node', cid: putBranches(store, o.id, b?.base ?? o.base, options, b?.defaultName ?? o.defaultName) }
+  }
 
   // Mutable references merge by value; members/proposals/peers are unioned; history keeps both parents.
   const asRef = (value: FosNodeContent): boolean => (isRefNode(store, value) && !isHandle(value)) || isLegacyInlineLink(store, value)
@@ -213,9 +230,9 @@ function mergeChildren(
       out.push(tt > ot ? t : o)
       continue
     }
-    if (o && t && sameShape(store, o, t) && !isChoiceEdge(store, o)) {
+    if (o && t && sameShape(store, o, t) && (!isChoiceEdge(store, o) || isBranchChoice(store, content(store, o[1])))) {
       // A base that is a choice (or has another shape) is no use as a merge base.
-      const baseIdentity = b && sameShape(store, b, o) && !isChoiceEdge(store, b) ? identityCid(store, b) : null
+      const baseIdentity = b && sameShape(store, b, o) && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? identityCid(store, b) : null
       const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false)
       if (merged.kind === 'node') {
         out.push(withIdentity(store, o, merged.cid))
@@ -228,7 +245,7 @@ function mergeChildren(
       { peerId: labels.ours, edge: o },
       { peerId: labels.theirs, edge: t }
     ]
-    const choiceCid = putChoice(store, id, b && !isChoiceEdge(store, b) ? b : null, options)
+    const choiceCid = putChoice(store, id, b && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? b : null, options)
     newChoiceCids.push(choiceCid)
     out.push([store.primitive.choiceTarget.getId(), choiceCid])
   }

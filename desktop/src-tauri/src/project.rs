@@ -17,6 +17,15 @@ pub struct Config {
     pub attach: Attach,
     #[serde(default)]
     pub serve: Serve,
+    pub server: Option<Policy>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Policy {
+    #[serde(default)]
+    pub to: Vec<String>,
+    #[serde(default)]
+    pub from: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -177,7 +186,9 @@ impl Project {
     }
 
     pub fn replica_json(&self, branch: &str) -> Option<String> {
-        fs::read_to_string(self.state_dir.join("replicas").join(format!("{}.json", branch_file_name(branch)))).ok()
+        fs::read_to_string(self.state_dir.join("replicas").join(format!("{}.json", branch_file_name(branch))))
+            .or_else(|_| fs::read_to_string(self.state_dir.join("replicas").join(format!("{}.json", legacy_branch_file_name(branch)))))
+            .ok()
     }
 
     pub fn save_replica_json(&self, branch: &str, json: &str) -> Result<(), String> {
@@ -239,16 +250,18 @@ fn hostname() -> String {
 }
 
 pub fn branch_file_name(branch: &str) -> String {
+    branch.as_bytes().iter().map(|b| {
+        if b.is_ascii_alphanumeric() || b"._-~".contains(b) { (*b as char).to_string() }
+        else { format!("%{:02X}", b) }
+    }).collect()
+}
+
+fn legacy_branch_file_name(branch: &str) -> String {
     let mut out = String::new();
-    let mut last_sep = false;
+    let mut separator = false;
     for c in branch.chars() {
-        if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
-            out.push(c);
-            last_sep = false;
-        } else if !last_sep {
-            out.push_str("__");
-            last_sep = true;
-        }
+        if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { out.push(c); separator = false; }
+        else if !separator { out.push_str("__"); separator = true; }
     }
     out
 }
@@ -288,7 +301,7 @@ mod tests {
 
     #[test]
     fn branch_names_and_config_discovery() {
-        assert_eq!(branch_file_name("feature/x y"), "feature__x__y");
+        assert_eq!(branch_file_name("feature/x y"), "feature%2Fx%20y");
         let dir = std::env::temp_dir().join(format!("fos-proj-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(dir.join("a/b")).unwrap();
         assert!(find_config_dir(&dir.join("a/b")).is_none());
