@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addTask, buildSyncRequest, createReplica, rootTargetCid, viewNode } from '@fosforescent/shared/sync/index'
+import { HOME_ID, ensureHomeContext, completeSync, view, type SyncResponse, addTask, buildSyncRequest, createReplica, rootTargetCid, viewNode } from '@fosforescent/shared/sync/index'
 
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
@@ -144,4 +144,19 @@ it('concurrent user2 and user3 requests remain in their own account stores', asy
   expect(responses.map((r) => r.sent().status)).toEqual([200, 200])
   expect(serverTitles(stores.get('user2')!)).toEqual(['user2 private work'])
   expect(serverTitles(stores.get('user3')!)).toEqual(['user3 private work'])
+})
+
+
+test('a constructor-aware device opens an existing account in Home without losing legacy rows', async () => {
+  const { deps, stores } = makeDeps()
+  const legacy = addTask(createReplica('old-device'), [], 'Existing project', 1, 'project')
+  stores.set(7, legacy.store)
+  let client = ensureHomeContext(createReplica('new-device'), 0)
+  const packet = buildSyncRequest(client)
+  const response = fakeRes()
+  await createPeerSyncHandler(deps)(fakeReq(packet), response.res)
+  expect(response.sent().status).toBe(200)
+  client = completeSync(client, packet, response.sent().body as SyncResponse, 2).replica
+  expect(view(client, [])!.tasks.map(row => row.id)).toEqual([HOME_ID])
+  expect(view(client, [HOME_ID])!.tasks.map(row => row.id)).toEqual(['project'])
 })

@@ -166,6 +166,15 @@ export type FosDataContent = {
   },
   /** An allocation row: locks `amount` of a resource bank (alias id `resource`), optionally for a time window. */
   allocation?: {
+    /** Handler demands use the same signed entry as resource allocations. */
+    capability?: NonNullable<FosDataContent['requirement']>['capability']
+    options?: string[]
+    peer?: string
+    repo?: string
+    tool?: string
+    at?: number
+    ref?: string
+    choice?: number
     resource: string
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
     amount: number

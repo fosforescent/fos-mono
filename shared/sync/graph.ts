@@ -43,7 +43,7 @@ import type { FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosP
 
 export type Scope = string[] // alias ids of nested nodes (tasks or legacy plain nodes), [] = the node a replica is attached to
 
-export const SYNC_FORMAT_VERSION = 1 as const
+export const SYNC_FORMAT_VERSION = 2 as const
 
 // ---------------------------------------------------------------------------
 // Basics
@@ -182,8 +182,8 @@ export function rowPrimitive(store: FosStore, kind: RowKind): string {
     case 'note': return store.primitive.documentField.getId()
     case 'comment': return store.primitive.commentField.getId()
     case 'ref': return store.primitive.linkField.getId()
-    case 'requirement': return store.primitive.requirementField.getId()
-    case 'supply': return store.primitive.supplyField.getId()
+    case 'requirement': return store.primitive.allocationField.getId()
+    case 'supply': return store.primitive.allocationField.getId()
     case 'query': return store.primitive.queryField.getId()
     case 'resource': return store.primitive.resourceField.getId()
     case 'allocation': return store.primitive.allocationField.getId()
@@ -205,7 +205,7 @@ export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
   if (target === p.supplyField.getId()) return 'supply'
   if (target === p.queryField.getId()) return 'query'
   if (target === p.resourceField.getId()) return 'resource'
-  if (target === p.allocationField.getId()) return 'allocation'
+  if (target === p.allocationField.getId()) return demandOf(valueContent(store, edge[0])) ? 'requirement' : supplyOf(valueContent(store, edge[0])) ? 'supply' : 'allocation'
   if (target === p.templateField.getId()) return 'template'
   return null
 }
@@ -295,11 +295,26 @@ export function rowContent(kind: RowKind, id: string, text: string, now: number,
     // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
     if (extra.targetCid && extra.store) return refNodeContent(extra.store, data, extra.targetCid)
   }
+  canonicalRowData(data)
   return { data, children: [] }
 }
 
+/** One write representation; older requirement records are only a read adapter. */
+export function canonicalRowData(data: FosNodeContent['data']): FosNodeContent['data'] {
+  if (data.requirement) {
+    const req = data.requirement
+    data.allocation = { ...req, capability: req.capability, resource: '', type: req.resource ?? 'inventory', amount: req.capability === 'allocation' ? -Math.abs(req.amount ?? 0) : -1, unit: req.unit ?? 'unit', ...(req.start !== undefined ? { start: req.start } : {}), ...(req.end !== undefined ? { end: req.end } : {}) }
+    delete data.requirement
+  } else if (data.supply) {
+    const supply = data.supply
+    data.allocation = { ...supply, resource: '', type: 'inventory', amount: 1, unit: 'unit' }
+    delete data.supply
+  }
+  return data
+}
+
 export function rowEdge(store: FosStore, kind: RowKind, cid: string): FosPathElem {
-  return [cid, rowPrimitive(store, kind)]
+  return [cid, rowPrimitive(store, valueContent(store, cid).data.allocation ? 'allocation' : kind)]
 }
 
 /** Same node as a different kind of row: completion added or dropped, comment/ref data adjusted. */
@@ -309,12 +324,12 @@ export function convertRowContent(value: FosNodeContent, kind: RowKind, now: num
   if (kind === 'task') data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now }
   if (kind === 'comment') data.comment = value.data.comment ?? { content: value.data.description?.content ?? '', authorID: '', authorName: '', time: now, votes: {} }
   if (kind === 'ref') data.ref = value.data.ref ?? { id: '' }
-  if (kind === 'requirement') data.requirement = value.data.requirement ?? { capability: 'confirmation' }
-  if (kind === 'supply') data.supply = value.data.supply ?? { capability: 'confirmation', by: '', at: now }
+  if (kind === 'requirement') data.requirement = demandOf(value) ?? { capability: 'confirmation' }
+  if (kind === 'supply') data.supply = supplyOf(value) ?? { capability: 'confirmation', by: '', at: now }
   if (kind === 'query') data.query = value.data.query ?? {}
   if (kind === 'resource') data.resource = value.data.resource ?? { type: 'inventory', unit: 'unit' }
   if (kind === 'allocation') data.allocation = value.data.allocation ?? { resource: '', type: 'inventory', amount: 0, unit: 'unit' }
-  return { ...value, data }
+  return { ...value, data: canonicalRowData(data) }
 }
 
 export function partitionContent(id: string, name: string, children: FosPathElem[] = []): FosNodeContent {
@@ -416,10 +431,21 @@ export function findEdge(store: FosStore, value: FosNodeContent, key: string): F
 export function resolveScope(store: FosStore, nodeCid: string | null, scope: Scope): string | null {
   let current = nodeCid
   for (const step of scope) {
-    if (!current) return null
+    if (!current) break
     current = findChild(store, current, step)
   }
+  if (!current && nodeCid && scope[0] !== 'fos:home') {
+    const home = findChild(store, nodeCid, 'fos:home')
+    if (home) return resolveScope(store, home, scope)
+  }
   return current
+}
+
+/** Legacy attachment paths predate the explicit Home constructor. */
+export function contextScope(store: FosStore, nodeCid: string, scope: Scope): Scope {
+  if (!scope.length || findChild(store, nodeCid, scope[0]!)) return scope
+  const home = findChild(store, nodeCid, 'fos:home')
+  return home && resolveScope(store, home, scope) ? ['fos:home', ...scope] : scope
 }
 
 /** Replace, append or remove (`null`) the edge with `key`, keeping the others in order. */
@@ -452,6 +478,8 @@ export function replaceEdge(store: FosStore, value: FosNodeContent, key: string,
  *     bookkeeping changes and wholesale replacement; no PREV is added unless `fn` adds it.
  */
 export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn: (value: FosNodeContent) => FosNodeContent, mode: 'value' | 'node' = 'value'): string {
+  const canonical = contextScope(store, nodeCid, scope)
+  if (canonical !== scope) return updateAtScope(store, nodeCid, canonical, fn, mode)
   const identity = content(store, nodeCid)
   const ref = isRefNode(store, identity) && !isHandle(identity)
   const value = ref ? valueContent(store, nodeCid) : identity
@@ -531,6 +559,30 @@ export function rootTargetCid(store: FosStore): string {
 
 export function rootIsAlias(store: FosStore): boolean {
   return content(store, store.rootNodeId).children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
+}
+
+export const HOME_ID = 'fos:home'
+
+/** Normalize an account context with ordinary constructor and member edges. */
+export function homeContextCid(store: FosStore, rootCid: string, now: number): string {
+  const root = valueContent(store, rootCid)
+  const identity = makeLink(store, content(store, rootCid), 0)
+  let bindings = identity
+  if (!readMembers(store, bindings).some(member => member.peerId === 'fos')) bindings = withMember(store, bindings, 'fos', 'fos', [], [], SERVER_CAPABILITIES)
+  for (const peer of INTEGRATION_PEERS) if (!readMembers(store, bindings).some(member => member.peerId === `integration:${peer.id}`)) bindings = withMember(store, bindings, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides)
+  const homeCid = findChild(store, rootCid, HOME_ID)
+  const movable = homeCid ? [] : root.children.filter(edge => (isRowEdge(store, edge) && rowKindOf(store, edge) !== 'template') || isChoiceEdge(store, edge))
+  const homeValue = homeCid ? valueContent(store, homeCid) : rowContent('template', HOME_ID, 'Home', 0)
+  let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0)
+  // Constructor defaults pass the existing peer references, not another provider registry.
+  const own = new Set(readMembers(store, home).map(member => member.peerId))
+  const argumentsFromRoot = bindings.children.filter(edge => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ''))
+  if (argumentsFromRoot.length) home = { ...home, children: [...home.children, ...argumentsFromRoot] }
+  const nextHome = put(store, home)
+  if (homeCid === nextHome && bindings === identity && identity === content(store, rootCid)) return rootCid
+  const keep = root.children.filter(edge => !movable.includes(edge) && (!homeCid || identityCid(store, edge) !== homeCid))
+  const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, 'template', nextHome)] })
+  return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings), refTypeCid(store, identity)))
 }
 
 /**
@@ -716,11 +768,12 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
   if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers; if (value.data.template) view.template = value.data.template }
-  if (kind === 'requirement' && value.data.requirement) {
+  const demand = demandOf(value)
+  if (kind === 'requirement' && demand) {
     const progress = requirementProgress(store, nodeCid)
-    view.requirement = { ...value.data.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(value.data.requirement), ...(progress ? progress : {}) }
+    view.requirement = { ...demand, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(demand), ...(progress ? progress : {}) }
   }
-  if (kind === 'supply' && value.data.supply) view.supply = value.data.supply
+  if (kind === 'supply') view.supply = supplyOf(value)
   if (kind === 'query') view.query = value.data.query ?? {}
   if (kind === 'resource' && value.data.resource) { const allocated = allocatedIn(store, nodeCid); view.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === undefined ? null : value.data.resource.capacity - allocated } }
   if (kind === 'allocation' && value.data.allocation) view.allocation = value.data.allocation
@@ -730,6 +783,21 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
 
 // ---------------------------------------------------------------------------
 // Requirements, supplies, resources
+
+/** Supplied handler values are positive entries of the same flow record. */
+export function supplyOf(value: FosNodeContent): FosDataContent['supply'] {
+  if (value.data.supply) return value.data.supply
+  const a = value.data.allocation
+  return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}) } : undefined
+}
+
+/** A demand and a contribution are signed entries of the same resource. Legacy demand records still read. */
+export function demandOf(value: FosNodeContent): FosDataContent['requirement'] {
+  if (value.data.requirement) return value.data.requirement
+  const a = value.data.allocation
+  return a && (a.amount < 0 || (a.amount === 0 && !!a.capability)) ? { capability: a.capability ?? 'allocation', ...(!a.capability || a.capability === 'allocation' ? { resource: a.type, amount: -a.amount, unit: a.unit } : {}), ...(a.options ? { options: a.options } : {}), ...(a.peer ? { peer: a.peer } : {}), ...(a.repo ? { repo: a.repo } : {}), ...(a.tool ? { tool: a.tool } : {}), ...(a.start !== undefined ? { start: a.start } : {}), ...(a.end !== undefined ? { end: a.end } : {}) } : undefined
+}
+
 
 export function requirementSummary(req: NonNullable<FosDataContent['requirement']>): string {
   switch (req.capability) {
@@ -775,13 +843,14 @@ function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: F
  * the requirement names no amount.
  */
 export function requirementProgress(store: FosStore, requirementCid: string, root?: string): { have: number; need: number } | null {
-  const req = valueContent(store, requirementCid).data.requirement
+  const req = demandOf(valueContent(store, requirementCid))
   if (!req || req.capability !== 'allocation' || req.amount === undefined) return null
   let have = 0
   for (const { kind, value } of childRows(store, requirementCid)) {
     if (kind === 'allocation' && allocationMatches(req, value.data.allocation)) have += value.data.allocation?.amount ?? 0
-    if (kind === 'supply' && value.data.supply?.capability === 'allocation' && value.data.supply.ref) {
-      const found = findRowByAlias(store, root ?? rootTargetCid(store), value.data.supply.ref)
+    const supply = supplyOf(value)
+    if (kind === 'supply' && supply?.capability === 'allocation' && supply.ref) {
+      const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref)
       if (!found) have += req.amount // supplied from outside this replica: trusted in full
       else if (allocationMatches(req, found.row.allocation)) have += found.row.allocation?.amount ?? 0
     }
@@ -795,7 +864,7 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
  * matches its capability (confirmation, choice, a peer's answer, or a reference to an allocation/query row elsewhere).
  */
 export function requirementSatisfied(store: FosStore, requirementCid: string, root?: string): boolean {
-  const req = valueContent(store, requirementCid).data.requirement
+  const req = demandOf(valueContent(store, requirementCid))
   if (!req) return true
   const rows = childRows(store, requirementCid)
   const filledByChild = rows.some(({ kind, value }) => {
@@ -815,7 +884,7 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
     if (progress && progress.have >= progress.need) return true
   }
   return rows.some(({ kind, value }) => {
-    const s = kind === 'supply' ? value.data.supply : undefined
+    const s = kind === 'supply' ? supplyOf(value) : undefined
     if (!s || s.capability !== req.capability) return false
     switch (req.capability) {
       case 'confirmation': return !!s.by
@@ -859,17 +928,18 @@ export function findTemplate(store: FosStore, rootCid: string, name: string, pre
 export function taskBlockers(store: FosStore, taskCid: string): string[] {
   return childRows(store, taskCid, 'requirement')
     .filter(({ cid }) => !requirementSatisfied(store, cid))
-    .map(({ value }) => (value.data.requirement ? requirementSummary(value.data.requirement) : 'requirement'))
+    .map(({ value }) => (demandOf(value) ? requirementSummary(demandOf(value)!) : 'requirement'))
 }
 
 /** Sum of allocation amounts anywhere under a resource bank (sub-banks included). */
 export function allocatedIn(store: FosStore, bankCid: string): number {
-  let total = 0
-  for (const { cid, kind, value } of childRows(store, bankCid)) {
-    if (kind === 'allocation') total += value.data.allocation?.amount ?? 0
-    else if (kind === 'resource') total += allocatedIn(store, cid)
-  }
-  return total
+  const type = valueContent(store, bankCid).data.resource?.type
+  const sum = (cid: string): number => childRows(store, cid).reduce((total, child) => {
+    const allocation = child.kind === 'allocation' ? child.value.data.allocation : undefined
+    const amount = allocation && (!type || allocation.type === type) ? allocation.amount : 0
+    return total + amount + sum(child.cid)
+  }, 0)
+  return sum(bankCid)
 }
 
 function describeEdge(store: FosStore, edge: FosPathElem | null): { task: TaskView | null; label: string | null } {
@@ -1434,7 +1504,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     if (instantiate && data.query) data.query = { market: data.query.market }
     if (data.ref && !data.ref.owner) data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id }
     if (data.supply?.ref) data.supply = { ...data.supply, ref: ids.get(data.supply.ref) ?? data.supply.ref }
-    if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource }
+    if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...(data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {}) }
     if (data.template) data.template = { ...data.template, id: ids.get(data.template.id) ?? data.template.id }
     // Typed arguments keep defaults, including ref-to-ref defaults. They get a fresh identity.
     const target = refValueCid(store, identity)
@@ -1458,7 +1528,7 @@ export function moveChild(store: FosStore, rootCid: string, fromPath: Scope, ali
   if (toPath.includes(aliasId)) return null // cannot move a node into its own subtree
   const fromCid = resolveScope(store, rootCid, fromPath)
   if (!fromCid) return null
-  const found = findAliasEdge(store, content(store, fromCid), aliasId)
+  const found = findAliasEdge(store, valueContent(store, fromCid), aliasId)
   if (!found) return null
   const moving = found.edge
 

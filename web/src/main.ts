@@ -31,6 +31,7 @@ const app = new App({
   baseUrl,
   autoLogin: project ? null : devCredentials,
   storage,
+  scopedDocument: virtualRequested,
   // [server] to/from in fos.config.toml fixes what this directory sends to and takes from the account server
   project: project ? { dir: project.dir, branch: () => (storage as { branch?: () => string }).branch?.() ?? null, deviceName: project.config.attach?.name ?? project.dir.split(/[\\/]/).filter(Boolean).pop(), policy: serverPolicyOf(project.config) } : undefined
 })

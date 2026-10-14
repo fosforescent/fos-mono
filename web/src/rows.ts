@@ -31,6 +31,7 @@ export type ParsedInput = {
   extras?: Omit<RowExtras, 'store'>
   /** "[ ] `name` …": the task executes the template called `name`. */
   templateName?: string
+  children?: ParsedInput[]
 }
 
 /** Words after "@" that open a resource bank rather than allocate a person. */
@@ -173,6 +174,22 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
 
 /** A typed row: the marker decides the kind (see the file comment); anything else is a plain row. */
 export function parseRowInput(raw: string): ParsedInput {
+  const lines = raw.replace(/\r\n/g, '\n').split('\n')
+  // Markdown owns its newlines; other cells use indentation to construct children.
+  if (lines.length > 1 && !/^>/.test(lines[0] ?? '') && lines.slice(1).every((line) => !line.trim() || /^\s+/.test(line))) {
+    const root = parseRowInput(lines[0] ?? '')
+    const parents: Array<{ indent: number; row: ParsedInput }> = [{ indent: -1, row: root }]
+    for (const line of lines.slice(1)) {
+      if (!line.trim()) continue
+      const indent = line.match(/^\s*/)?.[0].replace(/\t/g, '  ').length ?? 0
+      while (parents.length > 1 && parents[parents.length - 1]!.indent >= indent) parents.pop()
+      const child = parseRowInput(line.trimStart())
+      const parent = parents[parents.length - 1]!.row
+      ;(parent.children ??= []).push(child)
+      parents.push({ indent, row: child })
+    }
+    return root
+  }
   const text = raw.replace(/\s+$/, '')
   let m: RegExpMatchArray | null
   if ((m = text.match(/^\[\s?([xX]?)\]\s*(.*)$/s))) {

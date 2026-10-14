@@ -9,13 +9,13 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-web-tests-'))
 const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
-buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
-const { App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl } = require(path.join(dir, 'app.cjs'))
+buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
+const { App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const reply = (data, status = 200) => ({ ok: status < 400, status, statusText: String(status), json: async () => data })
 const apps = []
 function app(storage = createMemoryStorage()) {
-  const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage })
+  const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage, scopedDocument: true })
   // Test explicitly controls sync, polling and event notifications.
   a.scheduleSync = () => {}; a.startPolling = () => {}; a.openEvents = () => {}
   a.refreshRequests = async () => {}; a.refreshPoints = async () => {}; a.refreshIntegrations = async () => {}
@@ -24,11 +24,11 @@ function app(storage = createMemoryStorage()) {
 async function main() {
   const a = app(); mountUi(document.getElementById('app'), a)
   await tick()
-  let input = document.querySelector('input.edit')
+  let input = document.querySelector('textarea.edit')
   input.focus(); input.value = 'First row'
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await tick()
-  assert.equal(document.activeElement, document.querySelector('input.edit'), 'Enter in the empty list keeps the new-row editor focused')
+  assert.equal(document.activeElement, document.querySelector('textarea.edit'), 'Enter in the empty list keeps the new-row editor focused')
   Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true })
   input = document.activeElement; input.value = 'Parent with child'
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, shiftKey: true, bubbles: true }))
@@ -191,7 +191,7 @@ async function main() {
   assert(view(a.state.replica, []).tasks.some((row) => row.id === keyboardRow))
   assert.equal(document.activeElement.value.includes('Keyboard undo'), true, 'redo focuses restored row')
   a.goTo([]); a.select(null); await tick()
-  const ghostInput = document.querySelector('.ghost input.edit')
+  const ghostInput = document.querySelector('.ghost textarea.edit')
   ghostInput.focus(); ghostInput.value = 'Draft survives sync'; ghostInput.setSelectionRange(6, 6)
   const focusedServer = createReplica('focus-server')
   globalThis.fetch = async (url, init) => {
@@ -215,17 +215,17 @@ async function main() {
   assert.deepEqual(a.state.selected, ['qa-gamma'])
   assert(document.activeElement.value.includes('QA gamma'))
   a.select(null); await tick()
-  const previousGhost = document.querySelector('.ghost input.edit')
+  const previousGhost = document.querySelector('.ghost textarea.edit')
   previousGhost.focus(); previousGhost.value = 'Draft belongs to Home'
   a.goTo(['qa-delta']); await tick()
-  assert.notEqual(document.querySelector('.ghost input.edit'), previousGhost)
-  assert.equal(document.querySelector('.ghost input.edit').value, '', 'navigation never carries a Home draft into a child')
+  assert.notEqual(document.querySelector('.ghost textarea.edit'), previousGhost)
+  assert.equal(document.querySelector('.ghost textarea.edit').value, '', 'navigation never carries a Home draft into a child')
   a.goTo([]); await tick()
-  const previousStoreInput = document.querySelector('.ghost input.edit')
+  const previousStoreInput = document.querySelector('.ghost textarea.edit')
   previousStoreInput.value = 'Draft from old store'
   a.set({ replica: loadReplica(serializeReplica(a.state.replica)) }); await tick()
-  assert.notEqual(document.querySelector('.ghost input.edit'), previousStoreInput)
-  assert.equal(document.querySelector('.ghost input.edit').value, '', 'a replacement replica cannot inherit another session draft')
+  assert.notEqual(document.querySelector('.ghost textarea.edit'), previousStoreInput)
+  assert.equal(document.querySelector('.ghost textarea.edit').value, '', 'a replacement replica cannot inherit another session draft')
   console.log('PASS: ghost draft/caret/focus through asynchronous sync and sibling move undo/redo focus')
 
   const concurrent = a.addRowAt([], 'task', 'QA concurrent', { id: 'qa-concurrent' })
@@ -240,7 +240,7 @@ async function main() {
   assert(document.querySelector('.conflict-row'))
   a.resolveChoice(conflictNow.id, conflictNow.options.findIndex(option => option.task?.title === 'Local unfinished edit')); await tick()
   a.select(null); await tick()
-  let newRow = document.querySelector('.ghost input.edit')
+  let newRow = document.querySelector('.ghost textarea.edit')
   newRow.value = '[ ] QA completion'; newRow.dispatchEvent(new dom.window.Event('input'))
   newRow.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); await tick()
   const completed = a.currentView().tasks.find(task => task.title === 'QA completion')
@@ -256,7 +256,7 @@ async function main() {
   assert.equal(a.currentView().tasks.find(task => task.id === completed.id).done, true, 'completion uses the freshly parsed task type/state')
   a.select([completed.id]); await tick()
   document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true })); await tick()
-  assert.equal(document.activeElement, document.querySelector('.ghost input.edit'), 'zoom focuses the destination editor')
+  assert.equal(document.activeElement, document.querySelector('.ghost textarea.edit'), 'zoom focuses the destination editor')
   a.goTo([]); await tick()
   console.log('PASS: live concurrent drafts, visible conflicts, task completion while typing, blank cleanup, preview reset and zoom focus')
 
@@ -434,5 +434,48 @@ async function main() {
   console.log('PASS: undo/redo focus, deletion, received edits, redo invalidation, reset, peer connection settings and keyboard shortcuts')
   console.log('PASS: login, password-free persistence and attachment lookup retry')
   console.log('PASS: first-row/child focus, password removal, stored-session reconnect, bounded sync repair, expired-session notice')
+  const contextApp = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
+  contextApp.scheduleSync = () => {}; contextApp.startPolling = () => {}; apps.push(contextApp)
+  contextApp.enableVirtualPeers(null)
+  document.querySelector('#app').replaceChildren(); mountUi(document.querySelector('#app'), contextApp)
+  assert.deepEqual(contextApp.state.view, [HOME_ID])
+  assert.equal(contextApp.currentView().tasks.length, 0)
+  const project = contextApp.addRowAtTop(parseRowInput('[ ] Project\n  @money Budget 100\n    -$ 50 Travel\n      $ 20 First contribution\n      $ 30 Second contribution'))
+  const projectView = view(contextApp.state.replica, [HOME_ID, project])
+  const bank = projectView.tasks[0]
+  const need = view(contextApp.state.replica, [HOME_ID, project, bank.id]).tasks[0]
+  assert.equal(need.requirement.satisfied, true)
+  assert.equal(need.requirement.have, 50)
+  assert.equal(view(contextApp.state.replica, [HOME_ID,project]).tasks[0].resource.allocated,50,'contributions below demands count in the bank')
+  contextApp.undo()
+  assert.equal(view(contextApp.state.replica, [HOME_ID]).tasks.length, 0, 'a parsed tree is one undoable edit')
+  contextApp.redo()
+  assert.equal(view(contextApp.state.replica, [HOME_ID, project, bank.id, need.id]).tasks.length, 2)
+  const treeDraft = { store: contextApp.state.replica.store, head: require(path.join(dir, 'app.cjs')).headCid(contextApp.state.replica), parent: [HOME_ID] }
+  contextApp.set({ replica: renameTask(contextApp.state.replica, [HOME_ID], project, 'Remote title', 99) })
+  contextApp.rewriteRowAt([], project, parseRowInput('[ ] Local title\n  New local child'), treeDraft)
+  const treeConflict = contextApp.currentView().choices[0]
+  assert(treeConflict)
+  contextApp.resolveChoice(treeConflict.id, treeConflict.options.findIndex(option => option.task?.title === 'Local title'))
+  assert(view(contextApp.state.replica, [HOME_ID, project]).tasks.some(row => row.title === 'New local child'), 'parsed children survive concurrent draft conflicts')
+  contextApp.goToRoot()
+  assert(document.querySelector('[data-peer="integration:github"]'))
+  assert(!document.querySelector(`.tree .task[data-id="${HOME_ID}"]`), 'Settings hides the Home child')
+  assert(document.querySelector('.ghost textarea.edit'), 'root constructors use the same editor')
+  contextApp.addRowAtTop(parseRowInput('`Workflow`'))
+  assert(contextApp.currentView().tasks.some(row => row.title === 'Workflow'))
+  contextApp.goTo([])
+  contextApp.openContextMenu({ kind: 'task', at: [], task: contextApp.currentView().tasks[0] })
+  const menuItems = [...document.querySelectorAll('.context-menu button,.context button')]
+  assert(!document.body.textContent.includes('Add bank below'))
+  const connectNode = [...document.querySelectorAll('button')].find(button => button.textContent === 'Connect peer here…')
+  assert(connectNode)
+  connectNode.click()
+  assert.deepEqual(contextApp.state.view, [HOME_ID, project])
+  assert.equal(contextApp.state.modal, 'direct')
+  contextApp.logout()
+  assert.deepEqual(contextApp.state.view, [HOME_ID], 'a fresh offline session starts inside Home')
+  console.log('PASS: stored root/Home constructor, root peer bindings, indented tree parsing, atomic undo, shared Settings editor and node connections')
+
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(async () => { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); await tick(); for (const a of apps) a.logout(); dom.window.close(); rmSync(dir, { recursive: true, force: true }) })

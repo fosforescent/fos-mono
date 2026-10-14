@@ -33,6 +33,10 @@ import {
   bookkeepingOf,
   commitRoot,
   content,
+  contextScope,
+  HOME_ID,
+  homeContextCid,
+  findChild,
   hasNode,
   importNodes,
   isBookkeepingEdge,
@@ -149,7 +153,19 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
     return { error: `head node not provided (${detail})`, code: 'missing-nodes', missingNodeIds }
   }
 
+  const peerKnown = reachableSet(store, [request.headCid, request.baseCid])
   const rootTarget = rootTargetCid(store)
+  // Older root devices edit the Home instance; normalize both ends of their merge base.
+  if (!request.scope.length && findChild(store, rootTarget, HOME_ID) && !findChild(store, request.headCid, HOME_ID)) {
+    request = { ...request, headCid: homeContextCid(store, request.headCid, 0), baseCid: request.baseCid ? homeContextCid(store, request.baseCid, 0) : null }
+  }
+  const scope = contextScope(store, rootTarget, request.scope)
+  const scopedRequest = scope === request.scope ? request : { ...request, scope }
+  if (scopedRequest !== request) {
+    const result = serveSync(store, scopedRequest, serverPeerId, now, options)
+    if (!('error' in result)) result.response.scope = request.scope
+    return result
+  }
   const currentCid = resolveScope(store, rootTarget, request.scope)
   if (!currentCid) return { error: 'scope not found', code: 'scope-not-found' }
   if (options.proposeOnly && isLink(store, content(store, currentCid))) {
@@ -189,7 +205,7 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
     commitRoot(store, newRootTarget, now)
   }
 
-  const known = new Set([...Object.keys(request.nodes), ...reachableSet(store, [headCid, baseCid])])
+  const known = new Set([...Object.keys(request.nodes), ...peerKnown])
   return {
     changed,
     response: {

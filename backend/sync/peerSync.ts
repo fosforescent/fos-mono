@@ -11,7 +11,7 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { SERVER_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, createReplica, ensureHomeContext, SERVER_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
@@ -92,6 +92,13 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
         const loaded = await deps.loadStore(username)
         if (!loaded) return { status: 401, body: { error: 'User not found' } } as const
         const { user, store } = loaded
+        // Upgrade the account root only when a constructor-aware owner connects.
+        // Older scoped peer credentials continue to resolve through Home.
+        const beforeContext = rootTargetCid(store)
+        if (claimsOf(req).kind !== 'peer' && !parsed.scope.length && Object.values(parsed.nodes).some(node => node?.data?.alias?.id === HOME_ID)) {
+          ensureHomeContext(createReplica(serverPeerIdFor(user.username), store), 0)
+        }
+        const contextChanged = rootTargetCid(store) !== beforeContext
         {
           const claims = claimsOf(req)
           // Invited peers propose at link nodes (branches members approve); the owner's own devices merge.
@@ -103,8 +110,8 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
           }
           const served = serveSync(store, parsed, serverPeerIdFor(user.username), deps.now ? deps.now() : Date.now(), options)
           if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error, code: served.code, ...(served.missingNodeIds ? { missingNodeIds: served.missingNodeIds } : {}) } } as const
-          if (served.changed) await deps.saveStore(user, store)
-          return { status: 200, body: served.response, changed: served.changed, userId: user.id } as const
+          if (served.changed || contextChanged) await deps.saveStore(user, store)
+          return { status: 200, body: served.response, changed: served.changed || contextChanged, userId: user.id } as const
         }
       })
 
@@ -218,7 +225,7 @@ export function createProposalDecisionHandler(deps: PeerSyncDeps) {
             return { status: 403, body: { error: 'approve capability required on this node' } } as const
           }
         }
-        const replica: Replica = { store, meta: { version: 1, peerId: actor, scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
+        const replica: Replica = createReplica(actor, store)
         const before = headCid(replica)
         const now = deps.now ? deps.now() : Date.now()
         if (decision === 'approve') applyProposalAt(replica, scope, proposalId, actor, now)
@@ -247,7 +254,7 @@ export async function attachMemberToNode(deps: PeerSyncDeps, username: string, s
     if (!loaded) return false
     const { user, store } = loaded
     const { addMemberAt } = await import('@fosforescent/shared/sync/index')
-    const replica: Replica = { store, meta: { version: 1, peerId: serverPeerIdFor(user.username), scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
+    const replica: Replica = createReplica(serverPeerIdFor(user.username), store)
     const before = headCid(replica)
     try {
       addMemberAt(replica, scope, peerId, name, capabilities, deps.now ? deps.now() : Date.now())
@@ -284,7 +291,7 @@ export function createDetachHandler(deps: PeerSyncDeps) {
         const scope = findPeerScope(store, root, peerId)
         if (!scope) return { status: 200, body: { detached: false }, changed: false, userId: user.id } as const
         const { removePeerAt } = await import('@fosforescent/shared/sync/index')
-        const replica: Replica = { store, meta: { version: 1, peerId: serverPeerIdFor(user.username), scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
+        const replica: Replica = createReplica(serverPeerIdFor(user.username), store)
         const before = headCid(replica)
         removePeerAt(replica, scope, peerId, deps.now ? deps.now() : Date.now())
         const changed = headCid(replica) !== before
