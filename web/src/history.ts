@@ -1,4 +1,4 @@
-import { commitRoot, headCid, mergeNodes, resolveScope, viewNode, type Replica, type Scope } from '../../shared/sync/index'
+import { valueContent, identityCid, commitRoot, headCid, mergeNodes, resolveScope, viewNode, type Replica, type Scope } from '../../shared/sync/index'
 
 type Change = { from: string; to: string; path: Scope; settings: boolean }
 
@@ -18,15 +18,21 @@ export class EditHistory {
     this.future = []
   }
 
-  apply(replica: Replica, redo: boolean, now: number): { replica: Replica; path: Scope; settings: boolean; conflicts: boolean } | null {
+  canApply(replica: Replica, redo: boolean, scope: Scope): boolean {
+    return (redo ? this.future : this.past).some(change => withinScope(replica, change, scope))
+  }
+
+  apply(replica: Replica, redo: boolean, now: number, scope?: Scope): { replica: Replica; path: Scope; settings: boolean; conflicts: boolean } | null {
     const source = redo ? this.future : this.past
     const destination = redo ? this.past : this.future
-    const change = source[source.length - 1]
+    let index = source.length - 1
+    if (scope) while (index >= 0 && !withinScope(replica, source[index], scope)) index--
+    const change = source[index]
     if (!change) return null
     const before = headCid(replica)
     const result = mergeNodes(replica.store, change.from, before, change.to, { ours: 'Current edits', theirs: redo ? 'Redo' : 'Undo' })
     commitRoot(replica.store, result.cid, now)
-    source.pop()
+    source.splice(index, 1)
     destination.push({ from: result.cid, to: before, path: changedPath(replica, result.cid, before, change.path), settings: change.settings })
     return { replica: { ...replica }, path: change.path, settings: change.settings, conflicts: result.newChoiceCids.length > 0 }
   }
@@ -75,4 +81,22 @@ function modifiedPath(replica: Replica, before: string, after: string, path: Sco
     if (moved) return [...path, moved.id]
   }
   return path
+}
+
+/** Do not let a node undo affect sibling nodes (including cross-parent moves). */
+function withinScope(replica: Replica, change: Change, scope: Scope): boolean {
+  if (!scope.length) return true
+  const { store } = replica
+  for (let depth = 0; depth < scope.length; depth++) {
+    const parent = scope.slice(0, depth), childPath = scope.slice(0, depth + 1)
+    const signature = (head: string) => {
+      const parentCid = resolveScope(store, head, parent), childCid = resolveScope(store, head, childPath)
+      if (!parentCid || !childCid) return null
+      const value = valueContent(store, parentCid), { updated, ...data } = value.data
+      return JSON.stringify({ data, children: value.children.map(edge => identityCid(store, edge) === childCid ? ['selected-child'] : edge) })
+    }
+    const before = signature(change.from), after = signature(change.to)
+    if (before === null || after === null || before !== after) return false
+  }
+  return resolveScope(store, change.from, scope) !== resolveScope(store, change.to, scope)
 }

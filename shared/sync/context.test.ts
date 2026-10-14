@@ -1,4 +1,4 @@
-import { addSupply, addMemberAt, addRow, addTask, buildSyncRequest, completeSync, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, rowKindOf, serveSync, valueContent, view } from './index'
+import { createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, buildSyncRequest, completeSync, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, rowKindOf, serveSync, valueContent, view } from './index'
 
 test('legacy rows move into Home, constructors and peers remain at root, and migration is idempotent', () => {
   let r = addTask(createReplica('device'), [], 'Existing project', 1, 'project')
@@ -7,6 +7,7 @@ test('legacy rows move into Home, constructors and peers remain at root, and mig
   const previousProject = findChild(r.store, headCid(r), 'project')
   r = ensureHomeContext(r, 4)
   expect(homePath(r)).toEqual([HOME_ID])
+  expect(view(r, [])!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('plain')
   const rootMembers = content(r.store, headCid(r)).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
   const homeMembers = content(r.store, findChild(r.store, headCid(r), HOME_ID)!).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
   expect(homeMembers).toEqual(expect.arrayContaining(rootMembers))
@@ -100,4 +101,27 @@ test('handler demands and their supplied values share the same flow primitive', 
   expect(valueContent(r.store, answer).data.supply).toBeUndefined()
   expect(view(r, ['task'])!.tasks[0]!.requirement?.satisfied).toBe(true)
   expect(view(r, ['task', 'need'])!.tasks[0]!.supply?.by).toBe('user')
+})
+
+
+test('legacy Home template becomes an ordinary container without losing children', () => {
+  let r = addRow(createReplica(), [], 'template', 'Home', 1, { id: HOME_ID })
+  r = addTask(r, [HOME_ID], 'Keep this', 2, 'child')
+  r = ensureHomeContext(r, 3)
+  expect(view(r, [])!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('plain')
+  expect(view(r, [HOME_ID])!.tasks[0].id).toBe('child')
+  expect(ensureHomeContext(r, 4)).toBe(r)
+})
+
+
+test('Home branches survive normalization and keep their separate children', () => {
+  let r = ensureHomeContext(createReplica(), 0)
+  r = addTask(r, [HOME_ID], 'Original', 1, 'original')
+  r = createBranch(r, [HOME_ID], 'alternative', 2)
+  r = addTask(r, [HOME_ID], 'Alternative only', 3, 'extra')
+  r = ensureHomeContext(r, 4)
+  expect(view(r, [])!.tasks.find(row => row.id === HOME_ID)!.branches!.names).toContain('alternative')
+  expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).toContain('extra')
+  selectBranch(r.store, HOME_ID, 'main')
+  expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).not.toContain('extra')
 })
