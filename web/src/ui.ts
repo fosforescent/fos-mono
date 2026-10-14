@@ -262,10 +262,10 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
   const homeCrumb = button('crumb', labels.scope.length ? pathLabel(labels.scope) : 'Home', () => app.goTo([]))
-  crumbs.append(homeCrumb)
   if (state.atRoot) {
-    crumbs.append(span('sep', '›'), span('crumb current', 'Settings'))
+    crumbs.append(span('crumb current', 'Settings'))
   } else {
+    crumbs.append(homeCrumb)
     view.forEach((_id, index) => {
       if (_id === HOME_ID) return
       crumbs.append(span('sep', '›'), button('crumb', labels.view[index] ?? '…', () => app.goTo(view.slice(0, index + 1))))
@@ -1338,10 +1338,7 @@ function renderRootRows(state: AppState, app: App): HTMLElement[] {
     rows.push(li)
   }
   const constructors = app.currentView()
-  if (constructors) {
-    const visible = { ...constructors, tasks: constructors.tasks.filter((row) => row.id !== HOME_ID) }
-    rows.push(...renderRows(visible, [], 0, state, app))
-  }
+  if (constructors) rows.push(...renderRows(constructors, [], 0, state, app))
   return rows
 }
 
