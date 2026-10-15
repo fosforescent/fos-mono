@@ -190,9 +190,9 @@ export function hasSynced(replica: Replica): boolean {
   return replica.meta.baseCid !== null
 }
 
-export function view(replica: Replica, at: Scope): NodeView | null {
+export function view(replica: Replica, at: Scope, constructors = false): NodeView | null {
   const cid = resolveScope(replica.store, headCid(replica), at)
-  return cid ? viewNode(replica.store, cid) : null
+  return cid ? viewNode(replica.store, cid, constructors) : null
 }
 
 /** Names along the attached scope plus a path below it, for labels. */
@@ -230,7 +230,7 @@ function findTaskEdge(replica: Replica, value: FosNodeContent, taskId: string) {
 /** A child row carrying `aliasId` (any row kind, including legacy plain rows). */
 function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string) {
   const edge = findEdge(replica.store, value, `a:${aliasId}`)
-  return edge && isRowEdge(replica.store, edge) ? edge : undefined
+  return edge && (isRowEdge(replica.store, edge) || content(replica.store, identityCid(replica.store, edge)).data.name?.content.startsWith('fos:setting:')) ? edge : undefined
 }
 
 /** Parse single-brace parameters into ordinary named mutable-ref children.
@@ -464,6 +464,9 @@ export function resetHomeContent(replica: Replica, now: number): Replica {
 }
 
 export function deleteTask(replica: Replica, at: Scope, taskId: string, now: number): Replica {
+  const parent = resolveScope(replica.store, headCid(replica), at)
+  const edge = parent && findEdge(replica.store, content(replica.store, parent), `a:${taskId}`)
+  if (edge && [replica.store.primitive.memberField.getId(), replica.store.primitive.peerField.getId()].includes(edge[0])) return editNode(replica, at, now, node => replaceEdge(replica.store, node, `a:${taskId}`, null))
   return edit(replica, at, now, (value) => {
     if (!findChildEdge(replica, value, taskId)) return value
     return replaceEdge(replica.store, value, `a:${taskId}`, null)

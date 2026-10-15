@@ -430,7 +430,7 @@ export function partitionContent(id: string, name: string, children: FosPathElem
 }
 
 export function peerRefContent(peerId: string): FosNodeContent {
-  return { data: { peerId: { content: peerId } }, children: [] }
+  return { data: { alias: { id: `fos:device:${peerId}` }, peerId: { content: peerId } }, children: [] }
 }
 
 export function taskEdge(store: FosStore, taskCid: string): FosPathElem {
@@ -808,6 +808,8 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 // View model: what the UI sees (opaque ids, no cids)
 
 export type TaskView = {
+  construction?: { name?: string; peerId?: string }
+
   branches?: { selected: string; names: string[] }
   id: string
   title: string
@@ -1117,8 +1119,8 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
   return { tasks, done, choices }
 }
 
-export function viewNode(store: FosStore, cid: string): NodeView {
-  if (isBranchChoice(store, content(store, cid))) { const active = branchEdge(store, cid); if (active) return viewNode(store, identityCid(store, active)) }
+export function viewNode(store: FosStore, cid: string, constructors = false): NodeView {
+  if (isBranchChoice(store, content(store, cid))) { const active = branchEdge(store, cid); if (active) return viewNode(store, identityCid(store, active), constructors) }
   const identity = content(store, cid)      // ref node for link rows (bookkeeping lives here)
   const value = valueContent(store, cid)    // the content: text, rows
   const link = isLink(store, identity)
@@ -1145,6 +1147,21 @@ export function viewNode(store: FosStore, cid: string): NodeView {
       view.tasks.push(rowView(store, identityCid(store, edge), kind))
     } else if (isChoiceEdge(store, edge)) {
       view.choices.push(choiceView(store, edge[1]))
+    }
+  }
+  if (constructors) {
+    const seen = new Set<string>()
+    for (const edge of [...value.children, ...(identity === value ? [] : identity.children)]) {
+      const child = content(store, identityCid(store, edge))
+      const peerId = (isMemberEdge(store, edge) || isPeerEdge(store, edge)) ? child.data.peerId?.content : undefined
+      const name = refTypeCid(store, child) ? child.data.name?.content : undefined
+      if ((!peerId && !name?.startsWith('fos:setting:')) || !child.data.alias?.id) continue
+      if (seen.has(peerId ?? child.data.alias.id)) continue
+      seen.add(peerId ?? child.data.alias.id)
+      const row = rowView(store, identityCid(store, edge), 'plain')
+      row.title = peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name!
+      row.construction = { ...(name ? { name } : {}), ...(peerId ? { peerId } : {}) }
+      view.tasks.push(row)
     }
   }
   // Order is the edge order (part of the node's identity since cid v2); no sorting.
@@ -1401,6 +1418,7 @@ export function memberRefContent(store: FosStore, peerId: string, name: string |
   const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c))
   return {
     data: {
+      alias: { id: `fos:peer:${peerId}` },
       peerId: { content: peerId },
       ...(name ? { name: { content: name } } : {}),
       ...(off.length ? { disabledCapabilities: { content: off } } : {})
@@ -1438,6 +1456,9 @@ export function memberHandlers(store: FosStore, value: FosNodeContent, peerId: s
 /** Add or replace the member entry for `peerId`. */
 export function withMember(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
   const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts)
+  // Connection arguments and child rows belong to this constructor, not its capability list.
+  const previous = value.children.find(edge => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId)
+  if (previous) next.children.push(...content(store, previous[1]).children.filter(edge => edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId()))
   next.children = next.children.flatMap((edge) => {
     const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge)
     const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : []

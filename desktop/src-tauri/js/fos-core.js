@@ -1932,7 +1932,7 @@
     return { ...value, data: canonicalRowData(data) };
   }
   function peerRefContent(peerId) {
-    return { data: { peerId: { content: peerId } }, children: [] };
+    return { data: { alias: { id: `fos:device:${peerId}` }, peerId: { content: peerId } }, children: [] };
   }
   function taskEdge(store, taskCid) {
     return [taskCid, store.primitive.completeField.getId()];
@@ -2477,11 +2477,11 @@
     }
     return { tasks, done, choices };
   }
-  function viewNode(store, cid) {
+  function viewNode(store, cid, constructors = false) {
     if (isBranchChoice(store, content(store, cid))) {
       const active = branchEdge(store, cid);
       if (active)
-        return viewNode(store, identityCid(store, active));
+        return viewNode(store, identityCid(store, active), constructors);
     }
     const identity = content(store, cid);
     const value = valueContent(store, cid);
@@ -2511,6 +2511,23 @@
         view2.tasks.push(rowView(store, identityCid(store, edge), kind));
       } else if (isChoiceEdge(store, edge)) {
         view2.choices.push(choiceView(store, edge[1]));
+      }
+    }
+    if (constructors) {
+      const seen = /* @__PURE__ */ new Set();
+      for (const edge of [...value.children, ...identity === value ? [] : identity.children]) {
+        const child = content(store, identityCid(store, edge));
+        const peerId = isMemberEdge(store, edge) || isPeerEdge(store, edge) ? child.data.peerId?.content : void 0;
+        const name = refTypeCid(store, child) ? child.data.name?.content : void 0;
+        if (!peerId && !name?.startsWith("fos:setting:") || !child.data.alias?.id)
+          continue;
+        if (seen.has(peerId ?? child.data.alias.id))
+          continue;
+        seen.add(peerId ?? child.data.alias.id);
+        const row = rowView(store, identityCid(store, edge), "plain");
+        row.title = peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name;
+        row.construction = { ...name ? { name } : {}, ...peerId ? { peerId } : {} };
+        view2.tasks.push(row);
       }
     }
     return view2;
@@ -2673,6 +2690,7 @@
     const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c));
     return {
       data: {
+        alias: { id: `fos:peer:${peerId}` },
         peerId: { content: peerId },
         ...name ? { name: { content: name } } : {},
         ...off.length ? { disabledCapabilities: { content: off } } : {}
@@ -2715,6 +2733,9 @@
   }
   function withMember(store, value, peerId, name, capabilities, disabled = [], accepts = []) {
     const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts);
+    const previous = value.children.find((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId);
+    if (previous)
+      next.children.push(...content(store, previous[1]).children.filter((edge) => edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId()));
     next.children = next.children.flatMap((edge) => {
       const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge);
       const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : [];
@@ -8693,9 +8714,9 @@
       return head !== replica.meta.baseCid;
     return valueContent(replica.store, head).children.length > 0;
   }
-  function view(replica, at) {
+  function view(replica, at, constructors = false) {
     const cid = resolveScope(replica.store, headCid(replica), at);
-    return cid ? viewNode(replica.store, cid) : null;
+    return cid ? viewNode(replica.store, cid, constructors) : null;
   }
   function pathNames(replica, at = []) {
     return [...replica.meta.scopeNames, ...scopeNames(replica.store, headCid(replica), at)];
@@ -8712,7 +8733,7 @@
   }
   function findChildEdge(replica, value, aliasId) {
     const edge = findEdge(replica.store, value, `a:${aliasId}`);
-    return edge && isRowEdge(replica.store, edge) ? edge : void 0;
+    return edge && (isRowEdge(replica.store, edge) || content(replica.store, identityCid(replica.store, edge)).data.name?.content.startsWith("fos:setting:")) ? edge : void 0;
   }
   function withTextParameters(store, node) {
     const names = [...new Set(Array.from((node.data.description?.content ?? "").matchAll(/(?<![\\{])\{([A-Za-z_][\w.-]*)\}(?!\})/g), (m) => m[1]))];
@@ -8854,6 +8875,10 @@
     });
   }
   function deleteTask(replica, at, taskId, now) {
+    const parent = resolveScope(replica.store, headCid(replica), at);
+    const edge = parent && findEdge(replica.store, content(replica.store, parent), `a:${taskId}`);
+    if (edge && [replica.store.primitive.memberField.getId(), replica.store.primitive.peerField.getId()].includes(edge[0]))
+      return editNode(replica, at, now, (node) => replaceEdge(replica.store, node, `a:${taskId}`, null));
     return edit(replica, at, now, (value) => {
       if (!findChildEdge(replica, value, taskId))
         return value;
