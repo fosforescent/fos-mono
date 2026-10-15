@@ -459,3 +459,12 @@ button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
 .branch-request { flex: 0 0 auto; }
 .branch-request[aria-pressed="true"] { color: var(--accent, #4c9aff); }
 .peer-autocomplete { display: inline; }
+
+.template-buttons, .new-template-form, .destructure-panel form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.template-buttons button { min-width: 44px; min-height: 44px; }
+.new-template-form { margin-top: 1rem; }
+.destructure-panel { display: grid; gap: .5rem; padding: .5rem; border: 1px solid var(--border); border-radius: .35rem; }
+.destructure-panel input { min-width: 0; width: 10rem; max-width: 100%; }
+.output-chips { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
+.output-placeholder { cursor: grab; }
+.template-icon { margin-right: .35rem; }

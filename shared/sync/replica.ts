@@ -368,7 +368,7 @@ export function instantiateTemplate(replica: Replica, at: Scope, taskId: string,
   if (!template || template.row.kind !== 'template') return replica
   const templateCid = resolveScope(replica.store, headCid(replica), [...template.path, templateId])
   const taskCid = resolveScope(replica.store, headCid(replica), [...at, taskId])
-  if (!templateCid || !taskCid || !valueContent(replica.store, taskCid).data.todo) return replica
+  if (!templateCid || !taskCid || taskId === templateId) return replica
   const copied = content(replica.store, copyRowContent(replica.store, templateCid, now, newId, { instantiate: true, rootId: taskId }))
   return updateTask(replica, at, taskId, now, (task) => ({
     ...task,

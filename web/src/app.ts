@@ -25,7 +25,7 @@ import { evaluateOnServer, createRepositoryBranch, readRepository, proposeReposi
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, bookkeepingOf, refBranches, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -138,7 +138,7 @@ export type Notice = { kind: 'info' | 'error'; text: string; at: number }
 
 export type Credentials = { username: string; password: string }
 
-export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help' | 'phone' | 'work' | 'virtual'
+export type ModalKind = 'connect' | 'invite' | 'direct' | 'requests' | 'device' | 'market' | 'help' | 'phone' | 'work' | 'virtual' | 'template'
 
 /**
  * A peer in the context panel: the account server ("fos") with what it registered on the last sync, a member of the
@@ -194,6 +194,7 @@ export type AppState = {
   menuOpen: boolean
   virtual?: { name: string; hostName: string; capabilities: Capability[] }
   work?: { path: Scope; preview: WorkContext; busy: boolean; error?: string }
+  templatePicker?: { path: Scope }
   modal: ModalKind | null
   connectFlow: ConnectFlow
   inviteError?: string
@@ -1557,11 +1558,58 @@ export class App {
     commitRoot(current.store, merged.cid, this.now()); this.edit({ ...current })
     if (merged.newChoiceCids.length) this.notify('info', 'This text changed in two places. Choose which version to keep.')
   }
+  destructure(path: Scope, name: string, amount?: number): void {
+    try { this.edit(destructureRequirement(this.state.replica, path, name, amount, this.now())) }
+    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
+  bindOutputArgument(at: Scope, id: string, cid: string): void {
+    const r = this.state.replica, parent = resolveScope(r.store, headCid(r), [...this.state.view, ...at])
+    const arg = parent && argumentRefs(r.store, parent).find(a => content(r.store, a.cid).data.alias?.id === id)
+    if (!arg || !r.store.table.has(cid) || refTypeCid(r.store, content(r.store, cid)) !== arg.type) { this.notify('error', 'The placeholder has an incompatible type.'); return }
+    this.setArgumentValue(at, id, cid)
+  }
+  linkOutput(path: Scope, cid: string): void {
+    try { this.edit(linkRequirementOutput(this.state.replica, path, cid, this.now())) }
+    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
+  templateIcon(path: Scope): string {
+    const own = readNodeValue<string>(this.state.replica, path, 'fos:icon')
+    if (typeof own === 'string') return own
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+    const template = row?.template && resolveRef(this.state.replica, row.template.id)
+    const value = template ? readNodeValue<string>(this.state.replica, [...template.path, template.row.id], 'fos:icon') : null
+    return typeof value === 'string' ? value : ''
+  }
+  openTemplatePicker(path: Scope): void {
+    document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+    this.set({ templatePicker: { path: [...path] }, modal: 'template', contextMenu: null })
+  }
+  changeTemplate(kind: RowKind, templateId?: string): void {
+    const path = this.state.templatePicker?.path
+    if (!path?.length || path.at(-1) === HOME_ID) return
+    this.together(() => {
+      let r = this.state.replica
+      if (templateId) r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, templateId, this.now())
+      else r = setRowKind(r, path.slice(0, -1), path.at(-1)!, kind, this.now())
+      this.edit(r); this.closeModal()
+    })
+  }
+  createLinkedTemplate(name: string, icon: string, inHome: boolean): void {
+    const path = this.state.templatePicker?.path
+    if (!path?.length || path.at(-1) === HOME_ID) return
+    const parent = inHome ? homePath(this.state.replica) : path.slice(0, -1), id = newId(), title = name.trim() || 'Untitled template'
+    this.together(() => {
+      let r = addRow(this.state.replica, parent, 'template', title, this.now(), { id })
+      if (icon.trim()) r = writeNodeValue(r, [...parent, id], 'fos:icon', icon.trim(), this.now())
+      r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, id, this.now())
+      this.edit(r); this.closeModal(); this.goTo([...parent, id])
+    })
+  }
   changeCurrentKind(kind: RowKind): void {
     const path = this.state.view
     if (path.length && path.at(-1) !== 'fos:home') this.edit(setRowKind(this.state.replica, path.slice(0, -1), path.at(-1)!, kind, this.now()))
   }
-  searchLocalNodes(query: string): Array<{ row: TaskView; path: Scope }> {
+  searchLocalNodes(query: string, kind?: RowKind): Array<{ row: TaskView; path: Scope }> {
     const found: Array<{ row: TaskView; path: Scope }> = [], visited = new Set<string>()
     const walk = (path: Scope) => {
       if (path.length > 64 || visited.size > 5000) return
@@ -1569,7 +1617,7 @@ export class App {
         if (visited.has(row.id)) continue
         visited.add(row.id)
         const full = [...path, row.id]
-        if (row.title.toLowerCase().includes(query.toLowerCase()) && row.kind !== 'ref' && !this.state.view.includes(row.id)) found.push({ row, path: full })
+        if ((!kind || row.kind === kind) && row.title.toLowerCase().includes(query.toLowerCase()) && row.kind !== 'ref' && !this.state.view.includes(row.id)) found.push({ row, path: full })
         if (row.childCount) walk(full)
       }
     }
@@ -1732,7 +1780,7 @@ export class App {
     const path = [...this.state.view, ...at], r = this.state.replica
     const cid = resolveScope(r.store, headCid(r), path)
     if (!cid) return []
-    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && content(r.store, arg.cid).data.name?.content && !arg.name?.startsWith('fos:')).map(arg => {
+    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && !content(r.store, arg.cid).data.ref && content(r.store, arg.cid).data.name?.content && !arg.name?.startsWith('fos:')).map(arg => {
       const result = resolveText(r, path, `{{${arg.name}}}`)
       return { id: content(r.store, arg.cid).data.alias!.id, name: arg.name!, text: result.bindings[0]?.status === 'ready' ? result.text : '', problems: result.bindings.flatMap(b => b.problems) }
     })

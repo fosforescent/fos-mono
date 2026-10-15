@@ -80,653 +80,6 @@
     }
   });
 
-  // ../node_modules/js-sha3/src/sha3.js
-  var require_sha3 = __commonJS({
-    "../node_modules/js-sha3/src/sha3.js"(exports, module) {
-      init_prelude();
-      (function() {
-        "use strict";
-        var INPUT_ERROR = "input is invalid type";
-        var FINALIZE_ERROR = "finalize already called";
-        var WINDOW = typeof window === "object";
-        var root = WINDOW ? window : {};
-        if (root.JS_SHA3_NO_WINDOW) {
-          WINDOW = false;
-        }
-        var WEB_WORKER = !WINDOW && typeof self === "object";
-        var NODE_JS = !root.JS_SHA3_NO_NODE_JS && typeof process === "object" && process.versions && process.versions.node;
-        if (NODE_JS) {
-          root = global;
-        } else if (WEB_WORKER) {
-          root = self;
-        }
-        var COMMON_JS = !root.JS_SHA3_NO_COMMON_JS && typeof module === "object" && module.exports;
-        var AMD = typeof define === "function" && define.amd;
-        var ARRAY_BUFFER = !root.JS_SHA3_NO_ARRAY_BUFFER && typeof ArrayBuffer !== "undefined";
-        var HEX_CHARS = "0123456789abcdef".split("");
-        var SHAKE_PADDING = [31, 7936, 2031616, 520093696];
-        var CSHAKE_PADDING = [4, 1024, 262144, 67108864];
-        var KECCAK_PADDING = [1, 256, 65536, 16777216];
-        var PADDING = [6, 1536, 393216, 100663296];
-        var SHIFT = [0, 8, 16, 24];
-        var RC = [
-          1,
-          0,
-          32898,
-          0,
-          32906,
-          2147483648,
-          2147516416,
-          2147483648,
-          32907,
-          0,
-          2147483649,
-          0,
-          2147516545,
-          2147483648,
-          32777,
-          2147483648,
-          138,
-          0,
-          136,
-          0,
-          2147516425,
-          0,
-          2147483658,
-          0,
-          2147516555,
-          0,
-          139,
-          2147483648,
-          32905,
-          2147483648,
-          32771,
-          2147483648,
-          32770,
-          2147483648,
-          128,
-          2147483648,
-          32778,
-          0,
-          2147483658,
-          2147483648,
-          2147516545,
-          2147483648,
-          32896,
-          2147483648,
-          2147483649,
-          0,
-          2147516424,
-          2147483648
-        ];
-        var BITS = [224, 256, 384, 512];
-        var SHAKE_BITS = [128, 256];
-        var OUTPUT_TYPES = ["hex", "buffer", "arrayBuffer", "array", "digest"];
-        var CSHAKE_BYTEPAD = {
-          "128": 168,
-          "256": 136
-        };
-        var isArray = root.JS_SHA3_NO_NODE_JS || !Array.isArray ? function(obj) {
-          return Object.prototype.toString.call(obj) === "[object Array]";
-        } : Array.isArray;
-        var isView = ARRAY_BUFFER && (root.JS_SHA3_NO_ARRAY_BUFFER_IS_VIEW || !ArrayBuffer.isView) ? function(obj) {
-          return typeof obj === "object" && obj.buffer && obj.buffer.constructor === ArrayBuffer;
-        } : ArrayBuffer.isView;
-        var formatMessage = function(message) {
-          var type = typeof message;
-          if (type === "string") {
-            return [message, true];
-          }
-          if (type !== "object" || message === null) {
-            throw new Error(INPUT_ERROR);
-          }
-          if (ARRAY_BUFFER && message.constructor === ArrayBuffer) {
-            return [new Uint8Array(message), false];
-          }
-          if (!isArray(message) && !isView(message)) {
-            throw new Error(INPUT_ERROR);
-          }
-          return [message, false];
-        };
-        var empty = function(message) {
-          return formatMessage(message)[0].length === 0;
-        };
-        var cloneArray = function(array) {
-          var newArray = [];
-          for (var i2 = 0; i2 < array.length; ++i2) {
-            newArray[i2] = array[i2];
-          }
-          return newArray;
-        };
-        var createOutputMethod = function(bits2, padding, outputType) {
-          return function(message) {
-            return new Keccak(bits2, padding, bits2).update(message)[outputType]();
-          };
-        };
-        var createShakeOutputMethod = function(bits2, padding, outputType) {
-          return function(message, outputBits) {
-            return new Keccak(bits2, padding, outputBits).update(message)[outputType]();
-          };
-        };
-        var createCshakeOutputMethod = function(bits2, padding, outputType) {
-          return function(message, outputBits, n, s) {
-            return methods["cshake" + bits2].update(message, outputBits, n, s)[outputType]();
-          };
-        };
-        var createKmacOutputMethod = function(bits2, padding, outputType) {
-          return function(key, message, outputBits, s) {
-            return methods["kmac" + bits2].update(key, message, outputBits, s)[outputType]();
-          };
-        };
-        var createOutputMethods = function(method, createMethod2, bits2, padding) {
-          for (var i2 = 0; i2 < OUTPUT_TYPES.length; ++i2) {
-            var type = OUTPUT_TYPES[i2];
-            method[type] = createMethod2(bits2, padding, type);
-          }
-          return method;
-        };
-        var createMethod = function(bits2, padding) {
-          var method = createOutputMethod(bits2, padding, "hex");
-          method.create = function() {
-            return new Keccak(bits2, padding, bits2);
-          };
-          method.update = function(message) {
-            return method.create().update(message);
-          };
-          return createOutputMethods(method, createOutputMethod, bits2, padding);
-        };
-        var createShakeMethod = function(bits2, padding) {
-          var method = createShakeOutputMethod(bits2, padding, "hex");
-          method.create = function(outputBits) {
-            return new Keccak(bits2, padding, outputBits);
-          };
-          method.update = function(message, outputBits) {
-            return method.create(outputBits).update(message);
-          };
-          return createOutputMethods(method, createShakeOutputMethod, bits2, padding);
-        };
-        var createCshakeMethod = function(bits2, padding) {
-          var w = CSHAKE_BYTEPAD[bits2];
-          var method = createCshakeOutputMethod(bits2, padding, "hex");
-          method.create = function(outputBits, n, s) {
-            if (empty(n) && empty(s)) {
-              return methods["shake" + bits2].create(outputBits);
-            } else {
-              return new Keccak(bits2, padding, outputBits).bytepad([n, s], w);
-            }
-          };
-          method.update = function(message, outputBits, n, s) {
-            return method.create(outputBits, n, s).update(message);
-          };
-          return createOutputMethods(method, createCshakeOutputMethod, bits2, padding);
-        };
-        var createKmacMethod = function(bits2, padding) {
-          var w = CSHAKE_BYTEPAD[bits2];
-          var method = createKmacOutputMethod(bits2, padding, "hex");
-          method.create = function(key, outputBits, s) {
-            return new Kmac(bits2, padding, outputBits).bytepad(["KMAC", s], w).bytepad([key], w);
-          };
-          method.update = function(key, message, outputBits, s) {
-            return method.create(key, outputBits, s).update(message);
-          };
-          return createOutputMethods(method, createKmacOutputMethod, bits2, padding);
-        };
-        var algorithms = [
-          { name: "keccak", padding: KECCAK_PADDING, bits: BITS, createMethod },
-          { name: "sha3", padding: PADDING, bits: BITS, createMethod },
-          { name: "shake", padding: SHAKE_PADDING, bits: SHAKE_BITS, createMethod: createShakeMethod },
-          { name: "cshake", padding: CSHAKE_PADDING, bits: SHAKE_BITS, createMethod: createCshakeMethod },
-          { name: "kmac", padding: CSHAKE_PADDING, bits: SHAKE_BITS, createMethod: createKmacMethod }
-        ];
-        var methods = {}, methodNames = [];
-        for (var i = 0; i < algorithms.length; ++i) {
-          var algorithm = algorithms[i];
-          var bits = algorithm.bits;
-          for (var j = 0; j < bits.length; ++j) {
-            var methodName = algorithm.name + "_" + bits[j];
-            methodNames.push(methodName);
-            methods[methodName] = algorithm.createMethod(bits[j], algorithm.padding);
-            if (algorithm.name !== "sha3") {
-              var newMethodName = algorithm.name + bits[j];
-              methodNames.push(newMethodName);
-              methods[newMethodName] = methods[methodName];
-            }
-          }
-        }
-        function Keccak(bits2, padding, outputBits) {
-          this.blocks = [];
-          this.s = [];
-          this.padding = padding;
-          this.outputBits = outputBits;
-          this.reset = true;
-          this.finalized = false;
-          this.block = 0;
-          this.start = 0;
-          this.blockCount = 1600 - (bits2 << 1) >> 5;
-          this.byteCount = this.blockCount << 2;
-          this.outputBlocks = outputBits >> 5;
-          this.extraBytes = (outputBits & 31) >> 3;
-          for (var i2 = 0; i2 < 50; ++i2) {
-            this.s[i2] = 0;
-          }
-        }
-        Keccak.prototype.update = function(message) {
-          if (this.finalized) {
-            throw new Error(FINALIZE_ERROR);
-          }
-          var result = formatMessage(message);
-          message = result[0];
-          var isString = result[1];
-          var blocks = this.blocks, byteCount = this.byteCount, length = message.length, blockCount = this.blockCount, index = 0, s = this.s, i2, code;
-          while (index < length) {
-            if (this.reset) {
-              this.reset = false;
-              blocks[0] = this.block;
-              for (i2 = 1; i2 < blockCount + 1; ++i2) {
-                blocks[i2] = 0;
-              }
-            }
-            if (isString) {
-              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
-                code = message.charCodeAt(index);
-                if (code < 128) {
-                  blocks[i2 >> 2] |= code << SHIFT[i2++ & 3];
-                } else if (code < 2048) {
-                  blocks[i2 >> 2] |= (192 | code >> 6) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
-                } else if (code < 55296 || code >= 57344) {
-                  blocks[i2 >> 2] |= (224 | code >> 12) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
-                } else {
-                  code = 65536 + ((code & 1023) << 10 | message.charCodeAt(++index) & 1023);
-                  blocks[i2 >> 2] |= (240 | code >> 18) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 12 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
-                }
-              }
-            } else {
-              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
-                blocks[i2 >> 2] |= message[index] << SHIFT[i2++ & 3];
-              }
-            }
-            this.lastByteIndex = i2;
-            if (i2 >= byteCount) {
-              this.start = i2 - byteCount;
-              this.block = blocks[blockCount];
-              for (i2 = 0; i2 < blockCount; ++i2) {
-                s[i2] ^= blocks[i2];
-              }
-              f2(s);
-              this.reset = true;
-            } else {
-              this.start = i2;
-            }
-          }
-          return this;
-        };
-        Keccak.prototype.encode = function(x, right) {
-          var o = x & 255, n = 1;
-          var bytes = [o];
-          x = x >> 8;
-          o = x & 255;
-          while (o > 0) {
-            bytes.unshift(o);
-            x = x >> 8;
-            o = x & 255;
-            ++n;
-          }
-          if (right) {
-            bytes.push(n);
-          } else {
-            bytes.unshift(n);
-          }
-          this.update(bytes);
-          return bytes.length;
-        };
-        Keccak.prototype.encodeString = function(str) {
-          var result = formatMessage(str);
-          str = result[0];
-          var isString = result[1];
-          var bytes = 0, length = str.length;
-          if (isString) {
-            for (var i2 = 0; i2 < str.length; ++i2) {
-              var code = str.charCodeAt(i2);
-              if (code < 128) {
-                bytes += 1;
-              } else if (code < 2048) {
-                bytes += 2;
-              } else if (code < 55296 || code >= 57344) {
-                bytes += 3;
-              } else {
-                code = 65536 + ((code & 1023) << 10 | str.charCodeAt(++i2) & 1023);
-                bytes += 4;
-              }
-            }
-          } else {
-            bytes = length;
-          }
-          bytes += this.encode(bytes * 8);
-          this.update(str);
-          return bytes;
-        };
-        Keccak.prototype.bytepad = function(strs, w) {
-          var bytes = this.encode(w);
-          for (var i2 = 0; i2 < strs.length; ++i2) {
-            bytes += this.encodeString(strs[i2]);
-          }
-          var paddingBytes = (w - bytes % w) % w;
-          var zeros = [];
-          zeros.length = paddingBytes;
-          this.update(zeros);
-          return this;
-        };
-        Keccak.prototype.finalize = function() {
-          if (this.finalized) {
-            return;
-          }
-          this.finalized = true;
-          var blocks = this.blocks, i2 = this.lastByteIndex, blockCount = this.blockCount, s = this.s;
-          blocks[i2 >> 2] |= this.padding[i2 & 3];
-          if (this.lastByteIndex === this.byteCount) {
-            blocks[0] = blocks[blockCount];
-            for (i2 = 1; i2 < blockCount + 1; ++i2) {
-              blocks[i2] = 0;
-            }
-          }
-          blocks[blockCount - 1] |= 2147483648;
-          for (i2 = 0; i2 < blockCount; ++i2) {
-            s[i2] ^= blocks[i2];
-          }
-          f2(s);
-        };
-        Keccak.prototype.toString = Keccak.prototype.hex = function() {
-          this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
-          var hex = "", block;
-          while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
-              block = s[i2];
-              hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15] + HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15] + HEX_CHARS[block >> 20 & 15] + HEX_CHARS[block >> 16 & 15] + HEX_CHARS[block >> 28 & 15] + HEX_CHARS[block >> 24 & 15];
-            }
-            if (j2 % blockCount === 0) {
-              s = cloneArray(s);
-              f2(s);
-              i2 = 0;
-            }
-          }
-          if (extraBytes) {
-            block = s[i2];
-            hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15];
-            if (extraBytes > 1) {
-              hex += HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15];
-            }
-            if (extraBytes > 2) {
-              hex += HEX_CHARS[block >> 20 & 15] + HEX_CHARS[block >> 16 & 15];
-            }
-          }
-          return hex;
-        };
-        Keccak.prototype.arrayBuffer = function() {
-          this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
-          var bytes = this.outputBits >> 3;
-          var buffer;
-          if (extraBytes) {
-            buffer = new ArrayBuffer(outputBlocks + 1 << 2);
-          } else {
-            buffer = new ArrayBuffer(bytes);
-          }
-          var array = new Uint32Array(buffer);
-          while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
-              array[j2] = s[i2];
-            }
-            if (j2 % blockCount === 0) {
-              s = cloneArray(s);
-              f2(s);
-            }
-          }
-          if (extraBytes) {
-            array[j2] = s[i2];
-            buffer = buffer.slice(0, bytes);
-          }
-          return buffer;
-        };
-        Keccak.prototype.buffer = Keccak.prototype.arrayBuffer;
-        Keccak.prototype.digest = Keccak.prototype.array = function() {
-          this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
-          var array = [], offset, block;
-          while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
-              offset = j2 << 2;
-              block = s[i2];
-              array[offset] = block & 255;
-              array[offset + 1] = block >> 8 & 255;
-              array[offset + 2] = block >> 16 & 255;
-              array[offset + 3] = block >> 24 & 255;
-            }
-            if (j2 % blockCount === 0) {
-              s = cloneArray(s);
-              f2(s);
-            }
-          }
-          if (extraBytes) {
-            offset = j2 << 2;
-            block = s[i2];
-            array[offset] = block & 255;
-            if (extraBytes > 1) {
-              array[offset + 1] = block >> 8 & 255;
-            }
-            if (extraBytes > 2) {
-              array[offset + 2] = block >> 16 & 255;
-            }
-          }
-          return array;
-        };
-        function Kmac(bits2, padding, outputBits) {
-          Keccak.call(this, bits2, padding, outputBits);
-        }
-        Kmac.prototype = new Keccak();
-        Kmac.prototype.finalize = function() {
-          this.encode(this.outputBits, true);
-          return Keccak.prototype.finalize.call(this);
-        };
-        var f2 = function(s) {
-          var h, l, n, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31, b32, b33, b34, b35, b36, b37, b38, b39, b40, b41, b42, b43, b44, b45, b46, b47, b48, b49;
-          for (n = 0; n < 48; n += 2) {
-            c0 = s[0] ^ s[10] ^ s[20] ^ s[30] ^ s[40];
-            c1 = s[1] ^ s[11] ^ s[21] ^ s[31] ^ s[41];
-            c2 = s[2] ^ s[12] ^ s[22] ^ s[32] ^ s[42];
-            c3 = s[3] ^ s[13] ^ s[23] ^ s[33] ^ s[43];
-            c4 = s[4] ^ s[14] ^ s[24] ^ s[34] ^ s[44];
-            c5 = s[5] ^ s[15] ^ s[25] ^ s[35] ^ s[45];
-            c6 = s[6] ^ s[16] ^ s[26] ^ s[36] ^ s[46];
-            c7 = s[7] ^ s[17] ^ s[27] ^ s[37] ^ s[47];
-            c8 = s[8] ^ s[18] ^ s[28] ^ s[38] ^ s[48];
-            c9 = s[9] ^ s[19] ^ s[29] ^ s[39] ^ s[49];
-            h = c8 ^ (c2 << 1 | c3 >>> 31);
-            l = c9 ^ (c3 << 1 | c2 >>> 31);
-            s[0] ^= h;
-            s[1] ^= l;
-            s[10] ^= h;
-            s[11] ^= l;
-            s[20] ^= h;
-            s[21] ^= l;
-            s[30] ^= h;
-            s[31] ^= l;
-            s[40] ^= h;
-            s[41] ^= l;
-            h = c0 ^ (c4 << 1 | c5 >>> 31);
-            l = c1 ^ (c5 << 1 | c4 >>> 31);
-            s[2] ^= h;
-            s[3] ^= l;
-            s[12] ^= h;
-            s[13] ^= l;
-            s[22] ^= h;
-            s[23] ^= l;
-            s[32] ^= h;
-            s[33] ^= l;
-            s[42] ^= h;
-            s[43] ^= l;
-            h = c2 ^ (c6 << 1 | c7 >>> 31);
-            l = c3 ^ (c7 << 1 | c6 >>> 31);
-            s[4] ^= h;
-            s[5] ^= l;
-            s[14] ^= h;
-            s[15] ^= l;
-            s[24] ^= h;
-            s[25] ^= l;
-            s[34] ^= h;
-            s[35] ^= l;
-            s[44] ^= h;
-            s[45] ^= l;
-            h = c4 ^ (c8 << 1 | c9 >>> 31);
-            l = c5 ^ (c9 << 1 | c8 >>> 31);
-            s[6] ^= h;
-            s[7] ^= l;
-            s[16] ^= h;
-            s[17] ^= l;
-            s[26] ^= h;
-            s[27] ^= l;
-            s[36] ^= h;
-            s[37] ^= l;
-            s[46] ^= h;
-            s[47] ^= l;
-            h = c6 ^ (c0 << 1 | c1 >>> 31);
-            l = c7 ^ (c1 << 1 | c0 >>> 31);
-            s[8] ^= h;
-            s[9] ^= l;
-            s[18] ^= h;
-            s[19] ^= l;
-            s[28] ^= h;
-            s[29] ^= l;
-            s[38] ^= h;
-            s[39] ^= l;
-            s[48] ^= h;
-            s[49] ^= l;
-            b0 = s[0];
-            b1 = s[1];
-            b32 = s[11] << 4 | s[10] >>> 28;
-            b33 = s[10] << 4 | s[11] >>> 28;
-            b14 = s[20] << 3 | s[21] >>> 29;
-            b15 = s[21] << 3 | s[20] >>> 29;
-            b46 = s[31] << 9 | s[30] >>> 23;
-            b47 = s[30] << 9 | s[31] >>> 23;
-            b28 = s[40] << 18 | s[41] >>> 14;
-            b29 = s[41] << 18 | s[40] >>> 14;
-            b20 = s[2] << 1 | s[3] >>> 31;
-            b21 = s[3] << 1 | s[2] >>> 31;
-            b2 = s[13] << 12 | s[12] >>> 20;
-            b3 = s[12] << 12 | s[13] >>> 20;
-            b34 = s[22] << 10 | s[23] >>> 22;
-            b35 = s[23] << 10 | s[22] >>> 22;
-            b16 = s[33] << 13 | s[32] >>> 19;
-            b17 = s[32] << 13 | s[33] >>> 19;
-            b48 = s[42] << 2 | s[43] >>> 30;
-            b49 = s[43] << 2 | s[42] >>> 30;
-            b40 = s[5] << 30 | s[4] >>> 2;
-            b41 = s[4] << 30 | s[5] >>> 2;
-            b22 = s[14] << 6 | s[15] >>> 26;
-            b23 = s[15] << 6 | s[14] >>> 26;
-            b4 = s[25] << 11 | s[24] >>> 21;
-            b5 = s[24] << 11 | s[25] >>> 21;
-            b36 = s[34] << 15 | s[35] >>> 17;
-            b37 = s[35] << 15 | s[34] >>> 17;
-            b18 = s[45] << 29 | s[44] >>> 3;
-            b19 = s[44] << 29 | s[45] >>> 3;
-            b10 = s[6] << 28 | s[7] >>> 4;
-            b11 = s[7] << 28 | s[6] >>> 4;
-            b42 = s[17] << 23 | s[16] >>> 9;
-            b43 = s[16] << 23 | s[17] >>> 9;
-            b24 = s[26] << 25 | s[27] >>> 7;
-            b25 = s[27] << 25 | s[26] >>> 7;
-            b6 = s[36] << 21 | s[37] >>> 11;
-            b7 = s[37] << 21 | s[36] >>> 11;
-            b38 = s[47] << 24 | s[46] >>> 8;
-            b39 = s[46] << 24 | s[47] >>> 8;
-            b30 = s[8] << 27 | s[9] >>> 5;
-            b31 = s[9] << 27 | s[8] >>> 5;
-            b12 = s[18] << 20 | s[19] >>> 12;
-            b13 = s[19] << 20 | s[18] >>> 12;
-            b44 = s[29] << 7 | s[28] >>> 25;
-            b45 = s[28] << 7 | s[29] >>> 25;
-            b26 = s[38] << 8 | s[39] >>> 24;
-            b27 = s[39] << 8 | s[38] >>> 24;
-            b8 = s[48] << 14 | s[49] >>> 18;
-            b9 = s[49] << 14 | s[48] >>> 18;
-            s[0] = b0 ^ ~b2 & b4;
-            s[1] = b1 ^ ~b3 & b5;
-            s[10] = b10 ^ ~b12 & b14;
-            s[11] = b11 ^ ~b13 & b15;
-            s[20] = b20 ^ ~b22 & b24;
-            s[21] = b21 ^ ~b23 & b25;
-            s[30] = b30 ^ ~b32 & b34;
-            s[31] = b31 ^ ~b33 & b35;
-            s[40] = b40 ^ ~b42 & b44;
-            s[41] = b41 ^ ~b43 & b45;
-            s[2] = b2 ^ ~b4 & b6;
-            s[3] = b3 ^ ~b5 & b7;
-            s[12] = b12 ^ ~b14 & b16;
-            s[13] = b13 ^ ~b15 & b17;
-            s[22] = b22 ^ ~b24 & b26;
-            s[23] = b23 ^ ~b25 & b27;
-            s[32] = b32 ^ ~b34 & b36;
-            s[33] = b33 ^ ~b35 & b37;
-            s[42] = b42 ^ ~b44 & b46;
-            s[43] = b43 ^ ~b45 & b47;
-            s[4] = b4 ^ ~b6 & b8;
-            s[5] = b5 ^ ~b7 & b9;
-            s[14] = b14 ^ ~b16 & b18;
-            s[15] = b15 ^ ~b17 & b19;
-            s[24] = b24 ^ ~b26 & b28;
-            s[25] = b25 ^ ~b27 & b29;
-            s[34] = b34 ^ ~b36 & b38;
-            s[35] = b35 ^ ~b37 & b39;
-            s[44] = b44 ^ ~b46 & b48;
-            s[45] = b45 ^ ~b47 & b49;
-            s[6] = b6 ^ ~b8 & b0;
-            s[7] = b7 ^ ~b9 & b1;
-            s[16] = b16 ^ ~b18 & b10;
-            s[17] = b17 ^ ~b19 & b11;
-            s[26] = b26 ^ ~b28 & b20;
-            s[27] = b27 ^ ~b29 & b21;
-            s[36] = b36 ^ ~b38 & b30;
-            s[37] = b37 ^ ~b39 & b31;
-            s[46] = b46 ^ ~b48 & b40;
-            s[47] = b47 ^ ~b49 & b41;
-            s[8] = b8 ^ ~b0 & b2;
-            s[9] = b9 ^ ~b1 & b3;
-            s[18] = b18 ^ ~b10 & b12;
-            s[19] = b19 ^ ~b11 & b13;
-            s[28] = b28 ^ ~b20 & b22;
-            s[29] = b29 ^ ~b21 & b23;
-            s[38] = b38 ^ ~b30 & b32;
-            s[39] = b39 ^ ~b31 & b33;
-            s[48] = b48 ^ ~b40 & b42;
-            s[49] = b49 ^ ~b41 & b43;
-            s[0] ^= RC[n];
-            s[1] ^= RC[n + 1];
-          }
-        };
-        if (COMMON_JS) {
-          module.exports = methods;
-        } else {
-          for (i = 0; i < methodNames.length; ++i) {
-            root[methodNames[i]] = methods[methodNames[i]];
-          }
-          if (AMD) {
-            define(function() {
-              return methods;
-            });
-          }
-        }
-      })();
-    }
-  });
-
   // ../shared/node_modules/uuid/dist/esm-browser/max.js
   var max_default;
   var init_max = __esm({
@@ -1495,6 +848,653 @@
     }
   });
 
+  // ../node_modules/js-sha3/src/sha3.js
+  var require_sha3 = __commonJS({
+    "../node_modules/js-sha3/src/sha3.js"(exports, module) {
+      init_prelude();
+      (function() {
+        "use strict";
+        var INPUT_ERROR = "input is invalid type";
+        var FINALIZE_ERROR = "finalize already called";
+        var WINDOW = typeof window === "object";
+        var root = WINDOW ? window : {};
+        if (root.JS_SHA3_NO_WINDOW) {
+          WINDOW = false;
+        }
+        var WEB_WORKER = !WINDOW && typeof self === "object";
+        var NODE_JS = !root.JS_SHA3_NO_NODE_JS && typeof process === "object" && process.versions && process.versions.node;
+        if (NODE_JS) {
+          root = global;
+        } else if (WEB_WORKER) {
+          root = self;
+        }
+        var COMMON_JS = !root.JS_SHA3_NO_COMMON_JS && typeof module === "object" && module.exports;
+        var AMD = typeof define === "function" && define.amd;
+        var ARRAY_BUFFER = !root.JS_SHA3_NO_ARRAY_BUFFER && typeof ArrayBuffer !== "undefined";
+        var HEX_CHARS = "0123456789abcdef".split("");
+        var SHAKE_PADDING = [31, 7936, 2031616, 520093696];
+        var CSHAKE_PADDING = [4, 1024, 262144, 67108864];
+        var KECCAK_PADDING = [1, 256, 65536, 16777216];
+        var PADDING = [6, 1536, 393216, 100663296];
+        var SHIFT = [0, 8, 16, 24];
+        var RC = [
+          1,
+          0,
+          32898,
+          0,
+          32906,
+          2147483648,
+          2147516416,
+          2147483648,
+          32907,
+          0,
+          2147483649,
+          0,
+          2147516545,
+          2147483648,
+          32777,
+          2147483648,
+          138,
+          0,
+          136,
+          0,
+          2147516425,
+          0,
+          2147483658,
+          0,
+          2147516555,
+          0,
+          139,
+          2147483648,
+          32905,
+          2147483648,
+          32771,
+          2147483648,
+          32770,
+          2147483648,
+          128,
+          2147483648,
+          32778,
+          0,
+          2147483658,
+          2147483648,
+          2147516545,
+          2147483648,
+          32896,
+          2147483648,
+          2147483649,
+          0,
+          2147516424,
+          2147483648
+        ];
+        var BITS = [224, 256, 384, 512];
+        var SHAKE_BITS = [128, 256];
+        var OUTPUT_TYPES = ["hex", "buffer", "arrayBuffer", "array", "digest"];
+        var CSHAKE_BYTEPAD = {
+          "128": 168,
+          "256": 136
+        };
+        var isArray = root.JS_SHA3_NO_NODE_JS || !Array.isArray ? function(obj) {
+          return Object.prototype.toString.call(obj) === "[object Array]";
+        } : Array.isArray;
+        var isView = ARRAY_BUFFER && (root.JS_SHA3_NO_ARRAY_BUFFER_IS_VIEW || !ArrayBuffer.isView) ? function(obj) {
+          return typeof obj === "object" && obj.buffer && obj.buffer.constructor === ArrayBuffer;
+        } : ArrayBuffer.isView;
+        var formatMessage = function(message) {
+          var type = typeof message;
+          if (type === "string") {
+            return [message, true];
+          }
+          if (type !== "object" || message === null) {
+            throw new Error(INPUT_ERROR);
+          }
+          if (ARRAY_BUFFER && message.constructor === ArrayBuffer) {
+            return [new Uint8Array(message), false];
+          }
+          if (!isArray(message) && !isView(message)) {
+            throw new Error(INPUT_ERROR);
+          }
+          return [message, false];
+        };
+        var empty = function(message) {
+          return formatMessage(message)[0].length === 0;
+        };
+        var cloneArray = function(array) {
+          var newArray = [];
+          for (var i2 = 0; i2 < array.length; ++i2) {
+            newArray[i2] = array[i2];
+          }
+          return newArray;
+        };
+        var createOutputMethod = function(bits2, padding, outputType) {
+          return function(message) {
+            return new Keccak(bits2, padding, bits2).update(message)[outputType]();
+          };
+        };
+        var createShakeOutputMethod = function(bits2, padding, outputType) {
+          return function(message, outputBits) {
+            return new Keccak(bits2, padding, outputBits).update(message)[outputType]();
+          };
+        };
+        var createCshakeOutputMethod = function(bits2, padding, outputType) {
+          return function(message, outputBits, n, s) {
+            return methods["cshake" + bits2].update(message, outputBits, n, s)[outputType]();
+          };
+        };
+        var createKmacOutputMethod = function(bits2, padding, outputType) {
+          return function(key, message, outputBits, s) {
+            return methods["kmac" + bits2].update(key, message, outputBits, s)[outputType]();
+          };
+        };
+        var createOutputMethods = function(method, createMethod2, bits2, padding) {
+          for (var i2 = 0; i2 < OUTPUT_TYPES.length; ++i2) {
+            var type = OUTPUT_TYPES[i2];
+            method[type] = createMethod2(bits2, padding, type);
+          }
+          return method;
+        };
+        var createMethod = function(bits2, padding) {
+          var method = createOutputMethod(bits2, padding, "hex");
+          method.create = function() {
+            return new Keccak(bits2, padding, bits2);
+          };
+          method.update = function(message) {
+            return method.create().update(message);
+          };
+          return createOutputMethods(method, createOutputMethod, bits2, padding);
+        };
+        var createShakeMethod = function(bits2, padding) {
+          var method = createShakeOutputMethod(bits2, padding, "hex");
+          method.create = function(outputBits) {
+            return new Keccak(bits2, padding, outputBits);
+          };
+          method.update = function(message, outputBits) {
+            return method.create(outputBits).update(message);
+          };
+          return createOutputMethods(method, createShakeOutputMethod, bits2, padding);
+        };
+        var createCshakeMethod = function(bits2, padding) {
+          var w = CSHAKE_BYTEPAD[bits2];
+          var method = createCshakeOutputMethod(bits2, padding, "hex");
+          method.create = function(outputBits, n, s) {
+            if (empty(n) && empty(s)) {
+              return methods["shake" + bits2].create(outputBits);
+            } else {
+              return new Keccak(bits2, padding, outputBits).bytepad([n, s], w);
+            }
+          };
+          method.update = function(message, outputBits, n, s) {
+            return method.create(outputBits, n, s).update(message);
+          };
+          return createOutputMethods(method, createCshakeOutputMethod, bits2, padding);
+        };
+        var createKmacMethod = function(bits2, padding) {
+          var w = CSHAKE_BYTEPAD[bits2];
+          var method = createKmacOutputMethod(bits2, padding, "hex");
+          method.create = function(key, outputBits, s) {
+            return new Kmac(bits2, padding, outputBits).bytepad(["KMAC", s], w).bytepad([key], w);
+          };
+          method.update = function(key, message, outputBits, s) {
+            return method.create(key, outputBits, s).update(message);
+          };
+          return createOutputMethods(method, createKmacOutputMethod, bits2, padding);
+        };
+        var algorithms = [
+          { name: "keccak", padding: KECCAK_PADDING, bits: BITS, createMethod },
+          { name: "sha3", padding: PADDING, bits: BITS, createMethod },
+          { name: "shake", padding: SHAKE_PADDING, bits: SHAKE_BITS, createMethod: createShakeMethod },
+          { name: "cshake", padding: CSHAKE_PADDING, bits: SHAKE_BITS, createMethod: createCshakeMethod },
+          { name: "kmac", padding: CSHAKE_PADDING, bits: SHAKE_BITS, createMethod: createKmacMethod }
+        ];
+        var methods = {}, methodNames = [];
+        for (var i = 0; i < algorithms.length; ++i) {
+          var algorithm = algorithms[i];
+          var bits = algorithm.bits;
+          for (var j = 0; j < bits.length; ++j) {
+            var methodName = algorithm.name + "_" + bits[j];
+            methodNames.push(methodName);
+            methods[methodName] = algorithm.createMethod(bits[j], algorithm.padding);
+            if (algorithm.name !== "sha3") {
+              var newMethodName = algorithm.name + bits[j];
+              methodNames.push(newMethodName);
+              methods[newMethodName] = methods[methodName];
+            }
+          }
+        }
+        function Keccak(bits2, padding, outputBits) {
+          this.blocks = [];
+          this.s = [];
+          this.padding = padding;
+          this.outputBits = outputBits;
+          this.reset = true;
+          this.finalized = false;
+          this.block = 0;
+          this.start = 0;
+          this.blockCount = 1600 - (bits2 << 1) >> 5;
+          this.byteCount = this.blockCount << 2;
+          this.outputBlocks = outputBits >> 5;
+          this.extraBytes = (outputBits & 31) >> 3;
+          for (var i2 = 0; i2 < 50; ++i2) {
+            this.s[i2] = 0;
+          }
+        }
+        Keccak.prototype.update = function(message) {
+          if (this.finalized) {
+            throw new Error(FINALIZE_ERROR);
+          }
+          var result = formatMessage(message);
+          message = result[0];
+          var isString = result[1];
+          var blocks = this.blocks, byteCount = this.byteCount, length = message.length, blockCount = this.blockCount, index = 0, s = this.s, i2, code;
+          while (index < length) {
+            if (this.reset) {
+              this.reset = false;
+              blocks[0] = this.block;
+              for (i2 = 1; i2 < blockCount + 1; ++i2) {
+                blocks[i2] = 0;
+              }
+            }
+            if (isString) {
+              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
+                code = message.charCodeAt(index);
+                if (code < 128) {
+                  blocks[i2 >> 2] |= code << SHIFT[i2++ & 3];
+                } else if (code < 2048) {
+                  blocks[i2 >> 2] |= (192 | code >> 6) << SHIFT[i2++ & 3];
+                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                } else if (code < 55296 || code >= 57344) {
+                  blocks[i2 >> 2] |= (224 | code >> 12) << SHIFT[i2++ & 3];
+                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
+                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                } else {
+                  code = 65536 + ((code & 1023) << 10 | message.charCodeAt(++index) & 1023);
+                  blocks[i2 >> 2] |= (240 | code >> 18) << SHIFT[i2++ & 3];
+                  blocks[i2 >> 2] |= (128 | code >> 12 & 63) << SHIFT[i2++ & 3];
+                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
+                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                }
+              }
+            } else {
+              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
+                blocks[i2 >> 2] |= message[index] << SHIFT[i2++ & 3];
+              }
+            }
+            this.lastByteIndex = i2;
+            if (i2 >= byteCount) {
+              this.start = i2 - byteCount;
+              this.block = blocks[blockCount];
+              for (i2 = 0; i2 < blockCount; ++i2) {
+                s[i2] ^= blocks[i2];
+              }
+              f2(s);
+              this.reset = true;
+            } else {
+              this.start = i2;
+            }
+          }
+          return this;
+        };
+        Keccak.prototype.encode = function(x, right) {
+          var o = x & 255, n = 1;
+          var bytes = [o];
+          x = x >> 8;
+          o = x & 255;
+          while (o > 0) {
+            bytes.unshift(o);
+            x = x >> 8;
+            o = x & 255;
+            ++n;
+          }
+          if (right) {
+            bytes.push(n);
+          } else {
+            bytes.unshift(n);
+          }
+          this.update(bytes);
+          return bytes.length;
+        };
+        Keccak.prototype.encodeString = function(str) {
+          var result = formatMessage(str);
+          str = result[0];
+          var isString = result[1];
+          var bytes = 0, length = str.length;
+          if (isString) {
+            for (var i2 = 0; i2 < str.length; ++i2) {
+              var code = str.charCodeAt(i2);
+              if (code < 128) {
+                bytes += 1;
+              } else if (code < 2048) {
+                bytes += 2;
+              } else if (code < 55296 || code >= 57344) {
+                bytes += 3;
+              } else {
+                code = 65536 + ((code & 1023) << 10 | str.charCodeAt(++i2) & 1023);
+                bytes += 4;
+              }
+            }
+          } else {
+            bytes = length;
+          }
+          bytes += this.encode(bytes * 8);
+          this.update(str);
+          return bytes;
+        };
+        Keccak.prototype.bytepad = function(strs, w) {
+          var bytes = this.encode(w);
+          for (var i2 = 0; i2 < strs.length; ++i2) {
+            bytes += this.encodeString(strs[i2]);
+          }
+          var paddingBytes = (w - bytes % w) % w;
+          var zeros = [];
+          zeros.length = paddingBytes;
+          this.update(zeros);
+          return this;
+        };
+        Keccak.prototype.finalize = function() {
+          if (this.finalized) {
+            return;
+          }
+          this.finalized = true;
+          var blocks = this.blocks, i2 = this.lastByteIndex, blockCount = this.blockCount, s = this.s;
+          blocks[i2 >> 2] |= this.padding[i2 & 3];
+          if (this.lastByteIndex === this.byteCount) {
+            blocks[0] = blocks[blockCount];
+            for (i2 = 1; i2 < blockCount + 1; ++i2) {
+              blocks[i2] = 0;
+            }
+          }
+          blocks[blockCount - 1] |= 2147483648;
+          for (i2 = 0; i2 < blockCount; ++i2) {
+            s[i2] ^= blocks[i2];
+          }
+          f2(s);
+        };
+        Keccak.prototype.toString = Keccak.prototype.hex = function() {
+          this.finalize();
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var hex = "", block;
+          while (j2 < outputBlocks) {
+            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
+              block = s[i2];
+              hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15] + HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15] + HEX_CHARS[block >> 20 & 15] + HEX_CHARS[block >> 16 & 15] + HEX_CHARS[block >> 28 & 15] + HEX_CHARS[block >> 24 & 15];
+            }
+            if (j2 % blockCount === 0) {
+              s = cloneArray(s);
+              f2(s);
+              i2 = 0;
+            }
+          }
+          if (extraBytes) {
+            block = s[i2];
+            hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15];
+            if (extraBytes > 1) {
+              hex += HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15];
+            }
+            if (extraBytes > 2) {
+              hex += HEX_CHARS[block >> 20 & 15] + HEX_CHARS[block >> 16 & 15];
+            }
+          }
+          return hex;
+        };
+        Keccak.prototype.arrayBuffer = function() {
+          this.finalize();
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var bytes = this.outputBits >> 3;
+          var buffer;
+          if (extraBytes) {
+            buffer = new ArrayBuffer(outputBlocks + 1 << 2);
+          } else {
+            buffer = new ArrayBuffer(bytes);
+          }
+          var array = new Uint32Array(buffer);
+          while (j2 < outputBlocks) {
+            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
+              array[j2] = s[i2];
+            }
+            if (j2 % blockCount === 0) {
+              s = cloneArray(s);
+              f2(s);
+            }
+          }
+          if (extraBytes) {
+            array[j2] = s[i2];
+            buffer = buffer.slice(0, bytes);
+          }
+          return buffer;
+        };
+        Keccak.prototype.buffer = Keccak.prototype.arrayBuffer;
+        Keccak.prototype.digest = Keccak.prototype.array = function() {
+          this.finalize();
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var array = [], offset, block;
+          while (j2 < outputBlocks) {
+            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
+              offset = j2 << 2;
+              block = s[i2];
+              array[offset] = block & 255;
+              array[offset + 1] = block >> 8 & 255;
+              array[offset + 2] = block >> 16 & 255;
+              array[offset + 3] = block >> 24 & 255;
+            }
+            if (j2 % blockCount === 0) {
+              s = cloneArray(s);
+              f2(s);
+            }
+          }
+          if (extraBytes) {
+            offset = j2 << 2;
+            block = s[i2];
+            array[offset] = block & 255;
+            if (extraBytes > 1) {
+              array[offset + 1] = block >> 8 & 255;
+            }
+            if (extraBytes > 2) {
+              array[offset + 2] = block >> 16 & 255;
+            }
+          }
+          return array;
+        };
+        function Kmac(bits2, padding, outputBits) {
+          Keccak.call(this, bits2, padding, outputBits);
+        }
+        Kmac.prototype = new Keccak();
+        Kmac.prototype.finalize = function() {
+          this.encode(this.outputBits, true);
+          return Keccak.prototype.finalize.call(this);
+        };
+        var f2 = function(s) {
+          var h, l, n, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31, b32, b33, b34, b35, b36, b37, b38, b39, b40, b41, b42, b43, b44, b45, b46, b47, b48, b49;
+          for (n = 0; n < 48; n += 2) {
+            c0 = s[0] ^ s[10] ^ s[20] ^ s[30] ^ s[40];
+            c1 = s[1] ^ s[11] ^ s[21] ^ s[31] ^ s[41];
+            c2 = s[2] ^ s[12] ^ s[22] ^ s[32] ^ s[42];
+            c3 = s[3] ^ s[13] ^ s[23] ^ s[33] ^ s[43];
+            c4 = s[4] ^ s[14] ^ s[24] ^ s[34] ^ s[44];
+            c5 = s[5] ^ s[15] ^ s[25] ^ s[35] ^ s[45];
+            c6 = s[6] ^ s[16] ^ s[26] ^ s[36] ^ s[46];
+            c7 = s[7] ^ s[17] ^ s[27] ^ s[37] ^ s[47];
+            c8 = s[8] ^ s[18] ^ s[28] ^ s[38] ^ s[48];
+            c9 = s[9] ^ s[19] ^ s[29] ^ s[39] ^ s[49];
+            h = c8 ^ (c2 << 1 | c3 >>> 31);
+            l = c9 ^ (c3 << 1 | c2 >>> 31);
+            s[0] ^= h;
+            s[1] ^= l;
+            s[10] ^= h;
+            s[11] ^= l;
+            s[20] ^= h;
+            s[21] ^= l;
+            s[30] ^= h;
+            s[31] ^= l;
+            s[40] ^= h;
+            s[41] ^= l;
+            h = c0 ^ (c4 << 1 | c5 >>> 31);
+            l = c1 ^ (c5 << 1 | c4 >>> 31);
+            s[2] ^= h;
+            s[3] ^= l;
+            s[12] ^= h;
+            s[13] ^= l;
+            s[22] ^= h;
+            s[23] ^= l;
+            s[32] ^= h;
+            s[33] ^= l;
+            s[42] ^= h;
+            s[43] ^= l;
+            h = c2 ^ (c6 << 1 | c7 >>> 31);
+            l = c3 ^ (c7 << 1 | c6 >>> 31);
+            s[4] ^= h;
+            s[5] ^= l;
+            s[14] ^= h;
+            s[15] ^= l;
+            s[24] ^= h;
+            s[25] ^= l;
+            s[34] ^= h;
+            s[35] ^= l;
+            s[44] ^= h;
+            s[45] ^= l;
+            h = c4 ^ (c8 << 1 | c9 >>> 31);
+            l = c5 ^ (c9 << 1 | c8 >>> 31);
+            s[6] ^= h;
+            s[7] ^= l;
+            s[16] ^= h;
+            s[17] ^= l;
+            s[26] ^= h;
+            s[27] ^= l;
+            s[36] ^= h;
+            s[37] ^= l;
+            s[46] ^= h;
+            s[47] ^= l;
+            h = c6 ^ (c0 << 1 | c1 >>> 31);
+            l = c7 ^ (c1 << 1 | c0 >>> 31);
+            s[8] ^= h;
+            s[9] ^= l;
+            s[18] ^= h;
+            s[19] ^= l;
+            s[28] ^= h;
+            s[29] ^= l;
+            s[38] ^= h;
+            s[39] ^= l;
+            s[48] ^= h;
+            s[49] ^= l;
+            b0 = s[0];
+            b1 = s[1];
+            b32 = s[11] << 4 | s[10] >>> 28;
+            b33 = s[10] << 4 | s[11] >>> 28;
+            b14 = s[20] << 3 | s[21] >>> 29;
+            b15 = s[21] << 3 | s[20] >>> 29;
+            b46 = s[31] << 9 | s[30] >>> 23;
+            b47 = s[30] << 9 | s[31] >>> 23;
+            b28 = s[40] << 18 | s[41] >>> 14;
+            b29 = s[41] << 18 | s[40] >>> 14;
+            b20 = s[2] << 1 | s[3] >>> 31;
+            b21 = s[3] << 1 | s[2] >>> 31;
+            b2 = s[13] << 12 | s[12] >>> 20;
+            b3 = s[12] << 12 | s[13] >>> 20;
+            b34 = s[22] << 10 | s[23] >>> 22;
+            b35 = s[23] << 10 | s[22] >>> 22;
+            b16 = s[33] << 13 | s[32] >>> 19;
+            b17 = s[32] << 13 | s[33] >>> 19;
+            b48 = s[42] << 2 | s[43] >>> 30;
+            b49 = s[43] << 2 | s[42] >>> 30;
+            b40 = s[5] << 30 | s[4] >>> 2;
+            b41 = s[4] << 30 | s[5] >>> 2;
+            b22 = s[14] << 6 | s[15] >>> 26;
+            b23 = s[15] << 6 | s[14] >>> 26;
+            b4 = s[25] << 11 | s[24] >>> 21;
+            b5 = s[24] << 11 | s[25] >>> 21;
+            b36 = s[34] << 15 | s[35] >>> 17;
+            b37 = s[35] << 15 | s[34] >>> 17;
+            b18 = s[45] << 29 | s[44] >>> 3;
+            b19 = s[44] << 29 | s[45] >>> 3;
+            b10 = s[6] << 28 | s[7] >>> 4;
+            b11 = s[7] << 28 | s[6] >>> 4;
+            b42 = s[17] << 23 | s[16] >>> 9;
+            b43 = s[16] << 23 | s[17] >>> 9;
+            b24 = s[26] << 25 | s[27] >>> 7;
+            b25 = s[27] << 25 | s[26] >>> 7;
+            b6 = s[36] << 21 | s[37] >>> 11;
+            b7 = s[37] << 21 | s[36] >>> 11;
+            b38 = s[47] << 24 | s[46] >>> 8;
+            b39 = s[46] << 24 | s[47] >>> 8;
+            b30 = s[8] << 27 | s[9] >>> 5;
+            b31 = s[9] << 27 | s[8] >>> 5;
+            b12 = s[18] << 20 | s[19] >>> 12;
+            b13 = s[19] << 20 | s[18] >>> 12;
+            b44 = s[29] << 7 | s[28] >>> 25;
+            b45 = s[28] << 7 | s[29] >>> 25;
+            b26 = s[38] << 8 | s[39] >>> 24;
+            b27 = s[39] << 8 | s[38] >>> 24;
+            b8 = s[48] << 14 | s[49] >>> 18;
+            b9 = s[49] << 14 | s[48] >>> 18;
+            s[0] = b0 ^ ~b2 & b4;
+            s[1] = b1 ^ ~b3 & b5;
+            s[10] = b10 ^ ~b12 & b14;
+            s[11] = b11 ^ ~b13 & b15;
+            s[20] = b20 ^ ~b22 & b24;
+            s[21] = b21 ^ ~b23 & b25;
+            s[30] = b30 ^ ~b32 & b34;
+            s[31] = b31 ^ ~b33 & b35;
+            s[40] = b40 ^ ~b42 & b44;
+            s[41] = b41 ^ ~b43 & b45;
+            s[2] = b2 ^ ~b4 & b6;
+            s[3] = b3 ^ ~b5 & b7;
+            s[12] = b12 ^ ~b14 & b16;
+            s[13] = b13 ^ ~b15 & b17;
+            s[22] = b22 ^ ~b24 & b26;
+            s[23] = b23 ^ ~b25 & b27;
+            s[32] = b32 ^ ~b34 & b36;
+            s[33] = b33 ^ ~b35 & b37;
+            s[42] = b42 ^ ~b44 & b46;
+            s[43] = b43 ^ ~b45 & b47;
+            s[4] = b4 ^ ~b6 & b8;
+            s[5] = b5 ^ ~b7 & b9;
+            s[14] = b14 ^ ~b16 & b18;
+            s[15] = b15 ^ ~b17 & b19;
+            s[24] = b24 ^ ~b26 & b28;
+            s[25] = b25 ^ ~b27 & b29;
+            s[34] = b34 ^ ~b36 & b38;
+            s[35] = b35 ^ ~b37 & b39;
+            s[44] = b44 ^ ~b46 & b48;
+            s[45] = b45 ^ ~b47 & b49;
+            s[6] = b6 ^ ~b8 & b0;
+            s[7] = b7 ^ ~b9 & b1;
+            s[16] = b16 ^ ~b18 & b10;
+            s[17] = b17 ^ ~b19 & b11;
+            s[26] = b26 ^ ~b28 & b20;
+            s[27] = b27 ^ ~b29 & b21;
+            s[36] = b36 ^ ~b38 & b30;
+            s[37] = b37 ^ ~b39 & b31;
+            s[46] = b46 ^ ~b48 & b40;
+            s[47] = b47 ^ ~b49 & b41;
+            s[8] = b8 ^ ~b0 & b2;
+            s[9] = b9 ^ ~b1 & b3;
+            s[18] = b18 ^ ~b10 & b12;
+            s[19] = b19 ^ ~b11 & b13;
+            s[28] = b28 ^ ~b20 & b22;
+            s[29] = b29 ^ ~b21 & b23;
+            s[38] = b38 ^ ~b30 & b32;
+            s[39] = b39 ^ ~b31 & b33;
+            s[48] = b48 ^ ~b40 & b42;
+            s[49] = b49 ^ ~b41 & b43;
+            s[0] ^= RC[n];
+            s[1] ^= RC[n + 1];
+          }
+        };
+        if (COMMON_JS) {
+          module.exports = methods;
+        } else {
+          for (i = 0; i < methodNames.length; ++i) {
+            root[methodNames[i]] = methods[methodNames[i]];
+          }
+          if (AMD) {
+            define(function() {
+              return methods;
+            });
+          }
+        }
+      })();
+    }
+  });
+
   // ../shared/sync/embed.ts
   init_prelude();
 
@@ -1504,1863 +1504,10 @@
   // ../shared/sync/graph.ts
   init_prelude();
 
-  // ../shared/dag-implementation/cid.ts
+  // ../shared/sync/destructure.ts
   init_prelude();
-  var jsSha3 = __toESM(require_sha3(), 1);
-  var sha3_2562 = jsSha3.sha3_256 ?? jsSha3.default.sha3_256;
-  var PREFIXED = /^v(\d+)-([0-9a-f]+)$/;
-  var LEGACY = /^[0-9a-f]{64}$/;
-  function normalizeObject(obj) {
-    if (obj === null || typeof obj !== "object")
-      return obj;
-    if (Array.isArray(obj))
-      return obj.map(normalizeObject);
-    const source = obj;
-    return Object.keys(source).sort().reduce((result, key) => {
-      result[key] = normalizeObject(source[key]);
-      return result;
-    }, {});
-  }
-  function sortEdgesUndirected(edges) {
-    return edges.map((edge) => [...edge].sort()).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
-  }
-  function sha3Digest(content2) {
-    const normalized = {
-      data: JSON.stringify(normalizeObject(content2.data)),
-      children: sortEdgesUndirected(content2.children || [])
-    };
-    return sha3_2562(JSON.stringify(normalized));
-  }
-  function sha3OrderedDigest(content2) {
-    const normalized = {
-      v: 2,
-      data: JSON.stringify(normalizeObject(content2.data)),
-      children: (content2.children || []).map(([a, b]) => [a, b])
-    };
-    return sha3_2562(JSON.stringify(normalized));
-  }
-  var CID_FORMATS = {
-    0: {
-      version: 0,
-      description: "Legacy: bare sha3-256 hex of {data: canonical JSON, children: sorted edges}; no version prefix.",
-      digest: sha3Digest
-    },
-    1: {
-      version: 1,
-      description: 'Same digest as v0, written as "v1-<hex>" so the format can be told apart and migrated.',
-      digest: sha3Digest
-    },
-    2: {
-      version: 2,
-      description: "Edges hashed in order and direction (child order is part of identity).",
-      digest: sha3OrderedDigest
-    }
-  };
-  var CURRENT_CID_VERSION = 2;
-  function parseCid(cid) {
-    if (typeof cid !== "string")
-      return null;
-    const prefixed = PREFIXED.exec(cid);
-    if (prefixed) {
-      const version2 = Number(prefixed[1]);
-      return version2 in CID_FORMATS ? { version: version2, digest: prefixed[2] } : null;
-    }
-    if (LEGACY.test(cid))
-      return { version: 0, digest: cid };
-    return null;
-  }
-  function cidVersion(cid) {
-    return parseCid(cid)?.version ?? null;
-  }
-  function formatCid(version2, digest) {
-    if (!(version2 in CID_FORMATS))
-      throw new Error(`unknown cid version ${version2}`);
-    return version2 === 0 ? digest : `v${version2}-${digest}`;
-  }
-  function isCurrentCid(cid) {
-    return cidVersion(cid) === CURRENT_CID_VERSION;
-  }
-  function hashContentAt(content2, version2) {
-    const format = CID_FORMATS[version2];
-    if (!format)
-      throw new Error(`unknown cid version ${version2}`);
-    return formatCid(version2, format.digest(content2));
-  }
-  function hashContent(content2) {
-    return hashContentAt(content2, CURRENT_CID_VERSION);
-  }
-  function verifyCid(cid, content2) {
-    const parsed = parseCid(cid);
-    if (!parsed)
-      return false;
-    return hashContentAt(content2, parsed.version) === cid;
-  }
 
-  // ../shared/sync/graph.ts
-  var SYNC_FORMAT_VERSION = 3;
-  function content(store, cid) {
-    const value = store.table.get(cid);
-    if (!value)
-      throw new Error(`node ${cid.slice(0, 12)} not found`);
-    return value;
-  }
-  function hasNode(store, cid) {
-    return !!cid && store.table.has(cid);
-  }
-  function put(store, value) {
-    return store.create(value).getId();
-  }
-  function aliasIdOf(value) {
-    return value.data.alias?.id ?? null;
-  }
-  function isRefNode(store, value) {
-    return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId() || !!value.data.alias && i === store.primitive.instructionPointerConstructor.getId());
-  }
-  function isHandle(value) {
-    return !!value.data.ref;
-  }
-  function refValueCid(store, value) {
-    const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
-    return edge ? edge[1] : null;
-  }
-  function refBranches(store, ref) {
-    const cid = refValueCid(store, ref);
-    if (!cid || !isBranchChoice(store, content(store, cid)))
-      return null;
-    const record = readChoice(store, cid);
-    if (record.id !== ref.data.alias?.id)
-      return null;
-    return { cid, id: record.id, names: record.options.map((o) => o.peerId), selected: branchSelection(store, cid) };
-  }
-  function putRefValueBranches(store, ref, values, baseName = "main", selectedValue) {
-    const id = ref.data.alias.id;
-    const incoming = put(store, refNodeContent(store, { alias: { id }, ...ref.data.name ? { name: ref.data.name } : {} }, null, [], refTypeCid(store, ref)));
-    const options = [];
-    const add = (cid, preferred) => {
-      if (options.some((o) => o.edge?.[0] === cid))
-        return;
-      const name = preferred && !options.some((o) => o.peerId === preferred) ? preferred : options.length ? `value-${cid}` : baseName;
-      options.push({ peerId: name, edge: [cid, incoming] });
-    };
-    for (const cid of values) {
-      if (!cid)
-        continue;
-      if (isBranchChoice(store, content(store, cid)) && readChoice(store, cid).id === id) {
-        for (const option of readChoice(store, cid).options)
-          if (option.edge)
-            add(option.edge[0], option.peerId);
-      } else {
-        const prior = values.filter((value) => !!value && isBranchChoice(store, content(store, value)) && readChoice(store, value).id === id).flatMap((value) => readChoice(store, value).options).find((option) => option.edge?.[0] === cid);
-        add(cid, prior?.peerId);
-      }
-    }
-    const selected = options.find((o) => o.edge?.[0] === selectedValue)?.peerId ?? options[0]?.peerId ?? baseName;
-    return putBranches(store, id, options[0]?.edge ?? null, options, selected);
-  }
-  function selectedBranchValue(store, cid) {
-    const edge = branchEdge(store, cid);
-    if (!edge)
-      return null;
-    const right = content(store, edge[1]);
-    return refTypeCid(store, right) && right.data.alias?.id === readChoice(store, cid).id ? edge[0] : identityCid(store, edge);
-  }
-  function refTypeCid(store, value) {
-    const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId());
-    return edge ? edge[1] : null;
-  }
-  function valueContent(store, cid) {
-    const value = content(store, cid);
-    if (isBranchChoice(store, value)) {
-      const selected = selectedBranchValue(store, cid);
-      return selected ? valueContent(store, selected) : value;
-    }
-    if (isHandle(value))
-      return value;
-    const target = refValueCid(store, value);
-    return target && store.table.has(target) ? isBranchChoice(store, content(store, target)) ? valueContent(store, target) : content(store, target) : value;
-  }
-  function refBindingBaseCid(store, value) {
-    return put(store, { ...value, children: value.children.filter((edge) => !isProposalEdge(store, edge)) });
-  }
-  function refNodeContent(store, data, valueCid, bookkeeping = [], typeCid = null) {
-    const children = valueCid ? [[store.primitive.targetPointerConstructor.getId(), valueCid]] : [];
-    if (typeCid)
-      children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
-    return { data, children: [...children, ...bookkeeping] };
-  }
-  function newId() {
-    const cryptoApi = globalThis.crypto;
-    if (cryptoApi?.randomUUID)
-      return cryptoApi.randomUUID();
-    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-  }
-  function edgeKey(store, edge) {
-    const [instr, target] = edge;
-    if (instr === store.primitive.proposalField.getId()) {
-      const p = readProposal(store, target);
-      if (p)
-        return `p:${p.peerId}/${p.name}`;
-    }
-    const targetAlias = aliasIdOf(content(store, target));
-    if (targetAlias)
-      return `a:${targetAlias}`;
-    const instrAlias = aliasIdOf(content(store, instr));
-    if (instrAlias)
-      return `a:${instrAlias}`;
-    return `e:${instr}:${target}`;
-  }
-  function rowPrimitive(store, kind) {
-    switch (kind) {
-      case "task":
-        return store.primitive.completeField.getId();
-      case "plain":
-        return store.primitive.descriptionField.getId();
-      case "note":
-        return store.primitive.documentField.getId();
-      case "comment":
-        return store.primitive.commentField.getId();
-      case "ref":
-        return store.primitive.linkField.getId();
-      case "requirement":
-        return store.primitive.allocationField.getId();
-      case "supply":
-        return store.primitive.allocationField.getId();
-      case "query":
-        return store.primitive.queryField.getId();
-      case "resource":
-        return store.primitive.resourceField.getId();
-      case "allocation":
-        return store.primitive.allocationField.getId();
-      case "template":
-        return store.primitive.templateField.getId();
-    }
-  }
-  function rowKindOf(store, edge) {
-    if (isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))) {
-      const active = branchEdge(store, edge[1]);
-      return active ? rowKindOf(store, active) : null;
-    }
-    if (isPartitionEdge(store, edge))
-      return "plain";
-    const [, target] = edge;
-    const p = store.primitive;
-    if (target === p.completeField.getId())
-      return valueContent(store, edge[0]).data.todo ? "task" : "plain";
-    if (target === p.descriptionField.getId())
-      return "plain";
-    if (target === p.documentField.getId())
-      return "note";
-    if (target === p.commentField.getId())
-      return "comment";
-    if (target === p.linkField.getId())
-      return "ref";
-    if (target === p.requirementField.getId())
-      return "requirement";
-    if (target === p.supplyField.getId())
-      return "supply";
-    if (target === p.queryField.getId())
-      return "query";
-    if (target === p.resourceField.getId())
-      return "resource";
-    if (target === p.allocationField.getId())
-      return demandOf(valueContent(store, edge[0])) ? "requirement" : supplyOf(valueContent(store, edge[0])) ? "supply" : "allocation";
-    if (target === p.templateField.getId())
-      return "template";
-    return null;
-  }
-  function isRowEdge(store, edge) {
-    return rowKindOf(store, edge) !== null;
-  }
-  function identityOnInstruction(store, edge) {
-    return !isChoiceEdge(store, edge) && !isPartitionEdge(store, edge) && rowKindOf(store, edge) !== null;
-  }
-  function isPartitionEdge(store, edge) {
-    return edge[0] === store.primitive.listField.getId();
-  }
-  function isChoiceEdge(store, edge) {
-    return edge[0] === store.primitive.choiceTarget.getId();
-  }
-  var branchSelections = /* @__PURE__ */ new WeakMap();
-  function isBranchChoice(store, node) {
-    return !!node.data.option && !node.data.conflict && node.children.some((e) => e[0] === store.primitive.optionNotSelectedConstructor.getId());
-  }
-  function selectBranch(store, id, name) {
-    let selections = branchSelections.get(store);
-    if (!selections) {
-      selections = /* @__PURE__ */ new Map();
-      branchSelections.set(store, selections);
-    }
-    selections.set(id, name);
-  }
-  function withBranches(store, selections, run) {
-    const previous = branchSelections.get(store);
-    const next = new Map(previous);
-    for (const [id, name] of Object.entries(selections))
-      next.set(id, name);
-    branchSelections.set(store, next);
-    try {
-      return run();
-    } finally {
-      if (previous)
-        branchSelections.set(store, previous);
-      else
-        branchSelections.delete(store);
-    }
-  }
-  function scopeBranches(store, root, path) {
-    const result = {};
-    for (let i = 0; i <= path.length; i++) {
-      const cid = resolveScope(store, root, path.slice(0, i));
-      if (cid && isBranchChoice(store, content(store, cid)))
-        result[readChoice(store, cid).id] = branchSelection(store, cid);
-      else if (cid) {
-        const branches = refBranches(store, content(store, cid));
-        if (branches)
-          result[branches.id] = branches.selected;
-      }
-    }
-    return result;
-  }
-  function branchSelection(store, cid) {
-    const choice = readChoice(store, cid);
-    const name = branchSelections.get(store)?.get(choice.id);
-    return choice.options.find((o) => o.peerId === name)?.peerId ?? choice.defaultName ?? choice.options.map((o) => o.peerId).sort()[0] ?? "";
-  }
-  function branchEdge(store, cid) {
-    const choice = readChoice(store, cid);
-    return choice.options.find((o) => o.peerId === branchSelection(store, cid))?.edge ?? null;
-  }
-  function putBranches(store, id, base, options, defaultName = "main") {
-    const cid = putChoice(store, id, base, options), node = content(store, cid);
-    const { conflict: _conflict, ...data } = node.data;
-    const selectedIndex = Math.max(0, readChoice(store, cid).options.findIndex((o) => o.peerId === defaultName));
-    return put(store, { ...node, data: { ...data, option: { ...data.option, selectedIndex } } });
-  }
-  function updateBranch(store, cid, edge) {
-    const record = readChoice(store, cid), name = branchSelection(store, cid);
-    return putBranches(store, record.id, record.base, record.options.map((o) => o.peerId === name ? { ...o, edge } : o), record.defaultName);
-  }
-  function isPeerEdge(store, edge) {
-    return edge[0] === store.primitive.peerField.getId();
-  }
-  function identityCid(store, edge) {
-    return identityOnInstruction(store, edge) ? edge[0] : edge[1];
-  }
-  function withIdentity(store, edge, cid) {
-    return identityOnInstruction(store, edge) ? [cid, edge[1]] : [edge[0], cid];
-  }
-  function sameShape(store, a, b) {
-    const aRow = identityOnInstruction(store, a);
-    const bRow = identityOnInstruction(store, b);
-    if (aRow !== bRow)
-      return false;
-    return aRow ? a[1] === b[1] : a[0] === b[0];
-  }
-  function taskContent(id, title, done, createdAt, updatedAt) {
-    return {
-      data: {
-        alias: { id },
-        description: { content: title },
-        todo: { completed: done, time: createdAt },
-        updated: { time: updatedAt }
-      },
-      children: []
-    };
-  }
-  function rowContent(kind, id, text, now, extra = {}) {
-    const data = { alias: { id }, description: { content: text }, updated: { time: now } };
-    if (kind === "task")
-      data.todo = { completed: !!extra.done, time: now };
-    if (kind === "requirement")
-      data.requirement = extra.requirement ?? { capability: "confirmation" };
-    if (kind === "supply")
-      data.supply = extra.supply ?? { capability: "confirmation", by: "", at: now };
-    if (kind === "query")
-      data.query = extra.query ?? {};
-    if (kind === "resource")
-      data.resource = extra.resource ?? { type: "inventory", unit: "unit" };
-    if (kind === "allocation")
-      data.allocation = extra.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
-    if (kind === "comment")
-      data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
-    if (kind === "ref") {
-      data.ref = extra.refOwner ? { id: extra.refId ?? "", owner: extra.refOwner } : { id: extra.refId ?? "" };
-      if (extra.targetCid && extra.store)
-        return refNodeContent(extra.store, data, extra.targetCid);
-    }
-    canonicalRowData(data);
-    return { data, children: [] };
-  }
-  function canonicalRowData(data) {
-    if (data.requirement) {
-      const req = data.requirement;
-      data.allocation = { ...req, capability: req.capability, resource: "", type: req.resource ?? "inventory", amount: req.capability === "allocation" ? -Math.abs(req.amount ?? 0) : -1, unit: req.unit ?? "unit", ...req.start !== void 0 ? { start: req.start } : {}, ...req.end !== void 0 ? { end: req.end } : {} };
-      delete data.requirement;
-    } else if (data.supply) {
-      const supply = data.supply;
-      data.allocation = { ...supply, resource: "", type: "inventory", amount: 1, unit: "unit" };
-      delete data.supply;
-    }
-    return data;
-  }
-  function rowEdge(store, kind, cid) {
-    if (isBranchChoice(store, content(store, cid))) {
-      const active = branchEdge(store, cid);
-      return [store.primitive.choiceTarget.getId(), active ? updateBranch(store, cid, rowEdge(store, kind, identityCid(store, active))) : cid];
-    }
-    return [cid, rowPrimitive(store, valueContent(store, cid).data.allocation ? "allocation" : kind)];
-  }
-  function convertRowContent(value, kind, now) {
-    const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, ...rest } = value.data;
-    const data = { ...rest, updated: { time: now } };
-    if (kind === "task")
-      data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
-    if (kind === "comment")
-      data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
-    if (kind === "ref")
-      data.ref = value.data.ref ?? { id: "" };
-    if (kind === "requirement")
-      data.requirement = demandOf(value) ?? { capability: "confirmation" };
-    if (kind === "supply")
-      data.supply = supplyOf(value) ?? { capability: "confirmation", by: "", at: now };
-    if (kind === "query")
-      data.query = value.data.query ?? {};
-    if (kind === "resource")
-      data.resource = value.data.resource ?? { type: "inventory", unit: "unit" };
-    if (kind === "allocation")
-      data.allocation = value.data.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
-    return { ...value, data: canonicalRowData(data) };
-  }
-  function peerRefContent(peerId) {
-    return { data: { alias: { id: `fos:device:${peerId}` }, peerId: { content: peerId } }, children: [] };
-  }
-  function taskEdge(store, taskCid) {
-    return [taskCid, store.primitive.completeField.getId()];
-  }
-  function pointerContent(peerId, edge, store) {
-    const data = peerId ? { peerId: { content: peerId } } : {};
-    const children = edge ? [
-      [store.primitive.instructionPointerConstructor.getId(), edge[0]],
-      [store.primitive.targetPointerConstructor.getId(), edge[1]]
-    ] : [];
-    return { data, children };
-  }
-  function readPointer(store, cid) {
-    const value = content(store, cid);
-    let instr = null;
-    let target = null;
-    for (const [i, t] of value.children) {
-      if (i === store.primitive.instructionPointerConstructor.getId())
-        instr = t;
-      if (i === store.primitive.targetPointerConstructor.getId())
-        target = t;
-    }
-    return {
-      peerId: value.data.peerId?.content ?? null,
-      edge: instr && target ? [instr, target] : null
-    };
-  }
-  function mergeRequestEdge(store, id) {
-    const type = capabilityTarget(store, "approve");
-    return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: "request merge" } }, null, [], type))];
-  }
-  function putChoice(store, id, base, options) {
-    const alternatives = options.map((o) => {
-      const pointer = pointerContent(o.peerId, o.edge, store);
-      if (o.requestMerge)
-        pointer.children.push([capabilityTarget(store, "approve"), o.requestMerge]);
-      if (o.base)
-        pointer.children.push([store.primitive.conflictBaseNode.getId(), put(store, pointerContent(null, o.base, store))]);
-      return { peerId: o.peerId, cid: put(store, pointer) };
-    }).sort((a, b) => a.cid < b.cid ? -1 : a.cid > b.cid ? 1 : 0);
-    const baseCid = put(store, pointerContent(null, base, store));
-    const children = [
-      [store.primitive.conflictBaseNode.getId(), baseCid],
-      ...alternatives.map((a) => [store.primitive.optionNotSelectedConstructor.getId(), a.cid])
-    ];
-    return put(store, {
-      data: {
-        alias: { id },
-        conflict: { path: id },
-        option: { selectedIndex: 0, defaultResolutionStrategy: "choice" }
-      },
-      children
-    });
-  }
-  function readChoice(store, choiceCid) {
-    const value = content(store, choiceCid);
-    let base = null;
-    const options = [];
-    for (const [instr, target] of value.children) {
-      if (instr === store.primitive.conflictBaseNode.getId()) {
-        base = readPointer(store, target).edge;
-      } else if (instr === store.primitive.optionNotSelectedConstructor.getId()) {
-        const pointer = readPointer(store, target);
-        const basePointer = content(store, target).children.find((e) => e[0] === store.primitive.conflictBaseNode.getId());
-        const requestMerge = content(store, target).children.find((e) => content(store, e[1]).data.name?.content === "request merge")?.[1];
-        options.push({ peerId: pointer.peerId ?? "unknown", edge: pointer.edge, ...requestMerge ? { requestMerge } : {}, ...basePointer ? { base: readPointer(store, basePointer[1]).edge } : {} });
-      }
-    }
-    return { cid: choiceCid, id: aliasIdOf(value) ?? choiceCid, base, options, defaultName: options[value.data.option?.selectedIndex ?? 0]?.peerId };
-  }
-  function findEdge(store, value, key) {
-    return value.children.find((edge) => edgeKey(store, edge) === key);
-  }
-  function resolveScope(store, nodeCid, scope) {
-    let current = nodeCid;
-    for (const step of scope) {
-      if (!current)
-        break;
-      current = findChild(store, current, step);
-    }
-    if (!current && nodeCid && scope[0] !== "fos:home") {
-      const home = findChild(store, nodeCid, "fos:home");
-      if (home)
-        return resolveScope(store, home, scope);
-    }
-    return current;
-  }
-  function contextScope(store, nodeCid, scope) {
-    if (!scope.length || findChild(store, nodeCid, scope[0]))
-      return scope;
-    const home = findChild(store, nodeCid, "fos:home");
-    return home && resolveScope(store, home, scope) ? ["fos:home", ...scope] : scope;
-  }
-  function replaceEdge(store, value, key, edge) {
-    let found = false;
-    const children = [];
-    for (const existing of value.children) {
-      if (edgeKey(store, existing) === key) {
-        found = true;
-        if (edge)
-          children.push(edge);
-      } else {
-        children.push(existing);
-      }
-    }
-    if (!found && edge)
-      children.push(edge);
-    return { ...value, children };
-  }
-  function updateAtScope(store, nodeCid, scope, fn, mode = "value") {
-    const canonical = contextScope(store, nodeCid, scope);
-    if (canonical !== scope)
-      return updateAtScope(store, nodeCid, canonical, fn, mode);
-    const identity = content(store, nodeCid);
-    if (isBranchChoice(store, identity)) {
-      const active = branchEdge(store, nodeCid);
-      if (!active)
-        throw new Error("No selected branch");
-      const next = updateAtScope(store, identityCid(store, active), scope, fn, mode);
-      return next === identityCid(store, active) ? nodeCid : updateBranch(store, nodeCid, withIdentity(store, active, next));
-    }
-    const ref = isRefNode(store, identity) && !isHandle(identity);
-    const value = ref ? valueContent(store, nodeCid) : identity;
-    const advance = (nextValue) => {
-      if (nextValue === value)
-        return nodeCid;
-      if (ref) {
-        const now = nextValue.data.updated?.time ?? value.data.updated?.time ?? 0;
-        return put(store, relinkContent(store, identity, nodeCid, nextValue, now));
-      }
-      if (isLegacyInlineLink(store, identity)) {
-        const contentChanged = putStripped(store, nextValue) !== putStripped(store, value);
-        return put(store, contentChanged ? withPrev(store, nextValue, nodeCid) : nextValue);
-      }
-      return put(store, nextValue);
-    };
-    if (scope.length === 0) {
-      if (mode === "node") {
-        const next = fn(identity);
-        return next === identity ? nodeCid : put(store, next);
-      }
-      return advance(fn(value));
-    }
-    const [step, ...rest] = scope;
-    const found = findAliasEdge(store, value, step);
-    if (!found && ref) {
-      const argument = findAliasEdge(store, identity, step);
-      if (argument) {
-        const before = identityCid(store, argument.edge);
-        const after = updateAtScope(store, before, rest, fn, mode);
-        if (before === after)
-          return nodeCid;
-        const children2 = [...identity.children];
-        children2[argument.index] = withIdentity(store, argument.edge, after);
-        return put(store, withPrev(store, { ...identity, children: children2 }, nodeCid));
-      }
-    }
-    if (!found || isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])))
-      throw new Error(`node ${step} not found`);
-    const childCid = identityCid(store, found.edge);
-    const nextChild = updateAtScope(store, childCid, rest, fn, mode);
-    if (nextChild === childCid)
-      return nodeCid;
-    const children = [...value.children];
-    children[found.index] = withIdentity(store, found.edge, nextChild);
-    return advance({ ...value, children });
-  }
-  function withChildValue(store, edge, nextValue, now) {
-    const idCid = identityCid(store, edge);
-    const identity = content(store, idCid);
-    if (isBranchChoice(store, identity)) {
-      const active = branchEdge(store, idCid);
-      return active ? withIdentity(store, edge, updateBranch(store, idCid, withChildValue(store, active, nextValue, now))) : edge;
-    }
-    if (isRefNode(store, identity) && !isHandle(identity)) {
-      return withIdentity(store, edge, put(store, relinkContent(store, identity, idCid, nextValue, now)));
-    }
-    return withIdentity(store, edge, put(store, nextValue));
-  }
-  function withPeer(store, value, peerId) {
-    const refCid = put(store, peerRefContent(peerId));
-    const edge = [store.primitive.peerField.getId(), refCid];
-    if (value.children.some(([i, t]) => i === edge[0] && t === edge[1]))
-      return value;
-    return { ...value, children: [...value.children, edge] };
-  }
-  function rootTargetCid(store) {
-    const root = content(store, store.rootNodeId);
-    const pointer = root.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
-    return pointer ? pointer[1] : store.rootNodeId;
-  }
-  function rootIsAlias(store) {
-    return content(store, store.rootNodeId).children.some(([i]) => i === store.primitive.targetPointerConstructor.getId());
-  }
-  var HOME_ID = "fos:home";
-  function homeContextCid(store, rootCid, now) {
-    const root = valueContent(store, rootCid);
-    const identity = makeLink(store, content(store, rootCid), 0);
-    let bindings = identity;
-    if (!readMembers(store, bindings).some((member) => member.peerId === "fos"))
-      bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
-    const homeCid = findChild(store, rootCid, HOME_ID);
-    if (homeCid && isBranchChoice(store, content(store, homeCid))) {
-      const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
-      const nextEdge = rowEdge(store, "plain", homeCid);
-      if (nextEdge[0] === edge[0] && nextEdge[1] === edge[1] && bindings === identity && identity === content(store, rootCid))
-        return rootCid;
-      const nextValue2 = put(store, { ...root, children: root.children.map((e) => e === edge ? nextEdge : e) });
-      return put(store, refNodeContent(store, identity.data, nextValue2, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
-    }
-    const movable = homeCid ? [] : root.children.filter((edge) => isRowEdge(store, edge) && rowKindOf(store, edge) !== "template" || isChoiceEdge(store, edge));
-    const homeValue = homeCid ? valueContent(store, homeCid) : rowContent("plain", HOME_ID, "Home", 0);
-    let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0);
-    const legacyIntegrations = bindings.children.filter((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith("integration:"));
-    for (const edge of legacyIntegrations)
-      if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content))
-        home = { ...home, children: [...home.children, edge] };
-    if (legacyIntegrations.length)
-      bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
-    for (const peer of INTEGRATION_PEERS)
-      if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`))
-        home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
-    const own = new Set(readMembers(store, home).map((member) => member.peerId));
-    const argumentsFromRoot = bindings.children.filter((edge) => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ""));
-    if (argumentsFromRoot.length)
-      home = { ...home, children: [...home.children, ...argumentsFromRoot] };
-    const nextHome = put(store, home);
-    const homeEdge = root.children.find((edge) => identityCid(store, edge) === homeCid);
-    if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid))
-      return rootCid;
-    const keep = root.children.filter((edge) => !movable.includes(edge) && (!homeCid || identityCid(store, edge) !== homeCid));
-    const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, "plain", nextHome)] });
-    return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
-  }
-  function commitRoot(store, newTargetCid, now, mergeSourceCid = null) {
-    if (newTargetCid === rootTargetCid(store) && !mergeSourceCid)
-      return;
-    const previous = content(store, store.rootNodeId);
-    const instruction = rootIsAlias(store) ? previous.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId()) : void 0;
-    const children = [
-      [store.primitive.targetPointerConstructor.getId(), newTargetCid],
-      [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : store.primitive.rootInstructionNode.getId()],
-      [store.primitive.previousVersion.getId(), store.rootNodeId]
-    ];
-    if (mergeSourceCid)
-      children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid]);
-    const alias = previous.data.alias ?? { id: newId() };
-    store.rootNodeId = put(store, { data: { alias, updated: { time: now } }, children });
-    store.updateCtxCallback?.(store.exportContext([]));
-  }
-  function reachableNodes(store, roots, skip = /* @__PURE__ */ new Set()) {
-    const out = {};
-    const stack = roots.filter((r) => !!r && store.table.has(r));
-    const seen = /* @__PURE__ */ new Set();
-    while (stack.length) {
-      const cid = stack.pop();
-      if (seen.has(cid))
-        continue;
-      seen.add(cid);
-      const value = content(store, cid);
-      if (!skip.has(cid))
-        out[cid] = value;
-      for (const [i, t] of value.children) {
-        if (!seen.has(i))
-          stack.push(i);
-        if (!seen.has(t))
-          stack.push(t);
-      }
-    }
-    return out;
-  }
-  function reachableSet(store, roots) {
-    return new Set(Object.keys(reachableNodes(store, roots)));
-  }
-  function importNodes(store, nodes) {
-    const accepted = [];
-    let pending = Object.entries(nodes).filter(([cid, value]) => {
-      if (store.table.has(cid))
-        return false;
-      if (!value || typeof value !== "object" || !Array.isArray(value.children))
-        return false;
-      return isCurrentCid(cid) && verifyCid(cid, value);
-    });
-    let progress = true;
-    while (pending.length && progress) {
-      progress = false;
-      const rest = [];
-      for (const entry of pending) {
-        const [cid, value] = entry;
-        if (value.children.every(([i, t]) => store.table.has(i) && store.table.has(t))) {
-          store.table.set(cid, value);
-          accepted.push(cid);
-          progress = true;
-        } else {
-          rest.push(entry);
-        }
-      }
-      pending = rest;
-    }
-    return accepted;
-  }
-  function exportReachableContext(store, extraRoots = []) {
-    return {
-      nodes: reachableNodes(store, [store.rootNodeId, ...extraRoots]),
-      route: [],
-      rootNodeId: store.rootNodeId
-    };
-  }
-  function rowView(store, nodeCid, kind) {
-    const identity = content(store, nodeCid);
-    const value = valueContent(store, nodeCid);
-    const created = value.data.todo?.time ?? value.data.updated?.time ?? 0;
-    const sub = countNode(store, nodeCid);
-    const view2 = {
-      id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
-      title: value.data.description?.content ?? "",
-      kind,
-      checkable: kind === "task",
-      done: kind === "task" && !!value.data.todo?.completed,
-      createdAt: created,
-      updatedAt: value.data.updated?.time ?? created,
-      childCount: value.children.filter((e) => isRowEdge(store, e)).length,
-      childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
-      subtreeTasks: sub.tasks,
-      subtreeDone: sub.done,
-      isLink: isLink(store, identity)
-    };
-    const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null;
-    const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity;
-    if (refTypeCid(store, constructor) === capabilityTarget(store, "peer") && constructor.data.name)
-      view2.construction = { handler: constructor.data.name.content };
-    if (kind === "ref") {
-      view2.refId = identity.data.ref?.id ?? "";
-      if (identity.data.ref?.owner)
-        view2.refOwner = identity.data.ref.owner;
-    }
-    if (kind === "comment" && value.data.comment)
-      view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
-    if (kind === "task") {
-      const blockers = taskBlockers(store, nodeCid);
-      if (blockers.length)
-        view2.blockedBy = blockers;
-      if (value.data.template)
-        view2.template = value.data.template;
-    }
-    if (isBranchChoice(store, identity))
-      view2.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map((o) => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter((o) => o.requestMerge).map((o) => o.peerId) };
-    const demand = demandOf(value);
-    if (kind === "requirement" && demand) {
-      const progress = requirementProgress(store, nodeCid);
-      view2.requirement = { ...demand, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(demand), ...progress ? progress : {} };
-    }
-    if (kind === "supply")
-      view2.supply = supplyOf(value);
-    if (kind === "query")
-      view2.query = value.data.query ?? {};
-    if (kind === "resource" && value.data.resource) {
-      const allocated = allocatedIn(store, nodeCid);
-      view2.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === void 0 ? null : value.data.resource.capacity - allocated };
-    }
-    if (kind === "allocation" && value.data.allocation)
-      view2.allocation = value.data.allocation;
-    if (identity.data.listing)
-      view2.market = true;
-    return view2;
-  }
-  function supplyOf(value) {
-    if (value.data.supply)
-      return value.data.supply;
-    const a = value.data.allocation;
-    return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? "", at: a.at ?? 0, ...a.ref ? { ref: a.ref } : {}, ...a.choice !== void 0 ? { choice: a.choice } : {} } : void 0;
-  }
-  function demandOf(value) {
-    if (value.data.requirement)
-      return value.data.requirement;
-    const a = value.data.allocation;
-    return a && (a.amount < 0 || a.amount === 0 && !!a.capability) ? { capability: a.capability ?? "allocation", ...!a.capability || a.capability === "allocation" ? { resource: a.type, amount: -a.amount, unit: a.unit } : {}, ...a.options ? { options: a.options } : {}, ...a.peer ? { peer: a.peer } : {}, ...a.repo ? { repo: a.repo } : {}, ...a.tool ? { tool: a.tool } : {}, ...a.start !== void 0 ? { start: a.start } : {}, ...a.end !== void 0 ? { end: a.end } : {} } : void 0;
-  }
-  function requirementSummary(req) {
-    switch (req.capability) {
-      case "confirmation":
-        return "confirmation";
-      case "choice":
-        return `choice${req.options?.length ? ` (${req.options.join(" | ")})` : ""}`;
-      case "search":
-        return "search";
-      case "allocation":
-        return `${req.resource ?? "resource"}${req.amount !== void 0 ? ` ${req.amount} ${req.unit ?? ""}`.trimEnd() : ""}`;
-      case "task":
-        return "task";
-      case "market":
-        return "market";
-      case "mail":
-        return "mail";
-      case "peer":
-        return req.peer ? `@${req.peer}` : "peer";
-      case "llm":
-        return "llm";
-      case "repo":
-        return req.repo ? `repo ${req.repo}` : "repo";
-      case "tool":
-        return req.tool ? `tool ${req.tool}` : "tool";
-    }
-  }
-  function childRows(store, cid, kind) {
-    const out = [];
-    for (const edge of valueContent(store, cid).children) {
-      const k = rowKindOf(store, edge);
-      if (!k || kind && k !== kind)
-        continue;
-      const id = identityCid(store, edge);
-      out.push({ cid: id, kind: k, value: valueContent(store, id) });
-    }
-    return out;
-  }
-  function allocationFills(req, a) {
-    return allocationMatches(req, a) && (req.amount === void 0 || a.amount >= req.amount);
-  }
-  function allocationMatches(req, a) {
-    return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit === req.unit) && (req.start === void 0 || a.start !== void 0 && a.start <= req.start) && (req.end === void 0 || a.end === void 0 || a.end >= req.end) && (!req.peer || a.person === req.peer);
-  }
-  function requirementProgress(store, requirementCid, root) {
-    const req = demandOf(valueContent(store, requirementCid));
-    if (!req || req.capability !== "allocation" || req.amount === void 0)
-      return null;
-    let have = 0;
-    for (const { kind, value } of childRows(store, requirementCid)) {
-      if (kind === "allocation" && allocationMatches(req, value.data.allocation))
-        have += value.data.allocation?.amount ?? 0;
-      const supply = supplyOf(value);
-      if (kind === "supply" && supply?.capability === "allocation" && supply.ref) {
-        const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref);
-        if (!found)
-          have += req.amount;
-        else if (allocationMatches(req, found.row.allocation))
-          have += found.row.allocation?.amount ?? 0;
-      }
-    }
-    return { have, need: req.amount };
-  }
-  function requirementSatisfied(store, requirementCid, root) {
-    const req = demandOf(valueContent(store, requirementCid));
-    if (!req)
-      return true;
-    const rows = childRows(store, requirementCid);
-    const filledByChild = rows.some(({ kind, value }) => {
-      switch (req.capability) {
-        case "task":
-          return kind === "task" && !!value.data.todo?.completed;
-        case "allocation":
-          return kind === "allocation" && allocationFills(req, value.data.allocation);
-        case "search":
-          return kind === "query" && !!value.data.query?.executedAt;
-        case "peer":
-          return kind === "allocation" && value.data.allocation?.type === "person" && (!req.peer || value.data.allocation.person === req.peer);
-        default:
-          return false;
-      }
-    });
-    if (filledByChild)
-      return true;
-    if (req.capability === "allocation" && req.amount !== void 0 && req.amount > 0) {
-      const progress = requirementProgress(store, requirementCid, root);
-      if (progress && progress.have >= progress.need)
-        return true;
-    }
-    return rows.some(({ kind, value }) => {
-      const s = kind === "supply" ? supplyOf(value) : void 0;
-      if (!s || s.capability !== req.capability)
-        return false;
-      switch (req.capability) {
-        case "confirmation":
-          return !!s.by;
-        case "choice":
-          return typeof s.choice === "number" && (!req.options || s.choice >= 0 && s.choice < req.options.length);
-        case "search":
-          return !!s.ref;
-        case "task":
-          return !!s.ref;
-        case "market":
-          return !!s.by;
-        case "mail":
-          return !!s.by;
-        case "llm":
-          return !!s.by;
-        case "repo":
-          return !!s.by;
-        case "tool":
-          return !!s.by;
-        case "peer":
-          return !!s.by && (!req.peer || s.by === req.peer);
-        case "allocation": {
-          if (!s.ref)
-            return false;
-          const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref);
-          if (!found)
-            return true;
-          return allocationFills(req, found.row.allocation);
-        }
-      }
-    });
-  }
-  function taskBlockers(store, taskCid) {
-    return childRows(store, taskCid, "requirement").filter(({ cid }) => !requirementSatisfied(store, cid)).map(({ value }) => demandOf(value) ? requirementSummary(demandOf(value)) : "requirement");
-  }
-  function allocatedIn(store, bankCid) {
-    const type = valueContent(store, bankCid).data.resource?.type;
-    const sum = (cid) => childRows(store, cid).reduce((total, child) => {
-      const allocation = child.kind === "allocation" ? child.value.data.allocation : void 0;
-      const amount = allocation && (!type || allocation.type === type) ? allocation.amount : 0;
-      return total + amount + sum(child.cid);
-    }, 0);
-    return sum(bankCid);
-  }
-  function describeEdge(store, edge) {
-    if (!edge)
-      return { task: null, label: null };
-    const kind = rowKindOf(store, edge);
-    if (kind)
-      return { task: rowView(store, identityCid(store, edge), kind), label: null };
-    const value = valueContent(store, identityCid(store, edge));
-    return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? "node" };
-  }
-  function choiceView(store, choiceCid) {
-    const record = readChoice(store, choiceCid);
-    const base = describeEdge(store, record.base);
-    const options = record.options.map((o) => ({ peerId: o.peerId, ...describeEdge(store, o.edge) }));
-    const subject = base.task?.title ?? base.label ?? options.map((o) => o.task?.title ?? o.label).find((s) => !!s) ?? record.id;
-    return { id: record.id, subject, base: base.task, baseLabel: base.label, options };
-  }
-  function countNode(store, cid) {
-    let tasks = 0;
-    let done = 0;
-    let choices = 0;
-    for (const edge of valueContent(store, cid).children) {
-      if (rowKindOf(store, edge) === "task") {
-        tasks++;
-        const taskCid = identityCid(store, edge);
-        if (valueContent(store, taskCid).data.todo?.completed)
-          done++;
-        const sub = countNode(store, taskCid);
-        tasks += sub.tasks;
-        done += sub.done;
-        choices += sub.choices;
-      } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) {
-        choices++;
-      } else if (isRowEdge(store, edge)) {
-        const sub = countNode(store, identityCid(store, edge));
-        tasks += sub.tasks;
-        done += sub.done;
-        choices += sub.choices;
-      }
-    }
-    return { tasks, done, choices };
-  }
-  function viewNode(store, cid, constructors = false) {
-    if (isBranchChoice(store, content(store, cid))) {
-      const active = branchEdge(store, cid);
-      if (active)
-        return viewNode(store, identityCid(store, active), constructors);
-    }
-    const identity = content(store, cid);
-    const value = valueContent(store, cid);
-    const link = isLink(store, identity);
-    const view2 = {
-      name: value.data.description?.content ?? null,
-      done: value.data.todo ? !!value.data.todo.completed : null,
-      tasks: [],
-      choices: [],
-      peers: [],
-      isLink: link,
-      members: link ? readMembers(store, identity) : [],
-      proposals: link ? readProposals(store, identity).map((p) => proposalView(store, identity, p)) : [],
-      versions: link ? linkHistory(store, cid).length : 0
-    };
-    const peerEdges = identity === value ? identity.children : [...identity.children, ...value.children];
-    for (const edge of peerEdges) {
-      if (isPeerEdge(store, edge)) {
-        const peerId = content(store, edge[1]).data.peerId?.content;
-        if (peerId && !view2.peers.includes(peerId))
-          view2.peers.push(peerId);
-      }
-    }
-    for (const edge of value.children) {
-      const kind = rowKindOf(store, edge);
-      if (kind) {
-        view2.tasks.push(rowView(store, identityCid(store, edge), kind));
-      } else if (isChoiceEdge(store, edge)) {
-        view2.choices.push(choiceView(store, edge[1]));
-      }
-    }
-    if (constructors) {
-      const seen = /* @__PURE__ */ new Set();
-      for (const edge of [...value.children, ...identity === value ? [] : identity.children]) {
-        const child = content(store, identityCid(store, edge));
-        const peerId = isMemberEdge(store, edge) || isPeerEdge(store, edge) ? child.data.peerId?.content : void 0;
-        const name = refTypeCid(store, child) ? child.data.name?.content : void 0;
-        if (!peerId && !name?.startsWith("fos:setting:") || !child.data.alias?.id)
-          continue;
-        if (seen.has(peerId ?? child.data.alias.id))
-          continue;
-        seen.add(peerId ?? child.data.alias.id);
-        const row = rowView(store, identityCid(store, edge), "plain");
-        row.title = peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name;
-        row.construction = { ...name ? { name } : {}, ...peerId ? { peerId } : {} };
-        view2.tasks.push(row);
-      }
-    }
-    return view2;
-  }
-  function scopeNames(store, nodeCid, scope) {
-    const names = [];
-    let current = nodeCid;
-    for (const step of scope) {
-      if (!current) {
-        names.push(step);
-        continue;
-      }
-      const next = findChild(store, current, step);
-      names.push(next ? valueContent(store, next).data.description?.content ?? step : step);
-      current = next;
-    }
-    return names;
-  }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer"];
-  var INTEGRATION_PEERS = [
-    { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
-    { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
-    { id: "discord", name: "Discord", kind: "oauth", provides: ["mail", "relay"], consumes: ["read"] },
-    { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
-    { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
-  ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer"];
-  function isLink(store, value) {
-    if (isHandle(value))
-      return false;
-    return isRefNode(store, value) || !!value.data.link;
-  }
-  function isLegacyInlineLink(store, value) {
-    return !!value.data.link && !isRefNode(store, value);
-  }
-  function isPrevEdge(store, edge) {
-    return edge[0] === store.primitive.previousVersion.getId();
-  }
-  function isMemberEdge(store, edge) {
-    return edge[0] === store.primitive.memberField.getId();
-  }
-  function isProposalEdge(store, edge) {
-    return edge[0] === store.primitive.proposalField.getId();
-  }
-  function isBookkeepingEdge(store, edge) {
-    return isPrevEdge(store, edge) || isMemberEdge(store, edge) || isProposalEdge(store, edge) || isPeerEdge(store, edge);
-  }
-  function stripLink(store, value) {
-    if (isRefNode(store, value) && !isHandle(value)) {
-      const target = refValueCid(store, value);
-      return store.table.has(target) ? content(store, target) : { data: {}, children: [] };
-    }
-    const { link: _link, ...data } = value.data;
-    return { data, children: value.children.filter((e) => !isBookkeepingEdge(store, e)) };
-  }
-  function bookkeepingOf(store, value) {
-    return value.children.filter((e) => isBookkeepingEdge(store, e));
-  }
-  function putStripped(store, value) {
-    return put(store, stripLink(store, value));
-  }
-  function makeLink(store, value, now) {
-    if (isRefNode(store, value) && !isHandle(value))
-      return value;
-    const stripped = stripLink(store, value);
-    const valueCid = put(store, stripped);
-    const data = { alias: value.data.alias ?? { id: newId() }, updated: { time: now } };
-    return refNodeContent(store, data, valueCid, bookkeepingOf(store, value));
-  }
-  function withPrev(store, next, previousCid) {
-    const prevEdge = [store.primitive.previousVersion.getId(), previousCid];
-    const children = next.children.filter((e) => !isPrevEdge(store, e));
-    return { ...next, children: [...children, prevEdge] };
-  }
-  function linkHistory(store, cid, limit = 50) {
-    const out = [];
-    let current = cid;
-    while (current && out.length < limit) {
-      const prev = content(store, current).children.find((e) => isPrevEdge(store, e));
-      current = prev ? prev[1] : null;
-      if (current && store.table.has(current))
-        out.push(current);
-      else
-        break;
-    }
-    return out;
-  }
-  function capabilityTarget(store, capability) {
-    const p = store.primitive;
-    switch (capability) {
-      case "edit":
-        return p.proposeAction.getId();
-      case "approve":
-        return p.approveAction.getId();
-      case "direct":
-        return p.directConnectCapability.getId();
-      case "http":
-        return p.httpConnectCapability.getId();
-      case "ws":
-        return p.wsConnectCapability.getId();
-      case "relay":
-        return p.relayCapability.getId();
-      case "search":
-        return p.searchCapability.getId();
-      case "market":
-        return p.marketCapability.getId();
-      case "mail":
-        return p.mailCapability.getId();
-      case "read":
-        return p.readCapability.getId();
-      case "read-requests":
-        return p.readRequestsCapability.getId();
-      case "autopush":
-        return p.autopushCapability.getId();
-      case "calendar":
-        return p.calendarCapability.getId();
-      case "llm":
-        return p.llmCapability.getId();
-      case "repo":
-        return p.repoCapability.getId();
-      case "tool":
-        return p.toolCapability.getId();
-      case "send-payment":
-        return p.sendPaymentCapability.getId();
-      case "receive-payment":
-        return p.receivePaymentCapability.getId();
-      case "allocate":
-        return p.allocateCapability.getId();
-      case "request-payment":
-        return p.requestPaymentCapability.getId();
-      case "notify":
-        return p.notifyCapability.getId();
-      case "rank":
-      case "poll":
-      case "peer":
-      case "timer":
-      case "cron":
-      case "task-completion":
-      case "request":
-        return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] });
-    }
-  }
-  function capabilityOfTarget(store, target) {
-    const type = refTypeCid(store, content(store, target)) ?? target;
-    return CAPABILITIES.find((c) => type === capabilityTarget(store, c)) ?? null;
-  }
-  function capabilityOf(store, edge) {
-    if (edge[0] !== store.primitive.capabilityNode.getId())
-      return null;
-    return capabilityOfTarget(store, edge[1]);
-  }
-  function acceptsOf(store, edge) {
-    if (edge[0] !== store.primitive.acceptsNode.getId())
-      return null;
-    return capabilityOfTarget(store, edge[1]);
-  }
-  function memberRefContent(store, peerId, name, capabilities, disabled = [], accepts = []) {
-    const unique = [...new Set(capabilities)];
-    const from = [...new Set(accepts)];
-    const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c));
-    return {
-      data: {
-        alias: { id: `fos:peer:${peerId}` },
-        peerId: { content: peerId },
-        ...name ? { name: { content: name } } : {},
-        ...off.length ? { disabledCapabilities: { content: off } } : {}
-      },
-      children: [
-        ...unique.map((c) => [store.primitive.capabilityNode.getId(), capabilityTarget(store, c)]),
-        ...from.map((c) => [store.primitive.acceptsNode.getId(), capabilityTarget(store, c)])
-      ]
-    };
-  }
-  function readMembers(store, value) {
-    if (isBranchChoice(store, value)) {
-      const edge = branchEdge(store, put(store, value));
-      if (edge)
-        return readMembers(store, content(store, identityCid(store, edge)));
-    }
-    const out = [];
-    for (const edge of value.children) {
-      if (!isMemberEdge(store, edge))
-        continue;
-      const ref = content(store, edge[1]);
-      const peerId = ref.data.peerId?.content;
-      if (!peerId)
-        continue;
-      const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c) => c !== null))];
-      const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c) => c !== null);
-      const off = (ref.data.disabledCapabilities?.content ?? []).filter((c) => CAPABILITIES.includes(c) && (caps.includes(c) || accepts.includes(c)));
-      out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...off.length ? { disabled: off } : {}, ...accepts.length ? { accepts } : {} });
-    }
-    return out;
-  }
-  function memberHandlers(store, value, peerId, direction) {
-    if (isBranchChoice(store, value)) {
-      const edge = branchEdge(store, put(store, value));
-      if (edge)
-        return memberHandlers(store, content(store, identityCid(store, edge)), peerId, direction);
-    }
-    const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId);
-    return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && (e[0] === store.primitive.capabilityNode.getId() || e[0] === store.primitive.acceptsNode.getId()) && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : [];
-  }
-  function withMember(store, value, peerId, name, capabilities, disabled = [], accepts = []) {
-    const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts);
-    const previous = value.children.find((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId);
-    if (previous)
-      next.children.push(...content(store, previous[1]).children.filter((edge) => edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId()));
-    next.children = next.children.flatMap((edge) => {
-      const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge);
-      const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : [];
-      return matching.length ? matching.map((cid) => [edge[0], cid]) : [edge];
-    });
-    const refCid = put(store, next);
-    const children = value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId));
-    return { ...value, children: [...children, [store.primitive.memberField.getId(), refCid]] };
-  }
-  function textNode(store, text) {
-    return put(store, { data: { description: { content: text } }, children: [] });
-  }
-  function proposalContent(store, peerId, name, contentCid, baseCid, timestamp, status = "open") {
-    const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`;
-    const branchType = store.primitive.rootInstructionNode.getId();
-    const textType = store.primitive.documentField.getId();
-    const argument = (key, type, target, history = []) => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history, type))];
-    const constructor = put(store, {
-      data: { description: { content: name || "Proposal" }, peerId: { content: peerId }, updated: { time: timestamp } },
-      children: [
-        argument("branch", branchType, contentCid, [[store.primitive.previousVersion.getId(), baseCid]]),
-        mergeRequestEdge(store, id),
-        argument("status", textType, textNode(store, status))
-      ]
-    });
-    return refNodeContent(store, { alias: { id }, name: { content: "branch" }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId());
-  }
-  function readProposal(store, cid) {
-    const identity = content(store, cid);
-    if (refTypeCid(store, identity) === store.primitive.proposalField.getId()) {
-      const value2 = valueContent(store, cid);
-      const args = value2.children.map((edge) => content(store, identityCid(store, edge)));
-      const branch = args.find((arg) => arg.data.name?.content === "branch");
-      const status = args.find((arg) => arg.data.name?.content === "status");
-      const contentCid2 = branch && refValueCid(store, branch);
-      const baseCid2 = branch?.children.find((edge) => isPrevEdge(store, edge))?.[1];
-      const peerId2 = value2.data.peerId?.content;
-      const statusCid = status && refValueCid(store, status);
-      if (!contentCid2 || !baseCid2 || !peerId2)
-        return null;
-      return { cid, peerId: peerId2, name: value2.data.description?.content ?? "", contentCid: contentCid2, baseCid: baseCid2, timestamp: value2.data.updated?.time ?? 0, status: statusCid && ["rejected", '"rejected"'].includes(content(store, statusCid).data.description?.content ?? "") ? "rejected" : "open" };
-    }
-    const value = identity;
-    let peerId = "";
-    let name = "";
-    let contentCid = "";
-    let baseCid = "";
-    let timestamp = 0;
-    for (const [instr, target] of value.children) {
-      if (instr === store.primitive.proposalNameField.getId())
-        name = content(store, target).data.description?.content ?? "";
-      else if (instr === store.primitive.proposedContentField.getId())
-        contentCid = target;
-      else if (instr === store.primitive.senderField.getId())
-        peerId = content(store, target).data.description?.content ?? "";
-      else if (instr === store.primitive.timestampField.getId())
-        timestamp = Number(content(store, target).data.description?.content ?? 0) || 0;
-      else if (instr === store.primitive.previousVersion.getId())
-        baseCid = target;
-    }
-    if (!peerId || !contentCid || !baseCid)
-      return null;
-    return { cid, peerId, name, status: value.data.proposal?.status === "rejected" ? "rejected" : "open", contentCid, baseCid, timestamp };
-  }
-  function markProposalRejected(store, value, proposalCid) {
-    const record = readProposal(store, proposalCid);
-    if (!record || record.status === "rejected")
-      return value;
-    const rejectedCid = put(store, proposalContent(store, record.peerId, record.name, record.contentCid, record.baseCid, record.timestamp, "rejected"));
-    return withProposal(store, value, record.peerId, rejectedCid, record.name);
-  }
-  function readProposals(store, value) {
-    const out = [];
-    for (const edge of value.children) {
-      if (!isProposalEdge(store, edge))
-        continue;
-      const record = readProposal(store, edge[1]);
-      if (record)
-        out.push(record);
-    }
-    return out;
-  }
-  function withProposal(store, value, peerId, proposalCid, name) {
-    const matches = (cid) => {
-      const p = readProposal(store, cid);
-      return !!p && p.peerId === peerId && (name === void 0 || p.name === name);
-    };
-    const children = value.children.filter((e) => !(isProposalEdge(store, e) && matches(e[1])));
-    if (proposalCid)
-      children.push([store.primitive.proposalField.getId(), proposalCid]);
-    return { ...value, children };
-  }
-  function removeProposalByCid(store, value, proposalCid) {
-    return { ...value, children: value.children.filter((e) => !(isProposalEdge(store, e) && e[1] === proposalCid)) };
-  }
-  function relinkContent(store, previous, previousCid, strippedContent, now) {
-    const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e));
-    const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
-    if (previous.data.ref)
-      data.ref = previous.data.ref;
-    if (previous.data.name)
-      data.name = previous.data.name;
-    const branches = refBranches(store, previous);
-    const active = branches && branchEdge(store, branches.cid);
-    const value = put(store, strippedContent);
-    const target = branches && active ? updateBranch(store, branches.cid, [value, active[1]]) : value;
-    const next = refNodeContent(store, data, target, bookkeeping, refTypeCid(store, previous));
-    return withPrev(store, next, previousCid);
-  }
-  function normalizeRefs(store, nodeCid, now = 0) {
-    const identity = content(store, nodeCid);
-    if (isHandle(identity))
-      return nodeCid;
-    const ref = isRefNode(store, identity);
-    const value = ref ? valueContent(store, nodeCid) : identity;
-    let changed = false;
-    const children = value.children.map((edge) => {
-      if (!isRowEdge(store, edge) || isPartitionEdge(store, edge))
-        return edge;
-      const childCid = identityCid(store, edge);
-      const next = normalizeRefs(store, childCid, now);
-      if (next === childCid)
-        return edge;
-      changed = true;
-      return withIdentity(store, edge, next);
-    });
-    let nextValue = changed ? { ...value, children } : value;
-    if (isLegacyInlineLink(store, identity)) {
-      const stripped = stripLink(store, nextValue);
-      return put(store, refNodeContent(store, { alias: identity.data.alias ?? { id: newId() }, updated: { time: identity.data.updated?.time ?? now } }, put(store, stripped), bookkeepingOf(store, identity)));
-    }
-    if (!changed)
-      return nodeCid;
-    if (ref)
-      return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now));
-    return put(store, nextValue);
-  }
-  function findAliasEdge(store, value, aliasId) {
-    const key = `a:${aliasId}`;
-    const index = value.children.findIndex((e) => edgeKey(store, e) === key || aliasIdOf(content(store, identityCid(store, e))) === aliasId);
-    return index >= 0 ? { edge: value.children[index], index } : null;
-  }
-  function findChild(store, nodeCid, aliasId) {
-    const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId);
-    if (!found)
-      return null;
-    const { edge } = found;
-    if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])))
-      return null;
-    return identityCid(store, edge);
-  }
-  function findRowByAlias(store, rootCid, aliasId, prefix = []) {
-    for (const edge of valueContent(store, rootCid).children) {
-      const kind = rowKindOf(store, edge);
-      if (!kind)
-        continue;
-      const cid = identityCid(store, edge);
-      const id = aliasIdOf(content(store, cid));
-      if (!id)
-        continue;
-      if (id === aliasId)
-        return { path: prefix, row: rowView(store, cid, kind) };
-      const found = findRowByAlias(store, cid, aliasId, [...prefix, id]);
-      if (found)
-        return found;
-    }
-    return null;
-  }
-  function copyRowContent(store, nodeCid, now, freshId, options = {}) {
-    const { instantiate = false } = options;
-    const ids = /* @__PURE__ */ new Map();
-    const owned = /* @__PURE__ */ new Set();
-    const childEdges = (value) => value.children.filter((edge) => {
-      const kind = rowKindOf(store, edge);
-      const name = content(store, identityCid(store, edge)).data.name?.content;
-      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && name === "fos:trigger")
-        return false;
-      if (kind)
-        return !(instantiate && kind === "supply");
-      if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId())
-        return false;
-      return isRefNode(store, content(store, identityCid(store, edge)));
-    });
-    const collect = (cid) => {
-      if (owned.has(cid))
-        return;
-      owned.add(cid);
-      const identity = content(store, cid);
-      const id = aliasIdOf(identity);
-      if (id && !ids.has(id))
-        ids.set(id, cid === nodeCid && options.rootId ? options.rootId : freshId());
-      if (isBranchChoice(store, identity)) {
-        const choice = readChoice(store, cid);
-        for (const edge of [choice.base, ...choice.options.flatMap((o) => [o.edge, o.base])])
-          if (edge)
-            collect(identityCid(store, edge));
-        return;
-      }
-      if (refTypeCid(store, identity))
-        return;
-      for (const edge of childEdges(stripLink(store, identity)))
-        collect(identityCid(store, edge));
-    };
-    collect(nodeCid);
-    const copied = /* @__PURE__ */ new Map();
-    const copy = (cid) => {
-      const cached = copied.get(cid);
-      if (cached)
-        return cached;
-      const identity = content(store, cid);
-      if (isBranchChoice(store, identity)) {
-        const choice = readChoice(store, cid);
-        const remap = (edge) => edge ? withIdentity(store, edge, copy(identityCid(store, edge))) : null;
-        const result2 = putBranches(store, ids.get(choice.id), remap(choice.base), choice.options.map((o) => ({ ...o, edge: remap(o.edge), ...o.base ? { base: remap(o.base) } : {} })), choice.defaultName);
-        copied.set(cid, result2);
-        return result2;
-      }
-      const type = refTypeCid(store, identity);
-      const value = type ? identity : stripLink(store, identity);
-      const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? "") ?? freshId() }, updated: { time: now } };
-      if (instantiate && data.todo)
-        data.todo = { ...data.todo, completed: false, time: now };
-      if (instantiate && data.query)
-        data.query = { market: data.query.market };
-      if (data.ref && !data.ref.owner)
-        data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id };
-      if (data.supply?.ref)
-        data.supply = { ...data.supply, ref: ids.get(data.supply.ref) ?? data.supply.ref };
-      if (data.allocation)
-        data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {} };
-      if (data.template)
-        data.template = { ...data.template, id: ids.get(data.template.id) ?? data.template.id };
-      const target = refValueCid(store, identity);
-      const children = type ? [] : childEdges(value).map((edge) => withIdentity(store, edge, copy(identityCid(store, edge))));
-      if (!type && isHandle(identity) && target)
-        children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target]);
-      let bound = target && owned.has(target) ? copy(target) : target;
-      const alternatives = type && refBranches(store, identity);
-      if (alternatives) {
-        const record = readChoice(store, alternatives.cid);
-        const incoming = put(store, refNodeContent(store, { alias: data.alias, ...data.name ? { name: data.name } : {} }, null, [], type));
-        const edge = (original) => original ? [owned.has(original[0]) ? copy(original[0]) : original[0], incoming] : null;
-        bound = putBranches(store, data.alias.id, edge(record.base), record.options.map((option) => ({ ...option, edge: edge(option.edge) })), record.defaultName);
-      }
-      const result = put(store, type ? refNodeContent(store, data, bound, [], type) : { data, children });
-      copied.set(cid, result);
-      return result;
-    };
-    return copy(nodeCid);
-  }
-  function moveChild(store, rootCid, fromPath, aliasId, toPath, position) {
-    if (toPath.includes(aliasId))
-      return null;
-    const fromCid = resolveScope(store, rootCid, fromPath);
-    if (!fromCid)
-      return null;
-    const found = findAliasEdge(store, valueContent(store, fromCid), aliasId);
-    if (!found)
-      return null;
-    const moving = found.edge;
-    let root = updateAtScope(store, rootCid, fromPath, (value) => ({ ...value, children: value.children.filter((e) => e !== moving) }));
-    const insert = (value) => {
-      const children = [...value.children];
-      if ("into" in position) {
-        const parent = findAliasEdge(store, value, position.into);
-        if (!parent)
-          throw new Error("destination not found");
-        const target = identityCid(store, parent.edge);
-        const targetContent = valueContent(store, target);
-        const kids = [...targetContent.children];
-        const at = position.index === void 0 || position.index < 0 ? kids.length : Math.min(position.index, kids.length);
-        kids.splice(at, 0, moving);
-        children[parent.index] = withChildValue(store, parent.edge, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0);
-        return { ...value, children };
-      }
-      const sibling = findAliasEdge(store, value, position.relativeTo);
-      if (!sibling)
-        throw new Error("destination not found");
-      children.splice(position.position === "above" ? sibling.index : sibling.index + 1, 0, moving);
-      return { ...value, children };
-    };
-    root = updateAtScope(store, root, toPath, insert);
-    return root;
-  }
-  function proposalView(store, nodeValue, proposal) {
-    const current = store.getNodeByAddress(proposal.baseCid) ? content(store, proposal.baseCid) : stripLink(store, nodeValue);
-    const proposed = content(store, proposal.contentCid);
-    const index = (value) => {
-      const map = /* @__PURE__ */ new Map();
-      for (const edge of value.children) {
-        if (isChoiceEdge(store, edge)) {
-          const choice = readChoice(store, edge[1]);
-          for (const option of [choice.base, ...choice.options.map((o) => o.edge)]) {
-            if (!option || !isRowEdge(store, option))
-              continue;
-            const id2 = identityCid(store, option);
-            map.set(edgeKey(store, option), { title: valueContent(store, id2).data.description?.content ?? "", cid: id2 });
-          }
-          continue;
-        }
-        if (!isRowEdge(store, edge))
-          continue;
-        const id = identityCid(store, edge);
-        map.set(edgeKey(store, edge), { title: content(store, id).data.description?.content ?? "", cid: id });
-      }
-      return map;
-    };
-    const a = index(current);
-    const b = index(proposed);
-    const summary = { added: [], changed: [], removed: [] };
-    for (const [key, entry] of b) {
-      const before = a.get(key);
-      if (!before)
-        summary.added.push(entry.title);
-      else if (before.cid !== entry.cid)
-        summary.changed.push(entry.title);
-    }
-    for (const [key, entry] of a)
-      if (!b.has(key))
-        summary.removed.push(entry.title);
-    return { id: proposal.cid, peerId: proposal.peerId, name: proposal.name, status: proposal.status, timestamp: proposal.timestamp, summary };
-  }
-
-  // ../shared/sync/merge.ts
-  init_prelude();
-  var EMPTY = { data: {}, children: [] };
-  function mergeNodes(store, baseCid, oursCid, theirsCid, labels) {
-    const newChoiceCids = [];
-    const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true);
-    if (outcome.kind !== "node")
-      throw new Error("conflicting typed refs must be merged through their owning node to resolve the choice");
-    return { cid: outcome.cid, newChoiceCids };
-  }
-  function mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, isTop) {
-    if (oursCid === theirsCid)
-      return { kind: "node", cid: oursCid };
-    if (baseCid === oursCid)
-      return { kind: "node", cid: theirsCid };
-    if (baseCid === theirsCid)
-      return { kind: "node", cid: oursCid };
-    const base = baseCid ? content(store, baseCid) : EMPTY;
-    const ours = content(store, oursCid);
-    const theirs = content(store, theirsCid);
-    if (isBranchChoice(store, ours) && isBranchChoice(store, theirs)) {
-      const o = readChoice(store, oursCid), t = readChoice(store, theirsCid);
-      const b = baseCid && isBranchChoice(store, base) ? readChoice(store, baseCid) : null;
-      const options = [];
-      for (const name of new Set([...o.options, ...t.options].map((option) => option.peerId))) {
-        const oo = o.options.find((x) => x.peerId === name), tt = t.options.find((x) => x.peerId === name);
-        const oe = oo?.edge, te = tt?.edge;
-        const be = b?.options.find((x) => x.peerId === name)?.edge;
-        if (!oe || !te) {
-          const edge = oe ?? te;
-          if (edge)
-            options.push({ ...oo ?? tt, peerId: name, edge });
-          continue;
-        }
-        if (!sameShape(store, oe, te))
-          return { kind: "conflict" };
-        const merged = mergeNode(store, be ? identityCid(store, be) : null, identityCid(store, oe), identityCid(store, te), labels, newChoiceCids, false);
-        if (merged.kind === "conflict")
-          return merged;
-        const beforeRequest = b?.options.find((x) => x.peerId === name)?.requestMerge;
-        let requestMerge = oo.requestMerge === beforeRequest ? tt.requestMerge : oo.requestMerge;
-        if (oo.requestMerge !== beforeRequest && tt.requestMerge !== beforeRequest && oo.requestMerge !== tt.requestMerge) {
-          if (!oo.requestMerge || !tt.requestMerge)
-            return { kind: "conflict" };
-          const request = mergeNode(store, beforeRequest ?? null, oo.requestMerge, tt.requestMerge, labels, newChoiceCids, false);
-          if (request.kind === "conflict")
-            return request;
-          requestMerge = request.cid;
-        }
-        options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid), requestMerge });
-      }
-      return { kind: "node", cid: putBranches(store, o.id, b?.base ?? o.base, options, b?.defaultName ?? o.defaultName) };
-    }
-    const asRef = (value) => isRefNode(store, value) && !isHandle(value) || isLegacyInlineLink(store, value);
-    if (asRef(ours) || asRef(theirs)) {
-      const refOf = (cid, value) => {
-        if (!cid)
-          return null;
-        if (isRefNode(store, value) && !isHandle(value))
-          return { cid, node: value };
-        const node = makeLink(store, value, 0);
-        return { cid: put(store, node), node };
-      };
-      const o = refOf(oursCid, ours);
-      const t = refOf(theirsCid, theirs);
-      const b = baseCid ? refOf(baseCid, base) : null;
-      const valueOf = (r) => r ? refValueCid(store, r.node) : null;
-      const oursValue = valueOf(o) ?? put(store, stripLink(store, ours));
-      const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs));
-      const typed = refTypeCid(store, o.node) || refTypeCid(store, t.node);
-      if (typed && refTypeCid(store, o.node) !== refTypeCid(store, t.node))
-        return { kind: "conflict" };
-      let mergedValue;
-      if (typed) {
-        const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b);
-        if (ov === tv || tv === bv)
-          mergedValue = ov;
-        else if (ov === bv)
-          mergedValue = tv;
-        else {
-          const baseChoice = bv && isBranchChoice(store, content(store, bv)) ? readChoice(store, bv) : null;
-          const defaultValue = baseChoice ? baseChoice.options.find((option) => option.peerId === baseChoice.defaultName)?.edge?.[0] : bv;
-          mergedValue = putRefValueBranches(store, o.node, [bv, ...[ov, tv].filter((cid) => !!cid).sort()], "main", defaultValue);
-        }
-      } else {
-        const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true);
-        mergedValue = merged.kind === "node" ? merged.cid : oursValue;
-      }
-      const book = (r) => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] });
-      const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids);
-      const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue;
-      const prevEdge = (cid) => [store.primitive.previousVersion.getId(), cid];
-      const existingPrev = (r) => r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [];
-      const prev = valueChanged ? o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)] : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))];
-      const data2 = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data;
-      return { kind: "node", cid: put(store, refNodeContent(store, data2, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) };
-    }
-    const data = mergeData(base.data, ours.data, theirs.data, isTop);
-    if (!data)
-      return { kind: "conflict" };
-    const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids);
-    return { kind: "node", cid: put(store, { data, children }) };
-  }
-  function mergeData(base, ours, theirs, theirsWins) {
-    const out = {};
-    const keys = /* @__PURE__ */ new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)]);
-    const b = base;
-    const o = ours;
-    const t = theirs;
-    for (const key of keys) {
-      if (key === "versionControl")
-        continue;
-      if (key === "updated") {
-        const time = Math.max(timeOf(o[key]), timeOf(t[key]), timeOf(b[key]));
-        if (time > 0)
-          out[key] = { time };
-        continue;
-      }
-      const bv = b[key], ov = o[key], tv = t[key];
-      if (same(ov, tv)) {
-        if (ov !== void 0)
-          out[key] = ov;
-        continue;
-      }
-      if (same(bv, ov)) {
-        if (tv !== void 0)
-          out[key] = tv;
-        continue;
-      }
-      if (same(bv, tv)) {
-        if (ov !== void 0)
-          out[key] = ov;
-        continue;
-      }
-      if (!theirsWins)
-        return null;
-      if (tv !== void 0)
-        out[key] = tv;
-    }
-    return out;
-  }
-  function timeOf(value) {
-    return value && typeof value === "object" && typeof value.time === "number" ? value.time : 0;
-  }
-  function same(a, b) {
-    if (a === b)
-      return true;
-    if (a === void 0 || b === void 0)
-      return false;
-    return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
-  }
-  function sortKeys(value) {
-    if (Array.isArray(value))
-      return value.map(sortKeys);
-    if (value && typeof value === "object") {
-      const src = value;
-      const out = {};
-      for (const k of Object.keys(src).sort())
-        out[k] = sortKeys(src[k]);
-      return out;
-    }
-    return value;
-  }
-  function mergeChildren(store, base, ours, theirs, labels, newChoiceCids) {
-    const index = (value) => {
-      const map = /* @__PURE__ */ new Map();
-      for (const edge of value.children)
-        map.set(edgeKey(store, edge), edge);
-      return map;
-    };
-    const bMap = index(base);
-    const oMap = index(ours);
-    const tMap = index(theirs);
-    const keys = orderedKeys([...oMap.keys()], [...tMap.keys()], [...bMap.keys()]);
-    const out = [];
-    for (const key of keys) {
-      const b = bMap.get(key) ?? null;
-      const o = oMap.get(key) ?? null;
-      const t = tMap.get(key) ?? null;
-      if (sameEdge(o, t)) {
-        if (o)
-          out.push(o);
-        continue;
-      }
-      if (sameEdge(b, o)) {
-        if (t)
-          out.push(t);
-        continue;
-      }
-      if (sameEdge(b, t)) {
-        if (o)
-          out.push(o);
-        continue;
-      }
-      if (key.startsWith("p:") && o && t) {
-        const ot = readProposal(store, o[1])?.timestamp ?? 0;
-        const tt = readProposal(store, t[1])?.timestamp ?? 0;
-        out.push(tt > ot ? t : o);
-        continue;
-      }
-      if (o && t && sameShape(store, o, t) && (!isChoiceEdge(store, o) || isBranchChoice(store, content(store, o[1])))) {
-        const baseIdentity = b && sameShape(store, b, o) && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? identityCid(store, b) : null;
-        const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false);
-        if (merged.kind === "node") {
-          out.push(withIdentity(store, o, merged.cid));
-          continue;
-        }
-      }
-      const id = key.startsWith("a:") ? key.slice(2) : key;
-      const options = [
-        { peerId: labels.ours, edge: o },
-        { peerId: labels.theirs, edge: t }
-      ];
-      const choiceCid = putChoice(store, id, b && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? b : null, options);
-      newChoiceCids.push(choiceCid);
-      out.push([store.primitive.choiceTarget.getId(), choiceCid]);
-    }
-    return out;
-  }
-  function orderedKeys(ours, theirs, base) {
-    const out = [...ours];
-    const present = new Set(out);
-    theirs.forEach((key, i) => {
-      if (present.has(key))
-        return;
-      let at = -1;
-      for (let j = i - 1; j >= 0 && at < 0; j--) {
-        const idx = out.indexOf(theirs[j]);
-        if (idx >= 0)
-          at = idx + 1;
-      }
-      for (let j = i + 1; j < theirs.length && at < 0; j++) {
-        const idx = out.indexOf(theirs[j]);
-        if (idx >= 0)
-          at = idx;
-      }
-      if (at < 0)
-        at = out.length;
-      out.splice(at, 0, key);
-      present.add(key);
-    });
-    for (const key of base)
-      if (!present.has(key)) {
-        out.push(key);
-        present.add(key);
-      }
-    return out;
-  }
-  function sameEdge(a, b) {
-    if (!a || !b)
-      return a === b;
-    return a[0] === b[0] && a[1] === b[1];
-  }
-  function resolveChoiceIn(store, value, choiceId, pick, now) {
-    const key = `a:${choiceId}`;
-    const edge = value.children.find((e) => edgeKey(store, e) === key);
-    if (!edge || !isChoiceEdge(store, edge))
-      return value;
-    const children = [];
-    for (const existing of value.children) {
-      if (existing !== edge) {
-        children.push(existing);
-        continue;
-      }
-      if (pick === null)
-        continue;
-      const choice = content(store, edge[1]);
-      const alternatives = choice.children.filter(([i]) => i === store.primitive.optionNotSelectedConstructor.getId());
-      const alt = alternatives[pick];
-      if (!alt)
-        throw new Error(`choice ${choiceId} has no option ${pick}`);
-      const pointer = content(store, alt[1]);
-      let instr = null;
-      let target = null;
-      for (const [i, t] of pointer.children) {
-        if (i === store.primitive.instructionPointerConstructor.getId())
-          instr = t;
-        if (i === store.primitive.targetPointerConstructor.getId())
-          target = t;
-      }
-      if (!instr || !target)
-        continue;
-      const picked = [instr, target];
-      const idCid = identityCid(store, picked);
-      const touched = put(store, { ...content(store, idCid), data: { ...content(store, idCid).data, updated: { time: now } } });
-      children.push(withIdentity(store, picked, touched));
-    }
-    return { ...value, children };
-  }
-
-  // ../shared/sync/protocol.ts
+  // ../shared/sync/replica.ts
   init_prelude();
 
   // ../shared/dag-implementation/store.ts
@@ -7109,6 +5256,98 @@
     };
   };
 
+  // ../shared/dag-implementation/cid.ts
+  init_prelude();
+  var jsSha3 = __toESM(require_sha3(), 1);
+  var sha3_2562 = jsSha3.sha3_256 ?? jsSha3.default.sha3_256;
+  var PREFIXED = /^v(\d+)-([0-9a-f]+)$/;
+  var LEGACY = /^[0-9a-f]{64}$/;
+  function normalizeObject(obj) {
+    if (obj === null || typeof obj !== "object")
+      return obj;
+    if (Array.isArray(obj))
+      return obj.map(normalizeObject);
+    const source = obj;
+    return Object.keys(source).sort().reduce((result, key) => {
+      result[key] = normalizeObject(source[key]);
+      return result;
+    }, {});
+  }
+  function sortEdgesUndirected(edges) {
+    return edges.map((edge) => [...edge].sort()).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
+  }
+  function sha3Digest(content2) {
+    const normalized = {
+      data: JSON.stringify(normalizeObject(content2.data)),
+      children: sortEdgesUndirected(content2.children || [])
+    };
+    return sha3_2562(JSON.stringify(normalized));
+  }
+  function sha3OrderedDigest(content2) {
+    const normalized = {
+      v: 2,
+      data: JSON.stringify(normalizeObject(content2.data)),
+      children: (content2.children || []).map(([a, b]) => [a, b])
+    };
+    return sha3_2562(JSON.stringify(normalized));
+  }
+  var CID_FORMATS = {
+    0: {
+      version: 0,
+      description: "Legacy: bare sha3-256 hex of {data: canonical JSON, children: sorted edges}; no version prefix.",
+      digest: sha3Digest
+    },
+    1: {
+      version: 1,
+      description: 'Same digest as v0, written as "v1-<hex>" so the format can be told apart and migrated.',
+      digest: sha3Digest
+    },
+    2: {
+      version: 2,
+      description: "Edges hashed in order and direction (child order is part of identity).",
+      digest: sha3OrderedDigest
+    }
+  };
+  var CURRENT_CID_VERSION = 2;
+  function parseCid(cid) {
+    if (typeof cid !== "string")
+      return null;
+    const prefixed = PREFIXED.exec(cid);
+    if (prefixed) {
+      const version2 = Number(prefixed[1]);
+      return version2 in CID_FORMATS ? { version: version2, digest: prefixed[2] } : null;
+    }
+    if (LEGACY.test(cid))
+      return { version: 0, digest: cid };
+    return null;
+  }
+  function cidVersion(cid) {
+    return parseCid(cid)?.version ?? null;
+  }
+  function formatCid(version2, digest) {
+    if (!(version2 in CID_FORMATS))
+      throw new Error(`unknown cid version ${version2}`);
+    return version2 === 0 ? digest : `v${version2}-${digest}`;
+  }
+  function isCurrentCid(cid) {
+    return cidVersion(cid) === CURRENT_CID_VERSION;
+  }
+  function hashContentAt(content2, version2) {
+    const format = CID_FORMATS[version2];
+    if (!format)
+      throw new Error(`unknown cid version ${version2}`);
+    return formatCid(version2, format.digest(content2));
+  }
+  function hashContent(content2) {
+    return hashContentAt(content2, CURRENT_CID_VERSION);
+  }
+  function verifyCid(cid, content2) {
+    const parsed = parseCid(cid);
+    if (!parsed)
+      return false;
+    return hashContentAt(content2, parsed.version) === cid;
+  }
+
   // ../shared/dag-implementation/migrations.ts
   init_prelude();
   var MIGRATIONS = [
@@ -8434,7 +6673,298 @@
     }
   };
 
+  // ../shared/sync/merge.ts
+  init_prelude();
+  var EMPTY = { data: {}, children: [] };
+  function mergeNodes(store, baseCid, oursCid, theirsCid, labels) {
+    const newChoiceCids = [];
+    const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true);
+    if (outcome.kind !== "node")
+      throw new Error("conflicting typed refs must be merged through their owning node to resolve the choice");
+    return { cid: outcome.cid, newChoiceCids };
+  }
+  function mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, isTop) {
+    if (oursCid === theirsCid)
+      return { kind: "node", cid: oursCid };
+    if (baseCid === oursCid)
+      return { kind: "node", cid: theirsCid };
+    if (baseCid === theirsCid)
+      return { kind: "node", cid: oursCid };
+    const base = baseCid ? content(store, baseCid) : EMPTY;
+    const ours = content(store, oursCid);
+    const theirs = content(store, theirsCid);
+    if (isBranchChoice(store, ours) && isBranchChoice(store, theirs)) {
+      const o = readChoice(store, oursCid), t = readChoice(store, theirsCid);
+      const b = baseCid && isBranchChoice(store, base) ? readChoice(store, baseCid) : null;
+      const options = [];
+      for (const name of new Set([...o.options, ...t.options].map((option) => option.peerId))) {
+        const oo = o.options.find((x) => x.peerId === name), tt = t.options.find((x) => x.peerId === name);
+        const oe = oo?.edge, te = tt?.edge;
+        const be = b?.options.find((x) => x.peerId === name)?.edge;
+        if (!oe || !te) {
+          const edge = oe ?? te;
+          if (edge)
+            options.push({ ...oo ?? tt, peerId: name, edge });
+          continue;
+        }
+        if (!sameShape(store, oe, te))
+          return { kind: "conflict" };
+        const merged = mergeNode(store, be ? identityCid(store, be) : null, identityCid(store, oe), identityCid(store, te), labels, newChoiceCids, false);
+        if (merged.kind === "conflict")
+          return merged;
+        const beforeRequest = b?.options.find((x) => x.peerId === name)?.requestMerge;
+        let requestMerge = oo.requestMerge === beforeRequest ? tt.requestMerge : oo.requestMerge;
+        if (oo.requestMerge !== beforeRequest && tt.requestMerge !== beforeRequest && oo.requestMerge !== tt.requestMerge) {
+          if (!oo.requestMerge || !tt.requestMerge)
+            return { kind: "conflict" };
+          const request = mergeNode(store, beforeRequest ?? null, oo.requestMerge, tt.requestMerge, labels, newChoiceCids, false);
+          if (request.kind === "conflict")
+            return request;
+          requestMerge = request.cid;
+        }
+        options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid), requestMerge });
+      }
+      return { kind: "node", cid: putBranches(store, o.id, b?.base ?? o.base, options, b?.defaultName ?? o.defaultName) };
+    }
+    const asRef = (value) => isRefNode(store, value) && !isHandle(value) || isLegacyInlineLink(store, value);
+    if (asRef(ours) || asRef(theirs)) {
+      const refOf = (cid, value) => {
+        if (!cid)
+          return null;
+        if (isRefNode(store, value) && !isHandle(value))
+          return { cid, node: value };
+        const node = makeLink(store, value, 0);
+        return { cid: put(store, node), node };
+      };
+      const o = refOf(oursCid, ours);
+      const t = refOf(theirsCid, theirs);
+      const b = baseCid ? refOf(baseCid, base) : null;
+      const valueOf = (r) => r ? refValueCid(store, r.node) : null;
+      const oursValue = valueOf(o) ?? put(store, stripLink(store, ours));
+      const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs));
+      const typed = refTypeCid(store, o.node) || refTypeCid(store, t.node);
+      if (typed && refTypeCid(store, o.node) !== refTypeCid(store, t.node))
+        return { kind: "conflict" };
+      let mergedValue;
+      if (typed) {
+        const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b);
+        if (ov === tv || tv === bv)
+          mergedValue = ov;
+        else if (ov === bv)
+          mergedValue = tv;
+        else {
+          const baseChoice = bv && isBranchChoice(store, content(store, bv)) ? readChoice(store, bv) : null;
+          const defaultValue = baseChoice ? baseChoice.options.find((option) => option.peerId === baseChoice.defaultName)?.edge?.[0] : bv;
+          mergedValue = putRefValueBranches(store, o.node, [bv, ...[ov, tv].filter((cid) => !!cid).sort()], "main", defaultValue);
+        }
+      } else {
+        const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true);
+        mergedValue = merged.kind === "node" ? merged.cid : oursValue;
+      }
+      const book = (r) => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] });
+      const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids);
+      const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue;
+      const prevEdge = (cid) => [store.primitive.previousVersion.getId(), cid];
+      const existingPrev = (r) => r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [];
+      const prev = valueChanged ? o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)] : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))];
+      const data2 = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data;
+      return { kind: "node", cid: put(store, refNodeContent(store, data2, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) };
+    }
+    const data = mergeData(base.data, ours.data, theirs.data, isTop);
+    if (!data)
+      return { kind: "conflict" };
+    const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids);
+    return { kind: "node", cid: put(store, { data, children }) };
+  }
+  function mergeData(base, ours, theirs, theirsWins) {
+    const out = {};
+    const keys = /* @__PURE__ */ new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)]);
+    const b = base;
+    const o = ours;
+    const t = theirs;
+    for (const key of keys) {
+      if (key === "versionControl")
+        continue;
+      if (key === "updated") {
+        const time = Math.max(timeOf(o[key]), timeOf(t[key]), timeOf(b[key]));
+        if (time > 0)
+          out[key] = { time };
+        continue;
+      }
+      const bv = b[key], ov = o[key], tv = t[key];
+      if (same(ov, tv)) {
+        if (ov !== void 0)
+          out[key] = ov;
+        continue;
+      }
+      if (same(bv, ov)) {
+        if (tv !== void 0)
+          out[key] = tv;
+        continue;
+      }
+      if (same(bv, tv)) {
+        if (ov !== void 0)
+          out[key] = ov;
+        continue;
+      }
+      if (!theirsWins)
+        return null;
+      if (tv !== void 0)
+        out[key] = tv;
+    }
+    return out;
+  }
+  function timeOf(value) {
+    return value && typeof value === "object" && typeof value.time === "number" ? value.time : 0;
+  }
+  function same(a, b) {
+    if (a === b)
+      return true;
+    if (a === void 0 || b === void 0)
+      return false;
+    return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
+  }
+  function sortKeys(value) {
+    if (Array.isArray(value))
+      return value.map(sortKeys);
+    if (value && typeof value === "object") {
+      const src = value;
+      const out = {};
+      for (const k of Object.keys(src).sort())
+        out[k] = sortKeys(src[k]);
+      return out;
+    }
+    return value;
+  }
+  function mergeChildren(store, base, ours, theirs, labels, newChoiceCids) {
+    const index = (value) => {
+      const map = /* @__PURE__ */ new Map();
+      for (const edge of value.children)
+        map.set(edgeKey(store, edge), edge);
+      return map;
+    };
+    const bMap = index(base);
+    const oMap = index(ours);
+    const tMap = index(theirs);
+    const keys = orderedKeys([...oMap.keys()], [...tMap.keys()], [...bMap.keys()]);
+    const out = [];
+    for (const key of keys) {
+      const b = bMap.get(key) ?? null;
+      const o = oMap.get(key) ?? null;
+      const t = tMap.get(key) ?? null;
+      if (sameEdge(o, t)) {
+        if (o)
+          out.push(o);
+        continue;
+      }
+      if (sameEdge(b, o)) {
+        if (t)
+          out.push(t);
+        continue;
+      }
+      if (sameEdge(b, t)) {
+        if (o)
+          out.push(o);
+        continue;
+      }
+      if (key.startsWith("p:") && o && t) {
+        const ot = readProposal(store, o[1])?.timestamp ?? 0;
+        const tt = readProposal(store, t[1])?.timestamp ?? 0;
+        out.push(tt > ot ? t : o);
+        continue;
+      }
+      if (o && t && sameShape(store, o, t) && (!isChoiceEdge(store, o) || isBranchChoice(store, content(store, o[1])))) {
+        const baseIdentity = b && sameShape(store, b, o) && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? identityCid(store, b) : null;
+        const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false);
+        if (merged.kind === "node") {
+          out.push(withIdentity(store, o, merged.cid));
+          continue;
+        }
+      }
+      const id = key.startsWith("a:") ? key.slice(2) : key;
+      const options = [
+        { peerId: labels.ours, edge: o },
+        { peerId: labels.theirs, edge: t }
+      ];
+      const choiceCid = putChoice(store, id, b && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? b : null, options);
+      newChoiceCids.push(choiceCid);
+      out.push([store.primitive.choiceTarget.getId(), choiceCid]);
+    }
+    return out;
+  }
+  function orderedKeys(ours, theirs, base) {
+    const out = [...ours];
+    const present = new Set(out);
+    theirs.forEach((key, i) => {
+      if (present.has(key))
+        return;
+      let at = -1;
+      for (let j = i - 1; j >= 0 && at < 0; j--) {
+        const idx = out.indexOf(theirs[j]);
+        if (idx >= 0)
+          at = idx + 1;
+      }
+      for (let j = i + 1; j < theirs.length && at < 0; j++) {
+        const idx = out.indexOf(theirs[j]);
+        if (idx >= 0)
+          at = idx;
+      }
+      if (at < 0)
+        at = out.length;
+      out.splice(at, 0, key);
+      present.add(key);
+    });
+    for (const key of base)
+      if (!present.has(key)) {
+        out.push(key);
+        present.add(key);
+      }
+    return out;
+  }
+  function sameEdge(a, b) {
+    if (!a || !b)
+      return a === b;
+    return a[0] === b[0] && a[1] === b[1];
+  }
+  function resolveChoiceIn(store, value, choiceId, pick, now) {
+    const key = `a:${choiceId}`;
+    const edge = value.children.find((e) => edgeKey(store, e) === key);
+    if (!edge || !isChoiceEdge(store, edge))
+      return value;
+    const children = [];
+    for (const existing of value.children) {
+      if (existing !== edge) {
+        children.push(existing);
+        continue;
+      }
+      if (pick === null)
+        continue;
+      const choice = content(store, edge[1]);
+      const alternatives = choice.children.filter(([i]) => i === store.primitive.optionNotSelectedConstructor.getId());
+      const alt = alternatives[pick];
+      if (!alt)
+        throw new Error(`choice ${choiceId} has no option ${pick}`);
+      const pointer = content(store, alt[1]);
+      let instr = null;
+      let target = null;
+      for (const [i, t] of pointer.children) {
+        if (i === store.primitive.instructionPointerConstructor.getId())
+          instr = t;
+        if (i === store.primitive.targetPointerConstructor.getId())
+          target = t;
+      }
+      if (!instr || !target)
+        continue;
+      const picked = [instr, target];
+      const idCid = identityCid(store, picked);
+      const touched = put(store, { ...content(store, idCid), data: { ...content(store, idCid).data, updated: { time: now } } });
+      children.push(withIdentity(store, picked, touched));
+    }
+    return { ...value, children };
+  }
+
   // ../shared/sync/protocol.ts
+  init_prelude();
   function parseSyncRequest(body) {
     if (!body || typeof body !== "object")
       return { error: "request body must be an object", code: "bad-request" };
@@ -8669,7 +7199,6 @@
   }
 
   // ../shared/sync/replica.ts
-  init_prelude();
   function createReplica(peerId = newId(), store = new FosStore()) {
     return {
       store,
@@ -9000,6 +7529,1551 @@
     }
     commitRoot(store, put(store, { data: {}, children: [] }), now);
     return { store, meta: { ...meta, scope: [...newScope], branch: void 0, branches: void 0, scopeNames: names ?? [...newScope], baseCid: null } };
+  }
+
+  // ../shared/sync/destructure.ts
+  function requirementOutputs(store, cid) {
+    return valueContent(store, cid).children.flatMap((edge) => {
+      const ref = content(store, identityCid(store, edge)), type = refTypeCid(store, ref);
+      return type && edge[0] === type && ref.data.ref ? [{ cid: identityCid(store, edge), id: ref.data.alias.id, name: ref.data.name?.content ?? "Value", amount: ref.data.allocation?.amount, type }] : [];
+    });
+  }
+  function resolveRequirementOutput(store, cid) {
+    const ref = content(store, cid);
+    if (!refTypeCid(store, ref) || !ref.data.ref)
+      return null;
+    if (ref.data.ref.owner)
+      return { error: "The source requirement is outside this workspace." };
+    const source = findRowByAlias(store, rootTargetCid(store), ref.data.ref.id);
+    if (!source)
+      return { error: "The source requirement is unavailable." };
+    const sourceCid = resolveScope(store, rootTargetCid(store), [...source.path, source.row.id]);
+    const currentOutput = requirementOutputs(store, sourceCid).find((output) => output.id === ref.data.alias?.id);
+    if (!currentOutput)
+      return { error: "The placeholder is no longer part of the source requirement." };
+    const req = demandOf(valueContent(store, sourceCid));
+    if (!req || !["allocation", "choice"].includes(req.capability))
+      return { error: "The source is no longer an amount or choice requirement." };
+    if (!requirementSatisfied(store, sourceCid))
+      return { error: "The source requirement must be fulfilled first." };
+    if (req.capability === "allocation") {
+      const slice = content(store, currentOutput.cid).data.allocation;
+      const total = requirementOutputs(store, sourceCid).reduce((sum, o) => sum + (o.amount ?? 0), 0);
+      if (!slice || !Number.isFinite(slice.amount) || slice.amount <= 0 || req.amount === void 0 || total > req.amount + 1e-9 || slice.amount > req.amount || slice.type !== (req.resource ?? "account") || slice.unit !== (req.unit ?? "USD"))
+        return { error: "The pieces no longer fit the source requirement." };
+      return { cid: put(store, { data: { allocation: slice, description: { content: `${slice.amount} ${slice.unit}` } }, children: [] }) };
+    }
+    const choices = [...new Set(childRows(store, sourceCid, "supply").map((row) => supplyOf(row.value)?.choice).filter((n) => n !== void 0))];
+    if (choices.length !== 1 || !req.options?.[choices[0]])
+      return { error: "Choose exactly one constructor for the source requirement." };
+    return { cid: put(store, { data: { description: { content: req.options[choices[0]] } }, children: [] }) };
+  }
+  var resolvingAllocations = /* @__PURE__ */ new WeakMap();
+  function allocationValue(store, cid) {
+    const value = valueContent(store, cid), original = value.data.allocation;
+    if (!original)
+      return void 0;
+    const argument = value.children.find((edge) => edge[0] === store.primitive.allocationField.getId() && content(store, edge[1]).data.name?.content === "amount");
+    if (!argument)
+      return original;
+    const active = resolvingAllocations.get(store) ?? /* @__PURE__ */ new Set();
+    resolvingAllocations.set(store, active);
+    if (active.has(cid))
+      return void 0;
+    active.add(cid);
+    try {
+      let current = argument[1];
+      const seen = /* @__PURE__ */ new Set();
+      while (current && !seen.has(current) && seen.size < 100) {
+        seen.add(current);
+        const output = resolveRequirementOutput(store, current);
+        if (output)
+          return output.cid ? { ...original, ...content(store, output.cid).data.allocation } : void 0;
+        current = refValueCid(store, content(store, current));
+      }
+      return void 0;
+    } finally {
+      active.delete(cid);
+    }
+  }
+
+  // ../shared/sync/graph.ts
+  var SYNC_FORMAT_VERSION = 3;
+  function content(store, cid) {
+    const value = store.table.get(cid);
+    if (!value)
+      throw new Error(`node ${cid.slice(0, 12)} not found`);
+    return value;
+  }
+  function hasNode(store, cid) {
+    return !!cid && store.table.has(cid);
+  }
+  function put(store, value) {
+    return store.create(value).getId();
+  }
+  function aliasIdOf(value) {
+    return value.data.alias?.id ?? null;
+  }
+  function isRefNode(store, value) {
+    return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId() || !!value.data.alias && i === store.primitive.instructionPointerConstructor.getId());
+  }
+  function isHandle(value) {
+    return !!value.data.ref;
+  }
+  function refValueCid(store, value) {
+    const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    return edge ? edge[1] : null;
+  }
+  function refBranches(store, ref) {
+    const cid = refValueCid(store, ref);
+    if (!cid || !isBranchChoice(store, content(store, cid)))
+      return null;
+    const record = readChoice(store, cid);
+    if (record.id !== ref.data.alias?.id)
+      return null;
+    return { cid, id: record.id, names: record.options.map((o) => o.peerId), selected: branchSelection(store, cid) };
+  }
+  function putRefValueBranches(store, ref, values, baseName = "main", selectedValue) {
+    const id = ref.data.alias.id;
+    const incoming = put(store, refNodeContent(store, { alias: { id }, ...ref.data.name ? { name: ref.data.name } : {} }, null, [], refTypeCid(store, ref)));
+    const options = [];
+    const add = (cid, preferred) => {
+      if (options.some((o) => o.edge?.[0] === cid))
+        return;
+      const name = preferred && !options.some((o) => o.peerId === preferred) ? preferred : options.length ? `value-${cid}` : baseName;
+      options.push({ peerId: name, edge: [cid, incoming] });
+    };
+    for (const cid of values) {
+      if (!cid)
+        continue;
+      if (isBranchChoice(store, content(store, cid)) && readChoice(store, cid).id === id) {
+        for (const option of readChoice(store, cid).options)
+          if (option.edge)
+            add(option.edge[0], option.peerId);
+      } else {
+        const prior = values.filter((value) => !!value && isBranchChoice(store, content(store, value)) && readChoice(store, value).id === id).flatMap((value) => readChoice(store, value).options).find((option) => option.edge?.[0] === cid);
+        add(cid, prior?.peerId);
+      }
+    }
+    const selected = options.find((o) => o.edge?.[0] === selectedValue)?.peerId ?? options[0]?.peerId ?? baseName;
+    return putBranches(store, id, options[0]?.edge ?? null, options, selected);
+  }
+  function selectedBranchValue(store, cid) {
+    const edge = branchEdge(store, cid);
+    if (!edge)
+      return null;
+    const right = content(store, edge[1]);
+    return refTypeCid(store, right) && right.data.alias?.id === readChoice(store, cid).id ? edge[0] : identityCid(store, edge);
+  }
+  function refTypeCid(store, value) {
+    const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId());
+    return edge ? edge[1] : null;
+  }
+  function valueContent(store, cid) {
+    const value = content(store, cid);
+    if (isBranchChoice(store, value)) {
+      const selected = selectedBranchValue(store, cid);
+      return selected ? valueContent(store, selected) : value;
+    }
+    if (isHandle(value))
+      return value;
+    const target = refValueCid(store, value);
+    return target && store.table.has(target) ? isBranchChoice(store, content(store, target)) ? valueContent(store, target) : content(store, target) : value;
+  }
+  function refBindingBaseCid(store, value) {
+    return put(store, { ...value, children: value.children.filter((edge) => !isProposalEdge(store, edge)) });
+  }
+  function refNodeContent(store, data, valueCid, bookkeeping = [], typeCid = null) {
+    const children = valueCid ? [[store.primitive.targetPointerConstructor.getId(), valueCid]] : [];
+    if (typeCid)
+      children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
+    return { data, children: [...children, ...bookkeeping] };
+  }
+  function newId() {
+    const cryptoApi = globalThis.crypto;
+    if (cryptoApi?.randomUUID)
+      return cryptoApi.randomUUID();
+    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+  }
+  function edgeKey(store, edge) {
+    const [instr, target] = edge;
+    if (instr === store.primitive.proposalField.getId()) {
+      const p = readProposal(store, target);
+      if (p)
+        return `p:${p.peerId}/${p.name}`;
+    }
+    const targetAlias = aliasIdOf(content(store, target));
+    if (targetAlias)
+      return `a:${targetAlias}`;
+    const instrAlias = aliasIdOf(content(store, instr));
+    if (instrAlias)
+      return `a:${instrAlias}`;
+    return `e:${instr}:${target}`;
+  }
+  function rowPrimitive(store, kind) {
+    switch (kind) {
+      case "task":
+        return store.primitive.completeField.getId();
+      case "plain":
+        return store.primitive.descriptionField.getId();
+      case "note":
+        return store.primitive.documentField.getId();
+      case "comment":
+        return store.primitive.commentField.getId();
+      case "ref":
+        return store.primitive.linkField.getId();
+      case "requirement":
+        return store.primitive.allocationField.getId();
+      case "supply":
+        return store.primitive.allocationField.getId();
+      case "query":
+        return store.primitive.queryField.getId();
+      case "resource":
+        return store.primitive.resourceField.getId();
+      case "allocation":
+        return store.primitive.allocationField.getId();
+      case "template":
+        return store.primitive.templateField.getId();
+    }
+  }
+  function rowKindOf(store, edge) {
+    if (isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))) {
+      const active = branchEdge(store, edge[1]);
+      return active ? rowKindOf(store, active) : null;
+    }
+    if (isPartitionEdge(store, edge))
+      return "plain";
+    const [, target] = edge;
+    const p = store.primitive;
+    if (target === p.completeField.getId())
+      return valueContent(store, edge[0]).data.todo ? "task" : "plain";
+    if (target === p.descriptionField.getId())
+      return "plain";
+    if (target === p.documentField.getId())
+      return "note";
+    if (target === p.commentField.getId())
+      return "comment";
+    if (target === p.linkField.getId())
+      return "ref";
+    if (target === p.requirementField.getId())
+      return "requirement";
+    if (target === p.supplyField.getId())
+      return "supply";
+    if (target === p.queryField.getId())
+      return "query";
+    if (target === p.resourceField.getId())
+      return "resource";
+    if (target === p.allocationField.getId())
+      return demandOf(valueContent(store, edge[0])) ? "requirement" : supplyOf(valueContent(store, edge[0])) ? "supply" : "allocation";
+    if (target === p.templateField.getId())
+      return "template";
+    return null;
+  }
+  function isRowEdge(store, edge) {
+    return rowKindOf(store, edge) !== null;
+  }
+  function identityOnInstruction(store, edge) {
+    return !isChoiceEdge(store, edge) && !isPartitionEdge(store, edge) && rowKindOf(store, edge) !== null;
+  }
+  function isPartitionEdge(store, edge) {
+    return edge[0] === store.primitive.listField.getId();
+  }
+  function isChoiceEdge(store, edge) {
+    return edge[0] === store.primitive.choiceTarget.getId();
+  }
+  var branchSelections = /* @__PURE__ */ new WeakMap();
+  function isBranchChoice(store, node) {
+    return !!node.data.option && !node.data.conflict && node.children.some((e) => e[0] === store.primitive.optionNotSelectedConstructor.getId());
+  }
+  function selectBranch(store, id, name) {
+    let selections = branchSelections.get(store);
+    if (!selections) {
+      selections = /* @__PURE__ */ new Map();
+      branchSelections.set(store, selections);
+    }
+    selections.set(id, name);
+  }
+  function withBranches(store, selections, run) {
+    const previous = branchSelections.get(store);
+    const next = new Map(previous);
+    for (const [id, name] of Object.entries(selections))
+      next.set(id, name);
+    branchSelections.set(store, next);
+    try {
+      return run();
+    } finally {
+      if (previous)
+        branchSelections.set(store, previous);
+      else
+        branchSelections.delete(store);
+    }
+  }
+  function scopeBranches(store, root, path) {
+    const result = {};
+    for (let i = 0; i <= path.length; i++) {
+      const cid = resolveScope(store, root, path.slice(0, i));
+      if (cid && isBranchChoice(store, content(store, cid)))
+        result[readChoice(store, cid).id] = branchSelection(store, cid);
+      else if (cid) {
+        const branches = refBranches(store, content(store, cid));
+        if (branches)
+          result[branches.id] = branches.selected;
+      }
+    }
+    return result;
+  }
+  function branchSelection(store, cid) {
+    const choice = readChoice(store, cid);
+    const name = branchSelections.get(store)?.get(choice.id);
+    return choice.options.find((o) => o.peerId === name)?.peerId ?? choice.defaultName ?? choice.options.map((o) => o.peerId).sort()[0] ?? "";
+  }
+  function branchEdge(store, cid) {
+    const choice = readChoice(store, cid);
+    return choice.options.find((o) => o.peerId === branchSelection(store, cid))?.edge ?? null;
+  }
+  function putBranches(store, id, base, options, defaultName = "main") {
+    const cid = putChoice(store, id, base, options), node = content(store, cid);
+    const { conflict: _conflict, ...data } = node.data;
+    const selectedIndex = Math.max(0, readChoice(store, cid).options.findIndex((o) => o.peerId === defaultName));
+    return put(store, { ...node, data: { ...data, option: { ...data.option, selectedIndex } } });
+  }
+  function updateBranch(store, cid, edge) {
+    const record = readChoice(store, cid), name = branchSelection(store, cid);
+    return putBranches(store, record.id, record.base, record.options.map((o) => o.peerId === name ? { ...o, edge } : o), record.defaultName);
+  }
+  function isPeerEdge(store, edge) {
+    return edge[0] === store.primitive.peerField.getId();
+  }
+  function identityCid(store, edge) {
+    return identityOnInstruction(store, edge) ? edge[0] : edge[1];
+  }
+  function withIdentity(store, edge, cid) {
+    return identityOnInstruction(store, edge) ? [cid, edge[1]] : [edge[0], cid];
+  }
+  function sameShape(store, a, b) {
+    const aRow = identityOnInstruction(store, a);
+    const bRow = identityOnInstruction(store, b);
+    if (aRow !== bRow)
+      return false;
+    return aRow ? a[1] === b[1] : a[0] === b[0];
+  }
+  function taskContent(id, title, done, createdAt, updatedAt) {
+    return {
+      data: {
+        alias: { id },
+        description: { content: title },
+        todo: { completed: done, time: createdAt },
+        updated: { time: updatedAt }
+      },
+      children: []
+    };
+  }
+  function rowContent(kind, id, text, now, extra = {}) {
+    const data = { alias: { id }, description: { content: text }, updated: { time: now } };
+    if (kind === "task")
+      data.todo = { completed: !!extra.done, time: now };
+    if (kind === "requirement")
+      data.requirement = extra.requirement ?? { capability: "confirmation" };
+    if (kind === "supply")
+      data.supply = extra.supply ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query")
+      data.query = extra.query ?? {};
+    if (kind === "resource")
+      data.resource = extra.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation")
+      data.allocation = extra.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
+    if (kind === "comment")
+      data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
+    if (kind === "ref") {
+      data.ref = extra.refOwner ? { id: extra.refId ?? "", owner: extra.refOwner } : { id: extra.refId ?? "" };
+      if (extra.targetCid && extra.store)
+        return refNodeContent(extra.store, data, extra.targetCid);
+    }
+    canonicalRowData(data);
+    return { data, children: [] };
+  }
+  function canonicalRowData(data) {
+    if (data.requirement) {
+      const req = data.requirement;
+      data.allocation = { ...req, capability: req.capability, resource: "", type: req.resource ?? "inventory", amount: req.capability === "allocation" ? -Math.abs(req.amount ?? 0) : -1, unit: req.unit ?? "unit", ...req.start !== void 0 ? { start: req.start } : {}, ...req.end !== void 0 ? { end: req.end } : {} };
+      delete data.requirement;
+    } else if (data.supply) {
+      const supply = data.supply;
+      data.allocation = { ...supply, resource: "", type: "inventory", amount: 1, unit: "unit" };
+      delete data.supply;
+    }
+    return data;
+  }
+  function rowEdge(store, kind, cid) {
+    if (isBranchChoice(store, content(store, cid))) {
+      const active = branchEdge(store, cid);
+      return [store.primitive.choiceTarget.getId(), active ? updateBranch(store, cid, rowEdge(store, kind, identityCid(store, active))) : cid];
+    }
+    return [cid, rowPrimitive(store, valueContent(store, cid).data.allocation ? "allocation" : kind)];
+  }
+  function convertRowContent(value, kind, now) {
+    const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, ...rest } = value.data;
+    const data = { ...rest, updated: { time: now } };
+    if (kind === "task")
+      data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
+    if (kind === "comment")
+      data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
+    if (kind === "ref")
+      data.ref = value.data.ref ?? { id: "" };
+    if (kind === "requirement")
+      data.requirement = demandOf(value) ?? { capability: "confirmation" };
+    if (kind === "supply")
+      data.supply = supplyOf(value) ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query")
+      data.query = value.data.query ?? {};
+    if (kind === "resource")
+      data.resource = value.data.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation")
+      data.allocation = value.data.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
+    return { ...value, data: canonicalRowData(data) };
+  }
+  function peerRefContent(peerId) {
+    return { data: { alias: { id: `fos:device:${peerId}` }, peerId: { content: peerId } }, children: [] };
+  }
+  function taskEdge(store, taskCid) {
+    return [taskCid, store.primitive.completeField.getId()];
+  }
+  function pointerContent(peerId, edge, store) {
+    const data = peerId ? { peerId: { content: peerId } } : {};
+    const children = edge ? [
+      [store.primitive.instructionPointerConstructor.getId(), edge[0]],
+      [store.primitive.targetPointerConstructor.getId(), edge[1]]
+    ] : [];
+    return { data, children };
+  }
+  function readPointer(store, cid) {
+    const value = content(store, cid);
+    let instr = null;
+    let target = null;
+    for (const [i, t] of value.children) {
+      if (i === store.primitive.instructionPointerConstructor.getId())
+        instr = t;
+      if (i === store.primitive.targetPointerConstructor.getId())
+        target = t;
+    }
+    return {
+      peerId: value.data.peerId?.content ?? null,
+      edge: instr && target ? [instr, target] : null
+    };
+  }
+  function mergeRequestEdge(store, id) {
+    const type = capabilityTarget(store, "approve");
+    return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: "request merge" } }, null, [], type))];
+  }
+  function putChoice(store, id, base, options) {
+    const alternatives = options.map((o) => {
+      const pointer = pointerContent(o.peerId, o.edge, store);
+      if (o.requestMerge)
+        pointer.children.push([capabilityTarget(store, "approve"), o.requestMerge]);
+      if (o.base)
+        pointer.children.push([store.primitive.conflictBaseNode.getId(), put(store, pointerContent(null, o.base, store))]);
+      return { peerId: o.peerId, cid: put(store, pointer) };
+    }).sort((a, b) => a.cid < b.cid ? -1 : a.cid > b.cid ? 1 : 0);
+    const baseCid = put(store, pointerContent(null, base, store));
+    const children = [
+      [store.primitive.conflictBaseNode.getId(), baseCid],
+      ...alternatives.map((a) => [store.primitive.optionNotSelectedConstructor.getId(), a.cid])
+    ];
+    return put(store, {
+      data: {
+        alias: { id },
+        conflict: { path: id },
+        option: { selectedIndex: 0, defaultResolutionStrategy: "choice" }
+      },
+      children
+    });
+  }
+  function readChoice(store, choiceCid) {
+    const value = content(store, choiceCid);
+    let base = null;
+    const options = [];
+    for (const [instr, target] of value.children) {
+      if (instr === store.primitive.conflictBaseNode.getId()) {
+        base = readPointer(store, target).edge;
+      } else if (instr === store.primitive.optionNotSelectedConstructor.getId()) {
+        const pointer = readPointer(store, target);
+        const basePointer = content(store, target).children.find((e) => e[0] === store.primitive.conflictBaseNode.getId());
+        const requestMerge = content(store, target).children.find((e) => content(store, e[1]).data.name?.content === "request merge")?.[1];
+        options.push({ peerId: pointer.peerId ?? "unknown", edge: pointer.edge, ...requestMerge ? { requestMerge } : {}, ...basePointer ? { base: readPointer(store, basePointer[1]).edge } : {} });
+      }
+    }
+    return { cid: choiceCid, id: aliasIdOf(value) ?? choiceCid, base, options, defaultName: options[value.data.option?.selectedIndex ?? 0]?.peerId };
+  }
+  function findEdge(store, value, key) {
+    return value.children.find((edge) => edgeKey(store, edge) === key);
+  }
+  function resolveScope(store, nodeCid, scope) {
+    let current = nodeCid;
+    for (const step of scope) {
+      if (!current)
+        break;
+      current = findChild(store, current, step);
+    }
+    if (!current && nodeCid && scope[0] !== "fos:home") {
+      const home = findChild(store, nodeCid, "fos:home");
+      if (home)
+        return resolveScope(store, home, scope);
+    }
+    return current;
+  }
+  function contextScope(store, nodeCid, scope) {
+    if (!scope.length || findChild(store, nodeCid, scope[0]))
+      return scope;
+    const home = findChild(store, nodeCid, "fos:home");
+    return home && resolveScope(store, home, scope) ? ["fos:home", ...scope] : scope;
+  }
+  function replaceEdge(store, value, key, edge) {
+    let found = false;
+    const children = [];
+    for (const existing of value.children) {
+      if (edgeKey(store, existing) === key) {
+        found = true;
+        if (edge)
+          children.push(edge);
+      } else {
+        children.push(existing);
+      }
+    }
+    if (!found && edge)
+      children.push(edge);
+    return { ...value, children };
+  }
+  function updateAtScope(store, nodeCid, scope, fn, mode = "value") {
+    const canonical = contextScope(store, nodeCid, scope);
+    if (canonical !== scope)
+      return updateAtScope(store, nodeCid, canonical, fn, mode);
+    const identity = content(store, nodeCid);
+    if (isBranchChoice(store, identity)) {
+      const active = branchEdge(store, nodeCid);
+      if (!active)
+        throw new Error("No selected branch");
+      const next = updateAtScope(store, identityCid(store, active), scope, fn, mode);
+      return next === identityCid(store, active) ? nodeCid : updateBranch(store, nodeCid, withIdentity(store, active, next));
+    }
+    const ref = isRefNode(store, identity) && !isHandle(identity);
+    const value = ref ? valueContent(store, nodeCid) : identity;
+    const advance = (nextValue) => {
+      if (nextValue === value)
+        return nodeCid;
+      if (ref) {
+        const now = nextValue.data.updated?.time ?? value.data.updated?.time ?? 0;
+        return put(store, relinkContent(store, identity, nodeCid, nextValue, now));
+      }
+      if (isLegacyInlineLink(store, identity)) {
+        const contentChanged = putStripped(store, nextValue) !== putStripped(store, value);
+        return put(store, contentChanged ? withPrev(store, nextValue, nodeCid) : nextValue);
+      }
+      return put(store, nextValue);
+    };
+    if (scope.length === 0) {
+      if (mode === "node") {
+        const next = fn(identity);
+        return next === identity ? nodeCid : put(store, next);
+      }
+      return advance(fn(value));
+    }
+    const [step, ...rest] = scope;
+    const found = findAliasEdge(store, value, step);
+    if (!found && ref) {
+      const argument = findAliasEdge(store, identity, step);
+      if (argument) {
+        const before = identityCid(store, argument.edge);
+        const after = updateAtScope(store, before, rest, fn, mode);
+        if (before === after)
+          return nodeCid;
+        const children2 = [...identity.children];
+        children2[argument.index] = withIdentity(store, argument.edge, after);
+        return put(store, withPrev(store, { ...identity, children: children2 }, nodeCid));
+      }
+    }
+    if (!found || isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])))
+      throw new Error(`node ${step} not found`);
+    const childCid = identityCid(store, found.edge);
+    const nextChild = updateAtScope(store, childCid, rest, fn, mode);
+    if (nextChild === childCid)
+      return nodeCid;
+    const children = [...value.children];
+    children[found.index] = withIdentity(store, found.edge, nextChild);
+    return advance({ ...value, children });
+  }
+  function withChildValue(store, edge, nextValue, now) {
+    const idCid = identityCid(store, edge);
+    const identity = content(store, idCid);
+    if (isBranchChoice(store, identity)) {
+      const active = branchEdge(store, idCid);
+      return active ? withIdentity(store, edge, updateBranch(store, idCid, withChildValue(store, active, nextValue, now))) : edge;
+    }
+    if (isRefNode(store, identity) && !isHandle(identity)) {
+      return withIdentity(store, edge, put(store, relinkContent(store, identity, idCid, nextValue, now)));
+    }
+    return withIdentity(store, edge, put(store, nextValue));
+  }
+  function withPeer(store, value, peerId) {
+    const refCid = put(store, peerRefContent(peerId));
+    const edge = [store.primitive.peerField.getId(), refCid];
+    if (value.children.some(([i, t]) => i === edge[0] && t === edge[1]))
+      return value;
+    return { ...value, children: [...value.children, edge] };
+  }
+  function rootTargetCid(store) {
+    const root = content(store, store.rootNodeId);
+    const pointer = root.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    return pointer ? pointer[1] : store.rootNodeId;
+  }
+  function rootIsAlias(store) {
+    return content(store, store.rootNodeId).children.some(([i]) => i === store.primitive.targetPointerConstructor.getId());
+  }
+  var HOME_ID = "fos:home";
+  function homeContextCid(store, rootCid, now) {
+    const root = valueContent(store, rootCid);
+    const identity = makeLink(store, content(store, rootCid), 0);
+    let bindings = identity;
+    if (!readMembers(store, bindings).some((member) => member.peerId === "fos"))
+      bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
+    const homeCid = findChild(store, rootCid, HOME_ID);
+    if (homeCid && isBranchChoice(store, content(store, homeCid))) {
+      const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
+      const nextEdge = rowEdge(store, "plain", homeCid);
+      if (nextEdge[0] === edge[0] && nextEdge[1] === edge[1] && bindings === identity && identity === content(store, rootCid))
+        return rootCid;
+      const nextValue2 = put(store, { ...root, children: root.children.map((e) => e === edge ? nextEdge : e) });
+      return put(store, refNodeContent(store, identity.data, nextValue2, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
+    }
+    const movable = homeCid ? [] : root.children.filter((edge) => isRowEdge(store, edge) && rowKindOf(store, edge) !== "template" || isChoiceEdge(store, edge));
+    const homeValue = homeCid ? valueContent(store, homeCid) : rowContent("plain", HOME_ID, "Home", 0);
+    let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0);
+    const legacyIntegrations = bindings.children.filter((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith("integration:"));
+    for (const edge of legacyIntegrations)
+      if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content))
+        home = { ...home, children: [...home.children, edge] };
+    if (legacyIntegrations.length)
+      bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
+    for (const peer of INTEGRATION_PEERS)
+      if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`))
+        home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
+    const own = new Set(readMembers(store, home).map((member) => member.peerId));
+    const argumentsFromRoot = bindings.children.filter((edge) => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ""));
+    if (argumentsFromRoot.length)
+      home = { ...home, children: [...home.children, ...argumentsFromRoot] };
+    const nextHome = put(store, home);
+    const homeEdge = root.children.find((edge) => identityCid(store, edge) === homeCid);
+    if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid))
+      return rootCid;
+    const keep = root.children.filter((edge) => !movable.includes(edge) && (!homeCid || identityCid(store, edge) !== homeCid));
+    const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, "plain", nextHome)] });
+    return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
+  }
+  function commitRoot(store, newTargetCid, now, mergeSourceCid = null) {
+    if (newTargetCid === rootTargetCid(store) && !mergeSourceCid)
+      return;
+    const previous = content(store, store.rootNodeId);
+    const instruction = rootIsAlias(store) ? previous.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId()) : void 0;
+    const children = [
+      [store.primitive.targetPointerConstructor.getId(), newTargetCid],
+      [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : store.primitive.rootInstructionNode.getId()],
+      [store.primitive.previousVersion.getId(), store.rootNodeId]
+    ];
+    if (mergeSourceCid)
+      children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid]);
+    const alias = previous.data.alias ?? { id: newId() };
+    store.rootNodeId = put(store, { data: { alias, updated: { time: now } }, children });
+    store.updateCtxCallback?.(store.exportContext([]));
+  }
+  function reachableNodes(store, roots, skip = /* @__PURE__ */ new Set()) {
+    const out = {};
+    const stack = roots.filter((r) => !!r && store.table.has(r));
+    const seen = /* @__PURE__ */ new Set();
+    while (stack.length) {
+      const cid = stack.pop();
+      if (seen.has(cid))
+        continue;
+      seen.add(cid);
+      const value = content(store, cid);
+      if (!skip.has(cid))
+        out[cid] = value;
+      for (const [i, t] of value.children) {
+        if (!seen.has(i))
+          stack.push(i);
+        if (!seen.has(t))
+          stack.push(t);
+      }
+    }
+    return out;
+  }
+  function reachableSet(store, roots) {
+    return new Set(Object.keys(reachableNodes(store, roots)));
+  }
+  function importNodes(store, nodes) {
+    const accepted = [];
+    let pending = Object.entries(nodes).filter(([cid, value]) => {
+      if (store.table.has(cid))
+        return false;
+      if (!value || typeof value !== "object" || !Array.isArray(value.children))
+        return false;
+      return isCurrentCid(cid) && verifyCid(cid, value);
+    });
+    let progress = true;
+    while (pending.length && progress) {
+      progress = false;
+      const rest = [];
+      for (const entry of pending) {
+        const [cid, value] = entry;
+        if (value.children.every(([i, t]) => store.table.has(i) && store.table.has(t))) {
+          store.table.set(cid, value);
+          accepted.push(cid);
+          progress = true;
+        } else {
+          rest.push(entry);
+        }
+      }
+      pending = rest;
+    }
+    return accepted;
+  }
+  function exportReachableContext(store, extraRoots = []) {
+    return {
+      nodes: reachableNodes(store, [store.rootNodeId, ...extraRoots]),
+      route: [],
+      rootNodeId: store.rootNodeId
+    };
+  }
+  function rowView(store, nodeCid, kind) {
+    const identity = content(store, nodeCid);
+    const value = valueContent(store, nodeCid);
+    const created = value.data.todo?.time ?? value.data.updated?.time ?? 0;
+    const sub = countNode(store, nodeCid);
+    const view2 = {
+      id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
+      title: value.data.description?.content ?? "",
+      kind,
+      checkable: kind === "task",
+      done: kind === "task" && !!value.data.todo?.completed,
+      createdAt: created,
+      updatedAt: value.data.updated?.time ?? created,
+      childCount: value.children.filter((e) => isRowEdge(store, e)).length,
+      childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
+      subtreeTasks: sub.tasks,
+      subtreeDone: sub.done,
+      isLink: isLink(store, identity)
+    };
+    const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null;
+    const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity;
+    if (refTypeCid(store, constructor) === capabilityTarget(store, "peer") && constructor.data.name)
+      view2.construction = { handler: constructor.data.name.content };
+    if (kind === "ref") {
+      view2.refId = identity.data.ref?.id ?? "";
+      if (identity.data.ref?.owner)
+        view2.refOwner = identity.data.ref.owner;
+    }
+    if (kind === "comment" && value.data.comment)
+      view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
+    if (value.data.template)
+      view2.template = value.data.template;
+    if (kind === "task") {
+      const blockers = taskBlockers(store, nodeCid);
+      if (blockers.length)
+        view2.blockedBy = blockers;
+      if (value.data.template)
+        view2.template = value.data.template;
+    }
+    if (isBranchChoice(store, identity))
+      view2.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map((o) => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter((o) => o.requestMerge).map((o) => o.peerId) };
+    const demand = demandOf(value);
+    if (kind === "requirement" && demand) {
+      const progress = requirementProgress(store, nodeCid);
+      view2.requirement = { ...demand, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(demand), ...progress ? progress : {} };
+    }
+    if (kind === "supply")
+      view2.supply = supplyOf(value);
+    if (kind === "query")
+      view2.query = value.data.query ?? {};
+    if (kind === "resource" && value.data.resource) {
+      const allocated = allocatedIn(store, nodeCid);
+      view2.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === void 0 ? null : value.data.resource.capacity - allocated };
+    }
+    if (kind === "allocation" && value.data.allocation)
+      view2.allocation = allocationValue(store, nodeCid);
+    if (identity.data.listing)
+      view2.market = true;
+    return view2;
+  }
+  function supplyOf(value) {
+    if (value.data.supply)
+      return value.data.supply;
+    const a = value.data.allocation;
+    return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? "", at: a.at ?? 0, ...a.ref ? { ref: a.ref } : {}, ...a.choice !== void 0 ? { choice: a.choice } : {} } : void 0;
+  }
+  function demandOf(value) {
+    if (value.data.requirement)
+      return value.data.requirement;
+    const a = value.data.allocation;
+    return a && (a.amount < 0 || a.amount === 0 && !!a.capability) ? { capability: a.capability ?? "allocation", ...!a.capability || a.capability === "allocation" ? { resource: a.type, amount: -a.amount, unit: a.unit } : {}, ...a.options ? { options: a.options } : {}, ...a.peer ? { peer: a.peer } : {}, ...a.repo ? { repo: a.repo } : {}, ...a.tool ? { tool: a.tool } : {}, ...a.start !== void 0 ? { start: a.start } : {}, ...a.end !== void 0 ? { end: a.end } : {} } : void 0;
+  }
+  function requirementSummary(req) {
+    switch (req.capability) {
+      case "confirmation":
+        return "confirmation";
+      case "choice":
+        return `choice${req.options?.length ? ` (${req.options.join(" | ")})` : ""}`;
+      case "search":
+        return "search";
+      case "allocation":
+        return `${req.resource ?? "resource"}${req.amount !== void 0 ? ` ${req.amount} ${req.unit ?? ""}`.trimEnd() : ""}`;
+      case "task":
+        return "task";
+      case "market":
+        return "market";
+      case "mail":
+        return "mail";
+      case "peer":
+        return req.peer ? `@${req.peer}` : "peer";
+      case "llm":
+        return "llm";
+      case "repo":
+        return req.repo ? `repo ${req.repo}` : "repo";
+      case "tool":
+        return req.tool ? `tool ${req.tool}` : "tool";
+    }
+  }
+  function childRows(store, cid, kind) {
+    const out = [];
+    for (const edge of valueContent(store, cid).children) {
+      const k = rowKindOf(store, edge);
+      if (!k || kind && k !== kind)
+        continue;
+      const id = identityCid(store, edge);
+      out.push({ cid: id, kind: k, value: valueContent(store, id) });
+    }
+    return out;
+  }
+  function allocationFills(req, a) {
+    return allocationMatches(req, a) && (req.amount === void 0 || a.amount >= req.amount);
+  }
+  function allocationMatches(req, a) {
+    return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit === req.unit) && (req.start === void 0 || a.start !== void 0 && a.start <= req.start) && (req.end === void 0 || a.end === void 0 || a.end >= req.end) && (!req.peer || a.person === req.peer);
+  }
+  function requirementProgress(store, requirementCid, root) {
+    const req = demandOf(valueContent(store, requirementCid));
+    if (!req || req.capability !== "allocation" || req.amount === void 0)
+      return null;
+    let have = 0;
+    for (const { kind, value, cid } of childRows(store, requirementCid)) {
+      if (kind === "allocation") {
+        const allocation = allocationValue(store, cid);
+        if (allocationMatches(req, allocation))
+          have += allocation?.amount ?? 0;
+      }
+      const supply = supplyOf(value);
+      if (kind === "supply" && supply?.capability === "allocation" && supply.ref) {
+        const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref);
+        if (!found)
+          have += req.amount;
+        else if (allocationMatches(req, found.row.allocation))
+          have += found.row.allocation?.amount ?? 0;
+      }
+    }
+    return { have, need: req.amount };
+  }
+  function requirementSatisfied(store, requirementCid, root) {
+    const req = demandOf(valueContent(store, requirementCid));
+    if (!req)
+      return true;
+    const rows = childRows(store, requirementCid);
+    const filledByChild = rows.some(({ kind, value, cid }) => {
+      switch (req.capability) {
+        case "task":
+          return kind === "task" && !!value.data.todo?.completed;
+        case "allocation":
+          return kind === "allocation" && allocationFills(req, allocationValue(store, cid));
+        case "search":
+          return kind === "query" && !!value.data.query?.executedAt;
+        case "peer":
+          return kind === "allocation" && value.data.allocation?.type === "person" && (!req.peer || value.data.allocation.person === req.peer);
+        default:
+          return false;
+      }
+    });
+    if (filledByChild)
+      return true;
+    if (req.capability === "allocation" && req.amount !== void 0 && req.amount > 0) {
+      const progress = requirementProgress(store, requirementCid, root);
+      if (progress && progress.have >= progress.need)
+        return true;
+    }
+    return rows.some(({ kind, value }) => {
+      const s = kind === "supply" ? supplyOf(value) : void 0;
+      if (!s || s.capability !== req.capability)
+        return false;
+      switch (req.capability) {
+        case "confirmation":
+          return !!s.by;
+        case "choice":
+          return typeof s.choice === "number" && (!req.options || s.choice >= 0 && s.choice < req.options.length);
+        case "search":
+          return !!s.ref;
+        case "task":
+          return !!s.ref;
+        case "market":
+          return !!s.by;
+        case "mail":
+          return !!s.by;
+        case "llm":
+          return !!s.by;
+        case "repo":
+          return !!s.by;
+        case "tool":
+          return !!s.by;
+        case "peer":
+          return !!s.by && (!req.peer || s.by === req.peer);
+        case "allocation": {
+          if (!s.ref)
+            return false;
+          const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref);
+          if (!found)
+            return true;
+          return allocationFills(req, found.row.allocation);
+        }
+      }
+    });
+  }
+  function taskBlockers(store, taskCid) {
+    return childRows(store, taskCid, "requirement").filter(({ cid }) => !requirementSatisfied(store, cid)).map(({ value }) => demandOf(value) ? requirementSummary(demandOf(value)) : "requirement");
+  }
+  function allocatedIn(store, bankCid) {
+    const type = valueContent(store, bankCid).data.resource?.type;
+    const sum = (cid) => childRows(store, cid).reduce((total, child) => {
+      const allocation = child.kind === "allocation" ? allocationValue(store, child.cid) : void 0;
+      const amount = allocation && (!type || allocation.type === type) ? allocation.amount : 0;
+      return total + amount + sum(child.cid);
+    }, 0);
+    return sum(bankCid);
+  }
+  function describeEdge(store, edge) {
+    if (!edge)
+      return { task: null, label: null };
+    const kind = rowKindOf(store, edge);
+    if (kind)
+      return { task: rowView(store, identityCid(store, edge), kind), label: null };
+    const value = valueContent(store, identityCid(store, edge));
+    return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? "node" };
+  }
+  function choiceView(store, choiceCid) {
+    const record = readChoice(store, choiceCid);
+    const base = describeEdge(store, record.base);
+    const options = record.options.map((o) => ({ peerId: o.peerId, ...describeEdge(store, o.edge) }));
+    const subject = base.task?.title ?? base.label ?? options.map((o) => o.task?.title ?? o.label).find((s) => !!s) ?? record.id;
+    return { id: record.id, subject, base: base.task, baseLabel: base.label, options };
+  }
+  function countNode(store, cid) {
+    let tasks = 0;
+    let done = 0;
+    let choices = 0;
+    for (const edge of valueContent(store, cid).children) {
+      if (rowKindOf(store, edge) === "task") {
+        tasks++;
+        const taskCid = identityCid(store, edge);
+        if (valueContent(store, taskCid).data.todo?.completed)
+          done++;
+        const sub = countNode(store, taskCid);
+        tasks += sub.tasks;
+        done += sub.done;
+        choices += sub.choices;
+      } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) {
+        choices++;
+      } else if (isRowEdge(store, edge)) {
+        const sub = countNode(store, identityCid(store, edge));
+        tasks += sub.tasks;
+        done += sub.done;
+        choices += sub.choices;
+      }
+    }
+    return { tasks, done, choices };
+  }
+  function viewNode(store, cid, constructors = false) {
+    if (isBranchChoice(store, content(store, cid))) {
+      const active = branchEdge(store, cid);
+      if (active)
+        return viewNode(store, identityCid(store, active), constructors);
+    }
+    const identity = content(store, cid);
+    const value = valueContent(store, cid);
+    const link = isLink(store, identity);
+    const view2 = {
+      name: value.data.description?.content ?? null,
+      done: value.data.todo ? !!value.data.todo.completed : null,
+      tasks: [],
+      choices: [],
+      peers: [],
+      isLink: link,
+      members: link ? readMembers(store, identity) : [],
+      proposals: link ? readProposals(store, identity).map((p) => proposalView(store, identity, p)) : [],
+      versions: link ? linkHistory(store, cid).length : 0
+    };
+    const peerEdges = identity === value ? identity.children : [...identity.children, ...value.children];
+    for (const edge of peerEdges) {
+      if (isPeerEdge(store, edge)) {
+        const peerId = content(store, edge[1]).data.peerId?.content;
+        if (peerId && !view2.peers.includes(peerId))
+          view2.peers.push(peerId);
+      }
+    }
+    for (const edge of value.children) {
+      const kind = rowKindOf(store, edge);
+      if (kind) {
+        view2.tasks.push(rowView(store, identityCid(store, edge), kind));
+      } else if (isChoiceEdge(store, edge)) {
+        view2.choices.push(choiceView(store, edge[1]));
+      }
+    }
+    if (constructors) {
+      const seen = /* @__PURE__ */ new Set();
+      for (const edge of [...value.children, ...identity === value ? [] : identity.children]) {
+        const child = content(store, identityCid(store, edge));
+        const peerId = isMemberEdge(store, edge) || isPeerEdge(store, edge) ? child.data.peerId?.content : void 0;
+        const name = refTypeCid(store, child) ? child.data.name?.content : void 0;
+        if (!peerId && !name?.startsWith("fos:setting:") || !child.data.alias?.id)
+          continue;
+        if (seen.has(peerId ?? child.data.alias.id))
+          continue;
+        seen.add(peerId ?? child.data.alias.id);
+        const row = rowView(store, identityCid(store, edge), "plain");
+        row.title = peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name;
+        row.construction = { ...name ? { name } : {}, ...peerId ? { peerId } : {} };
+        view2.tasks.push(row);
+      }
+    }
+    return view2;
+  }
+  function scopeNames(store, nodeCid, scope) {
+    const names = [];
+    let current = nodeCid;
+    for (const step of scope) {
+      if (!current) {
+        names.push(step);
+        continue;
+      }
+      const next = findChild(store, current, step);
+      names.push(next ? valueContent(store, next).data.description?.content ?? step : step);
+      current = next;
+    }
+    return names;
+  }
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer"];
+  var INTEGRATION_PEERS = [
+    { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
+    { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
+    { id: "discord", name: "Discord", kind: "oauth", provides: ["mail", "relay"], consumes: ["read"] },
+    { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
+    { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
+  ];
+  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer"];
+  function isLink(store, value) {
+    if (isHandle(value))
+      return false;
+    return isRefNode(store, value) || !!value.data.link;
+  }
+  function isLegacyInlineLink(store, value) {
+    return !!value.data.link && !isRefNode(store, value);
+  }
+  function isPrevEdge(store, edge) {
+    return edge[0] === store.primitive.previousVersion.getId();
+  }
+  function isMemberEdge(store, edge) {
+    return edge[0] === store.primitive.memberField.getId();
+  }
+  function isProposalEdge(store, edge) {
+    return edge[0] === store.primitive.proposalField.getId();
+  }
+  function isBookkeepingEdge2(store, edge) {
+    return isPrevEdge(store, edge) || isMemberEdge(store, edge) || isProposalEdge(store, edge) || isPeerEdge(store, edge);
+  }
+  function stripLink(store, value) {
+    if (isRefNode(store, value) && !isHandle(value)) {
+      const target = refValueCid(store, value);
+      return store.table.has(target) ? content(store, target) : { data: {}, children: [] };
+    }
+    const { link: _link, ...data } = value.data;
+    return { data, children: value.children.filter((e) => !isBookkeepingEdge2(store, e)) };
+  }
+  function bookkeepingOf(store, value) {
+    return value.children.filter((e) => isBookkeepingEdge2(store, e));
+  }
+  function putStripped(store, value) {
+    return put(store, stripLink(store, value));
+  }
+  function makeLink(store, value, now) {
+    if (isRefNode(store, value) && !isHandle(value))
+      return value;
+    const stripped = stripLink(store, value);
+    const valueCid = put(store, stripped);
+    const data = { alias: value.data.alias ?? { id: newId() }, updated: { time: now } };
+    return refNodeContent(store, data, valueCid, bookkeepingOf(store, value));
+  }
+  function withPrev(store, next, previousCid) {
+    const prevEdge = [store.primitive.previousVersion.getId(), previousCid];
+    const children = next.children.filter((e) => !isPrevEdge(store, e));
+    return { ...next, children: [...children, prevEdge] };
+  }
+  function linkHistory(store, cid, limit = 50) {
+    const out = [];
+    let current = cid;
+    while (current && out.length < limit) {
+      const prev = content(store, current).children.find((e) => isPrevEdge(store, e));
+      current = prev ? prev[1] : null;
+      if (current && store.table.has(current))
+        out.push(current);
+      else
+        break;
+    }
+    return out;
+  }
+  function capabilityTarget(store, capability) {
+    const p = store.primitive;
+    switch (capability) {
+      case "edit":
+        return p.proposeAction.getId();
+      case "approve":
+        return p.approveAction.getId();
+      case "direct":
+        return p.directConnectCapability.getId();
+      case "http":
+        return p.httpConnectCapability.getId();
+      case "ws":
+        return p.wsConnectCapability.getId();
+      case "relay":
+        return p.relayCapability.getId();
+      case "search":
+        return p.searchCapability.getId();
+      case "market":
+        return p.marketCapability.getId();
+      case "mail":
+        return p.mailCapability.getId();
+      case "read":
+        return p.readCapability.getId();
+      case "read-requests":
+        return p.readRequestsCapability.getId();
+      case "autopush":
+        return p.autopushCapability.getId();
+      case "calendar":
+        return p.calendarCapability.getId();
+      case "llm":
+        return p.llmCapability.getId();
+      case "repo":
+        return p.repoCapability.getId();
+      case "tool":
+        return p.toolCapability.getId();
+      case "send-payment":
+        return p.sendPaymentCapability.getId();
+      case "receive-payment":
+        return p.receivePaymentCapability.getId();
+      case "allocate":
+        return p.allocateCapability.getId();
+      case "request-payment":
+        return p.requestPaymentCapability.getId();
+      case "notify":
+        return p.notifyCapability.getId();
+      case "rank":
+      case "poll":
+      case "peer":
+      case "timer":
+      case "cron":
+      case "task-completion":
+      case "request":
+        return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] });
+    }
+  }
+  function capabilityOfTarget(store, target) {
+    const type = refTypeCid(store, content(store, target)) ?? target;
+    return CAPABILITIES.find((c) => type === capabilityTarget(store, c)) ?? null;
+  }
+  function capabilityOf(store, edge) {
+    if (edge[0] !== store.primitive.capabilityNode.getId())
+      return null;
+    return capabilityOfTarget(store, edge[1]);
+  }
+  function acceptsOf(store, edge) {
+    if (edge[0] !== store.primitive.acceptsNode.getId())
+      return null;
+    return capabilityOfTarget(store, edge[1]);
+  }
+  function memberRefContent(store, peerId, name, capabilities, disabled = [], accepts = []) {
+    const unique = [...new Set(capabilities)];
+    const from = [...new Set(accepts)];
+    const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c));
+    return {
+      data: {
+        alias: { id: `fos:peer:${peerId}` },
+        peerId: { content: peerId },
+        ...name ? { name: { content: name } } : {},
+        ...off.length ? { disabledCapabilities: { content: off } } : {}
+      },
+      children: [
+        ...unique.map((c) => [store.primitive.capabilityNode.getId(), capabilityTarget(store, c)]),
+        ...from.map((c) => [store.primitive.acceptsNode.getId(), capabilityTarget(store, c)])
+      ]
+    };
+  }
+  function readMembers(store, value) {
+    if (isBranchChoice(store, value)) {
+      const edge = branchEdge(store, put(store, value));
+      if (edge)
+        return readMembers(store, content(store, identityCid(store, edge)));
+    }
+    const out = [];
+    for (const edge of value.children) {
+      if (!isMemberEdge(store, edge))
+        continue;
+      const ref = content(store, edge[1]);
+      const peerId = ref.data.peerId?.content;
+      if (!peerId)
+        continue;
+      const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c) => c !== null))];
+      const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c) => c !== null);
+      const off = (ref.data.disabledCapabilities?.content ?? []).filter((c) => CAPABILITIES.includes(c) && (caps.includes(c) || accepts.includes(c)));
+      out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...off.length ? { disabled: off } : {}, ...accepts.length ? { accepts } : {} });
+    }
+    return out;
+  }
+  function memberHandlers(store, value, peerId, direction) {
+    if (isBranchChoice(store, value)) {
+      const edge = branchEdge(store, put(store, value));
+      if (edge)
+        return memberHandlers(store, content(store, identityCid(store, edge)), peerId, direction);
+    }
+    const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId);
+    return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && (e[0] === store.primitive.capabilityNode.getId() || e[0] === store.primitive.acceptsNode.getId()) && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : [];
+  }
+  function withMember(store, value, peerId, name, capabilities, disabled = [], accepts = []) {
+    const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts);
+    const previous = value.children.find((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId);
+    if (previous)
+      next.children.push(...content(store, previous[1]).children.filter((edge) => edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId()));
+    next.children = next.children.flatMap((edge) => {
+      const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge);
+      const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : [];
+      return matching.length ? matching.map((cid) => [edge[0], cid]) : [edge];
+    });
+    const refCid = put(store, next);
+    const children = value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId));
+    return { ...value, children: [...children, [store.primitive.memberField.getId(), refCid]] };
+  }
+  function textNode(store, text) {
+    return put(store, { data: { description: { content: text } }, children: [] });
+  }
+  function proposalContent(store, peerId, name, contentCid, baseCid, timestamp, status = "open") {
+    const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`;
+    const branchType = store.primitive.rootInstructionNode.getId();
+    const textType = store.primitive.documentField.getId();
+    const argument = (key, type, target, history = []) => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history, type))];
+    const constructor = put(store, {
+      data: { description: { content: name || "Proposal" }, peerId: { content: peerId }, updated: { time: timestamp } },
+      children: [
+        argument("branch", branchType, contentCid, [[store.primitive.previousVersion.getId(), baseCid]]),
+        mergeRequestEdge(store, id),
+        argument("status", textType, textNode(store, status))
+      ]
+    });
+    return refNodeContent(store, { alias: { id }, name: { content: "branch" }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId());
+  }
+  function readProposal(store, cid) {
+    const identity = content(store, cid);
+    if (refTypeCid(store, identity) === store.primitive.proposalField.getId()) {
+      const value2 = valueContent(store, cid);
+      const args = value2.children.map((edge) => content(store, identityCid(store, edge)));
+      const branch = args.find((arg) => arg.data.name?.content === "branch");
+      const status = args.find((arg) => arg.data.name?.content === "status");
+      const contentCid2 = branch && refValueCid(store, branch);
+      const baseCid2 = branch?.children.find((edge) => isPrevEdge(store, edge))?.[1];
+      const peerId2 = value2.data.peerId?.content;
+      const statusCid = status && refValueCid(store, status);
+      if (!contentCid2 || !baseCid2 || !peerId2)
+        return null;
+      return { cid, peerId: peerId2, name: value2.data.description?.content ?? "", contentCid: contentCid2, baseCid: baseCid2, timestamp: value2.data.updated?.time ?? 0, status: statusCid && ["rejected", '"rejected"'].includes(content(store, statusCid).data.description?.content ?? "") ? "rejected" : "open" };
+    }
+    const value = identity;
+    let peerId = "";
+    let name = "";
+    let contentCid = "";
+    let baseCid = "";
+    let timestamp = 0;
+    for (const [instr, target] of value.children) {
+      if (instr === store.primitive.proposalNameField.getId())
+        name = content(store, target).data.description?.content ?? "";
+      else if (instr === store.primitive.proposedContentField.getId())
+        contentCid = target;
+      else if (instr === store.primitive.senderField.getId())
+        peerId = content(store, target).data.description?.content ?? "";
+      else if (instr === store.primitive.timestampField.getId())
+        timestamp = Number(content(store, target).data.description?.content ?? 0) || 0;
+      else if (instr === store.primitive.previousVersion.getId())
+        baseCid = target;
+    }
+    if (!peerId || !contentCid || !baseCid)
+      return null;
+    return { cid, peerId, name, status: value.data.proposal?.status === "rejected" ? "rejected" : "open", contentCid, baseCid, timestamp };
+  }
+  function markProposalRejected(store, value, proposalCid) {
+    const record = readProposal(store, proposalCid);
+    if (!record || record.status === "rejected")
+      return value;
+    const rejectedCid = put(store, proposalContent(store, record.peerId, record.name, record.contentCid, record.baseCid, record.timestamp, "rejected"));
+    return withProposal(store, value, record.peerId, rejectedCid, record.name);
+  }
+  function readProposals(store, value) {
+    const out = [];
+    for (const edge of value.children) {
+      if (!isProposalEdge(store, edge))
+        continue;
+      const record = readProposal(store, edge[1]);
+      if (record)
+        out.push(record);
+    }
+    return out;
+  }
+  function withProposal(store, value, peerId, proposalCid, name) {
+    const matches = (cid) => {
+      const p = readProposal(store, cid);
+      return !!p && p.peerId === peerId && (name === void 0 || p.name === name);
+    };
+    const children = value.children.filter((e) => !(isProposalEdge(store, e) && matches(e[1])));
+    if (proposalCid)
+      children.push([store.primitive.proposalField.getId(), proposalCid]);
+    return { ...value, children };
+  }
+  function removeProposalByCid(store, value, proposalCid) {
+    return { ...value, children: value.children.filter((e) => !(isProposalEdge(store, e) && e[1] === proposalCid)) };
+  }
+  function relinkContent(store, previous, previousCid, strippedContent, now) {
+    const bookkeeping = previous.children.filter((e) => isBookkeepingEdge2(store, e) && !isPrevEdge(store, e));
+    const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
+    if (previous.data.ref)
+      data.ref = previous.data.ref;
+    if (previous.data.name)
+      data.name = previous.data.name;
+    const branches = refBranches(store, previous);
+    const active = branches && branchEdge(store, branches.cid);
+    const value = put(store, strippedContent);
+    const target = branches && active ? updateBranch(store, branches.cid, [value, active[1]]) : value;
+    const next = refNodeContent(store, data, target, bookkeeping, refTypeCid(store, previous));
+    return withPrev(store, next, previousCid);
+  }
+  function normalizeRefs(store, nodeCid, now = 0) {
+    const identity = content(store, nodeCid);
+    if (isHandle(identity))
+      return nodeCid;
+    const ref = isRefNode(store, identity);
+    const value = ref ? valueContent(store, nodeCid) : identity;
+    let changed = false;
+    const children = value.children.map((edge) => {
+      if (!isRowEdge(store, edge) || isPartitionEdge(store, edge))
+        return edge;
+      const childCid = identityCid(store, edge);
+      const next = normalizeRefs(store, childCid, now);
+      if (next === childCid)
+        return edge;
+      changed = true;
+      return withIdentity(store, edge, next);
+    });
+    let nextValue = changed ? { ...value, children } : value;
+    if (isLegacyInlineLink(store, identity)) {
+      const stripped = stripLink(store, nextValue);
+      return put(store, refNodeContent(store, { alias: identity.data.alias ?? { id: newId() }, updated: { time: identity.data.updated?.time ?? now } }, put(store, stripped), bookkeepingOf(store, identity)));
+    }
+    if (!changed)
+      return nodeCid;
+    if (ref)
+      return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now));
+    return put(store, nextValue);
+  }
+  function findAliasEdge(store, value, aliasId) {
+    const key = `a:${aliasId}`;
+    const index = value.children.findIndex((e) => edgeKey(store, e) === key || aliasIdOf(content(store, identityCid(store, e))) === aliasId);
+    return index >= 0 ? { edge: value.children[index], index } : null;
+  }
+  function findChild(store, nodeCid, aliasId) {
+    const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId);
+    if (!found)
+      return null;
+    const { edge } = found;
+    if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])))
+      return null;
+    return identityCid(store, edge);
+  }
+  function findRowByAlias(store, rootCid, aliasId, prefix = []) {
+    for (const edge of valueContent(store, rootCid).children) {
+      const kind = rowKindOf(store, edge);
+      if (!kind)
+        continue;
+      const cid = identityCid(store, edge);
+      const id = aliasIdOf(content(store, cid));
+      if (!id)
+        continue;
+      if (id === aliasId)
+        return { path: prefix, row: rowView(store, cid, kind) };
+      const found = findRowByAlias(store, cid, aliasId, [...prefix, id]);
+      if (found)
+        return found;
+    }
+    return null;
+  }
+  function copyRowContent(store, nodeCid, now, freshId, options = {}) {
+    const { instantiate = false } = options;
+    const ids = /* @__PURE__ */ new Map();
+    const owned = /* @__PURE__ */ new Set();
+    const childEdges = (value) => value.children.filter((edge) => {
+      const kind = rowKindOf(store, edge);
+      const name = content(store, identityCid(store, edge)).data.name?.content;
+      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && name === "fos:trigger")
+        return false;
+      if (kind)
+        return !(instantiate && kind === "supply");
+      if (isBookkeepingEdge2(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId())
+        return false;
+      return isRefNode(store, content(store, identityCid(store, edge)));
+    });
+    const collect = (cid) => {
+      if (owned.has(cid))
+        return;
+      owned.add(cid);
+      const identity = content(store, cid);
+      const id = aliasIdOf(identity);
+      if (id && !ids.has(id))
+        ids.set(id, cid === nodeCid && options.rootId ? options.rootId : freshId());
+      if (isBranchChoice(store, identity)) {
+        const choice = readChoice(store, cid);
+        for (const edge of [choice.base, ...choice.options.flatMap((o) => [o.edge, o.base])])
+          if (edge)
+            collect(identityCid(store, edge));
+        return;
+      }
+      if (refTypeCid(store, identity))
+        return;
+      for (const edge of childEdges(stripLink(store, identity)))
+        collect(identityCid(store, edge));
+    };
+    collect(nodeCid);
+    const copied = /* @__PURE__ */ new Map();
+    const copy = (cid) => {
+      const cached = copied.get(cid);
+      if (cached)
+        return cached;
+      const identity = content(store, cid);
+      if (isBranchChoice(store, identity)) {
+        const choice = readChoice(store, cid);
+        const remap = (edge) => edge ? withIdentity(store, edge, copy(identityCid(store, edge))) : null;
+        const result2 = putBranches(store, ids.get(choice.id), remap(choice.base), choice.options.map((o) => ({ ...o, edge: remap(o.edge), ...o.base ? { base: remap(o.base) } : {} })), choice.defaultName);
+        copied.set(cid, result2);
+        return result2;
+      }
+      const type = refTypeCid(store, identity);
+      const value = type ? identity : stripLink(store, identity);
+      const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? "") ?? freshId() }, updated: { time: now } };
+      if (instantiate && data.todo)
+        data.todo = { ...data.todo, completed: false, time: now };
+      if (instantiate && data.query)
+        data.query = { market: data.query.market };
+      if (data.ref && !data.ref.owner)
+        data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id };
+      if (data.supply?.ref)
+        data.supply = { ...data.supply, ref: ids.get(data.supply.ref) ?? data.supply.ref };
+      if (data.allocation)
+        data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {} };
+      if (data.template)
+        data.template = { ...data.template, id: ids.get(data.template.id) ?? data.template.id };
+      const target = refValueCid(store, identity);
+      const children = type ? [] : childEdges(value).map((edge) => withIdentity(store, edge, copy(identityCid(store, edge))));
+      if (!type && isHandle(identity) && target)
+        children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target]);
+      let bound = target && owned.has(target) ? copy(target) : target;
+      const alternatives = type && refBranches(store, identity);
+      if (alternatives) {
+        const record = readChoice(store, alternatives.cid);
+        const incoming = put(store, refNodeContent(store, { alias: data.alias, ...data.name ? { name: data.name } : {} }, null, [], type));
+        const edge = (original) => original ? [owned.has(original[0]) ? copy(original[0]) : original[0], incoming] : null;
+        bound = putBranches(store, data.alias.id, edge(record.base), record.options.map((option) => ({ ...option, edge: edge(option.edge) })), record.defaultName);
+      }
+      const result = put(store, type ? refNodeContent(store, data, bound, [], type) : { data, children });
+      copied.set(cid, result);
+      return result;
+    };
+    return copy(nodeCid);
+  }
+  function moveChild(store, rootCid, fromPath, aliasId, toPath, position) {
+    if (toPath.includes(aliasId))
+      return null;
+    const fromCid = resolveScope(store, rootCid, fromPath);
+    if (!fromCid)
+      return null;
+    const found = findAliasEdge(store, valueContent(store, fromCid), aliasId);
+    if (!found)
+      return null;
+    const moving = found.edge;
+    let root = updateAtScope(store, rootCid, fromPath, (value) => ({ ...value, children: value.children.filter((e) => e !== moving) }));
+    const insert = (value) => {
+      const children = [...value.children];
+      if ("into" in position) {
+        const parent = findAliasEdge(store, value, position.into);
+        if (!parent)
+          throw new Error("destination not found");
+        const target = identityCid(store, parent.edge);
+        const targetContent = valueContent(store, target);
+        const kids = [...targetContent.children];
+        const at = position.index === void 0 || position.index < 0 ? kids.length : Math.min(position.index, kids.length);
+        kids.splice(at, 0, moving);
+        children[parent.index] = withChildValue(store, parent.edge, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0);
+        return { ...value, children };
+      }
+      const sibling = findAliasEdge(store, value, position.relativeTo);
+      if (!sibling)
+        throw new Error("destination not found");
+      children.splice(position.position === "above" ? sibling.index : sibling.index + 1, 0, moving);
+      return { ...value, children };
+    };
+    root = updateAtScope(store, root, toPath, insert);
+    return root;
+  }
+  function proposalView(store, nodeValue, proposal) {
+    const current = store.getNodeByAddress(proposal.baseCid) ? content(store, proposal.baseCid) : stripLink(store, nodeValue);
+    const proposed = content(store, proposal.contentCid);
+    const index = (value) => {
+      const map = /* @__PURE__ */ new Map();
+      for (const edge of value.children) {
+        if (isChoiceEdge(store, edge)) {
+          const choice = readChoice(store, edge[1]);
+          for (const option of [choice.base, ...choice.options.map((o) => o.edge)]) {
+            if (!option || !isRowEdge(store, option))
+              continue;
+            const id2 = identityCid(store, option);
+            map.set(edgeKey(store, option), { title: valueContent(store, id2).data.description?.content ?? "", cid: id2 });
+          }
+          continue;
+        }
+        if (!isRowEdge(store, edge))
+          continue;
+        const id = identityCid(store, edge);
+        map.set(edgeKey(store, edge), { title: content(store, id).data.description?.content ?? "", cid: id });
+      }
+      return map;
+    };
+    const a = index(current);
+    const b = index(proposed);
+    const summary = { added: [], changed: [], removed: [] };
+    for (const [key, entry] of b) {
+      const before = a.get(key);
+      if (!before)
+        summary.added.push(entry.title);
+      else if (before.cid !== entry.cid)
+        summary.changed.push(entry.title);
+    }
+    for (const [key, entry] of a)
+      if (!b.has(key))
+        summary.removed.push(entry.title);
+    return { id: proposal.cid, peerId: proposal.peerId, name: proposal.name, status: proposal.status, timestamp: proposal.timestamp, summary };
   }
 
   // ../shared/sync/project.ts
