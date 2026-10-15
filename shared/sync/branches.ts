@@ -1,5 +1,5 @@
 /** Editable alternatives use the existing choice pointers and three-way merge. */
-import { branchEdge, commitRoot, content, findAliasEdge, identityCid, isBranchChoice, putBranches, readChoice, resolveScope, selectBranch, updateAtScope, withIdentity, type Scope, type ChoiceOption } from './graph'
+import { branchEdge, readProposal, readProposals, valueContent, commitRoot, content, findAliasEdge, identityCid, isBranchChoice, putBranches, readChoice, resolveScope, selectBranch, updateAtScope, withIdentity, type Scope, type ChoiceOption } from './graph'
 import { headCid, type Replica } from './replica'
 import { mergeNodes } from './merge'
 
@@ -36,5 +36,18 @@ export function mergeBranch(r: Replica, at: Scope, source: string, target: strin
   const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [store.primitive.choiceTarget.getId(), nextChoice] : edge) }))
   commitRoot(store, next, now)
   selectBranch(store, record.id, target)
+  return { ...r }
+}
+
+/** Copy a proposed branch into a named editable alternative without changing the proposal or main. */
+export function copyProposalBranch(r: Replica, at: Scope, proposalId: string, name: string, now: number): Replica {
+  let cid = resolveScope(r.store, headCid(r), at)
+  if (cid && isBranchChoice(r.store, content(r.store, cid))) { const edge = branchEdge(r.store, cid); cid = edge ? identityCid(r.store, edge) : null }
+  const proposal = readProposal(r.store, proposalId)
+  if (!cid || !proposal || !readProposals(r.store, content(r.store, cid)).some(p => p.cid === proposalId)) throw new Error('Proposal no longer available.')
+  const source = valueContent(r.store, proposal.contentCid)
+  r = createBranch(r, at, name, now)
+  const next = updateAtScope(r.store, headCid(r), at, current => ({ ...source, data: { ...source.data, ...(current.data.alias ? { alias: current.data.alias } : {}), updated: { time: now } } }))
+  commitRoot(r.store, next, now)
   return { ...r }
 }

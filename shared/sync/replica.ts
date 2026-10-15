@@ -233,11 +233,27 @@ function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string)
   return edge && isRowEdge(replica.store, edge) ? edge : undefined
 }
 
+/** Parse single-brace parameters into ordinary named mutable-ref children.
+ * Existing bindings survive text edits; deterministic aliases make concurrent parses converge.
+ * Double-brace legacy substitutions remain references to the surrounding context.
+ */
+function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeContent {
+  const names = [...new Set(Array.from((node.data.description?.content ?? '').matchAll(/(?<![\\{])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
+  const type = store.primitive.documentField.getId(), children = [...node.children]
+  for (const name of names) {
+    if (children.some(edge => content(store, identityCid(store, edge)).data.name?.content === name)) continue
+    const id = `${node.data.alias?.id ?? newId()}:param:${name}`
+    const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, null, [], type))
+    children.push([type, ref])
+  }
+  return children.length === node.children.length ? node : { ...node, children }
+}
+
 export function addTask(replica: Replica, at: Scope, title: string, now: number, id: string = newId()): Replica {
   const trimmed = title.trim()
   if (!trimmed) return replica
   return edit(replica, at, now, (value) => {
-    const cid = put(replica.store, taskContent(id, trimmed, false, now, now))
+    const cid = put(replica.store, withTextParameters(replica.store, taskContent(id, trimmed, false, now, now)))
     return { ...value, children: [...value.children, taskEdge(replica.store, cid)] }
   })
 }
@@ -252,7 +268,7 @@ export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string,
   const id = options.id ?? newId()
   return edit(replica, at, now, (value) => {
     const { position: _p, id: _i, ...extras } = options
-    const cid = put(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store }))
+    const cid = put(replica.store, withTextParameters(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store })))
     const edge = rowEdge(replica.store, kind, cid)
     const children = [...value.children]
     const pos = options.position
@@ -289,7 +305,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
     if (kind === 'resource' && extras.resource) data.resource = extras.resource
     if (kind === 'query' && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
     if (kind === 'comment' && node.data.comment) data.comment = { ...node.data.comment, content: body }
-    const next = withChildValue(replica.store, edge, { ...converted, data: canonicalRowData(data) }, now)
+    const next = withChildValue(replica.store, edge, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), now)
     return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, next)))
   })
 }
@@ -436,7 +452,7 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
   if (!trimmed) return replica
   return updateTask(replica, at, taskId, now, (task) => {
     if (task.data.description?.content === trimmed) return null
-    return { ...task, data: { ...task.data, description: { content: trimmed } } }
+    return withTextParameters(replica.store, { ...task, data: { ...task.data, description: { content: trimmed } } })
   })
 }
 

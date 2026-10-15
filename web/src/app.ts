@@ -23,7 +23,7 @@ import { evaluateOnServer, createRepositoryBranch, readRepository, proposeReposi
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -1302,6 +1302,13 @@ export class App {
       this.set({ selected: null })
     } catch (error) { this.notify('error', String(error)) }
   }
+  copyProposalToBranch(proposalId: string, name: string): boolean {
+    try {
+      const path = this.state.view
+      const next = copyProposalBranch(this.state.replica, path, proposalId, name, this.now())
+      this.branchSelections[path.at(-1)!] = name; this.edit(next); this.savePrefs(); return true
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)); return false }
+  }
   selectNodeBranch(at: Scope, id: string, name: string, absolute = false): void {
     document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
     if (this.evaluating || this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
@@ -1666,11 +1673,13 @@ export class App {
       return { id: content(r.store, arg.cid).data.alias!.id, name: arg.name!, text: result.bindings[0]?.status === 'ready' ? result.text : '', problems: result.bindings.flatMap(b => b.problems) }
     })
   }
-  setTextArgument(at: Scope, id: string, text: string): void {
+  private setArgumentValue(at: Scope, id: string, value: string): void {
     const r = this.state.replica, path = [...this.state.view, ...at, id]
-    const value = put(r.store, { data: { description: { content: text } }, children: [] })
     const proposed = proposeRefAt(r, path, value, r.meta.peerId, this.now())
     this.edit(applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now()))
+  }
+  setTextArgument(at: Scope, id: string, text: string): void {
+    this.setArgumentValue(at, id, put(this.state.replica.store, { data: { description: { content: text } }, children: [] }))
   }
   addTextArgument(at: Scope, name: string, text: string): void {
     if (!/^[A-Za-z_][\w.-]*$/.test(name)) { this.notify('error', 'Use letters, digits, underscores, dots or hyphens for the argument name.'); return }
@@ -1685,22 +1694,46 @@ export class App {
     const type = typeName === 'text' ? r.store.primitive.documentField.getId() : CAPABILITIES.includes(typeName as Capability) ? capabilityTarget(r.store, typeName as Capability) : put(r.store, { data: { name: { content: `fos:type:${typeName.trim()}` } }, children: [] })
     this.edit(addRefAt(r, this.state.view, newId(), type, this.now(), null, name))
   }
-  placeholders() {
-    const r = this.state.replica, cid = resolveScope(r.store, headCid(r), this.state.view)
+  placeholders(at: Scope = []) {
+    const path = [...this.state.view, ...at]
+    const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
     if (!cid) return []
-    const candidates = contextBindings(r, this.state.view, { isPeerActive: id => this.isOnline(id) })
+    const candidates = contextBindings(r, path, { isPeerActive: id => this.isOnline(id) })
     return argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:')).map(a => ({
       id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
+      child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && refTypeCid(r.store, content(r.store, target)) === a.type ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
       type: a.type === r.store.primitive.documentField.getId() ? 'text' : (CAPABILITIES.find(c => capabilityTarget(r.store, c) === a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type').replace(/^fos:(capability|type):/, ''),
       status: resolveBinding(r.store, a.type, refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id) }).status,
       candidates: candidates.filter(c => c.type === a.type && c.cid !== a.cid).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
     }))
   }
-  bindPlaceholder(id: string, cid: string): void {
-    if (!this.placeholders().some(p => p.id === id && p.candidates.some(c => c.cid === cid))) return
-    const r = this.state.replica, path = [...this.state.view, id]
-    const proposed = proposeRefAt(r, path, cid, r.meta.peerId, this.now())
-    this.edit(applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now()))
+  bindPlaceholder(id: string, cid: string, at: Scope = []): void {
+    if (!this.placeholders(at).some(p => p.id === id && p.candidates.some(c => c.cid === cid))) return
+    this.setArgumentValue(at, id, cid)
+  }
+  createArgumentChild(id: string): void {
+    const r = this.state.replica, parent = resolveScope(r.store, headCid(r), this.state.view)
+    if (!parent) return
+    const arg = argumentRefs(r.store, parent).find(a => content(r.store, a.cid).data.alias?.id === id)
+    if (!arg || refValueCid(r.store, content(r.store, arg.cid))) return
+    const child = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: `${arg.name ?? 'Value'} child` } }, null, [], arg.type))
+    this.setArgumentValue([], id, child)
+  }
+  dropArgument(at: Scope, id: string, sourceId: string): void {
+    const arg = this.placeholders(at).find(p => p.id === id)
+    if (!arg || sourceId === id) return
+    const store = this.state.replica.store
+    const candidate = arg.candidates.find(c => c.cid === sourceId || content(store, c.cid).data.alias?.id === sourceId)
+    if (candidate) { this.bindPlaceholder(id, candidate.cid, at); return }
+    const source = resolveRef(this.state.replica, sourceId)
+    if (arg.type === 'text' && source && ['plain', 'note', 'comment'].includes(source.row.kind)) {
+      const cid = resolveScope(store, headCid(this.state.replica), [...source.path, source.row.id])
+      if (cid) {
+        this.setArgumentValue(at, id, cid)
+        return
+      }
+    }
+    this.notify('error', 'Drop a value with the matching argument type.')
   }
   subtasksAvailability(at: Scope) {
     return workHandler(this.state.replica, [...this.state.view, ...at], { isPeerActive: id => this.isOnline(id) })
