@@ -10,16 +10,16 @@ function setup() {
   commitRoot(store, updateAtScope(store, headCid(r), ['project'], node => withProposal(store, makeLink(store, node, 4), 'peer', proposal, 'Alternative'), 'node'), 5)
   return { r, proposal, branch, base }
 }
-test('a proposal is a child mutable ref constructor with branch and input arguments', () => {
+test('a proposal is a child mutable ref constructor with branch and merge-request arguments', () => {
   const { r, proposal, branch, base } = setup(), store = r.store, node = content(store, proposal)
   expect(node.data.proposal).toBeUndefined()
   expect(refTypeCid(store, node)).toBe(store.primitive.proposalField.getId())
   const args = argumentRefs(store, proposal)
-  expect(args.map(a => a.name).sort()).toEqual(['branch', 'input', 'status'])
+  expect(args.map(a => a.name).sort()).toEqual(['branch', 'request merge', 'status'])
   const branchArg = content(store, args.find(a => a.name === 'branch')!.cid)
   expect(refValueCid(store, branchArg)).toBe(branch)
   expect(branchArg.children).toContainEqual([store.primitive.previousVersion.getId(), base])
-  const input = args.find(a => a.name === 'input')!
+  const input = args.find(a => a.name === 'request merge')!
   expect(input.type).toBe(capabilityTarget(store, 'approve'))
   expect(refValueCid(store, content(store, input.cid))).toBeNull()
   const path = ['project', node.data.alias!.id]

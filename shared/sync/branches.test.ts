@@ -115,3 +115,44 @@ test('default branch survives serialization and a scoped attachment pins ancesto
   expect(view(client, [])!.tasks[0]!.title).toBe('Feature grandchild')
   expect(view(host, ['p', 'child'])!.tasks).toHaveLength(0)
 })
+
+test('merge requests are typed children of branch constructors and survive edits, reload and removal', async () => {
+  const { setBranchMergeRequest, readChoice, resolveScope, content, capabilityTarget, refTypeCid } = await import('./index')
+  let r = addTask(createReplica('a'), [], 'Project', 1, 'p')
+  r = createBranch(r, ['p'], 'feature', 2)
+  r = setBranchMergeRequest(r, ['p'], 'feature', true, 3)
+  const choice = resolveScope(r.store, headCid(r), ['p'])!
+  const record = readChoice(r.store, choice)
+  expect(record.options.filter(o => o.requestMerge).map(o => o.peerId)).toEqual(['feature'])
+  const pointers = content(r.store, choice).children.map(e => content(r.store, e[1]))
+  const request = pointers.flatMap(p => p.children.map(e => content(r.store, e[1]))).find(c => c.data.name?.content === 'request merge')!
+  expect(refTypeCid(r.store, request)).toBe(capabilityTarget(r.store, 'approve'))
+  r = renameTask(r, [], 'p', 'Changed on feature', 4)
+  r = loadReplica(serializeReplica(r))
+  expect(view(r, [])!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
+  selectBranch(r.store, 'p', 'main')
+  expect(view(r, [])!.tasks[0]!.title).toBe('Project')
+  r = setBranchMergeRequest(r, ['p'], 'feature', false, 5)
+  expect(view(r, [])!.tasks[0]!.branches?.mergeRequests).toEqual([])
+  selectBranch(r.store, 'p', 'feature')
+  expect(view(r, [])!.tasks[0]!.title).toBe('Changed on feature')
+})
+
+test('a merge request and a concurrent branch edit are both retained', async () => {
+  const { setBranchMergeRequest } = await import('./index')
+  let a = addTask(createReplica('a'), [], 'Project', 1, 'p')
+  a = createBranch(a, ['p'], 'feature', 2)
+  const base = headCid(a)
+  let b = loadReplica(serializeReplica(a))
+  selectBranch(b.store, 'p', 'feature')
+  a = setBranchMergeRequest(a, ['p'], 'feature', true, 3)
+  b = addTask(b, ['p'], 'Concurrent task', 4, 'task')
+  importNodes(a.store, reachableNodes(b.store, [headCid(b)]))
+  for (const [ours, theirs] of [[headCid(a), headCid(b)], [headCid(b), headCid(a)]]) {
+    const result = mergeNodes(a.store, base, ours, theirs, { ours: 'a', theirs: 'b' })
+    const r = { ...a }
+    commitRoot(r.store, result.cid, 5)
+    expect(view(r, [])!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
+    expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Concurrent task'])
+  }
+})

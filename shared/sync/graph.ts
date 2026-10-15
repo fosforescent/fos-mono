@@ -444,7 +444,7 @@ export function partitionEdge(store: FosStore, partitionCid: string): FosPathEle
 // ---------------------------------------------------------------------------
 // Choice nodes
 
-export type ChoiceOption = { peerId: string; edge: FosPathElem | null; base?: FosPathElem | null }
+export type ChoiceOption = { peerId: string; edge: FosPathElem | null; base?: FosPathElem | null; requestMerge?: string }
 
 export type ChoiceRecord = {
   defaultName?: string
@@ -479,11 +479,18 @@ function readPointer(store: FosStore, cid: string): { peerId: string | null; edg
   }
 }
 
+/** Both local and received branches request approval through this ordinary typed child ref. */
+export function mergeRequestEdge(store: FosStore, id: string): FosPathElem {
+  const type = capabilityTarget(store, 'approve')
+  return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: 'request merge' } }, null, [], type))]
+}
+
 /** Build and insert a choice node; the alternatives are sorted so the cid is deterministic. */
 export function putChoice(store: FosStore, id: string, base: FosPathElem | null, options: ChoiceOption[]): string {
   const alternatives = options
     .map((o) => {
       const pointer = pointerContent(o.peerId, o.edge, store)
+      if (o.requestMerge) pointer.children.push([capabilityTarget(store, 'approve'), o.requestMerge])
       if (o.base) pointer.children.push([store.primitive.conflictBaseNode.getId(), put(store, pointerContent(null, o.base, store))])
       return { peerId: o.peerId, cid: put(store, pointer) }
     })
@@ -513,7 +520,8 @@ export function readChoice(store: FosStore, choiceCid: string): ChoiceRecord {
     } else if (instr === store.primitive.optionNotSelectedConstructor.getId()) {
       const pointer = readPointer(store, target)
       const basePointer = content(store, target).children.find(e => e[0] === store.primitive.conflictBaseNode.getId())
-      options.push({ peerId: pointer.peerId ?? 'unknown', edge: pointer.edge, ...(basePointer ? { base: readPointer(store, basePointer[1]).edge } : {}) })
+      const requestMerge = content(store, target).children.find(e => content(store, e[1]).data.name?.content === 'request merge')?.[1]
+      options.push({ peerId: pointer.peerId ?? 'unknown', edge: pointer.edge, ...(requestMerge ? { requestMerge } : {}), ...(basePointer ? { base: readPointer(store, basePointer[1]).edge } : {}) })
     }
   }
   return { cid: choiceCid, id: aliasIdOf(value) ?? choiceCid, base, options, defaultName: options[value.data.option?.selectedIndex ?? 0]?.peerId }
@@ -808,9 +816,9 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 // View model: what the UI sees (opaque ids, no cids)
 
 export type TaskView = {
-  construction?: { name?: string; peerId?: string }
+  construction?: { name?: string; peerId?: string; handler?: string }
 
-  branches?: { selected: string; names: string[] }
+  branches?: { selected: string; names: string[]; mergeRequests?: string[] }
   id: string
   title: string
   kind: RowKind
@@ -900,10 +908,13 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
     subtreeDone: sub.done,
     isLink: isLink(store, identity)
   }
+  const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
+  const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity
+  if (refTypeCid(store, constructor) === capabilityTarget(store, 'peer') && constructor.data.name) view.construction = { handler: constructor.data.name.content }
   if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
   if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers; if (value.data.template) view.template = value.data.template }
-  if (isBranchChoice(store, identity)) view.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map(o => o.peerId) }
+  if (isBranchChoice(store, identity)) view.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map(o => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter(o => o.requestMerge).map(o => o.peerId) }
   const demand = demandOf(value)
   if (kind === 'requirement' && demand) {
     const progress = requirementProgress(store, nodeCid)
@@ -1506,18 +1517,17 @@ function textNode(store: FosStore, text: string): string {
 export function proposalContent(store: FosStore, peerId: string, name: string, contentCid: string, baseCid: string, timestamp: number, status: 'open' | 'rejected' = 'open'): FosNodeContent {
   const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`
   const branchType = store.primitive.rootInstructionNode.getId()
-  const approvalType = capabilityTarget(store, 'approve')
   const textType = store.primitive.documentField.getId()
   const argument = (key: string, type: string, target: string | null, history: FosPathElem[] = []): FosPathElem => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history, type))]
   const constructor = put(store, {
     data: { description: { content: name || 'Proposal' }, peerId: { content: peerId }, updated: { time: timestamp } },
     children: [
       argument('branch', branchType, contentCid, [[store.primitive.previousVersion.getId(), baseCid]]),
-      argument('input', approvalType, null),
+      mergeRequestEdge(store, id),
       argument('status', textType, textNode(store, status))
     ]
   })
-  return refNodeContent(store, { alias: { id }, name: { content: 'proposal' }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId())
+  return refNodeContent(store, { alias: { id }, name: { content: 'branch' }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId())
 }
 
 export function readProposal(store: FosStore, cid: string): ProposalRecord | null {

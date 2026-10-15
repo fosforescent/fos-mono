@@ -32,6 +32,7 @@ export type ParsedInput = {
   /** "[ ] `name` …": the task executes the template called `name`. */
   templateName?: string
   children?: ParsedInput[]
+  peer?: string
 }
 
 /** Words after "@" that open a resource bank rather than allocate a person. */
@@ -214,6 +215,7 @@ export function parseRowInput(raw: string): ParsedInput {
   }
   const typed = markerType(text)
   if (typed) { const { allocation, text: label } = parseAllocation(typed.type, text.slice(typed.length)); return { kind: 'allocation', text: label, done: false, extras: { allocation } } }
+  if ((m = text.match(/^@\{([^}]*)\}?\s*$/))) return { kind: 'plain', text, done: false, peer: (m[1] ?? '').trim() }
   if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? '', m[1] as string); return { kind: 'allocation', text: label, done: false, extras: { allocation } } }
   if ((m = text.match(/^`\s*([^`]*)`?\s*$/s))) return { kind: 'template', text: (m[1] ?? '').trim(), done: false }
   return { kind: 'plain', text: text.trim(), done: false }
@@ -282,6 +284,7 @@ export function allocationTag(a: NonNullable<TaskView['allocation']>): string {
  * "allocation · time 1 h", "bank · fos points", "template", … Empty for plain text.
  */
 export function describeParsed(p: ParsedInput): string {
+  if (p.peer !== undefined) return 'peer'
   const amt = (a: { amount?: number; unit?: string } | undefined) => (a && a.amount !== undefined ? ' ' + formatAmount(a.amount, a.unit ?? '') : '')
   switch (p.kind) {
     case 'task': return p.templateName ? `task · executes \`${p.templateName}\`${p.done ? ' · done' : ''}` : `task${p.done ? ' · done' : ''}`
@@ -321,6 +324,7 @@ export const SYNTAX_HELP: Array<[string, string]> = [
   ['-$ 50 text', 'a requirement for money; -: 1h for time; -# 2 widgets for things. Filled by allocations inside it, several may add up'],
   ['-@bob text', 'a requirement for the person bob: filled when bob allocates themself ("@bob 2h") or confirms'],
   ['-? text', 'a requirement for a search: filled when a query inside it has run (fos can run it)'],
+  ['@{invite} / @{virtual} / @{github}', 'a peer constructor; type @{ to choose its handler'],
   ['-market text', 'a requirement handled by a peer with the market capability (list it, collect proposals)'],
   ['-mail text', 'a requirement handled by a peer with the mail capability'],
   ['-llm question', 'a requirement answered by the language model (fos): preview context, then review and accept its proposed answer'],

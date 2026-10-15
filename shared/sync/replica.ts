@@ -238,7 +238,7 @@ function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string)
  * Double-brace legacy substitutions remain references to the surrounding context.
  */
 function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeContent {
-  const names = [...new Set(Array.from((node.data.description?.content ?? '').matchAll(/(?<![\\{])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
+  const names = [...new Set(Array.from((node.data.description?.content ?? '').matchAll(/(?<![\\{@])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
   const type = store.primitive.documentField.getId(), children = [...node.children]
   for (const name of names) {
     if (name === undefined) continue

@@ -1960,9 +1960,15 @@
       edge: instr && target ? [instr, target] : null
     };
   }
+  function mergeRequestEdge(store, id) {
+    const type = capabilityTarget(store, "approve");
+    return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: "request merge" } }, null, [], type))];
+  }
   function putChoice(store, id, base, options) {
     const alternatives = options.map((o) => {
       const pointer = pointerContent(o.peerId, o.edge, store);
+      if (o.requestMerge)
+        pointer.children.push([capabilityTarget(store, "approve"), o.requestMerge]);
       if (o.base)
         pointer.children.push([store.primitive.conflictBaseNode.getId(), put(store, pointerContent(null, o.base, store))]);
       return { peerId: o.peerId, cid: put(store, pointer) };
@@ -1991,7 +1997,8 @@
       } else if (instr === store.primitive.optionNotSelectedConstructor.getId()) {
         const pointer = readPointer(store, target);
         const basePointer = content(store, target).children.find((e) => e[0] === store.primitive.conflictBaseNode.getId());
-        options.push({ peerId: pointer.peerId ?? "unknown", edge: pointer.edge, ...basePointer ? { base: readPointer(store, basePointer[1]).edge } : {} });
+        const requestMerge = content(store, target).children.find((e) => content(store, e[1]).data.name?.content === "request merge")?.[1];
+        options.push({ peerId: pointer.peerId ?? "unknown", edge: pointer.edge, ...requestMerge ? { requestMerge } : {}, ...basePointer ? { base: readPointer(store, basePointer[1]).edge } : {} });
       }
     }
     return { cid: choiceCid, id: aliasIdOf(value) ?? choiceCid, base, options, defaultName: options[value.data.option?.selectedIndex ?? 0]?.peerId };
@@ -2253,6 +2260,10 @@
       subtreeDone: sub.done,
       isLink: isLink(store, identity)
     };
+    const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null;
+    const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity;
+    if (refTypeCid(store, constructor) === capabilityTarget(store, "peer") && constructor.data.name)
+      view2.construction = { handler: constructor.data.name.content };
     if (kind === "ref") {
       view2.refId = identity.data.ref?.id ?? "";
       if (identity.data.ref?.owner)
@@ -2268,7 +2279,7 @@
         view2.template = value.data.template;
     }
     if (isBranchChoice(store, identity))
-      view2.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map((o) => o.peerId) };
+      view2.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map((o) => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter((o) => o.requestMerge).map((o) => o.peerId) };
     const demand = demandOf(value);
     if (kind === "requirement" && demand) {
       const progress = requirementProgress(store, nodeCid);
@@ -2751,18 +2762,17 @@
   function proposalContent(store, peerId, name, contentCid, baseCid, timestamp, status = "open") {
     const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`;
     const branchType = store.primitive.rootInstructionNode.getId();
-    const approvalType = capabilityTarget(store, "approve");
     const textType = store.primitive.documentField.getId();
     const argument = (key, type, target, history = []) => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history, type))];
     const constructor = put(store, {
       data: { description: { content: name || "Proposal" }, peerId: { content: peerId }, updated: { time: timestamp } },
       children: [
         argument("branch", branchType, contentCid, [[store.primitive.previousVersion.getId(), baseCid]]),
-        argument("input", approvalType, null),
+        mergeRequestEdge(store, id),
         argument("status", textType, textNode(store, status))
       ]
     });
-    return refNodeContent(store, { alias: { id }, name: { content: "proposal" }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId());
+    return refNodeContent(store, { alias: { id }, name: { content: "branch" }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId());
   }
   function readProposal(store, cid) {
     const identity = content(store, cid);
@@ -3099,7 +3109,17 @@
         const merged = mergeNode(store, be ? identityCid(store, be) : null, identityCid(store, oe), identityCid(store, te), labels, newChoiceCids, false);
         if (merged.kind === "conflict")
           return merged;
-        options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid) });
+        const beforeRequest = b?.options.find((x) => x.peerId === name)?.requestMerge;
+        let requestMerge = oo.requestMerge === beforeRequest ? tt.requestMerge : oo.requestMerge;
+        if (oo.requestMerge !== beforeRequest && tt.requestMerge !== beforeRequest && oo.requestMerge !== tt.requestMerge) {
+          if (!oo.requestMerge || !tt.requestMerge)
+            return { kind: "conflict" };
+          const request = mergeNode(store, beforeRequest ?? null, oo.requestMerge, tt.requestMerge, labels, newChoiceCids, false);
+          if (request.kind === "conflict")
+            return request;
+          requestMerge = request.cid;
+        }
+        options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid), requestMerge });
       }
       return { kind: "node", cid: putBranches(store, o.id, b?.base ?? o.base, options, b?.defaultName ?? o.defaultName) };
     }
@@ -8737,7 +8757,7 @@
     return edge && (isRowEdge(replica.store, edge) || content(replica.store, identityCid(replica.store, edge)).data.name?.content.startsWith("fos:setting:")) ? edge : void 0;
   }
   function withTextParameters(store, node) {
-    const names = [...new Set(Array.from((node.data.description?.content ?? "").matchAll(/(?<![\\{])\{([A-Za-z_][\w.-]*)\}(?!\})/g), (m) => m[1]))];
+    const names = [...new Set(Array.from((node.data.description?.content ?? "").matchAll(/(?<![\\{@])\{([A-Za-z_][\w.-]*)\}(?!\})/g), (m) => m[1]))];
     const type = store.primitive.documentField.getId(), children = [...node.children];
     for (const name of names) {
       if (name === void 0)
