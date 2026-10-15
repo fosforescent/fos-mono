@@ -1,3 +1,5 @@
+import { SETTING_LABELS, settingKeyFromName } from './settings'
+import { combobox } from './combobox'
 import { iconSvg } from './icons'
 import { alternativePicker, proposalPreview, showProposal, clearProposal } from './alternatives'
 /**
@@ -116,7 +118,7 @@ export function mountUi(root: HTMLElement, app: App): void {
   }
 
   regions.list.addEventListener('dragover', event => { if (event.dataTransfer?.types.some(t => [NODE_DRAG_TYPE, 'application/x-fos-trigger'].includes(t))) event.preventDefault() })
-  regions.list.addEventListener('drop', event => { if (dropTrigger(event, app, app.state.view)) return; if (event.target === regions.list && event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { event.preventDefault(); app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE)) } })
+  regions.list.addEventListener('drop', event => { if (dropTrigger(event, app, app.state.view)) return; if (!(event.target as HTMLElement).closest('[data-id], [data-argument]') && event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { event.preventDefault(); app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE)) } })
   regions.mic.addEventListener('click', () => { void app.toggleVoice() })
   q<HTMLButtonElement>('help-button').addEventListener('click', () => toggleHelp(app))
   regions.menuButton.innerHTML = iconSvg('☰')!
@@ -272,7 +274,7 @@ function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): 
 }
 
 function renderRepository(el: HTMLElement, state: AppState, app: App): void {
-  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row'))) return
   const path = state.view, id = path.at(-1)
   const task = id ? viewAt(state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id) : null
   const info = app.repositoryInfo()
@@ -437,8 +439,10 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   }
   const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
   const rows = document.createElement('ul'); rows.className = 'list context-peers'
-  rows.append(...renderRootRows(state, app, prefs.tab)); panel.append(rows)
-  if (prefs.tab === 'peers') {
+  if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
+  else panel.append(span('muted', 'Settings and peer constructors are editable child rows below.'))
+  panel.append(rows)
+  if (prefs.tab === 'peers' && !state.atRoot) {
     const invite = button('secondary small', 'Devices · invite with QR', () => void app.startInvite()); invite.disabled = state.session?.kind !== 'user'
     panel.append(invite, sharingControls(app))
     const phone = state.integrations.find(p => p.id === 'phone')
@@ -446,40 +450,69 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
     if (app.canSpawnVirtualPeer()) panel.append(button('secondary small', 'New virtual peer', () => app.openModal('virtual')))
   }
   if (prefs.tab === 'integrations') panel.prepend(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
-  if (prefs.tab === 'device') panel.append(renderDeviceSettings(state, app, false))
-  if (prefs.tab === 'peers') panel.append(span('muted', `${app.currentView()?.versions ?? 0} previous versions`))
+  if (prefs.tab === 'device' && app.transport()) panel.append(span('muted', `Device syncs ${pathLabel(app.labels().scope)}`))
+  if (prefs.tab === 'peers' && !state.atRoot) panel.append(span('muted', `${app.currentView()?.versions ?? 0} previous versions`))
   const active = document.activeElement as HTMLElement | null
   if (active && el.contains(active) && active.matches('input,select')) return
   el.replaceChildren(tabs, panel)
 
 }
-function renderDeviceSettings(state: AppState, app: App, settings: boolean): HTMLElement {
-  const box = document.createElement('ul'); box.className = 'device-settings list'
-  const setting = (key: string, ...children: HTMLElement[]) => { const row = document.createElement('li'); row.className = 'task setting-row'; row.dataset.setting = key; row.dataset.argument = `${app.settingKey(key)}:${state.replica.meta.peerId}`; row.append(...children); box.append(row) }
-  const transport = app.transport()
-  if (transport) box.append(div('muted', state.virtual ? `Virtual peer of ${state.virtual.hostName}` : `Device syncs ${pathLabel(app.labels().scope)}`))
-  if (!settings) return box
-  const name = document.createElement('input'); name.type = 'text'; name.value = app.settingValue<string>('name') ?? state.deviceName; name.setAttribute('aria-label', 'Device name')
-  name.addEventListener('change', () => { if (name.value.trim()) app.setDeviceName(name.value.trim()) })
-  const nameLabel = document.createElement('label'); nameLabel.append('Device name ', name); setting('name', nameLabel)
-  const theme = document.createElement('select'); theme.setAttribute('aria-label', 'Device theme')
-  for (const value of ['system', 'light', 'dark']) theme.append(new Option(value[0].toUpperCase() + value.slice(1), value))
-  theme.value = app.settingValue<string>('theme') ?? document.documentElement.dataset.theme ?? 'system'
-  theme.addEventListener('change', () => { document.documentElement.dataset.theme = theme.value; app.setSetting('theme', theme.value); try { localStorage.setItem('fos.device.theme', theme.value) } catch { /* session-only preference */ } })
-  const label = document.createElement('label'); label.append('Device theme ', theme); setting('theme', label)
-  for (const [permission, label] of [['microphone', 'Voice / audio'], ['camera', 'Video'], ['geolocation', 'Location']] as const) {
-    const status = span('muted', app.settingValue<string>(permission) ?? 'Not checked')
-    const check = button('secondary small', `Check ${label.toLowerCase()} permission`, async () => {
-      try { const result = await navigator.permissions.query({ name: permission as PermissionName }); status.textContent = result.state; app.setSetting(permission, result.state) }
-      catch { status.textContent = 'Status unavailable in this browser. Use the browser’s site permissions.' }
-    })
-    setting(permission, div('permission-label', label), check, status)
+function settingControl(key: string, state: AppState, app: App): HTMLElement {
+  const box = div('setting-control', ''); box.dataset.setting = key
+  if (key === 'resetHome') box.classList.add('reset-data-row')
+  if (key === 'sessions') box.classList.add('data-sessions-row')
+  if (key === 'history') box.append(span('muted', `${viewAt(state.replica, [])?.versions ?? 0} previous versions`))
+  else if (key === 'name') {
+    const input = document.createElement('input'); input.value = app.settingValue<string>('name') ?? state.deviceName; input.setAttribute('aria-label', 'Device name')
+    input.onchange = () => app.setDeviceName(input.value); box.append(input)
+  } else if (key === 'theme') {
+    const input = document.createElement('select'); input.setAttribute('aria-label', 'Device theme')
+    for (const value of ['system', 'light', 'dark']) input.append(new Option(value, value))
+    input.value = app.settingValue<string>('theme') ?? 'system'
+    input.onchange = () => { app.setSetting('theme', input.value); document.documentElement.dataset.theme = input.value; try { localStorage.setItem('fos.device.theme', input.value) } catch {} }; box.append(input)
+  } else if (['microphone', 'camera', 'geolocation'].includes(key)) {
+    box.append(button('secondary small', `Check ${SETTING_LABELS[key].toLowerCase()} permission`, async () => {
+      try { const result = await navigator.permissions.query({ name: key as PermissionName }); app.setSetting(key, result.state) }
+      catch { app.notify('info', 'Status unavailable in this browser. Use the browser’s site permissions.') }
+    }), span('muted', app.settingValue<string>(key) ?? 'Not checked'))
+  } else if (key === 'server' || key === 'direct' || key === 'virtual') {
+    const control = button('secondary small', SETTING_LABELS[key], () => app.openModal(key === 'server' ? 'connect' : key as 'direct' | 'virtual'))
+    control.disabled = key === 'virtual' && !app.canSpawnVirtualPeer(); box.append(control)
+  } else if (key === 'peer') {
+    box.append(...renderRootRows(state, app, 'peers').filter(row => row.classList.contains('add-peer-row')).flatMap(row => Array.from(row.children)))
+  } else if (key === 'invite') {
+    const control = button('secondary small', SETTING_LABELS[key], () => void app.startInvite()); control.disabled = state.session?.kind !== 'user'; box.append(control)
+  } else if (key === 'phone') {
+    const control = button('secondary small', SETTING_LABELS[key], () => void app.connectIntegration('phone')); control.disabled = !state.integrations.find(p => p.id === 'phone')?.configured || !app.isOnline('fos'); box.append(control)
+  } else if (key === 'share') box.append(sharingControls(app))
+  else if (key === 'export') box.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
+  else if (key === 'import') box.append(yamlImportButton(app))
+  else if (key === 'sessions') {
+    const input = document.createElement('select'); input.setAttribute('aria-label', 'Saved data session')
+    for (const session of app.dataSessions()) input.append(new Option(`${session.owner?.username ?? 'Offline'} · ${session.id.slice(0, 8)}`, session.id))
+    input.value = app.activeDataSession()?.id ?? ''; input.onchange = () => app.switchDataSession(input.value)
+    box.append(input, span('muted', 'Switching keeps each session’s data separate.'))
+  } else if (key === 'resetHome' || key === 'resetAccount') {
+    const control = button('danger small', `${SETTING_LABELS[key]}…`, () => {
+      if (window.confirm(key === 'resetHome' ? 'Clear the attached node content? This syncs to connected devices. You can undo this during this session.' : 'Clear all account content, including outside this device’s subtree? This syncs to other devices. You can undo this during this session.')) {
+        if (key === 'resetHome') app.resetHome(); else void app.resetAccount()
+      }
+    }); control.disabled = !app.canResetHome() || (key === 'resetAccount' && state.session?.kind !== 'user'); box.append(control)
   }
-  setting('server', button('secondary small', 'Connect Server', () => app.openModal('connect')))
-  setting('direct', button('secondary small', 'Direct Connect', () => app.openModal('direct')))
-  setting('export', button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
-  setting('import', yamlImportButton(app))
-  for (const row of renderRootRows(state, app, 'settings')) { row.dataset.argument = app.settingKey(row.classList.contains('data-sessions-row') ? 'sessions' : 'resetHome'); box.append(row) }
+  box.addEventListener('click', event => event.stopPropagation()); box.addEventListener('keydown', event => event.stopPropagation())
+  return box
+}
+function constructorBody(task: TaskView, state: AppState, app: App): HTMLElement {
+  const box = div('title constructor-body', ''), key = settingKeyFromName(task.construction?.name)
+  if (key) {
+    box.classList.add('setting-row'); box.append(span('constructor-label', SETTING_LABELS[key] ?? key))
+    if (task.construction?.name === app.settingKey(key)) box.append(settingControl(key, state, app))
+    else box.append(span('muted', 'Owned by another device'))
+  }
+  else if (task.construction?.peerId) {
+    const peer = renderRootRows(state, app, 'peers', task.construction.peerId)[0]
+    if (peer) { const body = peer.querySelector('.peer-body'); if (body) box.append(...Array.from(body.children)) } else box.append(span('', task.title))
+  }
   return box
 }
 function placeholderForm(app: App): HTMLElement {
@@ -505,7 +538,7 @@ function rowMatches(row: TaskView, filter: string, state: AppState, path: Scope)
   return path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => rowMatches(child, filter, state, [...path, child.id]))
 }
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
-  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row'))) return
   const row = app.currentRow()
   el.hidden = false
   const preview = proposalPreview(app)
@@ -523,6 +556,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       app.editCurrentText(text, entry.draft)
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
     }
+    if (row?.construction) input.readOnly = true
     input.addEventListener('commit-edit', save)
     input.addEventListener('blur', () => { if (!renderDepth) save() })
     input.addEventListener('keydown', event => {
@@ -530,27 +564,11 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
       if (event.key === 'Escape') { event.preventDefault(); input.value = entry.baseline; input.blur() }
     })
-    const search = div('node-search', '')
-    const query = document.createElement('input'); query.type = 'search'; query.placeholder = 'Search nodes…'; query.setAttribute('aria-label', 'Find a node to link')
-    const results = div('node-results', ''); results.id = 'node-search-results'; results.setAttribute('role', 'listbox'); query.setAttribute('aria-controls', results.id)
-    const searchNow = () => {
-      results.replaceChildren()
-      if (!query.value.trim()) return
-      for (const found of app.searchLocalNodes(query.value)) {
-        const pick = button('secondary small', `${found.row.title} · ${found.row.kind}`, () => app.linkNode(found.row.id))
-        pick.disabled = !app.canLinkNode(found.row.id)
-        const result = div('node-search-result', ''); result.setAttribute('role', 'option'); result.setAttribute('aria-selected', 'false'); result.draggable = true; result.append(pick)
-        pick.title = pick.disabled ? 'Drag to a matching child requirement' : 'Click to link here, or drag to a child'
-        result.addEventListener('dragstart', event => { event.dataTransfer?.setData(NODE_DRAG_TYPE, found.row.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'link' })
-        results.append(result)
-      }
-    }
-    query.addEventListener('input', searchNow); query.addEventListener('keydown', event => event.stopPropagation())
-    query.setAttribute('role', 'combobox'); query.setAttribute('aria-autocomplete', 'list'); query.setAttribute('aria-expanded', 'false')
-    query.addEventListener('input', () => query.setAttribute('aria-expanded', String(!!results.children.length)))
-    query.addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); results.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() } if (event.key === 'Escape') { results.replaceChildren(); query.setAttribute('aria-expanded', 'false') } })
-    results.addEventListener('keydown', event => { const buttons = [...results.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement); if (event.key === 'ArrowDown') { event.preventDefault(); buttons[index + 1]?.focus() } if (event.key === 'ArrowUp') { event.preventDefault(); if (index > 0) buttons[index - 1].focus(); else query.focus() } if (event.key === 'Escape') query.focus() })
-    search.append(query, results)
+    const search = combobox('Find a node to link', 'Find a node…', query => query ? app.searchLocalNodes(query).map(found => ({
+      label: `${found.row.title} · ${found.row.kind}`, group: 'Values', disabled: !app.canLinkNode(found.row.id),
+      drag: { type: NODE_DRAG_TYPE, value: found.row.id }, run: () => app.linkNode(found.row.id)
+    })) : [], () => [], 'Search nodes…')
+    search.classList.add('node-search')
     const toolbar = div('node-toolbar', '')
     toolbar.append(iconButton('⋯', 'Current node actions', () => app.openContextMenu({ kind: 'node' })))
     toolbar.lastElementChild!.classList.add('more', 'node-menu-button')
@@ -560,8 +578,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     values.append(search, placeholderForm(app), dynamicValues)
     const voice = div('', ''); voice.dataset.slot = 'voice'
     const repository = div('', ''); repository.dataset.slot = 'repository'
-    const settings = div('', '')
-    el.replaceChildren(toolbar, input, accordion(app, 'context', 'Node context', context), accordion(app, 'actions', 'Node actions', controls, voice, repository), accordion(app, 'values', 'Node values', values), settings)
+    el.replaceChildren(toolbar, input, accordion(app, 'context', 'Node context', context), accordion(app, 'actions', 'Node actions', controls, voice, repository), accordion(app, 'values', 'Node values', values))
     details.set(el, entry); cached = entry
   } else if (cached.input.value === cached.baseline) {
     cached.baseline = title; cached.input.value = title
@@ -598,6 +615,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   const integration = app.integrationHandler()
   if (integration && !preview) { const connect = button('secondary small', `Connect ${integration.provider}`, () => void app.connectIntegration(integration.provider)); connect.disabled = !integration.enabled; controls.append(connect) }
+  if (row?.construction) controls.append(constructorBody(row, state, app))
   controls.prepend(alternativePicker(app, state.view, row))
   el.querySelector<HTMLElement>('.node-toolbar')!.hidden = !!preview
   el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview
@@ -694,7 +712,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row'))) return
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
@@ -708,7 +726,6 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const filtered = ((filter?.key === path && filter.value !== 'all') || prefs.search) ? { ...node, tasks: node.tasks.filter(matches) } : node
   const pending = prefs.layout === 'queue' ? { ...filtered, tasks: filtered.tasks.filter(t => !t.done && !t.requirement?.satisfied) } : filtered
   let rows = renderRows(pending, [], 0, state, app)
-  if (state.atRoot) rows.unshift(...Array.from(renderDeviceSettings(state, app, true).children) as HTMLElement[])
   if (prefs.layout === 'chat') {
     const comments: Array<{ row: TaskView; at: Scope }> = []
     const collect = (node: NodeView, at: Scope) => {
@@ -941,6 +958,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const li = document.createElement('li')
   li.className = 'task kind-' + task.kind + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
   li.style.setProperty('--depth', String(depth))
+  if (task.construction) li.classList.add('has-constructor')
   li.draggable = true
   li.tabIndex = 0
   li.dataset.id = task.id
@@ -1039,7 +1057,8 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
+  if (task.construction) { body = constructorBody(task, state, app) }
+  else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.kind === 'ref') {
     body = renderRefBody(task, app)
@@ -1588,7 +1607,7 @@ function clearDropMarks(row: HTMLElement): void {
  * attached devices of the Home node, with the capability rows the owner exposes to each (`to`) and accepts from each
  * (`from`). Constructors beneath the root use the ordinary row editor.
  */
-function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations' | 'device' | 'settings'): HTMLElement[] {
+function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations' | 'device', onlyPeer?: string): HTMLElement[] {
   const rows: HTMLElement[] = []
   const rowShell = (cls: string): HTMLLIElement => {
     const li = document.createElement('li')
@@ -1596,7 +1615,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     li.style.setProperty('--depth', '0')
     return li
   }
-  const peers = app.contextPeers().filter(p => mode === 'settings' ? false : mode === 'integrations' ? !!(p.integration || p.mcp) : mode === 'device' ? p.id === state.replica.meta.peerId : !(p.integration || p.mcp) && p.id !== state.replica.meta.peerId)
+  const peers = app.contextPeers().filter(p => onlyPeer ? p.id === onlyPeer || (onlyPeer === 'fos' && p.name === 'fos') : mode === 'integrations' ? !!(p.integration || p.mcp) : mode === 'device' ? p.id === state.replica.meta.peerId : !(p.integration || p.mcp) && p.id !== state.replica.meta.peerId)
   const owner = app.canApprove()
   const capTitle: Record<string, string> = {
     read: 'May read the content of the node',
@@ -1726,7 +1745,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     li.append(span('zoom-dot', ''), span('handle', ''), dot, body, meta)
     rows.push(li)
   }
-  if (mode === 'peers' || (mode === 'integrations' && state.view.at(-1) === HOME_ID)) {
+  if (!onlyPeer && (mode === 'peers' || (mode === 'integrations' && state.view.at(-1) === HOME_ID))) {
     const li = rowShell('add-peer-row')
     const form = document.createElement('form')
     form.className = 'row add-peer'
@@ -1766,28 +1785,6 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
       else if (mode === 'integrations') app.addIntegrationChoice()
     })
     li.append(span('zoom-dot', ''), span('handle', ''), form)
-    rows.push(li)
-  }
-  if (mode === 'settings' && app.canResetHome()) {
-    const scoped = state.replica.meta.scope.length > 0
-    const li = rowShell('reset-data-row')
-    li.append(button('danger small', scoped ? 'Reset attached node content…' : 'Reset Home content…', () => {
-      if (window.confirm('Clear all rows and choices in this device’s attached node? This change syncs to connected devices. Account, peer connections and version history remain. You can undo this during this session.')) app.resetHome()
-    }))
-    if (state.session?.kind === 'user') li.append(button('danger small', 'Reset entire account content…', () => {
-      if (window.confirm('Clear ALL rows and choices in this account, including outside this device’s attached subtree? This syncs to other devices. Account and peer connections remain. You can undo this during this session.')) void app.resetAccount()
-    }))
-    rows.push(li)
-  }
-  const sessions = app.dataSessions()
-  if (mode === 'settings' && sessions.length) {
-    const li = rowShell('data-sessions-row')
-    const label = document.createElement('label'); label.textContent = 'Saved data session: '
-    const select = document.createElement('select'); select.setAttribute('aria-label', 'Saved data session')
-    for (const session of sessions) select.append(new Option(`${session.owner ? session.owner.username : 'Offline'} · ${session.id.slice(0, 8)}`, session.id))
-    select.value = app.activeDataSession()?.id ?? ''
-    select.addEventListener('change', () => app.switchDataSession(select.value))
-    label.append(select); li.append(label, div('muted', 'Switching keeps each session’s data separate and disconnects sync. Sign in to reconnect its account.'))
     rows.push(li)
   }
   return rows

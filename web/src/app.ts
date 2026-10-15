@@ -1,3 +1,4 @@
+import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
@@ -409,7 +410,9 @@ export class App {
   }
 
   currentView(): NodeView | null {
-    return view(this.state.replica, this.state.view)
+    const node = view(this.state.replica, this.state.view, this.state.atRoot)
+    if (node) for (const row of node.tasks) { const key = settingKeyFromName(row.construction?.name); if (key) row.title = SETTING_LABELS[key] ?? key }
+    return node
   }
 
   labels(): { scope: string[]; view: string[] } {
@@ -880,7 +883,7 @@ export class App {
   rowAt(at: Scope): TaskView | null {
     const id = at[at.length - 1]
     if (!id) return null
-    return view(this.state.replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find((t) => t.id === id) ?? null
+    return view(this.state.replica, [...this.state.view, ...at.slice(0, -1)], true)?.tasks.find((t) => t.id === id) ?? null
   }
   /**
    * The bank an allocation of `type` added under `at` draws from, its parent context: the nearest bank of that type
@@ -1014,7 +1017,8 @@ export class App {
    * (`SERVER_CAPABILITIES` until then), the node's members with the capability rows this node's owner exposes to each
    * (editable here by the owner), and devices attached here (a direct-connected one is reachable `direct`).
    */
-  contextPeers(path = this.state.view): ContextPeer[] {
+  private peerContextPath(): Scope { return this.currentRow()?.construction ? this.state.view.slice(0, -1) : this.state.view }
+  contextPeers(path = this.peerContextPath()): ContextPeer[] {
     const peers: ContextPeer[] = []
     const session = this.state.session
     const me = this.state.replica.meta.peerId
@@ -1206,13 +1210,13 @@ export class App {
   /** Owner side: the capability rows under the peer `peerId` on the viewed node: `to` (granted, and which are switched off) and `from` (accepted). */
   setPeerCapabilities(peerId: string, capabilities: Capability[], disabled: Capability[], accepts?: Capability[]): void {
     if (!this.canApprove()) { this.notify('error', 'Only the owner of this node (or a member who may approve) changes what peers get here.'); return }
-    this.edit(setMemberCapabilitiesAt(this.state.replica, this.state.view, peerId, capabilities, disabled, this.now(), accepts))
+    this.edit(setMemberCapabilitiesAt(this.state.replica, this.peerContextPath(), peerId, capabilities, disabled, this.now(), accepts))
   }
   /** A nearer member binding shadows inherited offers without changing the parent. */
   setPeerOffers(peerId: string, offers: Capability[], enabled: boolean): void {
     if (!this.canApprove()) return
     const inherited = new Map<string, NodeView['members'][number]>()
-    for (let i = 0; i <= this.state.view.length; i++) for (const m of view(this.state.replica, this.state.view.slice(0, i))?.members ?? []) inherited.set(m.peerId, m)
+    for (let i = 0; i <= this.peerContextPath().length; i++) for (const m of view(this.state.replica, this.peerContextPath().slice(0, i))?.members ?? []) inherited.set(m.peerId, m)
     const member = inherited.get(peerId)
     const provider = this.contextPeers().find(p => p.id === peerId)
     const accepts = member?.accepts ?? provider?.integration?.provides ?? provider?.accepts ?? offers
@@ -1220,10 +1224,10 @@ export class App {
     let r = this.state.replica
     // Older Home constructors passed the exact root member as a default argument.
     // Keep that default linked when changing root offers, but preserve Home overrides.
-    const home = homePath(r), passed = !this.state.view.length && home.length ? view(r, home)?.members.find(m => m.peerId === peerId) : null
+    const home = homePath(r), passed = !this.peerContextPath().length && home.length ? view(r, home)?.members.find(m => m.peerId === peerId) : null
     const same = (a: readonly string[] = [], b: readonly string[] = []) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort())
     const inheritedDefault = member && passed && same(member.capabilities, passed.capabilities) && same(member.accepts, passed.accepts) && same(member.disabled, passed.disabled)
-    r = setMemberCapabilitiesAt(r, this.state.view, peerId, member?.capabilities ?? [], disabled, this.now(), accepts)
+    r = setMemberCapabilitiesAt(r, this.peerContextPath(), peerId, member?.capabilities ?? [], disabled, this.now(), accepts)
     if (inheritedDefault) r = setMemberCapabilitiesAt(r, home, peerId, passed.capabilities, disabled, this.now(), accepts)
     this.edit(r)
   }
@@ -1245,13 +1249,13 @@ export class App {
     const name = username.trim().replace(/^@/, '')
     if (!name) return
     if (!this.canApprove()) { this.notify('error', 'Only the owner of this node adds peers to it.'); return }
-    this.edit(addMemberAt(this.state.replica, this.state.view, `user:${name}`, name, ['edit'], this.now()))
+    this.edit(addMemberAt(this.state.replica, this.peerContextPath(), `user:${name}`, name, ['edit'], this.now()))
     this.notify('info', `@${name} is a member here: they can propose on this node once they sync. Add or switch off capabilities on their row.`)
   }
   /** Owner side: drop a peer row (and everything it was granted) from the viewed node. */
   removePeerHere(peerId: string): void {
     if (!this.canApprove()) return
-    this.edit(removeMemberAt(this.state.replica, this.state.view, peerId, this.now()))
+    this.edit(removeMemberAt(this.state.replica, this.peerContextPath(), peerId, this.now()))
   }
   /** Nodes of other accounts this account can send proposals to: market results in the tree (ref rows with an owner), one per node. */
   knownListings(): Array<{ owner: string; aliasId: string; title: string }> {
@@ -1501,7 +1505,9 @@ export class App {
 
   currentRow(): TaskView | null {
     const path = this.state.view
-    return path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) ?? null : null
+    const row = path.length ? view(this.state.replica, path.slice(0, -1), true)?.tasks.find(row => row.id === path.at(-1)) ?? null : null
+    const key = settingKeyFromName(row?.construction?.name); if (row && key) row.title = SETTING_LABELS[key] ?? key
+    return row
   }
   /** The full text editor uses the same three-way merge as cells, preserving remote edits. */
   editCurrentText(text: string, draft: { store: Replica['store']; head: string; path: Scope }): void {
@@ -2359,8 +2365,25 @@ export class App {
   setSetting(key: string, value: unknown): void { this.edit(writeNodeValue(this.state.replica, [], this.settingKey(key), value, this.now())) }
   ensureSettings(): void {
     let r = this.state.replica
-    const defaults: Record<string, unknown> = { name: this.state.deviceName, theme: document.documentElement.dataset.theme || 'system', microphone: 'Not checked', camera: 'Not checked', geolocation: 'Not checked', server: { handler: 'connect' }, direct: { handler: 'direct' }, resetHome: { handler: 'reset-home' }, resetAccount: { handler: 'reset-account' }, sessions: { handler: 'sessions' }, export: { handler: 'export-yaml' }, import: { handler: 'import-yaml' } }
-    for (const [key, value] of Object.entries(defaults)) if (readNodeValue(r, [], this.settingKey(key)) === null) r = writeNodeValue(r, [], this.settingKey(key), value, this.now(), typeof value === 'object' ? { type: capabilityTarget(r.store, 'tool'), peer: r.meta.peerId } : undefined)
+    const defaults: Record<string, unknown> = { history: { handler: 'history' }, name: this.state.deviceName, theme: document.documentElement.dataset.theme || 'system', microphone: 'Not checked', camera: 'Not checked', geolocation: 'Not checked', server: { handler: 'connect' }, direct: { handler: 'direct' }, peer: { handler: 'peer' }, invite: { handler: 'invite' }, virtual: { handler: 'virtual' }, phone: { handler: 'phone' }, share: { handler: 'share' }, resetHome: { handler: 'reset-home' }, resetAccount: { handler: 'reset-account' }, sessions: { handler: 'sessions' }, export: { handler: 'export-yaml' }, import: { handler: 'import-yaml' } }
+    const installedName = `fos:settings-installed:${r.meta.peerId}`
+    const installed = readNodeValue<string[]>(r, [], installedName) ?? []
+    for (const [key, value] of Object.entries(defaults)) {
+      const name = this.settingKey(key), existing = readNodeValue(r, [], name)
+      const peerHandler = ['server', 'direct', 'peer', 'invite', 'virtual', 'phone', 'share'].includes(key)
+      const type = capabilityTarget(r.store, peerHandler ? 'peer' : 'tool')
+      const argument = argumentRefs(r.store, headCid(r)).find(arg => arg.name === name)
+      if ((!installed.includes(key) && existing === null) || (peerHandler && argument && argument.type !== type)) r = writeNodeValue(r, [], name, existing ?? value, this.now(), typeof value === 'object' ? { type, peer: r.meta.peerId } : undefined)
+    }
+    if (Object.keys(defaults).some(key => !installed.includes(key))) r = writeNodeValue(r, [], installedName, [...new Set([...installed, ...Object.keys(defaults)])], this.now())
+    const root = headCid(r), store = r.store
+    const next = updateAtScope(store, root, [], node => ({ ...node, children: node.children.map(edge => {
+      if (![store.primitive.memberField.getId(), store.primitive.peerField.getId()].includes(edge[0])) return edge
+      const peer = content(store, edge[1]), id = peer.data.peerId?.content
+      if (!id || peer.data.alias) return edge
+      return [edge[0], put(store, { ...peer, data: { ...peer.data, alias: { id: `${edge[0] === store.primitive.memberField.getId() ? 'fos:peer' : 'fos:device'}:${id}` } } })]
+    }) }), 'node')
+    if (next !== root) { commitRoot(store, next, this.now()); r = { ...r } }
     if (r !== this.state.replica) { this.set({ replica: r }); this.scheduleSync() }
   }
   exportYaml(): string { return exportNodeYaml(this.state.replica, this.state.view) }
@@ -2408,10 +2431,10 @@ export class App {
   async startInvite(): Promise<void> {
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to invite a device.'); return }
-    const scope = this.currentScope()
-    const names = [...this.labels().scope, ...this.labels().view]
+    const scope = [...this.state.replica.meta.scope, ...this.peerContextPath()]
+    const names = [...this.labels().scope, ...scopeNames(this.state.replica.store, headCid(this.state.replica), this.peerContextPath())]
     // The invited node becomes a link node: it keeps its history and collects members and proposals.
-    this.edit(makeLinkAt(this.state.replica, this.state.view, this.now()))
+    this.edit(makeLinkAt(this.state.replica, this.peerContextPath(), this.now()))
     this.set({ modal: 'invite', menuOpen: false, invite: null })
     try {
       const created = await createInvite(session, scope, names)
@@ -2548,7 +2571,7 @@ export class App {
   spawnVirtualPeer(name: string, role: 'editor' | 'proposer' | 'reviewer' | 'viewer', shareAccount: boolean): void {
     if (!this.canSpawnVirtualPeer() || !name.trim()) return
     const token = crypto.randomUUID()
-    const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.state.view], branches: scopeBranches(this.state.replica.store, headCid(this.state.replica), this.state.view), dataSessionId: this.activeDataSession()?.id, name: name.trim().slice(0, 80), shareAccount }
+    const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.peerContextPath()], branches: scopeBranches(this.state.replica.store, headCid(this.state.replica), this.peerContextPath()), dataSessionId: this.activeDataSession()?.id, name: name.trim().slice(0, 80), shareAccount }
     const capabilities: Capability[] = role === 'viewer' ? ['read'] : role === 'proposer' ? ['read', 'edit'] : role === 'reviewer' ? ['read', 'edit', 'approve'] : ['read', 'edit', 'autopush']
     this.virtualPeers!.register(peer)
     const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('virtual', token)
@@ -2564,7 +2587,7 @@ export class App {
 
   async startDirectHost(): Promise<void> {
     this.cancelDirect()
-    this.hostScope = [...this.state.view]
+    this.hostScope = [...this.peerContextPath()]
     this.hostBranches = scopeBranches(this.state.replica.store, headCid(this.state.replica), this.hostScope)
     this.set({ modal: 'direct', menuOpen: false, direct: { role: 'host', phase: 'creating' } })
     try {

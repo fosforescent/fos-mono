@@ -1,10 +1,10 @@
 import { iconSvg } from './icons'
 
-export type ComboOption = { label: string; group: string; selected?: boolean; run: () => void }
+export type ComboOption = { label: string; group: string; selected?: boolean; disabled?: boolean; drag?: { type: string; value: string }; run: () => void }
 let sequence = 0
 let closeActive: (() => void) | undefined
 /** Searchable row popover. The caller supplies existing graph operations. */
-export function combobox(label: string, caption: string, options: () => ComboOption[], actions: (query: string) => ComboOption[] = () => []): HTMLElement {
+export function combobox(label: string, caption: string, options: (query: string) => ComboOption[], actions: (query: string) => ComboOption[] = () => [], placeholder = 'Find branch, proposal or child…'): HTMLElement {
   const box = document.createElement('span'); box.className = 'row-combobox'
   const trigger = document.createElement('button'); trigger.type = 'button'; trigger.className = 'combo-trigger secondary small'
   trigger.setAttribute('aria-label', label); trigger.setAttribute('aria-haspopup', 'dialog'); trigger.setAttribute('aria-expanded', 'false')
@@ -12,7 +12,7 @@ export function combobox(label: string, caption: string, options: () => ComboOpt
   const caret = document.createElement('span'); caret.innerHTML = iconSvg('▾') ?? '▾'
   trigger.append(title, caret)
   const panel = document.createElement('span'); panel.className = 'combo-panel'; panel.hidden = true; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', label)
-  const input = document.createElement('input'); input.type = 'search'; input.placeholder = 'Find branch, proposal or child…'; input.autocomplete = 'off'
+  const input = document.createElement('input'); input.type = 'search'; input.placeholder = placeholder; input.autocomplete = 'off'
   input.setAttribute('role', 'combobox'); input.setAttribute('aria-label', label); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false')
   const list = document.createElement('span'); list.className = 'combo-options'; list.id = `row-options-${++sequence}`; list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', label)
   input.setAttribute('aria-controls', list.id)
@@ -23,7 +23,7 @@ export function combobox(label: string, caption: string, options: () => ComboOpt
   const close = (restore = false) => {
     document.removeEventListener('pointerdown', outside, true); window.removeEventListener('resize', reposition)
     if (closeActive === close) closeActive = undefined
-    panel.hidden = true; trigger.setAttribute('aria-expanded', 'false'); input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant')
+    panel.hidden = true; panel.style.opacity = ''; panel.style.pointerEvents = ''; trigger.setAttribute('aria-expanded', 'false'); input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant')
     if (restore) trigger.focus()
   }
   const highlight = () => {
@@ -32,17 +32,23 @@ export function combobox(label: string, caption: string, options: () => ComboOpt
     if (row) { input.setAttribute('aria-activedescendant', row.id); row.scrollIntoView?.({ block: 'nearest' }) }
     else input.removeAttribute('aria-activedescendant')
   }
-  const choose = (option: ComboOption) => { close(); input.blur(); option.run() }
+  const choose = (option: ComboOption) => { if (option.disabled) return; close(); input.blur(); option.run() }
   const render = () => {
     const query = input.value.trim().toLocaleLowerCase()
-    visible = [...options().filter(o => o.label.toLocaleLowerCase().includes(query)), ...actions(input.value.trim())]
+    visible = [...options(input.value.trim()).filter(o => o.label.toLocaleLowerCase().includes(query)), ...actions(input.value.trim())]
     active = Math.min(active, Math.max(0, visible.length - 1)); list.replaceChildren()
     let group = ''
     visible.forEach((option, index) => {
       if (option.group !== group) { const heading = document.createElement('span'); heading.className = 'combo-group'; heading.textContent = group = option.group; list.append(heading) }
       const row = document.createElement('span'); row.className = 'combo-option'; row.id = `${list.id}-${index}`; row.dataset.index = String(index); row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(!!option.selected))
       row.textContent = `${option.selected ? '✓ ' : ''}${option.label}`
-      row.onpointerdown = event => event.preventDefault()
+      row.setAttribute('aria-disabled', String(!!option.disabled))
+      row.title = option.disabled ? 'Drag to a matching child requirement' : 'Select this value'
+      if (option.drag) {
+        row.draggable = true; row.tabIndex = -1
+        row.addEventListener('dragstart', event => { event.stopPropagation(); event.dataTransfer?.setData(option.drag!.type, option.drag!.value); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'link'; setTimeout(() => { if (!panel.hidden) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none' } }, 0) })
+        row.addEventListener('dragend', () => close())
+      } else row.onpointerdown = event => event.preventDefault()
       row.onclick = () => choose(option)
       list.append(row)
     })
@@ -74,6 +80,6 @@ export function combobox(label: string, caption: string, options: () => ComboOpt
   box.onkeydown = event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); close(true) } }
   box.onclick = event => event.stopPropagation()
   box.onpointerdown = event => event.stopPropagation()
-  box.addEventListener('focusout', () => { queueMicrotask(() => { if (!box.contains(document.activeElement)) close() }) })
+  box.addEventListener('focusout', () => { setTimeout(() => { if (!box.contains(document.activeElement)) close() }, 0) })
   panel.append(input, list); box.append(trigger, panel); return box
 }

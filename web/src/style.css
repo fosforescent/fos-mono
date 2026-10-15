@@ -440,3 +440,17 @@ button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
 @media (max-width: 640px) { .combo-option, .combo-trigger { min-height: 44px; box-sizing: border-box; } }
 .compact-picker .combo-trigger > span:first-child { display: none; }
 .task .combo-trigger > span:first-child { max-width: 9rem; }
+.constructor-body { min-width: 0; }
+.constructor-label { min-width: 8rem; }
+.setting-control { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; max-width: 100%; }
+.setting-control input, .setting-control select { max-width: 100%; min-width: 0; }
+.combo-option[aria-disabled="true"] { opacity: .55; cursor: grab; }
+.combo-option[draggable="true"] { cursor: grab; }
+.node-search .combo-panel input { width: 100%; box-sizing: border-box; }
+.constructor-label { min-width: 0; overflow-wrap: anywhere; }
+.constructor-body :is(input, select, button, .row) { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.constructor-body button { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .tree .task.has-constructor { flex-wrap: wrap; }
+  .tree .task.has-constructor > .constructor-body { flex-basis: 100%; order: 1; }
+}

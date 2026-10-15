@@ -44,3 +44,5 @@ cd shared && npx jest sync/
 
 
 Home normalization keeps `fos:home` as an ordinary plain container, not a workflow template. Legacy Home template edges are converted without changing the node identity or children. Editable Home choice wrappers must be preserved across normalization and reload; context tests cover branch isolation as well as idempotent legacy migration.
+
+`view(..., true)` / `viewNode(..., true)` opt into constructor rows for Settings: named setting refs and existing member/device edges are projected with their stored aliases; default evaluation/content views remain unchanged. Peer constructors carry stable aliases. Settings deletion uses ordinary ref-child deletion, while member/device deletion removes the existing bookkeeping edge on the parent identity.
