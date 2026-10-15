@@ -1,0 +1,14 @@
+{
+  "name": "fosforescent",
+  "owner": {
+    "name": "Fosforescent"
+  },
+  "plugins": [
+    {
+      "name": "fos-project",
+      "source": "./",
+      "version": "0.1.2",
+      "description": "Work from a scoped Fos task tree"
+    }
+  ]
+}

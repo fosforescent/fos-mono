@@ -1,0 +1,8 @@
+{
+  "name": "fos-project",
+  "version": "0.1.2",
+  "description": "Navigate an attached Fos project task tree and propose implementation updates.",
+  "author": {
+    "name": "Fosforescent"
+  }
+}
