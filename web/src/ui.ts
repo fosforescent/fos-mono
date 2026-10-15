@@ -269,7 +269,7 @@ function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): 
 }
 
 function renderRepository(el: HTMLElement, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker')) return
+  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor')) return
   const path = state.view, id = path.at(-1)
   const task = id ? viewAt(state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id) : null
   const info = app.repositoryInfo()
@@ -491,7 +491,7 @@ function rowMatches(row: TaskView, filter: string, state: AppState, path: Scope)
   return path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => rowMatches(child, filter, state, [...path, child.id]))
 }
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker')) return
+  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor')) return
   const row = app.currentRow()
   el.hidden = false
   const preview = proposalPreview(app)
@@ -590,6 +590,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   for (const arg of app.placeholders()) {
     const line = div('placeholder-row', '')
     line.append(span('', `${arg.name} · ${arg.type}`), span('muted', insideTemplate(state, state.view) || row?.kind === 'template' ? 'template parameter' : arg.status))
+    argumentDrop(line, app, [], arg.id)
+    if (arg.type === 'text') line.append(argumentEditor(app, [], arg.id, arg.name, app.textArguments([]).find(a => a.id === arg.id)?.text ?? ''))
+    else if (arg.child) line.append(div('argument-child muted', `${arg.child} · ${arg.type} — drop or choose a matching value`))
+    else if (arg.status !== 'ready') line.append(button('secondary small', `Create ${arg.type} child`, () => app.createArgumentChild(arg.id)))
     const pick = document.createElement('select'); pick.setAttribute('aria-label', `Bind ${arg.name}`); pick.append(new Option('Choose matching value…', ''))
     for (const candidate of arg.candidates) pick.append(new Option(candidate.label, candidate.cid))
     pick.disabled = !arg.candidates.length; pick.addEventListener('change', () => app.bindPlaceholder(arg.id, pick.value)); line.append(pick); dynamicValues.append(line)
@@ -670,7 +674,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker')) return
+  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor')) return
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
@@ -839,15 +843,43 @@ function toggleHelp(app: App): void {
   else app.openModal('help')
 }
 
+/** Arguments use the same typed ref whether filled by a dropped value or inline text. */
+function argumentDrop(el: HTMLElement, app: App, at: Scope, id: string): void {
+  el.addEventListener('dragover', event => {
+    if (!event.dataTransfer?.types.includes(NODE_DRAG_TYPE) && !drag) return
+    event.preventDefault(); event.stopPropagation(); el.classList.add('drop-into')
+  })
+  el.addEventListener('dragleave', () => el.classList.remove('drop-into'))
+  el.addEventListener('drop', event => {
+    if (!event.dataTransfer?.types.includes(NODE_DRAG_TYPE) && !drag) return
+    event.preventDefault(); event.stopPropagation(); el.classList.remove('drop-into')
+    app.dropArgument(at, id, event.dataTransfer?.getData(NODE_DRAG_TYPE) || drag?.id || '')
+  })
+}
+function argumentEditor(app: App, at: Scope, id: string, name: string, text: string): HTMLElement {
+  const panel = div('argument-editor', '')
+  argumentDrop(panel, app, at, id)
+  const label = span('muted', `${name} · text — drop a matching value or add text below`)
+  const input = document.createElement('textarea'); input.className = 'argument-value'; input.rows = 1
+  input.value = text; input.placeholder = 'Add text…'; input.setAttribute('aria-label', `Text for ${name}`)
+  let baseline = text
+  const save = () => { if (input.value !== baseline) { baseline = input.value; app.setTextArgument(at, id, baseline) } }
+  input.addEventListener('commit-edit', save)
+  input.addEventListener('blur', () => { if (!renderDepth) { save(); queueMicrotask(() => { if (input.isConnected) app.refresh() }) } })
+  input.addEventListener('keydown', event => {
+    event.stopPropagation()
+    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); save() }
+    if (event.key === 'Escape') { input.value = baseline; input.blur() }
+  })
+  panel.append(label, input); return panel
+}
+
 /** Rows for `node`'s tasks (and nested choices) at `depth`; `at` is the path relative to the view. */
 function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, app: App): HTMLElement[] {
   const rows: HTMLElement[] = []
   for (const arg of app.textArguments(at)) {
     const li = document.createElement('li'); li.className = 'task argument-row'; li.dataset.argument = arg.id; li.style.setProperty('--depth', String(depth))
-    li.append(button('title', `${arg.name}: ${arg.text || (arg.problems.length ? '(unfilled)' : '(empty text)')}`, () => {
-      const text = window.prompt(`Text for ${arg.name}`, arg.text)
-      if (text !== null) app.setTextArgument(at, arg.id, text)
-    }))
+    li.append(argumentEditor(app, at, arg.id, arg.name, arg.text))
     if (arg.problems.length && !insideTemplate(state, [...state.view, ...at])) li.append(span('blocked-badge', arg.problems.join('; ')))
     rows.push(li)
   }

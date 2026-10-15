@@ -409,3 +409,8 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .alternative-picker { display: inline-flex; max-width: 100%; min-width: 0; }
 .alternative-picker input { width: 240px; max-width: 100%; box-sizing: border-box; min-width: 0; }
 .constructor-row { flex-wrap: wrap; gap: 8px; }
+
+.argument-editor { display: flex; flex-direction: column; gap: .25rem; min-width: 0; width: 100%; }
+.argument-value { box-sizing: border-box; width: 100%; min-height: 2.25rem; resize: vertical; }
+.argument-child { margin-left: 1rem; }
+.placeholder-row { flex-wrap: wrap; }
