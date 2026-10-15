@@ -165,6 +165,53 @@ async function main() {
   await pullApp.pullPeer(pullApp.pullPeers()[0].id)
   assert.equal(packet.headCid, base, 'Pull advertises only the last shared head')
   assert(pullApp.currentView().tasks.some(t => t.title === 'Unpushed local change'), 'Pull preserves local edits')
+  // Palette clicks and drops share ordinary row constructors and are undoable.
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event('close')) }
+  a.goTo([])
+  document.querySelector('[aria-label="Utilities"]').click()
+  document.querySelector('[aria-label="Add resource bank"]').click()
+  let dialog = document.querySelector('.constructor-dialog')
+  dialog.querySelector('[aria-label="Constructor type"]').value = 'account'
+  dialog.querySelector('[aria-label="Constructor type"]').dispatchEvent(new window.Event('change'))
+  dialog.querySelector('[aria-label="Amount"]').value = '50'
+  dialog.querySelector('[aria-label="Constructor label"]').value = 'Travel budget'
+  dialog.querySelector('form').dispatchEvent(new window.Event('submit', { cancelable: true }))
+  const budget = a.currentView().tasks.find(t => t.title === 'Travel budget')
+  assert.equal(budget.resource.capacity, 50); assert.equal(budget.resource.type, 'account')
+  const target = a.addRowAt([], 'plain', 'Spend'), nested = a.addRowAt([target], 'plain', 'Keep this child')
+  const paletteDrop = (el, kind) => { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: { types: ['application/x-fos-constructor'], getData: type => type === 'application/x-fos-constructor' ? kind : '' } }); el.dispatchEvent(event) }
+  paletteDrop(document.querySelector(`[data-id="${target}"]`), 'account')
+  dialog = document.querySelector('.constructor-dialog')
+  dialog.querySelector('[aria-label="Amount"]').value = '10'
+  dialog.querySelector('[aria-label="Source bank"]').value = budget.id
+  dialog.querySelector('form').dispatchEvent(new window.Event('submit', { cancelable: true }))
+  assert.equal(a.rowAt([target]).allocation.amount, 10)
+  assert.equal(a.rowAt([target]).allocation.resource, budget.id)
+  assert(view(a.state.replica, [HOME_ID, target]).tasks.some(t => t.id === nested))
+  a.undo(); assert.equal(a.rowAt([target]).kind, 'plain')
+  const requirement = a.addRowAtTop(parseRowInput('-$ 10 Dinner'))
+  a.applyConstructor([HOME_ID, requirement], { kind: 'allocation', text: 'Offer', done: false, extras: { allocation: { type: 'account', amount: 10, unit: 'USD', resource: budget.id } } }, true)
+  assert.equal(a.rowAt([requirement]).kind, 'requirement')
+  assert(view(a.state.replica, [HOME_ID, requirement]).tasks.some(t => t.kind === 'allocation'))
+  const repo = a.applyConstructor([HOME_ID], { kind: 'plain', text: 'Project', done: false }, false, 'fosforescent/fos-mono')
+  a.goTo(repo)
+  assert.equal(a.repositoryInfo().repo, 'fosforescent/fos-mono')
+  assert(document.querySelector('[aria-label="Repository actions"]'))
+  document.querySelector('[aria-label="Peers and sharing"]').click()
+  const peerTab = document.querySelector('[aria-label="Peers and sharing"]')
+  assert.equal(peerTab.draggable, true)
+  document.querySelector('[aria-label="Add peer"]').click()
+  dialog = document.querySelector('.constructor-dialog')
+  dialog.querySelector('[aria-label="Constructor type"]').value = 'virtual'
+  dialog.querySelector('form').dispatchEvent(new window.Event('submit', { cancelable: true }))
+  assert(a.currentView().tasks.some(t => t.construction?.handler === 'virtual'))
+  a.addPlaceholder('connection', 'peer')
+  const peerArg = a.placeholders().find(p => p.name === 'connection')
+  assert.throws(() => a.applyConstructor([...repo, peerArg.id], { kind: 'allocation', text: '', done: false, extras: { allocation: { type: 'account', amount: 5, unit: 'USD', resource: '' } } }), /matching/)
+  a.applyConstructor([...repo, peerArg.id], { kind: 'plain', text: '', done: false, peer: 'virtual' })
+  assert.notEqual(a.placeholders().find(p => p.id === peerArg.id).status, 'missing')
+  console.log('PASS: constructor palette click/drop, bank amounts, allocation sources, child preservation, requirement inputs, and repository actions')
   console.log('PASS: persistent context input, fixed Home, captured import/media destinations, and file attachment')
   console.log('PASS: account peer sign-in/registration, compact menus, multi-selection/copy, Markdown/YAML paste, refs, subtree chat/queue and type filters')
 }

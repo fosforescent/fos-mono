@@ -119,7 +119,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     modal: q('modal')
   }
 
-  regions.list.addEventListener('dragover', event => { if (event.dataTransfer?.types.some(t => [NODE_DRAG_TYPE, OUTPUT_DRAG_TYPE, 'application/x-fos-placeholder', 'application/x-fos-trigger'].includes(t))) event.preventDefault() })
+  regions.list.addEventListener('dragover', event => { if (event.dataTransfer?.types.some(t => [CONSTRUCTOR_DRAG_TYPE, NODE_DRAG_TYPE, OUTPUT_DRAG_TYPE, 'application/x-fos-placeholder', 'application/x-fos-trigger'].includes(t))) event.preventDefault() })
   regions.list.addEventListener('drop', event => {
     if (dropTrigger(event, app, app.state.view) || (event.target as HTMLElement).closest('[data-id], [data-argument]')) return
     if (event.dataTransfer?.types.includes(OUTPUT_DRAG_TYPE)) { event.preventDefault(); app.linkOutput(app.state.view, event.dataTransfer.getData(OUTPUT_DRAG_TYPE)) }
@@ -443,7 +443,7 @@ function installRowClipboard(list: HTMLElement, app: App): void {
 }
 
 type NodeLayout = 'tree' | 'chat' | 'grid' | 'queue'
-type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
+type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values' | 'utilities'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
 const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
 const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
 function workspace(app: App): WorkspacePrefs {
@@ -468,7 +468,82 @@ function accordion(app: App, key: string, label: string, ...children: HTMLElemen
   d.addEventListener('toggle', () => { prefs.open[key] = d.open })
   return d
 }
-function dropTrigger(event: DragEvent, app: App, path: Scope): boolean {
+const CONSTRUCTOR_DRAG_TYPE = 'application/x-fos-constructor'
+const CONSTRUCTORS = [
+  { id: 'peer', label: 'Peer', icon: '♙' },
+  { id: 'integration', label: 'Integration', icon: '▦' },
+  { id: 'inventory', label: 'Inventory allocation', icon: 'inventory' },
+  { id: 'calendar', label: 'Calendar allocation', icon: 'calendar' },
+  { id: 'account', label: 'Money allocation', icon: 'money' },
+  { id: 'bank', label: 'Resource bank', icon: 'inventory' },
+  { id: 'repository', label: 'Repository', icon: '⑂' }
+] as const
+function constructorDrag(el: HTMLElement, id: string): void {
+  el.draggable = true
+  el.addEventListener('dragstart', event => { event.stopPropagation(); event.dataTransfer?.setData(CONSTRUCTOR_DRAG_TYPE, id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
+}
+function constructorPalette(app: App, ids: string[]): HTMLElement {
+  const palette = div('constructor-palette', '')
+  for (const item of CONSTRUCTORS.filter(c => ids.includes(c.id))) {
+    const b = iconButton(item.id === 'integration' ? 'integration' : item.icon, `Add ${item.label.toLowerCase()}`, () => openConstructor(app, item.id))
+    constructorDrag(b, item.id); palette.append(b)
+  }
+  return palette
+}
+function openConstructor(app: App, kind: string, path: Scope = [...app.state.view], replace = false): void {
+  if (!CONSTRUCTORS.some(c => c.id === kind) || proposalPreview(app)) return
+  document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+  const store = app.state.replica.store, dialog = document.createElement('dialog'), form = document.createElement('form')
+  dialog.className = 'import-dialog constructor-dialog'
+  const row = path.length ? viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1)) : undefined
+  const title = document.createElement('input'); title.setAttribute('aria-label', 'Constructor label'); title.placeholder = 'Label (optional)'; title.value = replace && row?.kind !== 'requirement' ? row?.title ?? '' : ''
+  const select = document.createElement('select'); select.setAttribute('aria-label', 'Constructor type')
+  const options = kind === 'peer' ? [['invite','Invite'],['direct','Direct connection'],['virtual','Virtual peer'],['fos','Fos server']] : kind === 'integration' ? [['google','Google'],['github','GitHub'],['discord','Discord'],['stripe','Stripe'],['phone','Phone']] : kind === 'repository' ? [['github','GitHub'],['gitlab','GitLab (unavailable)']] : [['inventory','Inventory'],['calendar','Calendar'],['account','Money']]
+  for (const [value, label] of options) { const option = new Option(label, value); option.disabled = value === 'gitlab'; select.append(option) }
+  if (['inventory','calendar','account'].includes(kind)) select.value = kind
+  const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.step = 'any'; amount.value = '1'; amount.setAttribute('aria-label', 'Amount')
+  const unit = document.createElement('input'); unit.setAttribute('aria-label', 'Unit')
+  const repository = document.createElement('input'); repository.placeholder = 'owner/repository'; repository.setAttribute('aria-label', 'Repository'); repository.required = kind === 'repository'
+  const bank = document.createElement('select'); bank.setAttribute('aria-label', 'Source bank')
+  const start = document.createElement('input'), end = document.createElement('input')
+  start.type = end.type = 'datetime-local'; start.setAttribute('aria-label', 'Allocation start'); end.setAttribute('aria-label', 'Allocation end'); start.title = 'Start (optional, local time)'; end.title = 'End (optional, local time)'
+  const resource = ['inventory','calendar','account','bank'].includes(kind)
+  const update = () => {
+    unit.value = select.value === 'calendar' ? 'h' : select.value === 'account' ? 'USD' : 'unit'
+    start.hidden = end.hidden = kind === 'bank' || !['calendar', 'inventory'].includes(select.value)
+    bank.replaceChildren(new Option('Unbound allocation', ''))
+    for (const entry of app.banks()) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
+  }
+  select.onchange = update; update()
+  const error = div('error', ''), submit = button('primary', replace && row?.kind !== 'requirement' && row?.id !== HOME_ID ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
+  const field = (text: string, input: HTMLElement) => { const label = document.createElement('label'); label.append(span('', text), input); return label }
+  form.append(h4(CONSTRUCTORS.find(c => c.id === kind)!.label), title, field(resource ? 'Resource' : 'Handler', select))
+  if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(field('Source bank', bank), start, end) }
+  if (kind === 'repository') form.append(field('Repository', repository))
+  form.append(error, submit, button('secondary', 'Cancel', () => dialog.close()))
+  form.onsubmit = event => {
+    event.preventDefault()
+    try {
+      if (app.state.replica.store !== store || proposalPreview(app)) throw new Error('The data session changed. Open the constructor again.')
+      const type = select.value as 'inventory' | 'calendar' | 'account', value = Number(amount.value)
+      if (resource && (!Number.isFinite(value) || value < 0)) throw new Error('Enter a non-negative amount.')
+      const begins = !start.hidden && start.value ? new Date(start.value).getTime() : undefined, ends = !end.hidden && end.value ? new Date(end.value).getTime() : undefined
+      if ((begins !== undefined && !Number.isFinite(begins)) || (ends !== undefined && !Number.isFinite(ends)) || (begins !== undefined && ends !== undefined && ends <= begins)) throw new Error('The allocation end must be after its start.')
+      if (kind === 'repository' && select.value !== 'github') throw new Error('This repository handler is unavailable.')
+      const parsed = kind === 'peer' || kind === 'integration' ? { kind: 'plain' as const, text: title.value, done: false, peer: select.value }
+        : kind === 'bank' ? { kind: 'resource' as const, text: title.value || 'Resource bank', done: false, extras: { resource: { type, capacity: value, unit: unit.value } } }
+        : resource ? { kind: 'allocation' as const, text: title.value, done: false, extras: { allocation: { type, amount: value, unit: unit.value, resource: bank.value, ...(begins !== undefined ? { start: begins } : {}), ...(ends !== undefined ? { end: ends } : {}) } } }
+        : { kind: 'plain' as const, text: title.value || repository.value, done: false }
+      app.applyConstructor(path, parsed, replace, kind === 'repository' ? repository.value.trim() : undefined)
+      dialog.close()
+    } catch (e) { error.textContent = e instanceof Error ? e.message : String(e) }
+  }
+  dialog.append(form); dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal()
+}
+
+function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): boolean {
+  const constructor = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
+  if (constructor && CONSTRUCTORS.some(c => c.id === constructor)) { event.preventDefault(); event.stopPropagation(); openConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -526,16 +601,20 @@ function currentNodeActions(app: App): Action[] {
 function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   const prefs = workspace(app), tabs = div('node-tabs', '')
   tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Node context')
-  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values']] as const) {
+  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values'], ['utilities', 'utilities', 'Utilities']] as const) {
     const b = iconButton(icon, label, () => { prefs.tab = tab; app.refresh() })
-    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab)); tabs.append(b)
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab));
+    if (tab === 'peers' || tab === 'integrations') constructorDrag(b, tab === 'peers' ? 'peer' : 'integration')
+    tabs.append(b)
   }
   const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
   const rows = document.createElement('ul'); rows.className = 'list context-peers'
+  if (prefs.tab === 'utilities') { panel.append(constructorPalette(app, ['inventory', 'calendar', 'account', 'bank'])); el.replaceChildren(tabs, panel); return }
   if (prefs.tab === 'input' || prefs.tab === 'values') { el.replaceChildren(tabs); return }
   if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
   else panel.append(span('muted', 'Settings and peer constructors are editable child rows below.'))
   panel.append(rows)
+  if (prefs.tab === 'peers' || prefs.tab === 'integrations') panel.append(constructorPalette(app, [prefs.tab === 'peers' ? 'peer' : 'integration']))
   panel.append(span('muted', 'Type @{ in a new row to add a peer.'))
   if (prefs.tab === 'integrations') panel.prepend(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
   if (prefs.tab === 'device' && app.transport()) panel.append(span('muted', `Device syncs ${pathLabel(app.labels().scope)}`))
@@ -662,6 +741,8 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
     }
     if (row?.construction || row?.template) { input.readOnly = true; input.title = 'Use Change template → Edit template to edit the constructor.' }
+    input.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) event.preventDefault() })
+    input.addEventListener('drop', event => { if (event.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) { save(); dropTrigger(event, app, [...state.view], true) } })
     input.addEventListener('commit-edit', save)
     input.addEventListener('blur', () => { if (!renderDepth) save() })
     input.addEventListener('keydown', event => {
@@ -670,10 +751,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
       if (event.key === 'Escape') { event.preventDefault(); input.value = entry.baseline; input.blur() }
     })
-    const search = combobox('Find a node to link', 'Find a node…', query => query ? app.searchLocalNodes(query).map(found => ({
+    const search = combobox('Find a node to link', 'Find a node or constructor…', query => [...CONSTRUCTORS.filter(c => c.label.toLowerCase().includes(query.toLowerCase())).map(c => ({ label: c.label, group: 'Constructors', drag: { type: CONSTRUCTOR_DRAG_TYPE, value: c.id }, run: () => openConstructor(app, c.id) })), ...(query ? app.searchLocalNodes(query).map(found => ({
       label: `${found.row.title} · ${found.row.kind}`, group: 'Values', disabled: !app.canLinkNode(found.row.id),
       drag: { type: NODE_DRAG_TYPE, value: found.row.id }, run: () => app.linkNode(found.row.id)
-    })) : [], () => [], 'Search nodes…')
+    })) : [])], () => [], 'Search nodes or constructors…')
     search.classList.add('node-search')
     const toolbar = div('node-toolbar', '')
     toolbar.append(iconButton('⋯', 'Current node actions', () => app.openContextMenu({ kind: 'node' })))
@@ -1011,13 +1092,14 @@ function toggleHelp(app: App): void {
 /** Arguments use the same typed ref whether filled by a dropped value or inline text. */
 function argumentDrop(el: HTMLElement, app: App, at: Scope, id: string): void {
   el.addEventListener('dragover', event => {
-    if (!event.dataTransfer?.types.some(t => t === NODE_DRAG_TYPE || t === OUTPUT_DRAG_TYPE) && !drag) return
+    if (!event.dataTransfer?.types.some(t => t === CONSTRUCTOR_DRAG_TYPE || t === NODE_DRAG_TYPE || t === OUTPUT_DRAG_TYPE) && !drag) return
     event.preventDefault(); event.stopPropagation(); el.classList.add('drop-into')
   })
   el.addEventListener('dragleave', () => el.classList.remove('drop-into'))
   el.addEventListener('drop', event => {
-    if (!event.dataTransfer?.types.some(t => t === NODE_DRAG_TYPE || t === OUTPUT_DRAG_TYPE) && !drag) return
+    if (!event.dataTransfer?.types.some(t => t === CONSTRUCTOR_DRAG_TYPE || t === NODE_DRAG_TYPE || t === OUTPUT_DRAG_TYPE) && !drag) return
     event.preventDefault(); event.stopPropagation(); el.classList.remove('drop-into')
+    if (dropTrigger(event, app, [...app.state.view, ...at, id])) return
     if (event.dataTransfer?.types.includes(OUTPUT_DRAG_TYPE)) { app.bindOutputArgument(at, id, event.dataTransfer.getData(OUTPUT_DRAG_TYPE)); return }
     app.dropArgument(at, id, event.dataTransfer?.getData(NODE_DRAG_TYPE) || drag?.id || '')
   })
@@ -1126,7 +1208,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   })
   const peerDrag = (event: DragEvent) => !!event.dataTransfer?.types.includes(PEER_DRAG_TYPE)
   li.addEventListener('dragover', (event) => {
-    if (event.dataTransfer?.types.some(t => [NODE_DRAG_TYPE, OUTPUT_DRAG_TYPE, 'application/x-fos-placeholder', 'application/x-fos-trigger'].includes(t))) { event.preventDefault(); li.classList.add('drop-into'); return }
+    if (event.dataTransfer?.types.some(t => [CONSTRUCTOR_DRAG_TYPE, NODE_DRAG_TYPE, OUTPUT_DRAG_TYPE, 'application/x-fos-placeholder', 'application/x-fos-trigger'].includes(t))) { event.preventDefault(); li.classList.add('drop-into'); return }
     if (peerDrag(event)) { event.preventDefault(); li.classList.add('drop-into'); return }
     if (!drag || drag.id === task.id) return
     event.preventDefault()
@@ -1139,7 +1221,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   li.addEventListener('dragleave', () => clearDropMarks(li))
   li.addEventListener('drop', (event) => {
     if (event.dataTransfer?.types.includes(OUTPUT_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); clearDropMarks(li); app.linkOutput([...state.view, ...at, task.id], event.dataTransfer.getData(OUTPUT_DRAG_TYPE)); return }
-    if (dropTrigger(event, app, [...app.state.view, ...at, task.id])) { clearDropMarks(li); return }
+    if (dropTrigger(event, app, [...app.state.view, ...at, task.id], true)) { clearDropMarks(li); return }
     event.preventDefault()
     clearDropMarks(li)
     if (event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE), [...app.state.view, ...at, task.id]); return }
