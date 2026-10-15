@@ -2073,9 +2073,6 @@
     let bindings = identity;
     if (!readMembers(store, bindings).some((member) => member.peerId === "fos"))
       bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
-    for (const peer of INTEGRATION_PEERS)
-      if (!readMembers(store, bindings).some((member) => member.peerId === `integration:${peer.id}`))
-        bindings = withMember(store, bindings, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
     const homeCid = findChild(store, rootCid, HOME_ID);
     if (homeCid && isBranchChoice(store, content(store, homeCid))) {
       const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
@@ -2088,6 +2085,15 @@
     const movable = homeCid ? [] : root.children.filter((edge) => isRowEdge(store, edge) && rowKindOf(store, edge) !== "template" || isChoiceEdge(store, edge));
     const homeValue = homeCid ? valueContent(store, homeCid) : rowContent("plain", HOME_ID, "Home", 0);
     let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0);
+    const legacyIntegrations = bindings.children.filter((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith("integration:"));
+    for (const edge of legacyIntegrations)
+      if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content))
+        home = { ...home, children: [...home.children, edge] };
+    if (legacyIntegrations.length)
+      bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
+    for (const peer of INTEGRATION_PEERS)
+      if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`))
+        home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
     const own = new Set(readMembers(store, home).map((member) => member.peerId));
     const argumentsFromRoot = bindings.children.filter((edge) => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ""));
     if (argumentsFromRoot.length)
@@ -2469,7 +2475,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer"];
   var INTEGRATION_PEERS = [
     { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
     { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
@@ -2477,7 +2483,7 @@
     { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
     { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
   ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll"];
+  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer"];
   function isLink(store, value) {
     if (isHandle(value))
       return false;
@@ -2585,6 +2591,7 @@
         return p.notifyCapability.getId();
       case "rank":
       case "poll":
+      case "peer":
       case "timer":
       case "cron":
       case "task-completion":

@@ -1,3 +1,4 @@
+import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
@@ -23,7 +24,7 @@ import { evaluateOnServer, createRepositoryBranch, readRepository, proposeReposi
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -377,6 +378,11 @@ export class App {
     if (patch.session && previous.session && patch.session.username !== previous.session.username) this.history.clear()
     if (patch.replica) for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(patch.replica.store, id, name)
     this.state = { ...previous, ...patch }
+    if (patch.replica) {
+      const name = this.settingValue<string>('name'), theme = this.settingValue<string>('theme')
+      if (typeof name === 'string' && name.trim()) this.state.deviceName = name
+      if (typeof theme === 'string' && ['system', 'light', 'dark'].includes(theme)) document.documentElement.dataset.theme = theme
+    }
     if (patch.replica && patch.replica !== previous.replica) {
       this.config.storage.saveReplica(serializeReplica(this.state.replica))
     }
@@ -1025,7 +1031,7 @@ export class App {
       peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
     }
     // integration peers (sign in with GitHub, Google, Discord; Stripe on the account; the phone): the server's status when signed in, the registry otherwise
-    if (!this.virtualIdentity && (this.state.atRoot || (!this.config.scopedDocument && (homePath(this.state.replica).length || node?.members.some(member => member.peerId.startsWith('integration:')))))) {
+    if (!this.virtualIdentity && !this.state.atRoot && (homePath(this.state.replica).every((id, index) => path[index] === id) || node?.members.some(member => member.peerId.startsWith('integration:')))) {
       for (const i of INTEGRATION_PEERS) {
         const s = this.state.integrations.find((p) => p.id === i.id)
         peers.push({ id: `integration:${i.id}`, name: i.name, online: this.isOnline(`integration:${i.id}`), capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { kind: i.kind, provides: [...i.provides], consumes: [...i.consumes], configured: s?.configured ?? false, connected: s?.connected ?? false, pending: s?.pending ?? false, accountName: s?.accountName ?? null } })
@@ -1070,22 +1076,41 @@ export class App {
       if (this.state.session === session) {
         let replica = this.state.replica
         // Existing OAuth connections were formerly only synthetic Settings rows; persist their root offers.
-        if (!this.virtualIdentity && !this.config.scopedDocument && !replica.meta.scope.length) for (const provider of providers.filter(p => p.connected)) replica = this.withIntegrationPeer(replica, [], provider.id)
+        if (!this.virtualIdentity && !this.config.scopedDocument && !replica.meta.scope.length) for (const provider of providers.filter(p => p.connected)) replica = this.withIntegrationPeer(replica, homePath(replica), provider.id)
         this.set({ integrations: providers, mcpPeers: mcp.peers, ...(replica !== this.state.replica ? { replica } : {}) })
         if (isDirty(replica)) this.scheduleSync()
         void this.refreshRepositories()
       }
     } catch { /* the rows fall back to the static registry */ }
   }
-  /** Integration selection is an ordinary choice with a typed server dependency. */
+  /** Peer → connection kind → provider uses refs and the existing branch constructor. */
   addIntegrationChoice(provider?: string): void {
-    const id = newId(), path = [...this.state.view, id]
-    let r = addRow(this.state.replica, this.state.view, 'requirement', 'Integration', this.now(), { id, requirement: { capability: 'choice', options: ['Google', 'GitHub', 'Discord', 'Custom OAuth (unavailable)', 'Custom API (unavailable)'] } })
-    r = writeNodeValue(r, path, 'fos:connection', { providers: ['google', 'github', 'discord'] }, this.now())
-    const server = put(r.store, { data: { peerId: { content: 'fos' } }, children: [] })
-    r = addRefAt(r, path, newId(), capabilityTarget(r.store, 'http'), this.now(), server, 'server')
-    this.edit(r)
-    if (provider) { const choice = ['google', 'github', 'discord'].indexOf(provider); if (choice >= 0) this.supplyRequirementAt([], id, { capability: 'choice', choice }) }
+    const home = homePath(this.state.replica)
+    if (JSON.stringify(this.state.view) !== JSON.stringify(home) || !this.isOnline('fos')) { this.notify('info', 'Integration peers are available in Home with an active Fos server.'); return }
+    const r = this.state.replica, s = r.store, peerId = newId(), kindId = newId(), providerId = newId()
+    const type = capabilityTarget(s, 'peer')
+    const server = put(s, { data: { peerId: { content: 'fos' } }, children: [] })
+    const edge = (cid: string): [string, string] => [cid, s.primitive.descriptionField.getId()]
+    const makeRef = (id: string, title: string, children: [string, string][], typed = false) => put(s, refNodeContent(s, { alias: { id } }, put(s, { data: { description: { content: title } }, children }), [], typed ? type : null))
+    const providers = ['google', 'github', 'discord', 'custom-oauth', 'custom-api']
+    const options = providers.map(name => {
+      const data = put(s, { data: { description: { content: JSON.stringify(name) } }, children: [] })
+      const config = put(s, refNodeContent(s, { alias: { id: `${providerId}:provider` }, name: { content: 'fos:integration' } }, data, [], s.primitive.documentField.getId()))
+      const dependency = put(s, refNodeContent(s, { alias: { id: `${providerId}:server` }, name: { content: 'server' } }, server, [], capabilityTarget(s, 'peer')))
+      return { peerId: name, edge: edge(makeRef(providerId, name.startsWith('custom') ? `${name} (unavailable)` : name, [[s.primitive.documentField.getId(), config], [capabilityTarget(s, 'peer'), dependency]], true)) }
+    })
+    const choice = putBranches(s, providerId, options[0].edge, options, providers.includes(provider ?? '') ? provider! : 'google')
+    const integration = makeRef(kindId, 'Integration', [[s.primitive.choiceTarget.getId(), choice]], true)
+    const kind = putBranches(s, kindId, edge(integration), [{ peerId: 'integration', edge: edge(integration) }], 'integration')
+    const peer = makeRef(peerId, 'Peer', [[s.primitive.choiceTarget.getId(), kind]], true)
+    commitRoot(s, updateAtScope(s, headCid(r), home, node => ({ ...node, children: [...node.children, edge(peer)] })), this.now())
+    this.edit({ ...r })
+  }
+  integrationHandler(): { provider: string; enabled: boolean } | null {
+    const provider = readNodeValue<string>(this.state.replica, this.state.view, 'fos:integration')
+    if (!provider) return null
+    const status = this.state.integrations.find(p => p.id === provider)
+    return { provider, enabled: !!status?.configured && this.isOnline('fos') && this.state.session?.kind === 'user' }
   }
   connectionOption(path: Scope, choice: number): { provider?: string; enabled: boolean } | null {
     const config = readNodeValue<{ providers: string[] }>(this.state.replica, path, 'fos:connection')
@@ -2198,7 +2223,7 @@ export class App {
   goTo(path: Scope): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); const home = homePath(this.state.replica); if (!path.length) path = home; this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false }) }
   /** Zoom out within Home; device settings are reached through the menu. */
   zoomOut(): void { if (this.state.view.length > homePath(this.state.replica).length) this.goTo(this.state.view.slice(0, -1)) }
-  goToRoot(): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); this.set({ atRoot: true, view: [], selected: null, collapsed: [...new Set([...this.state.collapsed, HOME_ID])], contextMenu: null }) }
+  goToRoot(): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); this.ensureSettings(); this.set({ atRoot: true, view: [], selected: null, collapsed: [...new Set([...this.state.collapsed, HOME_ID])], contextMenu: null }) }
   /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
   knownPeers(): Array<{ id: string; name: string }> {
     return this.contextPeers().map((p) => ({ id: p.id, name: p.name }))
@@ -2317,9 +2342,28 @@ export class App {
     this.set({ modal: null, connectFlow: { phase: 'idle' }, manual: {}, device: this.state.modal === 'device' ? null : this.state.device })
   }
 
+  settingKey(key: string): string { return `fos:setting:${this.state.replica.meta.peerId}:${key}` }
+  settingValue<T>(key: string): T | null { return readNodeValue<T>(this.state.replica, [], this.settingKey(key)) }
+  setSetting(key: string, value: unknown): void { this.edit(writeNodeValue(this.state.replica, [], this.settingKey(key), value, this.now())) }
+  ensureSettings(): void {
+    let r = this.state.replica
+    const defaults: Record<string, unknown> = { name: this.state.deviceName, theme: document.documentElement.dataset.theme || 'system', microphone: 'Not checked', camera: 'Not checked', geolocation: 'Not checked', server: { handler: 'connect' }, direct: { handler: 'direct' }, resetHome: { handler: 'reset-home' }, resetAccount: { handler: 'reset-account' }, sessions: { handler: 'sessions' }, export: { handler: 'export-yaml' }, import: { handler: 'import-yaml' } }
+    for (const [key, value] of Object.entries(defaults)) if (readNodeValue(r, [], this.settingKey(key)) === null) r = writeNodeValue(r, [], this.settingKey(key), value, this.now(), typeof value === 'object' ? { type: capabilityTarget(r.store, 'tool'), peer: r.meta.peerId } : undefined)
+    if (r !== this.state.replica) { this.set({ replica: r }); this.scheduleSync() }
+  }
+  exportYaml(): string { return exportNodeYaml(this.state.replica, this.state.view) }
+  importYaml(text: string): void {
+    const parsed = parseNodeYaml(text), r = this.state.replica
+    importNodes(r.store, parsed.nodes)
+    const imported = content(r.store, parsed.root), id = newId()
+    const node = put(r.store, { ...imported, data: { ...imported.data, alias: { id } } })
+    commitRoot(r.store, updateAtScope(r.store, headCid(r), this.state.view, value => ({ ...value, children: [...value.children, [node, r.store.primitive.descriptionField.getId()]] })), this.now())
+    this.edit({ ...r })
+  }
   setDeviceName(name: string): void {
     const clean = name.trim().slice(0, 80)
     if (!clean) return
+    this.setSetting('name', clean)
     this.set({ deviceName: clean })
     this.savePrefs()
   }

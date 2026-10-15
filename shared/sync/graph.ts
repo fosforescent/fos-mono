@@ -650,7 +650,6 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number): s
   const identity = makeLink(store, content(store, rootCid), 0)
   let bindings = identity
   if (!readMembers(store, bindings).some(member => member.peerId === 'fos')) bindings = withMember(store, bindings, 'fos', 'fos', [], [], SERVER_CAPABILITIES)
-  for (const peer of INTEGRATION_PEERS) if (!readMembers(store, bindings).some(member => member.peerId === `integration:${peer.id}`)) bindings = withMember(store, bindings, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides)
   const homeCid = findChild(store, rootCid, HOME_ID)
   // A branched Home is already a container: preserve its choice wrapper and alternatives.
   if (homeCid && isBranchChoice(store, content(store, homeCid))) {
@@ -663,6 +662,11 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number): s
   const movable = homeCid ? [] : root.children.filter(edge => (isRowEdge(store, edge) && rowKindOf(store, edge) !== 'template') || isChoiceEdge(store, edge))
   const homeValue = homeCid ? valueContent(store, homeCid) : rowContent('plain', HOME_ID, 'Home', 0)
   let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0)
+  // Integration handlers belong to Home; carry over old root bindings without losing overrides.
+  const legacyIntegrations = bindings.children.filter(edge => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith('integration:'))
+  for (const edge of legacyIntegrations) if (!readMembers(store, home).some(member => member.peerId === content(store, edge[1]).data.peerId?.content)) home = { ...home, children: [...home.children, edge] }
+  if (legacyIntegrations.length) bindings = { ...bindings, children: bindings.children.filter(edge => !legacyIntegrations.includes(edge)) }
+  for (const peer of INTEGRATION_PEERS) if (!readMembers(store, home).some(member => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides)
   // Constructor defaults pass the existing peer references, not another provider registry.
   const own = new Set(readMembers(store, home).map(member => member.peerId))
   const argumentsFromRoot = bindings.children.filter(edge => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ''))
@@ -1163,8 +1167,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1185,13 +1189,13 @@ export const INTEGRATION_PEERS: IntegrationPeer[] = [
 ]
 export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'relay']
 /** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market, mail, language-model and payment/allocation services. */
-export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail', 'llm', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'poll']
+export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail', 'llm', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'poll', 'peer']
 /** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
 export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'submit proposals', approve: 'approve proposals', autopush: 'autopush',
   direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
   calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll'
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1330,7 +1334,7 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'request-payment': return p.requestPaymentCapability.getId()
     case 'notify': return p.notifyCapability.getId()
     case 'rank':
-    case 'poll':
+    case 'poll': case 'peer':
     case 'timer': case 'cron': case 'task-completion': case 'request':
       return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
   }

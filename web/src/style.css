@@ -417,3 +417,6 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 
 .node-actions { display: flex; flex-direction: column; align-items: stretch; }
 .node-action-body { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: 100%; }
+
+button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
+.setting-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; min-height: 2.5rem; }
