@@ -489,3 +489,8 @@ button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
 .import-dialog { max-width:min(32rem, 90vw); background:var(--bg, #171717); color:inherit; border:1px solid var(--border, #444); border-radius:.7rem; padding:1rem; }
 .import-dialog::backdrop { background:#0008; }
 .home-node { cursor:default; }
+.constructor-palette { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 8px; }
+.constructor-palette button { width: 44px; height: 44px; cursor: grab; }
+.constructor-dialog form { display: grid; gap: 12px; min-width: min(320px, 75vw); }
+.constructor-dialog input, .constructor-dialog select { min-width: 0; padding: 8px; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; }
+.constructor-dialog label { display: grid; gap: 4px; }
