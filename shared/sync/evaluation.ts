@@ -220,6 +220,7 @@ export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[
       seen.add(row.id)
       if (row.kind === 'template' && row.id !== 'fos:home') continue
       if (row.resource) banks.set(row.id, row)
+      if (row.requirement?.capability === 'allocation' && row.requirement.satisfied && row.requirement.amount !== undefined) banks.set(row.id, { ...row, resource: { type: row.requirement.resource ?? 'account', unit: row.requirement.unit ?? 'USD', capacity: row.requirement.amount, allocated: 0, available: row.requirement.amount } })
       if (row.allocation && required.has(row.allocation.resource)) allocations.push(row)
       if (row.childCount) walk([...path, row.id])
     }

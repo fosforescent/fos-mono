@@ -1,4 +1,5 @@
 /** Shared, read-only resolution for data arguments and callable values. */
+import { resolveRequirementOutput } from './destructure'
 import { keyValueOf, splitFrontmatter } from './notes'
 import type { FosStore } from '../dag-implementation/store'
 import {
@@ -50,7 +51,7 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
     }
     for (const arg of argumentRefs(r.store, cid)) {
       // Unfilled local arguments are consumers, not providers.
-      if (refValueCid(r.store, content(r.store, arg.cid))) local.set(`${arg.type}/${arg.name}`, [...(local.get(`${arg.type}/${arg.name}`) ?? []), arg])
+      if (refValueCid(r.store, content(r.store, arg.cid)) || content(r.store, arg.cid).data.ref) local.set(`${arg.type}/${arg.name}`, [...(local.get(`${arg.type}/${arg.name}`) ?? []), arg])
     }
     for (const [key, values] of local) named.set(key, values)
     for (const edge of content(r.store, cid).children.filter(edge => isMemberEdge(r.store, edge))) {
@@ -101,6 +102,8 @@ export function resolveBinding(store: FosStore, type: string, target: string | n
       if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted) : fail('missing', 'Choose a supplied value branch') }
       if (actual && actual !== wanted) return fail('conflict', 'The bound value has an incompatible type')
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
+      const output = resolveRequirementOutput(store, cid)
+      if (output) return output.cid ? { status: 'ready', cid: output.cid, sources: [...sources], problems: [] } : fail('missing', output.error ?? 'Unfilled requirement')
       if (actual || refValueCid(store, node)) {
         const targets = [...new Set(node.children.filter(e => e[0] === store.primitive.targetPointerConstructor.getId()).map(e => e[1]))]
         if (!targets.length) return choose(wanted, node.data.name?.content, cid, true)

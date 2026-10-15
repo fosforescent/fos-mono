@@ -37,6 +37,7 @@
  * uses. A node's cid changes with every edit; its alias id does not.
  */
 
+import { allocationValue } from './destructure'
 import { FosStore } from '../dag-implementation/store'
 import { isCurrentCid, verifyCid } from '../dag-implementation/cid'
 import type { FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
@@ -913,6 +914,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   if (refTypeCid(store, constructor) === capabilityTarget(store, 'peer') && constructor.data.name) view.construction = { handler: constructor.data.name.content }
   if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
+  if (value.data.template) view.template = value.data.template
   if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers; if (value.data.template) view.template = value.data.template }
   if (isBranchChoice(store, identity)) view.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map(o => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter(o => o.requestMerge).map(o => o.peerId) }
   const demand = demandOf(value)
@@ -923,7 +925,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   if (kind === 'supply') view.supply = supplyOf(value)
   if (kind === 'query') view.query = value.data.query ?? {}
   if (kind === 'resource' && value.data.resource) { const allocated = allocatedIn(store, nodeCid); view.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === undefined ? null : value.data.resource.capacity - allocated } }
-  if (kind === 'allocation' && value.data.allocation) view.allocation = value.data.allocation
+  if (kind === 'allocation' && value.data.allocation) view.allocation = allocationValue(store, nodeCid)
   if (identity.data.listing) view.market = true
   return view
 }
@@ -996,8 +998,8 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
   const req = demandOf(valueContent(store, requirementCid))
   if (!req || req.capability !== 'allocation' || req.amount === undefined) return null
   let have = 0
-  for (const { kind, value } of childRows(store, requirementCid)) {
-    if (kind === 'allocation' && allocationMatches(req, value.data.allocation)) have += value.data.allocation?.amount ?? 0
+  for (const { kind, value, cid } of childRows(store, requirementCid)) {
+    if (kind === 'allocation') { const allocation = allocationValue(store, cid); if (allocationMatches(req, allocation)) have += allocation?.amount ?? 0 }
     const supply = supplyOf(value)
     if (kind === 'supply' && supply?.capability === 'allocation' && supply.ref) {
       const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref)
@@ -1017,10 +1019,10 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
   const req = demandOf(valueContent(store, requirementCid))
   if (!req) return true
   const rows = childRows(store, requirementCid)
-  const filledByChild = rows.some(({ kind, value }) => {
+  const filledByChild = rows.some(({ kind, value, cid }) => {
     switch (req.capability) {
       case 'task': return kind === 'task' && !!value.data.todo?.completed
-      case 'allocation': return kind === 'allocation' && allocationFills(req, value.data.allocation)
+      case 'allocation': return kind === 'allocation' && allocationFills(req, allocationValue(store, cid))
       case 'search': return kind === 'query' && !!value.data.query?.executedAt
       // "-@name": the named person allocates themself ("@name 2h") inside it
       case 'peer': return kind === 'allocation' && value.data.allocation?.type === 'person' && (!req.peer || value.data.allocation.person === req.peer)
@@ -1085,7 +1087,7 @@ export function taskBlockers(store: FosStore, taskCid: string): string[] {
 export function allocatedIn(store: FosStore, bankCid: string): number {
   const type = valueContent(store, bankCid).data.resource?.type
   const sum = (cid: string): number => childRows(store, cid).reduce((total, child) => {
-    const allocation = child.kind === 'allocation' ? child.value.data.allocation : undefined
+    const allocation = child.kind === 'allocation' ? allocationValue(store, child.cid) : undefined
     const amount = allocation && (!type || allocation.type === type) ? allocation.amount : 0
     return total + amount + sum(child.cid)
   }, 0)
