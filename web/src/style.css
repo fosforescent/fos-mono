@@ -145,8 +145,6 @@ input[type="text"], input[type="password"] { font: inherit; padding: 8px 10px; b
 .tree .task.nested-choice { display: block; }
 .tree .task.nested-choice .choice { margin: 6px 0; }
 .link-badge { font-size: 0.72rem; padding: 1px 7px; border-radius: 999px; background: var(--changed-bg); color: var(--warn-fg); white-space: nowrap; }
-.link-panel[hidden] { display: none; }
-.link-panel { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); display: flex; flex-direction: column; gap: 6px; }
 .link-head { display: flex; align-items: center; gap: 8px; }
 .proposal { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .proposal-title { font-weight: 600; }
@@ -405,3 +403,9 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .shared-node { max-width: 900px; margin: 1rem auto; padding: 1rem; border: 1px solid var(--border, #555); border-radius: .5rem; }
 .shared-node button { min-height: 40px; margin: .2rem; }
 .shared-node fieldset { min-width: 0; margin: .7rem 0; }
+
+.children-toolbar { padding: 12px 0; border-top: 1px solid var(--line); }
+.children-toolbar .child-search { width: 100%; box-sizing: border-box; }
+.alternative-picker { display: inline-flex; max-width: 100%; min-width: 0; }
+.alternative-picker input { width: 240px; max-width: 100%; box-sizing: border-box; min-width: 0; }
+.constructor-row { flex-wrap: wrap; gap: 8px; }

@@ -23,7 +23,7 @@ import { evaluateOnServer, createRepositoryBranch, readRepository, proposeReposi
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -1301,6 +1301,13 @@ export class App {
       this.savePrefs()
       this.set({ selected: null })
     } catch (error) { this.notify('error', String(error)) }
+  }
+  copyProposalToBranch(proposalId: string, name: string): boolean {
+    try {
+      const path = this.state.view
+      const next = copyProposalBranch(this.state.replica, path, proposalId, name, this.now())
+      this.branchSelections[path.at(-1)!] = name; this.edit(next); this.savePrefs(); return true
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)); return false }
   }
   selectNodeBranch(at: Scope, id: string, name: string, absolute = false): void {
     document.activeElement?.dispatchEvent(new window.Event('commit-edit'))

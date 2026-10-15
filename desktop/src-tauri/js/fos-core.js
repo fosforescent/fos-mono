@@ -2017,6 +2017,18 @@
     }
     const [step, ...rest] = scope;
     const found = findAliasEdge(store, value, step);
+    if (!found && ref) {
+      const argument = findAliasEdge(store, identity, step);
+      if (argument) {
+        const before = identityCid(store, argument.edge);
+        const after = updateAtScope(store, before, rest, fn, mode);
+        if (before === after)
+          return nodeCid;
+        const children2 = [...identity.children];
+        children2[argument.index] = withIdentity(store, argument.edge, after);
+        return put(store, withPrev(store, { ...identity, children: children2 }, nodeCid));
+      }
+    }
     if (!found || isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])))
       throw new Error(`node ${step} not found`);
     const childCid = identityCid(store, found.edge);
@@ -2655,19 +2667,37 @@
     return put(store, { data: { description: { content: text } }, children: [] });
   }
   function proposalContent(store, peerId, name, contentCid, baseCid, timestamp, status = "open") {
-    return {
-      data: { proposal: { status } },
+    const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`;
+    const branchType = store.primitive.rootInstructionNode.getId();
+    const approvalType = capabilityTarget(store, "approve");
+    const textType = store.primitive.documentField.getId();
+    const argument = (key, type, target, history = []) => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history, type))];
+    const constructor = put(store, {
+      data: { description: { content: name || "Proposal" }, peerId: { content: peerId }, updated: { time: timestamp } },
       children: [
-        [store.primitive.proposalNameField.getId(), textNode(store, name)],
-        [store.primitive.proposedContentField.getId(), contentCid],
-        [store.primitive.senderField.getId(), textNode(store, peerId)],
-        [store.primitive.timestampField.getId(), textNode(store, String(timestamp))],
-        [store.primitive.previousVersion.getId(), baseCid]
+        argument("branch", branchType, contentCid, [[store.primitive.previousVersion.getId(), baseCid]]),
+        argument("input", approvalType, null),
+        argument("status", textType, textNode(store, status))
       ]
-    };
+    });
+    return refNodeContent(store, { alias: { id }, name: { content: "proposal" }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId());
   }
   function readProposal(store, cid) {
-    const value = content(store, cid);
+    const identity = content(store, cid);
+    if (refTypeCid(store, identity) === store.primitive.proposalField.getId()) {
+      const value2 = valueContent(store, cid);
+      const args = value2.children.map((edge) => content(store, identityCid(store, edge)));
+      const branch = args.find((arg) => arg.data.name?.content === "branch");
+      const status = args.find((arg) => arg.data.name?.content === "status");
+      const contentCid2 = branch && refValueCid(store, branch);
+      const baseCid2 = branch?.children.find((edge) => isPrevEdge(store, edge))?.[1];
+      const peerId2 = value2.data.peerId?.content;
+      const statusCid = status && refValueCid(store, status);
+      if (!contentCid2 || !baseCid2 || !peerId2)
+        return null;
+      return { cid, peerId: peerId2, name: value2.data.description?.content ?? "", contentCid: contentCid2, baseCid: baseCid2, timestamp: value2.data.updated?.time ?? 0, status: statusCid && ["rejected", '"rejected"'].includes(content(store, statusCid).data.description?.content ?? "") ? "rejected" : "open" };
+    }
+    const value = identity;
     let peerId = "";
     let name = "";
     let contentCid = "";
@@ -2758,11 +2788,11 @@
   }
   function findAliasEdge(store, value, aliasId) {
     const key = `a:${aliasId}`;
-    const index = value.children.findIndex((e) => edgeKey(store, e) === key);
+    const index = value.children.findIndex((e) => edgeKey(store, e) === key || aliasIdOf(content(store, identityCid(store, e))) === aliasId);
     return index >= 0 ? { edge: value.children[index], index } : null;
   }
   function findChild(store, nodeCid, aliasId) {
-    const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId);
+    const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId);
     if (!found)
       return null;
     const { edge } = found;

@@ -575,6 +575,16 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
   }
   const [step, ...rest] = scope as [string, ...string[]]
   const found = findAliasEdge(store, value, step)
+  if (!found && ref) {
+    const argument = findAliasEdge(store, identity, step)
+    if (argument) {
+      const before = identityCid(store, argument.edge)
+      const after = updateAtScope(store, before, rest, fn, mode)
+      if (before === after) return nodeCid
+      const children = [...identity.children]; children[argument.index] = withIdentity(store, argument.edge, after)
+      return put(store, withPrev(store, { ...identity, children }, nodeCid))
+    }
+  }
   if (!found || (isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])))) throw new Error(`node ${step} not found`)
   const childCid = identityCid(store, found.edge)
   const nextChild = updateAtScope(store, childCid, rest, fn, mode)
@@ -1140,13 +1150,12 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
 //   link node  data.link = { createdAt }; edges:
 //     [PREV, previousVersionCid]       one per parent version (two after a merge)
 //     [MEMBER, memberRef]              memberRef.data: peerId{content}, actor{capabilities}
-//     [PROPOSAL, proposalNode]         a peer's branch (proposal.ts shape):
-//        [PROPOSALNAME, nameNode] [PROPOSEDCONTENT, contentCid] [SENDER, peerIdNode]
-//        [TIMESTAMP, timeNode] [PREV, baseCid]
+//     [PROPOSAL, constructorRef]      typed ref with branch/input/status arguments
+//        branch is a ref to proposed content, with PREV pointing to the merge base
 //
 // The node's *content* is everything except these bookkeeping edges; proposals
 // hold stripped content so they can be three-way merged against the main
-// content with the proposal's PREV as the base.
+// content using the branch argument's PREV as the base.
 
 /**
  * What a peer may do on a node or provides to it: 'edit' (may propose changes) and 'approve' (may merge
@@ -1428,21 +1437,42 @@ function textNode(store: FosStore, text: string): string {
   return put(store, { data: { description: { content: text } }, children: [] })
 }
 
+/** Proposal instances are typed refs with a branch argument and an input requirement.
+ * The parent ref owns the constructor; the branch holds its proposed value and merge base.
+ */
 export function proposalContent(store: FosStore, peerId: string, name: string, contentCid: string, baseCid: string, timestamp: number, status: 'open' | 'rejected' = 'open'): FosNodeContent {
-  return {
-    data: { proposal: { status } },
+  const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`
+  const branchType = store.primitive.rootInstructionNode.getId()
+  const approvalType = capabilityTarget(store, 'approve')
+  const textType = store.primitive.documentField.getId()
+  const argument = (key: string, type: string, target: string | null, history: FosPathElem[] = []): FosPathElem => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history, type))]
+  const constructor = put(store, {
+    data: { description: { content: name || 'Proposal' }, peerId: { content: peerId }, updated: { time: timestamp } },
     children: [
-      [store.primitive.proposalNameField.getId(), textNode(store, name)],
-      [store.primitive.proposedContentField.getId(), contentCid],
-      [store.primitive.senderField.getId(), textNode(store, peerId)],
-      [store.primitive.timestampField.getId(), textNode(store, String(timestamp))],
-      [store.primitive.previousVersion.getId(), baseCid]
+      argument('branch', branchType, contentCid, [[store.primitive.previousVersion.getId(), baseCid]]),
+      argument('input', approvalType, null),
+      argument('status', textType, textNode(store, status))
     ]
-  }
+  })
+  return refNodeContent(store, { alias: { id }, name: { content: 'proposal' }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId())
 }
 
 export function readProposal(store: FosStore, cid: string): ProposalRecord | null {
-  const value = content(store, cid)
+  const identity = content(store, cid)
+  if (refTypeCid(store, identity) === store.primitive.proposalField.getId()) {
+    const value = valueContent(store, cid)
+    const args = value.children.map(edge => content(store, identityCid(store, edge)))
+    const branch = args.find(arg => arg.data.name?.content === 'branch')
+    const status = args.find(arg => arg.data.name?.content === 'status')
+    const contentCid = branch && refValueCid(store, branch)
+    const baseCid = branch?.children.find(edge => isPrevEdge(store, edge))?.[1]
+    const peerId = value.data.peerId?.content
+    const statusCid = status && refValueCid(store, status)
+    if (!contentCid || !baseCid || !peerId) return null
+    return { cid, peerId, name: value.data.description?.content ?? '', contentCid, baseCid, timestamp: value.data.updated?.time ?? 0, status: statusCid && ['rejected', '"rejected"'].includes(content(store, statusCid).data.description?.content ?? '') ? 'rejected' : 'open' }
+  }
+  // Read older saved proposals; subsequent updates use the ordinary ref constructor.
+  const value = identity
   let peerId = ''
   let name = ''
   let contentCid = ''
@@ -1537,13 +1567,13 @@ export function normalizeRefs(store: FosStore, nodeCid: string, now: number = 0)
 /** Child edge (task, partition or choice) carrying `aliasId`, with its index. */
 export function findAliasEdge(store: FosStore, value: FosNodeContent, aliasId: string): { edge: FosPathElem; index: number } | null {
   const key = `a:${aliasId}`
-  const index = value.children.findIndex((e) => edgeKey(store, e) === key)
+  const index = value.children.findIndex((e) => edgeKey(store, e) === key || aliasIdOf(content(store, identityCid(store, e))) === aliasId)
   return index >= 0 ? { edge: value.children[index] as FosPathElem, index } : null
 }
 
 /** Cid of the node that `aliasId` names below `nodeCid` (task or partition), or null. */
 export function findChild(store: FosStore, nodeCid: string, aliasId: string): string | null {
-  const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId)
+  const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId)
   if (!found) return null
   const { edge } = found
   if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) return null

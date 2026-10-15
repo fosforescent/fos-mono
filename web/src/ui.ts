@@ -1,3 +1,4 @@
+import { alternativePicker, proposalPreview, showProposal, clearProposal } from './alternatives'
 /**
  * DOM rendering. The shell is built once; each state change re-renders the
  * dynamic regions from the app state and the replica's view model (plain ids,
@@ -6,7 +7,7 @@
 
 import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
-import { resolveText, put, content, headCid, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
@@ -17,7 +18,6 @@ type Regions = {
   context: HTMLElement
   repository: HTMLElement
   node: HTMLElement
-  link: HTMLElement
   status: HTMLElement
   menuButton: HTMLButtonElement
   menu: HTMLElement
@@ -89,8 +89,8 @@ export function mountUi(root: HTMLElement, app: App): void {
     <section class="repository" data-region="repository"></section>
     <section class="node-detail" data-region="node"></section>
     <section class="choices" data-region="choices"></section>
-    <section class="link-panel" data-region="link" hidden></section>
     <section class="tasks">
+      <div class="children-toolbar" data-region="children-toolbar"></div>
       <ul class="list tree" data-region="list"></ul>
     </section>
     <footer class="footer" data-region="footer"></footer>
@@ -102,7 +102,6 @@ export function mountUi(root: HTMLElement, app: App): void {
     context: q('context'),
     repository: q('repository'),
     node: q('node'),
-    link: q('link'),
     status: q('status'),
     menuButton: q('menu-button'),
     menu: q('menu'),
@@ -167,11 +166,10 @@ function render(regions: Regions, state: AppState, app: App): void {
   renderRepository(regions.repository, state, app)
   renderNodeDetail(regions.node, state, app)
   renderChoices(regions.choices, node, state, app)
-  renderLinkPanel(regions.link, node, state, app)
   renderTree(regions.list, node, state, app)
   renderFooter(regions.footer, state, app)
   renderContextMenu(regions.context, state, app)
-  for (const [name, element] of [['repository', regions.repository], ['voice', regions.mic.parentElement!], ['link', regions.link]] as const) {
+  for (const [name, element] of [['repository', regions.repository], ['voice', regions.mic.parentElement!]] as const) {
     const slot = regions.node.querySelector(`[data-slot="${name}"]`)
     if (slot && element.parentElement !== slot) slot.append(element)
   }
@@ -266,19 +264,12 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   el.replaceChildren(crumbs)
 }
 
-function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): HTMLSelectElement {
-  const select = document.createElement('select')
-  select.setAttribute('aria-label', `Branch of ${task.title}`)
-  for (const name of task.branches?.names ?? []) select.append(new Option(name, name))
-  select.value = task.branches?.selected ?? ''
-  select.disabled = !!app.state.voice || !!app.state.work?.busy
-  select.addEventListener('pointerdown', e => { e.stopPropagation(); document.activeElement?.dispatchEvent(new window.Event('commit-edit')) })
-  select.addEventListener('click', e => e.stopPropagation())
-  select.addEventListener('change', () => app.selectNodeBranch(at, task.id, select.value, absolute))
-  return select
+function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): HTMLElement {
+  return alternativePicker(app, [...(absolute ? [] : app.state.view), ...at, task.id], task)
 }
 
 function renderRepository(el: HTMLElement, state: AppState, app: App): void {
+  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker')) return
   const path = state.view, id = path.at(-1)
   const task = id ? viewAt(state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id) : null
   const info = app.repositoryInfo()
@@ -378,7 +369,7 @@ let pointerDown = false
 const noteHtml = new Map<string, string>()
 document.addEventListener('mouseup', () => { pointerDown = false })
 
-type NodeLayout = 'tree' | 'chat' | 'grid' | 'list'
+type NodeLayout = 'tree' | 'chat' | 'grid' | 'list' | 'queue'
 const workspacePrefs = new WeakMap<App, Map<string, { tab: 'peers' | 'integrations' | 'device'; layout: NodeLayout; actionTab: string; search: string; open: Record<string, boolean> }>>()
 function workspace(app: App) {
   let map = workspacePrefs.get(app)
@@ -444,13 +435,11 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   }
   if (prefs.tab === 'integrations') panel.prepend(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
   if (prefs.tab === 'device') panel.append(renderDeviceSettings(state, app, false))
-  // Keep the link panel itself mounted while switching tabs or receiving sync updates.
-  let link = el.querySelector<HTMLElement>('[data-slot="link"]')
-  if (!link) { link = div('', ''); link.dataset.slot = 'link' }
-  link.hidden = prefs.tab !== 'peers'
+  if (prefs.tab === 'peers') panel.append(span('muted', `${app.currentView()?.versions ?? 0} previous versions`))
   const active = document.activeElement as HTMLElement | null
   if (active && el.contains(active) && active.matches('input,select')) return
-  el.replaceChildren(tabs, panel, link)
+  el.replaceChildren(tabs, panel)
+
 }
 function renderDeviceSettings(state: AppState, app: App, settings: boolean): HTMLElement {
   const box = div('device-settings', '')
@@ -502,18 +491,20 @@ function rowMatches(row: TaskView, filter: string, state: AppState, path: Scope)
   return path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => rowMatches(child, filter, state, [...path, child.id]))
 }
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
+  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker')) return
   const row = app.currentRow()
   el.hidden = false
-  const title = row?.title ?? (state.atRoot ? 'Settings' : 'Home')
-  const key = JSON.stringify([state.atRoot, state.view, row?.branches?.selected])
+  const preview = proposalPreview(app)
+  const title = preview?.node.name ?? row?.title ?? (state.atRoot ? 'Settings' : 'Home')
+  const key = JSON.stringify([state.atRoot, state.view, row?.branches?.selected, preview?.proposal.id])
   let cached = details.get(el)
   if (!cached || cached.key !== key || cached.store !== state.replica.store) {
     const input = document.createElement('textarea'); input.className = 'node-text'; input.rows = 4
-    input.setAttribute('aria-label', 'Current node text'); input.value = title; input.hidden = !row
+    input.setAttribute('aria-label', 'Current node text'); input.value = title; input.hidden = !row && !preview; input.readOnly = !!preview
     const controls = div('node-actions', '')
     const entry = { key, store: state.replica.store, input, baseline: title, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls }
     const save = () => {
-      if (entry.input.value === entry.baseline) return
+      if (entry.input.readOnly || entry.input.value === entry.baseline) return
       const text = entry.input.value; entry.baseline = text
       app.editCurrentText(text, entry.draft)
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
@@ -582,6 +573,18 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const persist = iconButton('⟳', 'Sync / persist node', () => { cached!.input.dispatchEvent(new window.Event('commit-edit')); void app.syncNow('node action') })
   persist.disabled = state.connection === 'syncing'; controls.append(persist)
   if (row && !row.branches) controls.append(button('secondary small', 'Branches…', () => { const name = window.prompt('New branch name', 'alternative'); if (name) app.createNodeBranch(state.view.slice(0, -1), row.id, name, true) }))
+  if (preview) {
+    controls.replaceChildren(span('muted', 'Read-only proposed branch'))
+    if (state.view.length) controls.append(button('secondary small', 'Copy to branch…', () => {
+      const name = window.prompt('Name for your editable copy', 'alternative')
+      if (name && app.copyProposalToBranch(preview.proposal.id, name)) { clearProposal(app); app.refresh() }
+    }))
+    if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
+    if (preview.proposal.peerId === state.replica.meta.peerId && preview.proposal.status === 'rejected') controls.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(preview.proposal.id)))
+  }
+  controls.prepend(alternativePicker(app, state.view, row))
+  el.querySelector<HTMLElement>('.node-toolbar')!.hidden = !!preview
+  el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview
   const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
   dynamicValues.replaceChildren()
   for (const arg of app.placeholders()) {
@@ -617,7 +620,17 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (record && !['committed', 'rolled-back'].includes(record.status)) controls.append(button('secondary small', 'Review recovery', () => void app.recoverCurrentEvaluation()))
   const tags = new Set<string>()
   const collect = (path: Scope) => { if (path.length > 64) return; for (const child of viewAt(state.replica, path)?.tasks ?? []) { tags.add(child.requirement?.capability ?? child.allocation?.type ?? child.kind); if (child.childCount) collect([...path, child.id]) } }
-  collect(state.view)
+  if (preview) {
+    const collectPreview = (cid: string, depth: number) => {
+      if (depth > 32) return
+      for (const child of viewNode(state.replica.store, cid).tasks) {
+        tags.add(child.requirement?.capability ?? child.allocation?.type ?? child.kind)
+        const nested = child.kind !== 'ref' ? findChild(state.replica.store, cid, child.id) : null
+        if (nested) collectPreview(nested, depth + 1)
+      }
+    }
+    collectPreview(preview.cid, 0)
+  } else collect(state.view)
   const filterKey = JSON.stringify(state.view)
   if (nodeFilters.get(app)?.key !== filterKey) nodeFilters.set(app, { key: filterKey, value: 'all' })
   const tabs = div('node-filters', ''); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Filter children by capability')
@@ -625,7 +638,11 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const tab = button('secondary small', tag === 'all' ? 'All children' : tag, () => { nodeFilters.set(app, { key: filterKey, value: tag }); app.refresh() })
     tab.setAttribute('aria-pressed', String(nodeFilters.get(app)?.value === tag)); tabs.append(tab)
   }
-  dynamicValues.append(tabs)
+  const childToolbar = el.parentElement?.querySelector<HTMLElement>('[data-region="children-toolbar"]')
+  if (!childToolbar) return
+  const savedSearch = childToolbar.querySelector<HTMLInputElement>('.child-search')
+  for (const child of Array.from(childToolbar.children)) if (child !== savedSearch) child.remove()
+  childToolbar.append(tabs)
   const actionTabs = div('node-tabs', ''); actionTabs.setAttribute('role', 'tablist'); actionTabs.setAttribute('aria-label', 'Node action capabilities')
   const availableTabs: Array<[string, string, string]> = [['main', '⌂', 'Main actions']]
   if (row?.kind === 'task' || row?.requirement?.capability === 'llm') availableTabs.push(['llm', '✦', 'Language model actions'])
@@ -636,23 +653,24 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   for (const control of Array.from(controls.children) as HTMLElement[]) control.hidden = workspace(app).actionTab !== 'main' && control.dataset.capability !== workspace(app).actionTab
   controls.prepend(actionTabs)
-  el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = workspace(app).actionTab !== 'main'
-  el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !['main', 'repo'].includes(workspace(app).actionTab)
+  el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview || workspace(app).actionTab !== 'main'
+  el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(workspace(app).actionTab)
   const layouts = div('node-tabs', ''); layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Child view')
-  for (const [layout, icon, label] of [['tree', '☷', 'Tree view'], ['chat', '☏', 'Chat view'], ['grid', '▦', 'Grid / pin view'], ['list', '≡', 'List view']] as const) {
+  for (const [layout, icon, label] of [['tree', '☷', 'Tree view'], ['chat', '☏', 'Chat view'], ['grid', '▦', 'Grid / pin view'], ['list', '≡', 'List view'], ['queue', '☑', 'Queue view']] as const) {
     const b = iconButton(icon, label, () => { workspace(app).layout = layout; app.refresh() }); b.setAttribute('aria-pressed', String(workspace(app).layout === layout)); layouts.append(b)
   }
-  dynamicValues.append(layouts)
-  let filter = el.querySelector<HTMLInputElement>('.child-search')
+  childToolbar.append(layouts)
+  let filter = childToolbar.querySelector<HTMLInputElement>('.child-search')
   if (!filter) {
     filter = document.createElement('input'); filter.type = 'search'; filter.className = 'child-search'; filter.placeholder = 'Filter children…'; filter.setAttribute('aria-label', 'Filter children'); filter.value = workspace(app).search
-    filter.addEventListener('input', () => { workspace(app).search = filter!.value; app.refresh() }); el.querySelector('.node-values')!.prepend(filter)
+    filter.addEventListener('input', () => { workspace(app).search = filter!.value; app.refresh() }); childToolbar.prepend(filter)
   }
 }
 
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
+  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker')) return
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
@@ -664,7 +682,8 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const textMatches = (row: TaskView, path: Scope): boolean => row.title.toLowerCase().includes(prefs.search.toLowerCase()) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
   const matches = (row: TaskView): boolean => rowMatches(row, filter?.key === path ? filter.value : 'all', state, [...state.view, row.id]) && textMatches(row, [...state.view, row.id])
   const filtered = ((filter?.key === path && filter.value !== 'all') || prefs.search) ? { ...node, tasks: node.tasks.filter(matches) } : node
-  let rows = renderRows(filtered, [], 0, state, app)
+  const pending = prefs.layout === 'queue' ? { ...filtered, tasks: filtered.tasks.filter(t => !t.done && !t.requirement?.satisfied) } : filtered
+  let rows = renderRows(pending, [], 0, state, app)
   if (prefs.layout === 'chat') {
     const comments: Array<{ row: TaskView; at: Scope }> = []
     const collect = (node: NodeView, at: Scope) => {
@@ -676,6 +695,30 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
     }
     collect(filtered, []); comments.sort((a, b) => (a.row.author?.time ?? a.row.createdAt) - (b.row.author?.time ?? b.row.createdAt))
     rows = comments.map(({ row, at }, i) => { const el = renderRow(row, at, 0, i, comments.length, state, app); if (at.length) el.append(span('muted chat-path', at.map((id, index) => viewAt(state.replica, [...state.view, ...at.slice(0, index)])?.tasks.find(r => r.id === id)?.title ?? id).join(' › '))); return el })
+  }
+  if (app.readsRequests()) for (const p of node.proposals) {
+    if (prefs.layout === 'chat' || (prefs.layout === 'queue' && p.status !== 'open')) continue
+    if (prefs.search && !(p.name || p.peerId).toLowerCase().includes(prefs.search.toLowerCase())) continue
+    const child = document.createElement('li'); child.className = 'task constructor-row'
+    child.append(button('link title', `Proposal: ${p.name || peerLabel(p.peerId, state)}`, () => showProposal(app, state.view, p.id)), span('muted', `branch · input requirement${p.status === 'rejected' ? ' · rejected' : ''}`))
+    rows.push(child)
+  }
+  const preview = proposalPreview(app)
+  if (preview) {
+    el.className = `list tree layout-${prefs.layout}`
+    const renderReadOnly = (cid: string, depth: number): HTMLElement[] => {
+      if (depth > 32) return []
+      return viewNode(state.replica.store, cid).tasks.flatMap(task => {
+        if (prefs.layout === 'queue' && (task.done || task.requirement?.satisfied)) return []
+        const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth)); li.append(span('title', task.title))
+        const nested = task.kind !== 'ref' ? findChild(state.replica.store, cid, task.id) : null
+        const descendants = nested ? renderReadOnly(nested, depth + 1) : []
+        const tag = task.requirement?.capability ?? task.allocation?.type ?? task.kind
+        const include = (!filter || filter.key !== path || filter.value === 'all' || filter.value === tag) && (!prefs.search || task.title.toLowerCase().includes(prefs.search.toLowerCase())) && (prefs.layout !== 'chat' || task.kind === 'comment')
+        return [...(include ? [li] : []), ...(prefs.layout === 'tree' || prefs.layout === 'chat' ? descendants : [])]
+      })
+    }
+    el.replaceChildren(...renderReadOnly(preview.cid, 0)); ghostRows.delete(el); focusGhost = false; return
   }
   if (reuse) {
     // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
@@ -954,7 +997,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.title = 'Click to edit'
   }
 
-  if (task.branches) body.append(branchSelector(task, at, app))
+  if (task.branches || (app.readsRequests() && viewAt(state.replica, [...state.view, ...at, task.id])?.proposals.length)) body.append(branchSelector(task, at, app))
 
   const meta = span('row-meta', '')
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
@@ -1395,6 +1438,7 @@ function handleKey(event: KeyboardEvent, app: App): void {
   if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
   const target = event.target as HTMLElement | null
   if (target && target.closest('input, textarea, select, [contenteditable]')) return
+  if (proposalPreview(app) && !app.state.modal) { if (event.key === 'Escape') { clearProposal(app); app.refresh() } else if (event.ctrlKey || event.metaKey || event.key === 'Enter' || event.key === 'Delete' || event.key === 'Backspace') event.preventDefault(); return }
   if (!app.state.modal && historyShortcut(event) !== null) { event.preventDefault(); runHistory(app, historyShortcut(event)!); return }
   if (app.state.modal) { if (event.key === 'Escape') app.closeModal(); return }
   if (event.key === 'Escape') { const menu = app.state.contextMenu; app.closeContextMenu(); app.toggleMenu(false); if (menu?.kind === 'task') queueMicrotask(() => document.querySelector<HTMLElement>(`.task[data-id="${menu.task.id}"]`)?.focus()); return }
@@ -1472,58 +1516,7 @@ function clearDropMarks(row: HTMLElement): void {
 }
 
 // ---------------------------------------------------------------------------
-// Link panel: members, history and proposals of the node being viewed
-
-function renderLinkPanel(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  el.hidden = !node.isLink
-  if (!node.isLink) { el.replaceChildren(); return }
-  const head = div('link-head', '')
-  head.append(span('link-badge', '⛓ link node'), span('muted', ` ${node.versions} previous version${node.versions === 1 ? '' : 's'}`))
-  const members = div('muted members', '')
-  if (node.members.length) {
-    members.append(span('', 'Members: '))
-    node.members.forEach((m) => {
-      const row = span('peer-row', '')
-      const dot = span('presence' + (app.isOnline(m.peerId) ? ' online' : ''), '')
-      dot.title = app.isOnline(m.peerId) ? 'online' : 'offline (still a member)'
-      row.append(dot, span('', `${m.name ?? peerLabel(m.peerId, state)} · ${m.peerId.slice(0, 8)}${app.isOnline(m.peerId) ? '' : ' · offline'}${m.capabilities.includes('approve') ? ' (can approve)' : ''}`))
-      members.append(row)
-    })
-  } else {
-    members.textContent = 'No members yet. Invite a device from the ☰ menu.'
-  }
-  const items: HTMLElement[] = [head, members]
-  if (node.proposals.length && !app.readsRequests()) {
-    // requests reach a device only when it reads them (policy "from: read requests"); they are never pushed into its tree
-    items.push(div('muted', `${node.proposals.length} request${node.proposals.length === 1 ? '' : 's'} not shown: this device does not read requests (policy towards fos, in the context panel).`))
-  } else if (node.proposals.length) {
-    const h = document.createElement('h2')
-    h.textContent = node.proposals.length === 1 ? '1 proposal' : `${node.proposals.length} proposals`
-    items.push(h)
-    const mayApprove = app.canApprove(node)
-    for (const p of node.proposals) {
-      const card = document.createElement('article')
-      card.className = 'proposal'
-      const mine = p.peerId === state.replica.meta.peerId
-      const status = p.status === 'rejected' ? ' (rejected)' : mine ? ' (waiting for approval)' : ''
-      card.append(div('proposal-title', `${mine ? 'Your changes' : p.name || peerLabel(p.peerId, state)}${status}`))
-      if (p.status === 'rejected') card.classList.add('rejected')
-      const parts: string[] = []
-      if (p.summary.added.length) parts.push(`adds ${p.summary.added.map((t) => `“${t}”`).join(', ')}`)
-      if (p.summary.changed.length) parts.push(`changes ${p.summary.changed.map((t) => `“${t}”`).join(', ')}`)
-      if (p.summary.removed.length) parts.push(`removes ${p.summary.removed.map((t) => `“${t}”`).join(', ')}`)
-      card.append(div('muted', parts.length ? parts.join('; ') : 'no task changes (order or details)'))
-      if (mine && p.status === 'rejected') card.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(p.id)))
-      if (mayApprove && p.status === 'open') {
-        const row = div('row', '')
-        row.append(button('primary small', 'Approve and merge', () => void app.decideProposal(p.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(p.id, 'reject')))
-        card.append(row)
-      }
-      items.push(card)
-    }
-  }
-  el.replaceChildren(...items)
-}
+// Peer connection controls
 
 /**
  * Settings at the device's root: one row per peer this device reaches, including the fos
