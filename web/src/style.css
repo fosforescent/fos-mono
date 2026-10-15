@@ -144,7 +144,6 @@ input[type="text"], input[type="password"] { font: inherit; padding: 8px 10px; b
 .tree .task.inline-add .add { margin: 0; flex: 1; }
 .tree .task.nested-choice { display: block; }
 .tree .task.nested-choice .choice { margin: 6px 0; }
-.link-badge { font-size: 0.72rem; padding: 1px 7px; border-radius: 999px; background: var(--changed-bg); color: var(--warn-fg); white-space: nowrap; }
 .link-head { display: flex; align-items: center; gap: 8px; }
 .proposal { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .proposal-title { font-weight: 600; }
@@ -468,3 +467,10 @@ button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
 .output-chips { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
 .output-placeholder { cursor: grab; }
 .template-icon { margin-right: .35rem; }
+
+.combo-trigger { display: inline-flex; align-items: center; gap: .5rem; }
+.combo-trigger > span:last-child { margin-left: auto; }
+.task.multi-selected { background: color-mix(in srgb, var(--accent, #3685ff) 20%, transparent); }
+.chat-path { display: block; font-size: .8rem; }
+
+.crumb-icon { margin-right: .25rem; }

@@ -99,7 +99,7 @@ import {
   detachSelf,
   getAttachment,
   listInviteRequests,
-  login,
+  login, register,
   peerSync,
   pollConnect,
   type InviteRequest,
@@ -503,6 +503,59 @@ export class App {
     }
   }
 
+  async registerAccount(username: string, password: string): Promise<void> {
+    const generation = this.authGeneration
+    this.set({ loginError: null })
+    try {
+      await register(this.config.baseUrl, username.trim(), password)
+      if (generation !== this.authGeneration) return
+      await this.login(username, password)
+    } catch (error) { if (generation === this.authGeneration) this.set({ loginError: error instanceof Error ? error.message : String(error) }) }
+  }
+  async copyNodeLink(path: Scope): Promise<void> {
+    try { await navigator.clipboard.writeText(`fos-ref:${encodeURIComponent(path.at(-1)!)}`); this.notify('info', 'Reference copied. Paste into a blank row in this workspace.') }
+    catch { this.notify('error', 'Clipboard access failed. Allow clipboard access and try again.') }
+  }
+  pasteNodeLink(at: Scope, id: string | null, targetId: string): void {
+    const target = resolveRef(this.state.replica, targetId)
+    if (!target) { this.notify('error', 'This reference is not available in this workspace.'); return }
+    const parent = [...this.state.view, ...at]
+    if (parent.includes(targetId) || id === targetId) { this.notify('error', 'A node cannot contain a reference to itself.'); return }
+    this.together(() => {
+      let r = addRef(this.state.replica, parent, targetId, this.now(), id ? { relativeTo: id, position: 'below' } : undefined)
+      if (id) r = deleteTask(r, parent, id, this.now())
+      this.edit(r); this.select(null)
+    })
+  }
+  pasteRows(rows: import('./rows').ParsedInput[], at: Scope, id?: string): void {
+    this.together(() => {
+      if (id) {
+        const first = rows[0]!
+        if (first.kind === 'allocation' && first.extras?.allocation && !this.bankFor(at, first.extras.allocation.type)) {
+          this.edit(setRowContentAt(this.state.replica, [...this.state.view, ...at], id, first.kind, first.text, first.extras, this.now()))
+          if (first.children?.length) this.addParsedChildren([...at, id], first.children, undefined, true)
+        } else this.rewriteRowAt(at, id, first)
+        rows = rows.slice(1)
+      }
+      let previous = id
+      for (const row of rows) {
+        const created = this.addRowAt(at, row.kind, row.text, { done: row.done, extras: row.extras, templateName: row.templateName, preserveUnbound: true, ...(previous ? { position: { relativeTo: previous, position: 'below' as const } } : {}) })
+        if (row.peer !== undefined) this.setPeerRow([...this.state.view, ...at, created], row.peer)
+        if (row.children?.length) this.addParsedChildren([...at, created], row.children, undefined, true)
+        previous = created
+      }
+      this.select(null)
+    })
+  }
+  editLinkedTemplate(): void {
+    const path = this.state.templatePicker?.path
+    if (!path) return
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+    const template = row?.template && resolveRef(this.state.replica, row.template.id)
+    if (template) { this.closeModal(); this.goTo([...template.path, template.row.id]) }
+    else if (row?.kind === 'template') { this.closeModal(); this.goTo(path) }
+    else this.notify('info', 'This is a built-in constructor. Use + to create an editable template.')
+  }
   async login(username: string, password: string, automatic = false, mergeOffline = false): Promise<void> {
     const generation = ++this.authGeneration
     this.clearTimer('retry')
@@ -841,14 +894,14 @@ export class App {
    * draws from the parent context (`bankFor`); a task naming a template executes it (its requirements are copied
    * underneath); a task requirement naming a template gets that execution as its child right away.
    */
-  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string; replica?: Replica } = {}): string {
+  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string; replica?: Replica; preserveUnbound?: boolean } = {}): string {
     const author = kind === 'comment' ? { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName } : undefined
     const id = options.id ?? crypto.randomUUID()
-    const { extras, templateName, replica: branch, ...rest } = options
+    const { extras, templateName, replica: branch, preserveUnbound, ...rest } = options
     const replica = branch ?? this.state.replica
     let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
     if (kind === 'allocation') {
-      const resolved = this.allocationWithBank(at, data.allocation, replica)
+      const resolved = preserveUnbound && data.allocation && !this.bankFor(at, data.allocation.type, data.allocation.person, replica) ? { ...data.allocation, resource: '' } : this.allocationWithBank(at, data.allocation, replica)
       if (!resolved) return id
       data = { ...data, allocation: resolved }
     }
@@ -1416,8 +1469,8 @@ export class App {
     const repo = repositoryAt(this.state.replica, path)
     return repo ? { repo, snapshot: this.repositories.get(repo) } : null
   }
-  bindNodeRepository(at: Scope, id: string, repo: string): void {
-    const path = [...this.state.view, ...at, id]
+  bindNodeRepository(at: Scope, id: string, repo: string, absolute = false): void {
+    const path = [...(absolute ? [] : this.state.view), ...at, id]
     try {
       let next = bindRepository(this.state.replica, path, repo.trim(), this.now())
       next = this.withIntegrationPeer(next, path, 'github')
@@ -1804,11 +1857,12 @@ export class App {
     this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), store.primitive.documentField.getId(), this.now(), value, name))
     this.notify('info', `Text argument ${name} added. Use {{${name}}} in notes in this context.`)
   }
-  addPlaceholder(name: string, typeName: string): void {
+  addPlaceholder(name: string, typeName: string, destination = this.state.view): void {
     if (!/^[A-Za-z_][\w.-]*$/.test(name) || !typeName.trim()) { this.notify('error', 'Give the placeholder a name and type.'); return }
     const r = this.state.replica
-    const type = typeName === 'text' ? r.store.primitive.documentField.getId() : CAPABILITIES.includes(typeName as Capability) ? capabilityTarget(r.store, typeName as Capability) : put(r.store, { data: { name: { content: `fos:type:${typeName.trim()}` } }, children: [] })
-    this.edit(addRefAt(r, this.state.view, newId(), type, this.now(), null, name))
+    const template = typeName.startsWith('template:') ? resolveRef(r, typeName.slice(9)) : null
+    const type = template ? resolveScope(r.store, headCid(r), [...template.path, template.row.id])! : typeName === 'text' ? r.store.primitive.documentField.getId() : CAPABILITIES.includes(typeName as Capability) ? capabilityTarget(r.store, typeName as Capability) : put(r.store, { data: { name: { content: `fos:type:${typeName.trim()}` } }, children: [] })
+    this.edit(addRefAt(r, destination, newId(), type, this.now(), null, name))
   }
   placeholders(at: Scope = []) {
     const path = [...this.state.view, ...at]
@@ -2103,11 +2157,11 @@ export class App {
     this.set({ selected: [...at, created] })
   }
   /** The blank row at the top of the view was typed into: a row of the parsed kind becomes the first row here. */
-  private addParsedChildren(at: Scope, children: import('./rows').ParsedInput[], replica?: Replica): void {
+  private addParsedChildren(at: Scope, children: import('./rows').ParsedInput[], replica?: Replica, preserveUnbound = false): void {
     for (const child of children) {
-      const id = this.addRowAt(at, child.kind, child.text, { done: child.done, extras: child.extras, templateName: child.templateName, replica })
+      const id = this.addRowAt(at, child.kind, child.text, { done: child.done, extras: child.extras, templateName: child.templateName, replica, preserveUnbound })
       if (child.peer !== undefined) { if (replica) this.peerRowReplica(replica, [...this.state.view, ...at, id], child.peer); else this.setPeerRow([...this.state.view, ...at, id], child.peer) }
-      if (view(replica ?? this.state.replica, [...this.state.view, ...at])?.tasks.some(row => row.id === id) && child.children?.length) this.addParsedChildren([...at, id], child.children, replica)
+      if (view(replica ?? this.state.replica, [...this.state.view, ...at])?.tasks.some(row => row.id === id) && child.children?.length) this.addParsedChildren([...at, id], child.children, replica, preserveUnbound)
     }
   }
   addRowAtTop(parsed: import('./rows').ParsedInput): string | null {
@@ -2321,9 +2375,29 @@ export class App {
 
   /** Zoom into a descendant: `at` is its path relative to the current view (any depth). */
   zoomTo(at: Scope): void { this.goTo([...this.state.view, ...at]) }
-  goTo(path: Scope): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); const home = homePath(this.state.replica); if (!path.length) path = home; this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false }) }
+  goTo(path: Scope): void {
+    document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+    const home = homePath(this.state.replica), seen = new Set<string>()
+    if (!path.length) path = home
+    while (path.length && seen.size < 64) {
+      const row = view(this.state.replica, path.slice(0, -1), true)?.tasks.find(row => row.id === path.at(-1))
+      if (!row?.refId || row.refOwner || seen.has(row.refId)) break
+      seen.add(row.refId)
+      const target = resolveRef(this.state.replica, row.refId)
+      if (!target) break
+      path = [...target.path, target.row.id]
+    }
+    this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false })
+  }
+
   /** Zoom out within Home; device settings are reached through the menu. */
   zoomOut(): void { if (this.state.view.length > homePath(this.state.replica).length) this.goTo(this.state.view.slice(0, -1)) }
+  goToAccountPeer(): void {
+    this.goToRoot()
+    const row = view(this.state.replica, [], true)?.tasks.find(row => row.construction?.peerId === 'fos')
+    if (row) this.goTo([row.id])
+    else this.notify('error', 'The Fos peer is unavailable in this context.')
+  }
   goToRoot(): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); this.ensureSettings(); this.set({ atRoot: true, view: [], selected: null, collapsed: [...new Set([...this.state.collapsed, HOME_ID])], contextMenu: null }) }
   /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
   knownPeers(): Array<{ id: string; name: string }> {
@@ -2470,12 +2544,12 @@ export class App {
     if (r !== this.state.replica) { this.set({ replica: r }); this.scheduleSync() }
   }
   exportYaml(): string { return exportNodeYaml(this.state.replica, this.state.view) }
-  importYaml(text: string): void {
+  importYaml(text: string, destination = this.state.view): void {
     const parsed = parseNodeYaml(text), r = this.state.replica
     importNodes(r.store, parsed.nodes)
     const imported = content(r.store, parsed.root), id = newId()
     const node = put(r.store, { ...imported, data: { ...imported.data, alias: { id } } })
-    commitRoot(r.store, updateAtScope(r.store, headCid(r), this.state.view, value => ({ ...value, children: [...value.children, [node, r.store.primitive.descriptionField.getId()]] })), this.now())
+    commitRoot(r.store, updateAtScope(r.store, headCid(r), destination, value => ({ ...value, children: [...value.children, [node, r.store.primitive.descriptionField.getId()]] })), this.now())
     this.edit({ ...r })
   }
   setDeviceName(name: string): void {

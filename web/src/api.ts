@@ -51,6 +51,11 @@ async function responseError(response: Response): Promise<ApiError> {
 }
 
 
+export async function register(baseUrl: string, username: string, password: string): Promise<void> {
+  const response = await fetch(`${baseUrl}/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, accepted_terms: true, cookies: false }) })
+  if (!response.ok) throw await responseError(response)
+}
+
 export async function login(baseUrl: string, username: string, password: string): Promise<Session> {
   const response = await fetch(`${baseUrl}/auth/login`, {
     method: 'POST',
