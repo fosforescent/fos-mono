@@ -1,7 +1,7 @@
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
-import { alternativePicker, proposalPreview, showProposal, clearProposal } from './alternatives'
+import { alternativePicker, proposalPreview, clearProposal } from './alternatives'
 /**
  * DOM rendering. The shell is built once; each state change re-renders the
  * dynamic regions from the app state and the replica's view model (plain ids,
@@ -45,7 +45,8 @@ let renderDepth = 0
 const KEY_HELP: Array<[string, string]> = [
   ['Ctrl/⌘ Z · Ctrl/⌘ Shift Z', 'undo / redo committed edits (last 100 this session); while typing, undo draft text'],
   ['↑ / ↓', 'move between rows (↑ from the first row returns to the blank row at the top)'],
-  ['Shift+Enter', 'new line in a cell; indent lines to create child rows'],
+  ['Shift+Enter', 'create and edit a new branch'],
+  ['Alt+Enter', 'new line in a cell; indent lines to create child rows'],
   ['Enter', 'new row below (on a requirement, bank or allocation: edit its text)'],
   ['Ctrl+Enter', 'mark a task done or open; on other rows, new row below'],
   ['Ctrl+Shift+Enter', 'new row inside'],
@@ -418,12 +419,9 @@ function yamlImportButton(app: App): HTMLElement {
 function currentNodeActions(app: App): Action[] {
   const row = app.currentRow(), state = app.state
   return [
-    ...(app.state.view.at(-1) === HOME_ID && app.isOnline('fos') ? [{ label: 'Add integration peer…', run: () => app.addIntegrationChoice() }] : []),
     { label: 'Export YAML', run: () => downloadText('fos-nodes.yaml', app.exportYaml()) },
     { label: 'Import YAML…', run: () => { const control = yamlImportButton(app); control.dataset.transient = 'true'; document.body.append(control); control.querySelector('button')!.click(); control.hidden = true } },
-    { label: 'Connect peer…', run: () => app.openModal('direct') },
-    ...(app.canSpawnVirtualPeer() ? [{ label: 'Spawn virtual peer…', run: () => app.openModal('virtual') }] : []),
-    ...(state.session?.kind === 'user' ? [{ label: 'Invite device here (QR)…', run: () => void app.startInvite() }] : []),
+    { label: 'Add peer row', run: () => { const id = app.addRowAtTop(parseRowInput('@{')); if (id) app.select([id]) } },
     { label: 'Sync / persist node', run: () => void app.syncNow('node action') },
     ...(state.session?.kind === 'user' ? [{ label: 'Sync only this node on this device', disabled: !app.canAttach(app.currentScope()), run: () => app.attachAt(app.currentScope()) }] : []),
     ...(row && row.id !== HOME_ID ? [{ label: row.kind === 'template' ? 'Change to task' : 'Change to template', run: () => app.changeCurrentKind(row.kind === 'template' ? 'task' : 'template') }] : []),
@@ -442,13 +440,7 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
   else panel.append(span('muted', 'Settings and peer constructors are editable child rows below.'))
   panel.append(rows)
-  if (prefs.tab === 'peers' && !state.atRoot) {
-    const invite = button('secondary small', 'Devices · invite with QR', () => void app.startInvite()); invite.disabled = state.session?.kind !== 'user'
-    panel.append(invite, sharingControls(app))
-    const phone = state.integrations.find(p => p.id === 'phone')
-    const phoneButton = button('secondary small', 'Connect phone (SMS)', () => void app.connectIntegration('phone')); phoneButton.disabled = !phone?.configured || !app.isOnline('fos'); phoneButton.title = 'Link a phone number for SMS notifications; use the QR invitation for app access'; panel.append(phoneButton)
-    if (app.canSpawnVirtualPeer()) panel.append(button('secondary small', 'New virtual peer', () => app.openModal('virtual')))
-  }
+  panel.append(span('muted', 'Type @{ in a new row to add a peer.'))
   if (prefs.tab === 'integrations') panel.prepend(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
   if (prefs.tab === 'device' && app.transport()) panel.append(span('muted', `Device syncs ${pathLabel(app.labels().scope)}`))
   if (prefs.tab === 'peers' && !state.atRoot) panel.append(span('muted', `${app.currentView()?.versions ?? 0} previous versions`))
@@ -479,7 +471,7 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
     const control = button('secondary small', SETTING_LABELS[key], () => app.openModal(key === 'server' ? 'connect' : key as 'direct' | 'virtual'))
     control.disabled = key === 'virtual' && !app.canSpawnVirtualPeer(); box.append(control)
   } else if (key === 'peer') {
-    box.append(...renderRootRows(state, app, 'peers').filter(row => row.classList.contains('add-peer-row')).flatMap(row => Array.from(row.children)))
+    box.append(span('muted', 'Type @{ in a new row to choose a peer handler.'))
   } else if (key === 'invite') {
     const control = button('secondary small', SETTING_LABELS[key], () => void app.startInvite()); control.disabled = state.session?.kind !== 'user'; box.append(control)
   } else if (key === 'phone') {
@@ -502,12 +494,27 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
   box.addEventListener('click', event => event.stopPropagation()); box.addEventListener('keydown', event => event.stopPropagation())
   return box
 }
-function constructorBody(task: TaskView, state: AppState, app: App): HTMLElement {
+function constructorBody(task: TaskView, state: AppState, app: App, path: Scope = state.view): HTMLElement {
   const box = div('title constructor-body', ''), key = settingKeyFromName(task.construction?.name)
   if (key) {
     box.classList.add('setting-row'); box.append(span('constructor-label', SETTING_LABELS[key] ?? key))
     if (task.construction?.name === app.settingKey(key)) box.append(settingControl(key, state, app))
     else box.append(span('muted', 'Owned by another device'))
+  }
+  else if (task.construction?.handler) {
+    const handler = task.construction.handler
+    box.append(span('constructor-label', `@{${handler}}`))
+    const run = () => {
+      app.goTo(path)
+      if (handler === 'invite') void app.startInvite()
+      else if (handler === 'direct' || handler === 'virtual') app.openModal(handler)
+      else if (handler === 'fos') app.openModal('connect')
+      else if (['google', 'github', 'discord', 'stripe', 'phone'].includes(handler)) void app.connectIntegration(handler)
+      else app.attachNamedPeer(handler)
+    }
+    const action = button('secondary small', handler === 'invite' ? 'Create invite code' : handler === 'virtual' ? 'Open new tab' : handler === 'peer' ? 'Choose a handler by editing @{…}' : 'Connect', run)
+    action.disabled = handler === 'peer'; box.append(action)
+    if (handler === 'invite' && state.invite && JSON.stringify(state.invite.scope) === JSON.stringify([...state.replica.meta.scope, ...path.slice(0, -1)])) box.append(codeBox(state.invite.token))
   }
   else if (task.construction?.peerId) {
     const peer = renderRootRows(state, app, 'peers', task.construction.peerId)[0]
@@ -561,6 +568,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     input.addEventListener('blur', () => { if (!renderDepth) save() })
     input.addEventListener('keydown', event => {
       event.stopPropagation()
+      if (event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.metaKey && !input.readOnly) { event.preventDefault(); save(); app.newBranchAt([...state.view]); return }
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
       if (event.key === 'Escape') { event.preventDefault(); input.value = entry.baseline; input.blur() }
     })
@@ -738,13 +746,6 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
     collect(filtered, []); comments.sort((a, b) => (a.row.author?.time ?? a.row.createdAt) - (b.row.author?.time ?? b.row.createdAt))
     rows = comments.map(({ row, at }, i) => { const el = renderRow(row, at, 0, i, comments.length, state, app); if (at.length) el.append(span('muted chat-path', at.map((id, index) => viewAt(state.replica, [...state.view, ...at.slice(0, index)])?.tasks.find(r => r.id === id)?.title ?? id).join(' › '))); return el })
   }
-  if (app.readsRequests()) for (const p of node.proposals) {
-    if (prefs.layout === 'chat' || (prefs.layout === 'queue' && p.status !== 'open')) continue
-    if (prefs.search && !(p.name || p.peerId).toLowerCase().includes(prefs.search.toLowerCase())) continue
-    const child = document.createElement('li'); child.className = 'task constructor-row'
-    child.append(button('link title', `Proposal: ${p.name || peerLabel(p.peerId, state)}`, () => showProposal(app, state.view, p.id)), span('muted', `branch · input requirement${p.status === 'rejected' ? ' · rejected' : ''}`))
-    rows.push(child)
-  }
   const preview = proposalPreview(app)
   if (preview) {
     el.className = `list tree layout-${prefs.layout}`
@@ -785,6 +786,18 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
  * is typed into it. Enter makes it the first row here (with its marker parsed) and opens a new row below;
  * leaving it with text makes the row without moving on; ↓ goes to the first real row.
  */
+const lastCreatedRows = new WeakMap<App, { parent: string; id: string }>()
+function peerAutocomplete(input: HTMLTextAreaElement, app: App): HTMLElement {
+  const handlers = ['invite', 'direct', 'virtual', 'fos', 'google', 'github', 'discord', 'stripe', 'phone']
+  return combobox('Peer handler', '', () => [...new Set([...handlers, ...app.knownPeers().map(p => p.name)])].map(name => ({
+    label: `@{${name}}`, group: 'Peers', run: () => { input.value = `@{${name}}`; input.dispatchEvent(new window.Event('commit-edit')) }
+  })), query => query && !handlers.includes(query) ? [{ label: `Use @{${query}}`, group: 'Peers', run: () => { input.value = `@{${query}}`; input.dispatchEvent(new window.Event('commit-edit')) } }] : [], 'Choose a peer…', input)
+}
+function insertNewline(event: KeyboardEvent, input: HTMLTextAreaElement): boolean {
+  if (event.key !== 'Enter' || !event.altKey) return false
+  event.preventDefault(); event.stopPropagation(); input.setRangeText('\n', input.selectionStart, input.selectionEnd, 'end'); input.dispatchEvent(new window.Event('input')); return true
+}
+
 function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement {
   const li = document.createElement('li')
   li.className = 'task ghost kind-plain'
@@ -812,6 +825,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     const parsed = parseRowInput(raw)
     const created = app.addRowAtTop(parsed)
     if (!created) { committed = false; return null }
+    lastCreatedRows.set(app, { parent: path, id: created })
     input.value = ''
     input.dispatchEvent(new window.Event('input'))
     committed = false
@@ -821,10 +835,12 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   input.addEventListener('keydown', (e: Event) => {
     const event = e as KeyboardEvent
     if (isHelpKey(event)) { event.preventDefault(); toggleHelp(app); return }
-    if (indentDraft(event, input)) return
+    if (insertNewline(event, input) || indentDraft(event, input)) return
     const k = event.key
     if (historyShortcut(event) !== null && input.value === '') { event.preventDefault(); event.stopPropagation(); runHistory(app, historyShortcut(event)!); return }
     if (k === 'ArrowLeft' && event.altKey) { event.preventDefault(); commit(); focusGhost = true; app.zoomOut(); return }
+    if (k === 'Enter' && event.shiftKey && !event.ctrlKey && !event.metaKey) { event.preventDefault(); event.stopPropagation(); const id = commit(); if (id) app.newBranchAt([...state.view, id]); return }
+    if (k === 'Tab' && !event.shiftKey && !input.value.trim()) { const last = lastCreatedRows.get(app); if (last?.parent === path) { event.preventDefault(); event.stopPropagation(); focusGhost = false; app.addRowInside([], last.id); return } }
     if (k === 'Enter' && (!event.shiftKey || event.ctrlKey || event.metaKey)) {
       // the typed row becomes the first row here; the blank row stays on top, ready for the next one (no extra blank row below)
       event.preventDefault()
@@ -841,7 +857,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   })
   input.addEventListener('focus', () => { if (app.state.selected) { focusGhost = true; app.select(null) } })
   input.addEventListener('blur', () => { if (!renderDepth) commit() })
-  li.append(span('zoom-dot', ''), span('handle', ''), toggle, input, preview)
+  li.append(span('zoom-dot', ''), span('handle', ''), toggle, input, preview, peerAutocomplete(input, app))
   return li
 }
 
@@ -1057,7 +1073,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (task.construction) { body = constructorBody(task, state, app) }
+  if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.kind === 'ref') {
@@ -1173,7 +1189,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   input.addEventListener('keydown', (e: Event) => {
     const event = e as KeyboardEvent
     const k = event.key
-    if (indentDraft(event, input)) return
+    if (insertNewline(event, input) || indentDraft(event, input)) return
     if (historyShortcut(event) !== null && input.value === raw) { event.preventDefault(); event.stopPropagation(); runHistory(app, historyShortcut(event)!); return }
     const alt = event.altKey
     const ctrl = event.ctrlKey || event.metaKey
@@ -1185,11 +1201,12 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if ((k === 'ArrowLeft' || k === 'ArrowRight') && !alt && !ctrl && !event.shiftKey && input.selectionStart === input.selectionEnd && (k === 'ArrowLeft' ? input.selectionStart === 0 : input.selectionEnd === input.value.length)) { event.preventDefault(); commit(); const collapsed = app.state.collapsed.includes(task.id); if ((k === 'ArrowLeft' && !collapsed) || (k === 'ArrowRight' && collapsed)) app.toggleCollapsed(task.id); return }
     if (k === 'ArrowUp' && !event.shiftKey && caretOnEdge(input, 'first')) { event.preventDefault(); commit(); moveSelection(app, -1); return }
     if (k === 'ArrowDown' && !event.shiftKey && caretOnEdge(input, 'last')) { event.preventDefault(); commit(); moveSelection(app, 1); return }
+    if (k === 'Enter' && event.shiftKey && !ctrl) { event.preventDefault(); event.stopPropagation(); commit(); app.newBranchAt([...state.view, ...path]); return }
     if (k === 'Enter' && workspace(app).layout === 'chat' && !event.shiftKey) { event.preventDefault(); commit(); focusGhost = true; app.select(null); app.refresh(); return }
     if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id, workspace(app).layout === 'chat' ? 'comment' : 'plain'); return }
     if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); const current = app.rowAt(path); if (current?.kind === 'task') { app.toggleTaskAt(at, current); app.refresh() } else if (current) app.addRowBelow(at, task.id); return }
     if (k === 'Enter' && !multiline && !event.shiftKey) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
-    if (k === 'Tab') { event.preventDefault(); commit(); app.select(path); app.indentSelected(event.shiftKey); return }
+    if (k === 'Tab') { event.preventDefault(); if (input.value.trim()) commit(); else committed = true; app.select(path); app.indentSelected(event.shiftKey); return }
     if (k === 'Backspace' && input.value === '' && (ctrl || !multiline)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
     if (k === 'Backspace' && ctrl && event.shiftKey) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
     if (k === 'Escape') { event.preventDefault(); commit(); input.blur(); queueMicrotask(() => { const row = document.querySelector<HTMLElement>(`.tree .task[data-id="${task.id}"]`); if (row) row.focus(); else { focusGhost = true; app.select(null) } }); return }
@@ -1209,7 +1226,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   })
   // the editor plus a badge saying what the typed line is recognized as
   const wrap = span('title editing', '')
-  wrap.append(input, kindPreview(input))
+  wrap.append(input, kindPreview(input), peerAutocomplete(input, app))
   return wrap
 }
 
@@ -1448,9 +1465,7 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     ...(task.kind === 'resource' ? [{ label: `Add allocation inside (${({ account: '$', calendar: ':', inventory: '#', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account']} amount …)`, run: () => app.addRowInside(at, task.id, 'plain', ({ account: '$ ', calendar: ': ', inventory: '# ', person: '@' } as Record<string, string>)[task.resource?.type ?? 'account'] ?? '$ ') }] : []),
     ...(task.kind !== 'resource' && task.kind !== 'requirement' ? [{ label: 'Add allocation inside ($ amount …)', run: () => app.addRowInside(at, task.id, 'plain', '$ ') }] : []),
     ...(task.kind !== 'ref' && task.kind !== 'supply' ? ['money', 'calendar', 'inventory', 'person'].map((type) => ({ label: `Change to ${type} bank`, run: () => app.rewriteRowAt(at, task.id, { ...parseRowInput(`@${type} `), text: task.title }) })) : []),
-    { label: 'Connect peer here…', run: () => { app.zoomTo([...at, task.id]); app.openModal('direct') } },
-    ...(app.canSpawnVirtualPeer() ? [{ label: 'Spawn virtual peer here…', run: () => { app.zoomTo([...at, task.id]); app.openModal('virtual') } }] : []),
-    ...(state.session?.kind === 'user' ? app.knownPeers().filter((p) => !p.id.startsWith('integration:') && !p.id.startsWith('mcp:')).slice(0, 6).map((p) => ({ label: `Add @${p.name} as a member (make this a group)`, run: () => app.addPeerToRow(at, task.id, p.id, p.name) })) : []),
+    { label: 'Add peer row', run: () => app.addRowInside(at, task.id, 'plain', '@{') },
     ...(state.session?.kind === 'user' ? state.mcpPeers.slice(0, 6).map((m) => ({ label: `Attach MCP peer ${m.name} here (runs ${m.tools.slice(0, 3).join(', ') || 'its tools'})`, run: () => void app.attachMcpPeer(m.serverId, [...at, task.id]) })) : []),
     { label: 'Zoom in', keys: 'Alt+→', run: () => app.zoomTo([...at, task.id]) },
     ...(task.kind === 'task' ? [{ label: task.done ? 'Mark open' : 'Mark done', keys: 'Ctrl+Enter', run: () => app.toggleTaskAt(at, task) }] : []),
@@ -1468,7 +1483,6 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
     { label: 'Outdent', keys: 'Shift+Tab', run: () => { app.select([...at, task.id]); app.indentSelected(true) }, disabled: at.length === 0 },
     { label: 'Move up', disabled: (viewAt(state.replica, [...state.view, ...at])?.tasks.findIndex((t) => t.id === task.id) ?? 0) <= 0, keys: 'Alt+↑', run: () => { app.select([...at, task.id]); app.moveSelected('up') } },
     { label: 'Move down', disabled: (() => { const rows = viewAt(state.replica, [...state.view, ...at])?.tasks ?? []; return rows.findIndex((t) => t.id === task.id) === rows.length - 1 })(), keys: 'Alt+↓', run: () => { app.select([...at, task.id]); app.moveSelected('down') } },
-    ...(canInvite ? [{ label: 'Invite a device here', run: () => { app.zoomTo([...at, task.id]); void app.startInvite() } }] : []),
     ...(canInvite ? [{ label: 'Sync only this on this device', run: () => app.attachAt([...app.currentScope(), ...at, task.id]), disabled: !app.canAttach([...app.currentScope(), ...at, task.id]) }] : []),
     { label: 'Delete', keys: 'Ctrl+Shift+⌫', run: () => app.deleteTaskAt(at, task.id), danger: true }
   ]
@@ -1745,48 +1759,6 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     li.append(span('zoom-dot', ''), span('handle', ''), dot, body, meta)
     rows.push(li)
   }
-  if (!onlyPeer && (mode === 'peers' || (mode === 'integrations' && state.view.at(-1) === HOME_ID))) {
-    const li = rowShell('add-peer-row')
-    const form = document.createElement('form')
-    form.className = 'row add-peer'
-    const type = document.createElement('select')
-    type.setAttribute('aria-label', 'Peer connection type')
-    type.append(new Option('Choose a connection…', ''))
-    if (mode === 'peers') type.append(new Option('Fos account member', 'member'), new Option('Direct device connection', 'direct'), new Option('Invite device (QR)', 'invite'))
-    if (mode === 'integrations') {
-      for (const label of ['Custom OAuth (unavailable)', 'Custom API (unavailable)']) { const option = new Option(label, ''); option.disabled = true; type.append(option) }
-    }
-    if (mode === 'peers' && state.view.at(-1) === HOME_ID && app.isOnline('fos')) type.append(new Option('Integration peer', 'integration'))
-    if (mode === 'peers' && app.canSpawnVirtualPeer()) type.append(new Option('Virtual peer (new tab)', 'virtual'))
-    for (const p of peers.filter((p) => p.integration && !p.integration.connected)) {
-      const option = new Option(`${p.integration!.kind === 'oauth' ? 'OAuth: ' : ''}${p.name}`, p.id)
-      option.disabled = !state.session || !p.integration!.configured || p.integration!.kind === 'platform'
-      if (option.disabled) option.text += ' (unavailable)'
-      type.append(option)
-    }
-    const input = document.createElement('input')
-    input.placeholder = '@username'
-    input.autocomplete = 'off'
-    input.id = 'add-peer-name'
-    input.hidden = true
-    type.addEventListener('change', () => { input.hidden = type.value !== 'member' })
-    const go = button('secondary small', mode === 'integrations' ? 'Add integration choice' : 'Add peer', () => undefined)
-    go.type = 'submit'
-    if (mode === 'integrations') go.disabled = !app.isOnline('fos')
-    form.append(type, input, go)
-    form.addEventListener('submit', (e) => {
-      e.preventDefault()
-      if (type.value === 'member') { if (owner) app.addPeerHere(input.value); else app.notify('error', 'Sign in as the owner to add a member.'); input.value = '' }
-      else if (type.value === 'integration') app.addIntegrationChoice()
-      else if (type.value === 'virtual') app.openModal('virtual')
-      else if (type.value === 'direct') app.openModal('direct')
-      else if (type.value === 'invite') void app.startInvite()
-      else if (type.value.startsWith('integration:')) { const provider = type.value.slice('integration:'.length); if (['google', 'github', 'discord'].includes(provider)) app.addIntegrationChoice(provider); else void app.connectIntegration(provider) }
-      else if (mode === 'integrations') app.addIntegrationChoice()
-    })
-    li.append(span('zoom-dot', ''), span('handle', ''), form)
-    rows.push(li)
-  }
   return rows
 }
 
@@ -1916,7 +1888,7 @@ function legalLinks(lead: string): HTMLElement {
 function modalKey(state: AppState): string {
   const d = state.direct
   if (state.modal === 'work') return JSON.stringify([state.work, headCid(state.replica)])
-  return [state.modal, state.connectFlow.phase, state.invite?.token ?? '', d?.role ?? '', d?.phase ?? '', (d?.role === 'host' ? d.pendingPeer?.peerId ?? '' : ''), state.manual.requestCode ? 'rq' : '', state.manual.resultCode ? 'rs' : '', state.requests.map((r) => r.id).join(','), state.device?.status ?? '', state.device?.name ?? '', state.market?.aliasId ?? '', state.market?.phase ?? '', state.market?.error ?? '', state.phone?.phase ?? '', state.phone?.error ?? ''].join('|')
+  return [state.modal, state.connectFlow.phase, state.invite?.token ?? '', state.inviteError ?? '', d?.role ?? '', d?.phase ?? '', (d?.role === 'host' ? d.pendingPeer?.peerId ?? '' : ''), state.manual.requestCode ? 'rq' : '', state.manual.resultCode ? 'rs' : '', state.requests.map((r) => r.id).join(','), state.device?.status ?? '', state.device?.name ?? '', state.market?.aliasId ?? '', state.market?.phase ?? '', state.market?.error ?? '', state.phone?.phase ?? '', state.phone?.error ?? ''].join('|')
 }
 
 function updateModalDynamic(el: HTMLElement, state: AppState, app: App): void {
@@ -2114,7 +2086,7 @@ function renderConnect(body: HTMLElement, state: AppState, app: App): void {
 
 function renderInvite(body: HTMLElement, state: AppState, app: App): void {
   const invite = state.invite
-  if (!invite) { body.append(div('muted', 'Creating an invite…')); return }
+  if (!invite) { body.append(div(state.inviteError ? 'error' : 'muted', state.inviteError ?? 'Creating an invite…')); if (state.inviteError) body.append(button('secondary small', 'Retry', () => void app.startInvite())); return }
   body.append(div('muted', `The device that uses this token attaches to ${invite.scopeNames.length ? pathLabel(invite.scopeNames) : 'your whole account'} once you approve it; you choose then whether it may only propose changes or also approve them. It expires in 15 minutes.`))
   body.append(qrCanvas(invite.token))
   body.append(codeBox(invite.token))

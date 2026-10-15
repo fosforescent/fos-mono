@@ -89,7 +89,15 @@ function mergeNode(
       if (!sameShape(store, oe, te)) return { kind: 'conflict' }
       const merged = mergeNode(store, be ? identityCid(store, be) : null, identityCid(store, oe), identityCid(store, te), labels, newChoiceCids, false)
       if (merged.kind === 'conflict') return merged
-      options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid) })
+      const beforeRequest = b?.options.find(x => x.peerId === name)?.requestMerge
+      let requestMerge = oo.requestMerge === beforeRequest ? tt.requestMerge : oo.requestMerge
+      if (oo.requestMerge !== beforeRequest && tt.requestMerge !== beforeRequest && oo.requestMerge !== tt.requestMerge) {
+        if (!oo.requestMerge || !tt.requestMerge) return { kind: 'conflict' }
+        const request = mergeNode(store, beforeRequest ?? null, oo.requestMerge, tt.requestMerge, labels, newChoiceCids, false)
+        if (request.kind === 'conflict') return request
+        requestMerge = request.cid
+      }
+      options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid), requestMerge })
     }
     return { kind: 'node', cid: putBranches(store, o.id, b?.base ?? o.base, options, b?.defaultName ?? o.defaultName) }
   }

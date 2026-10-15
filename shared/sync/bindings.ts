@@ -130,7 +130,7 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
   const candidates = contextBindings(r, at), bindings: BindingResolution[] = []
   for (const candidate of defaults) if (!candidates.some(c => c.type === candidate.type && c.name === candidate.name)) candidates.push(candidate)
   const type = r.store.primitive.documentField.getId()
-  return { text: text.replace(/(?<!\\)(?:\{\{\s*([\w.-]+)\s*\}\}|(?<!\{)\{([A-Za-z_][\w.-]*)\}(?!\}))/g, (placeholder, legacyName: string, parameterName: string) => {
+  return { text: text.replace(/(?<!\\)(?:\{\{\s*([\w.-]+)\s*\}\}|(?<![{@])\{([A-Za-z_][\w.-]*)\}(?!\}))/g, (placeholder, legacyName: string, parameterName: string) => {
     const name = legacyName ?? parameterName
     const result = resolveBinding(r.store, type, null, candidates, name)
     bindings.push(result)

@@ -442,18 +442,19 @@ export class CalendarManager {
 
     const slots = calendarData.slots || []
     const slotIndex = slots.findIndex(s => s.id === slotId)
+    const slot = slots[slotIndex]
 
-    if (slotIndex === -1) {
+    if (!slot) {
       throw new LinearityError(`Time slot ${slotId} not found`)
     }
 
-    if (slots[slotIndex].allocated) {
+    if (slot.allocated) {
       throw new LinearityError(`Time slot ${slotId} already allocated`)
     }
 
     const updatedSlots = [...slots]
     updatedSlots[slotIndex] = {
-      ...slots[slotIndex],
+      ...slot,
       allocated: true,
       allocatedTo
     }

@@ -25,7 +25,7 @@ import { evaluateOnServer, createRepositoryBranch, readRepository, proposeReposi
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, refBranches, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, bookkeepingOf, refBranches, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -196,6 +196,7 @@ export type AppState = {
   work?: { path: Scope; preview: WorkContext; busy: boolean; error?: string }
   modal: ModalKind | null
   connectFlow: ConnectFlow
+  inviteError?: string
   invite: InviteState
   requests: InviteRequest[]
   direct: DirectState
@@ -943,8 +944,8 @@ export class App {
     const row = view(this.state.replica, parent)?.tasks.find((t) => t.id === id)
     if (row && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
-  rewriteRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string; children?: import('./rows').ParsedInput[] }, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
-    if (parsed.children?.length && !this.groupedEdit) { this.together(() => this.rewriteRowAt(at, id, parsed, draft)); return }
+  rewriteRowAt(at: Scope, id: string, parsed: import('./rows').ParsedInput, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
+    if ((parsed.children?.length || parsed.peer !== undefined) && !this.groupedEdit) { this.together(() => this.rewriteRowAt(at, id, parsed, draft)); return }
     if (draft && draft.store !== this.state.replica.store) return
     let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
     if (parsed.kind === 'allocation') {
@@ -960,6 +961,7 @@ export class App {
       commitRoot(branch.store, draft.head, this.now())
       for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(branch.store, id, name)
       branch = parsed.kind === 'ref' || parsed.kind === 'supply' ? renameTask(branch, draft.parent, id, parsed.text, this.now()) : setRowContentAt(branch, draft.parent, id, parsed.kind, parsed.text, extras, this.now())
+      if (parsed.peer !== undefined || before?.construction?.handler) branch = this.peerRowReplica(branch, [...draft.parent, id], parsed.peer)
       if (parsed.children?.length) this.addParsedChildren([...at, id], parsed.children, branch)
       const current = this.state.replica
       importNodes(current.store, reachableNodes(branch.store, [headCid(branch)]))
@@ -970,6 +972,7 @@ export class App {
     } else {
       this.edit(parsed.kind === 'ref' || parsed.kind === 'supply' ? renameTask(this.state.replica, [...this.state.view, ...at], id, parsed.text, this.now()) : setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.kind, parsed.text, extras, this.now()))
     }
+    if ((parsed.peer !== undefined || before?.construction?.handler) && !rebasing) this.setPeerRow([...this.state.view, ...at, id], parsed.peer)
     if (parsed.children?.length && !rebasing) this.addParsedChildren([...at, id], parsed.children)
     if (parsed.templateName && parsed.kind === 'task' && before?.template?.name !== parsed.templateName) this.applyTemplate(at, id, parsed.templateName)
     if (parsed.templateName && parsed.kind === 'requirement' && extras.requirement?.capability === 'task') {
@@ -1312,6 +1315,36 @@ export class App {
   }
   /** Who this device acts as when it confirms: the account username, else the device name. */
   actorName(): string { return this.state.session?.username ?? this.state.deviceName }
+  private peerRowReplica(r: Replica, path: Scope, handler: string | undefined): Replica {
+    if (!resolveScope(r.store, headCid(r), path)) return r
+    const next = updateAtScope(r.store, headCid(r), path, identity => {
+      const cid = put(r.store, identity), value = valueContent(r.store, cid)
+      const { name: _name, ...data } = identity.data
+      return refNodeContent(r.store, { ...data, ...(handler !== undefined ? { name: { content: handler || 'peer' } } : {}) },
+        put(r.store, value), [...bookkeepingOf(r.store, identity), [r.store.primitive.previousVersion.getId(), cid]], handler !== undefined ? capabilityTarget(r.store, 'peer') : null)
+    }, 'node')
+    commitRoot(r.store, next, this.now()); return { ...r }
+  }
+  attachNamedPeer(name: string): void {
+    const peer = this.knownPeers().find(p => p.name === name || p.id === name)
+    if (!peer) { this.notify('info', `No available peer handler named “${name}”. Edit the constructor to choose one.`); return }
+    this.edit(addMemberAt(this.state.replica, this.peerContextPath(), peer.id, peer.name, ['read', 'edit'], this.now()))
+  }
+  setPeerRow(path: Scope, handler: string | undefined): void { this.edit(this.peerRowReplica(this.state.replica, path, handler)) }
+  newBranchAt(path: Scope): void {
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
+    if (!row) return
+    let n = 1; while (row.branches?.names.includes(`branch ${n}`)) n++
+    void this.createNodeBranch(path.slice(0, -1), row.id, `branch ${n}`, true).then(() => {
+      if (JSON.stringify(path.slice(0, this.state.view.length)) === JSON.stringify(this.state.view)) this.select(path.slice(this.state.view.length))
+    })
+  }
+  toggleBranchMergeRequest(path: Scope, name: string): void {
+    if (this.state.voice || this.state.work?.busy || this.evaluating) return
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
+    if (!row?.branches) return
+    this.edit(setBranchMergeRequest(this.state.replica, path, name, !row.branches.mergeRequests?.includes(name), this.now()))
+  }
   async createNodeBranch(at: Scope, id: string, name: string, absolute = false): Promise<void> {
     if (this.evaluating || this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
     try {
@@ -2025,12 +2058,14 @@ export class App {
   private addParsedChildren(at: Scope, children: import('./rows').ParsedInput[], replica?: Replica): void {
     for (const child of children) {
       const id = this.addRowAt(at, child.kind, child.text, { done: child.done, extras: child.extras, templateName: child.templateName, replica })
+      if (child.peer !== undefined) { if (replica) this.peerRowReplica(replica, [...this.state.view, ...at, id], child.peer); else this.setPeerRow([...this.state.view, ...at, id], child.peer) }
       if (view(replica ?? this.state.replica, [...this.state.view, ...at])?.tasks.some(row => row.id === id) && child.children?.length) this.addParsedChildren([...at, id], child.children, replica)
     }
   }
   addRowAtTop(parsed: import('./rows').ParsedInput): string | null {
-    if (parsed.children?.length && !this.groupedEdit) return this.together(() => this.addRowAtTop(parsed))
+    if ((parsed.children?.length || parsed.peer !== undefined) && !this.groupedEdit) return this.together(() => this.addRowAtTop(parsed))
     const created = this.addRowAt([], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, templateName: parsed.templateName })
+    if (parsed.peer !== undefined) this.setPeerRow([...this.state.view, created], parsed.peer)
     if (this.currentView()?.tasks.some((t) => t.id === created) && parsed.children?.length) this.addParsedChildren([created], parsed.children)
     return this.currentView()?.tasks.some((t) => t.id === created) ? created : null
   }
@@ -2435,11 +2470,15 @@ export class App {
     const names = [...this.labels().scope, ...scopeNames(this.state.replica.store, headCid(this.state.replica), this.peerContextPath())]
     // The invited node becomes a link node: it keeps its history and collects members and proposals.
     this.edit(makeLinkAt(this.state.replica, this.peerContextPath(), this.now()))
-    this.set({ modal: 'invite', menuOpen: false, invite: null })
+    const generation = this.authGeneration
+    this.set({ modal: 'invite', menuOpen: false, invite: null, inviteError: undefined })
     try {
       const created = await createInvite(session, scope, names)
+      if (generation !== this.authGeneration || session !== this.state.session) return
       this.set({ invite: { token: created.token, scope, scopeNames: names, expiresAt: created.expiresAt } })
     } catch (error) {
+      if (generation !== this.authGeneration || session !== this.state.session) return
+      this.set({ inviteError: error instanceof Error ? error.message : String(error) })
       this.notify('error', `Could not create an invite: ${error instanceof Error ? error.message : String(error)}`)
     }
   }

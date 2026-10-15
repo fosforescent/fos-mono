@@ -454,3 +454,8 @@ button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
   .tree .task.has-constructor { flex-wrap: wrap; }
   .tree .task.has-constructor > .constructor-body { flex-basis: 100%; order: 1; }
 }
+
+.combo-option:has(.branch-request) { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.branch-request { flex: 0 0 auto; }
+.branch-request[aria-pressed="true"] { color: var(--accent, #4c9aff); }
+.peer-autocomplete { display: inline; }

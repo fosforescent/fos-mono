@@ -1,5 +1,5 @@
 /** Editable alternatives use the existing choice pointers and three-way merge. */
-import { branchEdge, readProposal, readProposals, valueContent, commitRoot, content, findAliasEdge, identityCid, isBranchChoice, putBranches, readChoice, resolveScope, selectBranch, updateAtScope, withIdentity, type Scope, type ChoiceOption } from './graph'
+import { mergeRequestEdge, branchEdge, readProposal, readProposals, valueContent, commitRoot, content, findAliasEdge, identityCid, isBranchChoice, putBranches, readChoice, resolveScope, selectBranch, updateAtScope, withIdentity, type Scope, type ChoiceOption } from './graph'
 import { headCid, type Replica } from './replica'
 import { mergeNodes } from './merge'
 
@@ -49,5 +49,17 @@ export function copyProposalBranch(r: Replica, at: Scope, proposalId: string, na
   r = createBranch(r, at, name, now)
   const next = updateAtScope(r.store, headCid(r), at, current => ({ ...source, data: { ...source.data, ...(current.data.alias ? { alias: current.data.alias } : {}), updated: { time: now } } }))
   commitRoot(r.store, next, now)
+  return { ...r }
+}
+
+/** A merge request is an approval argument on the branch constructor, not a second copy of its value. */
+export function setBranchMergeRequest(r: Replica, at: Scope, name: string, requested: boolean, now: number): Replica {
+  const store = r.store, cid = resolveScope(store, headCid(r), at)
+  if (!cid || !isBranchChoice(store, content(store, cid))) throw new Error('Select a branched node.')
+  const record = readChoice(store, cid)
+  if (!record.options.some(o => o.peerId === name)) throw new Error('Branch no longer available.')
+  const nextChoice = putBranches(store, record.id, record.base, record.options.map(o => o.peerId === name ? { ...o, requestMerge: requested ? o.requestMerge ?? mergeRequestEdge(store, `${record.id}:${name}`)[1] : undefined } : o), record.defaultName)
+  const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [store.primitive.choiceTarget.getId(), nextChoice] : edge) }))
+  commitRoot(store, next, now)
   return { ...r }
 }
