@@ -1,4 +1,4 @@
-import { capabilityTarget, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
+import { proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, capabilityTarget, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
 
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
 
@@ -108,4 +108,26 @@ test('editing memberships preserves typed handlers in their original direction',
   const updated = withMember(store, { data: {}, children: [[store.primitive.memberField.getId(), member]] }, 'peer', 'Peer', ['llm'], [], ['llm'])
   expect(memberHandlers(store, updated, 'peer', store.primitive.capabilityNode.getId())).toEqual([to])
   expect(memberHandlers(store, updated, 'peer', store.primitive.acceptsNode.getId())).toEqual([from])
+})
+
+
+test('single-brace parameters create stable mutable-ref children through all text edit paths', () => {
+  let r = addRow(createReplica('params'), [], 'template', 'Letter {customer} {customer} {{legacy}} \\{literal}', 1, { id: 'letter' })
+  const args = () => argumentRefs(r.store, resolveScope(r.store, headCid(r), ['letter'])!)
+  expect(args().map(a => a.name)).toEqual(['customer'])
+  const original = args()[0]!
+  expect(original.type).toBe(r.store.primitive.documentField.getId())
+  expect(resolveText(r, ['letter'], 'Hello {customer}').bindings[0]!.status).toBe('missing')
+  r = renameTask(r, [], 'letter', 'Letter {customer} to {recipient}', 2)
+  expect(args().map(a => a.name)).toEqual(['customer', 'recipient'])
+  expect(args()[0]!.cid).toBe(original.cid)
+  const path = ['letter', content(r.store, original.cid).data.alias!.id]
+  const proposed = proposeRefAt(r, path, literal(r, 'Ada'), r.meta.peerId, 3)
+  r = applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, 3)
+  expect(resolveText(r, ['letter'], 'Hello {customer}').text).toBe('Hello Ada')
+  r = setRowContentAt(r, [], 'letter', 'template', 'Only {recipient}', {}, 4)
+  expect(args().map(a => a.name)).toEqual(['customer', 'recipient'])
+  expect(resolveText(r, ['letter'], 'Hello {customer}').text).toBe('Hello Ada')
+  const bound = addRefAt(createReplica(), [], 'named', r.store.primitive.documentField.getId(), 4, null, 'name')
+  expect(argumentRefs(bound.store, headCid(bound))[0]!.name).toBe('name')
 })

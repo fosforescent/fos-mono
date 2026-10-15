@@ -8636,12 +8636,24 @@
     const edge = findEdge(replica.store, value, `a:${aliasId}`);
     return edge && isRowEdge(replica.store, edge) ? edge : void 0;
   }
+  function withTextParameters(store, node) {
+    const names = [...new Set(Array.from((node.data.description?.content ?? "").matchAll(/(?<![\\{])\{([A-Za-z_][\w.-]*)\}(?!\})/g), (m) => m[1]))];
+    const type = store.primitive.documentField.getId(), children = [...node.children];
+    for (const name of names) {
+      if (children.some((edge) => content(store, identityCid(store, edge)).data.name?.content === name))
+        continue;
+      const id = `${node.data.alias?.id ?? newId()}:param:${name}`;
+      const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, null, [], type));
+      children.push([type, ref]);
+    }
+    return children.length === node.children.length ? node : { ...node, children };
+  }
   function addTask(replica, at, title, now, id = newId()) {
     const trimmed = title.trim();
     if (!trimmed)
       return replica;
     return edit(replica, at, now, (value) => {
-      const cid = put(replica.store, taskContent(id, trimmed, false, now, now));
+      const cid = put(replica.store, withTextParameters(replica.store, taskContent(id, trimmed, false, now, now)));
       return { ...value, children: [...value.children, taskEdge(replica.store, cid)] };
     });
   }
@@ -8654,7 +8666,7 @@
     const id = options.id ?? newId();
     return edit(replica, at, now, (value) => {
       const { position: _p, id: _i, ...extras } = options;
-      const cid = put(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store }));
+      const cid = put(replica.store, withTextParameters(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store })));
       const edge = rowEdge(replica.store, kind, cid);
       const children = [...value.children];
       const pos = options.position;
@@ -8760,7 +8772,7 @@
     return updateTask(replica, at, taskId, now, (task) => {
       if (task.data.description?.content === trimmed)
         return null;
-      return { ...task, data: { ...task.data, description: { content: trimmed } } };
+      return withTextParameters(replica.store, { ...task, data: { ...task.data, description: { content: trimmed } } });
     });
   }
   function deleteTask(replica, at, taskId, now) {

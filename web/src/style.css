@@ -414,3 +414,6 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .argument-value { box-sizing: border-box; width: 100%; min-height: 2.25rem; resize: vertical; }
 .argument-child { margin-left: 1rem; }
 .placeholder-row { flex-wrap: wrap; }
+
+.node-actions { display: flex; flex-direction: column; align-items: stretch; }
+.node-action-body { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: 100%; }

@@ -656,7 +656,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const b = iconButton(icon, label, () => { workspace(app).actionTab = key; app.refresh() }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(workspace(app).actionTab === key)); actionTabs.append(b)
   }
   for (const control of Array.from(controls.children) as HTMLElement[]) control.hidden = workspace(app).actionTab !== 'main' && control.dataset.capability !== workspace(app).actionTab
-  controls.prepend(actionTabs)
+  const actionBody = div('node-action-body', '')
+  actionBody.setAttribute('role', 'tabpanel'); actionBody.setAttribute('aria-label', 'Selected node actions')
+  actionBody.append(...Array.from(controls.childNodes))
+  controls.append(actionTabs, actionBody)
   el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview || workspace(app).actionTab !== 'main'
   el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(workspace(app).actionTab)
   const layouts = div('node-tabs', ''); layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Child view')
