@@ -1,0 +1,88 @@
+name: Test and publish agent plugins
+on:
+  pull_request:
+    paths: ['plugins/**', 'backend/mcp/**', 'backend/sync/**', 'shared/sync/**', '.github/workflows/agent-plugins.yml']
+  push:
+    branches: [main]
+    paths: ['plugins/**', '.github/workflows/agent-plugins.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agent-plugins-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - name: Scoped MCP and evaluation regressions
+        run: npm test --prefix backend -- --runInBand mcp/taskTree.test.ts sync/peerSync.test.ts sync/evaluation.test.ts
+      - name: Transport and package checks
+        run: |
+          node --test plugins/bridge.test.mjs
+          python3 plugins/build_test.py
+      - name: Build all client packages from one source
+        env:
+          RELEASE_VERSION: 0.1.${{ github.run_number }}
+        run: python3 plugins/build.py --output /tmp/fos-agent-release --version "$RELEASE_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fos-agent-release
+          path: /tmp/fos-agent-release
+          include-hidden-files: true
+  publish:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: fos-agent-release
+          path: /tmp/fos-agent-release
+      - name: Update installable repository marketplace
+        env:
+          RELEASE_VERSION: 0.1.${{ github.run_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Build a normal descendant commit; never force-push or change main.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin agent-plugins:refs/remotes/origin/agent-plugins || true
+          git -C /tmp/fos-agent-release/marketplace init -q
+          git -C /tmp/fos-agent-release/marketplace add .
+          # Import the generated tree into the checked-out repository's object database.
+          git -C /tmp/fos-agent-release/marketplace config user.name 'github-actions[bot]'
+          git -C /tmp/fos-agent-release/marketplace config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C /tmp/fos-agent-release/marketplace commit -qm "Fos project plugin $RELEASE_VERSION"
+          git fetch /tmp/fos-agent-release/marketplace HEAD
+          generated_tree=$(git rev-parse 'FETCH_HEAD^{tree}')
+          parent=()
+          if git rev-parse --verify refs/remotes/origin/agent-plugins >/dev/null 2>&1; then
+            parent=(-p refs/remotes/origin/agent-plugins)
+          fi
+          commit=$(git commit-tree "$generated_tree" "${parent[@]}" -m "Fos project plugin $RELEASE_VERSION from $GITHUB_SHA")
+          git push origin "$commit:refs/heads/agent-plugins"
+      - name: Publish downloadable packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: 0.1.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          tag="agent-plugins-v$RELEASE_VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" /tmp/fos-agent-release/*.zip /tmp/fos-agent-release/*.mcpb /tmp/fos-agent-release/*.tar.gz /tmp/fos-agent-release/SHA256SUMS --clobber
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --title "Fos project plugins $RELEASE_VERSION" --notes 'Scoped project-tree MCP plugins. See plugins/fos-project/README.md for setup and platform registration requirements. Public directory listings require platform review; this release updates the repository marketplace.' --latest=false /tmp/fos-agent-release/*.zip /tmp/fos-agent-release/*.mcpb /tmp/fos-agent-release/*.tar.gz /tmp/fos-agent-release/SHA256SUMS
+          fi

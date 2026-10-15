@@ -1,3 +1,4 @@
+import { createTaskTreeMcp } from './mcp/taskTree'
 import { createSharingHandlers } from './sync/sharing'
 import { createEvaluationService } from './sync/evaluation'
 import { startCronRunner } from './sync/cron'
@@ -557,6 +558,8 @@ const evaluationService = createEvaluationService(prismaPeerSyncDeps, {
   githubConnected: async id => !!await integrationDeps.connections.get(id, 'github'),
   createIssue: integrations.createIssue
 })
+const taskTreeMcp = createTaskTreeMcp(prismaPeerSyncDeps, evaluationService.runNode)
+dataRoutes.all('/peer-sync/mcp', (req, res) => void taskTreeMcp(req, res))
 startCronRunner({
   enabled: process.env.FOS_ENABLE_CRON === 'true',
   users: async after => (await prisma.userModel.findMany({ where: after ? { user_name: { gt: after } } : {}, orderBy: { user_name: 'asc' }, take: 100, select: { user_name: true } })).map(user => user.user_name),

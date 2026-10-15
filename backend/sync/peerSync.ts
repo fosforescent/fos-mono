@@ -141,6 +141,14 @@ export function createPeerSyncInspector(deps: Pick<PeerSyncDeps, 'loadStore'>) {
       if (!loaded) return res.status(401).json({ error: 'User not found' })
       const scopeParam = typeof req.query.scope === 'string' ? req.query.scope : ''
       const scope = scopeParam ? scopeParam.split(',').filter(Boolean) : []
+      const claims = claimsOf(req)
+      if (claims.kind === 'peer') {
+        const denied = peerCredentialError(claims, claims.peerId ?? '', scope)
+        if (denied) return res.status(403).json({ error: denied })
+        // The raw inspector includes membership and proposal summaries. Scoped agents use
+        // the MCP projection instead; it filters both and rechecks live permissions.
+        return res.status(403).json({ error: 'Use the scoped MCP or peer-sync protocol to read a peer attachment.' })
+      }
       const root = rootTargetCid(loaded.store)
       const cid = resolveScope(loaded.store, root, scope)
       if (!cid) return res.status(404).json({ error: 'scope not found' })

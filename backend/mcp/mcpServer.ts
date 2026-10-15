@@ -19,6 +19,7 @@ import {
 export interface MCPServerOptions {
   name: string
   version: string
+  protocolVersion?: string
   capabilities?: MCPCapabilities
 }
 
@@ -38,6 +39,7 @@ export interface MCPPromptProvider {
 }
 
 export class MCPServerInstance extends EventEmitter {
+  private protocolVersion: string
   private name: string
   private version: string
   private capabilities: MCPCapabilities
@@ -48,6 +50,7 @@ export class MCPServerInstance extends EventEmitter {
 
   constructor(options: MCPServerOptions) {
     super()
+    this.protocolVersion = options.protocolVersion ?? '2024-11-05'
     this.name = options.name
     this.version = options.version
     this.capabilities = options.capabilities || {
@@ -82,7 +85,7 @@ export class MCPServerInstance extends EventEmitter {
       const parsed = JSON.parse(message)
       
       // Handle notifications (no response needed)
-      if (!parsed.id) {
+      if (!('id' in parsed)) {
         await this.handleNotification(parsed as JsonRpcNotification)
         return null
       }
@@ -177,7 +180,7 @@ export class MCPServerInstance extends EventEmitter {
     this.initialized = true
     
     return {
-      protocolVersion: '2024-11-05',
+      protocolVersion: this.protocolVersion,
       capabilities: this.capabilities,
       serverInfo: {
         name: this.name,
