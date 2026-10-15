@@ -185,3 +185,6 @@ request-local. The raw peer-sync inspector now refuses peer credentials: it is a
 owner diagnostic, not a scoped read projection. Packages and their single shared
 skill/stdio transport live under `plugins/fos-project`; release automation updates
 an isolated repository marketplace branch, not public app-store listings.
+
+### Media notes
+The existing authenticated `/user/data/voice-notes` pipeline also accepts JPEG/PNG/WebP images and MP4/WebM videos, bounded to 25 MB. It returns the same summary/cluster/source-text structure and uses the existing account usage budget. Gemini handles images and videos; the OpenAI implementation handles images and explicitly rejects video. Picture/video originals are not stored by this endpoint. Provider calls need live-provider validation in addition to the mocked handler tests.

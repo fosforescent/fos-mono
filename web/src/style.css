@@ -474,3 +474,18 @@ button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
 .chat-path { display: block; font-size: .8rem; }
 
 .crumb-icon { margin-right: .25rem; }
+
+.workspace-panels { display:flex; flex-wrap:wrap; align-items:flex-start; gap:.4rem; }
+.workspace-panels > .node-accordion { margin:0; border:0; padding:0; }
+.workspace-panels > .node-accordion > summary { display:inline-flex; justify-content:center; align-items:center; width:2.5rem; height:2.5rem; padding:0; border:1px solid var(--border, #444); border-radius:.5rem; list-style:none; cursor:pointer; }
+.workspace-panels > .node-accordion > summary::-webkit-details-marker { display:none; }
+.workspace-panels > .node-accordion[open] { flex-basis:100%; }
+.workspace-panels > .node-accordion[open] > summary { background:var(--changed-bg); }
+.node-input { margin-top:.5rem; } .input-controls { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+.children-toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin:.6rem 0; }
+.children-toolbar > .child-search { flex:1 1 12rem; width:auto; margin:0; min-width:0; }
+.children-toolbar > .node-tabs { display:flex; gap:.2rem; margin:0; }
+.children-toolbar .icon { min-width:2.2rem; min-height:2.2rem; border-radius:.4rem; }
+.import-dialog { max-width:min(32rem, 90vw); background:var(--bg, #171717); color:inherit; border:1px solid var(--border, #444); border-radius:.7rem; padding:1rem; }
+.import-dialog::backdrop { background:#0008; }
+.home-node { cursor:default; }
