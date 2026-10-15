@@ -1,7 +1,7 @@
 import type { App } from './app'
 import { view, viewNode, readProposal, type Scope, type TaskView } from '../../shared/sync/index'
 const selected = new WeakMap<App, { path: string; id: string }>()
-let sequence = 0
+import { combobox, type ComboOption } from './combobox'
 export function proposalPreview(app: App) {
   const choice = selected.get(app)
   if (!choice || choice.path !== JSON.stringify(app.state.view) || !app.readsRequests()) return null
@@ -15,30 +15,35 @@ export function showProposal(app: App, path: Scope, id: string): void {
   selected.set(app, { path: JSON.stringify(path), id }); app.goTo(path)
 }
 export function clearProposal(app: App): void { selected.delete(app) }
-/** Native combobox: one searchable list for named branches and proposed branches. */
+/** Shared row picker: branches/proposals choose a value; children open their own context. */
 export function alternativePicker(app: App, path: Scope, row: TaskView | null): HTMLElement {
-  const box = document.createElement('span'); box.className = 'alternative-picker'
-  const input = document.createElement('input'), list = document.createElement('datalist')
-  list.id = `alternatives-${++sequence}`; input.setAttribute('list', list.id)
-  input.setAttribute('aria-label', `Branch or proposal of ${row?.title ?? 'Settings'}`)
-  input.placeholder = 'Find branch or proposal…'; input.autocomplete = 'off'
-  const choices = new Map<string, () => void>()
-  const add = (label: string, run: () => void) => { choices.set(label, run); const option = document.createElement('option'); option.value = label; list.append(option) }
-  for (const name of row?.branches?.names ?? ['Current']) add(`Branch: ${name}`, () => {
-    clearProposal(app)
-    if (row?.branches) app.selectNodeBranch(path.slice(0, -1), row.id, name, true)
-    else app.refresh()
-  })
-  const proposals = app.readsRequests() ? view(app.state.replica, path)?.proposals ?? [] : []
-  const proposalLabel = (p: typeof proposals[number]) => `Proposal: ${p.name || p.peerId} · ${p.peerId}${p.status === 'rejected' ? ' (rejected)' : ''}`
-  for (const p of proposals) add(proposalLabel(p), () => showProposal(app, path, p.id))
+  const proposals = () => app.readsRequests() ? view(app.state.replica, path)?.proposals ?? [] : []
+  const proposalLabel = (p: ReturnType<typeof proposals>[number]) => `${p.name || p.peerId} · ${p.peerId}${p.status === 'rejected' ? ' (rejected)' : ''}`
   const current = selected.get(app)
-  const active = current?.path === JSON.stringify(path) ? proposals.find(p => p.id === current.id) : undefined
-  input.value = active ? proposalLabel(active) : `Branch: ${row?.branches?.selected ?? 'Current'}`
-  input.disabled = !!app.state.voice || !!app.state.work?.busy
-  input.onpointerdown = e => { e.stopPropagation(); document.activeElement?.dispatchEvent(new window.Event('commit-edit')) }
-  input.onclick = e => e.stopPropagation()
-  input.onchange = () => { const run = choices.get(input.value); if (run) { input.blur(); run() } }
-  input.onblur = () => { setTimeout(() => { if (input.isConnected) app.refresh() }, 0) }
-  box.append(input, list); return box
+  const active = current?.path === JSON.stringify(path) ? proposals().find(p => p.id === current.id) : undefined
+  const previewing = !!active
+  const options = (): ComboOption[] => [
+    ...(row?.branches?.names ?? ['Current']).map(name => ({ label: `Branch: ${name}`, group: 'Branches', selected: !previewing && name === (row?.branches?.selected ?? 'Current'), run: () => {
+      clearProposal(app)
+      if (row?.branches) app.selectNodeBranch(path.slice(0, -1), row.id, name, true)
+      else app.refresh()
+    } })),
+    ...proposals().map(p => ({ label: `Proposal: ${proposalLabel(p)}`, group: 'Proposals', selected: active?.id === p.id, run: () => showProposal(app, path, p.id) })),
+    // A proposal preview must not navigate into the owner's unrelated children.
+    ...(!previewing ? view(app.state.replica, path)?.tasks ?? [] : []).map(child => ({ label: child.title || 'Untitled child', group: 'Children', run: () => { clearProposal(app); app.goTo([...path, child.id]) } }))
+  ]
+  const box = combobox(`Branches, proposals and children of ${row?.title ?? 'Settings'}`, active ? proposalLabel(active) : row?.branches?.selected ?? 'Branches / children', options, query => {
+    if (app.state.voice || app.state.work?.busy) return []
+    if (previewing) return row && query ? [{ label: `Copy to branch “${query}”`, group: 'Create', run: () => { if (app.copyProposalToBranch(active!.id, query)) { clearProposal(app); app.refresh() } } }] : []
+    const actions: ComboOption[] = []
+    if (row && query && !row.branches?.names.includes(query)) actions.push({ label: `Create branch “${query}”`, group: 'Create', run: () => { void app.createNodeBranch(path.slice(0, -1), row.id, query, true) } })
+    actions.push({ label: query ? `Add child “${query}”` : 'Add child', group: 'Create', run: () => {
+      clearProposal(app); app.goTo(path)
+      const id = app.addRowAt([], 'plain', query); app.select([id])
+    } })
+    return actions
+  })
+  box.classList.add('alternative-picker')
+  box.querySelector('button')!.disabled = !!app.state.voice || !!app.state.work?.busy
+  return box
 }

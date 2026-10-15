@@ -272,7 +272,7 @@ function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): 
 }
 
 function renderRepository(el: HTMLElement, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row')) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
   const path = state.view, id = path.at(-1)
   const task = id ? viewAt(state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id) : null
   const info = app.repositoryInfo()
@@ -505,7 +505,7 @@ function rowMatches(row: TaskView, filter: string, state: AppState, path: Scope)
   return path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => rowMatches(child, filter, state, [...path, child.id]))
 }
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row')) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
   const row = app.currentRow()
   el.hidden = false
   const preview = proposalPreview(app)
@@ -694,7 +694,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row')) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
@@ -758,7 +758,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
     const input = ghost.querySelector<HTMLTextAreaElement>('textarea.edit')!
     queueMicrotask(() => {
       const active = document.activeElement
-      if (input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
+      if (!app.state.selected && input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
     })
   }
 }
@@ -1059,7 +1059,9 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.title = 'Click to edit'
   }
 
-  if (task.branches || (app.readsRequests() && viewAt(state.replica, [...state.view, ...at, task.id])?.proposals.length)) body.append(branchSelector(task, at, app))
+  const picker = branchSelector(task, at, app)
+  if (!task.branches) picker.classList.add('compact-picker')
+  body.append(picker)
 
   const meta = span('row-meta', '')
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'

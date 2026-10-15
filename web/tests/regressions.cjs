@@ -536,12 +536,14 @@ async function main() {
   await branchApp.createNodeBranch([], branchProject, 'feature')
   branchApp.zoomTo([branchProject])
   branchApp.addRowAtTop(parseRowInput('[ ] Feature-only task'))
-  let picker = document.querySelector('[data-region="repository"] input[list]')
+  document.querySelector('[data-region="repository"] .combo-trigger').click()
+  let picker = document.querySelector('[data-region="repository"] input[role="combobox"]')
   assert(picker, 'the current node has its branch selector when zoomed in')
-  picker.value = 'Branch: main'; picker.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  picker.value = 'Branch: main'; picker.dispatchEvent(new dom.window.Event('input')); picker.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   assert.equal(branchApp.currentView().tasks.length, 0)
-  picker = document.querySelector('[data-region="repository"] input[list]')
-  picker.value = 'Branch: feature'; picker.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  document.querySelector('[data-region="repository"] .combo-trigger').click()
+  picker = document.querySelector('[data-region="repository"] input[role="combobox"]')
+  picker.value = 'Branch: feature'; picker.dispatchEvent(new dom.window.Event('input')); picker.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   assert.equal(branchApp.currentView().tasks[0].title, 'Feature-only task')
   const featureChild = branchApp.currentView().tasks[0].id
   const draftOnFeature = { store: branchApp.state.replica.store, head: require(path.join(dir, 'app.cjs')).headCid(branchApp.state.replica), parent: [branchProject] }
