@@ -241,6 +241,7 @@ function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeConte
   const names = [...new Set(Array.from((node.data.description?.content ?? '').matchAll(/(?<![\\{])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
   const type = store.primitive.documentField.getId(), children = [...node.children]
   for (const name of names) {
+    if (name === undefined) continue
     if (children.some(edge => content(store, identityCid(store, edge)).data.name?.content === name)) continue
     const id = `${node.data.alias?.id ?? newId()}:param:${name}`
     const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, null, [], type))

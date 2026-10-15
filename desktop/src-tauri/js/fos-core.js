@@ -4392,9 +4392,9 @@
      */
     async assertFact(factNode) {
       const factPrimitive = this.store.primitive.factNode;
-      const existing = this.queryFacts(factNode);
-      if (existing.length > 0) {
-        return existing[0];
+      const existing = this.queryFacts(factNode)[0];
+      if (existing) {
+        return existing;
       }
       const newTarget = this.targetNode.addEdge(factPrimitive.getId(), factNode.getId());
       await this.update(this.instructionNode, newTarget);
@@ -5069,15 +5069,16 @@
       }
       const slots = calendarData.slots || [];
       const slotIndex = slots.findIndex((s) => s.id === slotId);
-      if (slotIndex === -1) {
+      const slot = slots[slotIndex];
+      if (!slot) {
         throw new Error(`Time slot ${slotId} not found`);
       }
-      if (slots[slotIndex].allocated) {
+      if (slot.allocated) {
         throw new Error(`Time slot ${slotId} is already allocated`);
       }
       const updatedSlots = [...slots];
       updatedSlots[slotIndex] = {
-        ...slots[slotIndex],
+        ...slot,
         allocated: true,
         allocatedTo
       };
@@ -8739,6 +8740,8 @@
     const names = [...new Set(Array.from((node.data.description?.content ?? "").matchAll(/(?<![\\{])\{([A-Za-z_][\w.-]*)\}(?!\})/g), (m) => m[1]))];
     const type = store.primitive.documentField.getId(), children = [...node.children];
     for (const name of names) {
+      if (name === void 0)
+        continue;
       if (children.some((edge) => content(store, identityCid(store, edge)).data.name?.content === name))
         continue;
       const id = `${node.data.alias?.id ?? newId()}:param:${name}`;

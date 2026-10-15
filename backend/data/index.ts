@@ -204,10 +204,10 @@ export const getNodeByCid = async (req: Request, res: Response): Promise<Respons
     // Check if the user has access to this node
     const nodeAccess = await prisma.fosNodeUserAccessLinkModel.findFirst({
       where: {
-        userModelId: user.id,
-        fosNodeModel: { cid }
+        userId: user.id,
+        fosTargetNode: { cid }
       },
-      include: { fosNodeModel: true }
+      include: { fosTargetNode: true }
     })
 
     if (!nodeAccess) {
@@ -216,7 +216,7 @@ export const getNodeByCid = async (req: Request, res: Response): Promise<Respons
 
     return res.json({
       cid,
-      content: nodeAccess.fosNodeModel.data as FosNodeContent
+      content: nodeAccess.fosTargetNode.data as FosNodeContent
     })
   } catch (error) {
     console.error('Error fetching node:', error)
@@ -258,15 +258,15 @@ export const getNodesByCids = async (req: Request, res: Response): Promise<Respo
     // Fetch all accessible nodes for the user with matching CIDs
     const nodeAccessLinks = await prisma.fosNodeUserAccessLinkModel.findMany({
       where: {
-        userModelId: user.id,
-        fosNodeModel: { cid: { in: cids } }
+        userId: user.id,
+        fosTargetNode: { cid: { in: cids } }
       },
-      include: { fosNodeModel: true }
+      include: { fosTargetNode: true }
     })
 
     const nodes: Record<string, FosNodeContent> = {}
     for (const link of nodeAccessLinks) {
-      nodes[link.fosNodeModel.cid] = link.fosNodeModel.data as FosNodeContent
+      nodes[link.fosTargetNode.cid] = link.fosTargetNode.data as FosNodeContent
     }
 
     return res.json({ nodes })

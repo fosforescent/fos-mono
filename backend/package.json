@@ -4,11 +4,12 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon --config nodemon.json",
+    "prebuild": "npm run db:generate",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "db:generate": "prisma generate",
+    "db:generate": "prisma generate --schema=../infra/prisma/schema.prisma",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",

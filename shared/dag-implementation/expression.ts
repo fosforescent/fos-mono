@@ -1431,9 +1431,9 @@ export class FosExpression {
     const factPrimitive = this.store.primitive.factNode
 
     // Check if fact already exists
-    const existing = this.queryFacts(factNode)
-    if (existing.length > 0) {
-      return existing[0]
+    const existing = this.queryFacts(factNode)[0]
+    if (existing) {
+      return existing
     }
 
     const newTarget = this.targetNode.addEdge(factPrimitive.getId(), factNode.getId())
@@ -2259,18 +2259,19 @@ export class FosExpression {
 
     const slots = calendarData.slots || []
     const slotIndex = slots.findIndex(s => s.id === slotId)
+    const slot = slots[slotIndex]
 
-    if (slotIndex === -1) {
+    if (!slot) {
       throw new Error(`Time slot ${slotId} not found`)
     }
 
-    if (slots[slotIndex].allocated) {
+    if (slot.allocated) {
       throw new Error(`Time slot ${slotId} is already allocated`)
     }
 
     const updatedSlots = [...slots]
     updatedSlots[slotIndex] = {
-      ...slots[slotIndex],
+      ...slot,
       allocated: true,
       allocatedTo
     }
