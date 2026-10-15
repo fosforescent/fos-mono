@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "cd .. && npm run dev:web",
-    "beforeBuildCommand": "cd .. && npm run build:web"
+    "beforeDevCommand": "npm run prepare:agents && npm run dev:web",
+    "beforeBuildCommand": "npm run prepare:agents && npm run build:web"
   },
   "app": {
     "withGlobalTauri": true,
@@ -42,6 +42,9 @@
     },
     "android": {
       "minSdkVersion": 24
+    },
+    "resources": {
+      "../agent-runtime/": "agent-runtime/"
     }
   }
 }

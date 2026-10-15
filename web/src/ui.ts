@@ -1,3 +1,5 @@
+import { desktopAgentControls, localRepository } from './agents'
+import { inTauri, tauriInvoke } from './project'
 import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { combobox } from './combobox'
@@ -541,7 +543,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   const row = path.length ? viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1)) : undefined
   const title = document.createElement('input'); title.setAttribute('aria-label', 'Constructor label'); title.placeholder = 'Label (optional)'; title.value = replace && row?.kind !== 'requirement' ? row?.title ?? '' : ''
   const select = document.createElement('select'); select.setAttribute('aria-label', 'Constructor type')
-  const options = kind === 'peer' ? [['invite','Invite'],['direct','Direct connection'],['virtual','Virtual peer'],['fos','Fos server']] : kind === 'integration' ? [['google','Google'],['github','GitHub'],['discord','Discord'],['stripe','Stripe'],['phone','Phone']] : kind === 'repository' ? [['github','GitHub'],['gitlab','GitLab (unavailable)']] : [['inventory','Inventory'],['calendar','Calendar'],['account','Money']]
+  const options = kind === 'peer' ? [['invite','Invite'],['direct','Direct connection'],['virtual','Virtual peer'],['fos','Fos server']] : kind === 'integration' ? [...(inTauri() ? [['claude','Claude Agent SDK'], ['codex','Codex SDK']] : []), ['google','Google'],['github','GitHub'],['discord','Discord'],['stripe','Stripe'],['phone','Phone']] : kind === 'repository' ? [...(inTauri() ? [['filesystem', 'Filesystem Git repository']] : []), ['github','GitHub'],['gitlab','GitLab (unavailable)']] : [['inventory','Inventory'],['calendar','Calendar'],['account','Money']]
   for (const [value, label] of options) { const option = new Option(label, value); option.disabled = value === 'gitlab'; select.append(option) }
   if (['inventory','calendar','account'].includes(kind)) select.value = kind
   const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.step = 'any'; amount.value = '1'; amount.setAttribute('aria-label', 'Amount')
@@ -552,6 +554,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   start.type = end.type = 'datetime-local'; start.setAttribute('aria-label', 'Allocation start'); end.setAttribute('aria-label', 'Allocation end'); start.title = 'Start (optional, local time)'; end.title = 'End (optional, local time)'
   const resource = ['inventory','calendar','account','bank'].includes(kind)
   const update = () => {
+    repository.placeholder = select.value === 'filesystem' ? '/path/to/git/checkout' : 'owner/repository'
     unit.value = select.value === 'calendar' ? 'h' : select.value === 'account' ? 'USD' : 'unit'
     start.hidden = end.hidden = kind === 'bank' || !['calendar', 'inventory'].includes(select.value)
     bank.replaceChildren(new Option('Unbound allocation', ''))
@@ -564,7 +567,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(field('Source bank', bank), start, end) }
   if (kind === 'repository') form.append(field('Repository', repository))
   form.append(error, submit, button('secondary', 'Cancel', () => dialog.close()))
-  form.onsubmit = event => {
+  form.onsubmit = async event => {
     event.preventDefault()
     try {
       if (app.state.replica.store !== store || proposalPreview(app)) throw new Error('The data session changed. Open the constructor again.')
@@ -572,14 +575,22 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
       if (resource && (!Number.isFinite(value) || value < 0)) throw new Error('Enter a non-negative amount.')
       const begins = !start.hidden && start.value ? new Date(start.value).getTime() : undefined, ends = !end.hidden && end.value ? new Date(end.value).getTime() : undefined
       if ((begins !== undefined && !Number.isFinite(begins)) || (ends !== undefined && !Number.isFinite(ends)) || (begins !== undefined && ends !== undefined && ends <= begins)) throw new Error('The allocation end must be after its start.')
-      if (kind === 'repository' && select.value !== 'github') throw new Error('This repository handler is unavailable.')
+      if (kind === 'repository' && !['github', 'filesystem'].includes(select.value)) throw new Error('This repository handler is unavailable.')
       const parsed = kind === 'peer' || kind === 'integration' ? { kind: 'plain' as const, text: title.value, done: false, peer: select.value }
         : kind === 'bank' ? { kind: 'resource' as const, text: title.value || 'Resource bank', done: false, extras: { resource: { type, capacity: value, unit: unit.value } } }
         : resource ? { kind: 'allocation' as const, text: title.value, done: false, extras: { allocation: { type, amount: value, unit: unit.value, resource: bank.value, ...(begins !== undefined ? { start: begins } : {}), ...(ends !== undefined ? { end: ends } : {}) } } }
         : { kind: 'plain' as const, text: title.value || repository.value, done: false }
-      app.applyConstructor(path, parsed, replace, kind === 'repository' ? repository.value.trim() : undefined)
+      if (kind === 'repository' && select.value === 'filesystem') {
+        submit.disabled = true
+        const revision = headCid(app.state.replica)
+        const directory = await tauriInvoke<string>('validate_agent_repository', { path: repository.value.trim() })
+        if (!directory) throw new Error('Filesystem repositories require the desktop app.')
+        if (!dialog.isConnected) return
+        if (app.state.replica.store !== store || headCid(app.state.replica) !== revision || proposalPreview(app)) throw new Error('The node changed while validating the path. Try again.')
+        app.applyConstructor(path, { ...parsed, peer: 'filesystem' }, replace, undefined, directory)
+      } else app.applyConstructor(path, parsed, replace, kind === 'repository' ? repository.value.trim() : undefined)
       dialog.close()
-    } catch (e) { error.textContent = e instanceof Error ? e.message : String(e) }
+    } catch (e) { error.textContent = e instanceof Error ? e.message : String(e); submit.disabled = false }
   }
   dialog.append(form); dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal()
 }
@@ -857,10 +868,12 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
     if (preview.proposal.peerId === state.replica.meta.peerId && preview.proposal.status === 'rejected') controls.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(preview.proposal.id)))
   }
+  const agents = !preview && desktopAgentControls(app); if (agents) controls.append(agents)
   const integration = app.integrationHandler()
   if (integration && !preview) { const connect = button('secondary small', `Connect ${integration.provider}`, () => void app.connectIntegration(integration.provider)); connect.disabled = !integration.enabled; controls.append(connect) }
   if (row?.construction) controls.append(constructorBody(row, state, app))
   if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.append(auth) }
+  if (inTauri() && row && app.repositoryInfo() && !localRepository(state.replica, state.view)) controls.append(button('secondary small', 'Attach local checkout…', () => openConstructor(app, 'repository', [...state.view], true)))
   if (row && app.isOnline('integration:github')) controls.append(button('secondary small', 'Connect GitHub repository…', () => { const repo = window.prompt('Repository (owner/name)'); if (repo) app.bindNodeRepository(state.view.slice(0, -1), row.id, repo, true) }))
   inputs.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
   el.querySelector<HTMLElement>('.node-toolbar')!.hidden = !!preview || !row
@@ -906,7 +919,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const actionTabs = div('node-tabs', ''); actionTabs.setAttribute('role', 'tablist'); actionTabs.setAttribute('aria-label', 'Node action capabilities')
   const availableTabs: Array<[string, string, string]> = [['main', '⌂', 'Main actions']]
   if (row?.kind === 'task' || row?.requirement?.capability === 'llm') availableTabs.push(['llm', '✦', 'Language model actions'])
-  if (app.repositoryInfo()) availableTabs.push(['repo', '⑂', 'Repository actions'])
+  if (app.repositoryInfo() || localRepository(state.replica, state.view)) availableTabs.push(['repo', '⑂', 'Repository actions'])
   if (!availableTabs.some(([key]) => key === workspace(app).actionTab)) workspace(app).actionTab = 'main'
   for (const [key, icon, label] of availableTabs) {
     const b = iconButton(icon, label, () => { workspace(app).actionTab = key; app.refresh() }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(workspace(app).actionTab === key)); actionTabs.append(b)

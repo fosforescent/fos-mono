@@ -1,0 +1,17 @@
+{
+  "name": "fos-desktop-agents",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.163.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.301",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "zod": "4.6.7"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
