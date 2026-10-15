@@ -1623,6 +1623,47 @@
     const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
     return edge ? edge[1] : null;
   }
+  function refBranches(store, ref) {
+    const cid = refValueCid(store, ref);
+    if (!cid || !isBranchChoice(store, content(store, cid)))
+      return null;
+    const record = readChoice(store, cid);
+    if (record.id !== ref.data.alias?.id)
+      return null;
+    return { cid, id: record.id, names: record.options.map((o) => o.peerId), selected: branchSelection(store, cid) };
+  }
+  function putRefValueBranches(store, ref, values, baseName = "main", selectedValue) {
+    const id = ref.data.alias.id;
+    const incoming = put(store, refNodeContent(store, { alias: { id }, ...ref.data.name ? { name: ref.data.name } : {} }, null, [], refTypeCid(store, ref)));
+    const options = [];
+    const add = (cid, preferred) => {
+      if (options.some((o) => o.edge?.[0] === cid))
+        return;
+      const name = preferred && !options.some((o) => o.peerId === preferred) ? preferred : options.length ? `value-${cid}` : baseName;
+      options.push({ peerId: name, edge: [cid, incoming] });
+    };
+    for (const cid of values) {
+      if (!cid)
+        continue;
+      if (isBranchChoice(store, content(store, cid)) && readChoice(store, cid).id === id) {
+        for (const option of readChoice(store, cid).options)
+          if (option.edge)
+            add(option.edge[0], option.peerId);
+      } else {
+        const prior = values.filter((value) => !!value && isBranchChoice(store, content(store, value)) && readChoice(store, value).id === id).flatMap((value) => readChoice(store, value).options).find((option) => option.edge?.[0] === cid);
+        add(cid, prior?.peerId);
+      }
+    }
+    const selected = options.find((o) => o.edge?.[0] === selectedValue)?.peerId ?? options[0]?.peerId ?? baseName;
+    return putBranches(store, id, options[0]?.edge ?? null, options, selected);
+  }
+  function selectedBranchValue(store, cid) {
+    const edge = branchEdge(store, cid);
+    if (!edge)
+      return null;
+    const right = content(store, edge[1]);
+    return refTypeCid(store, right) && right.data.alias?.id === readChoice(store, cid).id ? edge[0] : identityCid(store, edge);
+  }
   function refTypeCid(store, value) {
     const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId());
     return edge ? edge[1] : null;
@@ -1630,13 +1671,13 @@
   function valueContent(store, cid) {
     const value = content(store, cid);
     if (isBranchChoice(store, value)) {
-      const edge = branchEdge(store, cid);
-      return edge ? valueContent(store, identityCid(store, edge)) : value;
+      const selected = selectedBranchValue(store, cid);
+      return selected ? valueContent(store, selected) : value;
     }
     if (isHandle(value))
       return value;
     const target = refValueCid(store, value);
-    return target && store.table.has(target) ? content(store, target) : value;
+    return target && store.table.has(target) ? isBranchChoice(store, content(store, target)) ? valueContent(store, target) : content(store, target) : value;
   }
   function refBindingBaseCid(store, value) {
     return put(store, { ...value, children: value.children.filter((edge) => !isProposalEdge(store, edge)) });
@@ -1743,6 +1784,14 @@
   function isBranchChoice(store, node) {
     return !!node.data.option && !node.data.conflict && node.children.some((e) => e[0] === store.primitive.optionNotSelectedConstructor.getId());
   }
+  function selectBranch(store, id, name) {
+    let selections = branchSelections.get(store);
+    if (!selections) {
+      selections = /* @__PURE__ */ new Map();
+      branchSelections.set(store, selections);
+    }
+    selections.set(id, name);
+  }
   function withBranches(store, selections, run) {
     const previous = branchSelections.get(store);
     const next = new Map(previous);
@@ -1764,6 +1813,11 @@
       const cid = resolveScope(store, root, path.slice(0, i));
       if (cid && isBranchChoice(store, content(store, cid)))
         result[readChoice(store, cid).id] = branchSelection(store, cid);
+      else if (cid) {
+        const branches = refBranches(store, content(store, cid));
+        if (branches)
+          result[branches.id] = branches.selected;
+      }
     }
     return result;
   }
@@ -2073,9 +2127,6 @@
     let bindings = identity;
     if (!readMembers(store, bindings).some((member) => member.peerId === "fos"))
       bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
-    for (const peer of INTEGRATION_PEERS)
-      if (!readMembers(store, bindings).some((member) => member.peerId === `integration:${peer.id}`))
-        bindings = withMember(store, bindings, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
     const homeCid = findChild(store, rootCid, HOME_ID);
     if (homeCid && isBranchChoice(store, content(store, homeCid))) {
       const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
@@ -2088,6 +2139,15 @@
     const movable = homeCid ? [] : root.children.filter((edge) => isRowEdge(store, edge) && rowKindOf(store, edge) !== "template" || isChoiceEdge(store, edge));
     const homeValue = homeCid ? valueContent(store, homeCid) : rowContent("plain", HOME_ID, "Home", 0);
     let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0);
+    const legacyIntegrations = bindings.children.filter((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith("integration:"));
+    for (const edge of legacyIntegrations)
+      if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content))
+        home = { ...home, children: [...home.children, edge] };
+    if (legacyIntegrations.length)
+      bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
+    for (const peer of INTEGRATION_PEERS)
+      if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`))
+        home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
     const own = new Set(readMembers(store, home).map((member) => member.peerId));
     const argumentsFromRoot = bindings.children.filter((edge) => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ""));
     if (argumentsFromRoot.length)
@@ -2469,7 +2529,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer"];
   var INTEGRATION_PEERS = [
     { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
     { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
@@ -2477,7 +2537,7 @@
     { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
     { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
   ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll"];
+  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer"];
   function isLink(store, value) {
     if (isHandle(value))
       return false;
@@ -2585,6 +2645,7 @@
         return p.notifyCapability.getId();
       case "rank":
       case "poll":
+      case "peer":
       case "timer":
       case "cron":
       case "task-completion":
@@ -2755,7 +2816,13 @@
     const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
     if (previous.data.ref)
       data.ref = previous.data.ref;
-    const next = refNodeContent(store, data, put(store, strippedContent), bookkeeping, refTypeCid(store, previous));
+    if (previous.data.name)
+      data.name = previous.data.name;
+    const branches = refBranches(store, previous);
+    const active = branches && branchEdge(store, branches.cid);
+    const value = put(store, strippedContent);
+    const target = branches && active ? updateBranch(store, branches.cid, [value, active[1]]) : value;
+    const next = refNodeContent(store, data, target, bookkeeping, refTypeCid(store, previous));
     return withPrev(store, next, previousCid);
   }
   function normalizeRefs(store, nodeCid, now = 0) {
@@ -2885,7 +2952,15 @@
       const children = type ? [] : childEdges(value).map((edge) => withIdentity(store, edge, copy(identityCid(store, edge))));
       if (!type && isHandle(identity) && target)
         children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target]);
-      const result = put(store, type ? refNodeContent(store, data, target && owned.has(target) ? copy(target) : target, [], type) : { data, children });
+      let bound = target && owned.has(target) ? copy(target) : target;
+      const alternatives = type && refBranches(store, identity);
+      if (alternatives) {
+        const record = readChoice(store, alternatives.cid);
+        const incoming = put(store, refNodeContent(store, { alias: data.alias, ...data.name ? { name: data.name } : {} }, null, [], type));
+        const edge = (original) => original ? [owned.has(original[0]) ? copy(original[0]) : original[0], incoming] : null;
+        bound = putBranches(store, data.alias.id, edge(record.base), record.options.map((option) => ({ ...option, edge: edge(option.edge) })), record.defaultName);
+      }
+      const result = put(store, type ? refNodeContent(store, data, bound, [], type) : { data, children });
       copied.set(cid, result);
       return result;
     };
@@ -3033,8 +3108,11 @@
           mergedValue = ov;
         else if (ov === bv)
           mergedValue = tv;
-        else
-          return { kind: "conflict" };
+        else {
+          const baseChoice = bv && isBranchChoice(store, content(store, bv)) ? readChoice(store, bv) : null;
+          const defaultValue = baseChoice ? baseChoice.options.find((option) => option.peerId === baseChoice.defaultName)?.edge?.[0] : bv;
+          mergedValue = putRefValueBranches(store, o.node, [bv, ...[ov, tv].filter((cid) => !!cid).sort()], "main", defaultValue);
+        }
       } else {
         const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true);
         mergedValue = merged.kind === "node" ? merged.cid : oursValue;
@@ -8805,7 +8883,14 @@
       if (refTypeCid(store, value)) {
         if (proposal.baseCid !== refBindingBaseCid(store, value))
           return value;
-        const next = refNodeContent(store, { ...value.data, updated: { time: now } }, proposal.contentCid, bookkeepingOf(store, value), refTypeCid(store, value));
+        const previous = refValueCid(store, value);
+        let target = proposal.contentCid;
+        if (previous && previous !== target) {
+          const inherited = Object.values(scopeBranches(store, headCid(replica), at.slice(0, -1))).at(-1) ?? replica.meta.branch ?? "main";
+          target = putRefValueBranches(store, value, [previous, target], inherited, target);
+          selectBranch(store, value.data.alias.id, readChoice(store, target).defaultName);
+        }
+        const next = refNodeContent(store, { ...value.data, updated: { time: now } }, target, bookkeepingOf(store, value), refTypeCid(store, value));
         return removeProposalByCid(store, withPrev(store, next, put(store, value)), proposalCid);
       }
       const mergedCid = proposal.baseCid === main ? proposal.contentCid : mergeNodes(store, proposal.baseCid, main, proposal.contentCid, { ours: approverPeerId, theirs: proposal.peerId }).cid;

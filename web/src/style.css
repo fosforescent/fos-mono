@@ -417,3 +417,26 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 
 .node-actions { display: flex; flex-direction: column; align-items: stretch; }
 .node-action-body { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: 100%; }
+
+button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
+.setting-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; min-height: 2.5rem; }
+
+.argument-editor select { max-width: 100%; }
+
+.row-combobox { display: inline-flex; min-width: 0; max-width: 100%; vertical-align: middle; }
+.combo-trigger { display: inline-flex; align-items: center; gap: .5rem; max-width: 100%; }
+.combo-trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-trigger svg { width: .75em; height: .75em; }
+.combo-panel { position: fixed; z-index: 100; display: flex; flex-direction: column; box-sizing: border-box; padding: .5rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--bg); box-shadow: 0 6px 24px #0005; }
+.combo-panel[hidden] { display: none; }
+.alternative-picker .combo-panel input { width: 100%; flex-shrink: 0; }
+.combo-options { display: block; overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.combo-group, .combo-empty { display: block; padding: .5rem; font-size: .8rem; opacity: .65; }
+.combo-option { display: block; padding: .55rem; border-radius: .25rem; cursor: pointer; overflow-wrap: anywhere; white-space: normal; }
+.combo-option.active, .combo-option:hover { background: var(--hover, #8882); }
+.task .alternative-picker { margin-left: .4rem; }
+.task .combo-trigger { opacity: .65; }
+.task:hover .combo-trigger, .combo-trigger:focus-visible { opacity: 1; }
+@media (max-width: 640px) { .combo-option, .combo-trigger { min-height: 44px; box-sizing: border-box; } }
+.compact-picker .combo-trigger > span:first-child { display: none; }
+.task .combo-trigger > span:first-child { max-width: 9rem; }

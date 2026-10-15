@@ -1,5 +1,5 @@
 import {
-  addRefAt, addRow, addSupply, addTask, applyProposalAt, capabilityTarget, content,
+  refBranches, readChoice, branchEdge, selectBranch, createBranch, resolveBinding, addRefAt, addRow, addSupply, addTask, applyProposalAt, capabilityTarget, content,
   copyRowContent, createReplica, headCid, instantiateTemplate, mergeNodes, newId,
   proposeRefAt, put, refArguments, refNodeContent, refValueCid, resolveScope,
   valueContent, view, serializeReplica, loadReplica, type Replica
@@ -84,7 +84,12 @@ test('concurrent different handler bindings become a choice instead of merging p
   const a = put(store, { data: { peerId: { content: 'a' } }, children: [] })
   const b = put(store, { data: { description: { content: 'b' } }, children: [] })
   const result = mergeNodes(store, parent(slot(null)), parent(slot(a)), parent(slot(b)), { ours: 'a', theirs: 'b' })
-  expect(result.newChoiceCids).toHaveLength(1)
+  expect(result.newChoiceCids).toHaveLength(0)
+  const ref = content(store, resolveScope(store, result.cid, ['slot'])!)
+  const branches = refBranches(store, ref)!
+  expect(readChoice(store, branches.cid).options.map(o => o.edge![0]).sort()).toEqual([a, b].sort())
+  const reverse = mergeNodes(store, parent(slot(null)), parent(slot(b)), parent(slot(a)), { ours: 'b', theirs: 'a' })
+  expect(refValueCid(store, content(store, resolveScope(store, reverse.cid, ['slot'])!))).toBe(branches.cid)
 })
 
 
@@ -98,5 +103,41 @@ test('binding offers are tied to a version, including when a ref moves away and 
   r = bind(old.replica, ['arg'], b, 3)
   r = bind(r, ['arg'], a, 4)
   r = applyProposalAt(r, ['arg'], old.proposalCid, 'owner', 5)
-  expect(refValueCid(r.store, node(r, ['arg']))).toBe(a)
+  expect(valueContent(r.store, resolveScope(r.store, headCid(r), ['arg'])!).data.description?.content).toBe('a')
+})
+
+
+test('distinct supplied values branch with shared incoming identity and content; duplicates reuse their branch', () => {
+  let r = addRow(createReplica('owner'), [], 'plain', 'Project', 1, { id: 'project' })
+  r = createBranch(r, ['project'], 'feature', 2)
+  const type = capabilityTarget(r.store, 'tool')
+  const a = put(r.store, { data: { description: { content: 'a' } }, children: [] })
+  const b = put(r.store, { data: { description: { content: 'b' } }, children: [] })
+  const path = ['project', 'arg']
+  r = addRefAt(r, ['project'], 'arg', type, 3, a)
+  r = bind(r, path, b, 4)
+  let branches = refBranches(r.store, node(r, path))!
+  expect(branches.names).toContain('feature')
+  let options = readChoice(r.store, branches.cid).options
+  expect(options.map(o => o.edge![0]).sort()).toEqual([a, b].sort())
+  expect(new Set(options.map(o => o.edge![1])).size).toBe(1)
+  expect(resolveBinding(r.store, type, refValueCid(r.store, node(r, path))).cid).toBe(b)
+  selectBranch(r.store, branches.id, 'feature')
+  expect(resolveBinding(r.store, type, refValueCid(r.store, node(r, path))).cid).toBe(a)
+  r = bind(r, path, b, 5)
+  branches = refBranches(r.store, node(r, path))!
+  expect(branches.names).toHaveLength(2)
+  expect(branchEdge(r.store, branches.cid)![0]).toBe(b)
+  r = addRow(r, path, 'plain', 'Only in b', 6, { id: 'b-child' })
+  expect(view(r, path)!.tasks.map(t => t.title)).toEqual(['Only in b'])
+  selectBranch(r.store, branches.id, 'feature')
+  expect(view(r, path)!.tasks).toHaveLength(0)
+  selectBranch(r.store, branches.id, branches.selected)
+  const copied = copyRowContent(r.store, resolveScope(r.store, headCid(r), path)!, 7, () => 'copied-arg')
+  const copiedBranches = refBranches(r.store, content(r.store, copied))!
+  expect(copiedBranches.id).toBe('copied-arg')
+  expect([...copiedBranches.names].sort()).toEqual([...refBranches(r.store, node(r, path))!.names].sort())
+  const restored = loadReplica(serializeReplica(r)); selectBranch(restored.store, 'project', 'feature')
+  const resolved = resolveBinding(restored.store, type, refValueCid(restored.store, node(restored, path)))
+  expect(content(restored.store, resolved.cid!).data.description?.content).toBe('b')
 })

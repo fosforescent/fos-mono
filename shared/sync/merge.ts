@@ -17,7 +17,7 @@
 import { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
-  isBranchChoice, readChoice, putBranches, bookkeepingOf,
+  putRefValueBranches, isBranchChoice, readChoice, putBranches, bookkeepingOf,
   content,
   edgeKey,
   identityCid,
@@ -116,7 +116,11 @@ function mergeNode(
       const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b)
       if (ov === tv || tv === bv) mergedValue = ov
       else if (ov === bv) mergedValue = tv
-      else return { kind: 'conflict' }
+      else {
+        const baseChoice = bv && isBranchChoice(store, content(store, bv)) ? readChoice(store, bv) : null
+        const defaultValue = baseChoice ? baseChoice.options.find(option => option.peerId === baseChoice.defaultName)?.edge?.[0] : bv
+        mergedValue = putRefValueBranches(store, o.node, [bv, ...[ov, tv].filter((cid): cid is string => !!cid).sort()], 'main', defaultValue)
+      }
     } else {
       const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true)
       mergedValue = merged.kind === 'node' ? merged.cid : oursValue

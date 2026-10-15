@@ -11,7 +11,7 @@ import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
-  isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
+  refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
   homeContextCid,
   canonicalRowData,
@@ -565,7 +565,14 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     // A typed slot accepts a value atomically; merging two handlers would invent a handler.
     if (refTypeCid(store, value)) {
       if (proposal.baseCid !== refBindingBaseCid(store, value)) return value
-      const next = refNodeContent(store, { ...value.data, updated: { time: now } }, proposal.contentCid, bookkeepingOf(store, value), refTypeCid(store, value))
+      const previous = refValueCid(store, value)
+      let target = proposal.contentCid
+      if (previous && previous !== target) {
+        const inherited = Object.values(scopeBranches(store, headCid(replica), at.slice(0, -1))).at(-1) ?? replica.meta.branch ?? 'main'
+        target = putRefValueBranches(store, value, [previous, target], inherited, target)
+        selectBranch(store, value.data.alias!.id, readChoice(store, target).defaultName!)
+      }
+      const next = refNodeContent(store, { ...value.data, updated: { time: now } }, target, bookkeepingOf(store, value), refTypeCid(store, value))
       return removeProposalByCid(store, withPrev(store, next, put(store, value)), proposalCid)
     }
     const mergedCid = proposal.baseCid === main

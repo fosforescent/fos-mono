@@ -1,3 +1,4 @@
+import { iconSvg } from './icons'
 import { alternativePicker, proposalPreview, showProposal, clearProposal } from './alternatives'
 /**
  * DOM rendering. The shell is built once; each state change re-renders the
@@ -118,6 +119,7 @@ export function mountUi(root: HTMLElement, app: App): void {
   regions.list.addEventListener('drop', event => { if (dropTrigger(event, app, app.state.view)) return; if (event.target === regions.list && event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { event.preventDefault(); app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE)) } })
   regions.mic.addEventListener('click', () => { void app.toggleVoice() })
   q<HTMLButtonElement>('help-button').addEventListener('click', () => toggleHelp(app))
+  regions.menuButton.innerHTML = iconSvg('☰')!
   regions.menuButton.addEventListener('click', (event) => {
     event.stopPropagation()
     app.toggleMenu()
@@ -223,6 +225,7 @@ function renderMic(el: HTMLButtonElement, state: AppState, app: App): void {
   el.classList.toggle('busy', v?.phase === 'uploading')
   el.disabled = v?.phase === 'uploading' || (!v && !app.canRecordVoice())
   el.textContent = v?.phase === 'recording' ? '■' : v?.phase === 'uploading' ? '…' : '🎙'
+  if (!v) el.innerHTML = iconSvg('🎙')!
   el.title = v?.phase === 'recording' ? 'Stop recording' : v?.phase === 'uploading' ? 'Transcribing and organizing…' : app.canRecordVoice() ? 'Record a voice note (transcribed and organized into notes)' : 'Connect to your account to record voice notes'
 }
 
@@ -269,7 +272,7 @@ function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): 
 }
 
 function renderRepository(el: HTMLElement, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor')) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
   const path = state.view, id = path.at(-1)
   const task = id ? viewAt(state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id) : null
   const info = app.repositoryInfo()
@@ -380,7 +383,7 @@ function workspace(app: App) {
   return prefs
 }
 function iconButton(icon: string, label: string, action: () => void): HTMLButtonElement {
-  const b = button('icon', icon, action); b.title = label; b.setAttribute('aria-label', label); return b
+  const b = button('icon', icon, action); const svg = iconSvg(icon, label); if (svg) b.innerHTML = svg; b.title = label; b.setAttribute('aria-label', label); return b
 }
 function accordion(app: App, key: string, label: string, ...children: HTMLElement[]): HTMLDetailsElement {
   const d = document.createElement('details'), summary = document.createElement('summary')
@@ -404,9 +407,18 @@ function choiceButton(app: App, at: Scope, id: string, choice: number, label: st
   if (connection && !connection.enabled) { b.disabled = true; b.title = 'Requires an active Fos server and a configured provider' }
   return b
 }
+function yamlImportButton(app: App): HTMLElement {
+  const input = document.createElement('input'); input.type = 'file'; input.accept = '.yaml,.yml'; input.hidden = true
+  input.addEventListener('change', async () => { const file = input.files?.[0]; if (!file) return; try { app.importYaml(await file.text()); app.notify('info', 'YAML imported as a child node. You can undo this.'); } catch (error) { app.notify('error', String(error)) } finally { if (box.dataset.transient) box.remove() } })
+  input.addEventListener('cancel', () => { if (box.dataset.transient) box.remove() })
+  const box = div('', ''); box.append(button('secondary small', 'Import YAML', () => input.click()), input); return box
+}
 function currentNodeActions(app: App): Action[] {
   const row = app.currentRow(), state = app.state
   return [
+    ...(app.state.view.at(-1) === HOME_ID && app.isOnline('fos') ? [{ label: 'Add integration peer…', run: () => app.addIntegrationChoice() }] : []),
+    { label: 'Export YAML', run: () => downloadText('fos-nodes.yaml', app.exportYaml()) },
+    { label: 'Import YAML…', run: () => { const control = yamlImportButton(app); control.dataset.transient = 'true'; document.body.append(control); control.querySelector('button')!.click(); control.hidden = true } },
     { label: 'Connect peer…', run: () => app.openModal('direct') },
     ...(app.canSpawnVirtualPeer() ? [{ label: 'Spawn virtual peer…', run: () => app.openModal('virtual') }] : []),
     ...(state.session?.kind === 'user' ? [{ label: 'Invite device here (QR)…', run: () => void app.startInvite() }] : []),
@@ -442,30 +454,32 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
 
 }
 function renderDeviceSettings(state: AppState, app: App, settings: boolean): HTMLElement {
-  const box = div('device-settings', '')
+  const box = document.createElement('ul'); box.className = 'device-settings list'
+  const setting = (key: string, ...children: HTMLElement[]) => { const row = document.createElement('li'); row.className = 'task setting-row'; row.dataset.setting = key; row.dataset.argument = `${app.settingKey(key)}:${state.replica.meta.peerId}`; row.append(...children); box.append(row) }
   const transport = app.transport()
   if (transport) box.append(div('muted', state.virtual ? `Virtual peer of ${state.virtual.hostName}` : `Device syncs ${pathLabel(app.labels().scope)}`))
   if (!settings) return box
-  const name = document.createElement('input'); name.type = 'text'; name.value = state.deviceName; name.setAttribute('aria-label', 'Device name')
+  const name = document.createElement('input'); name.type = 'text'; name.value = app.settingValue<string>('name') ?? state.deviceName; name.setAttribute('aria-label', 'Device name')
   name.addEventListener('change', () => { if (name.value.trim()) app.setDeviceName(name.value.trim()) })
-  const nameLabel = document.createElement('label'); nameLabel.append('Device name ', name); box.append(nameLabel)
+  const nameLabel = document.createElement('label'); nameLabel.append('Device name ', name); setting('name', nameLabel)
   const theme = document.createElement('select'); theme.setAttribute('aria-label', 'Device theme')
   for (const value of ['system', 'light', 'dark']) theme.append(new Option(value[0].toUpperCase() + value.slice(1), value))
-  theme.value = document.documentElement.dataset.theme || 'system'
-  theme.addEventListener('change', () => { document.documentElement.dataset.theme = theme.value; try { localStorage.setItem('fos.device.theme', theme.value) } catch { /* session-only preference */ } })
-  const label = document.createElement('label'); label.append('Device theme ', theme); box.append(label)
+  theme.value = app.settingValue<string>('theme') ?? document.documentElement.dataset.theme ?? 'system'
+  theme.addEventListener('change', () => { document.documentElement.dataset.theme = theme.value; app.setSetting('theme', theme.value); try { localStorage.setItem('fos.device.theme', theme.value) } catch { /* session-only preference */ } })
+  const label = document.createElement('label'); label.append('Device theme ', theme); setting('theme', label)
   for (const [permission, label] of [['microphone', 'Voice / audio'], ['camera', 'Video'], ['geolocation', 'Location']] as const) {
-    const status = span('muted', 'Not checked')
+    const status = span('muted', app.settingValue<string>(permission) ?? 'Not checked')
     const check = button('secondary small', `Check ${label.toLowerCase()} permission`, async () => {
-      try { const result = await navigator.permissions.query({ name: permission as PermissionName }); status.textContent = result.state }
+      try { const result = await navigator.permissions.query({ name: permission as PermissionName }); status.textContent = result.state; app.setSetting(permission, result.state) }
       catch { status.textContent = 'Status unavailable in this browser. Use the browser’s site permissions.' }
     })
-    box.append(div('permission-label', label), check, status)
+    setting(permission, div('permission-label', label), check, status)
   }
-  const connections = div('row', '')
-  connections.append(button('secondary small', 'Connect Server', () => app.openModal('connect')), button('secondary small', 'Direct Connect', () => app.openModal('direct')))
-  box.append(connections)
-  const rows = document.createElement('ul'); rows.className = 'list'; rows.append(...renderRootRows(state, app, 'settings')); box.append(rows)
+  setting('server', button('secondary small', 'Connect Server', () => app.openModal('connect')))
+  setting('direct', button('secondary small', 'Direct Connect', () => app.openModal('direct')))
+  setting('export', button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
+  setting('import', yamlImportButton(app))
+  for (const row of renderRootRows(state, app, 'settings')) { row.dataset.argument = app.settingKey(row.classList.contains('data-sessions-row') ? 'sessions' : 'resetHome'); box.append(row) }
   return box
 }
 function placeholderForm(app: App): HTMLElement {
@@ -491,7 +505,7 @@ function rowMatches(row: TaskView, filter: string, state: AppState, path: Scope)
   return path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => rowMatches(child, filter, state, [...path, child.id]))
 }
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor')) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
   const row = app.currentRow()
   el.hidden = false
   const preview = proposalPreview(app)
@@ -546,7 +560,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     values.append(search, placeholderForm(app), dynamicValues)
     const voice = div('', ''); voice.dataset.slot = 'voice'
     const repository = div('', ''); repository.dataset.slot = 'repository'
-    const settings = state.atRoot ? renderDeviceSettings(state, app, true) : div('', '')
+    const settings = div('', '')
     el.replaceChildren(toolbar, input, accordion(app, 'context', 'Node context', context), accordion(app, 'actions', 'Node actions', controls, voice, repository), accordion(app, 'values', 'Node values', values), settings)
     details.set(el, entry); cached = entry
   } else if (cached.input.value === cached.baseline) {
@@ -582,6 +596,8 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
     if (preview.proposal.peerId === state.replica.meta.peerId && preview.proposal.status === 'rejected') controls.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(preview.proposal.id)))
   }
+  const integration = app.integrationHandler()
+  if (integration && !preview) { const connect = button('secondary small', `Connect ${integration.provider}`, () => void app.connectIntegration(integration.provider)); connect.disabled = !integration.enabled; controls.append(connect) }
   controls.prepend(alternativePicker(app, state.view, row))
   el.querySelector<HTMLElement>('.node-toolbar')!.hidden = !!preview
   el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview
@@ -596,6 +612,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     else if (arg.status !== 'ready') line.append(button('secondary small', `Create ${arg.type} child`, () => app.createArgumentChild(arg.id)))
     const pick = document.createElement('select'); pick.setAttribute('aria-label', `Bind ${arg.name}`); pick.append(new Option('Choose matching value…', ''))
     for (const candidate of arg.candidates) pick.append(new Option(candidate.label, candidate.cid))
+    if (arg.type !== 'text') { const branches = argumentBranchPicker(app, [], arg.id); if (branches) line.append(branches) }
     pick.disabled = !arg.candidates.length; pick.addEventListener('change', () => app.bindPlaceholder(arg.id, pick.value)); line.append(pick); dynamicValues.append(line)
   }
   const triggers = document.createElement('select'); triggers.className = 'small'; triggers.setAttribute('aria-label', 'Add trigger workflow'); triggers.title = 'Use a template to create a new instance on each event. Device triggers run while this app is open.'
@@ -677,7 +694,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor')) return
+  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.alternative-picker, .argument-editor, .setting-row'))) return
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
@@ -691,6 +708,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const filtered = ((filter?.key === path && filter.value !== 'all') || prefs.search) ? { ...node, tasks: node.tasks.filter(matches) } : node
   const pending = prefs.layout === 'queue' ? { ...filtered, tasks: filtered.tasks.filter(t => !t.done && !t.requirement?.satisfied) } : filtered
   let rows = renderRows(pending, [], 0, state, app)
+  if (state.atRoot) rows.unshift(...Array.from(renderDeviceSettings(state, app, true).children) as HTMLElement[])
   if (prefs.layout === 'chat') {
     const comments: Array<{ row: TaskView; at: Scope }> = []
     const collect = (node: NodeView, at: Scope) => {
@@ -740,7 +758,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
     const input = ghost.querySelector<HTMLTextAreaElement>('textarea.edit')!
     queueMicrotask(() => {
       const active = document.activeElement
-      if (input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
+      if (!app.state.selected && input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
     })
   }
 }
@@ -859,6 +877,15 @@ function argumentDrop(el: HTMLElement, app: App, at: Scope, id: string): void {
     app.dropArgument(at, id, event.dataTransfer?.getData(NODE_DRAG_TYPE) || drag?.id || '')
   })
 }
+function argumentBranchPicker(app: App, at: Scope, id: string): HTMLElement | null {
+  const arg = app.placeholders(at).find(p => p.id === id)
+  if (!arg?.branches) return null
+  const select = document.createElement('select'); select.setAttribute('aria-label', `Value branch for ${arg.name}`)
+  for (const [index, name] of arg.branches.names.entries()) select.append(new Option(name.startsWith('value-v') ? `Alternative ${index + 1} · ${name.slice(-8)}` : name, name))
+  select.value = arg.branches.selected
+  select.addEventListener('change', () => { const name = select.value; select.blur(); app.selectArgumentBranch(at, id, name) })
+  return select
+}
 function argumentEditor(app: App, at: Scope, id: string, name: string, text: string): HTMLElement {
   const panel = div('argument-editor', '')
   argumentDrop(panel, app, at, id)
@@ -874,7 +901,7 @@ function argumentEditor(app: App, at: Scope, id: string, name: string, text: str
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); save() }
     if (event.key === 'Escape') { input.value = baseline; input.blur() }
   })
-  panel.append(label, input); return panel
+  panel.append(label, input); const branches = argumentBranchPicker(app, at, id); if (branches) panel.append(branches); return panel
 }
 
 /** Rows for `node`'s tasks (and nested choices) at `depth`; `at` is the path relative to the view. */
@@ -1032,7 +1059,9 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.title = 'Click to edit'
   }
 
-  if (task.branches || (app.readsRequests() && viewAt(state.replica, [...state.view, ...at, task.id])?.proposals.length)) body.append(branchSelector(task, at, app))
+  const picker = branchSelector(task, at, app)
+  if (!task.branches) picker.classList.add('compact-picker')
+  body.append(picker)
 
   const meta = span('row-meta', '')
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
@@ -1697,7 +1726,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     li.append(span('zoom-dot', ''), span('handle', ''), dot, body, meta)
     rows.push(li)
   }
-  if (mode === 'peers' || mode === 'integrations') {
+  if (mode === 'peers' || (mode === 'integrations' && state.view.at(-1) === HOME_ID)) {
     const li = rowShell('add-peer-row')
     const form = document.createElement('form')
     form.className = 'row add-peer'
@@ -1708,6 +1737,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     if (mode === 'integrations') {
       for (const label of ['Custom OAuth (unavailable)', 'Custom API (unavailable)']) { const option = new Option(label, ''); option.disabled = true; type.append(option) }
     }
+    if (mode === 'peers' && state.view.at(-1) === HOME_ID && app.isOnline('fos')) type.append(new Option('Integration peer', 'integration'))
     if (mode === 'peers' && app.canSpawnVirtualPeer()) type.append(new Option('Virtual peer (new tab)', 'virtual'))
     for (const p of peers.filter((p) => p.integration && !p.integration.connected)) {
       const option = new Option(`${p.integration!.kind === 'oauth' ? 'OAuth: ' : ''}${p.name}`, p.id)
@@ -1723,10 +1753,12 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     type.addEventListener('change', () => { input.hidden = type.value !== 'member' })
     const go = button('secondary small', mode === 'integrations' ? 'Add integration choice' : 'Add peer', () => undefined)
     go.type = 'submit'
+    if (mode === 'integrations') go.disabled = !app.isOnline('fos')
     form.append(type, input, go)
     form.addEventListener('submit', (e) => {
       e.preventDefault()
       if (type.value === 'member') { if (owner) app.addPeerHere(input.value); else app.notify('error', 'Sign in as the owner to add a member.'); input.value = '' }
+      else if (type.value === 'integration') app.addIntegrationChoice()
       else if (type.value === 'virtual') app.openModal('virtual')
       else if (type.value === 'direct') app.openModal('direct')
       else if (type.value === 'invite') void app.startInvite()
@@ -2297,7 +2329,8 @@ function button(className: string, text: string, onClick: () => void): HTMLButto
   const el = document.createElement('button')
   el.type = 'button'
   el.className = className
-  el.textContent = text
+  const svg = iconSvg(text)
+  if (svg) { el.innerHTML = svg; el.setAttribute('aria-label', text) } else el.textContent = text
   el.addEventListener('click', onClick)
   return el
 }
