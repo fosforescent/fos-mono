@@ -612,6 +612,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     else if (arg.status !== 'ready') line.append(button('secondary small', `Create ${arg.type} child`, () => app.createArgumentChild(arg.id)))
     const pick = document.createElement('select'); pick.setAttribute('aria-label', `Bind ${arg.name}`); pick.append(new Option('Choose matching value…', ''))
     for (const candidate of arg.candidates) pick.append(new Option(candidate.label, candidate.cid))
+    if (arg.type !== 'text') { const branches = argumentBranchPicker(app, [], arg.id); if (branches) line.append(branches) }
     pick.disabled = !arg.candidates.length; pick.addEventListener('change', () => app.bindPlaceholder(arg.id, pick.value)); line.append(pick); dynamicValues.append(line)
   }
   const triggers = document.createElement('select'); triggers.className = 'small'; triggers.setAttribute('aria-label', 'Add trigger workflow'); triggers.title = 'Use a template to create a new instance on each event. Device triggers run while this app is open.'
@@ -876,6 +877,15 @@ function argumentDrop(el: HTMLElement, app: App, at: Scope, id: string): void {
     app.dropArgument(at, id, event.dataTransfer?.getData(NODE_DRAG_TYPE) || drag?.id || '')
   })
 }
+function argumentBranchPicker(app: App, at: Scope, id: string): HTMLElement | null {
+  const arg = app.placeholders(at).find(p => p.id === id)
+  if (!arg?.branches) return null
+  const select = document.createElement('select'); select.setAttribute('aria-label', `Value branch for ${arg.name}`)
+  for (const [index, name] of arg.branches.names.entries()) select.append(new Option(name.startsWith('value-v') ? `Alternative ${index + 1} · ${name.slice(-8)}` : name, name))
+  select.value = arg.branches.selected
+  select.addEventListener('change', () => { const name = select.value; select.blur(); app.selectArgumentBranch(at, id, name) })
+  return select
+}
 function argumentEditor(app: App, at: Scope, id: string, name: string, text: string): HTMLElement {
   const panel = div('argument-editor', '')
   argumentDrop(panel, app, at, id)
@@ -891,7 +901,7 @@ function argumentEditor(app: App, at: Scope, id: string, name: string, text: str
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); save() }
     if (event.key === 'Escape') { input.value = baseline; input.blur() }
   })
-  panel.append(label, input); return panel
+  panel.append(label, input); const branches = argumentBranchPicker(app, at, id); if (branches) panel.append(branches); return panel
 }
 
 /** Rows for `node`'s tasks (and nested choices) at `depth`; `at` is the path relative to the view. */

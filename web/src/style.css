@@ -420,3 +420,5 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 
 button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
 .setting-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; min-height: 2.5rem; }
+
+.argument-editor select { max-width: 100%; }

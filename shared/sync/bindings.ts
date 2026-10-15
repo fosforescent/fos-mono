@@ -2,7 +2,7 @@
 import { keyValueOf, splitFrontmatter } from './notes'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  readMembers, type Capability, put, childRows, requirementSatisfied, capabilityOf, acceptsOf, content, identityCid, isChoiceEdge, isMemberEdge, refTypeCid, refValueCid,
+  isBranchChoice, selectedBranchValue, readMembers, type Capability, put, childRows, requirementSatisfied, capabilityOf, acceptsOf, content, identityCid, isChoiceEdge, isMemberEdge, refTypeCid, refValueCid,
   resolveScope, valueContent, type Scope
 } from './graph'
 import { headCid, type Replica } from './replica'
@@ -98,6 +98,7 @@ export function resolveBinding(store: FosStore, type: string, target: string | n
     active.add(cid)
     try {
       const node = content(store, cid), actual = refTypeCid(store, node)
+      if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted) : fail('missing', 'Choose a supplied value branch') }
       if (actual && actual !== wanted) return fail('conflict', 'The bound value has an incompatible type')
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
       if (actual || refValueCid(store, node)) {

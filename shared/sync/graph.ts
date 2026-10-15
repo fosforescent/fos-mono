@@ -85,6 +85,43 @@ export function refValueCid(store: FosStore, value: FosNodeContent): string | nu
   return edge ? edge[1] : null
 }
 
+/** A supplied-value branch uses handler/value → shared incoming ref edges. */
+export function refBranches(store: FosStore, ref: FosNodeContent): { cid: string; id: string; names: string[]; selected: string } | null {
+  const cid = refValueCid(store, ref)
+  if (!cid || !isBranchChoice(store, content(store, cid))) return null
+  const record = readChoice(store, cid)
+  if (record.id !== ref.data.alias?.id) return null
+  return { cid, id: record.id, names: record.options.map(o => o.peerId), selected: branchSelection(store, cid) }
+}
+/** Union supplied values without copying their documents or merging distinct handlers. */
+export function putRefValueBranches(store: FosStore, ref: FosNodeContent, values: Array<string | null>, baseName = 'main', selectedValue?: string | null): string {
+  const id = ref.data.alias!.id
+  const incoming = put(store, refNodeContent(store, { alias: { id }, ...(ref.data.name ? { name: ref.data.name } : {}) }, null, [], refTypeCid(store, ref)))
+  const options: ChoiceOption[] = []
+  const add = (cid: string, preferred?: string) => {
+    if (options.some(o => o.edge?.[0] === cid)) return
+    const name = preferred && !options.some(o => o.peerId === preferred) ? preferred : options.length ? `value-${cid}` : baseName
+    options.push({ peerId: name, edge: [cid, incoming] })
+  }
+  for (const cid of values) {
+    if (!cid) continue
+    if (isBranchChoice(store, content(store, cid)) && readChoice(store, cid).id === id) {
+      for (const option of readChoice(store, cid).options) if (option.edge) add(option.edge[0], option.peerId)
+    } else {
+      const prior = values.filter((value): value is string => !!value && isBranchChoice(store, content(store, value)) && readChoice(store, value).id === id).flatMap(value => readChoice(store, value).options).find(option => option.edge?.[0] === cid)
+      add(cid, prior?.peerId)
+    }
+  }
+  const selected = options.find(o => o.edge?.[0] === selectedValue)?.peerId ?? options[0]?.peerId ?? baseName
+  return putBranches(store, id, options[0]?.edge ?? null, options, selected)
+}
+export function selectedBranchValue(store: FosStore, cid: string): string | null {
+  const edge = branchEdge(store, cid)
+  if (!edge) return null
+  const right = content(store, edge[1])
+  return refTypeCid(store, right) && right.data.alias?.id === readChoice(store, cid).id ? edge[0] : identityCid(store, edge)
+}
+
 export function refTypeCid(store: FosStore, value: FosNodeContent): string | null {
   const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())
   return edge ? edge[1] : null
@@ -93,19 +130,19 @@ export function refTypeCid(store: FosStore, value: FosNodeContent): string | nul
 /** The content a node stands for: its TARGETPOINTER value for ref nodes (not handles), the node itself otherwise. */
 export function valueContent(store: FosStore, cid: string): FosNodeContent {
   const value = content(store, cid)
-  if (isBranchChoice(store, value)) { const edge = branchEdge(store, cid); return edge ? valueContent(store, identityCid(store, edge)) : value }
+  if (isBranchChoice(store, value)) { const selected = selectedBranchValue(store, cid); return selected ? valueContent(store, selected) : value }
   if (isHandle(value)) return value
   const target = refValueCid(store, value)
-  return target && store.table.has(target) ? content(store, target) : value
+  return target && store.table.has(target) ? (isBranchChoice(store, content(store, target)) ? valueContent(store, target) : content(store, target)) : value
 }
 
 /** Cid of the content a node stands for (see valueContent). */
 export function valueCidOf(store: FosStore, cid: string): string {
   const value = content(store, cid)
-  if (isBranchChoice(store, value)) { const edge = branchEdge(store, cid); return edge ? valueCidOf(store, identityCid(store, edge)) : cid }
+  if (isBranchChoice(store, value)) { const selected = selectedBranchValue(store, cid); return selected ? valueCidOf(store, selected) : cid }
   if (isHandle(value)) return cid
   const target = refValueCid(store, value)
-  return target && store.table.has(target) ? target : cid
+  return target && store.table.has(target) ? (isBranchChoice(store, content(store, target)) ? valueCidOf(store, target) : target) : cid
 }
 
 /** Version against which a binding was offered. Adding offers does not invalidate other offers. */
@@ -256,6 +293,7 @@ export function scopeBranches(store: FosStore, root: string, path: Scope): Recor
   for (let i = 0; i <= path.length; i++) {
     const cid = resolveScope(store, root, path.slice(0, i))
     if (cid && isBranchChoice(store, content(store, cid))) result[readChoice(store, cid).id] = branchSelection(store, cid)
+    else if (cid) { const branches = refBranches(store, content(store, cid)); if (branches) result[branches.id] = branches.selected }
   }
   return result
 }
@@ -1531,7 +1569,12 @@ export function relinkContent(store: FosStore, previous: FosNodeContent, previou
   const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e))
   const data: FosNodeContent['data'] = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } }
   if (previous.data.ref) data.ref = previous.data.ref
-  const next = refNodeContent(store, data, put(store, strippedContent), bookkeeping, refTypeCid(store, previous))
+  if (previous.data.name) data.name = previous.data.name
+  const branches = refBranches(store, previous)
+  const active = branches && branchEdge(store, branches.cid)
+  const value = put(store, strippedContent)
+  const target = branches && active ? updateBranch(store, branches.cid, [value, active[1]]) : value
+  const next = refNodeContent(store, data, target, bookkeeping, refTypeCid(store, previous))
   return withPrev(store, next, previousCid)
 }
 
@@ -1654,7 +1697,15 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     const target = refValueCid(store, identity)
     const children = type ? [] : childEdges(value).map((edge) => withIdentity(store, edge, copy(identityCid(store, edge))))
     if (!type && isHandle(identity) && target) children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target])
-    const result = put(store, type ? refNodeContent(store, data, target && owned.has(target) ? copy(target) : target, [], type) : { data, children })
+    let bound = target && owned.has(target) ? copy(target) : target
+    const alternatives = type && refBranches(store, identity)
+    if (alternatives) {
+      const record = readChoice(store, alternatives.cid)
+      const incoming = put(store, refNodeContent(store, { alias: data.alias, ...(data.name ? { name: data.name } : {}) }, null, [], type))
+      const edge = (original: FosPathElem | null | undefined): FosPathElem | null => original ? [owned.has(original[0]) ? copy(original[0]) : original[0], incoming] : null
+      bound = putBranches(store, data.alias.id, edge(record.base), record.options.map(option => ({ ...option, edge: edge(option.edge) })), record.defaultName)
+    }
+    const result = put(store, type ? refNodeContent(store, data, bound, [], type) : { data, children })
     copied.set(cid, result)
     return result
   }

@@ -508,6 +508,16 @@ async function main() {
   argInput.blur(); contextApp.refresh()
   await new Promise(resolve => setTimeout(resolve, 20))
   assert(document.querySelector(`[data-id="${noteId}"] .note-body`).textContent.includes('Updated text'))
+  let valueBranches = document.querySelector(`[data-argument="${arg.id}"] select[aria-label="Value branch for mytext"]`)
+  assert.equal(valueBranches.options.length, 2, 'supplying a second value creates a branch')
+  const updatedBranch = valueBranches.value
+  valueBranches.value = [...valueBranches.options].find(option => option.value !== updatedBranch).value
+  valueBranches.dispatchEvent(new dom.window.Event('change'))
+  assert(document.querySelector(`[data-id="${noteId}"] .note-body`).textContent.includes('First text'))
+  valueBranches = document.querySelector(`[data-argument="${arg.id}"] select[aria-label="Value branch for mytext"]`)
+  valueBranches.value = updatedBranch; valueBranches.dispatchEvent(new dom.window.Event('change'))
+  assert(document.querySelector(`[data-id="${noteId}"] .note-body`).textContent.includes('Updated text'))
+
   contextApp.addTextArgument([], 'mytext', 'Conflicting text')
   assert.equal(contextApp.textArguments([]).filter(arg => arg.problems.some(p => p.includes('Incompatible'))).length, 2, 'both conflicting argument rows show the error')
   contextApp.goTo([])

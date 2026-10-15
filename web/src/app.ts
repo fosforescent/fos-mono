@@ -24,7 +24,7 @@ import { evaluateOnServer, createRepositoryBranch, readRepository, proposeReposi
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, refBranches, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -1701,7 +1701,11 @@ export class App {
   private setArgumentValue(at: Scope, id: string, value: string): void {
     const r = this.state.replica, path = [...this.state.view, ...at, id]
     const proposed = proposeRefAt(r, path, value, r.meta.peerId, this.now())
-    this.edit(applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now()))
+    const next = applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now())
+    const cid = resolveScope(next.store, headCid(next), path)
+    const branches = cid && refBranches(next.store, content(next.store, cid))
+    if (branches) this.branchSelections[branches.id] = branches.selected
+    this.edit(next); this.savePrefs()
   }
   setTextArgument(at: Scope, id: string, text: string): void {
     this.setArgumentValue(at, id, put(this.state.replica.store, { data: { description: { content: text } }, children: [] }))
@@ -1726,11 +1730,19 @@ export class App {
     const candidates = contextBindings(r, path, { isPeerActive: id => this.isOnline(id) })
     return argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:')).map(a => ({
       id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
+      branches: refBranches(r.store, content(r.store, a.cid)),
       child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && refTypeCid(r.store, content(r.store, target)) === a.type ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
       type: a.type === r.store.primitive.documentField.getId() ? 'text' : (CAPABILITIES.find(c => capabilityTarget(r.store, c) === a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type').replace(/^fos:(capability|type):/, ''),
       status: resolveBinding(r.store, a.type, refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id) }).status,
       candidates: candidates.filter(c => c.type === a.type && c.cid !== a.cid).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
     }))
+  }
+  selectArgumentBranch(at: Scope, id: string, name: string): void {
+    const branches = this.placeholders(at).find(p => p.id === id)?.branches
+    if (!branches?.names.includes(name)) return
+    document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+    selectBranch(this.state.replica.store, branches.id, name)
+    this.branchSelections[branches.id] = name; this.savePrefs(); this.refresh()
   }
   bindPlaceholder(id: string, cid: string, at: Scope = []): void {
     if (!this.placeholders(at).some(p => p.id === id && p.candidates.some(c => c.cid === cid))) return
