@@ -6,9 +6,9 @@ const { buildSync } = require('esbuild')
 const { JSDOM } = require('jsdom')
 const dir = mkdtempSync(path.join(tmpdir(), 'fos-template-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
-for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'FormData', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
+for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'FormData', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location', 'FileReader']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs } = require(path.join(dir, 'app.cjs'))
+const { parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, serveSync } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function main() {
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
@@ -112,6 +112,60 @@ async function main() {
   a.goTo([HOME_ID, first]); assert.equal(document.querySelector('.node-text').readOnly, true)
   a.openTemplatePicker([HOME_ID, first]); document.querySelector('[aria-label="Edit template"]').click()
   assert.equal(a.state.view.at(-1), definition)
+  // Context controls survive navigation; Home remains a fixed icon.
+  a.goTo([])
+  assert(document.querySelector('.crumb[aria-label="Home"] svg'))
+  assert(document.querySelector('.node-text').readOnly)
+  a.editCurrentText('Do not rename', { store: a.state.replica.store, head: headCid(a.state.replica), path: [HOME_ID] })
+  assert.notEqual(a.currentRow().title, 'Do not rename')
+  const context = document.querySelector('[data-accordion="context"]')
+  context.open = true; context.dispatchEvent(new window.Event('toggle'))
+  document.querySelector('[aria-label="Input / edit"]').click()
+  a.goTo([HOME_ID, second]); await tick()
+  assert(document.querySelector('[data-accordion="context"]').open)
+  assert.equal(document.querySelector('[aria-label="Input / edit"]').getAttribute('aria-selected'), 'true')
+  assert.equal(document.querySelector('.node-input').hidden, false)
+  assert(document.querySelector('.node-input [aria-label="Picture input"]'))
+  assert(document.querySelector('.node-input [aria-label="Video input"]'))
+  assert(!document.querySelector('.node-actions [aria-label="Undo in this node"]'))
+  const destination = [...a.state.view]
+  a.goTo([])
+  a.importText('# Imported feature\n- [ ] Imported task', 'markdown', destination)
+  assert(view(a.state.replica, destination).tasks.some(t => t.title === 'Imported feature'))
+  a.importText('config:\n  mode: test', 'yaml', destination)
+  assert(view(a.state.replica, destination).tasks.some(t => t.title === 'config'))
+  await a.attachFile(new window.File(['hello'], 'hello.txt', { type: 'text/plain' }), destination)
+  const attached = view(a.state.replica, destination).tasks.find(t => t.title === 'hello.txt')
+  assert.equal(a.attachment([...destination, attached.id]).data, 'data:text/plain;base64,aGVsbG8=')
+  // Media resolves into the node captured at initiation, even after navigation.
+  a.state.session = { baseUrl: 'http://localhost', jwt: 'test', username: 'test', kind: 'user' }
+  let finishMedia
+  globalThis.fetch = async () => ({ ok: true, json: () => new Promise(resolve => { finishMedia = resolve }) })
+  const media = a.inputMedia(new window.File(['image'], 'test.png', { type: 'image/png' }), destination)
+  await tick(); a.goTo([HOME_ID, first])
+  finishMedia({ title: 'Picture notes', summary: 'A diagram', transcript: 'Two tasks', clusters: [] })
+  await media
+  assert(view(a.state.replica, destination).tasks.some(t => t.title.includes('Picture notes')))
+  assert(!a.currentView().tasks.some(t => t.title.includes('Picture notes')))
+  a.state.session = null
+  const pullApp = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
+  pullApp.scheduleSync = () => {}
+  pullApp.state.session = { baseUrl: 'http://localhost', jwt: 'test', username: 'test', kind: 'user' }
+  const server = createReplica('server')
+  let packet
+  globalThis.fetch = async (_url, init) => {
+    packet = JSON.parse(init.body)
+    const result = serveSync(server.store, packet, 'server')
+    assert(!('error' in result))
+    return { ok: true, json: async () => result.response }
+  }
+  await pullApp.syncNow('initial')
+  pullApp.addRowAt([], 'plain', 'Unpushed local change')
+  const base = pullApp.state.replica.meta.baseCid
+  await pullApp.pullPeer(pullApp.pullPeers()[0].id)
+  assert.equal(packet.headCid, base, 'Pull advertises only the last shared head')
+  assert(pullApp.currentView().tasks.some(t => t.title === 'Unpushed local change'), 'Pull preserves local edits')
+  console.log('PASS: persistent context input, fixed Home, captured import/media destinations, and file attachment')
   console.log('PASS: account peer sign-in/registration, compact menus, multi-selection/copy, Markdown/YAML paste, refs, subtree chat/queue and type filters')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); rmSync(dir, { recursive: true, force: true }) })

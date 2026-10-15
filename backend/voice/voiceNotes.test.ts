@@ -96,3 +96,22 @@ test('prisma usage: paying detection, spend summed from voice-note debits, recor
   expect(created[0].description).toMatch(/^Voice note \(2 clusters/)
   expect(typeof created[0].transactionId).toBe('string')
 })
+
+test('media input uses the same organization pipeline and rejects unsupported or oversized files', async () => {
+  const transcribe = jest.fn(async () => 'A diagram of project tasks')
+  const handler = createVoiceNoteHandler(deps({ transcribe }))
+  const sent: { status: number; body: any } = { status: 200, body: null }
+  const res = { status(c: number) { sent.status = c; return res }, json(b: unknown) { sent.body = b; return res } } as unknown as Response
+  for (const mime of ['image/png', 'video/mp4']) {
+    sent.status = 200
+    await handler({ body: Buffer.from('media'), header: () => mime } as unknown as Request, res)
+    expect(sent.status).toBe(200)
+    expect(transcribe).toHaveBeenLastCalledWith(Buffer.from('media'), mime)
+    expect(sent.body.clusters).toHaveLength(2)
+  }
+  await handler({ body: Buffer.from('file'), header: () => 'text/html' } as unknown as Request, res)
+  expect(sent.status).toBe(415)
+  await handler({ body: Buffer.alloc(25 * 1024 * 1024 + 1), header: () => 'image/png' } as unknown as Request, res)
+  expect(sent.status).toBe(413)
+  expect(transcribe).toHaveBeenCalledTimes(2)
+})

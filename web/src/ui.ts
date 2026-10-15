@@ -271,7 +271,8 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
   const settingsContext = view.length > 0 && view[0] !== HOME_ID && !state.replica.meta.scope.length && !!viewAt(state.replica, [])?.tasks.some(row => row.id === HOME_ID)
-  const homeCrumb = button('crumb', settingsContext ? 'Settings' : labels.scope.length ? shortCrumb(pathLabel(labels.scope)) : 'Home', () => settingsContext ? app.goToRoot() : app.goTo([]))
+  const homeCrumb = button('crumb', settingsContext ? 'Settings' : labels.scope.length ? shortCrumb(pathLabel(labels.scope)) : '⌂', () => settingsContext ? app.goToRoot() : app.goTo([]))
+  if (!settingsContext && !labels.scope.length) { homeCrumb.innerHTML = iconSvg('⌂')!; homeCrumb.setAttribute('aria-label', 'Home'); homeCrumb.title = 'Home' }
   if (state.atRoot) {
     crumbs.append(span('crumb current', 'Settings'))
   } else {
@@ -443,22 +444,27 @@ function installRowClipboard(list: HTMLElement, app: App): void {
 }
 
 type NodeLayout = 'tree' | 'chat' | 'grid' | 'queue'
-const workspacePrefs = new WeakMap<App, Map<string, { tab: 'peers' | 'integrations' | 'device'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }>>()
-function workspace(app: App) {
-  let map = workspacePrefs.get(app)
-  if (!map) { map = new Map(); workspacePrefs.set(app, map) }
+type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
+const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
+const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
+function workspace(app: App): WorkspacePrefs {
+  let prefs = workspacePrefs.get(app)
+  if (!prefs) { prefs = { tab: 'peers', layout: 'tree', actionTab: 'main', search: '', open: {} }; workspacePrefs.set(app, prefs) }
   const key = JSON.stringify([app.state.atRoot, app.state.view])
-  let prefs = map.get(key)
-  if (!prefs) { prefs = { tab: 'peers', layout: 'tree', actionTab: 'main', search: '', open: { actions: true } }; map.set(key, prefs) }
+  let search = workspaceSearch.get(app)
+  if (!search) { search = { key, values: new Map() }; workspaceSearch.set(app, search) }
+  if (search.key !== key) { search.values.set(search.key, prefs.search); prefs.search = search.values.get(key) ?? ''; search.key = key }
   return prefs
 }
+
 function iconButton(icon: string, label: string, action: () => void): HTMLButtonElement {
   const b = button('icon', icon, action); const svg = iconSvg(icon, label); if (svg) b.innerHTML = svg; b.title = label; b.setAttribute('aria-label', label); return b
 }
 function accordion(app: App, key: string, label: string, ...children: HTMLElement[]): HTMLDetailsElement {
   const d = document.createElement('details'), summary = document.createElement('summary')
   d.className = 'node-accordion'; d.dataset.accordion = key; d.open = workspace(app).open[key] ?? false
-  summary.textContent = label; d.append(summary, ...children)
+  summary.innerHTML = iconSvg(key === 'context' ? '⚙' : key === 'actions' ? '▶' : 'inventory') ?? label
+  summary.title = label; summary.setAttribute('aria-label', label); d.append(summary, ...children)
   const prefs = workspace(app)
   d.addEventListener('toggle', () => { prefs.open[key] = d.open })
   return d
@@ -480,11 +486,35 @@ function choiceButton(app: App, at: Scope, id: string, choice: number, label: st
   return b
 }
 function yamlImportButton(app: App): HTMLElement {
-  const input = document.createElement('input'); input.type = 'file'; input.accept = '.yaml,.yml'; input.hidden = true
-  input.addEventListener('change', async () => { const file = input.files?.[0]; if (!file) return; try { app.importYaml(await file.text()); app.notify('info', 'YAML imported as a child node. You can undo this.'); } catch (error) { app.notify('error', String(error)) } finally { if (box.dataset.transient) box.remove() } })
-  input.addEventListener('cancel', () => { if (box.dataset.transient) box.remove() })
-  const box = div('', ''); box.append(button('secondary small', 'Import YAML', () => input.click()), input); return box
+  return button('secondary small', 'Import', () => openImport(app))
 }
+function openImport(app: App): void {
+  const at = [...app.state.view], store = app.state.replica.store
+  const dialog = document.createElement('dialog'); dialog.className = 'import-dialog'
+  const title = h4('Import'), input = document.createElement('input'); input.type = 'file'; input.accept = '.yaml,.yml,.md,.markdown,text/markdown,application/yaml'; input.setAttribute('aria-label', 'Markdown or YAML file')
+  const format = document.createElement('select'); format.setAttribute('aria-label', 'Import format'); format.append(new Option('Detect from file', ''), new Option('Markdown', 'markdown'), new Option('YAML', 'yaml'))
+  const error = div('error', '')
+  dialog.append(title, format, input, error, button('secondary', 'Cancel', () => dialog.close()))
+  input.onchange = async () => {
+    const file = input.files?.[0]; if (!file) return
+    try {
+      if (file.size > 1024 * 1024) throw new Error('Import up to 1 MB at a time.')
+      const text = await file.text()
+      if (store !== app.state.replica.store) throw new Error('The data session changed. Open Import again.')
+      app.importText(text, format.value || (/\.ya?ml$/i.test(file.name) ? 'yaml' : 'markdown'), at)
+      dialog.close()
+    } catch (e) { error.textContent = e instanceof Error ? e.message : String(e) }
+  }
+  dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal()
+}
+function mediaPicker(app: App, label: string, accept: string, attach = false): HTMLElement {
+  const input = document.createElement('input'); input.type = 'file'; input.accept = accept; input.hidden = true; input.setAttribute('aria-label', label)
+  const box = span('media-input', ''), trigger = iconButton(attach ? 'file' : accept.startsWith('image') ? 'image' : 'video', label, () => { at = [...app.state.view]; store = app.state.replica.store; input.click() })
+  let at = [...app.state.view], store = app.state.replica.store
+  input.onchange = async () => { const file = input.files?.[0]; if (!file || store !== app.state.replica.store) return; try { if (attach) await app.attachFile(file, at); else await app.inputMedia(file, at) } catch (error) { app.notify('error', String(error)) } finally { input.value = '' } }
+  box.append(trigger, input); return box
+}
+
 function currentNodeActions(app: App): Action[] {
   const row = app.currentRow()
   return row ? [
@@ -497,12 +527,13 @@ function currentNodeActions(app: App): Action[] {
 function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   const prefs = workspace(app), tabs = div('node-tabs', '')
   tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Node context')
-  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device']] as const) {
+  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit']] as const) {
     const b = iconButton(icon, label, () => { prefs.tab = tab; app.refresh() })
     b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab)); tabs.append(b)
   }
   const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
   const rows = document.createElement('ul'); rows.className = 'list context-peers'
+  if (prefs.tab === 'input') { el.replaceChildren(tabs); return }
   if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
   else panel.append(span('muted', 'Settings and peer constructors are editable child rows below.'))
   panel.append(rows)
@@ -618,7 +649,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   let cached = details.get(el)
   if (!cached || cached.key !== key || cached.store !== state.replica.store) {
     const input = document.createElement('textarea'); input.className = 'node-text'; input.rows = 4
-    input.setAttribute('aria-label', 'Current node text'); input.value = title; input.hidden = !row && !preview; input.readOnly = !!preview
+    input.setAttribute('aria-label', 'Current node text'); input.value = row?.id === HOME_ID ? '' : title; input.hidden = row?.id === HOME_ID || (!row && !preview); input.readOnly = !!preview || row?.id === HOME_ID
     const controls = div('node-actions', '')
     const entry = { key, store: state.replica.store, input, baseline: title, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls }
     const save = () => {
@@ -650,7 +681,9 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     values.append(search, placeholderForm(app), dynamicValues)
     const voice = div('', ''); voice.dataset.slot = 'voice'
     const repository = div('', ''); repository.dataset.slot = 'repository'
-    el.replaceChildren(toolbar, input, accordion(app, 'context', 'Node context', context), accordion(app, 'actions', 'Node actions', controls, voice, repository), accordion(app, 'values', 'Node values', values))
+    const edit = div('node-input', ''); edit.append(div('input-controls', ''), input, voice)
+    const panels = div('workspace-panels', ''); panels.append(accordion(app, 'context', 'Node context', context, edit), accordion(app, 'actions', 'Node actions', controls, repository), accordion(app, 'values', 'Node values', values))
+    el.replaceChildren(toolbar, panels)
     details.set(el, entry); cached = entry
   } else if (cached.input.value === cached.baseline) {
     cached.baseline = title; cached.input.value = title
@@ -672,12 +705,17 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (row.requirement.capability === 'confirmation' && state.session) controls.append(button('secondary small', 'Confirm', () => app.supplyRequirementAt(state.view.slice(0, -1), row.id, { capability: 'confirmation' }, true)))
     if (row.requirement.capability === 'choice') for (const [choice, label] of (row.requirement.options ?? []).entries()) controls.append(choiceButton(app, state.view.slice(0, -1), row.id, choice, label, true))
   }
+  const edit = el.querySelector<HTMLElement>('.node-input')!
+  edit.hidden = workspace(app).tab !== 'input'
+  const inputs = edit.querySelector<HTMLElement>('.input-controls')!; inputs.replaceChildren()
   for (const redo of [false, true]) {
-    const control = iconButton(redo ? '↪' : '↶', redo ? 'Redo in this node' : 'Undo in this node', () => { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); app.undoNode(redo) })
-    control.disabled = !app.canUndoNode(redo); control.addEventListener('mousedown', e => e.preventDefault()); controls.append(control)
+    const control = iconButton(redo ? '↪' : '↶', redo ? 'Redo in this node' : 'Undo in this node', () => { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); if (document.activeElement !== cached!.input) cached!.input.dispatchEvent(new window.Event('commit-edit')); app.undoNode(redo) })
+    control.disabled = !!preview || !app.canUndoNode(redo); control.onmousedown = e => e.preventDefault(); inputs.append(control)
   }
-  const persist = iconButton('⟳', 'Sync / persist node', () => { cached!.input.dispatchEvent(new window.Event('commit-edit')); void app.syncNow('node action') })
-  persist.disabled = state.connection === 'syncing'; controls.append(persist)
+  if (!preview) {
+    inputs.append(mediaPicker(app, 'Picture input', 'image/jpeg,image/png,image/webp'), mediaPicker(app, 'Video input', 'video/mp4,video/webm'), mediaPicker(app, 'Attach file (up to 1 MB)', '', true), yamlImportButton(app))
+    for (const peer of app.pullPeers()) { const pull = button('secondary small', `Pull · ${peer.name}`, () => void app.pullPeer(peer.id)); pull.disabled = state.connection === 'syncing'; inputs.append(pull) }
+  }
   if (preview) {
     controls.replaceChildren(span('muted', 'Read-only proposed branch'))
     if (state.view.length) controls.append(button('secondary small', 'Copy to branch…', () => {
@@ -692,7 +730,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (row?.construction) controls.append(constructorBody(row, state, app))
   if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.append(auth) }
   if (row && app.isOnline('integration:github')) controls.append(button('secondary small', 'Connect GitHub repository…', () => { const repo = window.prompt('Repository (owner/name)'); if (repo) app.bindNodeRepository(state.view.slice(0, -1), row.id, repo, true) }))
-  controls.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())), yamlImportButton(app))
+  inputs.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
   el.querySelector<HTMLElement>('.node-toolbar')!.hidden = !!preview || !row
   el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview
   const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
@@ -757,7 +795,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   actionBody.setAttribute('role', 'tabpanel'); actionBody.setAttribute('aria-label', 'Selected node actions')
   actionBody.append(...Array.from(controls.childNodes))
   controls.append(actionTabs, actionBody)
-  el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview || workspace(app).actionTab !== 'main'
+  el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview
   el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(workspace(app).actionTab)
   const layouts = div('node-tabs', ''); layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Child view')
   for (const [layout, icon, label] of [['tree', '☷', 'Tree view'], ['chat', '☏', 'Chat view'], ['grid', '▦', 'Grid / pin view'], ['queue', '☑', 'Queue view']] as const) {
@@ -1148,7 +1186,8 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
+  if (task.id === HOME_ID) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
+  else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.kind === 'ref') {
@@ -1169,6 +1208,13 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.title = 'Click to edit'
   }
 
+  const attachment = app.attachment([...state.view, ...at, task.id])
+  if (attachment) body.append(button('secondary small', 'Download attachment', () => {
+    try {
+      const encoded = attachment.data.split(',')[1] ?? '', bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' })), a = document.createElement('a'); a.href = url; a.download = attachment.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch { app.notify('error', 'This attachment could not be read.') }
+  }))
   const templateIcon = app.templateIcon([...state.view, ...at, task.id])
   if (templateIcon) body.prepend(span('template-icon', templateIcon))
   if (task.branches || viewAt(state.replica, [...state.view, ...path])?.proposals.length) body.append(branchSelector(task, at, app))

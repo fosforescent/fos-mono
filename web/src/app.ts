@@ -1,3 +1,4 @@
+import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
@@ -733,7 +734,17 @@ export class App {
     this.debounceTimer = setTimeout(() => void this.syncNow('edit'), 600)
   }
 
-  async syncNow(_reason: string): Promise<void> {
+  pullPeers(): Array<{ id: string; name: string }> {
+    const transport = this.transport()
+    if (!transport) return []
+    return [{ id: transport, name: transport === 'account' ? 'Fos' : transport === 'virtual' ? this.state.virtual?.hostName ?? 'Parent tab' : 'Connected device' }]
+  }
+  async pullPeer(id: string): Promise<void> {
+    if (id !== this.transport()) { this.notify('error', 'This peer is no longer connected.'); return }
+    if (this.syncInFlight) { this.notify('info', 'Wait for the current sync to finish, then pull.'); return }
+    await this.syncNow('pull', true)
+  }
+  async syncNow(_reason: string, pullOnly = false): Promise<void> {
     if (this.projectSwitching) { this.syncRequested = true; return }
     const transport = this.transport()
     if (!transport) return
@@ -749,7 +760,7 @@ export class App {
     const session = this.state.session
     const generation = this.authGeneration
     try {
-      let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush') })
+      let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !pullOnly && (transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush')) })
       const send = (packet: SyncRequest) => transport === 'account'
         ? peerSync(session as Session, packet)
         : transport === 'virtual' ? this.virtualPeers!.sync(packet) : (this.link as DirectLink).sync(packet)
@@ -759,7 +770,7 @@ export class App {
         const missing = error instanceof ApiError && (error.code === 'missing-nodes' || error.message.startsWith('head node not provided'))
         if (!missing || (this.state.session !== session || generation !== this.authGeneration)) throw error
         // Keep the agreed merge base. A reset server needs its closure too.
-        request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush'), full: true })
+        request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !pullOnly && (transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush')), full: true })
         response = await send(request)
       }
       if ((this.state.session !== session || generation !== this.authGeneration)) return
@@ -999,6 +1010,7 @@ export class App {
     if (row && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
   rewriteRowAt(at: Scope, id: string, parsed: import('./rows').ParsedInput, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
+    if (id === HOME_ID) return
     if ((parsed.children?.length || parsed.peer !== undefined) && !this.groupedEdit) { this.together(() => this.rewriteRowAt(at, id, parsed, draft)); return }
     if (draft && draft.store !== this.state.replica.store) return
     let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
@@ -1598,7 +1610,7 @@ export class App {
   }
   /** The full text editor uses the same three-way merge as cells, preserving remote edits. */
   editCurrentText(text: string, draft: { store: Replica['store']; head: string; path: Scope }): void {
-    if (draft.store !== this.state.replica.store || !draft.path.length) return
+    if (draft.store !== this.state.replica.store || !draft.path.length || draft.path.at(-1) === HOME_ID) return
     const parent = draft.path.slice(0, -1), id = draft.path.at(-1)!
     if (headCid(this.state.replica) === draft.head) { this.edit(renameTask(this.state.replica, parent, id, text, this.now())); return }
     const branch = createReplica(this.state.replica.meta.peerId)
@@ -2243,7 +2255,30 @@ export class App {
   }
 
   /** Note blocks from a transcription: one parent note (summary) with a note per cluster and its points as rows, plus the transcript. */
-  insertVoiceNote(note: VoiceNote, at: Scope = this.state.view): void {
+  async inputMedia(file: File, at: Scope = [...this.state.view]): Promise<void> {
+    const session = this.state.session, store = this.state.replica.store
+    if (!session) { this.notify('error', 'Connect to Fos to process media.'); return }
+    if (!/^(image\/(jpeg|png|webp)|video\/(mp4|webm))$/.test(file.type) || file.size > 25 * 1024 * 1024) { this.notify('error', 'Choose JPEG, PNG, WebP, MP4 or WebM, up to 25 MB.'); return }
+    this.notify('info', `Processing ${file.name}…`)
+    try {
+      const note = await transcribeVoice(session, file)
+      if (this.state.replica.store !== store || this.state.session !== session) return
+      this.insertVoiceNote(note, at, 'Source description')
+      this.notify('info', 'Media organized into child notes.')
+    } catch (error) { if (this.state.replica.store === store) this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
+  async attachFile(file: File, at: Scope = [...this.state.view]): Promise<void> {
+    const store = this.state.replica.store
+    if (file.size > 1024 * 1024) { this.notify('error', 'Attachments are limited to 1 MB while documents use browser storage.'); return }
+    const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read file.')); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(file) })
+    if (this.state.replica.store !== store || !view(this.state.replica, at)) return
+    const id = newId()
+    let r = addRow(this.state.replica, at, 'plain', file.name, this.now(), { id })
+    r = writeNodeValue(r, [...at, id], 'fos:attachment', { name: file.name, type: file.type, data, size: file.size }, this.now())
+    this.edit(r)
+  }
+  attachment(at: Scope) { return readNodeValue<{ name: string; type: string; data: string; size: number }>(this.state.replica, at, 'fos:attachment') }
+  insertVoiceNote(note: VoiceNote, at: Scope = this.state.view, sourceLabel = 'Transcript'): void {
     if (!view(this.state.replica, at)) throw new Error('The recording location was removed. Voice note could not be added.')
     const stamp = new Date(this.now()).toLocaleString()
     const parentId = crypto.randomUUID()
@@ -2253,7 +2288,7 @@ export class App {
       replica = addRow(replica, [...at, parentId], 'note', `## ${cluster.title}\n\n**${cluster.sentiment}** — ${cluster.summary}`, this.now(), { id: clusterId })
       for (const point of cluster.points) replica = addRow(replica, [...at, parentId, clusterId], 'plain', point, this.now())
     }
-    replica = addRow(replica, [...at, parentId], 'note', `## Transcript\n\n${note.transcript}`, this.now())
+    replica = addRow(replica, [...at, parentId], 'note', `## ${sourceLabel}\n\n${note.transcript}`, this.now())
     this.edit(replica)
   }
 
@@ -2300,6 +2335,7 @@ export class App {
     this.edit(setTaskDone(this.state.replica, [...this.state.view, ...at], task.id, !task.done, this.now()))
   }
   renameTaskAt(at: Scope, taskId: string, title: string): void {
+    if (taskId === HOME_ID) return
     this.edit(renameTask(this.state.replica, [...this.state.view, ...at], taskId, title, this.now()))
   }
   deleteTaskAt(at: Scope, taskId: string): void {
@@ -2544,6 +2580,21 @@ export class App {
     if (r !== this.state.replica) { this.set({ replica: r }); this.scheduleSync() }
   }
   exportYaml(): string { return exportNodeYaml(this.state.replica, this.state.view) }
+  importText(text: string, format: string, at: Scope): void {
+    if (!view(this.state.replica, at)) throw new Error('The import destination was removed.')
+    if (format === 'yaml' && /^\s*["']?v2-[a-f0-9]+["']?:/i.test(text)) { this.importYaml(text, at); return }
+    const rows = parsePastedRows(format === 'yaml' ? '```yaml\n' + text + '\n```' : text)
+    this.together(() => {
+      const append = (parent: Scope, rows: import('./rows').ParsedInput[]) => {
+        for (const row of rows) {
+          const id = newId(); this.edit(addRow(this.state.replica, parent, row.kind, row.text, this.now(), { id, done: row.done, ...row.extras }))
+          if (row.peer !== undefined) this.setPeerRow([...parent, id], row.peer)
+          if (row.children) append([...parent, id], row.children)
+        }
+      }
+      append(at, rows)
+    })
+  }
   importYaml(text: string, destination = this.state.view): void {
     const parsed = parseNodeYaml(text), r = this.state.replica
     importNodes(r.store, parsed.nodes)
