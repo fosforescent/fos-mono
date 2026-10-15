@@ -1,3 +1,4 @@
+mod agents;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -679,6 +680,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(agents::AgentRuns::default())
         .manage(app_state)
         .manage(peer_state)
         .setup(|app| {
@@ -746,6 +748,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            agents::validate_agent_repository, agents::agent_start, agents::agent_poll, agents::agent_control,
             find_project,
             read_project_file,
             write_project_file,
