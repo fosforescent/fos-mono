@@ -213,7 +213,6 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   const session = state.session
   if (!session) item('Connect…', () => app.goToAccountPeer(), 'primary-text')
   item('⚙ Settings', () => app.goToRoot())
-  if (app.canSpawnVirtualPeer()) item('Spawn virtual peer…', () => app.openModal('virtual'))
   if (session?.kind === 'user') {
     item('Invite a device here', () => void app.startInvite())
     item(`Connection requests${state.requests.length ? ` (${state.requests.length})` : ''}`, () => app.openModal('requests'))
@@ -444,7 +443,7 @@ function installRowClipboard(list: HTMLElement, app: App): void {
 }
 
 type NodeLayout = 'tree' | 'chat' | 'grid' | 'queue'
-type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
+type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
 const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
 const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
 function workspace(app: App): WorkspacePrefs {
@@ -527,20 +526,24 @@ function currentNodeActions(app: App): Action[] {
 function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   const prefs = workspace(app), tabs = div('node-tabs', '')
   tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Node context')
-  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit']] as const) {
+  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values']] as const) {
     const b = iconButton(icon, label, () => { prefs.tab = tab; app.refresh() })
     b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab)); tabs.append(b)
   }
   const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
   const rows = document.createElement('ul'); rows.className = 'list context-peers'
-  if (prefs.tab === 'input') { el.replaceChildren(tabs); return }
+  if (prefs.tab === 'input' || prefs.tab === 'values') { el.replaceChildren(tabs); return }
   if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
   else panel.append(span('muted', 'Settings and peer constructors are editable child rows below.'))
   panel.append(rows)
   panel.append(span('muted', 'Type @{ in a new row to add a peer.'))
   if (prefs.tab === 'integrations') panel.prepend(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
   if (prefs.tab === 'device' && app.transport()) panel.append(span('muted', `Device syncs ${pathLabel(app.labels().scope)}`))
-  if (prefs.tab === 'peers') panel.append(span('muted', `${app.currentView()?.versions ?? 0} previous versions`))
+  if (prefs.tab === 'peers') {
+    const spawn = button('secondary small', 'Spawn virtual peer…', () => app.openModal('virtual'))
+    spawn.disabled = !app.canSpawnVirtualPeer()
+    panel.append(spawn, span('muted', `${app.currentView()?.versions ?? 0} previous versions`))
+  }
   const active = document.activeElement as HTMLElement | null
   if (active && el.contains(active) && active.matches('input,select')) return
   el.replaceChildren(tabs, panel)
@@ -682,7 +685,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const voice = div('', ''); voice.dataset.slot = 'voice'
     const repository = div('', ''); repository.dataset.slot = 'repository'
     const edit = div('node-input', ''); edit.append(div('input-controls', ''), input, voice)
-    const panels = div('workspace-panels', ''); panels.append(accordion(app, 'context', 'Node context', context, edit), accordion(app, 'actions', 'Node actions', controls, repository), accordion(app, 'values', 'Node values', values))
+    const panels = div('workspace-panels', ''); panels.append(accordion(app, 'actions', 'Node actions', controls, repository), accordion(app, 'context', 'Node context', context, edit, values))
     el.replaceChildren(toolbar, panels)
     details.set(el, entry); cached = entry
   } else if (cached.input.value === cached.baseline) {
@@ -692,6 +695,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const toolbar = el.querySelector<HTMLElement>('.node-toolbar')!
   toolbar.querySelector('.alternative-picker')?.remove()
   if (row?.branches || app.currentView()?.proposals.length) toolbar.append(alternativePicker(app, state.view, row))
+  if (preview && workspace(app).tab === 'values') workspace(app).tab = 'peers'
   renderNodeContext(el.querySelector<HTMLElement>('.node-context')!, state, app)
   const controls = cached.controls
   controls.replaceChildren()
@@ -732,7 +736,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (row && app.isOnline('integration:github')) controls.append(button('secondary small', 'Connect GitHub repository…', () => { const repo = window.prompt('Repository (owner/name)'); if (repo) app.bindNodeRepository(state.view.slice(0, -1), row.id, repo, true) }))
   inputs.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
   el.querySelector<HTMLElement>('.node-toolbar')!.hidden = !!preview || !row
-  el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview
+  el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview || workspace(app).tab !== 'values'
   const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
   dynamicValues.replaceChildren()
   for (const arg of app.placeholders()) {
