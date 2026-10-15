@@ -170,3 +170,18 @@ The backend directory contains the Node.js/Express API server that provides the 
 `sync/sharing.ts` serves audience-scoped node projections at `/public/node/visit` and `/public/node/input`; signed-in visitors use `/user/data/sharing/visit` and `/user/data/sharing/input`. Only the owning account can configure `/user/data/sharing`. Settings, poll handlers and participation use existing named typed refs and member edges. Anonymous receipts use a separate derived signing key and cannot authenticate account sync. Poll names are display labels, not verified identities.
 
 Signed-in visitors get a host-peer container and foreign reference under Home. Their input and local source links stay in their own account; the host stores an allowlisted projection plus a reference to that participation state. Anonymous input is owned by the host. Approvals/rankings record input and never call proposal merge. Poll ballots are versioned; changed options invalidate earlier totals, and resubmission replaces the visitor's prior input. Only declared unbound text slots and direct allocation requirements are exposed as fields. Source projections refresh on submission, not continuously. Links currently address a node by account/path and support the default context; branch-specific links are not supported. Cross-account writes use deterministic refs and sorted per-account locks but are not a distributed transaction: guest intent may remain after a failed host save and can be resubmitted.
+
+## Scoped project MCP
+`mcp/taskTree.ts` exposes `POST /user/data/peer-sync/mcp` through the existing JWT
+middleware. Invited peers are bounded by their signed scope; every graph operation
+checks live membership, branch selections and explicit child restrictions. The
+stateless MCP view lists/searches visible task children and creates ordinary
+proposals under the attachment with optimistic revisions, the existing per-user
+lock and store CAS. It never accepts arbitrary CIDs, raw graph writes or peer
+integration effects. Owners must provide an explicit `scope` query parameter;
+owner evaluation calls `createEvaluationService.runNode` after releasing the read
+lock, and the evaluator performs its own version check/claim. Branch selection is
+request-local. The raw peer-sync inspector now refuses peer credentials: it is an
+owner diagnostic, not a scoped read projection. Packages and their single shared
+skill/stdio transport live under `plugins/fos-project`; release automation updates
+an isolated repository marketplace branch, not public app-store listings.

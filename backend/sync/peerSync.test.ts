@@ -160,3 +160,11 @@ test('a constructor-aware device opens an existing account in Home without losin
   expect(view(client, [])!.tasks.map(row => row.id)).toEqual([HOME_ID])
   expect(view(client, [HOME_ID])!.tasks.map(row => row.id)).toEqual(['project'])
 })
+
+test('raw inspector cannot expose an account root using a scoped peer credential', async () => {
+  const { createPeerSyncInspector } = await import('./peerSync')
+  const { deps } = makeDeps()
+  const response = fakeRes()
+  await createPeerSyncInspector(deps)({ claims: { username: 'alice', kind: 'peer', peerId: 'agent', scope: ['project'] }, query: {} } as unknown as Request, response.res)
+  expect(response.sent().status).toBe(403)
+})

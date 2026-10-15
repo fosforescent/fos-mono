@@ -1,0 +1,16 @@
+{
+  "manifest_version": "0.3",
+  "name": "fos-project",
+  "version": "0.1.0",
+  "description": "Navigate an attached Fos task subtree and submit proposals for owner review.",
+  "author": { "name": "Fosforescent" },
+  "server": {
+    "type": "node",
+    "entry_point": "scripts/bridge.mjs",
+    "mcp_config": { "command": "node", "args": ["${__dirname}/scripts/bridge.mjs"], "env": { "FOS_AGENT_CONNECTION": "${user_config.connection}" } }
+  },
+  "user_config": {
+    "connection": { "type": "file", "title": "Scoped Fos connection", "description": "Connection JSON created by scripts/connect.mjs after approving a node invitation in Fos.", "required": true }
+  },
+  "compatibility": { "runtimes": { "node": ">=22" } }
+}

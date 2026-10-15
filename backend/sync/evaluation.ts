@@ -48,6 +48,7 @@ export function createEvaluationService(deps: PeerSyncDeps, effects: Effects) {
     })
   }
   return {
+    runNode: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string }) => run(username, request),
     runCron: (username: string) => run(username),
     async handler(req: Request, res: Response) {
       const claims = (req as unknown as { claims?: { username?: string; kind?: string } }).claims
