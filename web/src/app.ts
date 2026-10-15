@@ -1670,6 +1670,23 @@ export class App {
       this.edit(r); this.closeModal(); this.goTo([...parent, id])
     })
   }
+  constructorContext(): Scope { return this.state.selected ? [...this.state.view, ...this.state.selected] : [...this.state.view] }
+  constructorNeeds(path = this.constructorContext()): string[] {
+    const row = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1)) : undefined
+    const needs: string[] = []
+    if (row?.requirement && !row.requirement.satisfied) needs.push(row.requirement.capability === 'allocation' ? row.requirement.resource ?? 'allocation' : row.requirement.capability)
+    const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
+    if (cid) for (const arg of argumentRefs(this.state.replica.store, cid)) {
+      if (arg.name?.startsWith('fos:') || refValueCid(this.state.replica.store, content(this.state.replica.store, arg.cid))) continue
+      needs.push(CAPABILITIES.find(c => capabilityTarget(this.state.replica.store, c) === arg.type) ?? content(this.state.replica.store, arg.type).data.name?.content?.replace('fos:type:', '') ?? '')
+    }
+    return needs
+  }
+  addPullConstructor(path = this.constructorContext()): Scope {
+    const peer = this.pullPeers()[0]
+    if (!peer) throw new Error('Connect a document peer before adding Pull.')
+    return this.applyConstructor(path, { kind: 'requirement', text: `Pull from ${peer.name}`, done: false, extras: { requirement: { capability: 'tool', tool: 'fos.pull', peer: peer.id } } })
+  }
   /** Palette input uses the same row documents as typed input; no separate palette model. */
   applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string): Scope {
     if (!view(this.state.replica, path)) throw new Error('The destination no longer exists.')
@@ -1681,7 +1698,7 @@ export class App {
     if (allocation?.resource && !this.banks().some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable or has a different resource type.')
     const parentCid = path.length && resolveScope(this.state.replica.store, headCid(this.state.replica), path.slice(0, -1))
     const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1))
-    const suppliedType = parsed.peer !== undefined ? capabilityTarget(this.state.replica.store, 'peer') : parsed.kind === 'allocation' ? put(this.state.replica.store, { data: { name: { content: 'fos:type:allocation' } }, children: [] }) : repo ? capabilityTarget(this.state.replica.store, 'repo') : null
+    const suppliedType = parsed.peer !== undefined ? capabilityTarget(this.state.replica.store, 'peer') : parsed.kind === 'requirement' && parsed.extras?.requirement && CAPABILITIES.includes(parsed.extras.requirement.capability as Capability) ? capabilityTarget(this.state.replica.store, parsed.extras.requirement.capability as Capability) : parsed.kind === 'allocation' ? put(this.state.replica.store, { data: { name: { content: 'fos:type:allocation' } }, children: [] }) : repo ? capabilityTarget(this.state.replica.store, 'repo') : null
     if (argument && argument.type !== suppliedType) throw new Error('Choose a constructor matching this input type.')
     if (repo && repositoryAt(this.state.replica, target) && repositoryAt(this.state.replica, target) !== repo) throw new Error('Edit the existing repository argument to change its repository.')
     this.together(() => {
@@ -1747,7 +1764,9 @@ export class App {
     const store = this.state.replica.store, generation = this.authGeneration
     const valid = () => { if (this.state.replica.store !== store || generation !== this.authGeneration) throw new Error('The data session changed during evaluation.') }
     try {
+      const localPull = (step: import('../../shared/sync/evaluation').EvaluationStep) => step.row?.requirement?.tool === 'fos.pull'
       const needsServer = evaluationSteps(this.state.replica, path).some(step => step.row?.requirement?.capability === 'repo' && !step.row.requirement.satisfied)
+      if (needsServer && evaluationSteps(this.state.replica, path).some(localPull)) throw new Error('Evaluate local Pull separately from server integration effects.')
       if (needsServer) {
         if (!this.isOnline('fos') || this.state.session?.kind !== 'user' || this.virtualIdentity) throw new Error('Connect to the account server to evaluate integration effects.')
         await this.syncNow('before evaluation'); valid()
@@ -1762,8 +1781,15 @@ export class App {
       const record = await evaluateNode(path, {
         get: () => { valid(); return this.state.replica },
         save: replica => { valid(); this.set({ replica }); this.scheduleSync() },
-        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: () => false,
-        check: () => []
+        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: localPull,
+        check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
+        effect: async step => {
+          if (!localPull(step)) throw new Error('No local handler for this constructor.')
+          if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
+          await this.syncNow('evaluate pull', true); valid()
+          if (this.state.connection !== 'online') throw new Error('Pull failed; review the sync status.')
+          this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, ref: 'unit' }, this.now()) })
+        }
       })
       if (record.status !== 'committed') throw new Error(record.error ?? 'Evaluation needs recovery.')
       this.notify('info', 'Evaluation committed.')
@@ -1804,13 +1830,16 @@ export class App {
     const peers = this.contextPeers(path), device = peers.find(p => p.id === this.state.replica.meta.peerId), server = peers.find(p => p.name === 'fos')
     return [...(navigator.locks ? (['timer', 'task-completion', 'request'] as TriggerKind[]).filter(kind => !device?.disabled.includes(kind)) : []), ...(this.isOnline('fos') && this.state.serverCapabilities?.includes('cron') && !server?.disabled.includes('cron') ? ['cron' as const] : [])]
   }
-  configureTrigger(kind: TriggerKind, value?: string, newTemplate = false, destination = this.state.view): void {
+  configureTrigger(kind: TriggerKind, value?: string, newTemplate = false, destination = this.state.view, enabled = true): void {
     try {
       const peer = kind === 'cron' ? 'fos' : this.state.replica.meta.peerId
       if (!this.triggerKinds(destination).includes(kind)) throw new Error('The trigger provider is not active.')
       if (kind === 'cron') cronMatches(value ?? '', this.now())
       if (kind === 'timer' && (!Number.isFinite(Date.parse(value ?? '')) || Date.parse(value!) < this.now())) throw new Error('Choose a future time.')
-      let r = this.state.replica
+      const source = this.state.replica, parentCid = destination.length && resolveScope(source.store, headCid(source), destination.slice(0, -1))
+      const arg = newTemplate && parentCid && argumentRefs(source.store, parentCid).find(a => content(source.store, a.cid).data.alias?.id === destination.at(-1))
+      if (arg && arg.type !== capabilityTarget(source.store, kind)) throw new Error('Choose a trigger matching this input type.')
+      let r = source
       if (peer === 'fos') {
         const member = view(r, [])?.members.find(m => m.peerId === 'fos')
         if (member) r = setMemberCapabilitiesAt(r, [], 'fos', member.capabilities, member.disabled ?? [], this.now(), [...new Set([...(member.accepts ?? []), 'cron'] as Capability[])])
@@ -1819,14 +1848,19 @@ export class App {
         if (!member) r = addMemberAt(r, home, peer, this.state.deviceName, [], this.now())
         r = setMemberCapabilitiesAt(r, home, peer, member?.capabilities ?? [], member?.disabled ?? [], this.now(), [...new Set([...(member?.accepts ?? []), 'timer', 'task-completion', 'request'] as Capability[])])
       }
-      const trigger = { kind, peer, enabled: true, created: this.now(), ...(kind === 'timer' ? { due: Date.parse(value ?? '') } : {}), ...(kind === 'cron' ? { expression: value ?? '' } : {}) }
+      const trigger = { kind, peer, enabled, created: this.now(), ...(kind === 'timer' ? { due: Date.parse(value ?? '') } : {}), ...(kind === 'cron' ? { expression: value ?? '' } : {}) }
       let path = [...destination]
       if (newTemplate) {
         const id = newId(); r = addRow(r, destination, 'template', `${kind} workflow`, this.now(), { id }); path = [...destination, id]
       }
-      this.edit(setNodeTrigger(r, path, trigger, this.now()))
+      r = setNodeTrigger(r, path, trigger, this.now())
+      if (arg) {
+        const proposed = proposeRefAt(r, destination, resolveScope(r.store, headCid(r), path)!, r.meta.peerId, this.now())
+        r = applyProposalAt(proposed.replica, destination, proposed.proposalCid, r.meta.peerId, this.now())
+      }
+      this.edit(r)
       if (newTemplate) this.notify('info', 'Trigger workflow created. Add the tasks and requirements to run inside it.')
-      this.notify('info', kind === 'cron' ? 'Cron configured on fos (UTC).' : 'Trigger configured on this device; it runs while this app is open.')
+      this.notify('info', !enabled ? 'Trigger created paused. Add its children, then enable it.' : kind === 'cron' ? 'Cron configured on fos (UTC).' : 'Trigger configured on this device; it runs while this app is open.')
     } catch (error) { this.notify('error', String(error)) }
   }
   toggleTrigger(): void {
@@ -2020,6 +2054,7 @@ export class App {
   async askPeerAt(at: Scope, req: TaskView): Promise<void> {
     const r = req.requirement
     if (!r) return
+    if (r.capability === 'tool' && r.tool === 'fos.pull') { await this.evaluateAt([...this.state.view, ...at, req.id]); return }
     if (r.capability === 'search') {
       const inside = view(this.state.replica, [...this.state.view, ...at, req.id])?.tasks ?? []
       let query = inside.find((q) => q.kind === 'query')

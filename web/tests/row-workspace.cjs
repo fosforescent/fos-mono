@@ -99,14 +99,7 @@ async function main() {
   document.querySelector(`.task[data-id="${first}"]`).dispatchEvent(drop)
   assert(a.placeholders([first]).some(arg => arg.status === 'missing'))
   a.triggerKinds = () => ['request', 'timer']; a.refresh()
-  const trigger = document.querySelector('[aria-label="Add trigger workflow"]')
-  trigger.value = 'request'; trigger.dispatchEvent(new window.Event('change'))
-  let payload
-  const drag = new window.Event('dragstart', { bubbles: true, cancelable: true })
-  Object.defineProperty(drag, 'dataTransfer', { value: { setData: (type, value) => payload = [type, value] } })
-  trigger.parentElement.dispatchEvent(drag)
-  assert.deepEqual(payload, ['application/x-fos-trigger', 'request'])
-  assert.equal(document.querySelectorAll('.trigger-palette button').length, 0)
+  assert(!document.querySelector('[aria-label="Add trigger workflow"]'), 'triggers use the common constructor menu')
   a.openTemplatePicker([HOME_ID, first]); a.createLinkedTemplate('Editable constructor', '', true)
   const definition = a.state.view.at(-1)
   a.goTo([HOME_ID, first]); assert.equal(document.querySelector('.node-text').readOnly, true)
@@ -211,6 +204,42 @@ async function main() {
   assert.throws(() => a.applyConstructor([...repo, peerArg.id], { kind: 'allocation', text: '', done: false, extras: { allocation: { type: 'account', amount: 5, unit: 'USD', resource: '' } } }), /matching/)
   a.applyConstructor([...repo, peerArg.id], { kind: 'plain', text: '', done: false, peer: 'virtual' })
   assert.notEqual(a.placeholders().find(p => p.id === peerArg.id).status, 'missing')
+  a.goTo([]); const unmet = a.addRowAtTop(parseRowInput('-$ 99 Unfilled')); a.select([unmet]); a.refresh()
+  document.querySelector('[aria-label="Constructors"]').click()
+  assert.equal(document.querySelectorAll('.node-accordion').length, 1)
+  const suggested = [...document.querySelectorAll('.constructor-suggestions button')].map(b => b.getAttribute('aria-label'))
+  assert(suggested.includes('Money allocation'))
+  assert(!suggested.includes('Inventory allocation'))
+  // Inserting an effect is data-only; evaluation dispatches it through the journalled driver.
+  let sends = 0
+  globalThis.fetch = async (_url, init) => {
+    sends++
+    const result = serveSync(server.store, JSON.parse(init.body), 'server')
+    assert(!('error' in result))
+    return { ok: true, json: async () => result.response }
+  }
+  const pullPath = pullApp.addPullConstructor()
+  assert.equal(sends, 0)
+  assert.equal(view(pullApp.state.replica, pullPath.slice(0, -1)).tasks.find(t => t.id === pullPath.at(-1)).requirement.tool, 'fos.pull')
+  await pullApp.evaluateAt(pullPath)
+  assert(sends >= 1)
+  assert.equal(view(pullApp.state.replica, pullPath.slice(0, -1)).tasks.find(t => t.id === pullPath.at(-1)).requirement.satisfied, true)
+  assert.equal(pullApp.state.notice.kind, 'info')
+  pullApp.addPlaceholder('callback', 'tool')
+  const callback = pullApp.placeholders().find(p => p.name === 'callback')
+  const parentHead = headCid(pullApp.state.replica)
+  assert.throws(() => pullApp.applyConstructor([...pullApp.state.view, callback.id], { kind: 'plain', text: '', done: false, peer: 'virtual' }), /matching/)
+  assert.equal(headCid(pullApp.state.replica), parentHead)
+  const previousSends = sends
+  pullApp.addPullConstructor([...pullApp.state.view, callback.id])
+  assert.equal(sends, previousSends, 'composition does not dispatch the effect')
+  assert.equal(pullApp.placeholders().find(p => p.id === callback.id).status, 'ready')
+  const count = a.currentView().tasks.length
+  a.configureTrigger('request', '', true, [HOME_ID], false)
+  assert.equal(a.currentView().tasks.length, count + 1)
+  const workflow = a.currentView().tasks.find(t => t.title === 'request workflow')
+  a.goTo([HOME_ID, workflow.id]); assert.equal(a.currentTrigger().enabled, false)
+  console.log('PASS: unified constructor menu, selected-input suggestions, deferred Pull evaluation, and paused trigger construction')
   console.log('PASS: constructor palette click/drop, bank amounts, allocation sources, child preservation, requirement inputs, and repository actions')
   console.log('PASS: persistent context input, fixed Home, captured import/media destinations, and file attachment')
   console.log('PASS: account peer sign-in/registration, compact menus, multi-selection/copy, Markdown/YAML paste, refs, subtree chat/queue and type filters')

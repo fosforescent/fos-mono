@@ -443,12 +443,12 @@ function installRowClipboard(list: HTMLElement, app: App): void {
 }
 
 type NodeLayout = 'tree' | 'chat' | 'grid' | 'queue'
-type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values' | 'utilities'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
+type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values' | 'utilities' | 'constructors' | 'actions'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
 const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
 const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
 function workspace(app: App): WorkspacePrefs {
   let prefs = workspacePrefs.get(app)
-  if (!prefs) { prefs = { tab: 'peers', layout: 'tree', actionTab: 'main', search: '', open: {} }; workspacePrefs.set(app, prefs) }
+  if (!prefs) { prefs = { tab: 'constructors', layout: 'tree', actionTab: 'main', search: '', open: {} }; workspacePrefs.set(app, prefs) }
   const key = JSON.stringify([app.state.atRoot, app.state.view])
   let search = workspaceSearch.get(app)
   if (!search) { search = { key, values: new Map() }; workspaceSearch.set(app, search) }
@@ -462,7 +462,7 @@ function iconButton(icon: string, label: string, action: () => void): HTMLButton
 function accordion(app: App, key: string, label: string, ...children: HTMLElement[]): HTMLDetailsElement {
   const d = document.createElement('details'), summary = document.createElement('summary')
   d.className = 'node-accordion'; d.dataset.accordion = key; d.open = workspace(app).open[key] ?? false
-  summary.innerHTML = iconSvg(key === 'context' ? '⚙' : key === 'actions' ? '▶' : 'inventory') ?? label
+  summary.innerHTML = iconSvg(key === 'context' ? '✦' : key === 'actions' ? '▶' : 'inventory') ?? label
   summary.title = label; summary.setAttribute('aria-label', label); d.append(summary, ...children)
   const prefs = workspace(app)
   d.addEventListener('toggle', () => { prefs.open[key] = d.open })
@@ -478,6 +478,49 @@ const CONSTRUCTORS = [
   { id: 'bank', label: 'Resource bank', icon: 'inventory' },
   { id: 'repository', label: 'Repository', icon: '⑂' }
 ] as const
+function constructorOptions(app: App) {
+  return [...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id })),
+    ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext())).map(cap => ({ id: `action:${cap}`, label: CAPABILITY_LABEL[cap] ?? cap, icon: '▶', output: cap })),
+    ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: '⟳', output: 'tool' })),
+    ...app.triggerKinds(app.constructorContext()).map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'When parent completes' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: 'calendar', output: kind }))]
+}
+function insertConstructor(app: App, id: string, path = app.constructorContext(), replace = false): void {
+  if (proposalPreview(app)) return
+  if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
+  if (id.startsWith('action:')) {
+    const cap = id.slice(7) as 'search' | 'llm' | 'market'
+    if (!['search','llm','market'].includes(cap) || !app.capabilityAvailable(cap, path)) { app.notify('error', 'This action has no active handler here.'); return }
+    try { app.applyConstructor(path, { kind: 'requirement', text: CAPABILITY_LABEL[cap] ?? cap, done: false, extras: { requirement: { capability: cap } } }) } catch (error) { app.notify('error', String(error)) }
+    return
+  }
+  if (!id.startsWith('trigger:')) { openConstructor(app, id, path, replace); return }
+  const kind = id.slice(8) as import('../../shared/sync/triggers').TriggerKind
+  if (!app.triggerKinds(path).includes(kind)) { app.notify('error', 'The trigger provider is not active.'); return }
+  const store = app.state.replica.store, dialog = document.createElement('dialog'), form = document.createElement('form')
+  dialog.className = 'import-dialog'
+  const input = document.createElement('input'); input.type = kind === 'timer' ? 'datetime-local' : 'text'; input.setAttribute('aria-label', 'Trigger schedule'); input.placeholder = 'Five-field UTC cron expression'; input.required = kind === 'timer' || kind === 'cron'; input.hidden = !input.required
+  const submit = button('primary', 'Add trigger', () => undefined); submit.type = 'submit'
+  const error = div('error', '')
+  form.append(h4('Trigger'), span('muted', 'Creates a paused workflow. Add its children, then enable it.'), input, error, submit, button('secondary', 'Cancel', () => dialog.close()))
+  form.onsubmit = event => {
+    event.preventDefault()
+    if (app.state.replica.store !== store || proposalPreview(app)) { error.textContent = 'The editing context changed.'; return }
+    const before = headCid(app.state.replica)
+    app.configureTrigger(kind, input.value, true, path, false)
+    if (headCid(app.state.replica) !== before) dialog.close()
+    else error.textContent = app.state.notice?.text ?? 'Check the trigger schedule.'
+  }
+  dialog.append(form); dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal()
+}
+function suggestedConstructors(app: App): HTMLElement {
+  const panel = div('constructor-palette suggestions', '')
+  const needs = app.constructorNeeds(), all = constructorOptions(app)
+  const matches = needs.length ? all.filter(c => needs.includes(c.output) || (needs.includes('allocation') && ['inventory','calendar','account'].includes(c.output))) : all
+  for (const c of matches) { const b = iconButton(c.icon, c.label, () => insertConstructor(app, c.id)); constructorDrag(b, c.id); panel.append(b) }
+  if (!matches.length) panel.append(span('muted', 'Search for a constructor matching this input.'))
+  return panel
+}
+
 function constructorDrag(el: HTMLElement, id: string): void {
   el.draggable = true
   el.addEventListener('dragstart', event => { event.stopPropagation(); event.dataTransfer?.setData(CONSTRUCTOR_DRAG_TYPE, id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
@@ -485,7 +528,7 @@ function constructorDrag(el: HTMLElement, id: string): void {
 function constructorPalette(app: App, ids: string[]): HTMLElement {
   const palette = div('constructor-palette', '')
   for (const item of CONSTRUCTORS.filter(c => ids.includes(c.id))) {
-    const b = iconButton(item.id === 'integration' ? 'integration' : item.icon, `Add ${item.label.toLowerCase()}`, () => openConstructor(app, item.id))
+    const b = iconButton(item.id === 'integration' ? 'integration' : item.icon, `Add ${item.label.toLowerCase()}`, () => insertConstructor(app, item.id))
     constructorDrag(b, item.id); palette.append(b)
   }
   return palette
@@ -543,7 +586,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
 
 function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): boolean {
   const constructor = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
-  if (constructor && CONSTRUCTORS.some(c => c.id === constructor)) { event.preventDefault(); event.stopPropagation(); openConstructor(app, constructor, path, replace); return true }
+  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'pull' || constructor.startsWith('trigger:') || constructor.startsWith('action:'))) { event.preventDefault(); event.stopPropagation(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -601,7 +644,7 @@ function currentNodeActions(app: App): Action[] {
 function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   const prefs = workspace(app), tabs = div('node-tabs', '')
   tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Node context')
-  for (const [tab, icon, label] of [['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values'], ['utilities', 'utilities', 'Utilities']] as const) {
+  for (const [tab, icon, label] of [['constructors', '✦', 'Constructors'], ['actions', '▶', 'Node actions'], ['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values'], ['utilities', 'utilities', 'Utilities']] as const) {
     const b = iconButton(icon, label, () => { prefs.tab = tab; app.refresh() })
     b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab));
     if (tab === 'peers' || tab === 'integrations') constructorDrag(b, tab === 'peers' ? 'peer' : 'integration')
@@ -610,7 +653,7 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
   const rows = document.createElement('ul'); rows.className = 'list context-peers'
   if (prefs.tab === 'utilities') { panel.append(constructorPalette(app, ['inventory', 'calendar', 'account', 'bank'])); el.replaceChildren(tabs, panel); return }
-  if (prefs.tab === 'input' || prefs.tab === 'values') { el.replaceChildren(tabs); return }
+  if (prefs.tab === 'input' || prefs.tab === 'values' || prefs.tab === 'constructors' || prefs.tab === 'actions') { el.replaceChildren(tabs); return }
   if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
   else panel.append(span('muted', 'Settings and peer constructors are editable child rows below.'))
   panel.append(rows)
@@ -751,7 +794,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
       if (event.key === 'Escape') { event.preventDefault(); input.value = entry.baseline; input.blur() }
     })
-    const search = combobox('Find a node to link', 'Find a node or constructor…', query => [...CONSTRUCTORS.filter(c => c.label.toLowerCase().includes(query.toLowerCase())).map(c => ({ label: c.label, group: 'Constructors', drag: { type: CONSTRUCTOR_DRAG_TYPE, value: c.id }, run: () => openConstructor(app, c.id) })), ...(query ? app.searchLocalNodes(query).map(found => ({
+    const search = combobox('Find a node to link', 'Find a node or constructor…', query => [...constructorOptions(app).filter(c => c.label.toLowerCase().includes(query.toLowerCase())).map(c => ({ label: c.label, group: 'Constructors', drag: { type: CONSTRUCTOR_DRAG_TYPE, value: c.id }, run: () => insertConstructor(app, c.id) })), ...(query ? app.searchLocalNodes(query).map(found => ({
       label: `${found.row.title} · ${found.row.kind}`, group: 'Values', disabled: !app.canLinkNode(found.row.id),
       drag: { type: NODE_DRAG_TYPE, value: found.row.id }, run: () => app.linkNode(found.row.id)
     })) : [])], () => [], 'Search nodes or constructors…')
@@ -762,11 +805,12 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const context = div('node-context', '')
     const values = div('node-values', '')
     const dynamicValues = div('node-values-dynamic', '')
-    values.append(search, placeholderForm(app), dynamicValues)
+    values.append(placeholderForm(app), dynamicValues)
     const voice = div('', ''); voice.dataset.slot = 'voice'
     const repository = div('', ''); repository.dataset.slot = 'repository'
     const edit = div('node-input', ''); edit.append(div('input-controls', ''), input, voice)
-    const panels = div('workspace-panels', ''); panels.append(accordion(app, 'actions', 'Node actions', controls, repository), accordion(app, 'context', 'Node context', context, edit, values))
+    const suggestions = div('constructor-suggestions', '')
+    const panels = div('workspace-panels', ''); panels.append(accordion(app, 'context', 'Constructors and node context', search, suggestions, context, controls, repository, edit, values))
     el.replaceChildren(toolbar, panels)
     details.set(el, entry); cached = entry
   } else if (cached.input.value === cached.baseline) {
@@ -778,8 +822,11 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (row?.branches || app.currentView()?.proposals.length) toolbar.append(alternativePicker(app, state.view, row))
   if (preview && workspace(app).tab === 'values') workspace(app).tab = 'peers'
   renderNodeContext(el.querySelector<HTMLElement>('.node-context')!, state, app)
+  const proposed = el.querySelector<HTMLElement>('.constructor-suggestions')!
+  proposed.hidden = !!preview || workspace(app).tab !== 'constructors'; proposed.replaceChildren(suggestedConstructors(app))
   const controls = cached.controls
   controls.replaceChildren()
+  controls.hidden = workspace(app).tab !== 'actions'
   if (!row || row.kind !== 'template' || row.id === HOME_ID) {
     const play = button('evaluate', app.evaluating ? 'Evaluating…' : '▶ Evaluate', () => { cached!.input.dispatchEvent(new window.Event('commit-edit')); void app.evaluateCurrent() })
     play.disabled = app.evaluating; controls.append(play)
@@ -799,7 +846,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   if (!preview) {
     inputs.append(mediaPicker(app, 'Picture input', 'image/jpeg,image/png,image/webp'), mediaPicker(app, 'Video input', 'video/mp4,video/webm'), mediaPicker(app, 'Attach file (up to 1 MB)', '', true), yamlImportButton(app))
-    for (const peer of app.pullPeers()) { const pull = button('secondary small', `Pull · ${peer.name}`, () => void app.pullPeer(peer.id)); pull.disabled = state.connection === 'syncing'; inputs.append(pull) }
+
   }
   if (preview) {
     controls.replaceChildren(span('muted', 'Read-only proposed branch'))
@@ -832,17 +879,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (arg.type !== 'text') { const branches = argumentBranchPicker(app, [], arg.id); if (branches) line.append(branches) }
     pick.disabled = !arg.candidates.length; pick.addEventListener('change', () => app.bindPlaceholder(arg.id, pick.value)); line.append(pick); dynamicValues.append(line)
   }
-  const triggers = document.createElement('select'); triggers.className = 'small'; triggers.setAttribute('aria-label', 'Add trigger workflow'); triggers.title = 'Use a template to create a new instance on each event. Device triggers run while this app is open.'
-  triggers.append(new Option('Create trigger workflow…', ''))
-  for (const kind of app.triggerKinds()) triggers.append(new Option(kind === 'task-completion' ? 'When parent completes' : kind === 'request' ? 'On request / proposal' : kind === 'cron' ? 'Cron (server, UTC)' : 'Timer (this device)', kind))
-  triggers.value = workspace(app).trigger ?? ''
-  triggers.onchange = () => { workspace(app).trigger = triggers.value }
-  const triggerHandle = div('trigger-palette', '')
-  triggerHandle.hidden = app.triggerKinds().length === 0
-  triggerHandle.draggable = true; triggerHandle.title = 'Choose a trigger, then drag it onto a row'
-  triggerHandle.append(triggers)
-  triggerHandle.addEventListener('dragstart', event => { event.stopPropagation(); if (!triggers.value) { event.preventDefault(); return }; event.dataTransfer?.setData('application/x-fos-trigger', triggers.value); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
-  dynamicValues.append(triggerHandle)
   const trigger = app.currentTrigger(), triggerState = app.currentTriggerState()
   if (trigger) dynamicValues.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
   if (triggerState && ['failed', 'running'].includes(triggerState.status)) dynamicValues.append(button('secondary small', 'Review / rearm trigger', () => app.retryCurrentTrigger()))
@@ -881,7 +917,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   actionBody.append(...Array.from(controls.childNodes))
   controls.append(actionTabs, actionBody)
   el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview
-  el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(workspace(app).actionTab)
+  el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || workspace(app).tab !== 'actions' || !['main', 'repo'].includes(workspace(app).actionTab)
   const layouts = div('node-tabs', ''); layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Child view')
   for (const [layout, icon, label] of [['tree', '☷', 'Tree view'], ['chat', '☏', 'Chat view'], ['grid', '▦', 'Grid / pin view'], ['queue', '☑', 'Queue view']] as const) {
     const b = iconButton(icon, label, () => { workspace(app).layout = layout; app.refresh() }); b.setAttribute('aria-pressed', String(workspace(app).layout === layout)); layouts.append(b)
@@ -1612,7 +1648,9 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         else hint('sign in with GitHub (root › GitHub) to open the issue')
       }
       if (r.capability === 'tool') {
-        if (app.capabilityAvailable('tool', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', `Run${r.tool ? ' ' + r.tool : ''}`, () => void app.askPeerAt(at, task))))
+        if (r.tool === 'fos.pull') {
+          const run = button('secondary small', '▶ Pull', () => void app.askPeerAt(at, task)); run.disabled = app.evaluating || !app.pullPeers().some(p => p.id === r.peer); body.append(stop(run))
+        } else if (app.capabilityAvailable('tool', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', `Run${r.tool ? ' ' + r.tool : ''}`, () => void app.askPeerAt(at, task))))
         else hint('sign in: an MCP peer attached above runs it')
       }
       if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined) {

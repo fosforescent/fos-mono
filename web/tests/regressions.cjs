@@ -632,7 +632,7 @@ async function main() {
   assert(![...document.querySelectorAll('.footer button')].some(b => /Undo|Redo|Connect/.test(b.textContent)))
   assert(document.querySelector('[aria-label="Device name"]'))
   assert(document.querySelector('[aria-label="Device theme"]'))
-  assert.equal(document.querySelector('[data-accordion="actions"]').open, false)
+  assert.equal(document.querySelector('[data-accordion="context"]').open, false)
   assert(!document.querySelector('[data-accordion="context"]').open)
   document.querySelector('.node-menu-button').click()
   assert(!document.querySelector('.context-menu').textContent.includes('Add peer row'))
