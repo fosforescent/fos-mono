@@ -56,6 +56,7 @@ import {
   setQueryOptionsAt,
   setRowKind,
   applyProposalAt,
+  shareHome,
   buildSyncRequest,
   completeSync,
   deleteTask,
@@ -595,6 +596,8 @@ export class App {
       this.loadDataSession(true)
     }
     const attachment = await getAttachment(session, this.state.replica.meta.peerId)
+    // Owner Home attachments live below this device's private root. Invited scopes stay unchanged.
+    if (session.kind === 'user' && !this.config.project && !this.config.scopedDocument && attachment.scope.length === 1 && attachment.scope[0] === HOME_ID) { attachment.scope = []; attachment.scopeNames = [] }
     if (generation !== this.authGeneration) return
     let replica = this.state.replica
     const same = replica.meta.scope.length === attachment.scope.length && replica.meta.scope.every((s, i) => attachment.scope[i] === s)
@@ -760,6 +763,7 @@ export class App {
 
     const session = this.state.session
     const generation = this.authGeneration
+    if (transport === 'account' && session?.kind === 'user') this.set({ replica: shareHome(this.state.replica) })
     try {
       let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { recipient: transport === 'account' ? 'server' : 'device', push: !pullOnly && (transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush')) })
       const send = (packet: SyncRequest) => transport === 'account'
@@ -853,7 +857,7 @@ export class App {
     const generation = this.authGeneration
     this.set({ connection: 'connecting' })
     try {
-      let replica = createReplica()
+      let replica = shareHome(this.state.replica.meta.scope.length ? ensureHomeContext(createReplica(), this.now()) : this.documentReplica(loadReplica(serializeReplica(this.state.replica))))
       const request = buildSyncRequest(replica, undefined, { push: false })
       const response = await peerSync(session, request)
       if (generation !== this.authGeneration) return
@@ -865,11 +869,11 @@ export class App {
       if (generation !== this.authGeneration) return
       replica = completeSync(replica, reset, saved, this.now()).replica
       this.virtualPeers?.close(); this.virtualPeers = null
-      this.set({ replica, session, view: [], selected: null, connection: 'online', atRoot: true })
+      this.set({ replica, session, view: homePath(replica), selected: null, connection: 'online', atRoot: false })
       this.history.record(replica, before, false)
       this.enableVirtualPeers(null)
       this.openEvents(); this.startPolling()
-      this.notify('info', 'Account content reset. This device now syncs the whole account. You can undo this.')
+      this.notify('info', 'Shared Home content reset. You can undo this.')
     } catch (error) {
       if (generation === this.authGeneration) { this.set({ connection: 'offline' }); this.notify('error', `Reset failed: ${error instanceof Error ? error.message : String(error)}. Local data was kept.`) }
     }
@@ -2712,7 +2716,9 @@ export class App {
   canAttach(scope: Scope): boolean {
     const { replica, connection, session } = this.state
     if (this.virtualIdentity || session?.kind === 'peer') return false // a peer credential is fixed to its node
-    const same = replica.meta.scope.length === scope.length && replica.meta.scope.every((s, i) => scope[i] === s)
+    const attached = [...replica.meta.scope, ...(replica.meta.localScope ?? [])]
+    const target = replica.meta.localScope?.length && !scope.length ? [HOME_ID] : scope
+    const same = attached.length === target.length && attached.every((s, i) => target[i] === s)
     return (connection === 'online' || connection === 'syncing') && !isDirty(replica) && replica.meta.baseCid !== null && !same
   }
 
@@ -2723,8 +2729,8 @@ export class App {
     }
     try {
       const next = reattach(this.state.replica, scope, this.now(), scope.length === 0 ? [] : undefined)
-      this.set({ replica: next, view: [], menuOpen: false })
-      this.notify('info', scope.length === 0 ? 'This device now syncs the whole account.' : 'This device now syncs only this node.')
+      this.set({ replica: next, view: next.meta.localScope ?? [], menuOpen: false })
+      this.notify('info', scope.length === 0 ? 'This device now syncs Home.' : 'This device now syncs only this node.')
       void this.syncNow('reattach')
     } catch (error) {
       this.notify('error', error instanceof Error ? error.message : String(error))
@@ -2962,7 +2968,7 @@ export class App {
       const replica = this.state.replica
       this.set({
         direct: { role: 'guest', phase: 'connected', remoteName: message.name },
-        replica: { store: replica.store, meta: { ...replica.meta, scope: [], scopeNames: [`${message.name}`], baseCid: null, serverPeerId: message.peerId } },
+        replica: { store: replica.store, meta: { ...replica.meta, scope: [], localScope: undefined, scopeNames: [`${message.name}`], baseCid: null, serverPeerId: message.peerId } },
         connection: 'online',
         view: [],
         modal: null

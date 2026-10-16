@@ -590,12 +590,17 @@ export function replaceEdge(store: FosStore, value: FosNodeContent, key: string,
  *     node is a ref (link row, root alias) the ref advances: a new ref node pointing at the new
  *     content with PREV → the old ref node. Bookkeeping (members, proposals, peers) is kept.
  *   mode 'node': `fn` sees and returns the identity node itself (a ref node for link rows), for
- *     bookkeeping changes and wholesale replacement; no PREV is added unless `fn` adds it.
+ *     bookkeeping changes; no PREV is added unless `fn` adds it.
+ *   mode 'replace': replace the complete identity, including a branch wrapper at the destination.
  */
-export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn: (value: FosNodeContent) => FosNodeContent, mode: 'value' | 'node' = 'value'): string {
+export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn: (value: FosNodeContent) => FosNodeContent, mode: 'value' | 'node' | 'replace' = 'value'): string {
   const canonical = contextScope(store, nodeCid, scope)
   if (canonical !== scope) return updateAtScope(store, nodeCid, canonical, fn, mode)
   const identity = content(store, nodeCid)
+  if (!scope.length && mode === 'replace') {
+    const next = fn(identity)
+    return next === identity ? nodeCid : put(store, next)
+  }
   if (isBranchChoice(store, identity)) {
     const active = branchEdge(store, nodeCid)
     if (!active) throw new Error('No selected branch')
@@ -721,10 +726,8 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number): s
   for (const edge of legacyIntegrations) if (!readMembers(store, home).some(member => member.peerId === content(store, edge[1]).data.peerId?.content)) home = { ...home, children: [...home.children, edge] }
   if (legacyIntegrations.length) bindings = { ...bindings, children: bindings.children.filter(edge => !legacyIntegrations.includes(edge)) }
   for (const peer of INTEGRATION_PEERS) if (!readMembers(store, home).some(member => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides)
-  // Constructor defaults pass the existing peer references, not another provider registry.
-  const own = new Set(readMembers(store, home).map(member => member.peerId))
-  const argumentsFromRoot = bindings.children.filter(edge => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ''))
-  if (argumentsFromRoot.length) home = { ...home, children: [...home.children, ...argumentsFromRoot] }
+  // Resolve inherited handlers through this peer's root at evaluation time.
+  // Copying root members into shared Home would publish device-local context and freeze inheritance.
   const nextHome = put(store, home)
   const homeEdge = root.children.find(edge => identityCid(store, edge) === homeCid)
   if (homeEdge && rowKindOf(store, homeEdge) === 'plain' && homeCid === nextHome && bindings === identity && identity === content(store, rootCid)) return rootCid

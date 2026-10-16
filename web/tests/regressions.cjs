@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export * from './src/yaml'; export {createProjectStorage} from './src/project'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
-const { headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
+const { headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, ensureHomeContext, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const reply = (data, status = 200) => ({ ok: status < 400, status, statusText: String(status), json: async () => data })
 const apps = []
@@ -282,7 +282,9 @@ async function main() {
     }
     const username = init.headers.Authorization.replace('Bearer ', '')
     if (url.includes('/attachment')) return reply({ scope: [], scopeNames: [] })
-    const result = serveSync(accountStores[username].store, JSON.parse(init.body), `${username}-server`)
+    const packet = JSON.parse(init.body)
+    if (packet.scope[0] === HOME_ID) accountStores[username] = ensureHomeContext(accountStores[username], 0)
+    const result = serveSync(accountStores[username].store, packet, `${username}-server`)
     return 'error' in result ? reply(result, 400) : reply(result.response)
   }
   const isolated = app()
@@ -324,11 +326,11 @@ async function main() {
   isolated.set({ replica: { ...isolated.state.replica, meta: { ...isolated.state.replica.meta, scope: ['attached-subtree'], scopeNames: ['Attached subtree'] } } })
   assert(isolated.canResetHome(), 'scoped user replicas expose a reset')
   await isolated.resetAccount()
-  assert.equal(view(accountStores.bob, []).tasks.length, 0, 'whole-account reset clears the server root from a scoped device')
+  assert.equal(view(accountStores.bob, [HOME_ID]).tasks.length, 0, 'account reset clears shared Home while retaining the server root')
   assert.deepEqual(isolated.state.replica.meta.scope, [])
   assert(isolated.canUndo)
   isolated.undo(); await isolated.syncNow('test')
-  assert(view(accountStores.bob, []).tasks.some(row => row.id === 'bob-root'), 'account reset is undoable after sync')
+  assert(view(accountStores.bob, [HOME_ID]).tasks.some(row => row.id === 'bob-root'), 'Home reset is undoable after sync')
   const normalFetch = globalThis.fetch
   let holdNextPush = true, releasePush = null
   globalThis.fetch = async (url, init) => {
@@ -342,7 +344,7 @@ async function main() {
   await isolated.resetAccount()
   releasePush(); await oldPush
   assert.equal(isolated.currentView().tasks.filter(row => !row.construction).length, 0, 'a pre-reset sync response cannot restore stale data')
-  assert.equal(view(accountStores.bob, []).tasks.length, 0)
+  assert.equal(view(accountStores.bob, [HOME_ID]).tasks.length, 0)
   globalThis.fetch = normalFetch
   isolated.logout()
   const delayed = isolated.login('delayed', 'test'); await tick()

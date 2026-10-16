@@ -87,6 +87,8 @@ export type SyncRequest = {
   baseCid: string | null
   headCid: string
   nodes: FosNodesData
+  /** Synchronize this mutable node including its branch constructor, rather than a selected alternative. */
+  wholeNode?: boolean
   /**
    * Name of the branch this head belongs to (e.g. a git branch). In branch
    * mode each (peer, branch) is its own proposal, so a directory checked out on
@@ -138,6 +140,7 @@ export function parseSyncRequest(body: unknown): SyncRequest | SyncError {
     baseCid: raw.baseCid ?? null,
     headCid: raw.headCid,
     nodes: raw.nodes ?? {},
+    ...(raw.wholeNode === true ? { wholeNode: true } : {}),
     ...(raw.branches ? { branches: { ...raw.branches } } : {}),
     ...(typeof raw.branch === 'string' && raw.branch.length > 0 && raw.branch.length <= 200 ? { branch: raw.branch } : {})
   }
@@ -177,7 +180,7 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
   }
   const currentCid = resolveScope(store, rootTarget, request.scope)
   if (!currentCid) return { error: 'scope not found', code: 'scope-not-found' }
-  if (isBranchChoice(store, content(store, currentCid))) {
+  if ((!request.wholeNode || options.proposeOnly) && isBranchChoice(store, content(store, currentCid))) {
     // Serve exactly one alternative. A temporary root lets the ordinary sync and
     // permission/proposal path run unchanged, without a global selection mutation.
     const choice = readChoice(store, currentCid)
@@ -233,7 +236,7 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
 
   const changed = resultCid !== currentCid
   if (changed) {
-    const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), 'node')
+    const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), request.wholeNode ? 'replace' : 'node')
     commitRoot(store, newRootTarget, now)
   }
 
@@ -357,7 +360,7 @@ export type ApplyResult = { reMerged: boolean; newChoiceIds: string[] }
  * the replica's scope. Returns what changed; the caller records `resultCid` as
  * the new base.
  */
-export function applySyncResponse(store: FosStore, request: SyncRequest, response: SyncResponse, localPeerId: string, now: number): ApplyResult {
+export function applySyncResponse(store: FosStore, request: SyncRequest, response: SyncResponse, localPeerId: string, now: number, localScope: Scope = []): ApplyResult {
   if (response.version !== SYNC_FORMAT_VERSION) throw new Error('Sync format changed; update the app and server')
   if (response.cidVersion !== CURRENT_CID_VERSION) {
     throw new Error(`server uses cid format v${response.cidVersion}, this client uses v${CURRENT_CID_VERSION}`)
@@ -365,14 +368,16 @@ export function applySyncResponse(store: FosStore, request: SyncRequest, respons
   importNodes(store, response.nodes)
   if (!hasNode(store, response.resultCid)) throw new Error('sync response did not include the result node')
 
-  const current = rootTargetCid(store)
+  const root = rootTargetCid(store), current = resolveScope(store, root, localScope)
+  if (!current) throw new Error('The shared node was removed while sync was in flight.')
+  const publish = (cid: string) => commitRoot(store, localScope.length ? updateAtScope(store, root, localScope, () => content(store, cid), 'replace') : cid, now)
   if (current === request.headCid) {
-    commitRoot(store, response.resultCid, now)
+    publish(response.resultCid)
     return { reMerged: false, newChoiceIds: [...response.newChoiceIds] }
   }
   // Edits happened while the request was in flight: they were made against the sent head.
   const merged = mergeNodes(store, request.headCid, current, response.resultCid, { ours: localPeerId, theirs: response.peerId })
-  commitRoot(store, merged.cid, now)
+  publish(merged.cid)
   const localChoiceIds = merged.newChoiceCids.map((cid) => content(store, cid).data.alias?.id ?? cid)
   return { reMerged: true, newChoiceIds: [...response.newChoiceIds, ...localChoiceIds] }
 }

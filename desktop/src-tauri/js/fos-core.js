@@ -6693,6 +6693,23 @@
     const base = baseCid ? content(store, baseCid) : EMPTY;
     const ours = content(store, oursCid);
     const theirs = content(store, theirsCid);
+    if (isBranchChoice(store, ours) !== isBranchChoice(store, theirs)) {
+      const choice = readChoice(store, isBranchChoice(store, ours) ? oursCid : theirsCid);
+      const main = choice.options.find((option) => option.peerId === choice.defaultName) ?? choice.options[0];
+      const mainEdge = main?.edge;
+      if (main && mainEdge) {
+        const lift = (cid) => putBranches(store, choice.id, choice.base, [{ peerId: main.peerId, edge: withIdentity(store, mainEdge, cid) }], choice.defaultName);
+        return mergeNode(
+          store,
+          baseCid && !isBranchChoice(store, base) ? lift(baseCid) : baseCid,
+          isBranchChoice(store, ours) ? oursCid : lift(oursCid),
+          isBranchChoice(store, theirs) ? theirsCid : lift(theirsCid),
+          labels,
+          newChoiceCids,
+          isTop
+        );
+      }
+    }
     if (isBranchChoice(store, ours) && isBranchChoice(store, theirs)) {
       const o = readChoice(store, oursCid), t = readChoice(store, theirsCid);
       const b = baseCid && isBranchChoice(store, base) ? readChoice(store, baseCid) : null;
@@ -6994,6 +7011,7 @@
       baseCid: raw.baseCid ?? null,
       headCid: raw.headCid,
       nodes: raw.nodes ?? {},
+      ...raw.wholeNode === true ? { wholeNode: true } : {},
       ...raw.branches ? { branches: { ...raw.branches } } : {},
       ...typeof raw.branch === "string" && raw.branch.length > 0 && raw.branch.length <= 200 ? { branch: raw.branch } : {}
     };
@@ -7031,7 +7049,7 @@
     const currentCid = resolveScope(store, rootTarget, request.scope);
     if (!currentCid)
       return { error: "scope not found", code: "scope-not-found" };
-    if (isBranchChoice(store, content(store, currentCid))) {
+    if ((!request.wholeNode || options.proposeOnly) && isBranchChoice(store, content(store, currentCid))) {
       const choice = readChoice(store, currentCid);
       const name = request.branch ?? branchSelection(store, currentCid);
       const selected = choice.options.find((option) => option.peerId === name)?.edge;
@@ -7082,7 +7100,7 @@
     const resultCid = withPeerContent === content(store, mergedCid) ? mergedCid : put(store, withPeerContent);
     const changed = resultCid !== currentCid;
     if (changed) {
-      const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), "node");
+      const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), request.wholeNode ? "replace" : "node");
       commitRoot(store, newRootTarget, now);
     }
     const known = /* @__PURE__ */ new Set([...Object.keys(request.nodes), ...peerKnown]);
@@ -7178,7 +7196,7 @@
       }
     };
   }
-  function applySyncResponse(store, request, response, localPeerId, now) {
+  function applySyncResponse(store, request, response, localPeerId, now, localScope = []) {
     if (response.version !== SYNC_FORMAT_VERSION)
       throw new Error("Sync format changed; update the app and server");
     if (response.cidVersion !== CURRENT_CID_VERSION) {
@@ -7187,13 +7205,16 @@
     importNodes(store, response.nodes);
     if (!hasNode(store, response.resultCid))
       throw new Error("sync response did not include the result node");
-    const current = rootTargetCid(store);
+    const root = rootTargetCid(store), current = resolveScope(store, root, localScope);
+    if (!current)
+      throw new Error("The shared node was removed while sync was in flight.");
+    const publish = (cid) => commitRoot(store, localScope.length ? updateAtScope(store, root, localScope, () => content(store, cid), "replace") : cid, now);
     if (current === request.headCid) {
-      commitRoot(store, response.resultCid, now);
+      publish(response.resultCid);
       return { reMerged: false, newChoiceIds: [...response.newChoiceIds] };
     }
     const merged = mergeNodes(store, request.headCid, current, response.resultCid, { ours: localPeerId, theirs: response.peerId });
-    commitRoot(store, merged.cid, now);
+    publish(merged.cid);
     const localChoiceIds = merged.newChoiceCids.map((cid) => content(store, cid).data.alias?.id ?? cid);
     return { reMerged: true, newChoiceIds: [...response.newChoiceIds, ...localChoiceIds] };
   }
@@ -7248,6 +7269,7 @@
         scope,
         scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
         baseCid,
+        ...Array.isArray(meta.localScope) && meta.localScope.length <= 64 && meta.localScope.every((id) => typeof id === "string") ? { localScope: [...meta.localScope] } : {},
         lastSyncAt: typeof meta.lastSyncAt === "number" ? meta.lastSyncAt : null,
         serverPeerId: typeof meta.serverPeerId === "string" ? meta.serverPeerId : null,
         ...typeof meta.branch === "string" ? { branch: meta.branch } : {},
@@ -7255,11 +7277,22 @@
       }
     };
   }
+  function homePath(replica) {
+    return findChild(replica.store, headCid(replica), HOME_ID) ? [HOME_ID] : [];
+  }
+  function shareHome(replica) {
+    if (replica.meta.scope.length || replica.meta.localScope?.length || !homePath(replica).length)
+      return replica;
+    const baseCid = replica.meta.baseCid ? findChild(replica.store, replica.meta.baseCid, HOME_ID) : null;
+    return { ...replica, meta: { ...replica.meta, localScope: [HOME_ID], baseCid } };
+  }
   function headCid(replica) {
     return rootTargetCid(replica.store);
   }
   function isDirty(replica) {
-    const head = headCid(replica);
+    const head = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []);
+    if (!head)
+      return true;
     if (replica.meta.baseCid)
       return head !== replica.meta.baseCid;
     return valueContent(replica.store, head).children.length > 0;
@@ -7480,7 +7513,11 @@
     return editNode(replica, at, now, (node) => markProposalRejected(replica.store, node, proposalCid));
   }
   function assertServerReplicationAllowed(replica) {
-    for (const node of Object.values(reachableNodes(replica.store, [headCid(replica), replica.meta.baseCid]))) {
+    const local = replica.meta.localScope ?? [];
+    const excluded = withMainBranchPolicy(replica.store, () => Array.from({ length: local.length + 1 }, (_, i) => view(replica, local.slice(0, i))).some((node) => node?.members.some((m) => m.peerId === "fos" && m.disabled?.includes("persist"))));
+    if (excluded)
+      throw new Error("Fos storage is excluded by this shared node or its local parent context.");
+    for (const node of Object.values(reachableNodes(replica.store, [resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []), replica.meta.baseCid]))) {
       if (node.data.peerId?.content === "fos" && node.data.disabledCapabilities?.content.includes("persist")) {
         throw new Error("Fos storage is excluded from this group or its history. Use direct device replication. Account sync is paused for the entire attached group, including historical versions.");
       }
@@ -7491,13 +7528,17 @@
       assertServerReplicationAllowed(replica);
     branch ?? (branch = replica.meta.branch);
     const base = replica.meta.baseCid;
-    const head = options.push === false ? base ?? put(replica.store, { data: {}, children: [] }) : headCid(replica);
+    const localHead = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []);
+    if (!localHead)
+      throw new Error("The shared node no longer exists locally.");
+    const head = options.push === false ? base ?? put(replica.store, { data: {}, children: [] }) : localHead;
     const known = base && !options.full ? reachableSet(replica.store, [base]) : /* @__PURE__ */ new Set();
     return {
       version: SYNC_FORMAT_VERSION,
       cidVersion: CURRENT_CID_VERSION,
       peerId: replica.meta.peerId,
-      scope: replica.meta.scope,
+      scope: [...replica.meta.scope, ...replica.meta.localScope ?? []],
+      ...replica.meta.localScope?.length ? { wholeNode: true } : {},
       baseCid: base,
       headCid: head,
       nodes: reachableNodes(replica.store, options.full ? [head, base] : [head], known),
@@ -7509,7 +7550,7 @@
     if (response.scope.length !== request.scope.length || response.scope.some((s, i) => s !== request.scope[i])) {
       throw new Error("sync response scope does not match request scope");
     }
-    const applied = applySyncResponse(replica.store, request, response, replica.meta.peerId, now);
+    const applied = applySyncResponse(replica.store, request, response, replica.meta.peerId, now, replica.meta.localScope);
     return {
       replica: {
         store: replica.store,
@@ -7523,6 +7564,14 @@
     if (isDirty(replica))
       throw new Error("cannot change scope with unsynced local changes");
     const { store, meta } = replica;
+    if (meta.localScope?.length) {
+      const local = newScope.length ? newScope.slice(meta.scope.length) : [HOME_ID];
+      if (!meta.scope.every((id, i) => newScope[i] === id) || !resolveScope(store, headCid(replica), local))
+        throw new Error("The requested shared node is not available below this device root.");
+      const descends = meta.localScope.every((id, i) => local[i] === id);
+      const baseCid = descends && meta.baseCid ? resolveScope(store, meta.baseCid, local.slice(meta.localScope.length)) : null;
+      return { store, meta: { ...meta, localScope: local, baseCid, branch: void 0, branches: void 0 } };
+    }
     const isPrefix = meta.scope.length <= newScope.length && meta.scope.every((s, i) => newScope[i] === s);
     const relative = newScope.slice(meta.scope.length);
     const target = isPrefix ? resolveScope(store, headCid(replica), relative) : null;
@@ -8070,6 +8119,10 @@
     if (canonical !== scope)
       return updateAtScope(store, nodeCid, canonical, fn, mode);
     const identity = content(store, nodeCid);
+    if (!scope.length && mode === "replace") {
+      const next = fn(identity);
+      return next === identity ? nodeCid : put(store, next);
+    }
     if (isBranchChoice(store, identity)) {
       const active = branchEdge(store, nodeCid);
       if (!active)
@@ -8178,10 +8231,6 @@
     for (const peer of INTEGRATION_PEERS)
       if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`))
         home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
-    const own = new Set(readMembers(store, home).map((member) => member.peerId));
-    const argumentsFromRoot = bindings.children.filter((edge) => isMemberEdge(store, edge) && !own.has(content(store, edge[1]).data.peerId?.content ?? ""));
-    if (argumentsFromRoot.length)
-      home = { ...home, children: [...home.children, ...argumentsFromRoot] };
     const nextHome = put(store, home);
     const homeEdge = root.children.find((edge) => identityCid(store, edge) === homeCid);
     if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid))
@@ -9164,7 +9213,9 @@
     },
     setScope(handle, scopeJson, namesJson) {
       const r = get2(handle);
-      set(handle, { store: r.store, meta: { ...r.meta, scope: parse2(scopeJson, []), scopeNames: parse2(namesJson, []), baseCid: null } });
+      const requested = parse2(scopeJson, []);
+      const home = requested.length === 1 && requested[0] === HOME_ID && homePath(r).length;
+      set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: void 0, scope: home ? [] : requested, scopeNames: home ? [] : parse2(namesJson, []), baseCid: null } }));
     },
     view(handle, atJson) {
       return JSON.stringify(view(get2(handle), parse2(atJson, [])));
@@ -9259,6 +9310,7 @@
       set(handle, reattach(get2(handle), parse2(scopeJson, []), now, namesJson ? parse2(namesJson, []) : void 0));
     },
     buildSyncRequest(handle, branch, push = true) {
+      set(handle, shareHome(get2(handle)));
       return JSON.stringify(buildSyncRequest(get2(handle), branch ?? void 0, { push }));
     },
     completeSync(handle, requestJson, responseJson, now) {

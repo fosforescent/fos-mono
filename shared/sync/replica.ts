@@ -91,6 +91,8 @@ export type ReplicaMeta = {
   scope: Scope
   /** Display names of the nodes along `scope` (a scoped replica cannot resolve them itself). */
   scopeNames: string[]
+  /** Local subtree shared by this attachment; its parent remains private to this peer. */
+  localScope?: Scope
   baseCid: string | null
   lastSyncAt: number | null
   serverPeerId: string | null
@@ -153,6 +155,7 @@ export function loadReplica(input: unknown): Replica {
       scope,
       scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
       baseCid,
+      ...(Array.isArray(meta.localScope) && meta.localScope.length <= 64 && meta.localScope.every(id => typeof id === 'string') ? { localScope: [...meta.localScope] } : {}),
       lastSyncAt: typeof meta.lastSyncAt === 'number' ? meta.lastSyncAt : null,
       serverPeerId: typeof meta.serverPeerId === 'string' ? meta.serverPeerId : null,
       ...(typeof meta.branch === 'string' ? { branch: meta.branch } : {}),
@@ -176,12 +179,22 @@ export function ensureHomeContext(replica: Replica, now: number): Replica {
   return { ...replica }
 }
 
+/** Attach a device's Home to the corresponding shared node, retaining its private root.
+ * Old whole-root merge bases are narrowed once; content IDs themselves do not change.
+ */
+export function shareHome(replica: Replica): Replica {
+  if (replica.meta.scope.length || replica.meta.localScope?.length || !homePath(replica).length) return replica
+  const baseCid = replica.meta.baseCid ? findChild(replica.store, replica.meta.baseCid, HOME_ID) : null
+  return { ...replica, meta: { ...replica.meta, localScope: [HOME_ID], baseCid } }
+}
+
 export function headCid(replica: Replica): string {
   return rootTargetCid(replica.store)
 }
 
 export function isDirty(replica: Replica): boolean {
-  const head = headCid(replica)
+  const head = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? [])
+  if (!head) return true
   if (replica.meta.baseCid) return head !== replica.meta.baseCid
   return valueContent(replica.store, head).children.length > 0 // a scoped replica's head may be a ref node
 }
@@ -673,7 +686,10 @@ export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: strin
  * Device transports still replicate the original content-addressed graph without rewriting its IDs.
  */
 export function assertServerReplicationAllowed(replica: Replica): void {
-  for (const node of Object.values(reachableNodes(replica.store, [headCid(replica), replica.meta.baseCid]))) {
+  const local = replica.meta.localScope ?? []
+  const excluded = withMainBranchPolicy(replica.store, () => Array.from({ length: local.length + 1 }, (_, i) => view(replica, local.slice(0, i))).some(node => node?.members.some(m => m.peerId === 'fos' && m.disabled?.includes('persist'))))
+  if (excluded) throw new Error('Fos storage is excluded by this shared node or its local parent context.')
+  for (const node of Object.values(reachableNodes(replica.store, [resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []), replica.meta.baseCid]))) {
     if (node.data.peerId?.content === 'fos' && node.data.disabledCapabilities?.content.includes('persist')) {
       throw new Error('Fos storage is excluded from this group or its history. Use direct device replication. Account sync is paused for the entire attached group, including historical versions.')
     }
@@ -684,14 +700,17 @@ export function buildSyncRequest(replica: Replica, branch?: string, options: { p
   if (options.recipient !== 'device') assertServerReplicationAllowed(replica)
   branch ??= replica.meta.branch
   const base = replica.meta.baseCid
-  const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : headCid(replica)
+  const localHead = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? [])
+  if (!localHead) throw new Error('The shared node no longer exists locally.')
+  const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : localHead
   // The server already holds everything reachable from the agreed base.
   const known = base && !options.full ? reachableSet(replica.store, [base]) : new Set<string>()
   return {
     version: SYNC_FORMAT_VERSION,
     cidVersion: CURRENT_CID_VERSION,
     peerId: replica.meta.peerId,
-    scope: replica.meta.scope,
+    scope: [...replica.meta.scope, ...(replica.meta.localScope ?? [])],
+    ...(replica.meta.localScope?.length ? { wholeNode: true } : {}),
     baseCid: base,
     headCid: head,
     nodes: reachableNodes(replica.store, options.full ? [head, base] : [head], known),
@@ -706,7 +725,7 @@ export function completeSync(replica: Replica, request: SyncRequest, response: S
   if (response.scope.length !== request.scope.length || response.scope.some((s, i) => s !== request.scope[i])) {
     throw new Error('sync response scope does not match request scope')
   }
-  const applied = applySyncResponse(replica.store, request, response, replica.meta.peerId, now)
+  const applied = applySyncResponse(replica.store, request, response, replica.meta.peerId, now, replica.meta.localScope)
   return {
     replica: {
       store: replica.store,
@@ -725,6 +744,13 @@ export function completeSync(replica: Replica, request: SyncRequest, response: S
 export function reattach(replica: Replica, newScope: Scope, now: number, names?: string[]): Replica {
   if (isDirty(replica)) throw new Error('cannot change scope with unsynced local changes')
   const { store, meta } = replica
+  if (meta.localScope?.length) {
+    const local = newScope.length ? newScope.slice(meta.scope.length) : [HOME_ID]
+    if (!meta.scope.every((id, i) => newScope[i] === id) || !resolveScope(store, headCid(replica), local)) throw new Error('The requested shared node is not available below this device root.')
+    const descends = meta.localScope.every((id, i) => local[i] === id)
+    const baseCid = descends && meta.baseCid ? resolveScope(store, meta.baseCid, local.slice(meta.localScope.length)) : null
+    return { store, meta: { ...meta, localScope: local, baseCid, branch: undefined, branches: undefined } }
+  }
   const isPrefix = meta.scope.length <= newScope.length && meta.scope.every((s, i) => newScope[i] === s)
   const relative = newScope.slice(meta.scope.length)
   const target = isPrefix ? resolveScope(store, headCid(replica), relative) : null

@@ -11,7 +11,7 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { HOME_ID, createReplica, ensureHomeContext, SERVER_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
+import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContext, SERVER_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
@@ -92,11 +92,15 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
         const loaded = await deps.loadStore(username)
         if (!loaded) return { status: 401, body: { error: 'User not found' } } as const
         const { user, store } = loaded
+        const serverReplica = createReplica(serverPeerIdFor(user.username), store)
+        const independentRoot = readNodeValue<string>(serverReplica, [], 'fos:peer-root') === 'fos'
+        if (independentRoot && !parsed.scope.length) return { status: 409, body: { error: 'This account shares Home, not its server root. Update this client to use a Home attachment.', code: 'version-mismatch' } } as const
         // Upgrade the account root only when a constructor-aware owner connects.
         // Older scoped peer credentials continue to resolve through Home.
         const beforeContext = rootTargetCid(store)
-        if (claimsOf(req).kind !== 'peer' && !parsed.scope.length && Object.values(parsed.nodes).some(node => node?.data?.alias?.id === HOME_ID)) {
-          ensureHomeContext(createReplica(serverPeerIdFor(user.username), store), 0)
+        if (claimsOf(req).kind !== 'peer' && ((!parsed.scope.length && Object.values(parsed.nodes).some(node => node?.data?.alias?.id === HOME_ID)) || parsed.scope[0] === HOME_ID)) {
+          ensureHomeContext(serverReplica, 0)
+          if (parsed.scope[0] === HOME_ID && !independentRoot) writeNodeValue(serverReplica, [], 'fos:peer-root', 'fos', deps.now?.() ?? Date.now())
         }
         const contextChanged = rootTargetCid(store) !== beforeContext
         {
