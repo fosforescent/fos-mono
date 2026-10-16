@@ -1,3 +1,4 @@
+import { nodeRelay } from './sync/nodeRelay';
 import jwt from 'jsonwebtoken';
 
 import { WebSocketServer, WebSocket } from 'ws';
@@ -64,10 +65,17 @@ export const attachWs = (server: any) => {
     // Presence announcement from a device (see web/src/app.ts). Registered before any await:
     // a hello that arrives while the user lookup is pending would otherwise be dropped, and
     // the device would never show as online.
+    let relayUser: number | undefined
+    let relayHello: { peerId: string; scope: string[]; capabilities: string[] } | undefined
+    const registerProvider = () => { if (relayUser !== undefined && relayHello) nodeRelay.register(relayUser, relayHello.peerId, ws, relayHello.scope, relayHello.capabilities) }
     ws.on('message', (message) => {
         try {
-            const parsed = JSON.parse(message.toString()) as { type?: unknown; peerId?: unknown }
-            if (parsed.type === 'hello' && typeof parsed.peerId === 'string') setSocketPeer(ws, parsed.peerId)
+            const parsed = JSON.parse(message.toString()) as { type?: unknown; peerId?: unknown; scope?: unknown; capabilities?: unknown }
+            if (parsed.type === 'hello' && typeof parsed.peerId === 'string' && parsed.peerId.length <= 128 && (decodedToken.kind !== 'peer' || parsed.peerId === decodedToken.peerId)) {
+              setSocketPeer(ws, parsed.peerId)
+              relayHello = { peerId: parsed.peerId, scope: Array.isArray(parsed.scope) ? parsed.scope : [], capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities.filter((c): c is string => typeof c === 'string') : [] }
+              registerProvider()
+            }
         } catch {
             // not JSON
         }
@@ -87,6 +95,7 @@ export const attachWs = (server: any) => {
 
         // Register this connection for prompt notifications
         addUserConnection(user.id, ws);
+        relayUser = user.id; registerProvider()
 
         // Register this connection for group events
         addGroupConnection(user.id, user.fosNodeId, ws);
@@ -101,9 +110,10 @@ export const attachWs = (server: any) => {
 
         ws.on('message', (message) => {
         try {
-            console.log('Received message:', message.toString());
+            // Node replies are consumed below without logging their contents.
             try {
               const parsed = JSON.parse(message.toString()) as { type?: unknown }
+              if (nodeRelay.receive(user.id, ws, parsed)) return
               if (parsed.type === 'hello') return // handled above
             } catch {
               // not JSON: fall through

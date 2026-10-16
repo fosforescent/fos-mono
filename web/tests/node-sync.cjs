@@ -1,0 +1,66 @@
+const assert = require('node:assert/strict')
+const { buildSync } = require('esbuild')
+const { mkdtempSync, rmSync } = require('node:fs')
+const path = require('node:path')
+const { JSDOM } = require('jsdom')
+const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-node-transport-'))
+const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
+for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
+
+async function main() {
+  buildSync({ stdin: { contents: `export {App} from './src/app'; export {DirectLink} from './src/p2p'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
+  const c = require(path.join(dir, 'test.cjs'))
+  class Channel extends EventTarget {
+    readyState = 'open'; sent = []
+    send(text) { this.sent.push(JSON.parse(text)); queueMicrotask(() => this.other.dispatchEvent(new MessageEvent('message', { data: text }))) }
+    close() { this.readyState = 'closed'; this.dispatchEvent(new Event('close')) }
+  }
+  const host = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
+  const guest = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
+  for (const app of [host, guest]) { app.scheduleSync = () => {}; app.syncNow = async () => {} }
+  let r = c.addTask(c.createReplica('host'), [], 'Parent', 1, 'parent')
+  r = c.addTask(r, ['parent'], 'Child', 2, 'child')
+  r = c.addTask(r, ['parent', 'child'], 'Grandchild secret', 3, 'grandchild')
+  c.commitRoot(r.store, c.updateAtScope(r.store, c.headCid(r), [], value => ({ ...value, data: { ...value.data, description: { content: 'Shared root text' } } })), 3)
+  host.set({ replica: r, direct: { role: 'host', phase: 'connected', pendingPeer: { peerId: 'guest', name: 'Guest' } } })
+  guest.set({ replica: c.createReplica('guest'), direct: { role: 'guest', phase: 'connected' } })
+  const a = new Channel(), b = new Channel(); a.other = b; b.other = a
+  const hostLink = new c.DirectLink({ close() {} }, a), guestLink = new c.DirectLink({ close() {} }, b)
+  hostLink.remotePeerId = 'guest'; guestLink.remotePeerId = 'host'
+  host.attachLink(hostLink, 'host'); guest.attachLink(guestLink, 'guest')
+  await assert.rejects(() => guestLink.requestNode({ peerId: 'guest', scope: [], path: [], linkId: 'unapproved' }), /not been approved/)
+  host.approveDirectPeer(true)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  await guest.syncNodes(false)
+  assert.equal(c.view(guest.state.replica, []).tasks[0].refPeer, 'host')
+  assert(!JSON.stringify(a.sent).includes('Grandchild secret'))
+  assert(!a.sent.some(m => m.t === 'sync') && !b.sent.some(m => m.t === 'sync'))
+  await guest.loadPeerNode(['parent'])
+  guest.set({ replica: c.renameTask(guest.state.replica, [], 'parent', 'Edited parent', 10) })
+  await guest.syncNodes(false)
+  assert.equal(c.view(host.state.replica, ['parent']).name, 'Edited parent')
+  assert.equal(c.view(host.state.replica, ['parent', 'child', 'grandchild']).name, 'Grandchild secret')
+  guest.set({ replica: c.addTask(guest.state.replica, [], 'New local row', 11, 'new') })
+  await guest.syncNodes(false)
+  assert.equal(c.view(host.state.replica, ['new']).name, 'New local row')
+  const round = b.sent.length
+  await guest.syncNodes(false)
+  assert(b.sent.slice(round).every(m => !m.request?.update), 'idle polls do not upload unchanged nodes')
+  await guest.createNodeBranch([], 'parent', 'feature', true)
+  guest.set({ replica: c.renameTask(guest.state.replica, [], 'parent', 'Feature edit', 12) })
+  await guest.syncNodes(false)
+  assert.equal(c.withMainBranchPolicy(host.state.replica.store, () => c.view(host.state.replica, ['parent']).name), 'Edited parent')
+  assert.equal(c.withBranches(host.state.replica.store, { parent: 'feature' }, () => c.view(host.state.replica, ['parent']).name), 'Feature edit')
+  guest.selectNodeBranch([], 'parent', 'main', true)
+  await guest.syncNodes(false)
+  assert.equal(c.view(guest.state.replica, ['parent']).name, 'Edited parent')
+  guest.set({ replica: c.renameTask(guest.state.replica, [], 'parent', 'Client conflict', 12) })
+  host.set({ replica: c.renameTask(host.state.replica, [], 'parent', 'Host conflict', 12) })
+  await assert.rejects(() => guest.syncNodes(false), /Concurrent change/)
+  assert.equal(c.view(host.state.replica, ['parent']).name, 'Host conflict')
+  assert.equal(c.view(guest.state.replica, ['parent']).name, 'Client conflict')
+  assert(c.loadReplica(c.serializeReplica(guest.state.replica)).meta.nodeSync)
+  hostLink.close(); guestLink.close()
+  console.log('PASS: background node sync, shallow uploads, lazy descendants, idle polling and concurrent edit preservation')
+}
+main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => { rmSync(dir, { recursive: true, force: true }); dom.window.close() })

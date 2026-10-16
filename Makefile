@@ -142,16 +142,9 @@ seed-live-db:
 # Default: opens in home directory. Override with DIR=. or DIR=/path/to/dir
 # Logs detailed application and JS console output to $(TAURI_LOG)
 DIR ?= $(HOME)
+export DIR PROD_API_URL
 tauri-dev:
-	@echo "🧹 Cleaning Vite cache..."
-	rm -rf web/node_modules/.vite web/dist 2>/dev/null || true
-	@echo "🔨 Rebuilding web..."
-	cd web && npm run build
-	@mkdir -p $(LOG_DIR)
-	@echo "🚀 Starting Tauri dev with verbose logging (logging to $(TAURI_LOG))..."
-	@echo "=== Tauri Dev Started: $$(date) ===" > $(TAURI_LOG)
-	@echo "=== Environment: RUST_LOG=debug RUST_BACKTRACE=1 ===" >> $(TAURI_LOG)
-	RUST_LOG=debug RUST_BACKTRACE=1 FOS_TARGET_DIR=$$(realpath $(DIR)) cd desktop && npm run dev 2>&1 | tee -a $(TAURI_LOG)
+	node scripts/tauri-dev.cjs
 
 # Run Tauri dev pointed at the production backend API.
 # Note: the web UI persists the API URL in webview localStorage
@@ -160,8 +153,7 @@ tauri-dev:
 # `make reset-local` if the app keeps using an old URL.
 PROD_API_URL ?= https://api.fosforescent.com
 tauri-dev-prod:
-	@echo "🌐 Using production API: $(PROD_API_URL)"
-	VITE_API_URL=$(PROD_API_URL) $(MAKE) tauri-dev
+	node scripts/tauri-dev.cjs --prod
 
 # View tauri logs
 tauri-logs:

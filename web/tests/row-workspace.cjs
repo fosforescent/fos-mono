@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-template-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'FormData', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location', 'FileReader']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, serveSync } = require(path.join(dir, 'app.cjs'))
+const { parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_CAPABILITIES } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function main() {
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
@@ -148,19 +148,18 @@ async function main() {
   const pullApp = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
   pullApp.scheduleSync = () => {}
   pullApp.state.session = { baseUrl: 'http://localhost', jwt: 'test', username: 'test', kind: 'user' }
-  const server = ensureHomeContext(createReplica('server'), 0)
+  const server = ensureHomeContext(createReplica('user:test'), 0)
   let packet
   globalThis.fetch = async (_url, init) => {
     packet = JSON.parse(init.body)
-    const result = serveSync(server.store, packet, 'server')
-    assert(!('error' in result))
-    return { ok: true, json: async () => result.response }
+    const result = exchangeNode(server, packet, { peerId: packet.peerId, scope: [], owner: true, capabilities: SERVER_CAPABILITIES }, 1)
+    return { ok: true, json: async () => result.node }
   }
   await pullApp.syncNow('initial')
   pullApp.addRowAt([], 'plain', 'Unpushed local change')
-  const base = pullApp.state.replica.meta.baseCid
   await pullApp.pullPeer(pullApp.pullPeers()[0].id)
-  assert.equal(packet.headCid, base, 'Pull advertises only the last shared head')
+  assert.equal(packet.update, undefined, 'Pull never uploads local node edits')
+  assert.equal(packet.nodes, undefined, 'Pull never sends a graph closure')
   assert(pullApp.currentView().tasks.some(t => t.title === 'Unpushed local change'), 'Pull preserves local edits')
   // Palette clicks and drops share ordinary row constructors and are undoable.
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
@@ -217,9 +216,9 @@ async function main() {
   let sends = 0
   globalThis.fetch = async (_url, init) => {
     sends++
-    const result = serveSync(server.store, JSON.parse(init.body), 'server')
-    assert(!('error' in result))
-    return { ok: true, json: async () => result.response }
+    const request = JSON.parse(init.body)
+    const result = exchangeNode(server, request, { peerId: request.peerId, scope: [], owner: true, capabilities: SERVER_CAPABILITIES }, 2)
+    return { ok: true, json: async () => result.node }
   }
   const pullPath = pullApp.addPullConstructor()
   assert.equal(sends, 0)

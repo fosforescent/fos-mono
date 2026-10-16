@@ -1,4 +1,3 @@
-import { fi } from "date-fns/locale"
 import { FosDataContent, FosNodeContent, FosPathElem } from "../types"
 import { FosNode } from "./node"
 import { FosStore } from "./store"

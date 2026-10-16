@@ -7,6 +7,7 @@ jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 
 import { createPeerSyncHandler, type PeerSyncDeps } from './peerSync'
+import { addMemberAt, removeMemberAt } from '@fosforescent/shared/sync/index'
 
 type Sent = { status: number; body: unknown }
 
@@ -45,6 +46,23 @@ function makeDeps(loadDelayMs = 0) {
 const serverTitles = (store: FosStore) => viewNode(store, rootTargetCid(store)).tasks.map((t) => t.title)
 
 describe('peer-sync handler', () => {
+  it('rechecks a scoped credential against current membership before importing or returning nodes', async () => {
+    const { deps, stores } = makeDeps()
+    let server = addTask(createReplica('server'), [], 'Shared', 1, 'shared')
+    server = addMemberAt(server, ['shared'], 'guest', 'Guest', ['read', 'edit'], 2)
+    stores.set(7, server.store)
+    const guest = createReplica('guest')
+    guest.meta.scope = ['shared']
+    const body = buildSyncRequest(guest, undefined, { recipient: 'device' })
+    const request = { body, claims: { username: 'alice', kind: 'peer', peerId: 'guest', scope: ['shared'] } } as unknown as Request
+    const handler = createPeerSyncHandler(deps), first = fakeRes()
+    await handler(request, first.res)
+    expect(first.sent().status).toBe(200)
+    server = removeMemberAt(server, ['shared'], 'guest', 3)
+    const revoked = fakeRes()
+    await handler(request, revoked.res)
+    expect(revoked.sent()).toEqual({ status: 403, body: { error: 'Peer no longer has access to this attachment.' } })
+  })
   it('rejects unauthenticated, unknown-user and malformed requests', async () => {
     const { deps } = makeDeps()
     const handler = createPeerSyncHandler(deps)

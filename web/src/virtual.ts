@@ -1,4 +1,5 @@
 import { createReplica, serializeReplica, type Capability, type Scope, type SyncRequest, type SyncResponse, type ServeResult } from '../../shared/sync/index'
+import type { NodeRequest, ProvidedNode } from '../../shared/sync/index'
 import type { Session } from './api'
 import { ApiError } from './api'
 import { createLocalStorageAdapter, type ReplicaStorage } from './storage'
@@ -37,6 +38,7 @@ export function virtualStorage(peer: VirtualPeer): ReplicaStorage {
 }
 
 type Hooks = {
+  provide?: (peer: VirtualPeer, request: NodeRequest) => ProvidedNode
   presence: () => void
   dataSessionId: () => string | undefined
   decide: (peer: VirtualPeer, scope: Scope, proposalId: string, decision: 'approve' | 'reject') => Promise<void>
@@ -51,6 +53,7 @@ type Hooks = {
 
 /** Each invitation has one same-origin channel; the existing graph protocol does the merging. */
 export class VirtualPeers {
+  private nodePending = new Map<number, { resolve: (node: ProvidedNode) => void; reject: (error: Error) => void }>()
   private closed = false
   readonly hostTab: string
   private rooms = new Map<string, { peer: VirtualPeer; channel: BroadcastChannel; seen: number }>()
@@ -80,6 +83,11 @@ export class VirtualPeers {
     if (guest) {
       this.channel = new BroadcastChannel(PREFIX + guest.token)
       this.channel.onmessage = ({ data }) => {
+        if (data.t === 'node-result') {
+          const pending = this.nodePending.get(data.id)
+          if (pending) { this.nodePending.delete(data.id); if (data.node) pending.resolve(data.node); else pending.reject(new Error(data.error ?? 'Node request failed.')) }
+          return
+        }
         if (data.t === 'welcome') {
           this.seen = Date.now()
           const first = !localStorage.getItem(PREFIX + guest.token + '.account-initialized')
@@ -137,6 +145,11 @@ export class VirtualPeers {
         const capabilities = this.hooks.grants(peer)
         if (!capabilities?.includes('read')) { channel.postMessage({ t: 'revoked', name: this.hooks.name() }); return }
         channel.postMessage({ t: 'welcome', revision: this.hooks.revision(), name: this.hooks.name(), capabilities, session: peer.shareAccount && data.requestAccount ? this.hooks.session() : undefined })
+      } else if (data.t === 'node') {
+        try {
+          if (!this.hooks.provide || !this.hooks.grants(peer)?.includes('read')) throw new Error('Node access denied.')
+          channel.postMessage({ t: 'node-result', id: data.id, node: this.hooks.provide(peer, data.request) })
+        } catch (error) { channel.postMessage({ t: 'node-result', id: data.id, error: error instanceof Error ? error.message : String(error) }) }
       } else if (data.t === 'decision') {
         void this.hooks.decide(peer, data.scope, data.proposalId, data.decision).then(
           () => { if (!this.closed) channel.postMessage({ t: 'decision-result', id: data.id }) },
@@ -160,6 +173,16 @@ export class VirtualPeers {
       this.channel!.postMessage({ t: 'sync', id, peerId: this.guest!.id, request })
     })
   }
+  requestNode(request: NodeRequest): Promise<ProvidedNode> {
+    if (!this.channel || !this.connected) return Promise.reject(new Error('The parent tab is unavailable.'))
+    return new Promise((resolve, reject) => {
+      const id = ++this.serial
+      const timer = setTimeout(() => { this.nodePending.delete(id); reject(new Error('Node request timed out.')) }, 8000)
+      this.nodePending.set(id, { resolve: node => { clearTimeout(timer); resolve(node) }, reject: error => { clearTimeout(timer); reject(error) } })
+      try { this.channel!.postMessage({ t: 'node', id, peerId: this.guest!.id, request }) }
+      catch (error) { clearTimeout(timer); this.nodePending.delete(id); reject(error) }
+    })
+  }
   decide(scope: Scope, proposalId: string, decision: 'approve' | 'reject'): Promise<void> {
     if (!this.channel || !this.connected) return Promise.reject(new Error('The parent tab is unavailable.'))
     return new Promise((resolve, reject) => {
@@ -170,6 +193,8 @@ export class VirtualPeers {
     })
   }
   close(): void {
+    for (const pending of this.nodePending.values()) pending.reject(new Error('Virtual connection closed.'))
+    this.nodePending.clear()
     if (this.closed) return
     this.channel?.postMessage({ t: 'bye', peerId: this.guest!.id })
     this.closed = true

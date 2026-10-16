@@ -1,5 +1,75 @@
 # Offline/online sync
 
+## On-demand node providers
+
+`shared/sync/node-provider.ts` separates `provideNode` from the optional `sync`
+capability. Fos and web peers advertise both. `provideNode` returns one logical
+node's permitted data and child addresses; it never sends descendant values,
+history, proposal contents, or reference targets. `pullNode` only tries the supplied
+associated peers that advertise the capability. `pullNodeTree` is an explicit,
+bounded eager handler that uses the same checked request for every node.
+
+HTTP uses `POST /user/data/peer-sync/provide-node`; WebRTC uses `node` and
+`node-result` messages; virtual tabs use their existing per-invitation channel.
+The transport supplies the authenticated peer and attachment scope. Requests
+cannot widen that scope, traverse a reference, or bypass a revoked child grant.
+Authorization is checked against current main-branch policy on every request.
+
+Each linked node has two distinct mutable endpoint refs. Their `ref` values name
+the opposite endpoint's alias and peer; their TARGETPOINTER values hold their
+own masks. The endpoints are stored on each peer's private root alias, outside
+the shared root target, and survive commits and serialization. They are never
+merged into each other's policy. `setNodeLinkMask` sets field/child allowlists:
+omitted means all, and an empty list means none. Ancestor field masks also apply
+to direct descendant requests. A changed request ID cannot bypass a mask.
+Connected endpoint rows expose field and child-reference switches under
+Connection and capabilities. These edit only this device's endpoint.
+
+Opening a peer-held row requests its node and leaves its children unloaded.
+The web controller checks the connection and current replica before accepting
+an asynchronous result. Requests for the same row share one in-flight promise.
+
+Background web/account, direct, and virtual synchronization now uses
+`shared/sync/node-sync.ts` through the node-provider transport. Each exchange
+contains only shallow field/child-reference deltas. Polls refresh the attachment
+and displayed path; edited materialized nodes are sent independently. Unopened
+remote descendants stay unloaded. Per-peer shallow baselines survive reloads.
+Existing child bodies, grants, and hidden children survive shallow updates.
+Concurrent edits to different fields merge; overlapping edits fail without
+replacing either value. In-flight local edits are rebased before installation.
+
+The old full-graph protocol remains for explicit legacy/manual flows, except
+account reset, which now uses a node update. It is no longer used by background
+`syncNow`, and still refuses
+partial projections, masked attachments, and nested read boundaries.
+
+Invited account peers and virtual proposers write into their own pending values;
+main stays unchanged until the existing approval operation applies the proposal.
+Reviewers receive proposal identifiers/status, without descendant contents.
+Current main grants are checked even when serving a pending value.
+
+Branch selections travel as explicit scoped contexts. Shallow baselines are keyed
+by branch, and updates restore only the selected alternatives, preserving main.
+Every branch request is authorized against current main grants and link masks.
+
+Reviewers open **Branches**, select a pending proposal, then choose **Approve and
+merge** or **Reject**. Approval requires owner access or the `approve` capability;
+it merges the pending value against its saved base. Proposal previews fetch one
+node at a time into a separate read-only replica. Rejecting leaves main unchanged.
+
+Browser providers register their attachment scope and `provideNode` capability on
+the authenticated account WebSocket. HTTP can pull a browser-held node through
+that socket, using a reference already stored by the server. Requests are bounded,
+time out after eight seconds, and recheck grants and reference identity before
+saving the answer. Offline providers remain unavailable; there is no bulk fallback.
+Relayed children must belong to the same provider at the expected child address;
+foreign reference targets require a separately authorized attachment.
+
+Run the provider, HTTP authorization and bidirectional transport regressions with
+`npm --prefix web run test:nodes`.
+
+## Legacy full-graph protocol
+
 How a device keeps working without a server and merges back when it signs in.
 Code: `shared/sync/` (core, shared by every peer), `backend/sync/peerSync.ts`
 (the user group's side), `web/src/app.ts` (the device's side). The same `web/`
@@ -579,15 +649,10 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
   template prefixes are parsed in `web/src/rows.ts` only.
 * Assignments (`-@name`) only show in the assigner's own context panel; the
   assignee's replica does not receive them yet (needs the proposal path).
-* Connection capabilities are declared, not enforced: nothing yet picks a
-  transport from a peer's `direct`/`http`/`ws`/`relay` rows, and the server
-  does not relay for devices that only hold `relay` through it.
-* Policies are enforced by the client only. The server should honour the
-  `to`/`from` lists too (not serve content to a peer whose row lacks `read`,
-  not keep proposals from one that lacks `edit`) and the `[peers.<name>]`
-  tables are parsed but not yet applied to member rows.
-* Devices do not register capabilities of their own with the account yet;
-  only the account server reports `capabilities` in sync responses.
+* Browser node relay requires a live authenticated WebSocket; offline devices
+  cannot answer requests. Relay does not traverse foreign reference targets.
+* Explicit legacy full-graph flows still exist for manual operations; background
+  synchronization uses capability-checked shallow exchanges.
 * Discord provides `mail`/`relay` on paper; its OAuth sign-in only identifies
   the user (no handler sends through it yet; the channels bot does).
 * OAuth tokens are refreshed on use (Google); GitHub tokens do not expire.

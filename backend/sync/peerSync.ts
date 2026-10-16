@@ -105,6 +105,12 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
         const contextChanged = rootTargetCid(store) !== beforeContext
         {
           const claims = claimsOf(req)
+          if (claims.kind === 'peer') {
+            const attachment = resolveScope(store, rootTargetCid(store), claims.scope ?? [])
+            if (!attachment || (!hasCapability(store, content(store, attachment), parsed.peerId, 'read') && !hasCapability(store, content(store, attachment), parsed.peerId, 'edit'))) {
+              return { status: 403, body: { error: 'Peer no longer has access to this attachment.' } } as const
+            }
+          }
           // Invited peers propose at link nodes (branches members approve); the owner's own devices merge.
           const options = {
             recipient: 'server' as const,

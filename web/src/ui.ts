@@ -994,7 +994,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   if (preview) {
     controls.replaceChildren(span('muted', 'Read-only proposed branch'))
-    if (state.view.length) controls.append(button('secondary small', 'Copy to branch…', () => {
+    if (state.view.length && !preview.remote) controls.append(button('secondary small', 'Copy to branch…', () => {
       const name = window.prompt('Name for your editable copy', 'alternative')
       if (name && app.copyProposalToBranch(preview.proposal.id, name)) { clearProposal(app); app.refresh() }
     }))
@@ -1037,9 +1037,9 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (preview) {
     const collectPreview = (cid: string, depth: number) => {
       if (depth > 32) return
-      for (const child of viewNode(state.replica.store, cid).tasks) {
+      for (const child of viewNode(preview.store, cid).tasks) {
         tags.add(child.requirement?.capability ?? child.allocation?.type ?? child.kind)
-        const nested = child.kind !== 'ref' ? findChild(state.replica.store, cid, child.id) : null
+        const nested = child.kind !== 'ref' ? findChild(preview.store, cid, child.id) : null
         if (nested) collectPreview(nested, depth + 1)
       }
     }
@@ -1133,13 +1133,14 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.length === 0) rows.push(firstRunHint(el))
   if (preview) {
     el.className = `list tree layout-${prefs.layout}`
-    const renderReadOnly = (cid: string, depth: number, trail: string[] = []): HTMLElement[] => {
+    const renderReadOnly = (cid: string, depth: number, trail: string[] = [], ids: Scope = []): HTMLElement[] => {
       if (depth > 32) return []
-      return viewNode(state.replica.store, cid).tasks.flatMap(task => {
+      return viewNode(preview.store, cid).tasks.flatMap(task => {
         const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth)); li.append(span('title', task.title)); li.dataset.depth = String(depth); li.dataset.time = String(task.author?.time ?? task.createdAt)
         if (prefs.layout === 'chat' || prefs.layout === 'queue') { li.style.setProperty('--depth', '0'); li.append(span('chat-path muted', [...trail, task.title].map(shortCrumb).join(' › '))) }
-        const nested = task.kind !== 'ref' ? findChild(state.replica.store, cid, task.id) : null
-        const descendants = nested ? renderReadOnly(nested, depth + 1, [...trail, task.title]) : []
+        const nested = task.kind !== 'ref' ? findChild(preview.store, cid, task.id) : null
+        if (preview.remote && task.refPeer) li.append(button('secondary small', 'Load proposed node', () => void app.loadProposalPreview(state.view, preview.proposal.id, [...ids, task.id])))
+        const descendants = nested ? renderReadOnly(nested, depth + 1, [...trail, task.title], [...ids, task.id]) : []
         const tag = task.requirement?.capability ?? task.allocation?.type ?? task.kind
         const include = (!prefs.search || matchesSearch(task, prefs.search)) && (prefs.layout !== 'chat' || task.kind === 'comment') && (prefs.layout !== 'queue' || task.kind === 'task' && !task.done)
         return [...(include ? [li] : []), ...(prefs.layout === 'tree' || prefs.layout === 'chat' || prefs.layout === 'queue' ? descendants : [])]
@@ -1488,7 +1489,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.kind === 'ref') {
-    body = renderRefBody(task, app)
+    body = renderRefBody(task, app, [...at, task.id])
   } else if (task.kind === 'note') {
     body = renderNoteBody(task, at, state, app)
   } else if (SPECIAL_KINDS.has(task.kind)) {
@@ -1652,12 +1653,12 @@ function firstLine(text: string): string {
 }
 
 /** A reference row shows the title of the row it points at and follows it on click. */
-function renderRefBody(task: TaskView, app: App): HTMLElement {
+function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
   const body = span('title ref', '')
   const arrow = span('ref-arrow', '→')
   if (task.refPeer) {
-    body.append(arrow, span('muted', 'Content held by peer ' + task.refPeer.slice(0, 8)))
-    body.title = 'Connect directly to the owning peer to receive this node. Fos does not store its content.'
+    body.append(arrow, button('link ref-link', 'Load node from ' + task.refPeer.slice(0, 8), () => app.zoomTo(path)))
+    body.title = 'Request this node from its peer. Child nodes load when opened.'
     return body
   }
   if (app.sharedLink(task.id)) {
@@ -2159,6 +2160,17 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
       b.disabled = !owner; b.setAttribute('aria-pressed', String(!p.disabled.includes(cap))); return b
     })))
     const customOffers = app.handlerOffers().filter(o => o.peerId === p.id && !o.capability)
+    const nodeMask = app.nodeLinkMask(p.id)
+    if (nodeMask) {
+      const controls = div('peer-capabilities', '')
+      for (const [key, text] of [['fields', 'Allow node fields across this link'], ['children', 'Allow child references across this link']] as const) {
+        const label = document.createElement('label'), input = document.createElement('input')
+        input.type = 'checkbox'; input.checked = nodeMask[key] === undefined; input.disabled = !owner
+        input.onchange = () => app.setNodeMask(p.id, { ...nodeMask, [key]: input.checked ? undefined : [] })
+        label.append(input, document.createTextNode(text)); controls.append(label)
+      }
+      lines.append(controls)
+    }
     if (customOffers.length) lines.append(direction('capabilities:', 'Published typed handlers; toggles apply to this context and its children.', customOffers.map(offer => {
       const b = button('chip cap-chip' + (!offer.enabled || !offer.active ? ' off' : ''), offer.label, () => app.toggleHandler(offer.peerId, offer.id, !offer.enabled))
       b.disabled = !owner; b.setAttribute('aria-pressed', String(offer.enabled)); return b
