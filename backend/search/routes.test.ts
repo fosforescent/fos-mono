@@ -99,3 +99,20 @@ test('a bidder submits a proposal on a listed node; bidders see only their own p
   expect((await call(d.handlers.marketProposal, 'alice', { body: { owner: 'alice', aliasId: 'job', rows: [{ kind: 'comment', text: 'x' }] } })).status).toBe(400)
   expect((await call(d.handlers.search, 'bob', { body: { query: '' } })).status).toBe(400)
 })
+
+test('published handler snapshots are readable globally, and disabling the offer revokes access', async () => {
+  const { publishTemplate, setHandlerEnabledAt } = await import('@fosforescent/shared/sync/index')
+  let alice = addRow(createReplica('alice-device'), [], 'template', 'Design', 1, { id: 'template' })
+  alice = addTask(alice, ['template'], 'Draw logo', 2, 'draw')
+  alice = addTask(alice, [], 'Private calendar', 3, 'private')
+  alice = publishTemplate(alice, [], ['template'], 'Design service', 4, true)
+  const d = deps({ alice, bob: createReplica('bob') })
+  const query = { owner: 'alice', id: 'fos:published:template' }
+  const opened = await call(d.handlers.marketNode, 'bob', { query })
+  expect(opened.status).toBe(200)
+  expect(opened.json.capability).toBe(true)
+  expect(opened.json.view.tasks.map((t: { title: string }) => t.title)).toEqual(['Draw logo'])
+  expect(JSON.stringify(opened.json)).not.toContain('Private calendar')
+  setHandlerEnabledAt(alice, [], alice.meta.peerId, query.id, false, 5)
+  expect((await call(d.handlers.marketNode, 'bob', { query })).status).toBe(404)
+})

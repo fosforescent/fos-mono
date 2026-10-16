@@ -13,7 +13,7 @@
 
 import type { Request, Response } from 'express'
 import {
-  resolveBinding, contextBindings, addMemberAt, addRefAt, addRow, addSupply, applyProposalAt, capabilityTarget,
+  evaluateNode, evaluationRecord, resolveBinding, contextBindings, addMemberAt, addRefAt, addRow, addSupply, applyProposalAt, capabilityTarget,
   content, headCid, discoverHandlers, MCP_PEER_PREFIX, newId, proposeRefAt, put,
   refArguments, refNodeContent, refTypeCid, refValueCid, resolveScope,
   setHandlerOffersAt, valueContent, view, type Replica, type Scope, type TaskView
@@ -54,6 +54,8 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyn
   if (!r || r.capability !== 'tool' || r.satisfied) return { error: 'not an open tool requirement' }
   const store = replica.store
   const scope = [...at, req.id]
+  const prior = evaluationRecord(replica, scope)
+  if (prior && !['committed', 'rolled-back'].includes(prior.status)) return { error: 'This evaluation needs recovery. Review its effects before running again.' }
   const requestView = view(replica, scope)
   if (requestView?.choices.length) return { error: 'tool requirement has unresolved choices' }
   if (requestView?.tasks.some((row) => row.kind === 'requirement' && !row.requirement?.satisfied)) return { error: 'tool requirement has unresolved dependencies' }
@@ -96,20 +98,35 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyn
   if (!server || !attached.some((a) => a.peerId === peerId) || !tool || !server.tools.some((t) => t.name === tool) || (r.tool && tool !== r.tool)) return { error: 'bound MCP handler is unavailable or does not match the requirement' }
   if (!discoverHandlers(replica, scope).some(o => o.peerId === peerId && o.enabled && o.capability === 'tool' && (o.legacy || valueContent(store, o.cid).data.description?.content === tool))) return { error: 'bound MCP handler is disabled or no longer advertised' }
   // Persist the binding before calling an external handler, including on failure.
-  const returns = refArguments(store, request, store.primitive.documentField.getId())
+  const returns = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
   if (returns.length > 1) return { error: 'tool requirement has ambiguous return arguments' }
   const returnId = returns[0]?.id ?? newId()
   replica = addRefAt(replica, scope, returnId, store.primitive.documentField.getId(), now)
   if (headCid(replica) !== before) await deps.saveStore(user, replica.store)
-  let text: string
-  try { text = await deps.callTool(server, tool, req.title) } catch (error) { return { error: `${server.name}/${tool}: ${error instanceof Error ? error.message : String(error)}` } }
-  const resultId = newId()
-  let next = addRow(replica, scope, 'note', text.slice(0, 20_000) || '(empty result)', now, { id: resultId })
-  const resultCid = resolveScope(store, headCid(next), [...scope, resultId])!
-  const returned = proposeRefAt(next, [...scope, returnId], resultCid, peerId!, now)
-  next = applyProposalAt(returned.replica, [...scope, returnId], returned.proposalCid, replica.meta.peerId, now)
-  next = addSupply(next, at, req.id, { capability: 'tool', by: peerId!, ref: resultId }, now)
-  return { replica: next, text }
+  let text = ''
+  try {
+    const record = await evaluateNode(scope, {
+      get: () => replica,
+      save: async next => { replica = next; await deps.saveStore(user, next.store) },
+      now: () => deps.now?.() ?? Date.now(),
+      handles: step => JSON.stringify(step.path) === JSON.stringify(scope),
+      outputs: () => [returnId],
+      check: () => discoverHandlers(replica, scope).some(o => o.peerId === peerId && o.enabled && o.capability === 'tool' && (o.legacy || valueContent(store, o.cid).data.description?.content === tool)) ? [] : ['The bound MCP handler is no longer available.'],
+      effect: async () => {
+        const liveServer = (await deps.servers(user.id)).find(s => s.id === server.id && s.tools.some(t => t.name === tool))
+        if (!liveServer) throw new Error('The bound MCP server disconnected.')
+        text = await deps.callTool(liveServer, tool, req.title)
+        const resultId = newId(), time = deps.now?.() ?? Date.now()
+        replica = addRow(replica, scope, 'note', text.slice(0, 20_000) || '(empty result)', time, { id: resultId })
+        const resultCid = resolveScope(store, headCid(replica), [...scope, resultId])!
+        const returned = proposeRefAt(replica, [...scope, returnId], resultCid, peerId!, time)
+        replica = applyProposalAt(returned.replica, [...scope, returnId], returned.proposalCid, replica.meta.peerId, time)
+        replica = addSupply(replica, at, req.id, { capability: 'tool', by: peerId!, ref: resultId }, time)
+      }
+    })
+    return record.status === 'committed' ? { replica, text } : { error: record.error ?? 'Tool evaluation needs recovery.' }
+  } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
+
 }
 
 export function createMcpPeerHandlers(deps: McpPeerDeps) {

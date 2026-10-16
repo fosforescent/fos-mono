@@ -67,3 +67,20 @@ test('indexing embeds changed rows only, removes vanished rows; search ranks own
   alice = deleteTask(alice, [], 'o', 7)
   expect(await indexStore(prisma, { id: 1, username: 'alice' }, alice.store, embed)).toEqual({ embedded: 0, removed: 1 })
 })
+
+test('global search aggregates only explicitly published enabled handler offers; revocation removes them', async () => {
+  const { publishTemplate, discoverHandlers, setHandlerEnabledAt } = await import('@fosforescent/shared/sync/index')
+  const prisma = fakePrisma()
+  let r = addRow(createReplica('alice-device'), [], 'template', 'Design a logo', 1, { id: 'design' })
+  r = addTask(r, [], 'Private notes', 2, 'private')
+  r = publishTemplate(r, [], ['design'], 'Logo capability', 3)
+  expect(collectRows(r.store).filter(row => row.kind === 'capability')).toEqual([])
+  r = publishTemplate(r, [], ['design'], 'Logo capability', 4, true)
+  await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)
+  const hits = await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)
+  expect(hits.map(h => [h.aliasId, h.kind, h.owner])).toEqual([['fos:published:design', 'capability', 'alice']])
+  const offer = discoverHandlers(r, []).find(o => o.id === 'fos:published:design')!
+  r = setHandlerEnabledAt(r, [], r.meta.peerId, offer.id, false, 5)
+  await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)
+  expect(await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)).toEqual([])
+})

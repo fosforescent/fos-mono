@@ -14,7 +14,7 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdge, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, marketplaceOffers, commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdge, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
 import { indexStore, searchRows, type Embed } from './rowIndex'
 
 export type SearchDeps = {
@@ -75,6 +75,11 @@ export function createSearchHandlers(deps: SearchDeps) {
       const loaded = await deps.loadStore(owner)
       if (!loaded) return res.status(404).json({ error: 'owner not found' })
       const { store } = loaded
+      const offer = marketplaceOffers(createReplica('market-read', store)).find(o => o.id === aliasId)
+      if (offer) {
+        const node = viewNode(store, offer.cid)
+        return res.json({ owner, aliasId, view: { ...node, peers: [], members: [], proposals: [] }, myProposal: null, capability: true })
+      }
       const found = findRowByAlias(store, rootTargetCid(store), aliasId)
       if (!found) return res.status(404).json({ error: 'node not found' })
       const cid = resolveScope(store, rootTargetCid(store), [...found.path, aliasId])!

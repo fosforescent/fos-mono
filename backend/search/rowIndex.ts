@@ -12,7 +12,7 @@
 
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { content, identityCid, isRowEdge, rootTargetCid, rowKindOf, valueContent, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, marketplaceOffers, withMainBranchPolicy, content, identityCid, isRowEdge, rootTargetCid, rowKindOf, valueContent, type Scope } from '@fosforescent/shared/sync/index'
 
 export type Embed = (texts: string[]) => Promise<number[][]>
 
@@ -22,8 +22,10 @@ export type IndexedRow = { aliasId: string; kind: string; title: string; path: S
 
 /** Rows worth indexing (supplies are not; a note contributes its first 600 characters). */
 export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
-  const out: IndexedRow[] = []
+  const out: IndexedRow[] = [], seen = new Set<string>()
   const walk = (cid: string, path: Scope, inherited: boolean) => {
+    if (seen.has(cid) || seen.size >= limit || path.length > 64) return
+    seen.add(cid)
     for (const edge of valueContent(store, cid).children) {
       if (out.length >= limit) return
       const kind = rowKindOf(store, edge)
@@ -42,7 +44,11 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       walk(id, [...path, aliasId], market)
     }
   }
-  walk(rootTargetCid(store), [], false)
+  withMainBranchPolicy(store, () => walk(rootTargetCid(store), [], false))
+  for (const offer of marketplaceOffers(createReplica('market-index', store))) {
+    const text = `${offer.label} ${valueContent(store, offer.cid).data.description?.content ?? ''}`.trim().slice(0, 600)
+    out.push({ aliasId: offer.id, kind: 'capability', title: offer.label, path: offer.path, market: true, text })
+  }
   return out
 }
 
