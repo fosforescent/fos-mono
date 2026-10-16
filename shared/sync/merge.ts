@@ -77,6 +77,20 @@ function mergeNode(
   const ours = content(store, oursCid)
   const theirs = content(store, theirsCid)
 
+  // A peer can first receive a branched node while still holding its ordinary
+  // main value. Lift that value into the default branch before merging.
+  if (isBranchChoice(store, ours) !== isBranchChoice(store, theirs)) {
+    const choice = readChoice(store, isBranchChoice(store, ours) ? oursCid : theirsCid)
+    const main = choice.options.find(option => option.peerId === choice.defaultName) ?? choice.options[0]
+    const mainEdge = main?.edge
+    if (main && mainEdge) {
+      const lift = (cid: string) => putBranches(store, choice.id, choice.base, [{ peerId: main.peerId, edge: withIdentity(store, mainEdge, cid) }], choice.defaultName)
+      return mergeNode(store, baseCid && !isBranchChoice(store, base) ? lift(baseCid) : baseCid,
+        isBranchChoice(store, ours) ? oursCid : lift(oursCid),
+        isBranchChoice(store, theirs) ? theirsCid : lift(theirsCid), labels, newChoiceCids, isTop)
+    }
+  }
+
   if (isBranchChoice(store, ours) && isBranchChoice(store, theirs)) {
     const o = readChoice(store, oursCid), t = readChoice(store, theirsCid)
     const b = baseCid && isBranchChoice(store, base) ? readChoice(store, baseCid) : null

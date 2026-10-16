@@ -1,4 +1,4 @@
-import { createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, buildSyncRequest, completeSync, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, rowKindOf, serveSync, valueContent, view } from './index'
+import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, buildSyncRequest, completeSync, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, rowKindOf, serveSync, valueContent, view } from './index'
 
 test('legacy rows move into Home, constructors and peers remain at root, and migration is idempotent', () => {
   let r = addTask(createReplica('device'), [], 'Existing project', 1, 'project')
@@ -10,8 +10,8 @@ test('legacy rows move into Home, constructors and peers remain at root, and mig
   expect(view(r, [])!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('plain')
   const rootMembers = content(r.store, headCid(r)).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
   const homeMembers = content(r.store, findChild(r.store, headCid(r), HOME_ID)!).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
-  expect(homeMembers).toEqual(expect.arrayContaining(rootMembers))
-  expect(view(r, [HOME_ID])!.members.some(peer => peer.peerId === 'fos')).toBe(true)
+  expect(homeMembers.some(edge => rootMembers.some(root => root[1] === edge[1]))).toBe(false)
+  expect(contextMembers(r, [HOME_ID]).some(peer => peer.peerId === 'fos')).toBe(true)
   expect(view(r, [])!.tasks.map(row => row.id)).toEqual(['workflow', HOME_ID])
   expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).toEqual(['project'])
   expect(findChild(r.store, findChild(r.store, headCid(r), HOME_ID)!, 'project')).toBe(previousProject)

@@ -11,6 +11,9 @@ import {
   copyNode,
   setRowKind,
   applyProposalAt,
+  shareHome,
+  homePath,
+  HOME_ID,
   buildSyncRequest,
   completeSync,
   createReplica,
@@ -64,7 +67,9 @@ export const api = {
   },
   setScope(handle: string, scopeJson: string, namesJson: string): void {
     const r = get(handle)
-    set(handle, { store: r.store, meta: { ...r.meta, scope: parse<Scope>(scopeJson, []), scopeNames: parse<string[]>(namesJson, []), baseCid: null } })
+    const requested = parse<Scope>(scopeJson, [])
+    const home = requested.length === 1 && requested[0] === HOME_ID && homePath(r).length
+    set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []), baseCid: null } }))
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },
   /** Add a row of `kind` ('task' | 'plain' | 'note' | 'comment' | 'ref') under `at`; returns its view. */
@@ -132,7 +137,7 @@ export const api = {
     set(handle, reattach(get(handle), parse<Scope>(scopeJson, []), now, namesJson ? parse<string[]>(namesJson, []) : undefined))
   },
 
-  buildSyncRequest(handle: string, branch: string | null, push: boolean = true): string { return JSON.stringify(buildSyncRequest(get(handle), branch ?? undefined, { push })) },
+  buildSyncRequest(handle: string, branch: string | null, push: boolean = true): string { set(handle, shareHome(get(handle))); return JSON.stringify(buildSyncRequest(get(handle), branch ?? undefined, { push })) },
   completeSync(handle: string, requestJson: string, responseJson: string, now: number): string {
     const done = completeSync(get(handle), JSON.parse(requestJson) as SyncRequest, JSON.parse(responseJson) as SyncResponse, now)
     set(handle, done.replica)
