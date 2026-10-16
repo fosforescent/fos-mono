@@ -854,6 +854,8 @@ async function main() {
   assert.equal(projectStorage.branch(), 'feature')
   assert.equal(projectStorage.loadReplica().branch, 'feature')
   assert.equal(JSON.parse(files.get('replicas/main.json')).text, 'Last edit before checkout')
+  await projectStorage.useBranch('new-feature')
+  assert.equal(projectStorage.loadReplica().branch, 'feature', 'new branches inherit the current graph')
   delete window.__TAURI__
   console.log('PASS: native storage flushes the old branch before atomically switching replicas')
 

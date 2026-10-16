@@ -1,3 +1,4 @@
+import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { openAnalysis } from './analysis'
 import { openNodeAgent } from './node-agent'
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack } from './filesystem'
@@ -629,6 +630,8 @@ function constructorOptions(app: App): ConstructorItem[] {
     { id: 'trigger:users', label: 'Fos template endpoint', icon: '\u2726', output: 'trigger', group: 'triggers' },
     ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
     ...app.handlerOffers().filter(o => o.type === app.state.replica.store.primitive.templateField.getId()).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: '✦', output: 'template', group: offerGroup(o.peerId) })),
+    ...(canVerifySpecifications(app,app.constructorContext()) ? [{id:'verify-specifications',label:'Verify specifications',icon:'confirm',output:'tool',group:'device'}] : []),
+    { id: 'feature-specification', label: 'Feature specification', icon: 'confirm', output: 'note', group: 'device' },
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
     ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext()) || app.handlerOffers().some(o => o.capability === cap)).map(cap => ({ id: `action:${cap}`, label: cap === 'llm' ? 'Ask fos' : cap === 'search' ? 'Search' : 'List on the market', icon: cap === 'llm' ? '✦' : cap === 'search' ? 'search' : 'store', output: cap, group: account })),
     ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: 'pull', output: 'tool', group: p.id })),
@@ -718,6 +721,8 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (item && !constructorState(app, item).enabled) return
   if (id === 'trigger:public' || id === 'trigger:users') { openPublishing(app, id === 'trigger:public' ? 'public' : 'users', path, true); return }
   if (id === 'publish:public' || id === 'publish:users') { openPublishing(app, id === 'publish:public' ? 'public' : 'users', path); return }
+  if (id === 'verify-specifications') { void openSpecificationVerification(app,path); return }
+  if (id === 'feature-specification') { app.addFeatureSpecification(path); return }
   if (id.startsWith('seed:')) { seedRow(app, id.slice(5), path, replace); return }
   if (id.startsWith('handler:')) { try { app.insertHandler(id.slice(8), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
@@ -874,7 +879,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
 
 function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): boolean {
   const constructor = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
-  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
+  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -1303,6 +1308,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   if (!preview && row?.kind === 'template') controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
   const agents = !preview && desktopAgentControls(app); if (agents) controls.append(agents)
+  const git = !preview && localGitControls(app); if (git) controls.append(git)
   const integration = app.integrationHandler()
   if (integration && !preview) { const connect = button('secondary small', `Connect ${integration.provider}`, () => void app.connectIntegration(integration.provider)); connect.disabled = !integration.enabled; controls.append(connect) }
   if (row?.construction) controls.append(constructorBody(row, state, app))
@@ -1772,6 +1778,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   if (task.branches || viewAt(state.replica, [...state.view, ...path])?.proposals.length) body.append(branchSelector(task, at, app))
 
   const meta = span('row-meta', '')
+  if (readNodeValue(state.replica,[...state.view,...path],'fos:specification')) { const badge=span('kind-badge','Feature specification'); badge.title='Versioned with the local Git peer'; meta.append(badge) }
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
   meta.append(opRef, opCopy)

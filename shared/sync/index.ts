@@ -26,3 +26,5 @@ export * from './node-provider'
 export * from './node-sync'
 
 export * from './node-context'
+
+export * from './specifications'

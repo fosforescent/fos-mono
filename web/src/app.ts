@@ -1,3 +1,4 @@
+import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
@@ -441,6 +442,8 @@ export class App {
   }
 
   /** Git branch of the project directory, when running in project mode. */
+  projectDirectory(): string | null { return this.config.project?.dir ?? null }
+
   currentBranch(): string | null {
     return this.config.project?.branch() ?? null
   }
@@ -1868,8 +1871,12 @@ export class App {
       r = replace ? setRowContentAt(r, parent, id, parsed.kind, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.kind, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
-      if (localDirectory) r = addRefAt(r, target, 'fos:local-repository', capabilityTarget(r.store, 'repo'), this.now(),
-        put(r.store, { data: { description: { content: JSON.stringify({ path: localDirectory, device: r.meta.peerId }) } }, children: [] }), 'local-repository')
+      if (localDirectory) {
+        const peer = `git:${r.meta.peerId}:${encodeURIComponent(localDirectory)}`
+        r = addRefAt(r, target, 'fos:local-repository', capabilityTarget(r.store, 'repo'), this.now(), put(r.store, { data: { description: { content: JSON.stringify({ path: localDirectory, device: r.meta.peerId, peer }) } }, children: [] }), 'local-repository')
+        r = addMemberAt(r, target, peer, 'Local Git', ['repo'], this.now())
+        r = setMemberCapabilitiesAt(r, target, peer, ['repo'], [], this.now(), ['repo'])
+      }
       if (argument) {
         const value = resolveScope(r.store, headCid(r), target)!
         const proposed = proposeRefAt(r, path, value, r.meta.peerId, this.now())
@@ -1920,6 +1927,37 @@ export class App {
   execution: { path: Scope; store: Replica['store'] } | null = null
   executionPath(): Scope | null {
     return this.execution?.store === this.state.replica.store && JSON.stringify(this.execution.path) === JSON.stringify(this.state.view) ? this.execution.path : null
+  }
+  registerLocalGitPeer(root: Scope, directory: string): void {
+    const data = readNodeValue<{ path: string; device: string; peer?: string }>(this.state.replica, root, 'local-repository')
+    if (!data || data.peer || data.device !== this.state.replica.meta.peerId || data.path !== directory) return
+    const peer = `git:${data.device}:${encodeURIComponent(directory)}`
+    let r = writeNodeValue(this.state.replica, root, 'local-repository', { ...data, peer }, this.now())
+    r = addMemberAt(r, root, peer, 'Local Git', ['repo'], this.now())
+    this.edit(setMemberCapabilitiesAt(r, root, peer, ['repo'], [], this.now(), ['repo']))
+  }
+  addFeatureSpecification(parent: Scope): void {
+    const result = addSpecification(this.state.replica, parent, 'Feature specification', this.now())
+    this.edit(result.replica); this.goTo(result.path)
+  }
+  importFeatureSpecifications(root: Scope, specifications: FeatureSpecification[]): void { this.edit(importSpecifications(this.state.replica, root, specifications, this.now())) }
+  queueFeatureVerification(root: Scope, commit: string, branch: string): void { this.edit(queueSpecificationVerification(this.state.replica, root, commit, branch, this.now())) }
+  recordFeatureVerification(root: Scope, report: { commit: string; specifications: FeatureSpecification[]; results: Array<{ id: string; status: string; evidence: string }> }): void {
+    const current = specificationRows(this.state.replica, root)
+    if (JSON.stringify(current) !== JSON.stringify(report.specifications)) throw new Error('Specifications changed during verification. Run again.')
+    const valid = new Set(current.map(spec => spec.id))
+    if (report.results.length !== valid.size || new Set(report.results.map(result => result.id)).size !== valid.size || report.results.some(result => !valid.has(result.id) || !['pass', 'fail', 'blocked'].includes(result.status) || typeof result.evidence !== 'string' || !result.evidence.trim() || result.evidence.length > 16000)) throw new Error('Provide one pass, fail, or blocked result with evidence for every specification.')
+    const prior = readNodeValue(this.state.replica,root,`fos:verification-result:${report.commit}`)
+    if (prior) throw new Error('Results for this commit have already been recorded.')
+    let r = writeNodeValue(this.state.replica, root, `fos:verification-result:${report.commit}`, report, this.now())
+    const queued = readNodeValue(r,root,`fos:verification:${report.commit}`) as {task?: string} | null
+    if (queued?.task) { const path=[...root,queued.task]; const request=readNodeValue(r,path,'fos:verification-request'); if(request) r=writeNodeValue(r,path,'fos:verification-request',{...request as object,status:'reviewed'},this.now()) }
+    for (const result of report.results.filter(item => item.status !== 'pass')) {
+      const id = newId(); r = addTask(r, root, `${result.status === 'fail' ? 'Issue' : 'Blocked verification'}: ${current.find(spec => spec.id === result.id)!.text.split('\n')[0]}`, this.now(), id)
+      r = writeNodeValue(r, [...root, id], 'fos:verification-issue', { commit: report.commit, specification: result.id, evidence: result.evidence }, this.now())
+      r = addRow(r, [...root,id], 'note', result.evidence, this.now())
+    }
+    this.edit(r)
   }
   async startExecution(path: Scope): Promise<void> {
     const row = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null

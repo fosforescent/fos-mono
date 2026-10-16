@@ -56,9 +56,11 @@ async function probe(app: App) {
 }
 export function desktopAgentControls(app: App): HTMLElement | null {
   const cwd = localRepository(app.state.replica, app.state.view)
-  if (!cwd || !inTauri()) return null
+  if (!inTauri()) return null
   const el = document.createElement('div'); el.dataset.capability = 'repo'
-  const label = document.createElement('small'); label.textContent = `Local Git · ${cwd}`; el.append(label)
+  const label = document.createElement('small'); label.textContent = cwd ? `Local Git · ${cwd}` : 'Local agents'; el.append(label)
+  for (const provider of ['claude', 'codex'] as const) { const launch = document.createElement('button'); launch.textContent = `Open ${provider === 'claude' ? 'Claude Code' : 'Codex'} CLI`; launch.onclick = () => openCliAgent(app, provider, cwd ?? ''); el.append(launch) }
+  if (!cwd) return el
   const state = availability.get(app)
   if (!state) { void probe(app); return el }
   for (const provider of ['claude', 'codex'] as const) if (state[provider]) {
@@ -69,14 +71,17 @@ export function desktopAgentControls(app: App): HTMLElement | null {
   if (state.error || (!state.loading && !state.claude && !state.codex && !state.diagnostics)) { const info = document.createElement('p'); info.textContent = state.error ?? 'Configure Codex native sign-in or Claude API credentials in the desktop environment, then check again.'; el.append(info) }
   return el
 }
-function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation = false) {
-  const replica = app.state.replica, store = replica.store, path = [...app.state.view]
+function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation = false, cli = false, initialPrompt?: string, verify = false, launchOptions: {autoStart?: boolean; scope?: Scope; chrome?: boolean} = {}) {
+  const replica = app.state.replica, store = replica.store, path = [...(launchOptions.scope ?? app.state.view)]
   let context: ReturnType<typeof agentContext>
   try { context = evaluation ? { revision: headCid(replica), nodes: [{ path: [], text: app.currentRow()?.title ?? '', kind: 'task', done: false }] } : agentContext(replica, path) } catch (e) { app.notify('error', String(e)); return }
   const dialog = document.createElement('dialog'); dialog.className = 'import-dialog'
-  const heading = document.createElement('h3'); heading.textContent = evaluation ? `Delegate to ${provider}` : `Run ${provider} in ${cwd}`
+  const heading = document.createElement('h3'); heading.textContent = cli ? `Open ${provider} CLI` : evaluation ? `Delegate to ${provider}` : `Run ${provider} in ${cwd}`
   const note = document.createElement('p'); note.textContent = evaluation ? 'The agent can interact with this evaluation through its declared inputs. Close or cancel to end the connection.' : 'Uses the current filesystem checkout and a read-only snapshot of this task subtree. Review code changes in Git. This does not switch Git branches.'
-  const prompt = document.createElement('textarea'); prompt.rows = 5; prompt.value = context.nodes[0]?.text || ''; prompt.setAttribute('aria-label', 'Agent task')
+  const prompt = document.createElement('textarea'); prompt.rows = 5; prompt.value = initialPrompt ?? context.nodes[0]?.text ?? ''; prompt.setAttribute('aria-label', 'Agent task')
+  const directory = document.createElement('input'); directory.value = cwd; directory.placeholder = 'Local working directory'; directory.setAttribute('aria-label', 'Agent working directory'); directory.hidden = !cli
+  const chrome = document.createElement('input'); chrome.type = 'checkbox'; chrome.setAttribute('aria-label', 'Use Claude Chrome integration'); chrome.hidden = !cli || provider !== 'claude'; chrome.checked = launchOptions.chrome ?? false
+  const browser = document.createElement('label'); browser.hidden = !cli || provider !== 'claude'; browser.append(chrome, 'Use configured Claude Chrome integration')
   const output = document.createElement('pre'); output.style.cssText = 'white-space:pre-wrap;max-height:40vh;overflow:auto'
   const permissions = document.createElement('div'), start = document.createElement('button'), close = document.createElement('button')
   start.textContent = 'Start'; close.textContent = 'Close'
@@ -92,7 +97,7 @@ function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation
     let endpoint: Awaited<ReturnType<typeof connectEvaluationAgent>> | undefined
     try {
       if (evaluation) endpoint = await connectEvaluationAgent(app)
-      id = await tauriInvoke<string>('agent_start', { request: { provider, cwd, prompt: prompt.value, context, ...(endpoint ? { evaluation: { url: endpoint.url, token: endpoint.token } } : {}) } })
+      id = await tauriInvoke<string>('agent_start', { request: { provider, cwd: cli ? directory.value.trim() : cwd, prompt: prompt.value, context, ...(cli ? { cli: true, chrome: chrome.checked, verify } : {}), ...(endpoint ? { evaluation: { url: endpoint.url, token: endpoint.token } } : {}) } })
       while (id) {
         if (app.state.replica.store !== store || evaluation && JSON.stringify(app.executionPath()) !== JSON.stringify(path)) { await control({ cancel: true }); throw new Error('Run cancelled because the data session changed.') }
         const poll = await tauriInvoke<Poll>('agent_poll', { id })
@@ -109,8 +114,8 @@ function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation
     } catch (e) { output.textContent += `\n${String(e)}` }
     finally { await endpoint?.stop().catch(() => {}); running = false; close.disabled = false; close.textContent = 'Close'; permissions.replaceChildren() }
   }
-  dialog.append(heading, note, prompt, start, close, permissions, output); document.body.append(dialog); dialog.showModal()
-  if (evaluation) start.click()
+  dialog.append(heading, note, directory, browser, prompt, start, close, permissions, output); document.body.append(dialog); dialog.showModal()
+  if (evaluation || launchOptions.autoStart) start.click()
 }
 
 export function evaluationAgentControl(app: App): HTMLButtonElement | null {
@@ -123,4 +128,8 @@ export function evaluationAgentControl(app: App): HTMLButtonElement | null {
   button.disabled = app.evaluating || app.evaluationStatus()?.status === 'committed'
   button.onclick = () => openRun(app, provider, localRepository(app.state.replica, app.state.view) ?? '', true)
   return button
+}
+
+export function openCliAgent(app: App, provider: 'claude' | 'codex', cwd = '', prompt?: string, verify = false, launchOptions: {autoStart?: boolean; scope?: Scope; chrome?: boolean} = {}): void {
+  openRun(app, provider, cwd, false, true, prompt, verify, launchOptions)
 }

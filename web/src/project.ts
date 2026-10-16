@@ -99,7 +99,7 @@ export async function createProjectStorage(info: ProjectInfo): Promise<ProjectSt
       if (writeErrors.size) throw new Error(`Unsaved project files: ${[...writeErrors.keys()].join(', ')}`)
       const loaded = await readReplica(next)
       branch = next
-      replica = loaded
+      replica = loaded ?? replica
     },
     branch: () => branch
   }

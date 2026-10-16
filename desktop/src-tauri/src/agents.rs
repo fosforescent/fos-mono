@@ -17,7 +17,8 @@ struct Run {
 }
 
 async fn repository(path: &str) -> Result<String, String> {
-    let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let mut path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    if path.file_name().is_some_and(|name| name == ".git") { path.pop(); }
     if !path.is_dir() {
         return Err("Choose a Git working directory".into());
     }
@@ -52,6 +53,17 @@ fn runtime(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(path)
 }
 #[tauri::command]
+pub async fn local_git(app: tauri::AppHandle, request: Value) -> Result<Value, String> {
+    if request.to_string().len() > 2_000_000 { return Err("Request too large".into()); }
+    let mut child = Command::new("node").arg(runtime(&app)?.with_file_name("local-git.mjs"))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true).spawn().map_err(|e| e.to_string())?;
+    child.stdin.take().ok_or("No stdin")?.write_all(request.to_string().as_bytes()).await.map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().await.map_err(|e| e.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).into_owned()); }
+    serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn agent_start(
     app: tauri::AppHandle,
     state: tauri::State<'_, AgentRuns>,
@@ -64,7 +76,11 @@ pub async fn agent_start(
         if !matches!(request["provider"].as_str(), Some("codex" | "claude")) {
             return Err("Unknown SDK".into());
         }
-        let path = if request.get("evaluation").is_some() && request["cwd"].as_str().unwrap_or("").is_empty() {
+        let path = if request["cli"].as_bool() == Some(true) {
+            let directory = std::fs::canonicalize(request["cwd"].as_str().ok_or("Directory required")?).map_err(|e| e.to_string())?;
+            if !directory.is_dir() { return Err("Choose a directory".into()); }
+            directory.to_string_lossy().into_owned()
+        } else if request.get("evaluation").is_some() && request["cwd"].as_str().unwrap_or("").is_empty() {
             let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("evaluation-agent");
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             let output = Command::new("git").args(["init", "--quiet"]).arg(&dir).output().await.map_err(|e| e.to_string())?;

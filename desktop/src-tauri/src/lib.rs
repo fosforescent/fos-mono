@@ -800,7 +800,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             link_node_directory, list_node_directory, read_node_file,
             node_agent::node_agent_start, node_agent::node_agent_poll, node_agent::node_agent_reply, node_agent::node_agent_stop,
-            agents::validate_agent_repository, agents::agent_start, agents::agent_poll, agents::agent_control,
+            agents::local_git, agents::validate_agent_repository, agents::agent_start, agents::agent_poll, agents::agent_control,
             find_project,
             read_project_file,
             write_project_file,
