@@ -177,7 +177,7 @@ async function main() {
   a.set({ session: { baseUrl: 'http://localhost', username: 'test', jwt: 'test', kind: 'user' },
     integrations: [{ id: 'github', name: 'GitHub', kind: 'oauth', configured: true, connected: true, accountName: 'octocat' }] })
   a.goToRoot()
-  document.querySelector('[role="tab"][aria-label="Integrations"]').click()
+  assert(!document.querySelector('.peer-tabs [role="tab"][aria-label="GitHub"]'), 'no integration peer tabs in root settings')
   assert(!document.querySelector('[data-peer="integration:github"]'), 'integrations are Home peers, not root settings')
   assert(!document.querySelector('.node-context-panel [aria-label="Peer connection type"]'), 'integration creation belongs in Home')
   assert(document.querySelector('.reset-data-row'))
@@ -462,7 +462,7 @@ async function main() {
   contextApp.resolveChoice(treeConflict.id, treeConflict.options.findIndex(option => option.task?.title === 'Local title'))
   assert(view(contextApp.state.replica, [HOME_ID, project]).tasks.some(row => row.title === 'New local child'), 'parsed children survive concurrent draft conflicts')
   contextApp.goToRoot()
-  document.querySelector('[role="tab"][aria-label="Integrations"]').click()
+  assert(!document.querySelector('.peer-tabs [role="tab"][aria-label="GitHub"]'), 'no integration peer tabs in root settings')
   assert(!document.querySelector('[data-peer="integration:github"]'))
   assert(document.querySelector(`.tree .task[data-id="${HOME_ID}"]`), 'Settings shows the stored Home constructor')
   assert.equal(document.querySelector('.crumb-path').textContent, 'Settings', 'root Settings is not below Home')

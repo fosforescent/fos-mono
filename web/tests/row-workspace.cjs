@@ -120,7 +120,7 @@ async function main() {
   document.querySelector('[aria-label="Input / edit"]').click()
   a.goTo([HOME_ID, second]); await tick()
   assert(document.querySelector('[data-accordion="context"]').open)
-  assert.equal(document.querySelector('[aria-label="Input / edit"]').getAttribute('aria-selected'), 'true')
+  assert.equal(document.querySelector('[aria-label="Input / edit"]').getAttribute('aria-pressed'), 'true')
   assert.equal(document.querySelector('.node-input').hidden, false)
   assert(document.querySelector('.node-input [aria-label="Picture input"]'))
   assert(document.querySelector('.node-input [aria-label="Video input"]'))
@@ -166,8 +166,8 @@ async function main() {
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event('close')) }
   a.goTo([])
-  document.querySelector('[aria-label="Utilities"]').click()
-  document.querySelector('[aria-label="Add resource bank"]').click()
+  document.querySelector('[aria-label="This device"]').click()
+  document.querySelector('.constructor-grid [aria-label="Resource bank"]').click()
   let dialog = document.querySelector('.constructor-dialog')
   dialog.querySelector('[aria-label="Constructor type"]').value = 'account'
   dialog.querySelector('[aria-label="Constructor type"]').dispatchEvent(new window.Event('change'))
@@ -195,10 +195,9 @@ async function main() {
   a.goTo(repo)
   assert.equal(a.repositoryInfo().repo, 'fosforescent/fos-mono')
   assert(document.querySelector('[aria-label="Repository actions"]'))
-  document.querySelector('[aria-label="Peers and sharing"]').click()
-  const peerTab = document.querySelector('[aria-label="Peers and sharing"]')
+  const peerTab = document.querySelector('.peer-tabs [aria-label="Add peer"]')
   assert.equal(peerTab.draggable, true)
-  document.querySelector('[aria-label="Add peer"]').click()
+  peerTab.click()
   dialog = document.querySelector('.constructor-dialog')
   dialog.querySelector('[aria-label="Constructor type"]').value = 'virtual'
   dialog.querySelector('form').dispatchEvent(new window.Event('submit', { cancelable: true }))

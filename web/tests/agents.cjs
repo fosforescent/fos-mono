@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
-const dir = mkdtempSync('/tmp/fos-agent-test-')
+const dir = mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'fos-agent-test-'))
 try {
   buildSync({ stdin: { contents: `export * from './src/agents'; export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs') })
   const { App, createMemoryStorage, localRepository, agentContext, headCid } = require(path.join(dir, 'test.cjs'))
