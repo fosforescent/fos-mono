@@ -1192,11 +1192,11 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
       const child = content(store, identityCid(store, edge))
       const peerId = (isMemberEdge(store, edge) || isPeerEdge(store, edge)) ? child.data.peerId?.content : undefined
       const name = refTypeCid(store, child) ? child.data.name?.content : undefined
-      if ((!peerId && !name?.startsWith('fos:setting:')) || !child.data.alias?.id) continue
+      if ((!peerId && (!name?.startsWith('fos:setting:') && name !== 'fos:evaluation')) || !child.data.alias?.id) continue
       if (seen.has(peerId ?? child.data.alias.id)) continue
       seen.add(peerId ?? child.data.alias.id)
       const row = rowView(store, identityCid(store, edge), 'plain')
-      row.title = peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name!
+      row.title = name === 'fos:evaluation' ? 'Evaluation' : peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name!
       row.construction = { ...(name ? { name } : {}), ...(peerId ? { peerId } : {}) }
       view.tasks.push(row)
     }
@@ -1718,7 +1718,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const childEdges = (value: FosNodeContent) => value.children.filter((edge) => {
     const kind = rowKindOf(store, edge)
     const name = content(store, identityCid(store, edge)).data.name?.content
-    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && name === 'fos:trigger')) return false
+    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' || name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
     if (kind) return !(instantiate && kind === 'supply')
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
     return isRefNode(store, content(store, identityCid(store, edge)))

@@ -7,7 +7,7 @@ import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeRe
 export const EVALUATION_ARGUMENT = 'fos:evaluation'
 const EVALUATION_BUDGET_MS = 120000
 export type EvaluationRecord = {
-  id: string; status: 'opening' | 'running' | 'committing' | 'committed' | 'rolled-back' | 'needs-recovery'
+  id: string; status: 'idle' | 'opening' | 'running' | 'committing' | 'committed' | 'rolled-back' | 'needs-recovery'
   started: number; error?: string; effects: Array<{ path: Scope; title: string; status: 'attempting' | 'applied' | 'reverted' | 'manual' }>
 }
 
@@ -117,7 +117,7 @@ const instruction = (r: Replica, path: Scope, outputs: string[] = []) => {
 
 export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promise<EvaluationRecord> {
   const prior = evaluationRecord(driver.get(), path)
-  if (prior && !['committed', 'rolled-back'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
+  if (prior && !['idle', 'committed', 'rolled-back'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
   const steps = evaluationSteps(driver.get(), path)
   if (!steps.length) throw new Error('Apply the template before evaluating it.')
   const initial = driver.get()
@@ -260,7 +260,7 @@ export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[
 /** Run under the same executor lock as evaluation, after confirming the old execution has stopped. */
 export function recoverEvaluation(r: Replica, path: Scope, now: number): Replica {
   const record = evaluationRecord(r, path)
-  if (!record || ['committed', 'rolled-back'].includes(record.status)) return r
+  if (!record || ['idle', 'committed', 'rolled-back'].includes(record.status)) return r
   if (['opening', 'running', 'committing'].includes(record.status) && now - record.started < EVALUATION_BUDGET_MS + 60000) throw new Error('This evaluation may still be running. Wait three minutes from its start before recovering an interrupted run.')
   for (const [index, effect] of record.effects.entries()) {
     if (effect.status === 'reverted') continue

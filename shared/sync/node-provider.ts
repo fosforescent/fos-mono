@@ -69,6 +69,35 @@ function readMask(r: Replica, path: Scope, peer: string, remoteId: string): Node
   catch { throw new NodeAccessError('Invalid node link policy.') }
 }
 
+/** Node-wide policy uses a private, unpaired endpoint; it is never sent as a peer. */
+export const NODE_PERMISSION_DEFAULT = 'fos:all-linked-peers'
+export function nodeLinkMaskAt(r: Replica, path: Scope, peer: string): NodeMask {
+  let fields: string[] | undefined, children: string[] | undefined
+  for (let i = 0; i <= path.length; i++) {
+    const at = path.slice(0, i)
+    if (!resolveScope(r.store, headCid(r), at)) break
+    for (const target of [NODE_PERMISSION_DEFAULT, peer]) {
+      const mask = readMask(r, at, target, '')
+      if (mask.fields) fields = fields ? fields.filter(f => mask.fields!.includes(f)) : [...mask.fields]
+      if (i < path.length && mask.children && !mask.children.includes(path[i]!)) throw new NodeAccessError('Parent permissions mask this child.')
+      if (i === path.length && mask.children) children = children ? children.filter(id => mask.children!.includes(id)) : [...mask.children]
+    }
+  }
+  return { ...(fields ? { fields } : {}), ...(children ? { children } : {}) }
+}
+export function isNodeProjection(r: Replica, path: Scope): boolean {
+  const cid = resolveScope(r.store, headCid(r), path)
+  if (!cid) return false
+  if (isPeerReference(content(r.store, cid))) return true
+  const id = sourceId(r, path)
+  return content(r.store, r.store.rootNodeId).children.some(e => {
+    if (e[0] !== capabilityTarget(r.store, 'provideNode')) return false
+    const ref = content(r.store, e[1])
+    if (ref.data.description?.content !== 'fos:node-projection') return false
+    try { return JSON.parse(ref.data.name?.content?.slice(LINK_NAME.length) ?? 'null')?.[1] === id } catch { return false }
+  })
+}
+
 export function nodeLinkEndpoint(r: Replica, path: Scope, peer: string): { id: string; remoteId: string; mask: NodeMask } | null {
   const link = linkAt(r, path, peer, '')
   if (!link) return null
@@ -79,16 +108,16 @@ export function nodeLinkEndpoint(r: Replica, path: Scope, peer: string): { id: s
 /** A local mutable ref points to the other endpoint by peer + alias, never a DAG cycle.
  * Its TARGETPOINTER holds this endpoint's policy; editing it cannot edit the other ref.
  */
-export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId: string, mask: NodeMask, now: number, id = localLinkId(r.meta.peerId, peer, remoteId)): Replica {
+export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId: string, mask: NodeMask, now: number, id = localLinkId(r.meta.peerId, peer, remoteId + sourceId(r, path))): Replica {
   const previous = linkAt(r, path, peer, remoteId)
-  if (previous && content(r.store, previous.cid).data.ref?.id !== remoteId) throw new NodeAccessError('This node is already linked to another endpoint on that peer.')
+  if (previous && content(r.store, previous.cid).data.ref?.id && content(r.store, previous.cid).data.ref?.id !== remoteId) throw new NodeAccessError('This node is already linked to another endpoint on that peer.')
   const policy = put(r.store, { data: { description: { content: JSON.stringify(maskOf(mask)) } }, children: [] })
   const ref = put(r.store, refNodeContent(r.store, {
     alias: { id: previous ? content(r.store, previous.cid).data.alias!.id : id },
     ...(previous && content(r.store, previous.cid).data.description ? { description: content(r.store, previous.cid).data.description } : {}),
     name: { content: linkName(r, peer, path) }, ref: { id: remoteId, peer }
   }, policy, previous ? [[r.store.primitive.previousVersion.getId(), previous.cid]] : [], capabilityTarget(r.store, 'provideNode')))
-  if (previous && refValueCid(r.store, content(r.store, previous.cid)) === policy) return r
+  if (previous && content(r.store, previous.cid).data.ref?.id === remoteId && refValueCid(r.store, content(r.store, previous.cid)) === policy) return r
   // Endpoint refs belong to this peer's root alias, outside its shared TARGETPOINTER.
   // They persist locally but never become another peer's mergeable policy.
   const root = content(r.store, r.store.rootNodeId)
@@ -97,11 +126,24 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
   return { ...r }
 }
 
+export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuthority): Capability[] {
+  let grants: Capability[] = authority.owner ? [...CAPABILITIES] : []
+  for (let i = 0; i <= path.length; i++) {
+    const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
+    if (!cid) throw new NodeAccessError('Attachment unavailable.')
+    const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
+    if (!member) continue
+    grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
+    if (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || (!grants.includes('read') && !grants.includes('edit'))) throw new NodeAccessError('Parent permissions deny node access.')
+  }
+  return grants
+}
+
 function permitted(r: Replica, cid: string, peer: string, inherited: boolean): boolean {
   const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === peer)
   if (!member) return inherited
   if (member.disabled?.includes('read') || member.disabled?.includes('provideNode')) return false
-  return member.capabilities.includes('read') || member.capabilities.includes('edit')
+  return member.capabilities.some(cap => (cap === 'read' || cap === 'edit') && !member.disabled?.includes(cap))
 }
 
 /** One logical node only. No PREV, proposals, reference targets, or descendant values.
@@ -114,9 +156,8 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
   return withMainBranchPolicy(r.store, () => {
     let cid = resolveScope(r.store, headCid(r), authority.scope)
     if (!cid) throw new NodeAccessError('Attachment unavailable.')
-    let access = permitted(r, cid, authority.peerId, authority.owner === true)
-    const initialMember = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
-    let grants = initialMember ? initialMember.capabilities.filter(cap => !initialMember.disabled?.includes(cap)) : (authority.owner ? CAPABILITIES : [])
+    let grants = inheritedNodeGrants(r, authority.scope, authority)
+    let access = grants.includes('read') || grants.includes('edit')
     if (!access) throw new NodeAccessError('Node access denied.')
     const path = [...authority.scope]
     let fields: Set<string> | undefined
@@ -125,7 +166,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     }
     // A mask on the attachment also constrains requests made directly to descendants.
     for (const id of request.path) {
-      const mask = readMask(r, path, authority.peerId, request.linkId)
+      const mask = nodeLinkMaskAt(r, path, authority.peerId)
       restrictFields(mask)
       if (mask.children && !mask.children.includes(id)) throw new NodeAccessError('Node access denied.')
       const identity = content(r.store, cid)
@@ -141,7 +182,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     }
     const heldByRequester = isPeerReference(content(r.store, cid)) && content(r.store, cid).data.ref?.peer === request.peerId && !!request.update
     if (isHandle(content(r.store, cid)) && !heldByRequester) throw new NodeAccessError('Reference targets require their own attachment.')
-    const mask = readMask(r, path, authority.peerId, request.linkId)
+    const mask = nodeLinkMaskAt(r, path, authority.peerId)
     restrictFields(mask)
     const value = heldByRequester ? { data: {}, children: [] } : valueContent(r.store, cid)
     const data = Object.fromEntries(Object.entries(value.data).filter(([key]) => !forbiddenFields.has(key) && (!fields || fields.has(key)))) as FosDataContent
@@ -159,9 +200,9 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       .filter(p => authority.owner || grants.includes('approve') || p.peerId === authority.peerId)
       .map(p => ({ id: p.cid, peerId: p.peerId, name: 'Proposed node changes', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] } }))
     const existing = linkAt(r, path, authority.peerId, request.linkId)
-    if (existing && content(r.store, existing.cid).data.ref?.id !== request.linkId) throw new NodeAccessError('Node link endpoint mismatch.')
+    if (existing && content(r.store, existing.cid).data.ref?.id && content(r.store, existing.cid).data.ref?.id !== request.linkId) throw new NodeAccessError('Node link endpoint mismatch.')
     const id = existing ? content(r.store, existing.cid).data.alias!.id : localLinkId(r.meta.peerId, authority.peerId, request.linkId + JSON.stringify(path))
-    if (!existing) r = setNodeLinkMask(r, path, authority.peerId, request.linkId, {}, now, id)
+    if (!existing || !content(r.store, existing.cid).data.ref?.id) r = setNodeLinkMask(r, path, authority.peerId, request.linkId, readMask(r, path, authority.peerId, ''), now, id)
     return { replica: r, node: { peerId: r.meta.peerId, linkId: id, remoteLinkId: request.linkId,
       address: { peerId: r.meta.peerId, scope: path }, data, children, proposals, grants, mask: { ...(fields ? { fields: [...fields] } : {}), ...(mask.children ? { children: mask.children } : {}) } } }
   })
@@ -174,7 +215,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   if (node.remoteLinkId !== request.linkId || JSON.stringify(node.address.scope) !== JSON.stringify([...request.scope, ...request.path])) throw new NodeAccessError('Node response does not match the request.')
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) throw new NodeAccessError('The receiving node no longer exists.')
-  const before = content(r.store, cid), local = readMask(r, at, node.peerId, node.linkId)
+  const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
   const children = node.children.filter(child => !local.children || local.children.includes(child.id)).map(child => {
     const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', kind: child.kind, scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
@@ -183,7 +224,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   // Preserve local grants and masks; the provider cannot replace them with its own.
   const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId } }, put(r.store, { data, children }), bookkeepingOf(r.store, before)), node.peerId)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), at, () => identity, 'replace'), now)
-  r = setNodeLinkMask({ ...r }, at, node.peerId, node.linkId, local, now, request.linkId)
+  r = setNodeLinkMask({ ...r }, at, node.peerId, node.linkId, ownMask, now, request.linkId)
   const endpoint = linkAt(r, at, node.peerId, node.linkId)!, ref = content(r.store, endpoint.cid)
   const marked = put(r.store, { ...ref, data: { ...ref.data, description: { content: 'fos:node-projection' } } })
   const root = content(r.store, r.store.rootNodeId)
@@ -214,7 +255,7 @@ export function hasNodeLinkMasks(store: Replica['store'], peer: string | null, s
   return content(store, store.rootNodeId).children.some(edge => {
     if (edge[0] !== capabilityTarget(store, 'provideNode')) return false
     const ref = content(store, edge[1]), name = ref.data.name?.content
-    if (!name?.startsWith(LINK_NAME) || (peer && ref.data.ref?.peer !== peer)) return false
+    if (!name?.startsWith(LINK_NAME) || (peer && ref.data.ref?.peer !== peer && ref.data.ref?.peer !== NODE_PERMISSION_DEFAULT)) return false
     try {
       const [, id] = JSON.parse(name.slice(LINK_NAME.length)) as [string, string]
       if (!sourceIds.has(id)) return false

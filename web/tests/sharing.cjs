@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-sharing-tests-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/sharing'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { App, mountUi, mountSharedNode, shareUrl, sharedAddress, createMemoryStorage, view, readNodeValue } = require(path.join(dir, 'app.cjs'))
+const { App, mountUi, mountSharedNode, shareUrl, sharedAddress, createMemoryStorage, view, readNodeValue, headCid } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 let a
 async function main() {
@@ -22,6 +22,31 @@ async function main() {
   a.scheduleSync = () => {}; a.syncNow = async () => {}
   mountUi(root, a)
   a.addTask('My private task')
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  window.HTMLDialogElement.prototype.close = function () { this.dispatchEvent(new window.Event('close')) }
+  document.querySelector('.peer-tabs [aria-label="Fos server"]').click()
+  assert(!document.querySelector('.sharing-controls'), 'no separate publication panel under Fos server')
+  document.querySelector('.peer-tabs [aria-label="Add peer"]').click()
+  const grid = document.querySelector('.constructor-grid'); assert(!grid.hidden)
+  const savedSession = a.state.session, savedConnection = a.state.connection, savedSync = a.syncNow, savedFetch = global.fetch
+  a.state.session = { kind: 'user', username: 'publisher', jwt: 'test', baseUrl: 'http://localhost' }; a.state.connection = 'online'
+  a.syncNow = async () => { a.state.replica.meta.baseCid = headCid(a.state.replica) }
+  for (const [caption, audience] of [['Publish publicly', 'public'], ['Publish to Fos users', 'users']]) {
+    const action = document.querySelector(`.constructor-grid [aria-label="${caption}"]`)
+    assert(action?.querySelector('svg')); assert(action.draggable)
+    let published
+    global.fetch = async (_url, init) => { published = JSON.parse(init.body); return { ok: true, json: async () => ({ owner: 'publisher', path: a.currentScope(), share: 'share-id-0123456789' }) } }
+    action.click()
+    const dialog = document.querySelector('.publish-dialog'); assert(dialog)
+    assert(!dialog.querySelector('details,summary'), 'no added audience accordion')
+    const publish = [...dialog.querySelectorAll('button')].find(b => b.textContent === 'Publish node')
+    publish.click(); await tick()
+    assert.equal(published.audience, audience)
+    assert.deepEqual(published.path, a.currentScope())
+    dialog.close()
+  }
+  a.state.session = savedSession; a.state.connection = savedConnection; a.syncNow = savedSync; global.fetch = savedFetch
+
   const requests = []
   const node = { title: 'Lunch?', rows: [], inputs: [{ key: 'text', name: 'Comment', kind: 'text' }], options: [{ id: 'option:0', label: 'Soup' }, { id: 'option:1', label: 'Salad' }], poll: { mode: 'approval' }, proposals: [], revision: 'v1', audience: 'public', counts: {}, rankings: {}, participants: 0, capabilities: ['read', 'approve', 'rank'] }
   global.fetch = async (url, init) => {

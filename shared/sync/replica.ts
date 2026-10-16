@@ -598,6 +598,20 @@ export function setHandlerOffersAt(replica: Replica, at: Scope, peerId: string, 
   })
 }
 
+/** Node-local menu constructor overrides, inherited through the peer binding. */
+export function setConstructorEnabledAt(replica: Replica, at: Scope, peerId: string, id: string, enabled: boolean, now: number): Replica {
+  return editPolicy(replica, at, now, node => {
+    node = localMember(replica, at, node, peerId)
+    return { ...node, children: node.children.map(edge => {
+      if (!isMemberEdge(replica.store, edge)) return edge
+      const member = content(replica.store, edge[1]); if (member.data.peerId?.content !== peerId) return edge
+      const disabled = new Set<string>(member.data.disabledCapabilities?.content ?? [])
+      if (enabled) disabled.delete(`fos:constructor:${id}`); else disabled.add(`fos:constructor:${id}`)
+      return [edge[0], put(replica.store, { ...member, data: { ...member.data, disabledCapabilities: { content: [...disabled] } } })]
+    }) }
+  })
+}
+
 /** Disable one configured handler without deleting it or changing its type. */
 export function setHandlerEnabledAt(replica: Replica, at: Scope, peerId: string, id: string, enabled: boolean, now: number): Replica {
   return editPolicy(replica, at, now, node => {

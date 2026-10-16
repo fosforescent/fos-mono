@@ -22,10 +22,18 @@ the shared root target, and survive commits and serialization. They are never
 merged into each other's policy. `setNodeLinkMask` sets field/child allowlists:
 omitted means all, and an empty list means none. Ancestor field masks also apply
 to direct descendant requests. A changed request ID cannot bypass a mask.
-Connected endpoint rows expose field and child-reference switches under
+The Permissions constructor is available on a node and beneath individual peers.
+Node-wide defaults and per-peer field/child allowlists are private local policies;
+new links inherit parent grants and masks. Explicit masks intersect with inherited
+ones, so a descendant cannot widen a parent boundary. They filter both incoming
+projections/changes and outgoing data. Policies can be configured before pairing;
+the first handshake preserves them and fixes the opposite endpoint identity.
+Connected endpoint rows also expose field and child-reference switches under
 Connection and capabilities. These edit only this device's endpoint.
 
-Opening a peer-held row requests its node and leaves its children unloaded.
+Visible peer-held rows request their content automatically, with at most four
+viewport requests active at a time. Offscreen rows wait until visible. Opening a
+peer-held row also requests it immediately; descendants stay unloaded until needed.
 The web controller checks the connection and current replica before accepting
 an asynchronous result. Requests for the same row share one in-flight promise.
 
@@ -662,3 +670,129 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
 * Choice requirements have no handler registry yet: any signed-in viewer can
   pick an option. Calendar allocations carry start/end but nothing checks
   overlaps.
+
+
+### Non-replicated provider rows
+
+A provider can return view-only rows with `replicated: false`. These rows are not
+`TaskView` graph tasks: they never enter the replica, undo history, exports, peer
+sync, or agent graph context. The filesystem provider is the first implementation.
+Desktop **Add peer > Link with directory** prepares the directory's `.fos` namespace
+and stores the node-to-directory binding only on this device, scoped by account and
+node. Existing local repository constructors also provide filesystem listings.
+Filesystem entries use the normal outline and node workspace. Opening a folder
+navigates into its filesystem children; breadcrumbs and parent navigation return
+to its ancestors and the hosting graph node. Templates are derived from file
+extensions (for example Markdown, TypeScript, and JSON), not stored graph rows.
+The view queries directory entries again on render/refresh. Files have read-only
+UTF-8 previews up to 1 MB; Markdown uses the existing sanitized Markdown renderer.
+File contents remain outside the replica. Binary previews and file editing are not
+implemented.
+`.fos`, `.git`, and symbolic links are excluded. Native folder queries are confined
+to the linked root. Errors remain in the local view and stale responses are discarded.
+
+Binding a CLI replica to the node and launching a terminal remain follow-up work.
+
+### Node-scoped agent connections
+
+**This device > Connect to agent** starts an authenticated loopback MCP endpoint
+in the desktop app. **Fos server > Connect to agent** creates a scoped peer
+credential for `/user/data/peer-sync/agent-mcp`. Each dialog provides configuration
+to copy into an agent and a disconnect action. The hosted endpoint requires the
+updated backend and currently supports main branches only; desktop connections
+use the selected branch.
+
+Both endpoints expose `fos_read` and `fos_propose_text`, limited to the selected
+node and its visible descendants. Reads respect peer permissions and field masks.
+Text changes become pending proposals for the owner's existing approval workflow;
+agents cannot merge them. Proposals require the revision returned by a read.
+The protocol is stateless MCP 2025-11-25 over HTTP with JSON responses.
+
+Desktop connections require the window to remain open and stop on account changes.
+Hosted connections use a scoped peer credential, never the owner's login token.
+Credentials are kept in memory, outside the graph. Disconnecting removes the peer;
+removing its grants also prevents further node access.
+
+### Template triggers and execution
+
+Play opens an execution view using the existing constructor rows. Graph editing
+is hidden; only requested text, confirmations, choices, and allocations are
+interactive. The evaluation journal persists while execution runs.
+
+The Triggers constructor tab includes public, Fos user, cron, and child evaluation
+triggers. New triggers require templates. Public and Fos template entry links stay
+reusable. Each visitor gets an independent private instance; returning visitors
+resume that instance. Public access uses a signed browser credential, while Fos
+access uses the logged-in account. Copying a private URL does not grant access.
+Revoking membership or disabling/reconfiguring the entry revokes instance access.
+
+Hosted execution accepts only declared, visible inputs and checks allocation
+bounds. Consuming an allocation records a graph receipt, not an external payment
+or resource transfer. Graph-only evaluations run after all inputs are supplied;
+external integration effects still require their host-side handler. Hosted
+endpoints require deployment of the updated backend.
+
+### Evaluation interaction API and MCP
+
+Account clients POST to `/user/data/evaluation` with an account JWT in the
+Authorization Bearer header. The body contains `path` (node ID segments) and
+`action`: `read`, `input`, or `complete`. Unpublished nodes are restricted to the
+account owner's graph. For another owner's private instance, include its `owner`
+and `share` from the template visit response. The same privacy, masks, membership,
+and entry revocation rules apply as on the shared webpage.
+
+Read returns `revision`, `inputs`, and node output (shared instances wrap these in
+`node`). Input submits `revision`, a declared input `key`, and `value`. Text is a
+string, confirmation is true, choice is a zero-based index, and allocation is
+`{type, unit, amount, start?, end?}` matching the returned bounds. Complete submits
+the latest revision after inputs are satisfied. Stale or undeclared submissions
+are rejected. Allocations record graph receipts; external side effects still
+require their evaluation handlers.
+
+The existing account WebSocket accepts
+`{type: "evaluation", id: "request-id", body: {...same request...}}` and responds
+with `{type: "evaluation_result", id, result}` or `error`. Wait for the socket's
+`connection_established` event before submitting. Each event rechecks JWT expiry
+and evaluation authority; a socket cannot change its authenticated identity.
+
+MCP clients POST JSON-RPC to `/user/data/evaluation/mcp?address=...`, where address
+is URL-encoded JSON containing `path` and optionally `owner` and `share`. Use the
+account JWT as a Bearer credential. Public visitors can instead use
+`/public/evaluation/mcp?address=...` with their private instance address and its
+visitor JWT as Bearer credential. Their existing HTTP input endpoint remains
+`/public/node/input`. Tools are `fos_evaluation_read`, `fos_evaluation_input`, and
+`fos_evaluation_complete`. Tool arguments cannot replace the connection address.
+
+The desktop evaluation toolbar shows an agent icon when a configured Claude or
+Codex SDK is available. Clicking it starts an evaluation-only loopback MCP server
+and launches that SDK. The connection ends when the run finishes, is cancelled,
+or the user leaves the evaluation or changes accounts. Credentials stay out of
+the graph. Without a linked repository, the desktop uses a scratch Git workspace.
+Hosted SDK spawning is not wired to this toolbar; hosted evaluation MCP clients
+can connect using the endpoints above. Updated hosted routes require deployment.
+
+### Editor, interaction, and analysis
+
+The main editor is always a tree. Play opens a node's interaction view without
+adding a constructor or changing graph content; it is available on tasks, notes,
+requirements, allocations, and other nodes. Play on a template first instantiates
+it. Completing an action creates the aggregate effects transaction and persists
+its journal for recovery. Child tasks and linked peer work appear in that same
+interaction view and remain visible in the tree.
+
+The analysis icon opens a read-only grid/graph workspace. Filter by text patterns
+(`*` matches arbitrary text), object type, or task status. Results include counts
+by kind and sums, averages, minima, and maxima for allocations, grouped by resource
+type and unit. Analysis reads at most 2,000 descendants to depth 32, reports when
+the row limit is reached, and does not traverse peer references. Refresh rereads
+the graph; query controls never edit it.
+
+Attached peers can use `/user/data/peer-sync/evaluation` and
+`/user/data/peer-sync/evaluation/mcp?address=...` with their scoped peer JWT.
+Paths are relative to the signed attachment. Endpoint access does not require an
+evaluation constructor or template instance. Reads respect node and field masks;
+interactions require edit permission on their target, and completing a transaction
+requires access to all effects it will execute. Revoking the peer removes access.
+Ordinary published nodes also expose interactions through their configured peers;
+unlike a visitor's private template instance, executing effects on the shared
+original requires explicit edit permissions.

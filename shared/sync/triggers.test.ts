@@ -10,7 +10,7 @@ test('UTC cron validates fields and handles ranges, steps and day OR semantics',
   expect(() => cronMatches('* * *', now)).toThrow()
 })
 test('timer belongs to one device, claims before running and does not replay after reload', async () => {
-  let r = addTask(createReplica('device'), [], 'Run', 0, 'task'), time = 10
+  let r = addRow(createReplica('device'), [], 'template', 'Run', 0, { id: 'task' }), time = 10
   r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 0, due: 20 }, 0)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => time, available: (id: string) => id === 'device', evaluate: async () => { expect(triggerState(r, ['task'])?.status).toBe('running'); runs++ } }
@@ -22,7 +22,7 @@ test('timer belongs to one device, claims before running and does not replay aft
 })
 test('parent completion fires once; editing its title does not refire; reopening arms it again', async () => {
   let r = addTask(createReplica('device'), [], 'Parent', 1, 'parent')
-  r = addTask(r, ['parent'], 'After parent', 1, 'child')
+  r = addRow(r, ['parent'], 'template', 'After parent', 1, { id: 'child' })
   r = setNodeTrigger(r, ['parent', 'child'], { kind: 'task-completion', peer: 'device', enabled: true, created: 1 }, 1)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async () => { runs++ } }
@@ -46,7 +46,7 @@ test('template triggers create an independent instance and failed runs do not sp
 
 test('an incoming proposal fires the request trigger and its saved occurrence is not replayed', async () => {
   const { makeLinkAt, proposalContent, withProposal, commitRoot, updateAtScope, headCid, resolveScope, put, rowContent } = await import('./index')
-  let r = makeLinkAt(addTask(createReplica('device'), [], 'Inbox', 1, 'inbox'), ['inbox'], 1)
+  let r = makeLinkAt(addRow(createReplica('device'), [], 'template', 'Inbox', 1, { id: 'inbox' }), ['inbox'], 1)
   r = setNodeTrigger(r, ['inbox'], { kind: 'request', peer: 'device', enabled: true, created: 2 }, 2)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async () => { runs++ } }
@@ -65,11 +65,29 @@ test('an incoming proposal fires the request trigger and its saved occurrence is
 
 test('changing the trigger reuses its typed argument and switches its capability type', async () => {
   const { argumentRefs, capabilityTarget, headCid, resolveScope } = await import('./index')
-  let r = addTask(createReplica('device'), [], 'Task', 1, 'task')
+  let r = addRow(createReplica('device'), [], 'template', 'Task', 1, { id: 'task' })
   r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 1, due: 10 }, 1)
   const args = () => argumentRefs(r.store, resolveScope(r.store, headCid(r), ['task'])!)
   expect(args()[0]!.type).toBe(capabilityTarget(r.store, 'timer'))
   r = setNodeTrigger(r, ['task'], { kind: 'request', peer: 'device', enabled: true, created: 2 }, 2)
   expect(args()).toHaveLength(1)
   expect(args()[0]!.type).toBe(capabilityTarget(r.store, 'request'))
+})
+
+
+test('child evaluation creates a fresh template instance for each completed parent execution', async () => {
+  const { writeNodeValue } = await import('./index')
+  let r = addTask(createReplica('device'), [], 'Parent', 1, 'parent')
+  r = addRow(r, ['parent'], 'template', 'Child workflow', 1, { id: 'child' })
+  r = setNodeTrigger(r, ['parent', 'child'], { kind: 'task-completion', peer: 'device', enabled: true, created: 1 }, 1)
+  const targets: string[][] = []
+  const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async (path: string[]) => { targets.push(path) } }
+  r = writeNodeValue(r, ['parent'], 'fos:evaluation', { id: 'one', status: 'committed', started: 2, effects: [] }, 3)
+  await runNodeTriggers(driver); await runNodeTriggers(driver)
+  expect(targets).toHaveLength(1)
+  r = writeNodeValue(r, ['parent'], 'fos:evaluation', { id: 'two', status: 'committed', started: 4, effects: [] }, 5)
+  await runNodeTriggers(driver)
+  expect(targets).toHaveLength(2)
+  expect(targets[0]).not.toEqual(targets[1])
+  expect(() => setNodeTrigger(r, ['parent'], { kind: 'cron', peer: 'fos', enabled: true, created: 1, expression: '* * * * *' }, 1)).toThrow('Triggers require a template')
 })

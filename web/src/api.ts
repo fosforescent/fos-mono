@@ -309,8 +309,8 @@ export function evaluateOnServer(session: Session, path: string[], expected: str
 }
 
 export type ShareAddress = import('../../shared/sync/sharing').SharedAddress
-export type GuestResult = { node: import('../../shared/sync/sharing').SharedNode; visitorToken?: string }
-export function configureSharing(session: Session, body: { path: string[]; expected: string; audience: 'public' | 'users'; enabled: boolean; poll: 'approval' | 'rank' | null }): Promise<ShareAddress> {
+export type GuestResult = { node: import('../../shared/sync/sharing').SharedNode; visitorToken?: string; entryToken?: string; address?: ShareAddress }
+export function configureSharing(session: Session, body: { path: string[]; expected: string; audience: 'public' | 'users'; enabled: boolean; template?: boolean; poll: 'approval' | 'rank' | null }): Promise<ShareAddress> {
   return authed(session, 'POST', '/user/data/sharing', body)
 }
 export async function sharedRequest(baseUrl: string, session: Session | null, action: 'visit' | 'input', body: unknown): Promise<GuestResult> {
@@ -318,4 +318,10 @@ export async function sharedRequest(baseUrl: string, session: Session | null, ac
   const response = await fetch(`${baseUrl}/public/node/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!response.ok) throw await responseError(response)
   return response.json() as Promise<GuestResult>
+}
+
+/** Account directory lookup; credentials use the active Fos server session. */
+export async function searchFosUsers(session: Session, query: string): Promise<string[]> {
+  const result = await authed<{ users: Array<{ user_name: string }> }>(session, 'GET', `/groups/search/name?name=${encodeURIComponent(query.trim())}`)
+  return [...new Set(result.users.map(user => user.user_name).filter(name => typeof name === 'string' && name !== session.username))]
 }

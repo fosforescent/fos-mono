@@ -1,7 +1,7 @@
 import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, readProposals, reachableNodes, resolveScope, rowPrimitive, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
 import { createBranch } from './branches'
 import { headCid, loadReplica, serializeReplica, type Replica } from './replica'
-import { NodeAccessError, parseNodeRequest, nodeLinkEndpoint, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
+import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
 
 const prefix = (a: Scope, b: Scope) => a.length <= b.length && a.every((v, i) => v === b[i])
 type Exchange = (r: Replica, request: NodeRequest, authority: NodeAuthority, now: number) => { replica: Replica; node: ProvidedNode }
@@ -11,7 +11,7 @@ type Exchange = (r: Replica, request: NodeRequest, authority: NodeAuthority, now
 export function nodeAuthorityAt(r: Replica, path: Scope, authority: NodeAuthority): Capability[] {
   return withMainBranchPolicy(r.store, () => {
     if (!prefix(authority.scope, path)) throw new NodeAccessError('Node is outside the attachment.')
-    let grants: Capability[] = authority.owner ? ['read', 'edit', 'approve', 'read-requests'] : []
+    let grants: Capability[] = inheritedNodeGrants(r, authority.scope, authority)
     for (let i = authority.scope.length; i <= path.length; i++) {
       const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
       if (!cid) { if (i === authority.scope.length) throw new NodeAccessError('Attachment unavailable.'); break }
@@ -19,7 +19,7 @@ export function nodeAuthorityAt(r: Replica, path: Scope, authority: NodeAuthorit
       if (member) grants = member.capabilities.filter(c => !member.disabled?.includes(c) && !(c === 'read' && member.disabled?.includes('provideNode')))
       if (!grants.includes('read') && !grants.includes('edit')) throw new NodeAccessError('Node access denied.')
       if (member?.disabled?.includes('read') || member?.disabled?.includes('provideNode')) throw new NodeAccessError('Node access denied.')
-      const mask = nodeLinkEndpoint(r, at, authority.peerId)?.mask
+      const mask = nodeLinkMaskAt(r, at, authority.peerId)
       if (i < path.length && mask?.children && !mask.children.includes(path[i]!)) throw new NodeAccessError('Node child is masked.')
       if (i < path.length && isHandle(content(r.store, cid))) throw new NodeAccessError('Reference targets require their own attachment.')
     }

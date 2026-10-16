@@ -8,7 +8,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 
 async function main() {
-  buildSync({ stdin: { contents: `export {App} from './src/app'; export {DirectLink} from './src/p2p'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
+  buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {DirectLink} from './src/p2p'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
   const c = require(path.join(dir, 'test.cjs'))
   class Channel extends EventTarget {
     readyState = 'open'; sent = []
@@ -53,6 +53,28 @@ async function main() {
   guest.setNodeMask('host', { fields: [] })
   const filtered = await hostLink.requestNode({ peerId: 'host', scope: [], path: [], linkId: c.nodeLinkEndpoint(host.state.replica, [], 'guest').id })
   assert.deepEqual(filtered.data, {}, 'the receiving endpoint independently masks the reverse direction')
+  const observations = new Map()
+  globalThis.IntersectionObserver = class {
+    constructor(callback) { this.callback = callback }
+    observe(element) { observations.set(element, this.callback) }
+    unobserve(element) { observations.delete(element) }
+  }
+  // Clear the receiving field mask before checking automatic rendering.
+  guest.setNodeMask('host', {})
+  guest.goTo(['parent', 'child'])
+  c.mountUi(document.getElementById('app'), guest)
+  await new Promise(resolve => setImmediate(resolve))
+  assert(!document.getElementById('app').textContent.includes('Load node from'))
+  const beforeVisible = b.sent.filter(m => m.t === 'node').length
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(b.sent.filter(m => m.t === 'node').length, beforeVisible, 'offscreen placeholders do not fetch')
+  assert(observations.size > 0)
+  for (const [target, callback] of [...observations]) callback([{ target, isIntersecting: true }])
+  for (let i = 0; i < 30 && c.view(guest.state.replica, ['parent', 'child']).tasks[0].refPeer; i++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(c.view(guest.state.replica, ['parent', 'child', 'grandchild']).name, 'Grandchild secret')
+  assert.equal(b.sent.filter(m => m.t === 'node').length, beforeVisible + 1)
+  assert(document.querySelector('.task.peer-held'), 'loaded peer node keeps its subtle provenance styling')
+  delete globalThis.IntersectionObserver
   hostLink.close(); guestLink.close()
   console.log('PASS: approved bidirectional WebRTC node requests, on-demand navigation and request deduplication')
 }

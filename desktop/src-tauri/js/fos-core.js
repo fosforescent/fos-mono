@@ -1884,11 +1884,12 @@
     for (const list of [mask.fields, mask.children]) if (list !== void 0 && (!Array.isArray(list) || list.length > 1e4 || list.some((v) => typeof v !== "string"))) throw new NodeAccessError("Invalid node mask.");
     return { ...mask.fields ? { fields: [...new Set(mask.fields)] } : {}, ...mask.children ? { children: [...new Set(mask.children)] } : {} };
   }
+  var NODE_PERMISSION_DEFAULT = "fos:all-linked-peers";
   function permitted(r, cid, peer, inherited) {
     const member = readMembers(r.store, content(r.store, cid)).find((m) => m.peerId === peer);
     if (!member) return inherited;
     if (member.disabled?.includes("read") || member.disabled?.includes("provideNode")) return false;
-    return member.capabilities.includes("read") || member.capabilities.includes("edit");
+    return member.capabilities.some((cap) => (cap === "read" || cap === "edit") && !member.disabled?.includes(cap));
   }
   function hasNodeLinkMasks(store, peer, scope) {
     const sourceIds = /* @__PURE__ */ new Set([content(store, store.rootNodeId).data.alias?.id ?? store.rootNodeId]);
@@ -1910,7 +1911,7 @@
     return content(store, store.rootNodeId).children.some((edge) => {
       if (edge[0] !== capabilityTarget(store, "provideNode")) return false;
       const ref = content(store, edge[1]), name = ref.data.name?.content;
-      if (!name?.startsWith(LINK_NAME) || peer && ref.data.ref?.peer !== peer) return false;
+      if (!name?.startsWith(LINK_NAME) || peer && ref.data.ref?.peer !== peer && ref.data.ref?.peer !== NODE_PERMISSION_DEFAULT) return false;
       try {
         const [, id] = JSON.parse(name.slice(LINK_NAME.length));
         if (!sourceIds.has(id)) return false;

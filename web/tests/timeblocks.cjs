@@ -59,7 +59,8 @@ async function main() {
   // From a time requirement in the tree, "Pick time…" creates the allocation inside it.
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
   a.scheduleSync = () => {}; mountUi(document.getElementById('app'), a)
-  assert(document.querySelector('.first-run'), 'an empty node shows the first-run examples')
+  assert.equal(document.querySelector('.first-run').textContent, 'Press Ctrl+H for help')
+  assert(!document.querySelector('.first-run-examples'), 'empty nodes show help without examples')
   const bank = a.addRowAtTop(parseRowInput('@calendar Team 40h'))
   const requirement = a.addRowAtTop(parseRowInput('-: 1h Site visit'))
   await tick()

@@ -23,6 +23,8 @@ export interface ReplicaStorage {
   selectDataSession?(id: string): void
   loadReplica(): unknown
   saveReplica(value: unknown): void
+  /** Await queued writes before dispatching evaluation effects. */
+  flush?(): Promise<void>
   loadPrefs(): unknown
   savePrefs(value: unknown): void
   /** The signed-in session (token, never a password), so the device reconnects on its own. */

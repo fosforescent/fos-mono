@@ -90,6 +90,10 @@ export async function createProjectStorage(info: ProjectInfo): Promise<ProjectSt
     savePrefs: (value) => { prefs = value; save('ui-prefs.json', value) },
     loadSession: () => session,
     saveSession: (value) => { session = value; if (value === null) save('session.json', null); else save('session.json', value) },
+    async flush() {
+      await writes
+      if (writeErrors.size) throw new Error(`Unsaved project files: ${[...writeErrors.keys()].join(', ')}`)
+    },
     async useBranch(next) {
       await writes
       if (writeErrors.size) throw new Error(`Unsaved project files: ${[...writeErrors.keys()].join(', ')}`)

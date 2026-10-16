@@ -1,3 +1,4 @@
+mod node_agent;
 mod agents;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -217,6 +218,54 @@ fn set_directory(path: String, state: State<AppState>) -> Result<DirectoryConten
 fn get_directory_contents(state: State<AppState>) -> Result<DirectoryContents, String> {
     let current = state.current_directory.lock().map_err(|e| e.to_string())?;
     get_directory_contents_internal(&current)
+}
+
+/// A local directory peer owns its .fos namespace, without importing files into the graph.
+#[tauri::command]
+fn link_node_directory(path: String) -> Result<String, String> {
+    let root = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    if !root.is_dir() { return Err("Choose a directory".into()); }
+    let state = root.join(".fos");
+    if let Ok(meta) = fs::symlink_metadata(&state) {
+        if meta.file_type().is_symlink() || !meta.is_dir() { return Err(".fos must be a real directory".into()); }
+    }
+    fs::create_dir_all(&state).map_err(|e| e.to_string())?;
+    match fs::OpenOptions::new().write(true).create_new(true).open(state.join(".gitignore")) {
+        Ok(mut file) => { std::io::Write::write_all(&mut file, b"*\n").map_err(|e| e.to_string())?; }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    Ok(root.to_string_lossy().into_owned())
+}
+
+/// Stateless reads avoid changing the desktop's active project or file-browser directory.
+#[tauri::command]
+fn list_node_directory(root: String, path: String) -> Result<DirectoryContents, String> {
+    let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let path = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    if !path.starts_with(&root) { return Err("Directory is outside the linked root".into()); }
+    let mut listing = get_directory_contents_internal(&path)?;
+    listing.entries.retain(|entry| {
+        entry.name != ".fos" && entry.name != ".git"
+            && fs::symlink_metadata(&entry.path).map(|meta| !meta.file_type().is_symlink()).unwrap_or(false)
+    });
+    listing.entries.sort_by(|a, b| b.is_directory.cmp(&a.is_directory).then_with(|| a.name.cmp(&b.name)));
+    Ok(listing)
+}
+
+#[tauri::command]
+fn read_node_file(root: String, path: String) -> Result<String, String> {
+    use std::io::Read;
+    let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let path = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    if !path.starts_with(&root) { return Err("File is outside the linked root".into()); }
+    let file = fs::File::open(&path).map_err(|e| e.to_string())?;
+    if !file.metadata().map_err(|e| e.to_string())?.is_file() { return Err("Not a regular file".into()); }
+    let mut bytes = Vec::new();
+    file.take(1_048_577).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() > 1_048_576 { return Err("Preview is limited to files up to 1 MB".into()); }
+    if bytes.contains(&0) { return Err("Binary file; text preview unavailable".into()); }
+    String::from_utf8(bytes).map_err(|_| "Binary or non-UTF-8 file; text preview unavailable".into())
 }
 
 fn get_directory_contents_internal(path: &PathBuf) -> Result<DirectoryContents, String> {
@@ -681,6 +730,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(agents::AgentRuns::default())
+        .manage(node_agent::NodeAgents::default())
         .manage(app_state)
         .manage(peer_state)
         .setup(|app| {
@@ -748,6 +798,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            link_node_directory, list_node_directory, read_node_file,
+            node_agent::node_agent_start, node_agent::node_agent_poll, node_agent::node_agent_reply, node_agent::node_agent_stop,
             agents::validate_agent_repository, agents::agent_start, agents::agent_poll, agents::agent_control,
             find_project,
             read_project_file,

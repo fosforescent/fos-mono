@@ -7,11 +7,12 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:nodes": "node tests/node-provider.cjs && node tests/node-api.cjs && node tests/node-transport.cjs && node tests/node-sync.cjs && node tests/node-context.cjs && node tests/node-relay.cjs && node tests/node-socket.cjs",
-    "test": "node tests/regressions.cjs && node tests/sharing.cjs && node tests/proposals.cjs && node tests/peer-branches.cjs && node tests/templates.cjs && node tests/row-workspace.cjs && node tests/agents.cjs && node tests/handlers.cjs && node tests/timeblocks.cjs && npm run test:nodes"
+    "test:nodes": "node tests/node-provider.cjs && node tests/node-permissions.cjs && node tests/node-api.cjs && node tests/node-transport.cjs && node tests/node-sync.cjs && node tests/node-context.cjs && node tests/node-relay.cjs && node tests/node-socket.cjs",
+    "test": "node tests/regressions.cjs && node tests/sharing.cjs && node tests/proposals.cjs && node tests/peer-branches.cjs && node tests/templates.cjs && node tests/row-workspace.cjs && node tests/agents.cjs && node tests/integrations.cjs && node tests/handlers.cjs && node tests/evaluation-ui.cjs && node tests/execution-trigger.cjs && node tests/timeblocks.cjs && node tests/filesystem.cjs && node tests/node-agent.cjs && node tests/node-agent-ui.cjs && npm run test:nodes"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.6",
+    "jsonwebtoken": "^9.0.2",
     "typescript": "~5.9.3",
     "vite": "^7.1.7"
   },

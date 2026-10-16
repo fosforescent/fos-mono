@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
-import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { probeAgents } from './availability.mjs'
 import { serveContext } from './context.mjs'
 
 const emit = event => { if (event.text) event.text = event.text.slice(-100_000); if (event.message) event.message = event.message.slice(-100_000); process.stdout.write(JSON.stringify(event) + '\n') }
@@ -22,16 +20,18 @@ input.on('line', line => {
 })
 async function run(request) {
   try {
-    if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Install Node.js 22 or later on the desktop PATH')
+    if (Number(process.versions.node.split('.')[0]) < 20) throw new Error('Install Node.js 20 or later on the desktop PATH')
     if (request.probe) {
-      const codex = await import('@openai/codex-sdk').then(({ Codex }) => { new Codex(); return true }).catch(() => false)
-      const claude = await import('@anthropic-ai/claude-agent-sdk').then(() => true, () => false)
-      emit({ type: 'availability', codex: codex && (!!(process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY) || existsSync(join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'auth.json'))), claude: claude && !!(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_USE_BEDROCK || process.env.CLAUDE_CODE_USE_VERTEX) })
+      emit(await probeAgents())
       return
     }
     if (!['codex','claude'].includes(request.provider) || !request.cwd || !request.prompt?.trim()) throw new Error('Provider, repository, and task prompt are required')
-    context = await serveContext(request.context)
-    const prompt = `Work in the selected repository. The fos MCP server exposes the task subtree from which this run was launched, captured at revision ${request.context.revision}. Start with fos_read at []. Read relevant descendants before implementing.\n\n${request.prompt}`
+    if (request.evaluation) {
+      const url = new URL(request.evaluation.url)
+      if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || typeof request.evaluation.token !== 'string') throw new Error('Evaluation requires an authenticated loopback endpoint')
+      context = { url: url.href, token: request.evaluation.token, close() {} }
+    } else context = await serveContext(request.context)
+    const prompt = request.evaluation ? `Use the fos evaluation MCP tools to perform this task. Start with fos_evaluation_read. Provide only declared inputs and consume only offered allocations. Complete when satisfied.\n\n${request.prompt}` : `Work in the selected repository. The fos MCP server exposes the task subtree from which this run was launched, captured at revision ${request.context.revision}. Start with fos_read at []. Read relevant descendants before implementing.\n\n${request.prompt}`
     if (request.provider === 'codex') {
       const { Codex } = await import('@openai/codex-sdk')
       const codex = new Codex({ apiKey: process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY, config: { mcp_servers: { fos: { url: context.url, http_headers: { Authorization: `Bearer ${context.token}` } } } } })
