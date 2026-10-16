@@ -15,7 +15,7 @@ import { alternativePicker, proposalPreview, clearProposal } from './alternative
 import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
 import { requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
-import type { App, AppState } from './app'
+import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
@@ -447,12 +447,13 @@ function installRowClipboard(list: HTMLElement, app: App): void {
 }
 
 type NodeLayout = 'tree' | 'chat' | 'grid' | 'queue'
-type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values' | 'utilities' | 'constructors' | 'actions' | 'marketplace'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
+/** `peer`: the selected tab of the constructor panel ('device' or a context peer id); `input`: the text/media input panel under the title. */
+type WorkspacePrefs = { peer: string; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean>; input: boolean }
 const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
 const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
 function workspace(app: App): WorkspacePrefs {
   let prefs = workspacePrefs.get(app)
-  if (!prefs) { prefs = { tab: 'constructors', layout: 'tree', actionTab: 'main', search: '', open: {} }; workspacePrefs.set(app, prefs) }
+  if (!prefs) { prefs = { peer: 'device', layout: 'tree', actionTab: 'main', search: '', open: {}, input: false }; workspacePrefs.set(app, prefs) }
   const key = JSON.stringify([app.state.atRoot, app.state.view])
   let search = workspaceSearch.get(app)
   if (!search) { search = { key, values: new Map() }; workspaceSearch.set(app, search) }
@@ -463,11 +464,12 @@ function workspace(app: App): WorkspacePrefs {
 function iconButton(icon: string, label: string, action: () => void): HTMLButtonElement {
   const b = button('icon', icon, action); const svg = iconSvg(icon, label); if (svg) b.innerHTML = svg; b.title = label; b.setAttribute('aria-label', label); return b
 }
+/** A collapsible panel whose open state follows the workspace prefs; it is toggled by a button elsewhere (the summary is not shown). */
 function accordion(app: App, key: string, label: string, ...children: HTMLElement[]): HTMLDetailsElement {
   const d = document.createElement('details'), summary = document.createElement('summary')
   d.className = 'node-accordion'; d.dataset.accordion = key; d.open = workspace(app).open[key] ?? false
-  summary.innerHTML = iconSvg(key === 'context' ? '✦' : key === 'actions' ? '▶' : 'inventory') ?? label
-  summary.title = label; summary.setAttribute('aria-label', label); d.append(summary, ...children)
+  summary.textContent = label; summary.className = 'accordion-summary'
+  d.append(summary, ...children)
   const prefs = workspace(app)
   d.addEventListener('toggle', () => { prefs.open[key] = d.open })
   return d
@@ -476,20 +478,65 @@ const CONSTRUCTOR_DRAG_TYPE = 'application/x-fos-constructor'
 const CONSTRUCTORS = [
   { id: 'peer', label: 'Peer', icon: '♙' },
   { id: 'integration', label: 'Integration', icon: '▦' },
-  { id: 'inventory', label: 'Inventory allocation', icon: 'inventory' },
-  { id: 'calendar', label: 'Calendar allocation', icon: 'calendar' },
-  { id: 'account', label: 'Money allocation', icon: 'money' },
-  { id: 'bank', label: 'Resource bank', icon: 'inventory' },
+  { id: 'inventory', label: 'Inventory allocation', icon: 'boxes' },
+  { id: 'calendar', label: 'Calendar allocation', icon: 'calendar-check' },
+  { id: 'account', label: 'Money allocation', icon: 'coins' },
+  { id: 'bank', label: 'Resource bank', icon: 'bank' },
   { id: 'repository', label: 'Repository', icon: '⑂' }
 ] as const
-function constructorOptions(app: App) {
-  return [...app.handlerOffers().filter(o => o.enabled && o.active && o.type === app.state.replica.store.primitive.templateField.getId()).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: '✦', output: 'template' })), ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id })),
-    ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext())).map(cap => ({ id: `action:${cap}`, label: CAPABILITY_LABEL[cap] ?? cap, icon: '▶', output: cap })),
-    ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: '⟳', output: 'tool' })),
-    ...app.triggerKinds(app.constructorContext()).map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'When parent completes' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: 'calendar', output: kind }))]
+type ConstructorItem = { id: string; label: string; icon: string; output: string; group: string }
+/** Row kinds this device makes by typing a marker; clicking seeds the blank row (or a row inside the selected one) with it. */
+const ROW_SEEDS: Array<[string, string, string]> = [
+  ['Task', '[ ] ', '☑'], ['Note', '> ', 'note'], ['Comment', '// ', 'comment'], ['Query', '? ', 'search'],
+  ['Money requirement', '-$ ', 'money'], ['Time requirement', '-: ', 'clock'], ['Things requirement', '-# ', 'things'], ['Person requirement', '-@', 'person'],
+  ['Decision', '-choice: ', 'decision'], ['Confirmation', '- ', 'confirm'], ['Template', '` ', 'template']
+]
+function constructorOptions(app: App): ConstructorItem[] {
+  const peers = app.contextPeers()
+  const account = peers.find(p => p.isAccount)?.id ?? 'fos'
+  const github = peers.find(p => p.id === 'integration:github')?.id ?? 'device'
+  const me = app.state.replica.meta.peerId
+  const offerGroup = (peerId: string) => peerId === me ? 'device' : peerId === 'fos' || peerId.startsWith('user:') ? account : peerId
+  return [
+    ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
+    ...app.handlerOffers().filter(o => o.enabled && o.active && o.type === app.state.replica.store.primitive.templateField.getId()).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: '✦', output: 'template', group: offerGroup(o.peerId) })),
+    ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
+    ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext())).map(cap => ({ id: `action:${cap}`, label: cap === 'llm' ? 'Ask fos' : cap === 'search' ? 'Search' : 'List on the market', icon: cap === 'llm' ? '✦' : cap === 'search' ? 'search' : 'store', output: cap, group: account })),
+    ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: 'pull', output: 'tool', group: p.id })),
+    ...app.triggerKinds(app.constructorContext()).map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'When parent completes' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: kind === 'timer' ? 'hourglass' : kind === 'request' ? 'request' : kind === 'task-completion' ? 'flag' : 'trigger', output: kind, group: kind === 'cron' ? account : 'device' }))]
+}
+function peerIcon(p: ContextPeer): string {
+  if (p.isAccount) return '✦'
+  if (p.integration) return ({ 'integration:github': '⑂', 'integration:google': 'calendar', 'integration:discord': '☏', 'integration:stripe': 'card', 'integration:phone': 'phone' } as Record<string, string>)[p.id] ?? 'integration'
+  if (p.mcp) return 'plug'
+  return p.id.startsWith('user:') ? '♙' : 'device'
+}
+/** The constructor panel's tabs: this device first, then every peer of the context; each constructor belongs to the peer that provides it. */
+function constructorGroups(app: App): Array<{ id: string; name: string; icon: string; items: ConstructorItem[]; peer?: ContextPeer }> {
+  const groups: Array<{ id: string; name: string; icon: string; items: ConstructorItem[]; peer?: ContextPeer }> = [{ id: 'device', name: 'This device', icon: 'device', items: [] }]
+  for (const peer of app.contextPeers()) if (peer.id !== app.state.replica.meta.peerId) groups.push({ id: peer.id, name: peer.name, icon: peerIcon(peer), items: [], peer })
+  for (const item of constructorOptions(app)) {
+    if (item.id === 'peer' || item.id === 'integration') continue // the "Add peer" button and the search cover these
+    ;(groups.find(g => g.id === item.group) ?? groups[0]!).items.push(item)
+  }
+  return groups
+}
+/** A row-kind constructor: seeds the blank top row, a new row inside the selected row, or (dropped with `replace`) rewrites that row keeping its text. */
+function seedRow(app: App, seed: string, path: Scope, replace: boolean): void {
+  const view = app.state.view
+  if (replace && path.length) {
+    const current = viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
+    try { app.applyConstructor(path, parseRowInput(seed + (current?.title ?? '')), true) } catch (error) { app.notify('error', String(error)) }
+    return
+  }
+  if (path.length > view.length) { app.addRowInside(path.slice(view.length, -1), path.at(-1)!, 'plain', seed); return }
+  const ghost = document.querySelector<HTMLTextAreaElement>('.tree .task.ghost textarea.edit')
+  if (!ghost) { app.addRowAtTop(parseRowInput(seed)); return }
+  ghost.value = seed; ghost.dispatchEvent(new window.Event('input')); ghost.focus(); ghost.setSelectionRange(seed.length, seed.length)
 }
 function insertConstructor(app: App, id: string, path = app.constructorContext(), replace = false): void {
   if (proposalPreview(app)) return
+  if (id.startsWith('seed:')) { seedRow(app, id.slice(5), path, replace); return }
   if (id.startsWith('handler:')) { try { app.insertHandler(id.slice(8), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id.startsWith('action:')) {
@@ -517,11 +564,17 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   }
   dialog.append(form); dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal()
 }
+/** Typed values for the selected row's unmet requirement or argument: chips that drop onto a row or insert with a click. Empty when nothing is needed. */
 function suggestedConstructors(app: App): HTMLElement {
-  const panel = div('constructor-palette suggestions', '')
-  const needs = app.constructorNeeds(), all = constructorOptions(app)
-  const matches = needs.length ? all.filter(c => needs.includes(c.output) || (needs.includes('allocation') && ['inventory','calendar','account'].includes(c.output))) : all
-  for (const c of matches) { const b = iconButton(c.icon, c.label, () => insertConstructor(app, c.id)); constructorDrag(b, c.id); panel.append(b) }
+  const panel = div('constructor-chips', '')
+  const needs = app.constructorNeeds()
+  if (!needs.length) { panel.hidden = true; return panel }
+  const matches = constructorOptions(app).filter(c => needs.includes(c.output) || (needs.includes('allocation') && ['inventory','calendar','account'].includes(c.output)))
+  for (const c of matches) {
+    const b = button('constructor-chip', '', () => insertConstructor(app, c.id))
+    b.innerHTML = iconSvg(c.icon) ?? ''; b.append(span('', c.label)); b.title = `${c.label} · drag onto a row`; b.setAttribute('aria-label', c.label)
+    constructorDrag(b, c.id); panel.append(b)
+  }
   if (!matches.length) panel.append(span('muted', 'Search for a constructor matching this input.'))
   return panel
 }
@@ -639,7 +692,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
 
 function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): boolean {
   const constructor = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
-  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'pull' || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:'))) { event.preventDefault(); event.stopPropagation(); insertConstructor(app, constructor, path, replace); return true }
+  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'pull' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:'))) { event.preventDefault(); event.stopPropagation(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -694,45 +747,53 @@ function currentNodeActions(app: App): Action[] {
   ] : []
 }
 
-function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
-  const prefs = workspace(app), tabs = div('node-tabs', '')
-  tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Node context')
-  for (const [tab, icon, label] of [['constructors', '✦', 'Constructors'], ['actions', '▶', 'Node actions'], ['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values'], ['utilities', 'utilities', 'Utilities'], ['marketplace', '▦', 'Marketplace']] as const) {
-    const b = iconButton(icon, label, () => { prefs.tab = tab; app.refresh() })
-    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab));
-    if (tab === 'peers' || tab === 'integrations') constructorDrag(b, tab === 'peers' ? 'peer' : 'integration')
+/** The constructor panel: peer tabs beside the search, the selected peer's constructors as an icon grid, typed values for the selected row, then that peer's rows (capabilities, sign-in, connections). */
+function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestions: HTMLElement, context: HTMLElement, state: AppState, app: App): void {
+  const prefs = workspace(app), groups = constructorGroups(app), preview = proposalPreview(app)
+  if (!groups.some(g => g.id === prefs.peer)) prefs.peer = 'device'
+  const group = groups.find(g => g.id === prefs.peer)!
+  const tabs = div('node-tabs peer-tabs', '')
+  tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Peers')
+  for (const g of groups) {
+    const b = iconButton(g.icon, g.name, () => { prefs.peer = g.id; app.refresh() })
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g.id === prefs.peer))
+    if (g.peer && !g.peer.online) b.classList.add('offline')
     tabs.append(b)
   }
-  const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
-  const rows = document.createElement('ul'); rows.className = 'list context-peers'
-  if (prefs.tab === 'marketplace') {
-    const form = document.createElement('form'), query = document.createElement('input')
-    query.placeholder = 'Find a capability…'; query.setAttribute('aria-label', 'Search marketplace'); query.required = true
-    const submit = button('secondary', 'Search', () => undefined); submit.type = 'submit'; submit.disabled = !app.isOnline('fos')
-    form.append(query, submit)
-    form.onsubmit = event => { event.preventDefault(); const id = app.addRowAt([], 'query', query.value, { extras: { query: { market: true } } }); const row = app.currentView()?.tasks.find(r => r.id === id); if (row) void app.runQueryAt([], row) }
-    panel.append(span('muted', 'Capabilities published by Fos peers. Private offers remain in their own contexts.'), form)
-    if (app.currentRow()?.kind === 'template') panel.append(button('secondary', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
-    el.replaceChildren(tabs, panel); return
-  }
-  if (prefs.tab === 'utilities') { panel.append(constructorPalette(app, ['inventory', 'calendar', 'account', 'bank'])); el.replaceChildren(tabs, panel); return }
-  if (prefs.tab === 'input' || prefs.tab === 'values' || prefs.tab === 'constructors' || prefs.tab === 'actions') { el.replaceChildren(tabs); return }
-  if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
-  else panel.append(span('muted', 'Settings and peer constructors are editable child rows below.'))
-  panel.append(rows)
-  if (prefs.tab === 'peers' || prefs.tab === 'integrations') panel.append(constructorPalette(app, [prefs.tab === 'peers' ? 'peer' : 'integration']))
-  panel.append(span('muted', 'Type @{ in a new row to add a peer.'))
-  if (prefs.tab === 'integrations') panel.prepend(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
-  if (prefs.tab === 'device' && app.transport()) panel.append(span('muted', `Device syncs ${pathLabel(app.labels().scope)}`))
-  if (prefs.tab === 'peers') {
-    const spawn = button('secondary small', 'Spawn virtual peer…', () => app.openModal('virtual'))
-    spawn.disabled = !app.canSpawnVirtualPeer()
-    panel.append(spawn, span('muted', `${app.currentView()?.versions ?? 0} previous versions`))
-  }
-  const active = document.activeElement as HTMLElement | null
-  if (active && el.contains(active) && active.matches('input,select')) return
-  el.replaceChildren(tabs, panel)
+  const add = iconButton('+', 'Add peer', () => insertConstructor(app, 'peer')); add.classList.add('add-peer'); add.disabled = !!preview
+  constructorDrag(add, 'peer'); tabs.append(add)
+  head.querySelector('.peer-tabs')?.remove(); head.prepend(tabs)
 
+  grid.setAttribute('aria-label', `${group.name} constructors`); grid.replaceChildren()
+  for (const c of group.items) { const b = iconButton(c.icon, c.label, () => insertConstructor(app, c.id)); constructorDrag(b, c.id); grid.append(b) }
+  if (!group.items.length) grid.append(span('muted', group.peer?.online === false ? 'Connect this peer to use its constructors.' : 'No constructors from this peer yet.'))
+  const typed = suggestedConstructors(app); suggestions.hidden = !!preview || typed.hidden; suggestions.replaceChildren(typed)
+
+  const active = document.activeElement as HTMLElement | null
+  if (active && context.contains(active) && active.matches('input,select')) return
+  const panel: HTMLElement[] = []
+  const rows = document.createElement('ul'); rows.className = 'list context-peers'
+  if (state.atRoot) panel.push(span('muted', 'Settings and peer constructors are editable child rows below.'))
+  else if (group.peer) {
+    const p = group.peer
+    if (p.integration) panel.push(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
+    rows.append(...renderRootRows(state, app, p.integration || p.mcp ? 'integrations' : 'peers', p.id)); panel.push(rows)
+    if (p.isAccount) {
+      const form = document.createElement('form'), query = document.createElement('input')
+      query.placeholder = 'Find a capability on the marketplace…'; query.setAttribute('aria-label', 'Search marketplace'); query.required = true
+      const submit = button('secondary', 'Search', () => undefined); submit.type = 'submit'; submit.disabled = !app.isOnline('fos')
+      form.append(query, submit); form.className = 'marketplace-search'
+      form.onsubmit = event => { event.preventDefault(); const id = app.addRowAt([], 'query', query.value, { extras: { query: { market: true } } }); const row = app.currentView()?.tasks.find(r => r.id === id); if (row) void app.runQueryAt([], row) }
+      panel.push(form)
+      if (app.currentRow()?.kind === 'template') panel.push(button('secondary small', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
+    }
+  } else {
+    rows.append(...renderRootRows(state, app, 'device')); if (rows.childElementCount) panel.push(rows)
+    if (app.transport()) panel.push(span('muted', `Device syncs ${pathLabel(app.labels().scope)}`))
+    const spawn = button('secondary small', 'Spawn virtual peer…', () => app.openModal('virtual')); spawn.disabled = !app.canSpawnVirtualPeer()
+    panel.push(spawn, span('muted', `Type @{ in a new row to add a peer · ${app.currentView()?.versions ?? 0} previous versions`))
+  }
+  context.replaceChildren(...panel)
 }
 function settingControl(key: string, state: AppState, app: App): HTMLElement {
   const box = div('setting-control', ''); box.dataset.setting = key
@@ -857,43 +918,63 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
       if (event.key === 'Escape') { event.preventDefault(); input.value = entry.baseline; input.blur() }
     })
-    const search = combobox('Find a node to link', 'Find a node or constructor…', query => [...constructorOptions(app).filter(c => c.label.toLowerCase().includes(query.toLowerCase())).map(c => ({ label: c.label, group: 'Constructors', drag: { type: CONSTRUCTOR_DRAG_TYPE, value: c.id }, run: () => insertConstructor(app, c.id) })), ...(query ? app.searchLocalNodes(query).map(found => ({
+    const search = combobox('Find a node to link', 'Search constructors or nodes…', query => [...constructorOptions(app).filter(c => c.label.toLowerCase().includes(query.toLowerCase())).map(c => ({ label: c.label, group: 'Constructors', drag: { type: CONSTRUCTOR_DRAG_TYPE, value: c.id }, run: () => insertConstructor(app, c.id) })), ...(query ? app.searchLocalNodes(query).map(found => ({
       label: `${found.row.title} · ${found.row.kind}`, group: 'Values', disabled: !app.canLinkNode(found.row.id),
       drag: { type: NODE_DRAG_TYPE, value: found.row.id }, run: () => app.linkNode(found.row.id)
-    })) : [])], () => [], 'Search nodes or constructors…')
+    })) : [])], () => [], 'Search constructors on all peers, or nodes to link…')
     search.classList.add('node-search')
+    // Title row: the node's name, Run, Add, the input toggle and the ⋯ menu.
+    const header = div('node-header', '')
+    const heading = document.createElement('h1'); heading.className = 'node-title'
     const toolbar = div('node-toolbar', '')
-    toolbar.append(iconButton('⋯', 'Current node actions', () => app.openContextMenu({ kind: 'node' })))
-    toolbar.lastElementChild!.classList.add('more', 'node-menu-button')
-    const context = div('node-context', '')
+    const run = button('evaluate', '', () => { input.dispatchEvent(new window.Event('commit-edit')); void app.evaluateCurrent() })
+    run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
+    const addRow = button('primary add-row', '', () => {
+      const ghost = document.querySelector<HTMLTextAreaElement>('.tree .task.ghost textarea.edit')
+      if (ghost) { if (app.state.selected) app.select(null); ghost.focus() }
+    })
+    addRow.innerHTML = `${iconSvg('+') ?? ''}<span>Add</span>`; addRow.title = 'Add a row (the blank row at the top of the list)'
+    const editToggle = iconButton('✎', 'Input / edit', () => { workspace(app).input = !workspace(app).input; app.refresh() })
+    editToggle.classList.add('input-toggle')
+    const more = iconButton('⋯', 'Current node actions', () => app.openContextMenu({ kind: 'node' })); more.classList.add('more', 'node-menu-button')
+    toolbar.append(run, addRow, editToggle, more)
+    header.append(heading, toolbar)
     const values = div('node-values', '')
     const dynamicValues = div('node-values-dynamic', '')
     values.append(placeholderForm(app), dynamicValues)
     const voice = div('', ''); voice.dataset.slot = 'voice'
     const repository = div('', ''); repository.dataset.slot = 'repository'
     const edit = div('node-input', ''); edit.append(div('input-controls', ''), input, voice)
+    const head = div('constructor-head', ''); head.append(search)
+    const grid = div('constructor-palette constructor-grid', ''); grid.setAttribute('role', 'tabpanel')
     const suggestions = div('constructor-suggestions', '')
-    const panels = div('workspace-panels', ''); panels.append(accordion(app, 'context', 'Constructors and node context', search, suggestions, context, controls, repository, edit, values))
-    el.replaceChildren(toolbar, panels)
+    const context = div('node-context', '')
+    const panel = accordion(app, 'context', 'Constructors', head, grid, suggestions, context); panel.id = 'constructors'
+    const panels = div('workspace-panels', ''); panels.append(panel)
+    el.replaceChildren(header, controls, edit, values, panels, repository)
     details.set(el, entry); cached = entry
   } else if (cached.input.value === cached.baseline) {
     cached.baseline = title; cached.input.value = title
     cached.draft.head = headCid(state.replica)
   }
-  const toolbar = el.querySelector<HTMLElement>('.node-toolbar')!
+  const prefs = workspace(app)
+  const header = el.querySelector<HTMLElement>('.node-header')!, toolbar = header.querySelector<HTMLElement>('.node-toolbar')!
+  header.querySelector<HTMLElement>('.node-title')!.textContent = title
+  header.classList.toggle('home', row?.id === HOME_ID)
+  const run = toolbar.querySelector<HTMLButtonElement>('.evaluate')!
+  run.hidden = !row || row.kind === 'template' || row.id === HOME_ID
+  run.disabled = app.evaluating || !!row?.blockedBy?.length
+  run.title = app.evaluating ? 'Evaluating…' : row?.blockedBy?.length ? 'Blocked by unfilled requirements' : 'Evaluate this node'
+  run.setAttribute('aria-label', app.evaluating ? 'Evaluating' : row?.blockedBy?.length ? 'Run (blocked by unfilled requirements)' : 'Run (evaluate this node)')
+  const editToggle = toolbar.querySelector<HTMLElement>('.input-toggle')!
+  editToggle.setAttribute('aria-pressed', String(prefs.input)); editToggle.setAttribute('aria-controls', 'node-input')
   toolbar.querySelector('.alternative-picker')?.remove()
   if (row?.branches || app.currentView()?.proposals.length) toolbar.append(alternativePicker(app, state.view, row))
-  if (preview && workspace(app).tab === 'values') workspace(app).tab = 'peers'
-  renderNodeContext(el.querySelector<HTMLElement>('.node-context')!, state, app)
-  const proposed = el.querySelector<HTMLElement>('.constructor-suggestions')!
-  proposed.hidden = !!preview || workspace(app).tab !== 'constructors'; proposed.replaceChildren(suggestedConstructors(app))
+  toolbar.hidden = !!preview || !row
+  const accordionEl = el.querySelector<HTMLDetailsElement>('[data-accordion="context"]')!
+  renderConstructorPanel(el.querySelector<HTMLElement>('.constructor-head')!, el.querySelector<HTMLElement>('.constructor-grid')!, el.querySelector<HTMLElement>('.constructor-suggestions')!, el.querySelector<HTMLElement>('.node-context')!, state, app)
   const controls = cached.controls
   controls.replaceChildren()
-  controls.hidden = workspace(app).tab !== 'actions'
-  if (!row || row.kind !== 'template' || row.id === HOME_ID) {
-    const play = button('evaluate', app.evaluating ? 'Evaluating…' : '▶ Evaluate', () => { cached!.input.dispatchEvent(new window.Event('commit-edit')); void app.evaluateCurrent() })
-    play.disabled = app.evaluating; controls.append(play)
-  }
   if (row?.kind === 'task') { const generate = button('secondary small', 'Generate subtasks…', () => app.generateSubtasks([])); generate.dataset.capability = 'llm'; generate.disabled = app.subtasksAvailability([]).status !== 'ready'; generate.title = generate.disabled ? 'Requires an active language-model handler' : ''; controls.append(generate) }
   if (row?.requirement?.capability === 'llm') { const work = button('secondary small', 'Context & results', () => app.openWork(state.view.slice(0, -1), row.id, true)); work.dataset.capability = 'llm'; controls.append(work) }
   if (row?.requirement && !row.requirement.satisfied && !insideTemplate(state, state.view)) {
@@ -901,7 +982,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (row.requirement.capability === 'choice') for (const [choice, label] of (row.requirement.options ?? []).entries()) controls.append(choiceButton(app, state.view.slice(0, -1), row.id, choice, label, true))
   }
   const edit = el.querySelector<HTMLElement>('.node-input')!
-  edit.hidden = workspace(app).tab !== 'input'
+  edit.id = 'node-input'; edit.hidden = !prefs.input
   const inputs = edit.querySelector<HTMLElement>('.input-controls')!; inputs.replaceChildren()
   for (const redo of [false, true]) {
     const control = iconButton(redo ? '↪' : '↶', redo ? 'Redo in this node' : 'Undo in this node', () => { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); if (document.activeElement !== cached!.input) cached!.input.dispatchEvent(new window.Event('commit-edit')); app.undoNode(redo) })
@@ -929,8 +1010,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (inTauri() && row && app.repositoryInfo() && !localRepository(state.replica, state.view)) controls.append(button('secondary small', 'Attach local checkout…', () => openConstructor(app, 'repository', [...state.view], true)))
   if (row && app.isOnline('integration:github')) controls.append(button('secondary small', 'Connect GitHub repository…', () => { const repo = window.prompt('Repository (owner/name)'); if (repo) app.bindNodeRepository(state.view.slice(0, -1), row.id, repo, true) }))
   inputs.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
-  el.querySelector<HTMLElement>('.node-toolbar')!.hidden = !!preview || !row
-  el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview || workspace(app).tab !== 'values'
   const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
   dynamicValues.replaceChildren()
   for (const arg of app.placeholders()) {
@@ -948,6 +1027,8 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const trigger = app.currentTrigger(), triggerState = app.currentTriggerState()
   if (trigger) dynamicValues.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
   if (triggerState && ['failed', 'running'].includes(triggerState.status)) dynamicValues.append(button('secondary small', 'Review / rearm trigger', () => app.retryCurrentTrigger()))
+  // Placeholders and triggers are node state: shown whenever the node has any (or is a template that may declare them).
+  el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview || !(dynamicValues.childElementCount || row?.kind === 'template' || insideTemplate(state, state.view))
   const record = app.evaluationStatus()
   if (record) controls.append(span('evaluation-status', `Evaluation: ${record.status}${record.error ? ' — ' + record.error : ''}`))
   if (record && !['committed', 'rolled-back'].includes(record.status)) controls.append(button('secondary small', 'Review recovery', () => void app.recoverCurrentEvaluation()))
@@ -964,41 +1045,47 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     }
     collectPreview(preview.cid, 0)
   } else collect(state.view)
+  // Capability tabs (language model, repository) filter the contextual actions; shown only when there is more than the main set.
+  const availableTabs: Array<[string, string, string]> = [['main', '⌂', 'Main actions']]
+  if (row?.kind === 'task' || row?.requirement?.capability === 'llm') availableTabs.push(['llm', '✦', 'Language model actions'])
+  if (app.repositoryInfo() || localRepository(state.replica, state.view)) availableTabs.push(['repo', '⑂', 'Repository actions'])
+  if (!availableTabs.some(([key]) => key === prefs.actionTab)) prefs.actionTab = 'main'
+  for (const control of Array.from(controls.children) as HTMLElement[]) control.hidden = prefs.actionTab !== 'main' && control.dataset.capability !== prefs.actionTab
+  const actionBody = div('node-action-body', '')
+  actionBody.setAttribute('role', 'tabpanel'); actionBody.setAttribute('aria-label', 'Selected node actions')
+  actionBody.append(...Array.from(controls.childNodes))
+  if (availableTabs.length > 1) {
+    const actionTabs = div('node-tabs', ''); actionTabs.setAttribute('role', 'tablist'); actionTabs.setAttribute('aria-label', 'Node action capabilities')
+    for (const [key, icon, label] of availableTabs) {
+      const b = iconButton(icon, label, () => { prefs.actionTab = key; app.refresh() }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.actionTab === key)); actionTabs.append(b)
+    }
+    controls.append(actionTabs)
+  }
+  controls.append(actionBody)
+  controls.hidden = !actionBody.childElementCount && availableTabs.length <= 1
+  el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview
+  el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(prefs.actionTab)
   const childToolbar = el.parentElement?.querySelector<HTMLElement>('[data-region="children-toolbar"]')
   if (!childToolbar) return
   const savedSearch = childToolbar.querySelector<HTMLInputElement>('.child-search')
   for (const child of Array.from(childToolbar.children)) if (child !== savedSearch) child.remove()
-
-  const actionTabs = div('node-tabs', ''); actionTabs.setAttribute('role', 'tablist'); actionTabs.setAttribute('aria-label', 'Node action capabilities')
-  const availableTabs: Array<[string, string, string]> = [['main', '⌂', 'Main actions']]
-  if (row?.kind === 'task' || row?.requirement?.capability === 'llm') availableTabs.push(['llm', '✦', 'Language model actions'])
-  if (app.repositoryInfo() || localRepository(state.replica, state.view)) availableTabs.push(['repo', '⑂', 'Repository actions'])
-  if (!availableTabs.some(([key]) => key === workspace(app).actionTab)) workspace(app).actionTab = 'main'
-  for (const [key, icon, label] of availableTabs) {
-    const b = iconButton(icon, label, () => { workspace(app).actionTab = key; app.refresh() }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(workspace(app).actionTab === key)); actionTabs.append(b)
-  }
-  for (const control of Array.from(controls.children) as HTMLElement[]) control.hidden = workspace(app).actionTab !== 'main' && control.dataset.capability !== workspace(app).actionTab
-  const actionBody = div('node-action-body', '')
-  actionBody.setAttribute('role', 'tabpanel'); actionBody.setAttribute('aria-label', 'Selected node actions')
-  actionBody.append(...Array.from(controls.childNodes))
-  controls.append(actionTabs, actionBody)
-  el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview
-  el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || workspace(app).tab !== 'actions' || !['main', 'repo'].includes(workspace(app).actionTab)
-  const layouts = div('node-tabs', ''); layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Child view')
-  for (const [layout, icon, label] of [['tree', '☷', 'Tree view'], ['chat', '☏', 'Chat view'], ['grid', '▦', 'Grid / pin view'], ['queue', '☑', 'Queue view']] as const) {
-    const b = iconButton(icon, label, () => { workspace(app).layout = layout; app.refresh() }); b.setAttribute('aria-pressed', String(workspace(app).layout === layout)); layouts.append(b)
+  const toggle = iconButton('grid', 'Constructors', () => { accordionEl.open = !accordionEl.open; prefs.open.context = accordionEl.open; app.refresh() })
+  toggle.classList.add('constructors-toggle'); toggle.setAttribute('aria-pressed', String(accordionEl.open)); toggle.setAttribute('aria-controls', 'constructors')
+  childToolbar.append(toggle)
+  const layouts = div('node-tabs view-switch', ''); layouts.setAttribute('role', 'group'); layouts.setAttribute('aria-label', 'Child view')
+  for (const [layout, icon, label, text] of [['tree', '☷', 'Tree view', 'Tree'], ['chat', '☏', 'Chat view', 'Chat'], ['grid', '▦', 'Grid / pin view', 'Grid'], ['queue', '☑', 'Queue view', 'Queue']] as const) {
+    const b = iconButton(icon, label, () => { prefs.layout = layout; app.refresh() }); b.append(span('view-label', text)); b.setAttribute('aria-pressed', String(prefs.layout === layout)); layouts.append(b)
   }
   childToolbar.append(layouts)
   let filter = childToolbar.querySelector<HTMLInputElement>('.child-search')
   if (!filter) {
-    filter = document.createElement('input'); filter.type = 'search'; filter.className = 'child-search'; filter.placeholder = 'Filter children…'; filter.setAttribute('aria-label', 'Filter children'); filter.value = workspace(app).search
-    filter.addEventListener('input', () => { workspace(app).search = filter!.value; app.refresh() }); childToolbar.prepend(filter)
+    filter = document.createElement('input'); filter.type = 'search'; filter.className = 'child-search'; filter.placeholder = 'Filter rows'; filter.setAttribute('aria-label', 'Filter children'); filter.value = prefs.search
+    filter.addEventListener('input', () => { prefs.search = filter!.value; app.refresh() }); childToolbar.prepend(filter)
   }
   const suggestions = document.createElement('datalist'); suggestions.id = 'child-filter-options'
   for (const tag of tags) suggestions.append(new Option(`type:${tag}`, `type:${tag}`))
   for (const child of app.currentView()?.tasks ?? []) suggestions.append(new Option(child.title, child.title))
   filter.setAttribute('list', suggestions.id); childToolbar.append(suggestions)
-
 }
 
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
