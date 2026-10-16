@@ -1,0 +1,31 @@
+name: MCP and integration tests
+on:
+  pull_request:
+    paths: ['plugins/**', 'backend/mcp/**', 'backend/sync/**', 'backend/integrations/**', 'backend/search/**', 'shared/sync/**', '.github/workflows/mcp-tests.yml']
+  push:
+    branches: [main]
+    paths: ['plugins/**', 'backend/mcp/**', 'backend/sync/**', 'backend/integrations/**', 'backend/search/**', 'shared/sync/**', '.github/workflows/mcp-tests.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mcp-tests-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - name: Scoped MCP and evaluation regressions
+        run: npm test --prefix backend -- --runInBand mcp/taskTree.test.ts sync/peerSync.test.ts sync/evaluation.test.ts integrations/mcpPeers.test.ts search/rowIndex.test.ts search/routes.test.ts
+      - name: Shared graph regressions
+        run: npm test --prefix shared -- --runInBand sync
+      - name: Transport and package checks
+        run: |
+          node --test plugins/bridge.test.mjs
+          python3 plugins/build_test.py

@@ -100,3 +100,17 @@ test('amount alone does not fulfill a different unit or time window', async () =
   expect(view(s.get(), ['parent'])!.tasks.find(t => t.id === 'need')!.requirement!.satisfied).toBe(false)
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow()
 })
+
+test('declared return slots can start empty, but an effect cannot commit with an unfilled return', async () => {
+  const { addRefAt } = await import('./index')
+  const s = setup()
+  s.set(addRow(s.get(), ['parent'], 'requirement', 'Produce a result', 3, { id: 'req', requirement: { capability: 'tool' } }))
+  s.set(addRefAt(s.get(), ['parent', 'req'], 'result', s.get().store.primitive.documentField.getId(), 4))
+  s.driver.handles = step => step.row?.requirement?.capability === 'tool'
+  s.driver.outputs = () => ['result']
+  s.driver.effect = async () => { s.set(addSupply(s.get(), ['parent'], 'req', { capability: 'tool', by: 'tool' }, 5)) }
+  const record = await evaluateNode(['parent'], s.driver)
+  expect(record.status).toBe('needs-recovery')
+  expect(record.error).toMatch(/valid return value/)
+  expect(view(s.get(), [])!.tasks[0]!.done).toBe(false)
+})

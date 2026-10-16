@@ -445,7 +445,7 @@ function installRowClipboard(list: HTMLElement, app: App): void {
 }
 
 type NodeLayout = 'tree' | 'chat' | 'grid' | 'queue'
-type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values' | 'utilities' | 'constructors' | 'actions'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
+type WorkspacePrefs = { tab: 'peers' | 'integrations' | 'device' | 'input' | 'values' | 'utilities' | 'constructors' | 'actions' | 'marketplace'; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
 const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
 const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
 function workspace(app: App): WorkspacePrefs {
@@ -656,7 +656,7 @@ function currentNodeActions(app: App): Action[] {
 function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   const prefs = workspace(app), tabs = div('node-tabs', '')
   tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Node context')
-  for (const [tab, icon, label] of [['constructors', '✦', 'Constructors'], ['actions', '▶', 'Node actions'], ['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values'], ['utilities', 'utilities', 'Utilities']] as const) {
+  for (const [tab, icon, label] of [['constructors', '✦', 'Constructors'], ['actions', '▶', 'Node actions'], ['peers', '♙', 'Peers and sharing'], ['integrations', '▦', 'Integrations'], ['device', '▣', 'This device'], ['input', '✎', 'Input / edit'], ['values', 'inventory', 'Node values'], ['utilities', 'utilities', 'Utilities'], ['marketplace', '▦', 'Marketplace']] as const) {
     const b = iconButton(icon, label, () => { prefs.tab = tab; app.refresh() })
     b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(prefs.tab === tab));
     if (tab === 'peers' || tab === 'integrations') constructorDrag(b, tab === 'peers' ? 'peer' : 'integration')
@@ -664,6 +664,16 @@ function renderNodeContext(el: HTMLElement, state: AppState, app: App): void {
   }
   const panel = div('node-context-panel', ''); panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-label', prefs.tab)
   const rows = document.createElement('ul'); rows.className = 'list context-peers'
+  if (prefs.tab === 'marketplace') {
+    const form = document.createElement('form'), query = document.createElement('input')
+    query.placeholder = 'Find a capability…'; query.setAttribute('aria-label', 'Search marketplace'); query.required = true
+    const submit = button('secondary', 'Search', () => undefined); submit.type = 'submit'; submit.disabled = !app.isOnline('fos')
+    form.append(query, submit)
+    form.onsubmit = event => { event.preventDefault(); const id = app.addRowAt([], 'query', query.value, { extras: { query: { market: true } } }); const row = app.currentView()?.tasks.find(r => r.id === id); if (row) void app.runQueryAt([], row) }
+    panel.append(span('muted', 'Capabilities published by Fos peers. Private offers remain in their own contexts.'), form)
+    if (app.currentRow()?.kind === 'template') panel.append(button('secondary', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
+    el.replaceChildren(tabs, panel); return
+  }
   if (prefs.tab === 'utilities') { panel.append(constructorPalette(app, ['inventory', 'calendar', 'account', 'bank'])); el.replaceChildren(tabs, panel); return }
   if (prefs.tab === 'input' || prefs.tab === 'values' || prefs.tab === 'constructors' || prefs.tab === 'actions') { el.replaceChildren(tabs); return }
   if (!state.atRoot) rows.append(...renderRootRows(state, app, prefs.tab));
@@ -985,6 +995,11 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
       el.append(button('link chat-path', label, () => app.zoomTo([...at, row.id])))
       return el
     })
+    if (!rows.length) {
+      const empty = document.createElement('li'); empty.className = 'muted view-empty'
+      empty.textContent = prefs.layout === 'chat' ? 'No comments here yet. Write a message to start; tasks remain in Tree and Queue.' : 'No open tasks here.'
+      rows.push(empty)
+    }
   }
   const preview = proposalPreview(app)
   if (preview) {
@@ -1976,6 +1991,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     const offers = p.name === 'fos' ? p.capabilities : p.integration ? p.integration.provides : p.accepts
     if (offers.length) lines.append(direction('available here:', 'Handlers available to this node and its children. Overrides inherit until another node overrides them.', offers.map(cap => {
       const b = button('chip cap-chip' + (p.disabled.includes(cap) || !p.online ? ' off' : ''), CAPABILITY_LABEL[cap] ?? cap, () => app.setPeerOffers(p.name === 'fos' ? 'fos' : p.id, [cap], p.disabled.includes(cap)))
+      if (cap === 'persist' && p.name === 'fos') b.title = 'Disabling Fos storage pauses account replication of this entire attached group and its history. Direct device replication remains available. Re-enabling does not release excluded history; use a separate data session for server-synced content.'
       b.disabled = !owner; b.setAttribute('aria-pressed', String(!p.disabled.includes(cap))); return b
     })))
     const customOffers = app.handlerOffers().filter(o => o.peerId === p.id && !o.capability)
@@ -2006,8 +2022,7 @@ function renderFooter(el: HTMLElement, state: AppState, app: App): void {
   if (state.virtual) items.push(div('muted', `${state.virtual.name} · virtual peer of ${state.virtual.hostName}${state.virtual.capabilities.includes('read') && !state.virtual.capabilities.includes('edit') ? ' · read-only (local edits stay here)' : ''}`))
   if (state.notice) items.push(div(`notice ${state.notice.kind}`, state.notice.text))
   const meta = div('meta', '')
-  meta.append(span('muted', state.deviceName))
-  if (state.session) meta.append(span('muted', ` · ${state.session.username}${state.session.kind === 'peer' ? ' (invited)' : ''}`))
+  if (state.session) meta.append(span('muted', `${state.session.username}${state.session.kind === 'peer' ? ' (invited)' : ''}`))
   items.push(meta, legalLinks(''))
   el.replaceChildren(...items)
 }
@@ -2225,6 +2240,7 @@ function renderMarket(body: HTMLElement, state: AppState, app: App): void {
   }
   if (!node.view.tasks.length) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = 'No rows shown.'; rows.append(li) }
   body.append(rows)
+  if (node.capability) { body.append(div('muted', 'Published capability snapshot. This view does not grant edit or execution authority on the publishing peer.')); return }
 
   if (node.myProposal) {
     const mine = node.view.proposals[0]

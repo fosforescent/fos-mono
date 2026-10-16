@@ -7479,7 +7479,16 @@
   function rejectProposalAt(replica, at, proposalCid, now) {
     return editNode(replica, at, now, (node) => markProposalRejected(replica.store, node, proposalCid));
   }
+  function assertServerReplicationAllowed(replica) {
+    for (const node of Object.values(reachableNodes(replica.store, [headCid(replica), replica.meta.baseCid]))) {
+      if (node.data.peerId?.content === "fos" && node.data.disabledCapabilities?.content.includes("persist")) {
+        throw new Error("Fos storage is excluded from this group or its history. Use direct device replication. Account sync is paused for the entire attached group, including historical versions.");
+      }
+    }
+  }
   function buildSyncRequest(replica, branch, options = {}) {
+    if (options.recipient !== "device")
+      assertServerReplicationAllowed(replica);
     branch ?? (branch = replica.meta.branch);
     const base = replica.meta.baseCid;
     const head = options.push === false ? base ?? put(replica.store, { data: {}, children: [] }) : headCid(replica);
@@ -8576,7 +8585,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist"];
   var INTEGRATION_PEERS = [
     { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
     { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
@@ -8584,7 +8593,7 @@
     { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
     { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
   ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer"];
+  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer", "persist"];
   function isLink(store, value) {
     if (isHandle(value))
       return false;
@@ -8693,6 +8702,7 @@
       case "rank":
       case "poll":
       case "peer":
+      case "persist":
       case "timer":
       case "cron":
       case "task-completion":

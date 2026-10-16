@@ -386,7 +386,11 @@ textarea.edit { width: 100%; font: inherit; font-family: ui-monospace, SFMono-Re
 .layout-grid > .task { border: 1px solid var(--line); border-radius: 8px; padding: 12px; align-items: start; background: var(--card); }
 .layout-grid > .ghost { grid-column: 1 / -1; }
 .layout-chat > .task:not(.ghost) { padding: 12px; border-radius: 10px; background: var(--card); margin: 8px 0; flex-wrap: wrap; }
-.chat-path { width: 100%; padding-left: 30px; overflow-wrap: anywhere; }
+.layout-queue > .task:not(.ghost) { flex-wrap: wrap; }
+/* Flat views navigate through the breadcrumb; tree expansion has no effect here. */
+.layout-chat > .task > .toggle, .layout-queue > .task > .toggle { display: none; }
+.view-empty { padding: 12px; list-style: none; }
+.chat-path { flex: 0 0 100%; box-sizing: border-box; width: 100%; padding-left: 30px; overflow-wrap: anywhere; }
 :root[data-theme="light"] { color-scheme: light; --bg:#fafafa; --fg:#1a1a1a; --muted:#6b6b6b; --line:#e2e2e2; --card:#fff; --accent:#2563eb; --danger:#b91c1c; --warn-bg:#fff7ed; --warn-fg:#9a3412; --ok:#15803d; --changed-bg:#fef3c7; }
 :root[data-theme="dark"] { color-scheme: dark; --bg:#111214; --fg:#ececec; --muted:#9a9a9a; --line:#2a2b2f; --card:#1a1b1e; --accent:#3b82f6; --danger:#f87171; --warn-bg:#2a1d10; --warn-fg:#fdba74; --ok:#4ade80; --changed-bg:#3a2f10; }
 @media (max-width: 640px) { .node-actions button, .node-context button, .node-values button, .device-settings button { min-height: 44px; } .placeholder-form > * { flex-basis: 100%; } }

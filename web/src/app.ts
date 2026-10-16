@@ -761,7 +761,7 @@ export class App {
     const session = this.state.session
     const generation = this.authGeneration
     try {
-      let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !pullOnly && (transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush')) })
+      let request: SyncRequest = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { recipient: transport === 'account' ? 'server' : 'device', push: !pullOnly && (transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush')) })
       const send = (packet: SyncRequest) => transport === 'account'
         ? peerSync(session as Session, packet)
         : transport === 'virtual' ? this.virtualPeers!.sync(packet) : (this.link as DirectLink).sync(packet)
@@ -771,7 +771,7 @@ export class App {
         const missing = error instanceof ApiError && (error.code === 'missing-nodes' || error.message.startsWith('head node not provided'))
         if (!missing || (this.state.session !== session || generation !== this.authGeneration)) throw error
         // Keep the agreed merge base. A reset server needs its closure too.
-        request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { push: !pullOnly && (transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush')), full: true })
+        request = buildSyncRequest(this.state.replica, this.currentBranch() ?? undefined, { recipient: transport === 'account' ? 'server' : 'device', push: !pullOnly && (transport === 'virtual' ? this.virtualCapabilities.includes('edit') : !policy || policy.to.includes('autopush')), full: true })
         response = await send(request)
       }
       if ((this.state.session !== session || generation !== this.authGeneration)) return
@@ -1289,7 +1289,7 @@ export class App {
     for (let i = 0; i <= this.peerContextPath().length; i++) for (const m of view(this.state.replica, this.peerContextPath().slice(0, i))?.members ?? []) inherited.set(m.peerId, m)
     const member = inherited.get(peerId)
     const provider = this.contextPeers().find(p => p.id === peerId)
-    const accepts = member?.accepts ?? provider?.integration?.provides ?? provider?.accepts ?? offers
+    const accepts = [...new Set([...(member?.accepts ?? provider?.integration?.provides ?? provider?.accepts ?? []), ...offers])]
     const disabled = enabled ? (member?.disabled ?? []).filter(c => !offers.includes(c)) : [...new Set([...(member?.disabled ?? []), ...offers])]
     let r = this.state.replica
     // Older Home constructors passed the exact root member as a default argument.
@@ -1674,9 +1674,10 @@ export class App {
   handlerOffers(path = this.constructorContext()) {
     return discoverHandlers(this.state.replica, path, { isPeerActive: id => id === this.state.replica.meta.peerId || this.isOnline(id) })
   }
-  publishCurrentTemplate(): void {
+  publishCurrentTemplate(market = false): void {
     if (!this.canApprove() || this.currentRow()?.kind !== 'template') return
-    try { this.edit(publishTemplate(this.state.replica, this.state.view.slice(0, -1), this.state.view, this.currentRow()!.title, this.now())); this.notify('info', 'This template version is advertised by this device in its parent context.') }
+    if (market && (!this.state.session || !this.isOnline('fos'))) { this.notify('error', 'Connect to Fos before publishing to the marketplace.'); return }
+    try { this.edit(publishTemplate(this.state.replica, this.state.view.slice(0, -1), this.state.view, this.currentRow()!.title, this.now(), market)); this.notify('info', market ? 'This template version is published to the Fos marketplace after sync.' : 'This template version is advertised by this device in its parent context.') }
     catch (error) { this.notify('error', String(error)) }
   }
   toggleHandler(peerId: string, id: string, enabled: boolean): void {
@@ -3021,7 +3022,7 @@ export class App {
   // Manual relay (fallback when no channel could be opened)
 
   manualMakeRequest(): void {
-    this.manualRequest = buildSyncRequest(this.state.replica)
+    this.manualRequest = buildSyncRequest(this.state.replica, undefined, { recipient: 'device' })
     this.set({ manual: { requestCode: ManualRelay.encodeRequest(this.manualRequest) } })
   }
 

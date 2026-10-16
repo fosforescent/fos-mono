@@ -668,7 +668,20 @@ export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: strin
  * peer only serves what it has and nothing but the connection leaves the device; local edits stay local, re-merged
  * over whatever comes back (`completeSync` merges sent head → local head → result).
  */
-export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean; full?: boolean } = {}): SyncRequest {
+/** Never send a graph containing an explicit server exclusion to the account transport.
+ * Includes history, proposals, constructors and inactive branches: these are all in the wire closure.
+ * Device transports still replicate the original content-addressed graph without rewriting its IDs.
+ */
+export function assertServerReplicationAllowed(replica: Replica): void {
+  for (const node of Object.values(reachableNodes(replica.store, [headCid(replica), replica.meta.baseCid]))) {
+    if (node.data.peerId?.content === 'fos' && node.data.disabledCapabilities?.content.includes('persist')) {
+      throw new Error('Fos storage is excluded from this group or its history. Use direct device replication. Account sync is paused for the entire attached group, including historical versions.')
+    }
+  }
+}
+
+export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean; full?: boolean; recipient?: 'server' | 'device' } = {}): SyncRequest {
+  if (options.recipient !== 'device') assertServerReplicationAllowed(replica)
   branch ??= replica.meta.branch
   const base = replica.meta.baseCid
   const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : headCid(replica)

@@ -1,7 +1,7 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { mergeNodes } from './merge'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
-import { childRows, supplyOf, findRowByAlias, commitRoot, content, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
+import { childRows, supplyOf, findRowByAlias, commitRoot, content, refValueCid, refTypeCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
 export const EVALUATION_ARGUMENT = 'fos:evaluation'
@@ -58,6 +58,8 @@ export type EvaluationDriver = BindingEnvironment & {
   /** Recheck live authority/availability; return why a handler cannot run. */
   check(step: EvaluationStep): string[]
   handles(step: EvaluationStep): boolean
+  /** Explicit return slots may be unfilled before execution and written by the effect. */
+  outputs?(step: EvaluationStep): string[]
   open?(step: EvaluationStep, transaction: string): Promise<void>
   effect?(step: EvaluationStep, operation: string): Promise<void>
   commit?(step: EvaluationStep, transaction: string): Promise<void>
@@ -89,7 +91,8 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   if (!cid) return ['The node no longer exists.']
   const issues = [...driver.check(step)]
   const candidates = contextBindings(r, step.path, driver)
-  for (const arg of argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:'))) {
+  const outputs = new Set(driver.outputs?.(step) ?? [])
+  for (const arg of argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
     issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, driver).problems)
   }
   issues.push(...resolveText(r, step.path, valueContent(r.store, cid).data.description?.content ?? '').bindings.flatMap(b => b.problems))
@@ -105,11 +108,11 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   return issues
 }
 // Refuse changed instructions and bound arguments across an await; effect results are handled separately.
-const instruction = (r: Replica, path: Scope) => {
+const instruction = (r: Replica, path: Scope, outputs: string[] = []) => {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return null
   const { updated: _updated, ...data } = valueContent(r.store, cid).data
-  return JSON.stringify({ data, arguments: argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:')), context: contextBindings(r, path).filter(a => !a.name?.startsWith('fos:')) })
+  return JSON.stringify({ data, arguments: argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '')), context: contextBindings(r, path).filter(a => !a.name?.startsWith('fos:') && !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '')) })
 }
 
 export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promise<EvaluationRecord> {
@@ -121,7 +124,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   if (path.some((id, i) => id !== 'fos:home' && view(initial, path.slice(0, i))?.tasks.some(t => t.id === id && t.kind === 'template'))) throw new Error('Apply the template before evaluating it.')
   const issues = [...allocationProblems(initial, steps), ...steps.flatMap(step => problems(driver.get(), step, driver))]
   if (issues.length) throw new Error([...new Set(issues)].join('\n'))
-  const versions = new Map(steps.map(step => [JSON.stringify(step.path), instruction(driver.get(), step.path)]))
+  const versions = new Map(steps.map(step => [JSON.stringify(step.path), instruction(driver.get(), step.path, driver.outputs?.(step))]))
   const children = new Map(steps.map(step => [JSON.stringify(step.path), JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.kind]))]))
   const applied = new Set<string>()
   const record: EvaluationRecord = { id: newId(), status: 'opening', started: driver.now(), effects: [] }
@@ -131,7 +134,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     if (driver.now() - record.started > EVALUATION_BUDGET_MS) throw new Error('Evaluation exceeded two minutes. Review its effects before retrying.')
     const current = evaluationRecord(driver.get(), path)
     if (!current || current.id !== record.id || !['opening', 'running', 'committing'].includes(current.status)) throw new Error('The evaluation claim changed. Review recovery before retrying.')
-    if (instruction(driver.get(), step.path) !== versions.get(JSON.stringify(step.path))) throw new Error('Instructions changed during evaluation. Review and run again.')
+    if (instruction(driver.get(), step.path, driver.outputs?.(step)) !== versions.get(JSON.stringify(step.path))) throw new Error('Instructions changed during evaluation. Review and run again.')
     if (!applied.has(JSON.stringify(step.path)) && JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.kind])) !== children.get(JSON.stringify(step.path))) throw new Error('The child rows changed during evaluation. Review and run again.')
     const errors = problems(driver.get(), fresh(step), driver)
     if (errors.length) throw new Error(errors.join('\n'))
@@ -153,7 +156,14 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       const effect = { path: step.path, title: current.row.title, status: 'attempting' as EvaluationRecord['effects'][number]['status'] }
       record.effects.push(effect); await save() // persist before sending, including an uncertain failed response
       applied.add(JSON.stringify(step.path))
+      const beforeCid = resolveScope(driver.get().store, headCid(driver.get()), step.path)!
+      const outputs = new Set(driver.outputs?.(step) ?? [])
+      const expectedOutputs = argumentRefs(driver.get().store, beforeCid).filter(a => outputs.has(content(driver.get().store, a.cid).data.alias?.id ?? '')).map(a => ({ id: content(driver.get().store, a.cid).data.alias!.id, type: a.type }))
       await driver.effect(current, `${record.id}:${JSON.stringify(step.path)}`)
+      for (const output of expectedOutputs) {
+        const r = driver.get(), cid = resolveScope(r.store, headCid(r), [...step.path, output.id])
+        if (!cid || refTypeCid(r.store, content(r.store, cid)) !== output.type || !refValueCid(r.store, content(r.store, cid)) || resolveBinding(r.store, output.type, cid, contextBindings(r, step.path, driver), undefined, driver).status !== 'ready') throw new Error('The handler did not supply a valid return value. Review its result before continuing.')
+      }
       effect.status = 'applied'; await save()
       if (!fresh(step).row?.requirement?.satisfied) throw new Error('The handler has not fulfilled its requirement. Review its result before continuing.')
     }

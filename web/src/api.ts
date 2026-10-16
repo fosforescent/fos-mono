@@ -207,7 +207,7 @@ export function searchRows(session: Session, query: string, options: { market?: 
   return authed(session, 'POST', '/user/data/search', { query, market: !!options.market, limit: options.limit ?? 10 })
 }
 
-export type MarketNode = { owner: string; aliasId: string; view: NodeView; myProposal: { id: string; status: string } | null }
+export type MarketNode = { capability?: boolean; owner: string; aliasId: string; view: NodeView; myProposal: { id: string; status: string } | null }
 
 export function getMarketNode(session: Session, owner: string, aliasId: string): Promise<MarketNode> {
   return authed(session, 'GET', `/user/data/market/node?owner=${encodeURIComponent(owner)}&id=${encodeURIComponent(aliasId)}`)

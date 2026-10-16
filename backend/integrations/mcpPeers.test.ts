@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
+import { evaluationRecord, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 import { createMcpPeerHandlers, mcpMembersAbove, type McpPeerDeps, type McpServerInfo } from './mcpPeers'
 
 function setup(servers: McpServerInfo[]) {
@@ -78,10 +78,17 @@ test('failed calls retain their binding, retries cannot silently switch to a nea
   expect(saved.length).toBe(firstSaves) // no endless after-save retry loop
   await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
   deps.callTool = async (server) => { invoked.push(server.id); return 'returned' }
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(200)
-  expect(invoked).toEqual([5, 5, 5])
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).json.error).toMatch(/needs recovery/)
+  expect(invoked).toEqual([5])
+  let recovered = replica()
+  const scope = ['proj', 'trip', 'rq']
+  expect(evaluationRecord(recovered, scope)?.status).toBe('needs-recovery')
+  for (const row of view(recovered, scope)!.tasks.filter(t => t.id.startsWith('rollback:'))) recovered = setTaskDone(recovered, scope, row.id, true, 20)
+  recoverEvaluation(recovered, scope, 21)
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).json).toEqual({ text: 'returned' })
+  expect(invoked).toEqual([5, 5])
   expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
-  expect(invoked).toHaveLength(3)
+  expect(invoked).toHaveLength(2)
   expect(view(replica(), ['proj', 'trip'])!.tasks[0]!.requirement!.satisfied).toBe(true)
 })
 
@@ -98,7 +105,7 @@ test('an unavailable bound provider does not fall back and unsatisfied dependenc
   await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq2' })
   deps.servers = async () => [{ ...weather, id: 6 }]
   await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq2' })).json.error).toMatch(/bound MCP handler is unavailable/)
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq2' })).json.error).toMatch(/needs recovery/)
 })
 
 
@@ -124,7 +131,7 @@ test('an explicit handler ref is honored and the return ref addresses the result
   r = replica()
   const request = valueContent(store, resolveScope(store, headCid(r), scope)!)
   expect(refArguments(store, request, capabilityTarget(store, 'tool'))[0]!.targetCid).toBe(handler)
-  const returned = refArguments(store, request, store.primitive.documentField.getId())
+  const returned = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
   expect(returned).toHaveLength(1)
   expect(content(store, returned[0]!.targetCid!).data.description!.content).toBe('weather(Paris next week) = sunny')
 })
