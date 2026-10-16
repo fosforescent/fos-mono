@@ -197,3 +197,22 @@ test('the server keeps its own root and shares only Home with constructor-aware 
   await handler(fakeReq(buildSyncRequest(createReplica('old-device'))), legacy.res)
   expect(legacy.sent().status).toBe(409)
 })
+
+test('Home sync persists public siblings and peer references, never excluded nested content', async () => {
+  const { shareHome, addMemberAt, setMemberCapabilitiesAt } = await import('@fosforescent/shared/sync/index')
+  const { deps, stores } = makeDeps()
+  let client = shareHome(ensureHomeContext(createReplica('desktop'), 0))
+  client = addTask(client, [HOME_ID], 'Private project', 1, 'private')
+  client = addMemberAt(client, [HOME_ID, 'private'], 'fos', 'fos', ['persist'], 2)
+  client = setMemberCapabilitiesAt(client, [HOME_ID, 'private'], 'fos', ['persist'], ['persist'], 3)
+  client = addTask(client, [HOME_ID, 'private'], 'Never upload this', 4, 'secret')
+  client = addTask(client, [HOME_ID], 'Shared sibling', 5, 'public')
+  const packet = buildSyncRequest(client), response = fakeRes()
+  await createPeerSyncHandler(deps)(fakeReq(packet), response.res)
+  expect(response.sent().status).toBe(200)
+  expect(JSON.stringify([...stores.get(7)!.table.values()])).not.toContain('Never upload this')
+  expect(JSON.stringify(response.sent().body)).not.toContain('Private project')
+  expect(view(createReplica('server', stores.get(7)!), [HOME_ID])!.tasks.find(t => t.id === 'private')!.refPeer).toBe('desktop')
+  client = completeSync(client, packet, response.sent().body as SyncResponse).replica
+  expect(view(client, [HOME_ID, 'private'])!.tasks[0]!.id).toBe('secret')
+})

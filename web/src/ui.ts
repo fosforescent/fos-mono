@@ -1510,6 +1510,11 @@ function firstLine(text: string): string {
 function renderRefBody(task: TaskView, app: App): HTMLElement {
   const body = span('title ref', '')
   const arrow = span('ref-arrow', '→')
+  if (task.refPeer) {
+    body.append(arrow, span('muted', 'Content held by peer ' + task.refPeer.slice(0, 8)))
+    body.title = 'Connect directly to the owning peer to receive this node. Fos does not store its content.'
+    return body
+  }
   if (app.sharedLink(task.id)) {
     body.append(arrow, button('link ref-link', firstLine(task.title) || 'Shared node', () => app.openSharedLink(task.id)))
     return body
