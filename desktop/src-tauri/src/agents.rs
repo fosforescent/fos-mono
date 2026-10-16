@@ -64,7 +64,13 @@ pub async fn agent_start(
         if !matches!(request["provider"].as_str(), Some("codex" | "claude")) {
             return Err("Unknown SDK".into());
         }
-        let path = repository(request["cwd"].as_str().ok_or("Repository path required")?).await?;
+        let path = if request.get("evaluation").is_some() && request["cwd"].as_str().unwrap_or("").is_empty() {
+            let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("evaluation-agent");
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let output = Command::new("git").args(["init", "--quiet"]).arg(&dir).output().await.map_err(|e| e.to_string())?;
+            if !output.status.success() { return Err("Cannot prepare evaluation workspace".into()); }
+            dir.to_string_lossy().into_owned()
+        } else { repository(request["cwd"].as_str().ok_or("Repository path required")?).await? };
         request["cwd"] = json!(path);
         let prompt = request["prompt"].as_str().ok_or("Task prompt required")?;
         if prompt.trim().is_empty() || prompt.len() > 100_000 {
@@ -87,7 +93,7 @@ pub async fn agent_start(
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("Install Node.js 22+ on PATH: {e}"))?;
+        .map_err(|e| format!("Install Node.js 20+ on PATH: {e}"))?;
     let mut input = child.stdin.take().ok_or("Runtime stdin unavailable")?;
     input
         .write_all(format!("{}\n", request).as_bytes())

@@ -1,4 +1,6 @@
 /** Public participation is a projection of an ordinary node, with inputs stored in typed refs. */
+import { nodeAuthorityAt } from './node-context'
+import { nodeLinkMaskAt } from './node-provider'
 import { argumentRefs, capabilityPeers } from './bindings'
 import { readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
 import { addMemberAt, homePath, addRow, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
@@ -7,12 +9,12 @@ import { capabilityTarget, content, hasCapability, resolveScope, refValueCid, ty
 export const SHARE_ARGUMENT = 'fos:sharing'
 export const POLL_ARGUMENT = 'fos:poll'
 export const audiencePeer = (audience: 'public' | 'users') => `audience:${audience}`
-export type SharePolicy = { id: string; audience: 'public' | 'users'; enabled: boolean }
+export type SharePolicy = { id: string; audience: 'public' | 'users'; enabled: boolean; template?: boolean; execution?: { peer: string; entry: SharedAddress } }
 export type Poll = { mode: 'approval' | 'rank' }
-export type SharedInput = { key: string; name: string; kind: 'text' | 'allocation'; type?: string; unit?: string; amount?: number; start?: number; end?: number }
+export type SharedInput = { key: string; name: string; kind: 'text' | 'allocation' | 'confirmation' | 'choice'; path?: Scope; options?: string[]; direction?: 'provide' | 'consume'; type?: string; unit?: string; amount?: number; start?: number; end?: number }
 export type Participation = {
   peer: string; name?: string; labels?: Record<string, string>; audience: string; revision: string; updated: number
-  approvals: string[]; ranking: string[]; fields: Record<string, string | { amount: number; type: string; unit: string; start?: number; end?: number }>
+  approvals: string[]; ranking: string[]; fields: Record<string, string | boolean | number | { amount: number; type: string; unit: string; start?: number; end?: number }>
   account?: { owner: string; ref: string }
 }
 export type SharedNode = {
@@ -20,6 +22,7 @@ export type SharedNode = {
   inputs: SharedInput[]; options: Array<{ id: string; label: string }>; poll: Poll | null
   proposals: Array<{ id: string; label: string }>; revision: string
   audience: 'public' | 'users'; counts: Record<string, number>; rankings: Record<string, number>; participants: number
+  execution?: { status: string; error?: string };
   mine?: Participation | null; capabilities?: string[]; sources?: Record<string, string>
 }
 export function sharing(r: Replica, path: Scope): SharePolicy | null {
@@ -50,6 +53,27 @@ export function sharedInputs(r: Replica, path: Scope): SharedInput[] {
   const allocations = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'allocation' ? [{ key: row.id, name: row.title, kind: 'allocation' as const, type: row.requirement.resource ?? 'inventory', unit: row.requirement.unit ?? 'unit', amount: row.requirement.amount, ...(row.requirement.start !== undefined ? { start: row.requirement.start } : {}), ...(row.requirement.end !== undefined ? { end: row.requirement.end } : {}) }] : [])
   return [...text, ...allocations].slice(0, 32)
 }
+/** Only declared, unfilled inputs of an execution are writable by its visitor. */
+export function executionInputs(r: Replica, root: Scope): SharedInput[] {
+  const result: SharedInput[] = []
+  const walk = (path: Scope, depth: number) => {
+    if (depth > 8 || result.length >= 32) return
+    for (const field of sharedInputs(r, path).filter(f => f.kind === 'text')) result.push({ ...field, key: JSON.stringify([...path.slice(root.length), field.key]), path: [...path.slice(root.length), field.key] })
+    for (const row of view(r, path)?.tasks ?? []) {
+      if (result.length >= 32) break
+      const req = row.requirement, relative = [...path.slice(root.length), row.id]
+      if (row.allocation && !view(r, path)?.tasks.some(t => t.supply?.ref === row.id) && !readNodeValue(r, [...path, row.id], 'fos:consumed')) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: row.allocation.type, unit: row.allocation.unit, amount: row.allocation.amount, start: row.allocation.start, end: row.allocation.end })
+      if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability)) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
+      if (row.kind !== 'ref' && row.kind !== 'template') walk([...path, row.id], depth + 1)
+    }
+  }
+  const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) : null
+  const req = current?.requirement
+  if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability)) result.push({ key: '[]', path: [], name: current!.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
+  if (current?.allocation && !readNodeValue(r, root, 'fos:consumed')) result.push({ key: '[]', path: [], name: current.title, kind: 'allocation', direction: 'consume', ...current.allocation })
+  walk(root, 0); return result.slice(0, 32)
+}
+
 /** Keep the foreign identity on the ordinary ref; its target contains only the permitted projection. */
 export function writeParticipation(r: Replica, path: Scope, record: Participation, now: number): Replica {
   return writeLinkedNodeValue(r, path, `fos:guest:${record.peer}`, record, now, record.account ? { state: { owner: record.account.owner, id: record.account.ref } } : {})
@@ -63,16 +87,21 @@ export function participants(r: Replica, path: Scope): Participation[] {
   const node = view(r, path)
   return (node?.members ?? []).flatMap(m => { const record = participation(r, path, m.peerId); return record ? [record] : [] })
 }
-export function sharedProjection(r: Replica, path: Scope, revision: (value: unknown) => string): SharedNode {
+export function sharedProjection(r: Replica, path: Scope, revision: (value: unknown) => string, peer?: string, interactive = false): SharedNode {
   const node = view(r, path), policy = sharing(r, path)
   if (!node || !policy) throw new Error('Shared node unavailable.')
+  const visitor = peer ?? audiencePeer(policy.audience)
+  const visible = (at: Scope) => { try { nodeAuthorityAt(r, at, { peerId: visitor, scope: path, capabilities: ['read'] }); return true } catch { return false } }
+  const textVisible = (at: Scope) => { const mask = nodeLinkMaskAt(r, at, visitor); return !mask?.fields || mask.fields.includes('description') }
   const current = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
   const rows: SharedNode['rows'] = []
   const walk = (at: Scope, depth: number) => {
     if (depth > 8 || rows.length >= 200) return
     for (const row of view(r, at)?.tasks ?? []) {
       if (rows.length >= 200) break
-      rows.push({ id: row.id, title: row.title.slice(0, 8000), kind: row.kind, depth })
+      const childPath = [...at, row.id]
+      if (!visible(childPath)) continue
+      rows.push({ id: row.id, title: textVisible(childPath) ? row.title.slice(0, 8000) : '', kind: row.kind, depth })
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
       if (row.kind !== 'ref') walk([...at, row.id], depth + 1)
     }
@@ -82,7 +111,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   const poll = configured && ['approval', 'rank'].includes(configured.mode) && current?.requirement?.capability === 'choice' && capabilityPeers(r, path, 'poll').includes('fos') ? configured : null
   const options = poll ? (current!.requirement!.options ?? []).slice(0, 100).map((label, index) => ({ id: `option:${index}`, label })) : []
   const proposals = node.proposals.filter(p => p.status === 'open').slice(0, 100).map(p => ({ id: `proposal:${p.id}`, label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
-  const inputs = sharedInputs(r, path)
+  const inputs = ((policy.execution || interactive) ? executionInputs(r, path) : sharedInputs(r, path)).filter(field => { const at = [...path, ...(field.path ?? [field.key])]; return visible(at) && textVisible(at) })
   const key = revision({ policy: policy.id, title: current?.title ?? node.name, rows, inputs, options, poll, proposals })
   const counts: Record<string, number> = {}, rankings: Record<string, number> = {}
   const cid = resolveScope(r.store, headCid(r), path)!
@@ -91,7 +120,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'approve') && hasCapability(r.store, content(r.store, cid), p.peer, 'approve')) for (const id of p.approvals) counts[id] = (counts[id] ?? 0) + 1
     if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'rank') && hasCapability(r.store, content(r.store, cid), p.peer, 'rank')) p.ranking.forEach((id, i) => { rankings[id] = (rankings[id] ?? 0) + p.ranking.length - i })
   }
-  return { title: (current?.title ?? node.name ?? 'Shared node').slice(0, 8000), rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
+  return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), title: textVisible(path) ? (current?.title ?? node.name ?? 'Shared node').slice(0, 8000) : 'Shared node', rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
 }
 
 export type SharedAddress = { owner: string; path: Scope; share: string }

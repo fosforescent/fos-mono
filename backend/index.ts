@@ -1,3 +1,5 @@
+import { createExecutionHandlers } from './sync/execution'
+import { createNodeAgentMcp } from './mcp/nodeAgent'
 import { createTaskTreeMcp } from './mcp/taskTree'
 import { createSharingHandlers } from './sync/sharing'
 import { createEvaluationService } from './sync/evaluation'
@@ -284,10 +286,12 @@ app.post('/auth/check-username', slowDown({
 app.put('/error', maxRequests(10), putError)
 
 // Public links use audience-scoped guest receipts; they never grant account-sync credentials.
+const executionHandlers = createExecutionHandlers(prismaPeerSyncDeps, process.env.JWT_SECRET!)
 const sharingHandlers = createSharingHandlers(prismaPeerSyncDeps, process.env.JWT_SECRET!)
 const guestThrottle = slowDown({ windowMs: 60_000, delayAfter: 30, delayMs: 500 })
 app.post('/public/node/visit', guestThrottle, sharingHandlers.visit)
 app.post('/public/node/input', guestThrottle, sharingHandlers.submit)
+app.all('/public/evaluation/mcp', guestThrottle, executionHandlers.publicMcp)
 
 // Device connection through an invite token (no session yet): claim, then poll for approval.
 app.post('/peer/connect', slowDown({
@@ -382,6 +386,10 @@ dataRoutes.post('/search', searchHandlers.search)
 dataRoutes.post('/search/reindex', searchHandlers.reindex)
 dataRoutes.get('/market/node', searchHandlers.marketNode)
 dataRoutes.post('/market/proposals', searchHandlers.marketProposal)
+dataRoutes.post('/evaluation', executionHandlers.http)
+dataRoutes.post('/peer-sync/evaluation', executionHandlers.http)
+dataRoutes.all('/peer-sync/evaluation/mcp', executionHandlers.mcp)
+dataRoutes.all('/evaluation/mcp', executionHandlers.mcp)
 dataRoutes.post('/sharing', sharingHandlers.configure)
 dataRoutes.post('/sharing/visit', sharingHandlers.visit)
 dataRoutes.post('/sharing/input', sharingHandlers.submit)
@@ -560,6 +568,7 @@ const evaluationService = createEvaluationService(prismaPeerSyncDeps, {
   githubConnected: async id => !!await integrationDeps.connections.get(id, 'github'),
   createIssue: integrations.createIssue
 })
+dataRoutes.all('/peer-sync/agent-mcp', createNodeAgentMcp(prismaPeerSyncDeps))
 const taskTreeMcp = createTaskTreeMcp(prismaPeerSyncDeps, evaluationService.runNode)
 dataRoutes.all('/peer-sync/mcp', (req, res) => void taskTreeMcp(req, res))
 startCronRunner({
@@ -650,7 +659,7 @@ mcpMiddleware.attachToServer(server, '/mcp');
 // Make MCP proxy available globally for other parts of the application
 (global as any).mcpProxy = mcpProxy
 
-attachWs(server)
+attachWs(server, executionHandlers.interact)
 
 // Start the server
 const PORT = parseInt(process.env.PORT || '4000', 10);

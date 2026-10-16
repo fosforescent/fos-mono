@@ -6,10 +6,10 @@ Open a task under that repository, select **Actions**, and choose **Run Claude**
 
 Requirements:
 
-- Node.js **22 or later** and Git on the desktop process's PATH.
+- Node.js **20 or later** and Git on the desktop process's PATH.
 - Codex: native Codex sign-in (`codex login`) or `OPENAI_API_KEY` in the native environment.
 - Claude: `ANTHROPIC_API_KEY`, or the SDK's Bedrock/Vertex environment configuration. This integration does not offer consumer Claude sign-in.
-- Run **Check agent integrations** after changing configuration. Relaunch the desktop app if its environment changed. Keys are never stored in Fos nodes or sent to the webview.
+- Run **Check agent integrations** after changing configuration. The check reports missing SDK installations and credentials separately; it does not make a model request or validate credentials with the provider. Relaunch the desktop app if its environment changed. Keys are never stored in Fos nodes or sent to the webview.
 
 `npm run prepare:agents` in `desktop` installs the pinned SDK dependencies. Desktop dev/build hooks run it automatically; release resources include the runtime and dependencies. Native SDK binaries are platform-specific: build on the target OS/architecture. A universal Tauri wrapper does not make the bundled SDK binaries universal. Mobile and browser clients cannot run these local processes.
 

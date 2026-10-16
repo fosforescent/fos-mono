@@ -1,3 +1,5 @@
+import { connectEvaluationAgent } from './node-agent'
+import { iconSvg } from './icons'
 /** Native SDK adapters use ordinary repository arguments and a scoped graph projection. */
 import { argumentRefs, capabilityTarget, content, headCid, refValueCid, resolveScope, view, type Replica, type Scope } from '../../shared/sync/index'
 import { inTauri, tauriInvoke } from './project'
@@ -34,9 +36,9 @@ export function agentContext(r: Replica, at: Scope) {
   walk(at, [], 'task')
   return { revision: headCid(r), nodes }
 }
-type Event = { type: string; message?: string; text?: string; id?: string; tool?: string; input?: unknown; codex?: boolean; claude?: boolean }
+type Event = { type: string; message?: string; text?: string; id?: string; tool?: string; input?: unknown; codex?: boolean; claude?: boolean; diagnostics?: Partial<Record<'codex' | 'claude', string>> }
 type Poll = { finished: boolean; events: Event[] }
-const availability = new WeakMap<App, { codex?: boolean; claude?: boolean; error?: string; loading?: boolean }>()
+const availability = new WeakMap<App, { codex?: boolean; claude?: boolean; diagnostics?: Partial<Record<'codex' | 'claude', string>>; error?: string; loading?: boolean }>()
 async function probe(app: App) {
   const state = { loading: true } as NonNullable<ReturnType<typeof availability.get>>; availability.set(app, state)
   try {
@@ -44,7 +46,7 @@ async function probe(app: App) {
     for (let i = 0; i < 40; i++) {
       const result = await tauriInvoke<Poll>('agent_poll', { id })
       const event = result?.events.find(e => e.type === 'availability')
-      if (event) { state.codex = event.codex; state.claude = event.claude; break }
+      if (event) { state.codex = event.codex; state.claude = event.claude; state.diagnostics = event.diagnostics; break }
       if (result?.finished) throw new Error(result.events.find(e => e.type === 'error')?.message || 'SDK runtime unavailable')
       await new Promise(resolve => setTimeout(resolve, 250))
       if (i === 39) { await tauriInvoke('agent_control', { id, message: { cancel: true } }); throw new Error('SDK check timed out') }
@@ -62,17 +64,18 @@ export function desktopAgentControls(app: App): HTMLElement | null {
   for (const provider of ['claude', 'codex'] as const) if (state[provider]) {
     const b = document.createElement('button'); b.textContent = `Run ${provider === 'claude' ? 'Claude' : 'Codex'}…`; b.onclick = () => openRun(app, provider, cwd); el.append(b)
   }
+  for (const provider of ['claude', 'codex'] as const) if (!state[provider] && state.diagnostics?.[provider]) { const info = document.createElement('p'); info.textContent = `${provider === 'claude' ? 'Claude' : 'Codex'}: ${state.diagnostics[provider]}`; el.append(info) }
   const check = document.createElement('button'); check.textContent = state.loading ? 'Checking SDKs…' : 'Check agent integrations'; check.disabled = !!state.loading; check.onclick = () => void probe(app); el.append(check)
-  if (state.error || (!state.loading && !state.claude && !state.codex)) { const info = document.createElement('p'); info.textContent = state.error ?? 'Configure Codex native sign-in or Claude API credentials in the desktop environment, then check again.'; el.append(info) }
+  if (state.error || (!state.loading && !state.claude && !state.codex && !state.diagnostics)) { const info = document.createElement('p'); info.textContent = state.error ?? 'Configure Codex native sign-in or Claude API credentials in the desktop environment, then check again.'; el.append(info) }
   return el
 }
-function openRun(app: App, provider: 'claude' | 'codex', cwd: string) {
+function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation = false) {
   const replica = app.state.replica, store = replica.store, path = [...app.state.view]
   let context: ReturnType<typeof agentContext>
-  try { context = agentContext(replica, path) } catch (e) { app.notify('error', String(e)); return }
+  try { context = evaluation ? { revision: headCid(replica), nodes: [{ path: [], text: app.currentRow()?.title ?? '', kind: 'task', done: false }] } : agentContext(replica, path) } catch (e) { app.notify('error', String(e)); return }
   const dialog = document.createElement('dialog'); dialog.className = 'import-dialog'
-  const heading = document.createElement('h3'); heading.textContent = `Run ${provider} in ${cwd}`
-  const note = document.createElement('p'); note.textContent = 'Uses the current filesystem checkout and a read-only snapshot of this task subtree. Review code changes in Git. This does not switch Git branches.'
+  const heading = document.createElement('h3'); heading.textContent = evaluation ? `Delegate to ${provider}` : `Run ${provider} in ${cwd}`
+  const note = document.createElement('p'); note.textContent = evaluation ? 'The agent can interact with this evaluation through its declared inputs. Close or cancel to end the connection.' : 'Uses the current filesystem checkout and a read-only snapshot of this task subtree. Review code changes in Git. This does not switch Git branches.'
   const prompt = document.createElement('textarea'); prompt.rows = 5; prompt.value = context.nodes[0]?.text || ''; prompt.setAttribute('aria-label', 'Agent task')
   const output = document.createElement('pre'); output.style.cssText = 'white-space:pre-wrap;max-height:40vh;overflow:auto'
   const permissions = document.createElement('div'), start = document.createElement('button'), close = document.createElement('button')
@@ -86,10 +89,12 @@ function openRun(app: App, provider: 'claude' | 'codex', cwd: string) {
     if (!prompt.value.trim()) return
     if (app.state.replica.store !== store) { output.textContent = 'Data session changed. Reopen the launcher.'; return }
     running = true; start.disabled = true; prompt.readOnly = true; close.textContent = 'Cancel run'
+    let endpoint: Awaited<ReturnType<typeof connectEvaluationAgent>> | undefined
     try {
-      id = await tauriInvoke<string>('agent_start', { request: { provider, cwd, prompt: prompt.value, context } })
+      if (evaluation) endpoint = await connectEvaluationAgent(app)
+      id = await tauriInvoke<string>('agent_start', { request: { provider, cwd, prompt: prompt.value, context, ...(endpoint ? { evaluation: { url: endpoint.url, token: endpoint.token } } : {}) } })
       while (id) {
-        if (app.state.replica.store !== store) { await control({ cancel: true }); throw new Error('Run cancelled because the data session changed.') }
+        if (app.state.replica.store !== store || evaluation && JSON.stringify(app.executionPath()) !== JSON.stringify(path)) { await control({ cancel: true }); throw new Error('Run cancelled because the data session changed.') }
         const poll = await tauriInvoke<Poll>('agent_poll', { id })
         for (const event of poll?.events ?? []) {
           if (event.type === 'permission') {
@@ -102,7 +107,20 @@ function openRun(app: App, provider: 'claude' | 'codex', cwd: string) {
         await new Promise(resolve => setTimeout(resolve, 500))
       }
     } catch (e) { output.textContent += `\n${String(e)}` }
-    finally { running = false; close.disabled = false; close.textContent = 'Close'; permissions.replaceChildren() }
+    finally { await endpoint?.stop().catch(() => {}); running = false; close.disabled = false; close.textContent = 'Close'; permissions.replaceChildren() }
   }
   dialog.append(heading, note, prompt, start, close, permissions, output); document.body.append(dialog); dialog.showModal()
+  if (evaluation) start.click()
+}
+
+export function evaluationAgentControl(app: App): HTMLButtonElement | null {
+  if (!inTauri() || !app.canApprove()) return null
+  const state = availability.get(app)
+  if (!state) { void probe(app); return null }
+  const provider = state.codex ? 'codex' : state.claude ? 'claude' : null
+  if (!provider) return null
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'icon execution-delegate'; button.title = 'Delegate to agent'; button.setAttribute('aria-label', button.title); button.innerHTML = iconSvg('agent')!
+  button.disabled = app.evaluating || app.evaluationStatus()?.status === 'committed'
+  button.onclick = () => openRun(app, provider, localRepository(app.state.replica, app.state.view) ?? '', true)
+  return button
 }

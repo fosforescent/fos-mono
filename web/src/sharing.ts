@@ -1,3 +1,4 @@
+import { iconSvg } from './icons'
 import type { App } from './app'
 import { configureSharing, sharedRequest, type ShareAddress } from './api'
 import { sharing, readNodeValue, participants, resolveScope, headCid, valueContent, put, isDirty, scopeBranches, resolveRef, type Poll, type SharedNode } from '../../shared/sync/index'
@@ -24,21 +25,17 @@ export function sharedAddress(hash: string): ShareAddress | null {
   } catch { return null }
 }
 
-const openControls = new WeakMap<App, string>()
-
-/** Same node-context controls as other peers; publishing does not create a second document. */
-export function sharingControls(app: App): HTMLElement {
-  const box = element('details'); box.className = 'sharing-controls'
-  box.open = openControls.get(app) === JSON.stringify(app.state.view)
-  box.ontoggle = () => { if (box.isConnected) openControls.set(app, box.open ? JSON.stringify(app.state.view) : '') }
-  box.append(element('summary', 'Share by URL · poll'))
+/** Publishing configuration opened by the audience's Add peer constructor. */
+export function sharingControls(app: App, audience: 'public' | 'users', templateTrigger = false): HTMLElement {
+  const box = element('div'); box.className = 'sharing-controls'
   const state = app.state, policy = sharing(state.replica, state.view), poll = readNodeValue<Poll>(state.replica, state.view, 'fos:poll')
-  const audience = element('select'); audience.append(new Option('👤 Public · no account required', 'public'), new Option('🌐 Fos users · sign-in required', 'users')); audience.value = policy?.audience ?? 'public'
-  box.append(label('Audience ', audience))
   const mode = element('select'); mode.append(new Option('No poll', ''), new Option('Approval poll', 'approval'), new Option('Ranking poll', 'rank')); mode.value = poll?.mode ?? ''
   mode.disabled = app.currentRow()?.requirement?.capability !== 'choice' || !app.capabilityAvailable('poll')
   box.append(label('Choice handler ', mode))
   if (mode.disabled) box.append(element('p', 'To create a poll, use a choice requirement, for example: -choice: Monday | Tuesday'))
+  if (templateTrigger) box.append(element('p', 'Each visitor gets a private execution of this template. Returning visitors resume their execution.'))
+  const endpoint = element('textarea'); endpoint.readOnly = true; endpoint.setAttribute('aria-label', 'Trigger endpoint'); endpoint.hidden = !templateTrigger
+  if (templateTrigger) box.append(endpoint)
   const status = element('p'); status.setAttribute('role', 'status')
   const output = element('input'); output.readOnly = true; output.setAttribute('aria-label', 'Shareable URL')
   if (policy?.enabled && state.session?.kind === 'user') output.value = shareUrl({ owner: state.session.username, path: app.currentScope(), share: policy.id })
@@ -54,14 +51,15 @@ export function sharingControls(app: App): HTMLElement {
       if (app.state.session !== session || JSON.stringify(app.state.view) !== JSON.stringify(path) || JSON.stringify(app.currentScope()) !== JSON.stringify(scope)) throw new Error('The account or selected node changed. Try again.')
       const r = app.state.replica, cid = resolveScope(r.store, headCid(r), path)
       if (!cid || isDirty(r) || !app.isOnline('fos')) throw new Error('Finish syncing this node before sharing it.')
-      const address = await configureSharing(session, { path: app.currentScope(), expected: put(r.store, valueContent(r.store, cid)), audience: audience.value as 'public' | 'users', enabled, poll: (mode.value || null) as Poll['mode'] | null })
+      const address = await configureSharing(session, { path: app.currentScope(), expected: put(r.store, valueContent(r.store, cid)), audience, enabled, template: templateTrigger, poll: (mode.value || null) as Poll['mode'] | null })
+      if (templateTrigger) endpoint.value = enabled ? JSON.stringify({ method: 'POST', url: `${session.baseUrl.replace(/\/$/, '')}/${audience === 'public' ? 'public/node' : 'user/data/sharing'}/visit`, body: { owner: address.owner, path: address.path, share: address.share } }, null, 2) : ''
       output.value = enabled ? shareUrl(address) : ''; copy.disabled = !enabled
       status.textContent = enabled ? 'Link ready. Visitors can submit input; approval does not merge edits.' : 'Link revoked.'
       await app.syncNow('sharing changed')
     } catch (error) { status.textContent = error instanceof Error ? error.message : String(error) }
     finally { publish.disabled = revoke.disabled = false }
   }
-  const publish = button(policy?.enabled ? 'Update sharing' : 'Add audience peer', () => void save(true))
+  const publish = button(policy?.enabled ? 'Update publication' : 'Publish node', () => void save(true))
   const revoke = button('Revoke link', () => void save(false)); revoke.disabled = !policy?.enabled
   publish.disabled = state.session?.kind !== 'user' || !app.isOnline('fos')
   box.append(publish, revoke, output, copy, status)
@@ -73,7 +71,7 @@ export function sharingControls(app: App): HTMLElement {
       const named = (id: string) => record.labels?.[id] ?? 'Earlier option'
       if (record.approvals.length) row.append(element('p', `Approves: ${record.approvals.map(named).join('; ')}`))
       if (record.ranking.length) row.append(element('p', `Preference: ${record.ranking.map(named).join(' → ')}`))
-      for (const [key, value] of Object.entries(record.fields)) row.append(element('p', `${record.labels?.[key] ?? 'Input'}: ${typeof value === 'string' ? value : `${value.amount} ${value.unit}`}`))
+      for (const [key, value] of Object.entries(record.fields)) row.append(element('p', `${record.labels?.[key] ?? 'Input'}: ${typeof value === 'object' ? `${value.amount} ${value.unit}` : String(value)}`))
       row.append(element('small', `Saved ${new Date(record.updated).toLocaleString()}`)); results.append(row)
     }
     box.append(results)
@@ -93,6 +91,12 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
     const id = generation, session = currentSession()
     const result = await sharedRequest(baseUrl, session, action, { ...address, ...body, ...(!session && token ? { visitorToken: token } : {}) })
     if (id !== generation) return
+    if (result.entryToken) { try { localStorage.setItem(tokenKey(), result.entryToken) } catch {} }
+    if (result.address) {
+      address = result.address
+      window.history.replaceState(null, '', shareUrl(address))
+      lastIdentity = `${JSON.stringify(address)}:${currentSession()?.username ?? 'anonymous'}`
+    }
     if (result.visitorToken) { token = result.visitorToken; try { localStorage.setItem(tokenKey(), token) } catch { /* private browsing */ } }
     node = result.node
     if (!linkedPath && session) { await app.syncNow('received shared link'); if (id !== generation) return }
@@ -109,12 +113,21 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
   }
   const load = async () => { const id = generation; try { await request('visit') } catch (error) { if (id === generation) showError(error) } }
   const render = () => {
+    root.classList.toggle('shared-execution', !!node?.execution && !panel.hidden)
     panel.replaceChildren(element('h2', node?.title ?? 'Shared node'))
+    if (node?.execution && document.documentElement.requestFullscreen) {
+      const fullscreen = element('button', ''); fullscreen.className = 'icon shared-fullscreen'; fullscreen.type = 'button'
+      const update = () => { fullscreen.innerHTML = iconSvg(document.fullscreenElement ? 'exit-fullscreen' : 'fullscreen')!; fullscreen.title = document.fullscreenElement ? 'Exit full screen' : 'Full screen'; fullscreen.setAttribute('aria-label', fullscreen.title) }
+      update(); fullscreen.onclick = () => { void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).then(update).catch(() => {}) }; panel.append(fullscreen)
+    }
     panel.append(element('p', `Shared by ${address?.owner} · linked in your Home context.`))
-    panel.append(button('Refresh shared node', () => void load()), button('Back to host peer', () => { if (linkedPath) app.goTo(linkedPath.slice(0, -1)); location.hash = '' }))
+    panel.append(button('Refresh shared node', () => void load()))
+    if (!node?.execution) panel.append(button('Back to host peer', () => { if (linkedPath) app.goTo(linkedPath.slice(0, -1)); location.hash = '' }))
     if (!currentSession()) panel.append(button('Sign in with my context', () => app.openModal('connect')))
     const status = element('p'); status.setAttribute('role', 'status'); panel.append(status)
     if (!node) return
+    if (node.execution?.error) panel.append(element('p', node.execution.error))
+    else if (node.execution?.status === 'committed') panel.append(element('p', 'Complete'))
     const snapshot = node, revision = node.revision, form = element('form')
     for (const row of node.rows) { const el = element('p', row.title); el.style.paddingInlineStart = `${Math.min(row.depth, 8)}em`; panel.append(el) }
     const name = element('input'); name.maxLength = 80; name.setAttribute('autocomplete', 'nickname'); name.value = node.mine?.name ?? ''; name.required = !currentSession() && !!node.poll
@@ -145,10 +158,19 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
     const fields: Record<string, { value?: unknown; source?: string }> = Object.create(null)
     const ownSources = node.sources ?? (linkedPath ? readNodeValue<Record<string, string>>(app.state.replica, linkedPath, 'fos:input-links') : null) ?? {}
     for (const field of node.inputs) {
-      const box = element('fieldset'); box.append(element('legend', field.name))
-      const input = element('input'); input.type = field.kind === 'text' ? 'text' : 'number'; if (field.kind !== 'text') { input.min = '0'; input.step = 'any' }
+      const box = element('fieldset'); box.append(element('legend', field.direction === 'consume' ? `Use ${field.name}` : field.name))
+      if (field.kind === 'confirmation' || field.kind === 'choice') {
+        if (field.kind === 'confirmation') {
+          const input = element('input'); input.type = 'checkbox'; input.onchange = () => { if (input.checked) fields[field.key] = { value: true }; else delete fields[field.key] }; box.append(label('Confirm ', input))
+        } else {
+          const input = element('select'); input.append(new Option('Choose an option', '')); for (const [i, option] of (field.options ?? []).entries()) input.append(new Option(option, String(i)))
+          input.onchange = () => { if (input.value) fields[field.key] = { value: Number(input.value) }; else delete fields[field.key] }; box.append(input)
+        }
+        form.append(box); continue
+      }
+      const input = element('input'); input.type = field.kind === 'text' ? 'text' : 'number'; if (field.kind !== 'text') { input.min = '0'; input.step = 'any'; if (field.direction === 'consume' && field.amount !== undefined) input.max = String(field.amount) }
       const previous = node.mine?.fields[field.key]
-      input.value = typeof previous === 'string' ? previous : previous ? String(previous.amount) : ''
+      input.value = typeof previous === 'string' ? previous : previous && typeof previous === 'object' ? String(previous.amount) : ''
       const update = () => { fields[field.key] = { value: field.kind === 'text' ? input.value : { amount: Number(input.value), type: field.type, unit: field.unit, start: field.start, end: field.end } } }
       if (previous !== undefined) update()
       if (Object.hasOwn(ownSources, field.key)) fields[field.key] = { source: ownSources[field.key] }
@@ -171,7 +193,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
       }
       form.append(box)
     }
-    const submit = element('button', 'Save input'); submit.type = 'submit'; form.append(submit)
+    const submit = element('button', node.execution ? 'Continue execution' : 'Save input'); submit.type = 'submit'; submit.disabled = !!node.execution && !['idle', 'rolled-back'].includes(node.execution.status); form.append(submit)
     form.onsubmit = async e => {
       e.preventDefault(); submit.disabled = true
       const id = generation
@@ -199,9 +221,9 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
   const update = () => {
     if (app.state.connection === 'connecting' && !currentSession()) return
     const next = sharedAddress(location.hash), identity = `${JSON.stringify(next)}:${currentSession()?.username ?? 'anonymous'}`
-    if (identity === lastIdentity) { if (linkedPath) panel.hidden = JSON.stringify(app.state.view) !== JSON.stringify(linkedPath); return }
+    if (identity === lastIdentity) { if (linkedPath) panel.hidden = JSON.stringify(app.state.view) !== JSON.stringify(linkedPath); root.classList.toggle('shared-execution', !!node?.execution && !panel.hidden); return }
     lastIdentity = identity; generation++; address = next; node = null; linkedPath = null; token = undefined; panel.hidden = !next
-    if (!next) return
+    if (!next) { root.classList.remove('shared-execution'); return }
     try { token = localStorage.getItem(tokenKey()) ?? undefined } catch { /* private browsing */ }
     render(); void load()
   }

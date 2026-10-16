@@ -7,16 +7,16 @@ import { addGroupConnection } from './groupEvents';
 import { prisma } from './prismaClient';
 
 // Create WebSocket server attached to HTTP server
-const wss = new WebSocketServer({ 
+const wss = new WebSocketServer({
   noServer: true  // Important: we'll handle the upgrade ourselves
 });
 
 console.log('WebSocket server created');
 
-export const attachWs = (server: any) => {
+export const attachWs = (server: any, evaluation?: (claims: any, body: any) => Promise<unknown>) => {
     // Handle upgrades manually
     server.on('upgrade', (request: any, socket: any, head: any) => {
-    console.log('Upgrade request received:', request.url);
+
 
     // Other WebSocket servers (the MCP endpoint at /mcp) share this HTTP server and
     // handle their own upgrades; only /ws/{jwt} (or /{jwt}) belongs to this one.
@@ -27,7 +27,7 @@ export const attachWs = (server: any) => {
 
     try {
         const token = request.url?.split('/')[2];
-        
+
         if (!token) {
         console.log('No token provided');
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -44,8 +44,8 @@ export const attachWs = (server: any) => {
             return;
         }
 
-        console.log('JWT verified successfully:', decoded);
-        
+
+
         // Complete the WebSocket upgrade
         wss.handleUpgrade(request, socket, head, (ws) => {
             wss.emit('connection', ws, request, decoded);
@@ -60,7 +60,7 @@ export const attachWs = (server: any) => {
 
     // WebSocket connection handler
     wss.on('connection', async (ws: WebSocket, request: any, decodedToken: any) => {
-    console.log('New WebSocket connection:', decodedToken);
+
 
     // Presence announcement from a device (see web/src/app.ts). Registered before any await:
     // a hello that arrives while the user lookup is pending would otherwise be dropped, and
@@ -86,8 +86,8 @@ export const attachWs = (server: any) => {
         const user = await prisma.userModel.findUnique({
         where: { user_name: decodedToken.username }
         });
-        
-        if (!user) {
+
+        if (!user || !user.approved) {
         console.error('User not found for WebSocket connection:', decodedToken.username);
         ws.close(1008, 'User not found');
         return;
@@ -115,6 +115,16 @@ export const attachWs = (server: any) => {
               const parsed = JSON.parse(message.toString()) as { type?: unknown }
               if (nodeRelay.receive(user.id, ws, parsed)) return
               if (parsed.type === 'hello') return // handled above
+              if (parsed.type === 'evaluation' && evaluation) {
+                const event = parsed as { id?: unknown; body?: unknown }
+                if (Buffer.byteLength(message.toString()) > 100_000) { ws.close(1009, 'Evaluation message too large'); return }
+                void evaluation(decodedToken, event.body).then(result => {
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'evaluation_result', id: event.id, result }))
+                }).catch(error => {
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'evaluation_result', id: event.id, error: error instanceof Error ? error.message : 'Evaluation failed' }))
+                })
+                return
+              }
             } catch {
               // not JSON: fall through
             }
@@ -135,7 +145,7 @@ export const attachWs = (server: any) => {
         ws.on('error', (error) => {
         console.error('WebSocket error:', error);
         });
-        
+
     } catch (error) {
         console.error('Error setting up WebSocket connection:', error);
         ws.close(1011, 'Internal server error');

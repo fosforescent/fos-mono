@@ -1,5 +1,6 @@
-import { discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
-import { nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
+import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
+import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
+import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
@@ -7,8 +8,8 @@ import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
-import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid } from '../../shared/sync/index'
-import { evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
+import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid } from '../../shared/sync/index'
+import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
  * group's document or to another device's node), the connection state, the
@@ -169,6 +170,8 @@ export type ContextPeer = {
   /** An integration peer (GitHub, Google, Discord, Stripe, the phone): what it provides and consumes, and its connection status from the server. */
   integration?: { kind: 'oauth' | 'platform' | 'channel'; provides: Capability[]; consumes: Capability[]; configured: boolean; connected: boolean; pending: boolean; accountName: string | null }
   /** An MCP peer: one of the account's MCP servers, with the tools it advertises; attached to nodes as a member `mcp:<id>`. */
+  fosUser?: string
+  repository?: { repo: string }
   mcp?: { serverId: number; tools: string[] }
 }
 
@@ -235,7 +238,7 @@ export type AppState = {
   /** The phone-linking modal: waiting for a number, then for the code texted to it. */
   phone: { phase: 'number' | 'code' | 'busy'; number?: string; error?: string } | null
   /** Open context menu, if any. */
-  contextMenu: { kind: 'node' } | { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
+  contextMenu: { kind: 'task'; at: Scope; task: TaskView } | { kind: 'peer'; peerId: string } | null
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
   device: { code: string; name: string | null; status: 'loading' | 'ready' | 'approved' | 'denied' | 'error'; error?: string } | null
   /** Microphone capture: recording (with start time), uploading, or idle. */
@@ -299,8 +302,8 @@ export class App {
   private syncInFlight = false
   private syncRequested = false
   private debounceTimer: Timer | null = null
-  /** Integration id whose sign-in is running in the system browser (Tauri apps); checked when the window regains focus. */
-  private pendingIntegration: string | null = null
+  /** Integration id whose sign-in is running in the system browser (Tauri apps); checked on focus and background polls. */
+  private pendingIntegration: { id: string; session: Session } | null = null
   private pollTimer: Timer | null = null
   private retryTimer: Timer | null = null
   private connectPollTimer: Timer | null = null
@@ -382,6 +385,7 @@ export class App {
     const previous = this.state
     const contentChanged = patch.replica && headCid(patch.replica) !== this.observedHead
     if (patch.replica) {
+      if (patch.replica.store !== previous.replica.store) { this.autoNodeAttempts.clear(); this.autoNodeQueue = [] }
       if (patch.replica.store !== previous.replica.store || JSON.stringify(patch.replica.meta.scope) !== JSON.stringify(previous.replica.meta.scope)) this.history.clear()
       this.observedHead = headCid(patch.replica)
     }
@@ -790,7 +794,7 @@ export class App {
       await this.syncNodes(pullOnly)
       if (this.state.session !== session || generation !== this.authGeneration) return
       this.set({ connection: 'online' })
-      if (transport === 'account') { void this.refreshRepositories(); void this.refreshPoints(); if (!this.state.integrations.length) void this.refreshIntegrations() }
+      if (transport === 'account') { void this.refreshRepositories(); void this.refreshPoints(); if (this.pendingIntegration) void this.checkPendingIntegration(); else if (!this.state.integrations.length) void this.refreshIntegrations() }
       this.retryDelay = MIN_RETRY_MS
     } catch (error) {
       if ((this.state.session !== session || generation !== this.authGeneration)) return
@@ -1194,14 +1198,14 @@ export class App {
     }
     for (const m of node?.members ?? []) {
       if (m.peerId === me || m.peerId === 'fos' || peers.some((x) => x.id === m.peerId)) continue
-      peers.push({ id: m.peerId, name: m.name ?? nameOf(m.peerId), online: this.isOnline(m.peerId), capabilities: [...m.capabilities], disabled: [...(m.disabled ?? [])], accepts: [...(m.accepts ?? [])], isAccount: m.peerId.startsWith('user:'), member: true })
+      peers.push({ id: m.peerId, name: m.name ?? nameOf(m.peerId), online: this.isOnline(m.peerId), capabilities: [...m.capabilities], disabled: [...(m.disabled ?? [])], accepts: [...(m.accepts ?? [])], isAccount: m.peerId.startsWith('user:'), member: true, ...(m.peerId.startsWith('user:') ? { fosUser: m.peerId.slice(5) } : {}), ...(m.peerId.startsWith('github:') ? { repository: { repo: m.peerId.slice(7) } } : {}) })
     }
     const directPeer = this.state.direct?.phase === 'connected' ? this.state.replica.meta.serverPeerId ?? null : null
     for (const p of node?.peers ?? []) {
       if (p === me) continue
       const known = peers.find((x) => x.id === p)
       if (known) { if (p === directPeer && !known.capabilities.includes('direct')) known.capabilities.push('direct'); continue }
-      peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false })
+      peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false, ...(p.startsWith('user:') ? { fosUser: p.slice(5) } : {}) })
     }
     peers.push({ id: me, name: this.state.deviceName, online: true, capabilities: [], disabled: [], accepts: CLIENT_CAPABILITIES, isAccount: false, member: false })
     for (const p of peers) {
@@ -1280,26 +1284,35 @@ export class App {
     if (status?.kind === 'platform') { this.notify('info', `${status.name} is set up on the account itself (payments); there is nothing to connect here.`); return }
     try {
       const { url } = await startIntegration(session, id)
+      if (session !== this.state.session) return
       // In the Tauri apps the sign-in runs in the system browser: Google (and others) refuse embedded webviews
       // ("disallowed_useragent"), and navigating the app's own window away would lose the app. The provider's
       // callback lands on the web site, so the app learns the result when it regains focus (`checkPendingIntegration`).
+      this.pendingIntegration = { id, session }
       const external = openExternal(url)
       if (!external) { window.location.assign(url); return }
       await external
-      this.pendingIntegration = id
+      if (session !== this.state.session) return
       this.notify('info', `Finish signing in to ${status?.name ?? id} in your browser, then come back here.`)
+      void this.checkPendingIntegration()
     } catch (error) {
+      if (session !== this.state.session) return
+      if (this.pendingIntegration?.id === id && this.pendingIntegration.session === session) this.pendingIntegration = null
       this.notify('error', error instanceof Error ? error.message : String(error))
     }
   }
   /** After a sign-in opened in the system browser: on return, see whether the peer is now connected. */
   private async checkPendingIntegration(): Promise<void> {
-    const id = this.pendingIntegration
-    if (!id || document.visibilityState === 'hidden') return
+    const pending = this.pendingIntegration
+    if (!pending) return
+    if (pending.session !== this.state.session) { this.pendingIntegration = null; return }
+    if (document.visibilityState === 'hidden') return
     await this.refreshIntegrations()
-    const status = this.state.integrations.find((p) => p.id === id)
+    if (this.pendingIntegration !== pending || this.state.session !== pending.session) return
+    const status = this.state.integrations.find(p => p.id === pending.id)
     if (status?.connected) { this.pendingIntegration = null; this.notify('info', `${status.name} is connected.`) }
   }
+
   async disconnectIntegration(id: string): Promise<void> {
     const session = this.state.session
     if (!session || session.kind !== 'user') return
@@ -1392,10 +1405,32 @@ export class App {
   /** Does this device read the requests (proposals) addressed to it? `from: read-requests` in its policy. */
   readsRequests(): boolean { return this.state.policy.from.includes('read-requests') }
   /** Owner side: a peer row for another account on the viewed node, starting with `edit` (so it may send proposals here, e.g. allocation bins). */
+  async findFosUsers(query: string): Promise<string[]> {
+    const session = this.state.session
+    if (session?.kind !== 'user' || !this.isOnline('fos')) throw new Error('Connect to Fos to search users.')
+    if (!query.trim()) return []
+    const users = await searchFosUsers(session, query)
+    return session === this.state.session ? users : []
+  }
+  attachAgentPeer(path: Scope, id: string, name: string): void {
+    if (!this.canApprove(view(this.state.replica, path)) || !id.startsWith('agent:')) throw new Error('Only node owners can connect agents.')
+    this.edit(addMemberAt(this.state.replica, path, id, name, ['read', 'edit'], this.now()))
+  }
+  removeAgentPeer(path: Scope, id: string): void {
+    if (!this.canApprove(view(this.state.replica, path)) || !id.startsWith('agent:')) throw new Error('Only node owners can remove agents.')
+    this.edit(removeMemberAt(this.state.replica, path, id, this.now()))
+  }
+  exchangeAgentNode(request: NodeRequest) {
+    const result = exchangeNode(this.state.replica, request, { peerId: request.peerId, scope: request.scope, proposeOnly: true, capabilities: CLIENT_CAPABILITIES }, this.now())
+    this.set({ replica: { ...result.replica } })
+    if (request.update) this.scheduleSync()
+    return result.node
+  }
   addPeerHere(username: string): void {
     const name = username.trim().replace(/^@/, '')
     if (!name) return
     if (!this.canApprove()) { this.notify('error', 'Only the owner of this node adds peers to it.'); return }
+    if (contextMembers(this.state.replica, this.peerContextPath()).some(m => m.peerId === `user:${name}`)) return
     this.edit(addMemberAt(this.state.replica, this.peerContextPath(), `user:${name}`, name, ['edit'], this.now()))
     this.notify('info', `@${name} is a member here: they can propose on this node once they sync. Add or switch off capabilities on their row.`)
   }
@@ -1495,11 +1530,11 @@ export class App {
       const path = absolute ? [...at, id] : [...this.state.view, ...at, id], info = this.repositoryInfo(path)
       const session = this.state.session, generation = this.authGeneration
       if (info) {
-        if (!session || !info.snapshot || !this.hasRepositoryPeer(path)) throw new Error('Connect GitHub and refresh this repository first')
+        if (!session || !info.snapshot || !this.canPushRepository(path)) throw new Error('Connect GitHub and refresh this repository first')
         const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)!
         const from = isBranchChoice(this.state.replica.store, content(this.state.replica.store, cid)) ? branchSelection(this.state.replica.store, cid) : info.snapshot.defaultBranch
         await createRepositoryBranch(session, info.repo, name, from)
-        if (generation !== this.authGeneration) return
+        if (generation !== this.authGeneration || session !== this.state.session || repositoryAt(this.state.replica, path) !== info.repo || !this.canPushRepository(path)) return
       }
       const next = createBranch(this.state.replica, path, name, this.now(), info?.snapshot?.defaultBranch ?? 'main')
       this.branchSelections[id] = name
@@ -1551,8 +1586,12 @@ export class App {
     this.projectSwitching = false
     if (this.transport()) void this.syncNow('checkout complete')
   }
-  hasRepositoryPeer(path: Scope): boolean {
-    return this.capabilityAvailable('repo', path)
+  hasRepositoryPeer(path: Scope, direction: 'pull' | 'push' = 'pull'): boolean {
+    const repo = repositoryAt(this.state.replica, path)
+    return !!repo && this.isOnline(repositoryPeerId(repo)) && repositoryPeerAllows(this.state.replica, path, repo, direction)
+  }
+  canPushRepository(path: Scope): boolean {
+    return this.hasRepositoryPeer(path, 'push') && !!this.repositoryInfo(path)?.snapshot?.canPush
   }
 
   repositoryInfo(path: Scope = this.state.view): { repo: string; snapshot?: RepositorySnapshot } | null {
@@ -1635,13 +1674,13 @@ export class App {
   }
   async proposeRepoMerge(path: Scope, target: string): Promise<void> {
     const session = this.state.session, info = this.repositoryInfo(path), generation = this.authGeneration
-    if (!session || !info || !this.hasRepositoryPeer(path)) { this.notify('error', 'Connect your account and GitHub peer first.'); return }
+    if (!session || !info || !this.canPushRepository(path)) { this.notify('error', 'Connect your account and GitHub peer first.'); return }
     const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
     if (!cid || !isBranchChoice(this.state.replica.store, content(this.state.replica.store, cid))) return
     const source = branchSelection(this.state.replica.store, cid)
     try {
       const pull = await proposeRepositoryMerge(session, info.repo, source, target, `Merge ${source} into ${target}`)
-      if (generation !== this.authGeneration) return
+      if (generation !== this.authGeneration || session !== this.state.session || repositoryAt(this.state.replica, path) !== info.repo || !this.canPushRepository(path)) return
       if (info.snapshot) this.repositories.set(info.repo, { ...info.snapshot, pulls: [...info.snapshot.pulls.filter(p => p.number !== pull.number), pull] })
       this.notify('info', `GitHub PR #${pull.number} opened: ${pull.url}`)
       await this.refreshRepositories(true)
@@ -1659,12 +1698,12 @@ export class App {
   }
   async decideRepoPull(pull: RepositoryPull, decision: 'merge' | 'close'): Promise<void> {
     const session = this.state.session, info = this.repositoryInfo(), path = [...this.state.view], generation = this.authGeneration
-    if (!session || !info || !this.hasRepositoryPeer(path)) return
+    if (!session || !info || !this.canPushRepository(path)) return
     const reviewedCid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
     const reviewed = reviewedCid && isBranchChoice(this.state.replica.store, content(this.state.replica.store, reviewedCid)) ? readChoice(this.state.replica.store, reviewedCid).options.find(o => o.peerId === pull.head) : undefined
     try {
       await decideRepositoryPull(session, info.repo, pull.number, decision, pull.sha)
-      if (generation !== this.authGeneration) return
+      if (generation !== this.authGeneration || session !== this.state.session || repositoryAt(this.state.replica, path) !== info.repo || !this.canPushRepository(path)) return
       if (decision === 'merge' && reviewed && pull.headRepo.toLowerCase() === info.repo.toLowerCase()) {
         this.edit(mergeBranch(this.state.replica, path, pull.head, pull.base, this.now(), reviewed))
         this.branchSelections[path.at(-1)!] = pull.base
@@ -1756,6 +1795,20 @@ export class App {
     if (market && (!this.state.session || !this.isOnline('fos'))) { this.notify('error', 'Connect to Fos before publishing to the marketplace.'); return }
     try { this.edit(publishTemplate(this.state.replica, this.state.view.slice(0, -1), this.state.view, this.currentRow()!.title, this.now(), market)); this.notify('info', market ? 'This template version is published to the Fos marketplace after sync.' : 'This template version is advertised by this device in its parent context.') }
     catch (error) { this.notify('error', String(error)) }
+  }
+  constructorEnabled(peerId: string, id: string): boolean {
+    const cid = contextMemberRefs(this.state.replica, this.peerContextPath()).get(peerId)
+    return !cid || !(content(this.state.replica.store, cid).data.disabledCapabilities?.content ?? []).includes(`fos:constructor:${id}`)
+  }
+  setConstructorEnabled(peerId: string, id: string, enabled: boolean): void {
+    if (!this.canApprove()) return
+    let replica = this.state.replica
+    if (!contextMemberRefs(replica, this.peerContextPath()).has(peerId)) {
+      const provider = this.contextPeers().find(p => p.id === peerId)
+      replica = addMemberAt(replica, this.peerContextPath(), peerId, provider?.name ?? peerId, [], this.now())
+      replica = setMemberCapabilitiesAt(replica, this.peerContextPath(), peerId, [], [], this.now(), provider?.integration?.provides ?? provider?.accepts ?? [])
+    }
+    this.edit(setConstructorEnabledAt(replica, this.peerContextPath(), peerId, id, enabled, this.now()))
   }
   toggleHandler(peerId: string, id: string, enabled: boolean): void {
     if (!this.canApprove()) return
@@ -1864,9 +1917,85 @@ export class App {
     const r = this.state.replica
     return { ...r.meta.branches, ...(r.meta.branch && r.meta.scope.length ? { [r.meta.scope.at(-1)!]: r.meta.branch } : {}), ...scopeBranches(r.store, headCid(r), path) }
   }
+  execution: { path: Scope; store: Replica['store'] } | null = null
+  executionPath(): Scope | null {
+    return this.execution?.store === this.state.replica.store && JSON.stringify(this.execution.path) === JSON.stringify(this.state.view) ? this.execution.path : null
+  }
+  async startExecution(path: Scope): Promise<void> {
+    const row = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
+    if (row?.kind === 'template' && row.id !== HOME_ID) {
+      const id = newId(), parent = path.slice(0, -1)
+      let r = addTask(this.state.replica, parent, row.title, this.now(), id)
+      r = instantiateTemplate(r, parent, id, row.id, this.now())
+      this.edit(r); path = [...parent, id]
+    }
+    this.goTo(path)
+    this.execution = { path: [...this.state.view], store: this.state.replica.store }
+    this.refresh()
+  }
+  async interactExecution(body: any): Promise<unknown> {
+    const path = this.executionPath()
+    if (!path || !this.canApprove()) throw new Error('This execution is no longer available.')
+    if (body.action === 'read') return executionSnapshot(this.state.replica, path)
+    if (this.evaluating) throw new Error('Evaluation is running.')
+    if (body.action === 'input') this.edit(executionInput(this.state.replica, path, body, this.state.replica.meta.peerId, this.now()))
+    else if (body.action === 'complete') {
+      const snapshot = executionSnapshot(this.state.replica, path)
+      if (body.revision !== snapshot.revision || snapshot.inputs.length || !['idle', 'rolled-back'].includes(snapshot.status)) throw new Error('Read the evaluation and satisfy its current inputs before completing.')
+      await this.finishExecution()
+    } else throw new Error('Unknown interaction.')
+    await this.config.storage.flush?.()
+    return executionSnapshot(this.state.replica, path)
+  }
+  executionTimeEntries(): Array<{ start: number; end?: number; notes: string }> {
+    const path = this.executionPath()
+    return path ? readNodeValue(this.state.replica, path, 'fos:execution-time') ?? [] : []
+  }
+  setExecutionTimeNotes(notes: string): void {
+    const path = this.executionPath(), entries = this.executionTimeEntries()
+    const active = entries.find(entry => entry.end === undefined)
+    if (!path || !active || this.evaluating) return
+    active.notes = notes
+    this.edit(writeNodeValue(this.state.replica, path, 'fos:execution-time', entries, this.now()))
+  }
+  toggleExecutionTimer(notes: string): void {
+    const path = this.executionPath()
+    if (!path || this.evaluating) return
+    const entries = this.executionTimeEntries(), active = entries.find(entry => entry.end === undefined)
+    if (active) { active.end = this.now(); active.notes = notes }
+    else {
+      if (this.evaluationStatus(path)?.status === 'committed') return
+      entries.push({ start: this.now(), notes })
+    }
+    this.edit(writeNodeValue(this.state.replica, path, 'fos:execution-time', entries, this.now()))
+  }
+  async finishExecution(abort = false): Promise<void> {
+    const path = this.executionPath()
+    if (!path || this.evaluating) return
+    const active = this.executionTimeEntries().find(entry => entry.end === undefined)
+    if (active) this.toggleExecutionTimer(active.notes)
+    if (abort) {
+      const record = this.evaluationStatus(path)
+      if (record && record.status !== 'committed') this.edit(writeNodeValue(this.state.replica, path, 'fos:evaluation', { ...record, status: 'rolled-back', error: 'Aborted by user' }, this.now()))
+      this.exitExecution()
+    } else await this.evaluateAt(path)
+  }
+  consumeExecutionAllocation(path: Scope, amount: number): void {
+    const root = this.executionPath()
+    if (!root || !root.every((id, i) => path[i] === id) || !Number.isFinite(amount) || amount < 0) return
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+    const status = this.evaluationStatus(root)?.status
+    if (!row?.allocation || amount > row.allocation.amount || this.evaluating || status && status !== 'idle' && status !== 'rolled-back' || readNodeValue(this.state.replica, path, 'fos:consumed')) return
+    this.edit(writeNodeValue(this.state.replica, path, 'fos:consumed', { peer: this.state.replica.meta.peerId, value: { ...row.allocation, amount }, time: this.now() }, this.now()))
+  }
+  exitExecution(): void { this.execution = null; this.refresh() }
   evaluating = false
-  evaluationStatus() { return evaluationRecord(this.state.replica, this.state.view) }
-  async evaluateCurrent(): Promise<void> { await this.evaluateAt([...this.state.view]) }
+  evaluationStatus(path = this.state.view) { return evaluationRecord(this.state.replica, path) }
+  addEvaluationConstructor(path: Scope): void {
+    if (evaluationRecord(this.state.replica, path)) return
+    this.edit(writeNodeValue(this.state.replica, path, 'fos:evaluation', { id: crypto.randomUUID(), status: 'idle', started: this.now(), effects: [] }, this.now()))
+  }
+  async evaluateCurrent(): Promise<void> { await this.evaluateAt(this.currentRow()?.construction?.name === 'fos:evaluation' ? this.state.view.slice(0, -1) : [...this.state.view]) }
   async evaluateAt(path: Scope, triggered = false): Promise<void> {
     if (!triggered) document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
     if (this.evaluating) { if (triggered) throw new Error('Another evaluation is running.'); return }
@@ -1886,11 +2015,11 @@ export class App {
         try { await evaluateOnServer(this.state.session!, [...r.meta.scope, ...path], put(r.store, valueContent(r.store, cid)), this.evaluationBranches(path)) }
         finally { if (generation === this.authGeneration) await this.syncNow('evaluation results') }
         valid()
-        this.notify('info', 'Evaluation committed.'); return
+        return
       }
       const record = await evaluateNode(path, {
         get: () => { valid(); return this.state.replica },
-        save: replica => { valid(); this.set({ replica }); this.scheduleSync() },
+        save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
         now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: localPull,
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
         effect: async step => {
@@ -1902,13 +2031,12 @@ export class App {
         }
       })
       if (record.status !== 'committed') throw new Error(record.error ?? 'Evaluation needs recovery.')
-      this.notify('info', 'Evaluation committed.')
     } catch (error) { if (triggered) throw error; this.notify('error', error instanceof Error ? error.message : String(error)) }
     finally { this.evaluating = false; this.refresh() }
   }
-  async recoverCurrentEvaluation(): Promise<void> {
+  async recoverCurrentEvaluation(path = [...this.state.view]): Promise<void> {
     if (this.evaluating) return
-    const path = [...this.state.view], r = this.state.replica, generation = this.authGeneration
+    const r = this.state.replica, generation = this.authGeneration
     try {
       if (this.state.session?.kind === 'user' && !this.virtualIdentity && this.isOnline('fos')) {
         await this.syncNow('before recovery')
@@ -1929,7 +2057,7 @@ export class App {
     const state = this.currentTriggerState()
     if (!state) return
     const evaluation = evaluationRecord(this.state.replica, state.target)
-    if (evaluation && !['committed', 'rolled-back'].includes(evaluation.status)) {
+    if (evaluation && !['idle', 'committed', 'rolled-back'].includes(evaluation.status)) {
       this.goTo(state.target); this.notify('info', 'Review recovery before rearming this trigger.'); return
     }
     this.edit(writeNodeValue(this.state.replica, this.state.view, 'fos:trigger-state', { ...state, occurrence: '', status: 'finished', error: undefined }, this.now()))
@@ -1960,7 +2088,7 @@ export class App {
       }
       const trigger = { kind, peer, enabled, created: this.now(), ...(kind === 'timer' ? { due: Date.parse(value ?? '') } : {}), ...(kind === 'cron' ? { expression: value ?? '' } : {}) }
       let path = [...destination]
-      if (newTemplate) {
+      if (newTemplate && view(r, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.kind !== 'template') {
         const id = newId(); r = addRow(r, destination, 'template', `${kind} workflow`, this.now(), { id }); path = [...destination, id]
       }
       r = setNodeTrigger(r, path, trigger, this.now())
@@ -1999,7 +2127,7 @@ export class App {
         for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(persisted.store, id, name)
         await runNodeTriggers({
         get: () => { if (this.state.replica.store !== store) throw new Error('Data session changed'); return this.state.replica },
-        save: replica => { if (this.state.replica.store !== store) throw new Error('Data session changed'); this.set({ replica }); this.scheduleSync() },
+        save: async replica => { if (this.state.replica.store !== store) throw new Error('Data session changed'); this.set({ replica }); await this.config.storage.flush?.(); this.scheduleSync() },
         now: () => this.now(),
         available: (peer, kind, path) => {
           if (peer !== this.state.replica.meta.peerId || kind === 'cron' || !capabilityPeers(this.state.replica, path, kind).includes(peer)) return false
@@ -2620,11 +2748,43 @@ export class App {
     const id = peer === 'fos' ? this.state.replica.meta.serverPeerId ?? peer : peer
     return nodeLinkEndpoint(this.state.replica, this.peerContextPath(), id)?.mask ?? null
   }
-  setNodeMask(peer: string, mask: NodeMask): void {
-    const id = peer === 'fos' ? this.state.replica.meta.serverPeerId ?? peer : peer, path = this.peerContextPath()
+  setNodeMask(peer: string, mask: NodeMask, path: Scope = this.peerContextPath()): void {
+    const id = peer === 'fos' ? this.state.replica.meta.serverPeerId ?? peer : peer
     const endpoint = nodeLinkEndpoint(this.state.replica, path, id)
-    if (!endpoint) return
-    this.set({ replica: setNodeLinkMask(this.state.replica, path, id, endpoint.remoteId, mask, this.now()) })
+    this.set({ replica: setNodeLinkMask(this.state.replica, path, id, endpoint?.remoteId ?? '', mask, this.now()) })
+  }
+  nodePermissions(path: Scope, peer = NODE_PERMISSION_DEFAULT): NodeMask {
+    const id = peer === 'fos' ? this.state.replica.meta.serverPeerId ?? peer : peer
+    return nodeLinkEndpoint(this.state.replica, path, id)?.mask ?? {}
+  }
+  isPeerNode(path: Scope): boolean { return isNodeProjection(this.state.replica, path) }
+  private autoNodeAttempts = new Map<string, number>()
+  private autoNodeQueue: Array<{ path: Scope; store: Replica['store']; generation: number; view: string; load?: () => Promise<void> }> = []
+  private autoNodeActive = 0
+  autoLoadPeerNode(path: Scope): void {
+    const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
+    if (!cid || !isPeerReference(content(this.state.replica.store, cid))) return
+    const key = JSON.stringify([this.authGeneration, this.branchSelections, path, cid])
+    if (Date.now() - (this.autoNodeAttempts.get(key) ?? 0) < 30000) return
+    if (this.autoNodeAttempts.size > 1000) this.autoNodeAttempts.clear()
+    this.autoNodeAttempts.set(key, Date.now())
+    this.autoNodeQueue.push({ path: [...path], store: this.state.replica.store, generation: this.authGeneration, view: JSON.stringify(this.state.view) })
+    this.drainAutoNodes()
+  }
+  autoLoadProposalNode(path: Scope, id: string, relative: Scope): void {
+    const key = JSON.stringify(['proposal', this.authGeneration, id, path, relative])
+    if (Date.now() - (this.autoNodeAttempts.get(key) ?? 0) < 30000) return
+    this.autoNodeAttempts.set(key, Date.now())
+    this.autoNodeQueue.push({ path, store: this.state.replica.store, generation: this.authGeneration, view: JSON.stringify(this.state.view), load: () => this.loadProposalPreview(path, id, relative) })
+    this.drainAutoNodes()
+  }
+  private drainAutoNodes(): void {
+    while (this.autoNodeActive < 4 && this.autoNodeQueue.length) {
+      const next = this.autoNodeQueue.shift()!
+      if (next.store !== this.state.replica.store || next.generation !== this.authGeneration || next.view !== JSON.stringify(this.state.view)) continue
+      this.autoNodeActive++
+      void (next.load ? next.load() : this.loadPeerNode(next.path)).finally(() => { this.autoNodeActive--; this.drainAutoNodes() })
+    }
   }
   loadPeerNode(path: Scope): Promise<void> {
     const key = JSON.stringify(path), existing = this.nodeLoads.get(key)
@@ -2721,6 +2881,7 @@ export class App {
 
   isOnline(peerId: string): boolean {
     if (peerId === 'fos' || peerId === this.state.replica.meta.serverPeerId) return this.transport() === 'account' && ['online', 'syncing'].includes(this.state.connection)
+    if (peerId.startsWith('github:')) return this.isOnline('integration:github')
     if (peerId.startsWith('integration:')) return this.isOnline('fos') && !!this.state.integrations.find(peer => `integration:${peer.id}` === peerId)?.connected
     if (peerId.startsWith('mcp:')) return this.isOnline('fos') && this.state.mcpPeers.some(peer => peer.id === peerId)
     if (peerId === this.state.replica.meta.peerId) return true

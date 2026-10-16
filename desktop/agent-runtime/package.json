@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test *.test.mjs"
+    "test": "node --test"
   },
   "dependencies": {
     "@openai/codex-sdk": "0.163.0",
@@ -12,6 +12,6 @@
     "zod": "4.6.7"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   }
 }

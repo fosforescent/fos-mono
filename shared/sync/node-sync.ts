@@ -3,7 +3,7 @@ import type { FosDataContent } from '../types'
 import { content, valueContent, identityCid, rowKindOf, rowPrimitive, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
-import { provideNode, parseNodeRequest, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError,
+import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError,
   type NodeBranch, type NodeRequest, type NodeShape, type NodeChild, type ProvidedNode, type NodeAuthority } from './node-provider'
 
 export type NodeSyncState = { local: NodeShape; remote: NodeShape & Pick<ProvidedNode, 'proposals' | 'grants'> }
@@ -89,7 +89,7 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
 }
 
 function allowedToEdit(r: Replica, path: Scope, authority: NodeAuthority): boolean {
-  let allowed = authority.owner === true
+  let allowed = inheritedNodeGrants(r, authority.scope, authority).includes('edit')
   for (let i = authority.scope.length; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) return false
@@ -119,7 +119,7 @@ function exchangeNodeOnMain(r: Replica, input: NodeRequest, authority: NodeAutho
   if (sameNodeShape(request.update.base, request.update.value)) return served
   // Enforce every ancestor mask on writes as well as reads.
   for (let i = authority.scope.length; i <= path.length; i++) {
-    const mask = nodeLinkEndpoint(r, path.slice(0, i), request.peerId)?.mask
+    const mask = nodeLinkMaskAt(r, path.slice(0, i), request.peerId)
     if (!mask) continue
     if (mask.fields && [...new Set([...Object.keys(request.update.base.data), ...Object.keys(request.update.value.data)])].some(k => !mask.fields!.includes(k))) throw new NodeAccessError('Node field is masked.')
     if (i < path.length && mask.children && !mask.children.includes(path[i]!)) throw new NodeAccessError('Node child is masked.')
@@ -182,7 +182,7 @@ export function outgoingNodeShape(r: Replica, path: Scope, peer: string, shape: 
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     const member = cid && readMembers(r.store, content(r.store, cid)).find(m => m.peerId === peer)
     if (member && (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || (!member.capabilities.includes('read') && !member.capabilities.includes('edit')))) throw new NodeAccessError('Local node access denied.')
-    const mask = nodeLinkEndpoint(r, path.slice(0, i), peer)?.mask
+    const mask = nodeLinkMaskAt(r, path.slice(0, i), peer)
     if (mask?.fields) fields = fields ? fields.filter(f => mask.fields!.includes(f)) : mask.fields
     if (i < path.length && mask?.children && !mask.children.includes(path[i]!)) throw new NodeAccessError('Local link masks this child.')
     if (i === path.length) children = mask?.children
@@ -202,8 +202,8 @@ export function establishNodeSync(r: Replica, path: Scope, request: NodeRequest,
 function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
   const request = parseNodeRequest(input), path = [...request.scope, ...request.path]
   if (request.peerId !== authority.peerId || !equal(request.scope, authority.scope)) throw new NodeAccessError('Node request is outside the attachment.')
-  let read = authority.owner === true, edit = authority.owner === true
-  let grants = authority.owner ? CAPABILITIES : []
+  let grants = inheritedNodeGrants(r, authority.scope, authority)
+  let read = grants.includes('read') || grants.includes('edit'), edit = grants.includes('edit')
   for (let i = authority.scope.length; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) { if (i === authority.scope.length) throw new NodeAccessError('Attachment unavailable.'); break }

@@ -1,5 +1,5 @@
 /** Triggers are named arguments on nodes, supplied by a device or the Home server peer. */
-import { readNodeValue, writeNodeValue } from './evaluation'
+import { evaluationRecord, readNodeValue, writeNodeValue } from './evaluation'
 import { addTask, headCid, instantiateTemplate, view, type Replica } from './replica'
 import { capabilityTarget, newId, resolveScope, valueContent, type Scope } from './graph'
 export type TriggerKind = 'timer' | 'cron' | 'task-completion' | 'request'
@@ -36,6 +36,7 @@ export function cronMatches(expression: string, now: number): boolean {
   return !!(matches[0] && matches[1] && matches[3] && day)
 }
 export function setNodeTrigger(r: Replica, path: Scope, trigger: NodeTrigger, now: number): Replica {
+  if (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.kind !== 'template') throw new Error('Triggers require a template.')
   if (trigger.kind === 'cron') cronMatches(trigger.expression ?? '', now)
   if (trigger.kind === 'timer' && (!Number.isFinite(trigger.due) || trigger.due! < now)) throw new Error('Choose a future time.')
   return writeNodeValue(r, path, TRIGGER_ARGUMENT, trigger, now, { type: capabilityTarget(r.store, trigger.kind), peer: trigger.peer })
@@ -52,6 +53,8 @@ export function triggerOccurrence(r: Replica, path: Scope, t: NodeTrigger, now: 
     return next ? `request:${next.id}` : null
   }
   const parent = path.slice(0, -1), cid = resolveScope(r.store, headCid(r), parent)
+  const evaluated = evaluationRecord(r, parent)
+  if (evaluated?.status === 'committed' && evaluated.started >= t.created) return `evaluation:${evaluated.id}`
   const data = cid ? valueContent(r.store, cid).data : null
   return data?.todo?.completed && (data.updated?.time ?? 0) >= t.created ? `completion:${data.updated?.time}` : null
 }
@@ -82,7 +85,7 @@ export async function runNodeTriggers(driver: {
     const event = triggerOccurrence(driver.get(), path, trigger, driver.now())
     const prior = triggerState(driver.get(), path)
     if (trigger.kind === 'task-completion' && prior?.status === 'finished' && prior.occurrence) {
-      if (event) continue // already consumed this completed state; edits to the parent are not another completion
+      if (event && (!event.startsWith('evaluation:') || event === prior.occurrence)) continue // already consumed this completed state; edits to the parent are not another completion
       await driver.save(writeNodeValue(driver.get(), path, TRIGGER_STATE_ARGUMENT, { ...prior, occurrence: '' }, driver.now()))
     }
     if (!event || prior?.occurrence === event || prior?.status === 'running' || prior?.status === 'failed') continue
