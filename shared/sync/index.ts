@@ -19,3 +19,5 @@ export * from './triggers'
 export * from './sharing'
 
 export * from './destructure'
+
+export * from './handlers'

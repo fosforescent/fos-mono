@@ -1,3 +1,4 @@
+import { discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
 import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
@@ -1094,7 +1095,7 @@ export class App {
     const local = view(this.state.replica, path)
     // Constructor arguments are the surrounding context; nearer peer bindings shadow ancestors.
     const members = new Map<string, NonNullable<NodeView>['members'][number]>()
-    for (let i = 0; i <= path.length; i++) for (const member of view(this.state.replica, path.slice(0, i))?.members ?? []) members.set(member.peerId, member)
+    for (const member of contextMembers(this.state.replica, path)) members.set(member.peerId, member)
     const node = local ? { ...local, members: [...members.values()] } : local
     const nameOf = (id: string) => (id.startsWith('user:') ? id.slice(5) : id.slice(0, 8))
     // the fos account server is always a peer of the root context (sign in happens on its row when not connected)
@@ -1668,6 +1669,31 @@ export class App {
       if (icon.trim()) r = writeNodeValue(r, [...parent, id], 'fos:icon', icon.trim(), this.now())
       r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, id, this.now())
       this.edit(r); this.closeModal(); this.goTo([...parent, id])
+    })
+  }
+  handlerOffers(path = this.constructorContext()) {
+    return discoverHandlers(this.state.replica, path, { isPeerActive: id => id === this.state.replica.meta.peerId || this.isOnline(id) })
+  }
+  publishCurrentTemplate(): void {
+    if (!this.canApprove() || this.currentRow()?.kind !== 'template') return
+    try { this.edit(publishTemplate(this.state.replica, this.state.view.slice(0, -1), this.state.view, this.currentRow()!.title, this.now())); this.notify('info', 'This template version is advertised by this device in its parent context.') }
+    catch (error) { this.notify('error', String(error)) }
+  }
+  toggleHandler(peerId: string, id: string, enabled: boolean): void {
+    if (!this.canApprove()) return
+    try { this.edit(setHandlerEnabledAt(this.state.replica, this.peerContextPath(), peerId, id, enabled, this.now())) }
+    catch (error) { this.notify('error', String(error)) }
+  }
+  insertHandler(cid: string, path = this.constructorContext()): void {
+    const offer = this.handlerOffers(path).find(o => o.cid === cid && o.enabled && o.active)
+    if (!offer || offer.type !== this.state.replica.store.primitive.templateField.getId()) throw new Error('This template handler is unavailable.')
+    const source = refValueCid(this.state.replica.store, content(this.state.replica.store, offer.cid))
+    if (!source) throw new Error('Template is unbound.')
+    this.together(() => {
+      const id = newId()
+      let r = addRow(this.state.replica, path, 'task', offer.label, this.now(), { id })
+      r = instantiateTemplateValue(r, path, id, source, this.now())
+      this.edit(r)
     })
   }
   constructorContext(): Scope { return this.state.selected ? [...this.state.view, ...this.state.selected] : [...this.state.view] }

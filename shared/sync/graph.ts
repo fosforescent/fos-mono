@@ -298,8 +298,15 @@ export function scopeBranches(store: FosStore, root: string, path: Scope): Recor
   }
   return result
 }
+const policyReads = new WeakSet<FosStore>()
+/** Main is the authority branch; the default is the legacy fallback when no main exists. */
+export function withMainBranchPolicy<T>(store: FosStore, run: () => T): T {
+  const nested = policyReads.has(store); policyReads.add(store)
+  try { return run() } finally { if (!nested) policyReads.delete(store) }
+}
 export function branchSelection(store: FosStore, cid: string): string {
   const choice = readChoice(store, cid)
+  if (policyReads.has(store)) return choice.options.find(o => o.peerId === 'main')?.peerId ?? choice.defaultName ?? choice.options[0]?.peerId ?? ''
   const name = branchSelections.get(store)?.get(choice.id)
   return choice.options.find(o => o.peerId === name)?.peerId ?? choice.defaultName ?? choice.options.map(o => o.peerId).sort()[0] ?? ''
 }
@@ -1133,7 +1140,7 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
 }
 
 export function viewNode(store: FosStore, cid: string, constructors = false): NodeView {
-  if (isBranchChoice(store, content(store, cid))) { const active = branchEdge(store, cid); if (active) return viewNode(store, identityCid(store, active), constructors) }
+  if (isBranchChoice(store, content(store, cid))) { const active = branchEdge(store, cid); if (active) return { ...viewNode(store, identityCid(store, active), constructors), members: readMembers(store, content(store, cid)) } }
   const identity = content(store, cid)      // ref node for link rows (bookkeeping lives here)
   const value = valueContent(store, cid)    // the content: text, rows
   const link = isLink(store, identity)
@@ -1444,7 +1451,7 @@ export function memberRefContent(store: FosStore, peerId: string, name: string |
 }
 
 export function readMembers(store: FosStore, value: FosNodeContent): MemberRecord[] {
-  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return readMembers(store, content(store, identityCid(store, edge))) }
+  if (isBranchChoice(store, value)) { const edge = withMainBranchPolicy(store, () => branchEdge(store, put(store, value))); if (edge) return readMembers(store, content(store, identityCid(store, edge))) }
   const out: MemberRecord[] = []
   for (const edge of value.children) {
     if (!isMemberEdge(store, edge)) continue
@@ -1452,7 +1459,7 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
     const peerId = ref.data.peerId?.content
     if (!peerId) continue
     const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c): c is Capability => c !== null))]
-    const accepts = ref.children.map((e) => acceptsOf(store, e)).filter((c): c is Capability => c !== null)
+    const accepts = [...new Set(ref.children.map((e) => acceptsOf(store, e)).filter((c): c is Capability => c !== null))]
     const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => (CAPABILITIES as string[]).includes(c) && (caps.includes(c as Capability) || accepts.includes(c as Capability)))
     out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...(off.length ? { disabled: off } : {}), ...(accepts.length ? { accepts } : {}) })
   }
@@ -1471,7 +1478,15 @@ export function withMember(store: FosStore, value: FosNodeContent, peerId: strin
   const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts)
   // Connection arguments and child rows belong to this constructor, not its capability list.
   const previous = value.children.find(edge => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId)
-  if (previous) next.children.push(...content(store, previous[1]).children.filter(edge => edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId()))
+  if (previous) {
+    const old = content(store, previous[1])
+    next.children.push(...old.children.filter(edge =>
+      (edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId()) ||
+      (!!refTypeCid(store, content(store, edge[1])) && !capabilityOfTarget(store, edge[1]))))
+    // Built-in checkbox edits must not erase custom handler overrides.
+    const custom = (old.data.disabledCapabilities?.content ?? []).filter(id => !CAPABILITIES.includes(id as Capability))
+    if (custom.length) next.data.disabledCapabilities = { content: [...new Set([...(next.data.disabledCapabilities?.content ?? []), ...custom])] }
+  }
   next.children = next.children.flatMap((edge) => {
     const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge)
     const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : []
