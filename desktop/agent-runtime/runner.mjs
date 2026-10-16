@@ -1,3 +1,4 @@
+import { launchCli } from './cli.mjs'
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import { probeAgents } from './availability.mjs'
@@ -26,12 +27,17 @@ async function run(request) {
       return
     }
     if (!['codex','claude'].includes(request.provider) || !request.cwd || !request.prompt?.trim()) throw new Error('Provider, repository, and task prompt are required')
+    if (request.cli && request.evaluation) throw new Error('CLI launches require read-only node context')
     if (request.evaluation) {
       const url = new URL(request.evaluation.url)
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || typeof request.evaluation.token !== 'string') throw new Error('Evaluation requires an authenticated loopback endpoint')
       context = { url: url.href, token: request.evaluation.token, close() {} }
     } else context = await serveContext(request.context)
     const prompt = request.evaluation ? `Use the fos evaluation MCP tools to perform this task. Start with fos_evaluation_read. Provide only declared inputs and consume only offered allocations. Complete when satisfied.\n\n${request.prompt}` : `Work in the selected repository. The fos MCP server exposes the task subtree from which this run was launched, captured at revision ${request.context.revision}. Start with fos_read at []. Read relevant descendants before implementing.\n\n${request.prompt}`
+    if (request.cli) {
+      await launchCli(request, context, abort.signal, emit)
+      emit({ type: abort.signal.aborted ? 'cancelled' : 'completed' }); return
+    }
     if (request.provider === 'codex') {
       const { Codex } = await import('@openai/codex-sdk')
       const codex = new Codex({ apiKey: process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY, config: { mcp_servers: { fos: { url: context.url, http_headers: { Authorization: `Bearer ${context.token}` } } } } })
