@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
+import { discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 import { createMcpPeerHandlers, mcpMembersAbove, type McpPeerDeps, type McpServerInfo } from './mcpPeers'
 
 function setup(servers: McpServerInfo[]) {
@@ -40,7 +40,7 @@ test('an MCP server attaches to a node as a member advertising tool; it is found
   expect((await call(h.attach, { scope: ['proj'], serverId: 9 })).status).toBe(404)
   const attached = await call(h.attach, { scope: ['proj'], serverId: 5 })
   expect(attached.json).toEqual({ ok: true, peerId: 'mcp:5', tools: ['weather', 'forecast'] })
-  expect(view(replica(), ['proj'])!.members).toEqual([{ peerId: 'mcp:5', name: 'Weather MCP', capabilities: ['tool', 'read', 'edit'] }])
+  expect(view(replica(), ['proj'])!.members).toEqual([{ peerId: 'mcp:5', name: 'Weather MCP', capabilities: ['tool', 'read', 'edit'], accepts: ['tool'] }])
   expect(mcpMembersAbove(replica(), ['proj', 'trip'])).toEqual([{ serverId: 5, peerId: 'mcp:5' }])
   expect(mcpMembersAbove(replica(), [])).toEqual([])
 })
@@ -155,5 +155,17 @@ test('multiple matching tools require a choice instead of silently choosing the 
   addRow(replica(), ['proj', 'trip'], 'requirement', 'choose a tool', 20, { id: 'ambiguous', requirement: { capability: 'tool' } })
   const result = await call(h.run, { scope: ['proj', 'trip'], requirementId: 'ambiguous' })
   expect(result.json.error).toMatch(/Choose a binding/)
+  expect(calls).toEqual([])
+})
+
+
+test('disabling one advertised tool cannot fall back to the primitive marker while another remains enabled', async () => {
+  const { deps, calls, replica } = setup([weather])
+  const h = createMcpPeerHandlers(deps)
+  await call(h.attach, { scope: ['proj'], serverId: 5 })
+  const offer = discoverHandlers(replica(), ['proj']).find(o => valueContent(replica().store, o.cid).data.description?.content === 'weather')!
+  setHandlerEnabledAt(replica(), ['proj'], 'mcp:5', offer.id, false, 3)
+  expect(mcpMembersAbove(replica(), ['proj'])).toHaveLength(1)
+  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
   expect(calls).toEqual([])
 })

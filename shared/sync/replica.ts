@@ -11,7 +11,7 @@ import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
-  refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
+  withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
   homeContextCid,
   canonicalRowData,
@@ -222,6 +222,13 @@ function editNode(replica: Replica, at: Scope, now: number, fn: (node: FosNodeCo
   return { ...replica }
 }
 
+function editPolicy(replica: Replica, at: Scope, now: number, fn: (node: FosNodeContent) => FosNodeContent): Replica {
+  return withMainBranchPolicy(replica.store, () => {
+    if (!resolveScope(replica.store, headCid(replica), at)) throw new Error('Peer policy can only be changed on a node present in main.')
+    return editNode(replica, at, now, fn)
+  })
+}
+
 function findTaskEdge(replica: Replica, value: FosNodeContent, taskId: string) {
   const edge = findEdge(replica.store, value, `a:${taskId}`)
   return edge && edge[1] === replica.store.primitive.completeField.getId() ? edge : undefined
@@ -367,12 +374,20 @@ export function instantiateTemplate(replica: Replica, at: Scope, taskId: string,
   const template = resolveRef(replica, templateId)
   if (!template || template.row.kind !== 'template') return replica
   const templateCid = resolveScope(replica.store, headCid(replica), [...template.path, templateId])
+  if (!templateCid || taskId === templateId || !resolveScope(replica.store, headCid(replica), [...at, taskId])) return replica
+  return instantiateTemplateValue(replica, at, taskId, templateCid, now)
+}
+
+/** Local templates and advertised templates use the same copy/remap operation. */
+export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: string, templateCid: string, now: number): Replica {
+  if (!replica.store.table.has(templateCid)) throw new Error('Template content is unavailable.')
   const taskCid = resolveScope(replica.store, headCid(replica), [...at, taskId])
-  if (!templateCid || !taskCid || taskId === templateId) return replica
+  if (!taskCid) throw new Error('Template destination is unavailable.')
+  const source = valueContent(replica.store, templateCid)
   const copied = content(replica.store, copyRowContent(replica.store, templateCid, now, newId, { instantiate: true, rootId: taskId }))
-  return updateTask(replica, at, taskId, now, (task) => ({
+  return updateTask(replica, at, taskId, now, task => ({
     ...task,
-    data: { ...task.data, template: { id: templateId, name: template.row.title } },
+    data: { ...task.data, template: { id: source.data.alias?.id ?? templateCid, name: source.data.description?.content ?? 'Template' } },
     children: [...task.children, ...copied.children]
   }))
 }
@@ -502,7 +517,7 @@ export function makeLinkAt(replica: Replica, at: Scope, now: number): Replica {
 }
 
 export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: string | null, capabilities: Capability[], now: number): Replica {
-  return editNode(replica, at, now, (node) => withMember(replica.store, makeLink(replica.store, node, now), peerId, name, capabilities))
+  return editPolicy(replica, at, now, (node) => withMember(replica.store, makeLink(replica.store, node, now), peerId, name, capabilities))
 }
 
 /**
@@ -511,7 +526,7 @@ export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: s
  * count for `hasCapability`. Bookkeeping on the ref node: no version.
  */
 export function setMemberCapabilitiesAt(replica: Replica, at: Scope, peerId: string, capabilities: Capability[], disabled: Capability[], now: number, accepts?: Capability[]): Replica {
-  return editNode(replica, at, now, (node) => {
+  return editPolicy(replica, at, now, (node) => {
     const link = makeLink(replica.store, node, now)
     const existing = readMembers(replica.store, link).find((m) => m.peerId === peerId)
     return withMember(replica.store, link, peerId, existing?.name ?? null, capabilities, disabled, accepts ?? existing?.accepts ?? [])
@@ -520,19 +535,57 @@ export function setMemberCapabilitiesAt(replica: Replica, at: Scope, peerId: str
 
 /** Owner side: drop the member `peerId` from the node at `at` (its capabilities with it). */
 export function removeMemberAt(replica: Replica, at: Scope, peerId: string, now: number): Replica {
-  return editNode(replica, at, now, (node) => withoutMember(replica.store, node, peerId))
+  return editPolicy(replica, at, now, (node) => withoutMember(replica.store, node, peerId))
 }
 
-/** Replace a member's advertisements for one capability, retaining its other grants. */
-export function setMemberHandlersAt(replica: Replica, at: Scope, peerId: string, capability: Capability, handlers: string[], now: number): Replica {
-  return editNode(replica, at, now, (node) => ({ ...node, children: node.children.map((edge) => {
-    if (!isMemberEdge(replica.store, edge)) return edge
-    const member = content(replica.store, edge[1])
-    if (member.data.peerId?.content !== peerId) return edge
-    const children = handlers.map((cid): [string, string] => [replica.store.primitive.capabilityNode.getId(), cid])
-    children.push(...member.children.filter((e) => capabilityOf(replica.store, e) !== capability))
-    return [edge[0], put(replica.store, { ...member, children })]
-  }) }))
+/** Materialize the nearest inherited member before overriding its offers locally. Called in main policy context. */
+function localMember(replica: Replica, at: Scope, node: FosNodeContent, peerId: string): FosNodeContent {
+  if (!node.children.some(e => isMemberEdge(replica.store, e) && content(replica.store, e[1]).data.peerId?.content === peerId)) {
+    let inherited: [string, string] | undefined
+    for (let depth = 0; depth < at.length; depth++) {
+      const cid = resolveScope(replica.store, headCid(replica), at.slice(0, depth))
+      if (!cid) continue
+      const current = content(replica.store, cid)
+      const active = isBranchChoice(replica.store, current) ? branchEdge(replica.store, cid) : null
+      const policy = active ? content(replica.store, identityCid(replica.store, active)) : current
+      const edge = policy.children.find(e => isMemberEdge(replica.store, e) && content(replica.store, e[1]).data.peerId?.content === peerId)
+      if (edge) inherited = edge
+    }
+    if (!inherited) throw new Error('Peer no longer exists.')
+    node = { ...node, children: [...node.children, inherited] }
+  }
+  return node
+}
+
+/** Publish typed offers without requiring registration in the built-in capability vocabulary. */
+export function setHandlerOffersAt(replica: Replica, at: Scope, peerId: string, type: string, handlers: string[], now: number, direction: 'from' | 'to' = 'from'): Replica {
+  const s = replica.store, marker = direction === 'from' ? s.primitive.acceptsNode.getId() : s.primitive.capabilityNode.getId()
+  if (!s.table.has(type) || handlers.some(cid => !s.table.has(cid) || refTypeCid(s, content(s, cid)) !== type)) throw new Error('Handler type does not match its advertised capability.')
+  return editPolicy(replica, at, now, node => {
+    node = localMember(replica, at, node, peerId)
+    return { ...node, children: node.children.map(edge => {
+      if (!isMemberEdge(s, edge)) return edge
+      const member = content(s, edge[1]); if (member.data.peerId?.content !== peerId) return edge
+      const children = member.children.filter(e => e[0] !== marker || (refTypeCid(s, content(s, e[1])) ?? e[1]) !== type)
+      children.push(...[...new Set(handlers)].map(cid => [marker, cid] as [string, string]))
+      return [edge[0], put(s, { ...member, children })]
+    }) }
+  })
+}
+
+/** Disable one configured handler without deleting it or changing its type. */
+export function setHandlerEnabledAt(replica: Replica, at: Scope, peerId: string, id: string, enabled: boolean, now: number): Replica {
+  return editPolicy(replica, at, now, node => {
+    node = localMember(replica, at, node, peerId)
+    return { ...node, children: node.children.map(edge => {
+      if (!isMemberEdge(replica.store, edge)) return edge
+      const member = content(replica.store, edge[1]); if (member.data.peerId?.content !== peerId) return edge
+      if (!member.children.some(e => (e[0] === replica.store.primitive.acceptsNode.getId() || e[0] === replica.store.primitive.capabilityNode.getId()) && (content(replica.store, e[1]).data.alias?.id ?? e[1]) === id)) throw new Error('Handler no longer exists.')
+      const disabled = new Set(member.data.disabledCapabilities?.content ?? [])
+      if (enabled) disabled.delete(id); else disabled.add(id)
+      return [edge[0], put(replica.store, { ...member, data: { ...member.data, disabledCapabilities: { content: [...disabled] } } })]
+    }) }
+  })
 }
 
 /** Add a typed mutable argument using the existing ref shape. No separate binding record. */

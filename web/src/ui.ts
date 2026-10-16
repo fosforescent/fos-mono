@@ -481,13 +481,14 @@ const CONSTRUCTORS = [
   { id: 'repository', label: 'Repository', icon: '⑂' }
 ] as const
 function constructorOptions(app: App) {
-  return [...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id })),
+  return [...app.handlerOffers().filter(o => o.enabled && o.active && o.type === app.state.replica.store.primitive.templateField.getId()).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: '✦', output: 'template' })), ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id })),
     ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext())).map(cap => ({ id: `action:${cap}`, label: CAPABILITY_LABEL[cap] ?? cap, icon: '▶', output: cap })),
     ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: '⟳', output: 'tool' })),
     ...app.triggerKinds(app.constructorContext()).map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'When parent completes' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: 'calendar', output: kind }))]
 }
 function insertConstructor(app: App, id: string, path = app.constructorContext(), replace = false): void {
   if (proposalPreview(app)) return
+  if (id.startsWith('handler:')) { try { app.insertHandler(id.slice(8), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id.startsWith('action:')) {
     const cap = id.slice(7) as 'search' | 'llm' | 'market'
@@ -597,7 +598,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
 
 function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): boolean {
   const constructor = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
-  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'pull' || constructor.startsWith('trigger:') || constructor.startsWith('action:'))) { event.preventDefault(); event.stopPropagation(); insertConstructor(app, constructor, path, replace); return true }
+  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'pull' || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:'))) { event.preventDefault(); event.stopPropagation(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -868,6 +869,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
     if (preview.proposal.peerId === state.replica.meta.peerId && preview.proposal.status === 'rejected') controls.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(preview.proposal.id)))
   }
+  if (!preview && row?.kind === 'template') controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
   const agents = !preview && desktopAgentControls(app); if (agents) controls.append(agents)
   const integration = app.integrationHandler()
   if (integration && !preview) { const connect = button('secondary small', `Connect ${integration.provider}`, () => void app.connectIntegration(integration.provider)); connect.disabled = !integration.enabled; controls.append(connect) }
@@ -1975,6 +1977,11 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     if (offers.length) lines.append(direction('available here:', 'Handlers available to this node and its children. Overrides inherit until another node overrides them.', offers.map(cap => {
       const b = button('chip cap-chip' + (p.disabled.includes(cap) || !p.online ? ' off' : ''), CAPABILITY_LABEL[cap] ?? cap, () => app.setPeerOffers(p.name === 'fos' ? 'fos' : p.id, [cap], p.disabled.includes(cap)))
       b.disabled = !owner; b.setAttribute('aria-pressed', String(!p.disabled.includes(cap))); return b
+    })))
+    const customOffers = app.handlerOffers().filter(o => o.peerId === p.id && !o.capability)
+    if (customOffers.length) lines.append(direction('capabilities:', 'Published typed handlers; toggles apply to this context and its children.', customOffers.map(offer => {
+      const b = button('chip cap-chip' + (!offer.enabled || !offer.active ? ' off' : ''), offer.label, () => app.toggleHandler(offer.peerId, offer.id, !offer.enabled))
+      b.disabled = !owner; b.setAttribute('aria-pressed', String(offer.enabled)); return b
     })))
     const meta = span('row-meta', '')
     if (p.member && owner) { const remove = button('icon more small-icon', '×', () => app.removePeerHere(p.id)); remove.title = `Remove @${p.name} from Home`; meta.append(remove) }

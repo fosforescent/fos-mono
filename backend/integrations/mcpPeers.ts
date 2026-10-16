@@ -14,9 +14,9 @@
 import type { Request, Response } from 'express'
 import {
   resolveBinding, contextBindings, addMemberAt, addRefAt, addRow, addSupply, applyProposalAt, capabilityTarget,
-  content, headCid, memberHandlers, MCP_PEER_PREFIX, newId, proposeRefAt, put,
+  content, headCid, discoverHandlers, MCP_PEER_PREFIX, newId, proposeRefAt, put,
   refArguments, refNodeContent, refTypeCid, refValueCid, resolveScope,
-  setMemberHandlersAt, valueContent, view, type Replica, type Scope, type TaskView
+  setHandlerOffersAt, valueContent, view, type Replica, type Scope, type TaskView
 } from '@fosforescent/shared/sync/index'
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { editTree, walkRows, type StoreDeps } from './store'
@@ -33,30 +33,12 @@ export type McpPeerDeps = StoreDeps & {
 
 /** The MCP members on the path to `at` (nearest first), as peer ids and server ids. */
 export function mcpMembersAbove(replica: Replica, at: Scope): Array<{ serverId: number; peerId: string }> {
-  const out: Array<{ serverId: number; peerId: string }> = []
-  const seen = new Set<string>()
-  for (let i = at.length; i >= 0; i--) {
-    const node = view(replica, at.slice(0, i))
-    for (const m of node?.members ?? []) {
-      if (seen.has(m.peerId)) continue
-      seen.add(m.peerId)
-      if (!m.peerId.startsWith(MCP_PEER_PREFIX) || !m.capabilities.includes('tool') || (m.disabled ?? []).includes('tool')) continue
-      const serverId = Number(m.peerId.slice(MCP_PEER_PREFIX.length))
-      if (Number.isFinite(serverId) && !out.some((o) => o.serverId === serverId)) out.push({ serverId, peerId: m.peerId })
-    }
-  }
-  return out
+  const ids = [...new Set(discoverHandlers(replica, at).filter(o => o.enabled && o.capability === 'tool' && o.peerId.startsWith(MCP_PEER_PREFIX)).map(o => o.peerId))]
+  return ids.map(peerId => ({ peerId, serverId: Number(peerId.slice(MCP_PEER_PREFIX.length)) })).filter(p => Number.isFinite(p.serverId))
 }
 
-/** The nearest membership shadows the same peer's ancestor advertisements. */
 function handlersAbove(replica: Replica, at: Scope, peerId: string): string[] {
-  for (let i = at.length; i >= 0; i--) {
-    const scope = at.slice(0, i)
-    if (!view(replica, scope)?.members.some((member) => member.peerId === peerId)) continue
-    const cid = resolveScope(replica.store, headCid(replica), scope)!
-    return memberHandlers(replica.store, content(replica.store, cid), peerId)
-  }
-  return []
+  return discoverHandlers(replica, at).filter(o => o.peerId === peerId && o.enabled && !o.legacy && o.capability === 'tool').map(o => o.cid)
 }
 
 /** Create the native handler as a value behind the same ref that can hold a template. */
@@ -112,6 +94,7 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyn
   const tool = handler.data.description?.content
   const server = servers.find((s) => `${MCP_PEER_PREFIX}${s.id}` === peerId)
   if (!server || !attached.some((a) => a.peerId === peerId) || !tool || !server.tools.some((t) => t.name === tool) || (r.tool && tool !== r.tool)) return { error: 'bound MCP handler is unavailable or does not match the requirement' }
+  if (!discoverHandlers(replica, scope).some(o => o.peerId === peerId && o.enabled && o.capability === 'tool' && (o.legacy || valueContent(store, o.cid).data.description?.content === tool))) return { error: 'bound MCP handler is disabled or no longer advertised' }
   // Persist the binding before calling an external handler, including on failure.
   const returns = refArguments(store, request, store.primitive.documentField.getId())
   if (returns.length > 1) return { error: 'tool requirement has ambiguous return arguments' }
@@ -151,7 +134,7 @@ export function createMcpPeerHandlers(deps: McpPeerDeps) {
         if (!resolveScope(replica.store, headCid(replica), scope)) return { replica: null, result: false }
         const peerId = `${MCP_PEER_PREFIX}${server.id}`
         let next = addMemberAt(replica, scope, peerId, server.name, ['tool', 'read', 'edit'], now())
-        next = setMemberHandlersAt(next, scope, peerId, 'tool', server.tools.map((tool) => toolHandler(next, server, tool.name)), now())
+        next = setHandlerOffersAt(next, scope, peerId, capabilityTarget(next.store, 'tool'), server.tools.map((tool) => toolHandler(next, server, tool.name)), now())
         return { replica: next, result: true }
       })
       if (!done) return fail(res, 404, 'node not found')

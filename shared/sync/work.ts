@@ -1,7 +1,8 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
+import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import {
-  demandOf, readMembers, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
+  demandOf, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope, rowContent,
   rowEdge, rowKindOf, updateAtScope, valueContent, type Scope
 } from './graph'
@@ -28,18 +29,7 @@ export function workHandler(r: Replica, requestPath: Scope, environment: Binding
   const request = nodeAt(r, requestPath)
   const handlers = slots(r, request.cid, type)
   const candidates = contextBindings(r, requestPath, environment)
-  // Old Fos memberships advertise a primitive rather than a typed handler ref.
-  let fos = false
-  for (let i = 0; i <= requestPath.length; i++) {
-    const cid = resolveScope(store, headCid(r), requestPath.slice(0, i))
-    const member = cid ? readMembers(store, content(store, cid)).find(m => m.peerId === 'fos') : undefined
-    if (member) fos = !!(member.accepts?.includes('llm') || member.capabilities.includes('llm')) && !member.disabled?.includes('llm')
-  }
-  if (environment.isPeerActive && !environment.isPeerActive('fos')) fos = false
-  if (fos && !candidates.some(c => c.type === type && valueContent(store, c.cid).data.peerId?.content === 'fos')) {
-    const native = put(store, { data: { peerId: { content: 'fos' }, description: { content: 'llm' } }, children: [] })
-    candidates.push({ cid: put(store, refNodeContent(store, { alias: { id: 'fos:llm' } }, native, [], type)), type })
-  }
+  const fos = discoverHandlers(r, requestPath, environment).some(o => o.peerId === 'fos' && o.capability === 'llm' && o.enabled && o.active)
   const result = handlers.length > 1
     ? { status: 'ambiguous' as const, sources: handlers.map(h => h.cid), problems: ['Choose one language-model handler.'] }
     : resolveBinding(store, type, handlers[0]?.cid ?? null, candidates, undefined, environment)

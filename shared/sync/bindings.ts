@@ -1,14 +1,15 @@
 /** Shared, read-only resolution for data arguments and callable values. */
+import { discoverHandlers, type HandlerEnvironment } from './handlers'
 import { resolveRequirementOutput } from './destructure'
 import { keyValueOf, splitFrontmatter } from './notes'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  isBranchChoice, selectedBranchValue, readMembers, type Capability, put, childRows, requirementSatisfied, capabilityOf, acceptsOf, content, identityCid, isChoiceEdge, isMemberEdge, refTypeCid, refValueCid,
+  isBranchChoice, selectedBranchValue, type Capability, put, childRows, requirementSatisfied, content, identityCid, isChoiceEdge, refTypeCid, refValueCid,
   resolveScope, valueContent, type Scope
 } from './graph'
 import { headCid, type Replica } from './replica'
 
-export type BindingEnvironment = { isPeerActive?: (peerId: string) => boolean }
+export type BindingEnvironment = HandlerEnvironment
 
 export type BindingCandidate = { cid: string; type: string; name?: string }
 export type BindingResolution = {
@@ -28,7 +29,7 @@ export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
 
 /** Only explicitly passed arguments and advertised peer handlers enter the context. */
 export function contextBindings(r: Replica, at: Scope, environment: BindingEnvironment = {}): BindingCandidate[] {
-  const named = new Map<string, BindingCandidate[]>(), peers = new Map<string, BindingCandidate[]>()
+  const named = new Map<string, BindingCandidate[]>()
   for (let i = 0; i <= at.length; i++) {
     const cid = resolveScope(r.store, headCid(r), at.slice(0, i))
     if (!cid) continue
@@ -54,22 +55,8 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
       if (refValueCid(r.store, content(r.store, arg.cid)) || content(r.store, arg.cid).data.ref) local.set(`${arg.type}/${arg.name}`, [...(local.get(`${arg.type}/${arg.name}`) ?? []), arg])
     }
     for (const [key, values] of local) named.set(key, values)
-    for (const edge of content(r.store, cid).children.filter(edge => isMemberEdge(r.store, edge))) {
-      const member = content(r.store, edge[1]), peer = member.data.peerId?.content
-      if (!peer) continue
-      if (environment.isPeerActive && !environment.isPeerActive(peer)) { peers.set(peer, []); continue }
-      const disabled = member.data.disabledCapabilities?.content ?? []
-      // Direction/permission filtering is also performed by the invoking transport.
-      const offers = member.children.filter(e => e[0] === r.store.primitive.capabilityNode.getId() || e[0] === r.store.primitive.acceptsNode.getId())
-      peers.set(peer, offers.flatMap(e => {
-        const ref = content(r.store, e[1]), type = refTypeCid(r.store, ref)
-        // Legacy capability markers are adapted by their existing executors.
-        const capability = capabilityOf(r.store, e) ?? acceptsOf(r.store, e)
-        return type && (!capability || !disabled.includes(capability)) ? [{ cid: e[1], type }] : []
-      }))
-    }
   }
-  return [...[...named.values()].flat(), ...[...peers.values()].flat()]
+  return [...[...named.values()].flat(), ...discoverHandlers(r, at, environment).filter(o => o.enabled && o.active).map(({ cid, type }) => ({ cid, type }))]
 }
 
 /** Explicit targets win. Multiple candidates remain choices; no first-provider wins. */
@@ -143,11 +130,5 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
 
 /** Nearest bindings shadow ancestors. Offers are distinct from permissions granted to a peer. */
 export function capabilityPeers(r: Replica, path: Scope, capability: Capability): string[] {
-  const members = new Map<string, ReturnType<typeof readMembers>[number]>()
-  for (let i = 0; i <= path.length; i++) {
-    const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
-    if (cid) for (const member of readMembers(r.store, content(r.store, cid))) members.set(member.peerId, member)
-  }
-  return [...members.values()].filter(m => !m.disabled?.includes(capability) &&
-    (m.accepts?.includes(capability) || ((m.peerId === 'fos' || (m.peerId.startsWith('mcp:') && capability === 'tool')) && m.capabilities.includes(capability)))).map(m => m.peerId)
+  return [...new Set(discoverHandlers(r, path).filter(o => o.enabled && o.capability === capability).map(o => o.peerId))]
 }
