@@ -4,6 +4,7 @@ import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
+import { openTimeBlockPicker, type TimeBank } from './timeblocks'
 import { alternativePicker, proposalPreview, clearProposal } from './alternatives'
 /**
  * DOM rendering. The shell is built once; each state change re-renders the
@@ -17,7 +18,7 @@ import { requirementOutputs, resolveRequirementOutput, resolveScope, resolveText
 import type { App, AppState } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
+import { RESOURCE_NAME, ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
 import { CAPABILITY_LABEL, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
@@ -85,13 +86,13 @@ export function mountUi(root: HTMLElement, app: App): void {
       <div class="brand-row">
         <button type="button" class="icon menu-button" data-region="menu-button" aria-label="Menu">☰</button>
         <div class="brand"><img src="/icon-192.png" width="24" height="24" alt="">Fosforescent</div>
-        <button type="button" class="icon help-button" data-region="help-button" title="Keys and row syntax (Ctrl+H)" aria-label="Keys and row syntax">?</button>
       </div>
+      <nav class="crumbs" data-region="crumbs" aria-label="Breadcrumb"></nav>
       <div class="status" data-region="status"></div>
+      <button type="button" class="icon help-button" data-region="help-button" title="Keys and row syntax (Ctrl+H)" aria-label="Keys and row syntax">?</button>
       <nav class="menu" data-region="menu" hidden></nav>
     </header>
     <section class="banner" data-region="banner" hidden></section>
-    <nav class="crumbs" data-region="crumbs"></nav>
     <div class="voice-controls"><button type="button" class="icon mic" data-region="mic" title="Record a voice note (transcribed and organized into notes)" aria-label="Record a voice note">🎙</button></div>
     <section class="repository" data-region="repository"></section>
     <section class="node-detail" data-region="node"></section>
@@ -130,6 +131,7 @@ export function mountUi(root: HTMLElement, app: App): void {
   installRowClipboard(regions.list, app)
   regions.mic.addEventListener('click', () => { void app.toggleVoice() })
   q<HTMLButtonElement>('help-button').addEventListener('click', () => toggleHelp(app))
+  q<HTMLButtonElement>('help-button').innerHTML = iconSvg('keyboard')!
   regions.menuButton.innerHTML = iconSvg('☰')!
   regions.menuButton.addEventListener('click', (event) => {
     event.stopPropagation()
@@ -536,6 +538,34 @@ function constructorPalette(app: App, ids: string[]): HTMLElement {
   }
   return palette
 }
+const HOUR_MS = 3_600_000
+/** Calendar banks with the spans already allocated from them, for the time-block picker's timeline. */
+function timeBanks(app: App): TimeBank[] {
+  const allocations = app.allocations()
+  return app.banks().filter(({ row }) => row.resource.type === 'calendar').map(({ row }) => ({
+    id: row.id, name: row.title,
+    busy: allocations.filter(a => a.row.allocation?.resource === row.id && a.row.allocation.start !== undefined).map(a => ({
+      start: a.row.allocation!.start!, end: a.row.allocation!.end ?? a.row.allocation!.start! + a.row.allocation!.amount * HOUR_MS,
+      label: a.row.title || formatAmount(a.row.allocation!.amount, a.row.allocation!.unit), open: () => app.goTo(a.path)
+    }))
+  }))
+}
+/** "Pick time…" on an unmet time requirement: place the block, then an allocation is created inside the requirement. */
+async function pickTimeForRequirement(app: App, path: Scope, task: TaskView): Promise<void> {
+  const r = task.requirement; if (!r) return
+  const store = app.state.replica.store
+  const bank = app.bankFor(path.slice(0, -1), 'calendar')
+  const picked = await openTimeBlockPicker({ title: task.title || 'Time requirement', text: task.title, amount: r.amount, start: r.start, end: r.end, banks: timeBanks(app), bank: bank?.id ?? '', requirement: true, cta: 'Create allocation' })
+  if (!picked || picked.start === undefined) return
+  if (app.state.replica.store !== store) { app.notify('error', 'The data session changed. Pick the time again.'); return }
+  try { app.applyConstructor(path, { kind: 'allocation', text: task.title, done: false, extras: { allocation: { type: 'calendar', amount: picked.amount, unit: 'h', resource: picked.bank, start: picked.start, end: picked.end } } }, true) }
+  catch (error) { app.notify('error', String(error)) }
+}
+/** A millisecond time as the value of a datetime-local input (local time, minutes). */
+function localInputValue(t: number): string {
+  const d = new Date(t), pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 function openConstructor(app: App, kind: string, path: Scope = [...app.state.view], replace = false): void {
   if (!CONSTRUCTORS.some(c => c.id === kind) || proposalPreview(app)) return
   document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
@@ -554,10 +584,21 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   const start = document.createElement('input'), end = document.createElement('input')
   start.type = end.type = 'datetime-local'; start.setAttribute('aria-label', 'Allocation start'); end.setAttribute('aria-label', 'Allocation end'); start.title = 'Start (optional, local time)'; end.title = 'End (optional, local time)'
   const resource = ['inventory','calendar','account','bank'].includes(kind)
+  // Time allocations can be placed on the zoomable timeline; the picker fills the amount, window and source bank below.
+  const pickTime = div('pick-time', ''), pickSummary = document.createElement('code')
+  const pickButton = button('secondary small', 'Pick time…', () => void (async () => {
+    const picked = await openTimeBlockPicker({ title: title.value || 'Time allocation', text: title.value, amount: Number(amount.value) || 1, start: start.value ? new Date(start.value).getTime() : undefined, end: end.value ? new Date(end.value).getTime() : undefined, banks: timeBanks(app), bank: bank.value })
+    if (!picked) return
+    amount.value = String(picked.amount); unit.value = 'h'; bank.value = picked.bank
+    start.value = picked.start !== undefined ? localInputValue(picked.start) : ''; end.value = picked.end !== undefined ? localInputValue(picked.end) : ''
+    pickSummary.textContent = picked.start !== undefined ? `: ${formatAmount(picked.amount, 'h')} ${localInputValue(picked.start)}..${localInputValue(picked.end!)}` : `: ${formatAmount(picked.amount, 'h')} (unscheduled)`
+  })())
+  pickTime.append(pickButton, pickSummary)
   const update = () => {
     repository.placeholder = select.value === 'filesystem' ? '/path/to/git/checkout' : 'owner/repository'
     unit.value = select.value === 'calendar' ? 'h' : select.value === 'account' ? 'USD' : 'unit'
     start.hidden = end.hidden = kind === 'bank' || !['calendar', 'inventory'].includes(select.value)
+    pickTime.hidden = kind === 'bank' || select.value !== 'calendar'
     bank.replaceChildren(new Option('Unbound allocation', ''))
     for (const entry of app.banks()) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
   }
@@ -565,7 +606,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   const error = div('error', ''), submit = button('primary', replace && row?.kind !== 'requirement' && row?.id !== HOME_ID ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
   const field = (text: string, input: HTMLElement) => { const label = document.createElement('label'); label.append(span('', text), input); return label }
   form.append(h4(CONSTRUCTORS.find(c => c.id === kind)!.label), title, field(resource ? 'Resource' : 'Handler', select))
-  if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(field('Source bank', bank), start, end) }
+  if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(field('Source bank', bank), pickTime, start, end) }
   if (kind === 'repository') form.append(field('Repository', repository))
   form.append(error, submit, button('secondary', 'Cancel', () => dialog.close()))
   form.onsubmit = async event => {
@@ -1002,6 +1043,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
     }
   }
   const preview = proposalPreview(app)
+  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.length === 0) rows.push(firstRunHint(el))
   if (preview) {
     el.className = `list tree layout-${prefs.layout}`
     const renderReadOnly = (cid: string, depth: number, trail: string[] = []): HTMLElement[] => {
@@ -1037,6 +1079,22 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
       if (!app.state.selected && input.isConnected && active !== input && (!active || active === document.body || !active.closest('input, textarea, select, button'))) input.focus()
     })
   }
+}
+
+/** Below an empty node: the help shortcut and example rows that fill the blank row to show the syntax. */
+function firstRunHint(list: HTMLElement): HTMLElement {
+  const li = document.createElement('li'); li.className = 'first-run'
+  const keys = div('first-run-keys', ''); keys.append('Press ', Object.assign(document.createElement('kbd'), { textContent: 'Ctrl' }), span('sep', '+'), Object.assign(document.createElement('kbd'), { textContent: 'H' }), ' for help')
+  const examples = div('first-run-examples', '')
+  for (const [cls, text] of [['ex-task', '[ ] Book a venue'], ['ex-need', '-$ 2400 Deposit'], ['ex-bank', '@money Events 5000'], ['ex-note', '> Must seat 40'], ['ex-query', '? venues downtown']] as const) {
+    const b = button(`secondary small ${cls}`, text, () => {
+      const input = list.querySelector<HTMLTextAreaElement>('.ghost textarea.edit'); if (!input) return
+      input.value = text; input.dispatchEvent(new window.Event('input')); input.focus(); input.setSelectionRange(text.length, text.length)
+    })
+    b.title = 'Fills the blank row with this example'; examples.append(b)
+  }
+  li.append(keys, examples)
+  return li
 }
 
 /**
@@ -1313,7 +1371,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   })
 
   const zoom = button('icon zoom-dot', '◉', () => app.zoomTo(path))
-  zoom.title = 'Zoom in (Alt+→)'
+  zoom.title = 'Zoom in (Alt+→)'; zoom.setAttribute('aria-label', 'Zoom in')
   zoom.tabIndex = -1
   const handle = span('handle', '⋮⋮')
   handle.title = 'Drag to move'
@@ -1624,8 +1682,11 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
   if (task.kind === 'requirement' && task.requirement) {
     const r = task.requirement
     const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@' }
-    const label = r.capability === 'peer' && r.peer ? `@${r.peer}` : r.capability === 'allocation' ? `${marker[r.resource ?? ''] ?? '$'}${r.amount !== undefined ? ' ' + formatAmount(r.amount, r.unit ?? '') : ''}` : r.capability === 'task' ? '[ ]' : r.capability === 'search' ? '?' : r.capability
-    badge(r.satisfied ? '✓ ' + label : '- ' + label, r.satisfied ? 'ok' : insideTemplate(state, [...state.view, ...at, task.id]) ? 'tpl' : 'needs')
+    // A legible chip ("Needs money", "Decided", "Filled") with the amount beside it in monospace, instead of the raw marker.
+    const what = r.capability === 'peer' ? (r.peer ? `@${r.peer}` : 'person') : r.capability === 'allocation' ? (RESOURCE_NAME[r.resource ?? 'inventory'] ?? r.resource ?? 'allocation') : r.capability === 'task' ? 'task' : r.capability === 'choice' ? 'decision' : r.capability === 'llm' ? 'answer' : r.capability
+    const chip = r.satisfied ? (r.capability === 'choice' ? 'Decided' : r.capability === 'confirmation' ? 'Confirmed' : 'Filled') : `Needs ${what}`
+    badge(chip, r.satisfied ? 'ok' : insideTemplate(state, [...state.view, ...at, task.id]) ? 'tpl' : 'needs')
+    if (r.capability === 'allocation' && r.amount !== undefined) { const amt = span('req-amount', `${marker[r.resource ?? ''] ?? '$'} ${formatAmount(r.amount, r.unit ?? '')}`); amt.title = `${formatAmount(r.amount, r.unit ?? '')} of ${what}`; body.append(amt) }
     if (r.capability === 'allocation' || r.capability === 'choice') {
       const trigger = body.lastElementChild as HTMLElement
       trigger.classList.add('destructure-trigger'); trigger.tabIndex = 0; trigger.setAttribute('role', 'button'); trigger.title = 'Double-click to destructure'; trigger.setAttribute('aria-label', 'Destructure requirement')
@@ -1683,6 +1744,10 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         } else if (app.capabilityAvailable('tool', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', `Run${r.tool ? ' ' + r.tool : ''}`, () => void app.askPeerAt(at, task))))
         else hint('sign in: an MCP peer attached above runs it')
       }
+      if (r.capability === 'allocation' && r.resource === 'calendar') {
+        // The time-block picker places the needed time on a calendar's timeline and creates the allocation inside this requirement.
+        body.append(stop(button('secondary small pick-time', 'Pick time…', () => void pickTimeForRequirement(app, [...state.view, ...at, task.id], task))))
+      }
       if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined) {
         const google = state.integrations.find((p) => p.id === 'google')
         if (google?.connected && app.capabilityAvailable('calendar', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', 'Add to Google Calendar', () => void app.askPeerAt(at, task))))
@@ -1703,21 +1768,28 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       }
     }
   } else if (task.kind === 'supply' && task.supply) {
-    badge('supplied', 'ok')
+    badge('Supplied', 'ok')
     body.append(document.createTextNode(` ${task.title}${task.title.includes(task.supply.by) ? '' : ` · ${task.supply.by}`}`))
     if (task.supply.ref) { const t = app.refTarget(task.supply.ref); if (t) body.append(stop(button('link small', firstLine(t.row.title) || t.row.kind, () => app.followRef(task.supply!.ref!)))) }
   } else if (task.kind === 'query') {
-    badge('?' + (task.query?.market ? ' market' : ''), 'query')
+    badge('Query' + (task.query?.market ? ' · market' : ''), 'query')
     body.append(document.createTextNode(' ' + task.title + ' '))
-    body.append(stop(button('secondary small', task.query?.executedAt ? 'Refresh' : 'Search', () => void app.runQueryAt(at, task))))
+    body.append(stop(button('secondary small', task.query?.executedAt ? 'Run again' : 'Search', () => void app.runQueryAt(at, task))))
   } else if (task.kind === 'resource' && task.resource) {
-    badge(task.resource.type, 'bank')
+    badge(`Bank · ${RESOURCE_NAME[task.resource.type] ?? task.resource.type}`, 'bank')
     body.append(document.createTextNode(' ' + task.title + ' '))
     const r = task.resource
-    body.append(span('muted', r.capacity === undefined ? `${formatAmount(r.allocated, r.unit)} allocated` : `${formatAmount(r.available ?? 0, r.unit)} of ${formatAmount(r.capacity, r.unit)} available`))
+    const balance = span('mono muted', r.capacity === undefined ? `${formatAmount(r.allocated, r.unit)} allocated` : `${formatAmount(r.available ?? 0, r.unit)} of ${formatAmount(r.capacity, r.unit)} free`)
+    body.append(balance)
+    if (r.capacity !== undefined && r.capacity > 0) {
+      const bar = span('req-progress', ''), fill = span('req-progress-fill bank-fill', '')
+      fill.style.width = `${Math.min(100, Math.round(((r.available ?? 0) / r.capacity) * 100))}%`; fill.style.background = 'var(--bank)'
+      bar.append(fill); bar.title = balance.textContent ?? ''; body.append(bar)
+    }
   } else if (task.kind === 'allocation' && task.allocation) {
     const a = task.allocation
-    badge('+' + formatAmount(a.amount, a.unit), 'alloc')
+    const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
+    badge(`${a.type === 'person' ? '@' + (a.person ?? '') : marker[a.type] ?? '+'} ${formatAmount(a.amount, a.unit)}`, 'alloc')
     const when = a.start ? ` ${new Date(a.start).toLocaleDateString()}${a.end ? '–' + new Date(a.end).toLocaleDateString() : ''}` : ''
     body.append(document.createTextNode(` ${task.title}${when}${a.by ? ` · ${a.by}` : ''}`))
   }
@@ -2022,8 +2094,11 @@ function renderFooter(el: HTMLElement, state: AppState, app: App): void {
   if (state.virtual) items.push(div('muted', `${state.virtual.name} · virtual peer of ${state.virtual.hostName}${state.virtual.capabilities.includes('read') && !state.virtual.capabilities.includes('edit') ? ' · read-only (local edits stay here)' : ''}`))
   if (state.notice) items.push(div(`notice ${state.notice.kind}`, state.notice.text))
   const meta = div('meta', '')
-  if (state.session) meta.append(span('muted', `${state.session.username}${state.session.kind === 'peer' ? ' (invited)' : ''}`))
-  items.push(meta, legalLinks(''))
+  const lastSync = state.replica.meta.lastSyncAt
+  meta.append(span('muted', isDirty(state.replica) ? 'Saved on this device' : lastSync ? `Synced ${ago(lastSync)}` : 'Saved on this device'))
+  if (state.session) meta.append(span('muted', `· ${state.session.username}${state.session.kind === 'peer' ? ' (invited)' : ''}`))
+  const hint = span('key-hint', 'Ctrl+H shortcuts'); hint.title = 'Keys and row syntax'
+  items.push(meta, hint, legalLinks('', true))
   el.replaceChildren(...items)
 }
 
@@ -2150,9 +2225,10 @@ function renderHelp(body: HTMLElement): void {
 }
 
 // Links to the static legal pages in web/public (served at /privacy and /terms); `lead` is the text before them.
-function legalLinks(lead: string): HTMLElement {
+function legalLinks(lead: string, compact = false): HTMLElement {
   const el = div('muted small-print legal-links', '')
   const link = (href: string, text: string) => { const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text; return a }
+  if (compact) { el.append(link('/terms', 'Terms'), link('/privacy', 'Privacy')); return el }
   el.append(`${lead} `, link('/terms', 'Terms of Service'), ' and ', link('/privacy', 'Privacy Policy'), '.')
   return el
 }
