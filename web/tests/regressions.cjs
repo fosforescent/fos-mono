@@ -10,9 +10,15 @@ const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export * from './src/yaml'; export {createProjectStorage} from './src/project'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
-const { headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, ensureHomeContext, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
+const { exchangeNode, SERVER_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, ensureHomeContext, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const reply = (data, status = 200) => ({ ok: status < 400, status, statusText: String(status), json: async () => data })
+function nodeReply(server, request) {
+  try {
+    if ([...request.scope, ...request.path][0] === HOME_ID) ensureHomeContext(server, 0)
+    return reply(exchangeNode(server, request, { peerId: request.peerId, scope: [], owner: true, capabilities: SERVER_CAPABILITIES }, Date.now()).node)
+  } catch (error) { return reply({ error: error.message }, 403) }
+}
 const apps = []
 function app(storage = createMemoryStorage()) {
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage, scopedDocument: true })
@@ -45,33 +51,32 @@ async function main() {
   localStorage.setItem('web-mini.token', 'test-token'); localStorage.setItem('web-mini.username', 'user2'); localStorage.setItem('web-mini.api-url', 'http://localhost')
   const storage = createLocalStorageAdapter(localStorage)
   assert.equal(localStorage.getItem('web-mini.password'), null)
-  const b = app(storage), server = createReplica('server')
+  const b = app(storage), server = createReplica('user:user2')
   const requests = []
   globalThis.fetch = async (url, init) => {
     requests.push(url)
     if (url.includes('/attachment')) return reply({ scope: [], scopeNames: [] })
-    if (url.endsWith('/peer-sync')) { const result = serveSync(server.store, JSON.parse(init.body), 'server'); return 'error' in result ? reply(result, 400) : reply(result.response) }
+    if (url.endsWith('/provide-node')) return nodeReply(server, JSON.parse(init.body))
     throw new Error(`unexpected request ${url}`)
   }
   b.state.replica = addTask(b.state.replica, [], 'Previously saved', 1, 'existing')
   b.start(); await tick(); await tick()
-  assert(requests.some(url => url.endsWith('/peer-sync')), 'stored session reconnects on startup')
-  assert.equal(b.state.connection, 'online')
+  assert(requests.some(url => url.endsWith('/provide-node')), 'stored session reconnects through node requests on startup')
+  assert.equal(b.state.connection, 'online', b.state.notice?.text)
   b.state.replica = addTask(b.state.replica, [], 'Pending edit', 10, 'pending')
-  const reset = createReplica('reset'); let pushes = 0
+  const reset = createReplica('user:user2'); let pushes = 0
   globalThis.fetch = async (url, init) => {
     pushes++
-    const result = serveSync(reset.store, JSON.parse(init.body), 'server')
-    return 'error' in result ? reply(result, 400) : reply(result.response)
+    return nodeReply(reset, JSON.parse(init.body))
   }
   await b.syncNow('repair test')
-  assert.equal(pushes, 2, 'one full-closure retry follows a rejected delta')
-  assert.equal(b.state.connection, 'online')
+  assert(pushes > 0, 'reset peer receives independent node exchanges')
+  assert.equal(b.state.connection, 'online', b.state.notice?.text)
   assert(view(b.state.replica, []).tasks.some(t => t.id === 'pending'))
   pushes = 0
   globalThis.fetch = async () => { pushes++; return reply({ code: 'missing-nodes', error: 'head node not provided' }, 400) }
   await b.syncNow('unrecoverable test')
-  assert.equal(pushes, 2, 'repair is bounded per sync round')
+  assert.equal(pushes, 1, 'node failures never trigger a bulk closure retry')
   assert(b.state.notice.text.includes('head node not provided'))
   b.clearTimer('retry')
   globalThis.fetch = async () => reply({ error: 'expired' }, 401)
@@ -80,15 +85,14 @@ async function main() {
   assert(b.state.notice.text.includes('Sign in') || b.state.notice.text.includes('sign in'))
   assert.equal(storage.loadSession(), null)
   const c = app(createMemoryStorage())
-  const loginServer = createReplica('login-server')
+  const loginServer = createReplica('user:user3')
   globalThis.fetch = async (url, init) => {
     if (url.endsWith('/auth/login')) {
       assert.deepEqual(JSON.parse(init.body), { username: 'user3', password: 'ephemeral-test-password' })
       return reply({ access_token: 'user3-token' })
     }
     if (url.includes('/attachment')) return reply({ scope: [], scopeNames: [] })
-    const served = serveSync(loginServer.store, JSON.parse(init.body), 'server')
-    return 'error' in served ? reply(served, 400) : reply(served.response)
+    return nodeReply(loginServer, JSON.parse(init.body))
   }
   await c.login('user3', 'ephemeral-test-password')
   assert.equal(c.state.connection, 'online')
@@ -194,11 +198,10 @@ async function main() {
   a.goTo([]); a.select(null); await tick()
   const ghostInput = document.querySelector('.ghost textarea.edit')
   ghostInput.focus(); ghostInput.value = 'Draft survives sync'; ghostInput.setSelectionRange(6, 6)
-  const focusedServer = createReplica('focus-server')
+  const focusedServer = createReplica('user:test')
   globalThis.fetch = async (url, init) => {
     await new Promise(resolve => setTimeout(resolve, 20))
-    const served = serveSync(focusedServer.store, JSON.parse(init.body), 'focus-server')
-    return 'error' in served ? reply(served, 400) : reply(served.response)
+    return nodeReply(focusedServer, JSON.parse(init.body))
   }
   const syncing = a.syncNow('draft focus regression'); await tick()
   assert.equal(document.activeElement, ghostInput, 'sync-start render keeps the actual ghost input')
@@ -270,7 +273,7 @@ async function main() {
   assert.equal(mediaLinks.querySelector('button').textContent, 'Load remote image')
 
   // Accounts and offline sessions never share an implicit outbox.
-  const accountStores = { alice: createReplica('alice-server'), bob: createReplica('bob-server') }
+  const accountStores = { alice: createReplica('user:alice'), bob: createReplica('user:bob') }
   accountStores.alice = addTask(accountStores.alice, [], 'Alice server data', 1, 'alice-root')
   accountStores.bob = addTask(accountStores.bob, [], 'Bob server data', 1, 'bob-root')
   let deferLogin = null
@@ -284,7 +287,8 @@ async function main() {
     if (url.includes('/attachment')) return reply({ scope: [], scopeNames: [] })
     const packet = JSON.parse(init.body)
     if (packet.scope[0] === HOME_ID) accountStores[username] = ensureHomeContext(accountStores[username], 0)
-    const result = serveSync(accountStores[username].store, packet, `${username}-server`)
+    if (url.endsWith('/provide-node')) return nodeReply(accountStores[username], packet)
+    const result = serveSync(accountStores[username].store, packet, `user:${username}`)
     return 'error' in result ? reply(result, 400) : reply(result.response)
   }
   const isolated = app()
@@ -335,7 +339,7 @@ async function main() {
   let holdNextPush = true, releasePush = null
   globalThis.fetch = async (url, init) => {
     const response = await normalFetch(url, init)
-    if (holdNextPush && url.endsWith('/peer-sync')) { holdNextPush = false; return new Promise(resolve => { releasePush = () => resolve(response) }) }
+    if (holdNextPush && url.endsWith('/provide-node')) { holdNextPush = false; return new Promise(resolve => { releasePush = () => resolve(response) }) }
     return response
   }
   isolated.addRowAt([], 'task', 'Old pending sync', { id: 'old-sync' })
@@ -387,7 +391,7 @@ async function main() {
     const keys = Object.keys(localStorage).filter(key => key.startsWith('fos.virtual.') && key.endsWith('.connection'))
     const peer = keys.map(key => JSON.parse(localStorage.getItem(key))).find(peer => peer.name === name)
     const child = app(virtualStorage(peer)); child.enableVirtualPeers(peer); child.start()
-    await waitFor(() => child.state.connection === 'online')
+    try { await waitFor(() => child.state.connection === 'online') } catch (error) { throw new Error(name + ': ' + child.state.notice?.text + ' / ' + child.state.connection) }
     return child
   }
   const writer = await connectVirtual('Writer', 'editor')
@@ -401,14 +405,17 @@ async function main() {
   assert(!host.currentView().tasks.some(row => row.id === 'channel-proposal'))
   const reviewer = await connectVirtual('Reviewer', 'reviewer')
   await waitFor(() => reviewer.currentView().proposals.length > 0)
-  await reviewer.decideProposal(reviewer.currentView().proposals[0].id, 'approve')
+  const pendingId = reviewer.currentView().proposals[0].id
+  await reviewer.loadProposalPreview([], pendingId)
+  assert.ok(reviewer.proposalPreviewData(pendingId), 'reviewer loads pending content separately before approval')
+  await reviewer.decideProposal(pendingId, 'approve')
   await waitFor(() => host.currentView().tasks.some(row => row.id === 'channel-proposal'))
   const observer = await connectVirtual('Observer', 'viewer')
   observer.addRowAt([], 'task', 'Private draft', { id: 'private-draft' }); await observer.syncNow('test')
   assert(!host.currentView().tasks.some(row => row.id === 'private-draft'))
   assert.equal(observer.canApprove(), false)
-  await assert.rejects(observer.virtualPeers.sync(buildSyncRequest(observer.state.replica)), /read-only/)
-  await assert.rejects(writer.virtualPeers.sync({ ...buildSyncRequest(writer.state.replica), scope: ['outside'] }), /scope mismatch/)
+  await assert.rejects(observer.virtualPeers.requestNode({ peerId: observer.state.replica.meta.peerId, scope: ['virtual-project'], path: [], linkId: 'invalid-writer', update: { base: { data: {}, children: [] }, value: { data: {}, children: [] } } }), /editing is not permitted/)
+  await assert.rejects(writer.virtualPeers.requestNode({ peerId: writer.state.replica.meta.peerId, scope: ['outside'], path: [], linkId: 'outside' }), /outside the attachment/)
   host.set({ session: { baseUrl: 'http://localhost', jwt: 'virtual-test-token', username: 'virtual-user', kind: 'user' } })
   const accountPeer = await connectVirtual('Account peer', 'editor', true)
   assert.equal(accountPeer.state.session.username, 'virtual-user')

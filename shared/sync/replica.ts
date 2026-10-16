@@ -1,3 +1,4 @@
+import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSyncKey, nodePersistenceAllowed } from './node-sync'
 /**
  * Device replica: a FosStore whose root alias points at the node this device is
  * attached to (the whole user-group document for scope [], or one node),
@@ -8,6 +9,7 @@
  */
 
 import { FosStore } from '../dag-implementation/store'
+import { hasNodeLinkMasks, hasNodeReadBoundary } from './node-provider'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
@@ -88,6 +90,7 @@ import { mergeNodes, resolveChoiceIn } from './merge'
 import { applySyncResponse, type SyncRequest, type SyncResponse } from './protocol'
 
 export type ReplicaMeta = {
+  nodeSync?: Record<string, import('./node-sync').NodeSyncState>
   version: typeof SYNC_FORMAT_VERSION
   peerId: string
   scope: Scope
@@ -157,6 +160,7 @@ export function loadReplica(input: unknown): Replica {
       scope,
       scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
       baseCid,
+      ...(meta.nodeSync && typeof meta.nodeSync === 'object' ? { nodeSync: meta.nodeSync } : {}),
       ...(Array.isArray(meta.localScope) && meta.localScope.length <= 64 && meta.localScope.every(id => typeof id === 'string') ? { localScope: [...meta.localScope] } : {}),
       lastSyncAt: typeof meta.lastSyncAt === 'number' ? meta.lastSyncAt : null,
       serverPeerId: typeof meta.serverPeerId === 'string' ? meta.serverPeerId : null,
@@ -195,6 +199,11 @@ export function headCid(replica: Replica): string {
 }
 
 export function isDirty(replica: Replica): boolean {
+  if (replica.meta.nodeSync && replica.meta.serverPeerId) return materializedNodePaths(replica, replica.meta.localScope ?? []).some(path => {
+    if (!nodePersistenceAllowed(replica, path)) return false
+    const state = replica.meta.nodeSync![nodeSyncKey(replica.meta.serverPeerId!, path, nodeBranches(replica, path))]
+    return !state || !sameNodeShape(nodeShape(replica, path), state.local)
+  })
   const head = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? [])
   if (!head) return true
   if (replica.meta.baseCid) return head !== replica.meta.baseCid && replicationView(replica.store, [head, replica.meta.baseCid], replica.meta.peerId).project(head) !== replica.meta.baseCid
@@ -202,7 +211,7 @@ export function isDirty(replica: Replica): boolean {
 }
 
 export function hasSynced(replica: Replica): boolean {
-  return replica.meta.baseCid !== null
+  return replica.meta.lastSyncAt !== null || replica.meta.baseCid !== null
 }
 
 export function view(replica: Replica, at: Scope, constructors = false): NodeView | null {
@@ -693,6 +702,8 @@ export function assertServerReplicationAllowed(replica: Replica): void {
 }
 
 export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean; full?: boolean; recipient?: 'server' | 'device' } = {}): SyncRequest {
+  if (hasNodeLinkMasks(replica.store, replica.meta.serverPeerId, replica.meta.localScope ?? [])) throw new Error('This attachment has node masks; use provideNode for permission-filtered traversal.')
+  if (replica.meta.serverPeerId && hasNodeReadBoundary(replica, replica.meta.localScope ?? [], replica.meta.serverPeerId)) throw new Error('This attachment has a read boundary; use provideNode for permission-filtered traversal.')
   if (options.recipient !== 'device') assertServerReplicationAllowed(replica)
   branch ??= replica.meta.branch
   let base = replica.meta.baseCid
@@ -702,6 +713,7 @@ export function buildSyncRequest(replica: Replica, branch?: string, options: { p
   const projection = selective ? replicationView(replica.store, [localHead, base], replica.meta.peerId) : null
   if (base && projection) base = projection.project(base)
   const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : projection ? projection.project(localHead) : localHead
+  if (Object.values(reachableNodes(replica.store, [head])).some(node => node.data.ref?.version === 'unloaded')) throw new Error('Unloaded peer nodes require node-by-node sync; a partial subtree cannot be pushed through legacy sync.')
   // The server already holds everything reachable from the agreed base.
   const known = replica.meta.baseCid && !options.full ? reachableSet(replica.store, [replica.meta.baseCid]) : new Set<string>()
   return {

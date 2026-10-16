@@ -7,17 +7,22 @@ export function proposalPreview(app: App) {
   if (!choice || choice.path !== JSON.stringify(app.state.view) || !app.readsRequests()) return null
   const proposal = app.currentView()?.proposals.find(p => p.id === choice.id)
   const record = proposal && readProposal(app.state.replica.store, proposal.id)
-  if (!record) { selected.delete(app); return null }
-  return { proposal: proposal!, node: viewNode(app.state.replica.store, record.contentCid), cid: record.contentCid }
+  if (!record) {
+    const remote = proposal && app.proposalPreviewData(proposal.id)
+    if (remote) return { proposal: proposal!, ...remote }
+    return null
+  }
+  return { proposal: proposal!, node: viewNode(app.state.replica.store, record.contentCid), cid: record.contentCid, store: app.state.replica.store, remote: false }
 }
 export function showProposal(app: App, path: Scope, id: string): void {
   document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
   selected.set(app, { path: JSON.stringify(path), id }); app.goTo(path)
+  if (!readProposal(app.state.replica.store, id)) void app.loadProposalPreview(path, id)
 }
 export function clearProposal(app: App): void { selected.delete(app) }
 /** Local and incoming branches share one picker; incoming values remain read-only. */
 export function alternativePicker(app: App, path: Scope, row: TaskView | null): HTMLElement {
-  const proposals = () => app.readsRequests() ? view(app.state.replica, path)?.proposals ?? [] : []
+  const proposals = () => app.readsRequests() ? (JSON.stringify(path) === JSON.stringify(app.state.view) ? app.currentView()?.proposals : view(app.state.replica, path)?.proposals) ?? [] : []
   const proposalLabel = (p: ReturnType<typeof proposals>[number]) => `${p.name || p.peerId} · ${p.peerId}${p.status === 'rejected' ? ' (rejected)' : ''}`
   const current = selected.get(app)
   const active = current?.path === JSON.stringify(path) ? proposals().find(p => p.id === current.id) : undefined

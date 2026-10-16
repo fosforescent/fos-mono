@@ -130,8 +130,14 @@ export async function peerSync(session: Session, request: SyncRequest): Promise<
   return (await response.json()) as SyncResponse
 }
 
+export function requestPeerNode(session: Session, request: import('../../shared/sync/node-provider').NodeRequest): Promise<import('../../shared/sync/node-provider').ProvidedNode> {
+  return authed(session, 'POST', '/user/data/peer-sync/provide-node', request)
+}
+
 export type EventHandlers = {
   onMessage(message: Record<string, unknown>): void
+  onNodeRequest?(request: import('../../shared/sync/index').NodeRequest): Promise<import('../../shared/sync/index').ProvidedNode>
+  providerScope?: string[]
   onOpen?(): void
   onClose?(): void
 }
@@ -156,12 +162,20 @@ export function connectEvents(session: Session, peerId: string, handlers: EventH
     return () => undefined
   }
   socket.addEventListener('open', () => {
-    try { socket?.send(JSON.stringify({ type: 'hello', peerId })) } catch { /* ignore */ }
+    try { socket?.send(JSON.stringify({ type: 'hello', peerId, scope: handlers.providerScope ?? [], capabilities: handlers.onNodeRequest ? ['provideNode'] : [] })) } catch { /* ignore */ }
     handlers.onOpen?.()
   })
   socket.addEventListener('message', (event) => {
     try {
       const parsed = JSON.parse(String(event.data)) as Record<string, unknown>
+      if (parsed.type === 'provide_node' && typeof parsed.id === 'string' && handlers.onNodeRequest) {
+        const id = parsed.id
+        void handlers.onNodeRequest(parsed.request as import('../../shared/sync/index').NodeRequest).then(
+          node => { if (!closedByUs && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'provided_node', id, node })) },
+          error => { if (!closedByUs && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'provided_node', id, error: error instanceof Error ? error.message : 'Node access denied.' })) }
+        )
+        return
+      }
       handlers.onMessage(parsed)
     } catch {
       // ignore non-JSON frames

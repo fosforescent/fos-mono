@@ -7,11 +7,20 @@
   var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-  var __esm = (fn, res) => function __init() {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  var __esm = (fn, res, err) => function __init() {
+    if (err) throw err[0];
+    try {
+      return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+    } catch (e) {
+      throw err = [e], e;
+    }
   };
   var __commonJS = (cb, mod) => function __require() {
-    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+    try {
+      return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+    } catch (e) {
+      throw mod = 0, e;
+    }
   };
   var __export = (target, all) => {
     for (var name in all)
@@ -33,14 +42,11 @@
     isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
     mod
   ));
-  var __publicField = (obj, key, value) => {
-    __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-    return value;
-  };
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // src-tauri/js/prelude.js
+  // desktop/src-tauri/js/prelude.js
   var init_prelude = __esm({
-    "src-tauri/js/prelude.js"() {
+    "desktop/src-tauri/js/prelude.js"() {
       "use strict";
       globalThis.console = globalThis.console || {};
       for (const level of ["log", "info", "warn", "error", "debug", "trace"]) {
@@ -53,8 +59,7 @@
       }
       globalThis.crypto = globalThis.crypto || {};
       globalThis.crypto.getRandomValues = (array) => {
-        for (let i = 0; i < array.length; i++)
-          array[i] = __hostRandom() & 255;
+        for (let i2 = 0; i2 < array.length; i2++) array[i2] = __hostRandom() & 255;
         return array;
       };
       globalThis.crypto.randomUUID = () => {
@@ -69,8 +74,7 @@
       globalThis.__call = (name, argsJson) => {
         try {
           const fn = globalThis.fosCore && globalThis.fosCore[name];
-          if (typeof fn !== "function")
-            return JSON.stringify({ error: "unknown core function " + name });
+          if (typeof fn !== "function") return JSON.stringify({ error: "unknown core function " + name });
           const value = fn.apply(globalThis.fosCore, JSON.parse(argsJson));
           return JSON.stringify({ ok: value === void 0 ? null : value });
         } catch (e) {
@@ -80,777 +84,9 @@
     }
   });
 
-  // ../shared/node_modules/uuid/dist/esm-browser/max.js
-  var max_default;
-  var init_max = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/max.js"() {
-      init_prelude();
-      max_default = "ffffffff-ffff-ffff-ffff-ffffffffffff";
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/nil.js
-  var nil_default;
-  var init_nil = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/nil.js"() {
-      init_prelude();
-      nil_default = "00000000-0000-0000-0000-000000000000";
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/regex.js
-  var regex_default;
-  var init_regex = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/regex.js"() {
-      init_prelude();
-      regex_default = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/validate.js
-  function validate(uuid) {
-    return typeof uuid === "string" && regex_default.test(uuid);
-  }
-  var validate_default;
-  var init_validate = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/validate.js"() {
-      init_prelude();
-      init_regex();
-      validate_default = validate;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/parse.js
-  function parse(uuid) {
-    if (!validate_default(uuid)) {
-      throw TypeError("Invalid UUID");
-    }
-    var v;
-    var arr = new Uint8Array(16);
-    arr[0] = (v = parseInt(uuid.slice(0, 8), 16)) >>> 24;
-    arr[1] = v >>> 16 & 255;
-    arr[2] = v >>> 8 & 255;
-    arr[3] = v & 255;
-    arr[4] = (v = parseInt(uuid.slice(9, 13), 16)) >>> 8;
-    arr[5] = v & 255;
-    arr[6] = (v = parseInt(uuid.slice(14, 18), 16)) >>> 8;
-    arr[7] = v & 255;
-    arr[8] = (v = parseInt(uuid.slice(19, 23), 16)) >>> 8;
-    arr[9] = v & 255;
-    arr[10] = (v = parseInt(uuid.slice(24, 36), 16)) / 1099511627776 & 255;
-    arr[11] = v / 4294967296 & 255;
-    arr[12] = v >>> 24 & 255;
-    arr[13] = v >>> 16 & 255;
-    arr[14] = v >>> 8 & 255;
-    arr[15] = v & 255;
-    return arr;
-  }
-  var parse_default;
-  var init_parse = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/parse.js"() {
-      init_prelude();
-      init_validate();
-      parse_default = parse;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/stringify.js
-  function unsafeStringify(arr, offset = 0) {
-    return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
-  }
-  function stringify(arr, offset = 0) {
-    var uuid = unsafeStringify(arr, offset);
-    if (!validate_default(uuid)) {
-      throw TypeError("Stringified UUID is invalid");
-    }
-    return uuid;
-  }
-  var byteToHex, i, stringify_default;
-  var init_stringify = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/stringify.js"() {
-      init_prelude();
-      init_validate();
-      byteToHex = [];
-      for (i = 0; i < 256; ++i) {
-        byteToHex.push((i + 256).toString(16).slice(1));
-      }
-      stringify_default = stringify;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/rng.js
-  function rng() {
-    if (!getRandomValues) {
-      getRandomValues = typeof crypto !== "undefined" && crypto.getRandomValues && crypto.getRandomValues.bind(crypto);
-      if (!getRandomValues) {
-        throw new Error("crypto.getRandomValues() not supported. See https://github.com/uuidjs/uuid#getrandomvalues-not-supported");
-      }
-    }
-    return getRandomValues(rnds8);
-  }
-  var getRandomValues, rnds8;
-  var init_rng = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/rng.js"() {
-      init_prelude();
-      rnds8 = new Uint8Array(16);
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v1.js
-  function v1(options, buf, offset) {
-    var i = buf && offset || 0;
-    var b = buf || new Array(16);
-    options = options || {};
-    var node = options.node;
-    var clockseq = options.clockseq;
-    if (!options._v6) {
-      if (!node) {
-        node = _nodeId;
-      }
-      if (clockseq == null) {
-        clockseq = _clockseq;
-      }
-    }
-    if (node == null || clockseq == null) {
-      var seedBytes = options.random || (options.rng || rng)();
-      if (node == null) {
-        node = [seedBytes[0], seedBytes[1], seedBytes[2], seedBytes[3], seedBytes[4], seedBytes[5]];
-        if (!_nodeId && !options._v6) {
-          node[0] |= 1;
-          _nodeId = node;
-        }
-      }
-      if (clockseq == null) {
-        clockseq = (seedBytes[6] << 8 | seedBytes[7]) & 16383;
-        if (_clockseq === void 0 && !options._v6) {
-          _clockseq = clockseq;
-        }
-      }
-    }
-    var msecs = options.msecs !== void 0 ? options.msecs : Date.now();
-    var nsecs = options.nsecs !== void 0 ? options.nsecs : _lastNSecs + 1;
-    var dt = msecs - _lastMSecs + (nsecs - _lastNSecs) / 1e4;
-    if (dt < 0 && options.clockseq === void 0) {
-      clockseq = clockseq + 1 & 16383;
-    }
-    if ((dt < 0 || msecs > _lastMSecs) && options.nsecs === void 0) {
-      nsecs = 0;
-    }
-    if (nsecs >= 1e4) {
-      throw new Error("uuid.v1(): Can't create more than 10M uuids/sec");
-    }
-    _lastMSecs = msecs;
-    _lastNSecs = nsecs;
-    _clockseq = clockseq;
-    msecs += 122192928e5;
-    var tl = ((msecs & 268435455) * 1e4 + nsecs) % 4294967296;
-    b[i++] = tl >>> 24 & 255;
-    b[i++] = tl >>> 16 & 255;
-    b[i++] = tl >>> 8 & 255;
-    b[i++] = tl & 255;
-    var tmh = msecs / 4294967296 * 1e4 & 268435455;
-    b[i++] = tmh >>> 8 & 255;
-    b[i++] = tmh & 255;
-    b[i++] = tmh >>> 24 & 15 | 16;
-    b[i++] = tmh >>> 16 & 255;
-    b[i++] = clockseq >>> 8 | 128;
-    b[i++] = clockseq & 255;
-    for (var n = 0; n < 6; ++n) {
-      b[i + n] = node[n];
-    }
-    return buf || unsafeStringify(b);
-  }
-  var _nodeId, _clockseq, _lastMSecs, _lastNSecs, v1_default;
-  var init_v1 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v1.js"() {
-      init_prelude();
-      init_rng();
-      init_stringify();
-      _lastMSecs = 0;
-      _lastNSecs = 0;
-      v1_default = v1;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v1ToV6.js
-  function v1ToV6(uuid) {
-    var v1Bytes = typeof uuid === "string" ? parse_default(uuid) : uuid;
-    var v6Bytes = _v1ToV6(v1Bytes);
-    return typeof uuid === "string" ? unsafeStringify(v6Bytes) : v6Bytes;
-  }
-  function _v1ToV6(v1Bytes, randomize = false) {
-    return Uint8Array.of((v1Bytes[6] & 15) << 4 | v1Bytes[7] >> 4 & 15, (v1Bytes[7] & 15) << 4 | (v1Bytes[4] & 240) >> 4, (v1Bytes[4] & 15) << 4 | (v1Bytes[5] & 240) >> 4, (v1Bytes[5] & 15) << 4 | (v1Bytes[0] & 240) >> 4, (v1Bytes[0] & 15) << 4 | (v1Bytes[1] & 240) >> 4, (v1Bytes[1] & 15) << 4 | (v1Bytes[2] & 240) >> 4, 96 | v1Bytes[2] & 15, v1Bytes[3], v1Bytes[8], v1Bytes[9], v1Bytes[10], v1Bytes[11], v1Bytes[12], v1Bytes[13], v1Bytes[14], v1Bytes[15]);
-  }
-  var init_v1ToV6 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v1ToV6.js"() {
-      init_prelude();
-      init_parse();
-      init_stringify();
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v35.js
-  function stringToBytes(str) {
-    str = unescape(encodeURIComponent(str));
-    var bytes = [];
-    for (var i = 0; i < str.length; ++i) {
-      bytes.push(str.charCodeAt(i));
-    }
-    return bytes;
-  }
-  function v35(name, version2, hashfunc) {
-    function generateUUID(value, namespace, buf, offset) {
-      var _namespace;
-      if (typeof value === "string") {
-        value = stringToBytes(value);
-      }
-      if (typeof namespace === "string") {
-        namespace = parse_default(namespace);
-      }
-      if (((_namespace = namespace) === null || _namespace === void 0 ? void 0 : _namespace.length) !== 16) {
-        throw TypeError("Namespace must be array-like (16 iterable integer values, 0-255)");
-      }
-      var bytes = new Uint8Array(16 + value.length);
-      bytes.set(namespace);
-      bytes.set(value, namespace.length);
-      bytes = hashfunc(bytes);
-      bytes[6] = bytes[6] & 15 | version2;
-      bytes[8] = bytes[8] & 63 | 128;
-      if (buf) {
-        offset = offset || 0;
-        for (var i = 0; i < 16; ++i) {
-          buf[offset + i] = bytes[i];
-        }
-        return buf;
-      }
-      return unsafeStringify(bytes);
-    }
-    try {
-      generateUUID.name = name;
-    } catch (err) {
-    }
-    generateUUID.DNS = DNS;
-    generateUUID.URL = URL;
-    return generateUUID;
-  }
-  var DNS, URL;
-  var init_v35 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v35.js"() {
-      init_prelude();
-      init_stringify();
-      init_parse();
-      DNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-      URL = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/md5.js
-  function md5(bytes) {
-    if (typeof bytes === "string") {
-      var msg = unescape(encodeURIComponent(bytes));
-      bytes = new Uint8Array(msg.length);
-      for (var i = 0; i < msg.length; ++i) {
-        bytes[i] = msg.charCodeAt(i);
-      }
-    }
-    return md5ToHexEncodedArray(wordsToMd5(bytesToWords(bytes), bytes.length * 8));
-  }
-  function md5ToHexEncodedArray(input) {
-    var output = [];
-    var length32 = input.length * 32;
-    var hexTab = "0123456789abcdef";
-    for (var i = 0; i < length32; i += 8) {
-      var x = input[i >> 5] >>> i % 32 & 255;
-      var hex = parseInt(hexTab.charAt(x >>> 4 & 15) + hexTab.charAt(x & 15), 16);
-      output.push(hex);
-    }
-    return output;
-  }
-  function getOutputLength(inputLength8) {
-    return (inputLength8 + 64 >>> 9 << 4) + 14 + 1;
-  }
-  function wordsToMd5(x, len) {
-    x[len >> 5] |= 128 << len % 32;
-    x[getOutputLength(len) - 1] = len;
-    var a = 1732584193;
-    var b = -271733879;
-    var c = -1732584194;
-    var d = 271733878;
-    for (var i = 0; i < x.length; i += 16) {
-      var olda = a;
-      var oldb = b;
-      var oldc = c;
-      var oldd = d;
-      a = md5ff(a, b, c, d, x[i], 7, -680876936);
-      d = md5ff(d, a, b, c, x[i + 1], 12, -389564586);
-      c = md5ff(c, d, a, b, x[i + 2], 17, 606105819);
-      b = md5ff(b, c, d, a, x[i + 3], 22, -1044525330);
-      a = md5ff(a, b, c, d, x[i + 4], 7, -176418897);
-      d = md5ff(d, a, b, c, x[i + 5], 12, 1200080426);
-      c = md5ff(c, d, a, b, x[i + 6], 17, -1473231341);
-      b = md5ff(b, c, d, a, x[i + 7], 22, -45705983);
-      a = md5ff(a, b, c, d, x[i + 8], 7, 1770035416);
-      d = md5ff(d, a, b, c, x[i + 9], 12, -1958414417);
-      c = md5ff(c, d, a, b, x[i + 10], 17, -42063);
-      b = md5ff(b, c, d, a, x[i + 11], 22, -1990404162);
-      a = md5ff(a, b, c, d, x[i + 12], 7, 1804603682);
-      d = md5ff(d, a, b, c, x[i + 13], 12, -40341101);
-      c = md5ff(c, d, a, b, x[i + 14], 17, -1502002290);
-      b = md5ff(b, c, d, a, x[i + 15], 22, 1236535329);
-      a = md5gg(a, b, c, d, x[i + 1], 5, -165796510);
-      d = md5gg(d, a, b, c, x[i + 6], 9, -1069501632);
-      c = md5gg(c, d, a, b, x[i + 11], 14, 643717713);
-      b = md5gg(b, c, d, a, x[i], 20, -373897302);
-      a = md5gg(a, b, c, d, x[i + 5], 5, -701558691);
-      d = md5gg(d, a, b, c, x[i + 10], 9, 38016083);
-      c = md5gg(c, d, a, b, x[i + 15], 14, -660478335);
-      b = md5gg(b, c, d, a, x[i + 4], 20, -405537848);
-      a = md5gg(a, b, c, d, x[i + 9], 5, 568446438);
-      d = md5gg(d, a, b, c, x[i + 14], 9, -1019803690);
-      c = md5gg(c, d, a, b, x[i + 3], 14, -187363961);
-      b = md5gg(b, c, d, a, x[i + 8], 20, 1163531501);
-      a = md5gg(a, b, c, d, x[i + 13], 5, -1444681467);
-      d = md5gg(d, a, b, c, x[i + 2], 9, -51403784);
-      c = md5gg(c, d, a, b, x[i + 7], 14, 1735328473);
-      b = md5gg(b, c, d, a, x[i + 12], 20, -1926607734);
-      a = md5hh(a, b, c, d, x[i + 5], 4, -378558);
-      d = md5hh(d, a, b, c, x[i + 8], 11, -2022574463);
-      c = md5hh(c, d, a, b, x[i + 11], 16, 1839030562);
-      b = md5hh(b, c, d, a, x[i + 14], 23, -35309556);
-      a = md5hh(a, b, c, d, x[i + 1], 4, -1530992060);
-      d = md5hh(d, a, b, c, x[i + 4], 11, 1272893353);
-      c = md5hh(c, d, a, b, x[i + 7], 16, -155497632);
-      b = md5hh(b, c, d, a, x[i + 10], 23, -1094730640);
-      a = md5hh(a, b, c, d, x[i + 13], 4, 681279174);
-      d = md5hh(d, a, b, c, x[i], 11, -358537222);
-      c = md5hh(c, d, a, b, x[i + 3], 16, -722521979);
-      b = md5hh(b, c, d, a, x[i + 6], 23, 76029189);
-      a = md5hh(a, b, c, d, x[i + 9], 4, -640364487);
-      d = md5hh(d, a, b, c, x[i + 12], 11, -421815835);
-      c = md5hh(c, d, a, b, x[i + 15], 16, 530742520);
-      b = md5hh(b, c, d, a, x[i + 2], 23, -995338651);
-      a = md5ii(a, b, c, d, x[i], 6, -198630844);
-      d = md5ii(d, a, b, c, x[i + 7], 10, 1126891415);
-      c = md5ii(c, d, a, b, x[i + 14], 15, -1416354905);
-      b = md5ii(b, c, d, a, x[i + 5], 21, -57434055);
-      a = md5ii(a, b, c, d, x[i + 12], 6, 1700485571);
-      d = md5ii(d, a, b, c, x[i + 3], 10, -1894986606);
-      c = md5ii(c, d, a, b, x[i + 10], 15, -1051523);
-      b = md5ii(b, c, d, a, x[i + 1], 21, -2054922799);
-      a = md5ii(a, b, c, d, x[i + 8], 6, 1873313359);
-      d = md5ii(d, a, b, c, x[i + 15], 10, -30611744);
-      c = md5ii(c, d, a, b, x[i + 6], 15, -1560198380);
-      b = md5ii(b, c, d, a, x[i + 13], 21, 1309151649);
-      a = md5ii(a, b, c, d, x[i + 4], 6, -145523070);
-      d = md5ii(d, a, b, c, x[i + 11], 10, -1120210379);
-      c = md5ii(c, d, a, b, x[i + 2], 15, 718787259);
-      b = md5ii(b, c, d, a, x[i + 9], 21, -343485551);
-      a = safeAdd(a, olda);
-      b = safeAdd(b, oldb);
-      c = safeAdd(c, oldc);
-      d = safeAdd(d, oldd);
-    }
-    return [a, b, c, d];
-  }
-  function bytesToWords(input) {
-    if (input.length === 0) {
-      return [];
-    }
-    var length8 = input.length * 8;
-    var output = new Uint32Array(getOutputLength(length8));
-    for (var i = 0; i < length8; i += 8) {
-      output[i >> 5] |= (input[i / 8] & 255) << i % 32;
-    }
-    return output;
-  }
-  function safeAdd(x, y) {
-    var lsw = (x & 65535) + (y & 65535);
-    var msw = (x >> 16) + (y >> 16) + (lsw >> 16);
-    return msw << 16 | lsw & 65535;
-  }
-  function bitRotateLeft(num, cnt) {
-    return num << cnt | num >>> 32 - cnt;
-  }
-  function md5cmn(q, a, b, x, s, t) {
-    return safeAdd(bitRotateLeft(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b);
-  }
-  function md5ff(a, b, c, d, x, s, t) {
-    return md5cmn(b & c | ~b & d, a, b, x, s, t);
-  }
-  function md5gg(a, b, c, d, x, s, t) {
-    return md5cmn(b & d | c & ~d, a, b, x, s, t);
-  }
-  function md5hh(a, b, c, d, x, s, t) {
-    return md5cmn(b ^ c ^ d, a, b, x, s, t);
-  }
-  function md5ii(a, b, c, d, x, s, t) {
-    return md5cmn(c ^ (b | ~d), a, b, x, s, t);
-  }
-  var md5_default;
-  var init_md5 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/md5.js"() {
-      init_prelude();
-      md5_default = md5;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v3.js
-  var v3, v3_default;
-  var init_v3 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v3.js"() {
-      init_prelude();
-      init_v35();
-      init_md5();
-      v3 = v35("v3", 48, md5_default);
-      v3_default = v3;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/native.js
-  var randomUUID, native_default;
-  var init_native = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/native.js"() {
-      init_prelude();
-      randomUUID = typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID.bind(crypto);
-      native_default = {
-        randomUUID
-      };
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v4.js
-  function v4(options, buf, offset) {
-    if (native_default.randomUUID && !buf && !options) {
-      return native_default.randomUUID();
-    }
-    options = options || {};
-    var rnds = options.random || (options.rng || rng)();
-    rnds[6] = rnds[6] & 15 | 64;
-    rnds[8] = rnds[8] & 63 | 128;
-    if (buf) {
-      offset = offset || 0;
-      for (var i = 0; i < 16; ++i) {
-        buf[offset + i] = rnds[i];
-      }
-      return buf;
-    }
-    return unsafeStringify(rnds);
-  }
-  var v4_default;
-  var init_v4 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v4.js"() {
-      init_prelude();
-      init_native();
-      init_rng();
-      init_stringify();
-      v4_default = v4;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/sha1.js
-  function f(s, x, y, z) {
-    switch (s) {
-      case 0:
-        return x & y ^ ~x & z;
-      case 1:
-        return x ^ y ^ z;
-      case 2:
-        return x & y ^ x & z ^ y & z;
-      case 3:
-        return x ^ y ^ z;
-    }
-  }
-  function ROTL(x, n) {
-    return x << n | x >>> 32 - n;
-  }
-  function sha1(bytes) {
-    var K = [1518500249, 1859775393, 2400959708, 3395469782];
-    var H = [1732584193, 4023233417, 2562383102, 271733878, 3285377520];
-    if (typeof bytes === "string") {
-      var msg = unescape(encodeURIComponent(bytes));
-      bytes = [];
-      for (var i = 0; i < msg.length; ++i) {
-        bytes.push(msg.charCodeAt(i));
-      }
-    } else if (!Array.isArray(bytes)) {
-      bytes = Array.prototype.slice.call(bytes);
-    }
-    bytes.push(128);
-    var l = bytes.length / 4 + 2;
-    var N = Math.ceil(l / 16);
-    var M = new Array(N);
-    for (var _i = 0; _i < N; ++_i) {
-      var arr = new Uint32Array(16);
-      for (var j = 0; j < 16; ++j) {
-        arr[j] = bytes[_i * 64 + j * 4] << 24 | bytes[_i * 64 + j * 4 + 1] << 16 | bytes[_i * 64 + j * 4 + 2] << 8 | bytes[_i * 64 + j * 4 + 3];
-      }
-      M[_i] = arr;
-    }
-    M[N - 1][14] = (bytes.length - 1) * 8 / Math.pow(2, 32);
-    M[N - 1][14] = Math.floor(M[N - 1][14]);
-    M[N - 1][15] = (bytes.length - 1) * 8 & 4294967295;
-    for (var _i2 = 0; _i2 < N; ++_i2) {
-      var W = new Uint32Array(80);
-      for (var t = 0; t < 16; ++t) {
-        W[t] = M[_i2][t];
-      }
-      for (var _t = 16; _t < 80; ++_t) {
-        W[_t] = ROTL(W[_t - 3] ^ W[_t - 8] ^ W[_t - 14] ^ W[_t - 16], 1);
-      }
-      var a = H[0];
-      var b = H[1];
-      var c = H[2];
-      var d = H[3];
-      var e = H[4];
-      for (var _t2 = 0; _t2 < 80; ++_t2) {
-        var s = Math.floor(_t2 / 20);
-        var T = ROTL(a, 5) + f(s, b, c, d) + e + K[s] + W[_t2] >>> 0;
-        e = d;
-        d = c;
-        c = ROTL(b, 30) >>> 0;
-        b = a;
-        a = T;
-      }
-      H[0] = H[0] + a >>> 0;
-      H[1] = H[1] + b >>> 0;
-      H[2] = H[2] + c >>> 0;
-      H[3] = H[3] + d >>> 0;
-      H[4] = H[4] + e >>> 0;
-    }
-    return [H[0] >> 24 & 255, H[0] >> 16 & 255, H[0] >> 8 & 255, H[0] & 255, H[1] >> 24 & 255, H[1] >> 16 & 255, H[1] >> 8 & 255, H[1] & 255, H[2] >> 24 & 255, H[2] >> 16 & 255, H[2] >> 8 & 255, H[2] & 255, H[3] >> 24 & 255, H[3] >> 16 & 255, H[3] >> 8 & 255, H[3] & 255, H[4] >> 24 & 255, H[4] >> 16 & 255, H[4] >> 8 & 255, H[4] & 255];
-  }
-  var sha1_default;
-  var init_sha1 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/sha1.js"() {
-      init_prelude();
-      sha1_default = sha1;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v5.js
-  var v5, v5_default;
-  var init_v5 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v5.js"() {
-      init_prelude();
-      init_v35();
-      init_sha1();
-      v5 = v35("v5", 80, sha1_default);
-      v5_default = v5;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v6.js
-  function ownKeys(e, r) {
-    var t = Object.keys(e);
-    if (Object.getOwnPropertySymbols) {
-      var o = Object.getOwnPropertySymbols(e);
-      r && (o = o.filter(function(r2) {
-        return Object.getOwnPropertyDescriptor(e, r2).enumerable;
-      })), t.push.apply(t, o);
-    }
-    return t;
-  }
-  function _objectSpread(e) {
-    for (var r = 1; r < arguments.length; r++) {
-      var t = null != arguments[r] ? arguments[r] : {};
-      r % 2 ? ownKeys(Object(t), true).forEach(function(r2) {
-        _defineProperty(e, r2, t[r2]);
-      }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function(r2) {
-        Object.defineProperty(e, r2, Object.getOwnPropertyDescriptor(t, r2));
-      });
-    }
-    return e;
-  }
-  function _defineProperty(e, r, t) {
-    return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: true, configurable: true, writable: true }) : e[r] = t, e;
-  }
-  function _toPropertyKey(t) {
-    var i = _toPrimitive(t, "string");
-    return "symbol" == typeof i ? i : i + "";
-  }
-  function _toPrimitive(t, r) {
-    if ("object" != typeof t || !t)
-      return t;
-    var e = t[Symbol.toPrimitive];
-    if (void 0 !== e) {
-      var i = e.call(t, r || "default");
-      if ("object" != typeof i)
-        return i;
-      throw new TypeError("@@toPrimitive must return a primitive value.");
-    }
-    return ("string" === r ? String : Number)(t);
-  }
-  function v6(options = {}, buf, offset = 0) {
-    var bytes = v1_default(_objectSpread(_objectSpread({}, options), {}, {
-      _v6: true
-    }), new Uint8Array(16));
-    bytes = v1ToV6(bytes);
-    if (buf) {
-      for (var i = 0; i < 16; i++) {
-        buf[offset + i] = bytes[i];
-      }
-      return buf;
-    }
-    return unsafeStringify(bytes);
-  }
-  var init_v6 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v6.js"() {
-      init_prelude();
-      init_stringify();
-      init_v1();
-      init_v1ToV6();
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v6ToV1.js
-  function v6ToV1(uuid) {
-    var v6Bytes = typeof uuid === "string" ? parse_default(uuid) : uuid;
-    var v1Bytes = _v6ToV1(v6Bytes);
-    return typeof uuid === "string" ? unsafeStringify(v1Bytes) : v1Bytes;
-  }
-  function _v6ToV1(v6Bytes) {
-    return Uint8Array.of((v6Bytes[3] & 15) << 4 | v6Bytes[4] >> 4 & 15, (v6Bytes[4] & 15) << 4 | (v6Bytes[5] & 240) >> 4, (v6Bytes[5] & 15) << 4 | v6Bytes[6] & 15, v6Bytes[7], (v6Bytes[1] & 15) << 4 | (v6Bytes[2] & 240) >> 4, (v6Bytes[2] & 15) << 4 | (v6Bytes[3] & 240) >> 4, 16 | (v6Bytes[0] & 240) >> 4, (v6Bytes[0] & 15) << 4 | (v6Bytes[1] & 240) >> 4, v6Bytes[8], v6Bytes[9], v6Bytes[10], v6Bytes[11], v6Bytes[12], v6Bytes[13], v6Bytes[14], v6Bytes[15]);
-  }
-  var init_v6ToV1 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v6ToV1.js"() {
-      init_prelude();
-      init_parse();
-      init_stringify();
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/v7.js
-  function v7(options, buf, offset) {
-    options = options || {};
-    var i = buf && offset || 0;
-    var b = buf || new Uint8Array(16);
-    var rnds = options.random || (options.rng || rng)();
-    var msecs = options.msecs !== void 0 ? options.msecs : Date.now();
-    var seq = options.seq !== void 0 ? options.seq : null;
-    var seqHigh = _seqHigh;
-    var seqLow = _seqLow;
-    if (msecs > _msecs && options.msecs === void 0) {
-      _msecs = msecs;
-      if (seq !== null) {
-        seqHigh = null;
-        seqLow = null;
-      }
-    }
-    if (seq !== null) {
-      if (seq > 2147483647) {
-        seq = 2147483647;
-      }
-      seqHigh = seq >>> 19 & 4095;
-      seqLow = seq & 524287;
-    }
-    if (seqHigh === null || seqLow === null) {
-      seqHigh = rnds[6] & 127;
-      seqHigh = seqHigh << 8 | rnds[7];
-      seqLow = rnds[8] & 63;
-      seqLow = seqLow << 8 | rnds[9];
-      seqLow = seqLow << 5 | rnds[10] >>> 3;
-    }
-    if (msecs + 1e4 > _msecs && seq === null) {
-      if (++seqLow > 524287) {
-        seqLow = 0;
-        if (++seqHigh > 4095) {
-          seqHigh = 0;
-          _msecs++;
-        }
-      }
-    } else {
-      _msecs = msecs;
-    }
-    _seqHigh = seqHigh;
-    _seqLow = seqLow;
-    b[i++] = _msecs / 1099511627776 & 255;
-    b[i++] = _msecs / 4294967296 & 255;
-    b[i++] = _msecs / 16777216 & 255;
-    b[i++] = _msecs / 65536 & 255;
-    b[i++] = _msecs / 256 & 255;
-    b[i++] = _msecs & 255;
-    b[i++] = seqHigh >>> 4 & 15 | 112;
-    b[i++] = seqHigh & 255;
-    b[i++] = seqLow >>> 13 & 63 | 128;
-    b[i++] = seqLow >>> 5 & 255;
-    b[i++] = seqLow << 3 & 255 | rnds[10] & 7;
-    b[i++] = rnds[11];
-    b[i++] = rnds[12];
-    b[i++] = rnds[13];
-    b[i++] = rnds[14];
-    b[i++] = rnds[15];
-    return buf || unsafeStringify(b);
-  }
-  var _seqLow, _seqHigh, _msecs, v7_default;
-  var init_v7 = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/v7.js"() {
-      init_prelude();
-      init_rng();
-      init_stringify();
-      _seqLow = null;
-      _seqHigh = null;
-      _msecs = 0;
-      v7_default = v7;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/version.js
-  function version(uuid) {
-    if (!validate_default(uuid)) {
-      throw TypeError("Invalid UUID");
-    }
-    return parseInt(uuid.slice(14, 15), 16);
-  }
-  var version_default;
-  var init_version = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/version.js"() {
-      init_prelude();
-      init_validate();
-      version_default = version;
-    }
-  });
-
-  // ../shared/node_modules/uuid/dist/esm-browser/index.js
-  var esm_browser_exports = {};
-  __export(esm_browser_exports, {
-    MAX: () => max_default,
-    NIL: () => nil_default,
-    parse: () => parse_default,
-    stringify: () => stringify_default,
-    v1: () => v1_default,
-    v1ToV6: () => v1ToV6,
-    v3: () => v3_default,
-    v4: () => v4_default,
-    v5: () => v5_default,
-    v6: () => v6,
-    v6ToV1: () => v6ToV1,
-    v7: () => v7_default,
-    validate: () => validate_default,
-    version: () => version_default
-  });
-  var init_esm_browser = __esm({
-    "../shared/node_modules/uuid/dist/esm-browser/index.js"() {
-      init_prelude();
-      init_max();
-      init_nil();
-      init_parse();
-      init_stringify();
-      init_v1();
-      init_v1ToV6();
-      init_v3();
-      init_v4();
-      init_v5();
-      init_v6();
-      init_v6ToV1();
-      init_v7();
-      init_validate();
-      init_version();
-    }
-  });
-
-  // ../node_modules/js-sha3/src/sha3.js
+  // node_modules/js-sha3/src/sha3.js
   var require_sha3 = __commonJS({
-    "../node_modules/js-sha3/src/sha3.js"(exports, module) {
+    "node_modules/js-sha3/src/sha3.js"(exports, module) {
       init_prelude();
       (function() {
         "use strict";
@@ -956,13 +192,13 @@
           }
           return [message, false];
         };
-        var empty = function(message) {
+        var empty2 = function(message) {
           return formatMessage(message)[0].length === 0;
         };
         var cloneArray = function(array) {
           var newArray = [];
-          for (var i2 = 0; i2 < array.length; ++i2) {
-            newArray[i2] = array[i2];
+          for (var i3 = 0; i3 < array.length; ++i3) {
+            newArray[i3] = array[i3];
           }
           return newArray;
         };
@@ -987,8 +223,8 @@
           };
         };
         var createOutputMethods = function(method, createMethod2, bits2, padding) {
-          for (var i2 = 0; i2 < OUTPUT_TYPES.length; ++i2) {
-            var type = OUTPUT_TYPES[i2];
+          for (var i3 = 0; i3 < OUTPUT_TYPES.length; ++i3) {
+            var type = OUTPUT_TYPES[i3];
             method[type] = createMethod2(bits2, padding, type);
           }
           return method;
@@ -1017,7 +253,7 @@
           var w = CSHAKE_BYTEPAD[bits2];
           var method = createCshakeOutputMethod(bits2, padding, "hex");
           method.create = function(outputBits, n, s) {
-            if (empty(n) && empty(s)) {
+            if (empty2(n) && empty2(s)) {
               return methods["shake" + bits2].create(outputBits);
             } else {
               return new Keccak(bits2, padding, outputBits).bytepad([n, s], w);
@@ -1047,8 +283,8 @@
           { name: "kmac", padding: CSHAKE_PADDING, bits: SHAKE_BITS, createMethod: createKmacMethod }
         ];
         var methods = {}, methodNames = [];
-        for (var i = 0; i < algorithms.length; ++i) {
-          var algorithm = algorithms[i];
+        for (var i2 = 0; i2 < algorithms.length; ++i2) {
+          var algorithm = algorithms[i2];
           var bits = algorithm.bits;
           for (var j = 0; j < bits.length; ++j) {
             var methodName = algorithm.name + "_" + bits[j];
@@ -1074,8 +310,8 @@
           this.byteCount = this.blockCount << 2;
           this.outputBlocks = outputBits >> 5;
           this.extraBytes = (outputBits & 31) >> 3;
-          for (var i2 = 0; i2 < 50; ++i2) {
-            this.s[i2] = 0;
+          for (var i3 = 0; i3 < 50; ++i3) {
+            this.s[i3] = 0;
           }
         }
         Keccak.prototype.update = function(message) {
@@ -1085,51 +321,51 @@
           var result = formatMessage(message);
           message = result[0];
           var isString = result[1];
-          var blocks = this.blocks, byteCount = this.byteCount, length = message.length, blockCount = this.blockCount, index = 0, s = this.s, i2, code;
+          var blocks = this.blocks, byteCount = this.byteCount, length = message.length, blockCount = this.blockCount, index = 0, s = this.s, i3, code;
           while (index < length) {
             if (this.reset) {
               this.reset = false;
               blocks[0] = this.block;
-              for (i2 = 1; i2 < blockCount + 1; ++i2) {
-                blocks[i2] = 0;
+              for (i3 = 1; i3 < blockCount + 1; ++i3) {
+                blocks[i3] = 0;
               }
             }
             if (isString) {
-              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
+              for (i3 = this.start; index < length && i3 < byteCount; ++index) {
                 code = message.charCodeAt(index);
                 if (code < 128) {
-                  blocks[i2 >> 2] |= code << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= code << SHIFT[i3++ & 3];
                 } else if (code < 2048) {
-                  blocks[i2 >> 2] |= (192 | code >> 6) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= (192 | code >> 6) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code & 63) << SHIFT[i3++ & 3];
                 } else if (code < 55296 || code >= 57344) {
-                  blocks[i2 >> 2] |= (224 | code >> 12) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= (224 | code >> 12) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code & 63) << SHIFT[i3++ & 3];
                 } else {
                   code = 65536 + ((code & 1023) << 10 | message.charCodeAt(++index) & 1023);
-                  blocks[i2 >> 2] |= (240 | code >> 18) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 12 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i2++ & 3];
-                  blocks[i2 >> 2] |= (128 | code & 63) << SHIFT[i2++ & 3];
+                  blocks[i3 >> 2] |= (240 | code >> 18) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code >> 12 & 63) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code >> 6 & 63) << SHIFT[i3++ & 3];
+                  blocks[i3 >> 2] |= (128 | code & 63) << SHIFT[i3++ & 3];
                 }
               }
             } else {
-              for (i2 = this.start; index < length && i2 < byteCount; ++index) {
-                blocks[i2 >> 2] |= message[index] << SHIFT[i2++ & 3];
+              for (i3 = this.start; index < length && i3 < byteCount; ++index) {
+                blocks[i3 >> 2] |= message[index] << SHIFT[i3++ & 3];
               }
             }
-            this.lastByteIndex = i2;
-            if (i2 >= byteCount) {
-              this.start = i2 - byteCount;
+            this.lastByteIndex = i3;
+            if (i3 >= byteCount) {
+              this.start = i3 - byteCount;
               this.block = blocks[blockCount];
-              for (i2 = 0; i2 < blockCount; ++i2) {
-                s[i2] ^= blocks[i2];
+              for (i3 = 0; i3 < blockCount; ++i3) {
+                s[i3] ^= blocks[i3];
               }
               f2(s);
               this.reset = true;
             } else {
-              this.start = i2;
+              this.start = i3;
             }
           }
           return this;
@@ -1159,8 +395,8 @@
           var isString = result[1];
           var bytes = 0, length = str.length;
           if (isString) {
-            for (var i2 = 0; i2 < str.length; ++i2) {
-              var code = str.charCodeAt(i2);
+            for (var i3 = 0; i3 < str.length; ++i3) {
+              var code = str.charCodeAt(i3);
               if (code < 128) {
                 bytes += 1;
               } else if (code < 2048) {
@@ -1168,7 +404,7 @@
               } else if (code < 55296 || code >= 57344) {
                 bytes += 3;
               } else {
-                code = 65536 + ((code & 1023) << 10 | str.charCodeAt(++i2) & 1023);
+                code = 65536 + ((code & 1023) << 10 | str.charCodeAt(++i3) & 1023);
                 bytes += 4;
               }
             }
@@ -1181,8 +417,8 @@
         };
         Keccak.prototype.bytepad = function(strs, w) {
           var bytes = this.encode(w);
-          for (var i2 = 0; i2 < strs.length; ++i2) {
-            bytes += this.encodeString(strs[i2]);
+          for (var i3 = 0; i3 < strs.length; ++i3) {
+            bytes += this.encodeString(strs[i3]);
           }
           var paddingBytes = (w - bytes % w) % w;
           var zeros = [];
@@ -1195,37 +431,37 @@
             return;
           }
           this.finalized = true;
-          var blocks = this.blocks, i2 = this.lastByteIndex, blockCount = this.blockCount, s = this.s;
-          blocks[i2 >> 2] |= this.padding[i2 & 3];
+          var blocks = this.blocks, i3 = this.lastByteIndex, blockCount = this.blockCount, s = this.s;
+          blocks[i3 >> 2] |= this.padding[i3 & 3];
           if (this.lastByteIndex === this.byteCount) {
             blocks[0] = blocks[blockCount];
-            for (i2 = 1; i2 < blockCount + 1; ++i2) {
-              blocks[i2] = 0;
+            for (i3 = 1; i3 < blockCount + 1; ++i3) {
+              blocks[i3] = 0;
             }
           }
           blocks[blockCount - 1] |= 2147483648;
-          for (i2 = 0; i2 < blockCount; ++i2) {
-            s[i2] ^= blocks[i2];
+          for (i3 = 0; i3 < blockCount; ++i3) {
+            s[i3] ^= blocks[i3];
           }
           f2(s);
         };
         Keccak.prototype.toString = Keccak.prototype.hex = function() {
           this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i3 = 0, j2 = 0;
           var hex = "", block;
           while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
-              block = s[i2];
+            for (i3 = 0; i3 < blockCount && j2 < outputBlocks; ++i3, ++j2) {
+              block = s[i3];
               hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15] + HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15] + HEX_CHARS[block >> 20 & 15] + HEX_CHARS[block >> 16 & 15] + HEX_CHARS[block >> 28 & 15] + HEX_CHARS[block >> 24 & 15];
             }
             if (j2 % blockCount === 0) {
               s = cloneArray(s);
               f2(s);
-              i2 = 0;
+              i3 = 0;
             }
           }
           if (extraBytes) {
-            block = s[i2];
+            block = s[i3];
             hex += HEX_CHARS[block >> 4 & 15] + HEX_CHARS[block & 15];
             if (extraBytes > 1) {
               hex += HEX_CHARS[block >> 12 & 15] + HEX_CHARS[block >> 8 & 15];
@@ -1238,7 +474,7 @@
         };
         Keccak.prototype.arrayBuffer = function() {
           this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i3 = 0, j2 = 0;
           var bytes = this.outputBits >> 3;
           var buffer;
           if (extraBytes) {
@@ -1248,8 +484,8 @@
           }
           var array = new Uint32Array(buffer);
           while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
-              array[j2] = s[i2];
+            for (i3 = 0; i3 < blockCount && j2 < outputBlocks; ++i3, ++j2) {
+              array[j2] = s[i3];
             }
             if (j2 % blockCount === 0) {
               s = cloneArray(s);
@@ -1257,7 +493,7 @@
             }
           }
           if (extraBytes) {
-            array[j2] = s[i2];
+            array[j2] = s[i3];
             buffer = buffer.slice(0, bytes);
           }
           return buffer;
@@ -1265,12 +501,12 @@
         Keccak.prototype.buffer = Keccak.prototype.arrayBuffer;
         Keccak.prototype.digest = Keccak.prototype.array = function() {
           this.finalize();
-          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i2 = 0, j2 = 0;
+          var blockCount = this.blockCount, s = this.s, outputBlocks = this.outputBlocks, extraBytes = this.extraBytes, i3 = 0, j2 = 0;
           var array = [], offset, block;
           while (j2 < outputBlocks) {
-            for (i2 = 0; i2 < blockCount && j2 < outputBlocks; ++i2, ++j2) {
+            for (i3 = 0; i3 < blockCount && j2 < outputBlocks; ++i3, ++j2) {
               offset = j2 << 2;
-              block = s[i2];
+              block = s[i3];
               array[offset] = block & 255;
               array[offset + 1] = block >> 8 & 255;
               array[offset + 2] = block >> 16 & 255;
@@ -1283,7 +519,7 @@
           }
           if (extraBytes) {
             offset = j2 << 2;
-            block = s[i2];
+            block = s[i3];
             array[offset] = block & 255;
             if (extraBytes > 1) {
               array[offset + 1] = block >> 8 & 255;
@@ -1482,8 +718,8 @@
         if (COMMON_JS) {
           module.exports = methods;
         } else {
-          for (i = 0; i < methodNames.length; ++i) {
-            root[methodNames[i]] = methods[methodNames[i]];
+          for (i2 = 0; i2 < methodNames.length; ++i2) {
+            root[methodNames[i2]] = methods[methodNames[i2]];
           }
           if (AMD) {
             define(function() {
@@ -1495,31 +731,1281 @@
     }
   });
 
-  // ../shared/sync/embed.ts
+  // shared/node_modules/uuid/dist/esm-browser/max.js
+  var max_default;
+  var init_max = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/max.js"() {
+      init_prelude();
+      max_default = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/nil.js
+  var nil_default;
+  var init_nil = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/nil.js"() {
+      init_prelude();
+      nil_default = "00000000-0000-0000-0000-000000000000";
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/regex.js
+  var regex_default;
+  var init_regex = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/regex.js"() {
+      init_prelude();
+      regex_default = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/validate.js
+  function validate(uuid) {
+    return typeof uuid === "string" && regex_default.test(uuid);
+  }
+  var validate_default;
+  var init_validate = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/validate.js"() {
+      init_prelude();
+      init_regex();
+      validate_default = validate;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/parse.js
+  function parse(uuid) {
+    if (!validate_default(uuid)) {
+      throw TypeError("Invalid UUID");
+    }
+    var v;
+    var arr = new Uint8Array(16);
+    arr[0] = (v = parseInt(uuid.slice(0, 8), 16)) >>> 24;
+    arr[1] = v >>> 16 & 255;
+    arr[2] = v >>> 8 & 255;
+    arr[3] = v & 255;
+    arr[4] = (v = parseInt(uuid.slice(9, 13), 16)) >>> 8;
+    arr[5] = v & 255;
+    arr[6] = (v = parseInt(uuid.slice(14, 18), 16)) >>> 8;
+    arr[7] = v & 255;
+    arr[8] = (v = parseInt(uuid.slice(19, 23), 16)) >>> 8;
+    arr[9] = v & 255;
+    arr[10] = (v = parseInt(uuid.slice(24, 36), 16)) / 1099511627776 & 255;
+    arr[11] = v / 4294967296 & 255;
+    arr[12] = v >>> 24 & 255;
+    arr[13] = v >>> 16 & 255;
+    arr[14] = v >>> 8 & 255;
+    arr[15] = v & 255;
+    return arr;
+  }
+  var parse_default;
+  var init_parse = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/parse.js"() {
+      init_prelude();
+      init_validate();
+      parse_default = parse;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/stringify.js
+  function unsafeStringify(arr, offset = 0) {
+    return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
+  }
+  function stringify(arr, offset = 0) {
+    var uuid = unsafeStringify(arr, offset);
+    if (!validate_default(uuid)) {
+      throw TypeError("Stringified UUID is invalid");
+    }
+    return uuid;
+  }
+  var byteToHex, i, stringify_default;
+  var init_stringify = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/stringify.js"() {
+      init_prelude();
+      init_validate();
+      byteToHex = [];
+      for (i = 0; i < 256; ++i) {
+        byteToHex.push((i + 256).toString(16).slice(1));
+      }
+      stringify_default = stringify;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/rng.js
+  function rng() {
+    if (!getRandomValues) {
+      getRandomValues = typeof crypto !== "undefined" && crypto.getRandomValues && crypto.getRandomValues.bind(crypto);
+      if (!getRandomValues) {
+        throw new Error("crypto.getRandomValues() not supported. See https://github.com/uuidjs/uuid#getrandomvalues-not-supported");
+      }
+    }
+    return getRandomValues(rnds8);
+  }
+  var getRandomValues, rnds8;
+  var init_rng = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/rng.js"() {
+      init_prelude();
+      rnds8 = new Uint8Array(16);
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v1.js
+  function v1(options, buf, offset) {
+    var i2 = buf && offset || 0;
+    var b = buf || new Array(16);
+    options = options || {};
+    var node = options.node;
+    var clockseq = options.clockseq;
+    if (!options._v6) {
+      if (!node) {
+        node = _nodeId;
+      }
+      if (clockseq == null) {
+        clockseq = _clockseq;
+      }
+    }
+    if (node == null || clockseq == null) {
+      var seedBytes = options.random || (options.rng || rng)();
+      if (node == null) {
+        node = [seedBytes[0], seedBytes[1], seedBytes[2], seedBytes[3], seedBytes[4], seedBytes[5]];
+        if (!_nodeId && !options._v6) {
+          node[0] |= 1;
+          _nodeId = node;
+        }
+      }
+      if (clockseq == null) {
+        clockseq = (seedBytes[6] << 8 | seedBytes[7]) & 16383;
+        if (_clockseq === void 0 && !options._v6) {
+          _clockseq = clockseq;
+        }
+      }
+    }
+    var msecs = options.msecs !== void 0 ? options.msecs : Date.now();
+    var nsecs = options.nsecs !== void 0 ? options.nsecs : _lastNSecs + 1;
+    var dt = msecs - _lastMSecs + (nsecs - _lastNSecs) / 1e4;
+    if (dt < 0 && options.clockseq === void 0) {
+      clockseq = clockseq + 1 & 16383;
+    }
+    if ((dt < 0 || msecs > _lastMSecs) && options.nsecs === void 0) {
+      nsecs = 0;
+    }
+    if (nsecs >= 1e4) {
+      throw new Error("uuid.v1(): Can't create more than 10M uuids/sec");
+    }
+    _lastMSecs = msecs;
+    _lastNSecs = nsecs;
+    _clockseq = clockseq;
+    msecs += 122192928e5;
+    var tl = ((msecs & 268435455) * 1e4 + nsecs) % 4294967296;
+    b[i2++] = tl >>> 24 & 255;
+    b[i2++] = tl >>> 16 & 255;
+    b[i2++] = tl >>> 8 & 255;
+    b[i2++] = tl & 255;
+    var tmh = msecs / 4294967296 * 1e4 & 268435455;
+    b[i2++] = tmh >>> 8 & 255;
+    b[i2++] = tmh & 255;
+    b[i2++] = tmh >>> 24 & 15 | 16;
+    b[i2++] = tmh >>> 16 & 255;
+    b[i2++] = clockseq >>> 8 | 128;
+    b[i2++] = clockseq & 255;
+    for (var n = 0; n < 6; ++n) {
+      b[i2 + n] = node[n];
+    }
+    return buf || unsafeStringify(b);
+  }
+  var _nodeId, _clockseq, _lastMSecs, _lastNSecs, v1_default;
+  var init_v1 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v1.js"() {
+      init_prelude();
+      init_rng();
+      init_stringify();
+      _lastMSecs = 0;
+      _lastNSecs = 0;
+      v1_default = v1;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v1ToV6.js
+  function v1ToV6(uuid) {
+    var v1Bytes = typeof uuid === "string" ? parse_default(uuid) : uuid;
+    var v6Bytes = _v1ToV6(v1Bytes);
+    return typeof uuid === "string" ? unsafeStringify(v6Bytes) : v6Bytes;
+  }
+  function _v1ToV6(v1Bytes, randomize = false) {
+    return Uint8Array.of((v1Bytes[6] & 15) << 4 | v1Bytes[7] >> 4 & 15, (v1Bytes[7] & 15) << 4 | (v1Bytes[4] & 240) >> 4, (v1Bytes[4] & 15) << 4 | (v1Bytes[5] & 240) >> 4, (v1Bytes[5] & 15) << 4 | (v1Bytes[0] & 240) >> 4, (v1Bytes[0] & 15) << 4 | (v1Bytes[1] & 240) >> 4, (v1Bytes[1] & 15) << 4 | (v1Bytes[2] & 240) >> 4, 96 | v1Bytes[2] & 15, v1Bytes[3], v1Bytes[8], v1Bytes[9], v1Bytes[10], v1Bytes[11], v1Bytes[12], v1Bytes[13], v1Bytes[14], v1Bytes[15]);
+  }
+  var init_v1ToV6 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v1ToV6.js"() {
+      init_prelude();
+      init_parse();
+      init_stringify();
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v35.js
+  function stringToBytes(str) {
+    str = unescape(encodeURIComponent(str));
+    var bytes = [];
+    for (var i2 = 0; i2 < str.length; ++i2) {
+      bytes.push(str.charCodeAt(i2));
+    }
+    return bytes;
+  }
+  function v35(name, version2, hashfunc) {
+    function generateUUID(value, namespace, buf, offset) {
+      var _namespace;
+      if (typeof value === "string") {
+        value = stringToBytes(value);
+      }
+      if (typeof namespace === "string") {
+        namespace = parse_default(namespace);
+      }
+      if (((_namespace = namespace) === null || _namespace === void 0 ? void 0 : _namespace.length) !== 16) {
+        throw TypeError("Namespace must be array-like (16 iterable integer values, 0-255)");
+      }
+      var bytes = new Uint8Array(16 + value.length);
+      bytes.set(namespace);
+      bytes.set(value, namespace.length);
+      bytes = hashfunc(bytes);
+      bytes[6] = bytes[6] & 15 | version2;
+      bytes[8] = bytes[8] & 63 | 128;
+      if (buf) {
+        offset = offset || 0;
+        for (var i2 = 0; i2 < 16; ++i2) {
+          buf[offset + i2] = bytes[i2];
+        }
+        return buf;
+      }
+      return unsafeStringify(bytes);
+    }
+    try {
+      generateUUID.name = name;
+    } catch (err) {
+    }
+    generateUUID.DNS = DNS;
+    generateUUID.URL = URL;
+    return generateUUID;
+  }
+  var DNS, URL;
+  var init_v35 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v35.js"() {
+      init_prelude();
+      init_stringify();
+      init_parse();
+      DNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+      URL = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/md5.js
+  function md5(bytes) {
+    if (typeof bytes === "string") {
+      var msg = unescape(encodeURIComponent(bytes));
+      bytes = new Uint8Array(msg.length);
+      for (var i2 = 0; i2 < msg.length; ++i2) {
+        bytes[i2] = msg.charCodeAt(i2);
+      }
+    }
+    return md5ToHexEncodedArray(wordsToMd5(bytesToWords(bytes), bytes.length * 8));
+  }
+  function md5ToHexEncodedArray(input) {
+    var output = [];
+    var length32 = input.length * 32;
+    var hexTab = "0123456789abcdef";
+    for (var i2 = 0; i2 < length32; i2 += 8) {
+      var x = input[i2 >> 5] >>> i2 % 32 & 255;
+      var hex = parseInt(hexTab.charAt(x >>> 4 & 15) + hexTab.charAt(x & 15), 16);
+      output.push(hex);
+    }
+    return output;
+  }
+  function getOutputLength(inputLength8) {
+    return (inputLength8 + 64 >>> 9 << 4) + 14 + 1;
+  }
+  function wordsToMd5(x, len) {
+    x[len >> 5] |= 128 << len % 32;
+    x[getOutputLength(len) - 1] = len;
+    var a = 1732584193;
+    var b = -271733879;
+    var c = -1732584194;
+    var d = 271733878;
+    for (var i2 = 0; i2 < x.length; i2 += 16) {
+      var olda = a;
+      var oldb = b;
+      var oldc = c;
+      var oldd = d;
+      a = md5ff(a, b, c, d, x[i2], 7, -680876936);
+      d = md5ff(d, a, b, c, x[i2 + 1], 12, -389564586);
+      c = md5ff(c, d, a, b, x[i2 + 2], 17, 606105819);
+      b = md5ff(b, c, d, a, x[i2 + 3], 22, -1044525330);
+      a = md5ff(a, b, c, d, x[i2 + 4], 7, -176418897);
+      d = md5ff(d, a, b, c, x[i2 + 5], 12, 1200080426);
+      c = md5ff(c, d, a, b, x[i2 + 6], 17, -1473231341);
+      b = md5ff(b, c, d, a, x[i2 + 7], 22, -45705983);
+      a = md5ff(a, b, c, d, x[i2 + 8], 7, 1770035416);
+      d = md5ff(d, a, b, c, x[i2 + 9], 12, -1958414417);
+      c = md5ff(c, d, a, b, x[i2 + 10], 17, -42063);
+      b = md5ff(b, c, d, a, x[i2 + 11], 22, -1990404162);
+      a = md5ff(a, b, c, d, x[i2 + 12], 7, 1804603682);
+      d = md5ff(d, a, b, c, x[i2 + 13], 12, -40341101);
+      c = md5ff(c, d, a, b, x[i2 + 14], 17, -1502002290);
+      b = md5ff(b, c, d, a, x[i2 + 15], 22, 1236535329);
+      a = md5gg(a, b, c, d, x[i2 + 1], 5, -165796510);
+      d = md5gg(d, a, b, c, x[i2 + 6], 9, -1069501632);
+      c = md5gg(c, d, a, b, x[i2 + 11], 14, 643717713);
+      b = md5gg(b, c, d, a, x[i2], 20, -373897302);
+      a = md5gg(a, b, c, d, x[i2 + 5], 5, -701558691);
+      d = md5gg(d, a, b, c, x[i2 + 10], 9, 38016083);
+      c = md5gg(c, d, a, b, x[i2 + 15], 14, -660478335);
+      b = md5gg(b, c, d, a, x[i2 + 4], 20, -405537848);
+      a = md5gg(a, b, c, d, x[i2 + 9], 5, 568446438);
+      d = md5gg(d, a, b, c, x[i2 + 14], 9, -1019803690);
+      c = md5gg(c, d, a, b, x[i2 + 3], 14, -187363961);
+      b = md5gg(b, c, d, a, x[i2 + 8], 20, 1163531501);
+      a = md5gg(a, b, c, d, x[i2 + 13], 5, -1444681467);
+      d = md5gg(d, a, b, c, x[i2 + 2], 9, -51403784);
+      c = md5gg(c, d, a, b, x[i2 + 7], 14, 1735328473);
+      b = md5gg(b, c, d, a, x[i2 + 12], 20, -1926607734);
+      a = md5hh(a, b, c, d, x[i2 + 5], 4, -378558);
+      d = md5hh(d, a, b, c, x[i2 + 8], 11, -2022574463);
+      c = md5hh(c, d, a, b, x[i2 + 11], 16, 1839030562);
+      b = md5hh(b, c, d, a, x[i2 + 14], 23, -35309556);
+      a = md5hh(a, b, c, d, x[i2 + 1], 4, -1530992060);
+      d = md5hh(d, a, b, c, x[i2 + 4], 11, 1272893353);
+      c = md5hh(c, d, a, b, x[i2 + 7], 16, -155497632);
+      b = md5hh(b, c, d, a, x[i2 + 10], 23, -1094730640);
+      a = md5hh(a, b, c, d, x[i2 + 13], 4, 681279174);
+      d = md5hh(d, a, b, c, x[i2], 11, -358537222);
+      c = md5hh(c, d, a, b, x[i2 + 3], 16, -722521979);
+      b = md5hh(b, c, d, a, x[i2 + 6], 23, 76029189);
+      a = md5hh(a, b, c, d, x[i2 + 9], 4, -640364487);
+      d = md5hh(d, a, b, c, x[i2 + 12], 11, -421815835);
+      c = md5hh(c, d, a, b, x[i2 + 15], 16, 530742520);
+      b = md5hh(b, c, d, a, x[i2 + 2], 23, -995338651);
+      a = md5ii(a, b, c, d, x[i2], 6, -198630844);
+      d = md5ii(d, a, b, c, x[i2 + 7], 10, 1126891415);
+      c = md5ii(c, d, a, b, x[i2 + 14], 15, -1416354905);
+      b = md5ii(b, c, d, a, x[i2 + 5], 21, -57434055);
+      a = md5ii(a, b, c, d, x[i2 + 12], 6, 1700485571);
+      d = md5ii(d, a, b, c, x[i2 + 3], 10, -1894986606);
+      c = md5ii(c, d, a, b, x[i2 + 10], 15, -1051523);
+      b = md5ii(b, c, d, a, x[i2 + 1], 21, -2054922799);
+      a = md5ii(a, b, c, d, x[i2 + 8], 6, 1873313359);
+      d = md5ii(d, a, b, c, x[i2 + 15], 10, -30611744);
+      c = md5ii(c, d, a, b, x[i2 + 6], 15, -1560198380);
+      b = md5ii(b, c, d, a, x[i2 + 13], 21, 1309151649);
+      a = md5ii(a, b, c, d, x[i2 + 4], 6, -145523070);
+      d = md5ii(d, a, b, c, x[i2 + 11], 10, -1120210379);
+      c = md5ii(c, d, a, b, x[i2 + 2], 15, 718787259);
+      b = md5ii(b, c, d, a, x[i2 + 9], 21, -343485551);
+      a = safeAdd(a, olda);
+      b = safeAdd(b, oldb);
+      c = safeAdd(c, oldc);
+      d = safeAdd(d, oldd);
+    }
+    return [a, b, c, d];
+  }
+  function bytesToWords(input) {
+    if (input.length === 0) {
+      return [];
+    }
+    var length8 = input.length * 8;
+    var output = new Uint32Array(getOutputLength(length8));
+    for (var i2 = 0; i2 < length8; i2 += 8) {
+      output[i2 >> 5] |= (input[i2 / 8] & 255) << i2 % 32;
+    }
+    return output;
+  }
+  function safeAdd(x, y) {
+    var lsw = (x & 65535) + (y & 65535);
+    var msw = (x >> 16) + (y >> 16) + (lsw >> 16);
+    return msw << 16 | lsw & 65535;
+  }
+  function bitRotateLeft(num, cnt) {
+    return num << cnt | num >>> 32 - cnt;
+  }
+  function md5cmn(q, a, b, x, s, t) {
+    return safeAdd(bitRotateLeft(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b);
+  }
+  function md5ff(a, b, c, d, x, s, t) {
+    return md5cmn(b & c | ~b & d, a, b, x, s, t);
+  }
+  function md5gg(a, b, c, d, x, s, t) {
+    return md5cmn(b & d | c & ~d, a, b, x, s, t);
+  }
+  function md5hh(a, b, c, d, x, s, t) {
+    return md5cmn(b ^ c ^ d, a, b, x, s, t);
+  }
+  function md5ii(a, b, c, d, x, s, t) {
+    return md5cmn(c ^ (b | ~d), a, b, x, s, t);
+  }
+  var md5_default;
+  var init_md5 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/md5.js"() {
+      init_prelude();
+      md5_default = md5;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v3.js
+  var v3, v3_default;
+  var init_v3 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v3.js"() {
+      init_prelude();
+      init_v35();
+      init_md5();
+      v3 = v35("v3", 48, md5_default);
+      v3_default = v3;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/native.js
+  var randomUUID, native_default;
+  var init_native = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/native.js"() {
+      init_prelude();
+      randomUUID = typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID.bind(crypto);
+      native_default = {
+        randomUUID
+      };
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v4.js
+  function v4(options, buf, offset) {
+    if (native_default.randomUUID && !buf && !options) {
+      return native_default.randomUUID();
+    }
+    options = options || {};
+    var rnds = options.random || (options.rng || rng)();
+    rnds[6] = rnds[6] & 15 | 64;
+    rnds[8] = rnds[8] & 63 | 128;
+    if (buf) {
+      offset = offset || 0;
+      for (var i2 = 0; i2 < 16; ++i2) {
+        buf[offset + i2] = rnds[i2];
+      }
+      return buf;
+    }
+    return unsafeStringify(rnds);
+  }
+  var v4_default;
+  var init_v4 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v4.js"() {
+      init_prelude();
+      init_native();
+      init_rng();
+      init_stringify();
+      v4_default = v4;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/sha1.js
+  function f(s, x, y, z) {
+    switch (s) {
+      case 0:
+        return x & y ^ ~x & z;
+      case 1:
+        return x ^ y ^ z;
+      case 2:
+        return x & y ^ x & z ^ y & z;
+      case 3:
+        return x ^ y ^ z;
+    }
+  }
+  function ROTL(x, n) {
+    return x << n | x >>> 32 - n;
+  }
+  function sha1(bytes) {
+    var K = [1518500249, 1859775393, 2400959708, 3395469782];
+    var H = [1732584193, 4023233417, 2562383102, 271733878, 3285377520];
+    if (typeof bytes === "string") {
+      var msg = unescape(encodeURIComponent(bytes));
+      bytes = [];
+      for (var i2 = 0; i2 < msg.length; ++i2) {
+        bytes.push(msg.charCodeAt(i2));
+      }
+    } else if (!Array.isArray(bytes)) {
+      bytes = Array.prototype.slice.call(bytes);
+    }
+    bytes.push(128);
+    var l = bytes.length / 4 + 2;
+    var N = Math.ceil(l / 16);
+    var M = new Array(N);
+    for (var _i = 0; _i < N; ++_i) {
+      var arr = new Uint32Array(16);
+      for (var j = 0; j < 16; ++j) {
+        arr[j] = bytes[_i * 64 + j * 4] << 24 | bytes[_i * 64 + j * 4 + 1] << 16 | bytes[_i * 64 + j * 4 + 2] << 8 | bytes[_i * 64 + j * 4 + 3];
+      }
+      M[_i] = arr;
+    }
+    M[N - 1][14] = (bytes.length - 1) * 8 / Math.pow(2, 32);
+    M[N - 1][14] = Math.floor(M[N - 1][14]);
+    M[N - 1][15] = (bytes.length - 1) * 8 & 4294967295;
+    for (var _i2 = 0; _i2 < N; ++_i2) {
+      var W = new Uint32Array(80);
+      for (var t = 0; t < 16; ++t) {
+        W[t] = M[_i2][t];
+      }
+      for (var _t = 16; _t < 80; ++_t) {
+        W[_t] = ROTL(W[_t - 3] ^ W[_t - 8] ^ W[_t - 14] ^ W[_t - 16], 1);
+      }
+      var a = H[0];
+      var b = H[1];
+      var c = H[2];
+      var d = H[3];
+      var e = H[4];
+      for (var _t2 = 0; _t2 < 80; ++_t2) {
+        var s = Math.floor(_t2 / 20);
+        var T = ROTL(a, 5) + f(s, b, c, d) + e + K[s] + W[_t2] >>> 0;
+        e = d;
+        d = c;
+        c = ROTL(b, 30) >>> 0;
+        b = a;
+        a = T;
+      }
+      H[0] = H[0] + a >>> 0;
+      H[1] = H[1] + b >>> 0;
+      H[2] = H[2] + c >>> 0;
+      H[3] = H[3] + d >>> 0;
+      H[4] = H[4] + e >>> 0;
+    }
+    return [H[0] >> 24 & 255, H[0] >> 16 & 255, H[0] >> 8 & 255, H[0] & 255, H[1] >> 24 & 255, H[1] >> 16 & 255, H[1] >> 8 & 255, H[1] & 255, H[2] >> 24 & 255, H[2] >> 16 & 255, H[2] >> 8 & 255, H[2] & 255, H[3] >> 24 & 255, H[3] >> 16 & 255, H[3] >> 8 & 255, H[3] & 255, H[4] >> 24 & 255, H[4] >> 16 & 255, H[4] >> 8 & 255, H[4] & 255];
+  }
+  var sha1_default;
+  var init_sha1 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/sha1.js"() {
+      init_prelude();
+      sha1_default = sha1;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v5.js
+  var v5, v5_default;
+  var init_v5 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v5.js"() {
+      init_prelude();
+      init_v35();
+      init_sha1();
+      v5 = v35("v5", 80, sha1_default);
+      v5_default = v5;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v6.js
+  function ownKeys(e, r) {
+    var t = Object.keys(e);
+    if (Object.getOwnPropertySymbols) {
+      var o = Object.getOwnPropertySymbols(e);
+      r && (o = o.filter(function(r2) {
+        return Object.getOwnPropertyDescriptor(e, r2).enumerable;
+      })), t.push.apply(t, o);
+    }
+    return t;
+  }
+  function _objectSpread(e) {
+    for (var r = 1; r < arguments.length; r++) {
+      var t = null != arguments[r] ? arguments[r] : {};
+      r % 2 ? ownKeys(Object(t), true).forEach(function(r2) {
+        _defineProperty(e, r2, t[r2]);
+      }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function(r2) {
+        Object.defineProperty(e, r2, Object.getOwnPropertyDescriptor(t, r2));
+      });
+    }
+    return e;
+  }
+  function _defineProperty(e, r, t) {
+    return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: true, configurable: true, writable: true }) : e[r] = t, e;
+  }
+  function _toPropertyKey(t) {
+    var i2 = _toPrimitive(t, "string");
+    return "symbol" == typeof i2 ? i2 : i2 + "";
+  }
+  function _toPrimitive(t, r) {
+    if ("object" != typeof t || !t) return t;
+    var e = t[Symbol.toPrimitive];
+    if (void 0 !== e) {
+      var i2 = e.call(t, r || "default");
+      if ("object" != typeof i2) return i2;
+      throw new TypeError("@@toPrimitive must return a primitive value.");
+    }
+    return ("string" === r ? String : Number)(t);
+  }
+  function v6(options = {}, buf, offset = 0) {
+    var bytes = v1_default(_objectSpread(_objectSpread({}, options), {}, {
+      _v6: true
+    }), new Uint8Array(16));
+    bytes = v1ToV6(bytes);
+    if (buf) {
+      for (var i2 = 0; i2 < 16; i2++) {
+        buf[offset + i2] = bytes[i2];
+      }
+      return buf;
+    }
+    return unsafeStringify(bytes);
+  }
+  var init_v6 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v6.js"() {
+      init_prelude();
+      init_stringify();
+      init_v1();
+      init_v1ToV6();
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v6ToV1.js
+  function v6ToV1(uuid) {
+    var v6Bytes = typeof uuid === "string" ? parse_default(uuid) : uuid;
+    var v1Bytes = _v6ToV1(v6Bytes);
+    return typeof uuid === "string" ? unsafeStringify(v1Bytes) : v1Bytes;
+  }
+  function _v6ToV1(v6Bytes) {
+    return Uint8Array.of((v6Bytes[3] & 15) << 4 | v6Bytes[4] >> 4 & 15, (v6Bytes[4] & 15) << 4 | (v6Bytes[5] & 240) >> 4, (v6Bytes[5] & 15) << 4 | v6Bytes[6] & 15, v6Bytes[7], (v6Bytes[1] & 15) << 4 | (v6Bytes[2] & 240) >> 4, (v6Bytes[2] & 15) << 4 | (v6Bytes[3] & 240) >> 4, 16 | (v6Bytes[0] & 240) >> 4, (v6Bytes[0] & 15) << 4 | (v6Bytes[1] & 240) >> 4, v6Bytes[8], v6Bytes[9], v6Bytes[10], v6Bytes[11], v6Bytes[12], v6Bytes[13], v6Bytes[14], v6Bytes[15]);
+  }
+  var init_v6ToV1 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v6ToV1.js"() {
+      init_prelude();
+      init_parse();
+      init_stringify();
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/v7.js
+  function v7(options, buf, offset) {
+    options = options || {};
+    var i2 = buf && offset || 0;
+    var b = buf || new Uint8Array(16);
+    var rnds = options.random || (options.rng || rng)();
+    var msecs = options.msecs !== void 0 ? options.msecs : Date.now();
+    var seq = options.seq !== void 0 ? options.seq : null;
+    var seqHigh = _seqHigh;
+    var seqLow = _seqLow;
+    if (msecs > _msecs && options.msecs === void 0) {
+      _msecs = msecs;
+      if (seq !== null) {
+        seqHigh = null;
+        seqLow = null;
+      }
+    }
+    if (seq !== null) {
+      if (seq > 2147483647) {
+        seq = 2147483647;
+      }
+      seqHigh = seq >>> 19 & 4095;
+      seqLow = seq & 524287;
+    }
+    if (seqHigh === null || seqLow === null) {
+      seqHigh = rnds[6] & 127;
+      seqHigh = seqHigh << 8 | rnds[7];
+      seqLow = rnds[8] & 63;
+      seqLow = seqLow << 8 | rnds[9];
+      seqLow = seqLow << 5 | rnds[10] >>> 3;
+    }
+    if (msecs + 1e4 > _msecs && seq === null) {
+      if (++seqLow > 524287) {
+        seqLow = 0;
+        if (++seqHigh > 4095) {
+          seqHigh = 0;
+          _msecs++;
+        }
+      }
+    } else {
+      _msecs = msecs;
+    }
+    _seqHigh = seqHigh;
+    _seqLow = seqLow;
+    b[i2++] = _msecs / 1099511627776 & 255;
+    b[i2++] = _msecs / 4294967296 & 255;
+    b[i2++] = _msecs / 16777216 & 255;
+    b[i2++] = _msecs / 65536 & 255;
+    b[i2++] = _msecs / 256 & 255;
+    b[i2++] = _msecs & 255;
+    b[i2++] = seqHigh >>> 4 & 15 | 112;
+    b[i2++] = seqHigh & 255;
+    b[i2++] = seqLow >>> 13 & 63 | 128;
+    b[i2++] = seqLow >>> 5 & 255;
+    b[i2++] = seqLow << 3 & 255 | rnds[10] & 7;
+    b[i2++] = rnds[11];
+    b[i2++] = rnds[12];
+    b[i2++] = rnds[13];
+    b[i2++] = rnds[14];
+    b[i2++] = rnds[15];
+    return buf || unsafeStringify(b);
+  }
+  var _seqLow, _seqHigh, _msecs, v7_default;
+  var init_v7 = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/v7.js"() {
+      init_prelude();
+      init_rng();
+      init_stringify();
+      _seqLow = null;
+      _seqHigh = null;
+      _msecs = 0;
+      v7_default = v7;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/version.js
+  function version(uuid) {
+    if (!validate_default(uuid)) {
+      throw TypeError("Invalid UUID");
+    }
+    return parseInt(uuid.slice(14, 15), 16);
+  }
+  var version_default;
+  var init_version = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/version.js"() {
+      init_prelude();
+      init_validate();
+      version_default = version;
+    }
+  });
+
+  // shared/node_modules/uuid/dist/esm-browser/index.js
+  var esm_browser_exports = {};
+  __export(esm_browser_exports, {
+    MAX: () => max_default,
+    NIL: () => nil_default,
+    parse: () => parse_default,
+    stringify: () => stringify_default,
+    v1: () => v1_default,
+    v1ToV6: () => v1ToV6,
+    v3: () => v3_default,
+    v4: () => v4_default,
+    v5: () => v5_default,
+    v6: () => v6,
+    v6ToV1: () => v6ToV1,
+    v7: () => v7_default,
+    validate: () => validate_default,
+    version: () => version_default
+  });
+  var init_esm_browser = __esm({
+    "shared/node_modules/uuid/dist/esm-browser/index.js"() {
+      init_prelude();
+      init_max();
+      init_nil();
+      init_parse();
+      init_stringify();
+      init_v1();
+      init_v1ToV6();
+      init_v3();
+      init_v4();
+      init_v5();
+      init_v6();
+      init_v6ToV1();
+      init_v7();
+      init_validate();
+      init_version();
+    }
+  });
+
+  // shared/sync/embed.ts
   init_prelude();
 
-  // ../shared/sync/index.ts
+  // shared/sync/index.ts
   init_prelude();
 
-  // ../shared/sync/graph.ts
+  // shared/sync/graph.ts
   init_prelude();
 
-  // ../shared/sync/destructure.ts
+  // shared/sync/destructure.ts
   init_prelude();
 
-  // ../shared/sync/replica.ts
+  // shared/sync/replica.ts
   init_prelude();
 
-  // ../shared/dag-implementation/store.ts
+  // shared/sync/node-sync.ts
   init_prelude();
 
-  // ../shared/utils.ts
+  // shared/sync/node-context.ts
   init_prelude();
 
-  // ../shared/dag-implementation/expression.ts
+  // shared/sync/branches.ts
   init_prelude();
 
-  // ../shared/dag-implementation/context.ts
+  // shared/sync/merge.ts
+  init_prelude();
+  var EMPTY = { data: {}, children: [] };
+  function mergeNodes(store, baseCid, oursCid, theirsCid, labels) {
+    const newChoiceCids = [];
+    const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true);
+    if (outcome.kind !== "node") throw new Error("conflicting typed refs must be merged through their owning node to resolve the choice");
+    return { cid: outcome.cid, newChoiceCids };
+  }
+  function mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, isTop) {
+    if (oursCid === theirsCid) return { kind: "node", cid: oursCid };
+    if (baseCid === oursCid) return { kind: "node", cid: theirsCid };
+    if (baseCid === theirsCid) return { kind: "node", cid: oursCid };
+    const base = baseCid ? content(store, baseCid) : EMPTY;
+    const ours = content(store, oursCid);
+    const theirs = content(store, theirsCid);
+    if (isBranchChoice(store, ours) !== isBranchChoice(store, theirs)) {
+      const choice = readChoice(store, isBranchChoice(store, ours) ? oursCid : theirsCid);
+      const main = choice.options.find((option) => option.peerId === choice.defaultName) ?? choice.options[0];
+      const mainEdge = main?.edge;
+      if (main && mainEdge) {
+        const lift = (cid) => putBranches(store, choice.id, choice.base, [{ peerId: main.peerId, edge: withIdentity(store, mainEdge, cid) }], choice.defaultName);
+        return mergeNode(
+          store,
+          baseCid && !isBranchChoice(store, base) ? lift(baseCid) : baseCid,
+          isBranchChoice(store, ours) ? oursCid : lift(oursCid),
+          isBranchChoice(store, theirs) ? theirsCid : lift(theirsCid),
+          labels,
+          newChoiceCids,
+          isTop
+        );
+      }
+    }
+    if (isBranchChoice(store, ours) && isBranchChoice(store, theirs)) {
+      const o = readChoice(store, oursCid), t = readChoice(store, theirsCid);
+      const b = baseCid && isBranchChoice(store, base) ? readChoice(store, baseCid) : null;
+      const options = [];
+      for (const name of new Set([...o.options, ...t.options].map((option) => option.peerId))) {
+        const oo = o.options.find((x) => x.peerId === name), tt = t.options.find((x) => x.peerId === name);
+        const oe = oo?.edge, te = tt?.edge;
+        const be = b?.options.find((x) => x.peerId === name)?.edge;
+        if (!oe || !te) {
+          const edge = oe ?? te;
+          if (edge) options.push({ ...oo ?? tt, peerId: name, edge });
+          continue;
+        }
+        if (!sameShape(store, oe, te)) return { kind: "conflict" };
+        const merged = mergeNode(store, be ? identityCid(store, be) : null, identityCid(store, oe), identityCid(store, te), labels, newChoiceCids, false);
+        if (merged.kind === "conflict") return merged;
+        const beforeRequest = b?.options.find((x) => x.peerId === name)?.requestMerge;
+        let requestMerge = oo.requestMerge === beforeRequest ? tt.requestMerge : oo.requestMerge;
+        if (oo.requestMerge !== beforeRequest && tt.requestMerge !== beforeRequest && oo.requestMerge !== tt.requestMerge) {
+          if (!oo.requestMerge || !tt.requestMerge) return { kind: "conflict" };
+          const request = mergeNode(store, beforeRequest ?? null, oo.requestMerge, tt.requestMerge, labels, newChoiceCids, false);
+          if (request.kind === "conflict") return request;
+          requestMerge = request.cid;
+        }
+        options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid), requestMerge });
+      }
+      return { kind: "node", cid: putBranches(store, o.id, b?.base ?? o.base, options, b?.defaultName ?? o.defaultName) };
+    }
+    const asRef = (value) => isRefNode(store, value) && !isHandle(value) || isLegacyInlineLink(store, value);
+    if (asRef(ours) || asRef(theirs)) {
+      const refOf = (cid, value) => {
+        if (!cid) return null;
+        if (isRefNode(store, value) && !isHandle(value)) return { cid, node: value };
+        const node = makeLink(store, value, 0);
+        return { cid: put(store, node), node };
+      };
+      const o = refOf(oursCid, ours);
+      const t = refOf(theirsCid, theirs);
+      const b = baseCid ? refOf(baseCid, base) : null;
+      const valueOf = (r) => r ? refValueCid(store, r.node) : null;
+      const oursValue = valueOf(o) ?? put(store, stripLink(store, ours));
+      const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs));
+      const typed = refTypeCid(store, o.node) || refTypeCid(store, t.node);
+      if (typed && refTypeCid(store, o.node) !== refTypeCid(store, t.node)) return { kind: "conflict" };
+      let mergedValue;
+      if (typed) {
+        const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b);
+        if (ov === tv || tv === bv) mergedValue = ov;
+        else if (ov === bv) mergedValue = tv;
+        else {
+          const baseChoice = bv && isBranchChoice(store, content(store, bv)) ? readChoice(store, bv) : null;
+          const defaultValue = baseChoice ? baseChoice.options.find((option) => option.peerId === baseChoice.defaultName)?.edge?.[0] : bv;
+          mergedValue = putRefValueBranches(store, o.node, [bv, ...[ov, tv].filter((cid) => !!cid).sort()], "main", defaultValue);
+        }
+      } else {
+        const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true);
+        mergedValue = merged.kind === "node" ? merged.cid : oursValue;
+      }
+      const book = (r) => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] });
+      const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids);
+      const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue;
+      const prevEdge = (cid) => [store.primitive.previousVersion.getId(), cid];
+      const existingPrev = (r) => r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [];
+      const prev = valueChanged ? o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)] : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))];
+      const data2 = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data;
+      return { kind: "node", cid: put(store, refNodeContent(store, data2, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) };
+    }
+    const data = mergeData(base.data, ours.data, theirs.data, isTop);
+    if (!data) return { kind: "conflict" };
+    const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids);
+    return { kind: "node", cid: put(store, { data, children }) };
+  }
+  function mergeData(base, ours, theirs, theirsWins) {
+    const out = {};
+    const keys = /* @__PURE__ */ new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)]);
+    const b = base;
+    const o = ours;
+    const t = theirs;
+    for (const key of keys) {
+      if (key === "versionControl") continue;
+      if (key === "updated") {
+        const time = Math.max(timeOf(o[key]), timeOf(t[key]), timeOf(b[key]));
+        if (time > 0) out[key] = { time };
+        continue;
+      }
+      const bv = b[key], ov = o[key], tv = t[key];
+      if (same(ov, tv)) {
+        if (ov !== void 0) out[key] = ov;
+        continue;
+      }
+      if (same(bv, ov)) {
+        if (tv !== void 0) out[key] = tv;
+        continue;
+      }
+      if (same(bv, tv)) {
+        if (ov !== void 0) out[key] = ov;
+        continue;
+      }
+      if (!theirsWins) return null;
+      if (tv !== void 0) out[key] = tv;
+    }
+    return out;
+  }
+  function timeOf(value) {
+    return value && typeof value === "object" && typeof value.time === "number" ? value.time : 0;
+  }
+  function same(a, b) {
+    if (a === b) return true;
+    if (a === void 0 || b === void 0) return false;
+    return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
+  }
+  function sortKeys(value) {
+    if (Array.isArray(value)) return value.map(sortKeys);
+    if (value && typeof value === "object") {
+      const src = value;
+      const out = {};
+      for (const k of Object.keys(src).sort()) out[k] = sortKeys(src[k]);
+      return out;
+    }
+    return value;
+  }
+  function mergeChildren(store, base, ours, theirs, labels, newChoiceCids) {
+    const index = (value) => {
+      const map = /* @__PURE__ */ new Map();
+      for (const edge of value.children) map.set(edgeKey(store, edge), edge);
+      return map;
+    };
+    const bMap = index(base);
+    const oMap = index(ours);
+    const tMap = index(theirs);
+    const keys = orderedKeys([...oMap.keys()], [...tMap.keys()], [...bMap.keys()]);
+    const out = [];
+    for (const key of keys) {
+      const b = bMap.get(key) ?? null;
+      const o = oMap.get(key) ?? null;
+      const t = tMap.get(key) ?? null;
+      if (sameEdge(o, t)) {
+        if (o) out.push(o);
+        continue;
+      }
+      if (sameEdge(b, o)) {
+        if (t) out.push(t);
+        continue;
+      }
+      if (sameEdge(b, t)) {
+        if (o) out.push(o);
+        continue;
+      }
+      if (key.startsWith("p:") && o && t) {
+        const ot = readProposal(store, o[1])?.timestamp ?? 0;
+        const tt = readProposal(store, t[1])?.timestamp ?? 0;
+        out.push(tt > ot ? t : o);
+        continue;
+      }
+      if (o && t && sameShape(store, o, t) && (!isChoiceEdge(store, o) || isBranchChoice(store, content(store, o[1])))) {
+        const baseIdentity = b && sameShape(store, b, o) && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? identityCid(store, b) : null;
+        const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false);
+        if (merged.kind === "node") {
+          out.push(withIdentity(store, o, merged.cid));
+          continue;
+        }
+      }
+      const id = key.startsWith("a:") ? key.slice(2) : key;
+      const options = [
+        { peerId: labels.ours, edge: o },
+        { peerId: labels.theirs, edge: t }
+      ];
+      const choiceCid = putChoice(store, id, b && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? b : null, options);
+      newChoiceCids.push(choiceCid);
+      out.push([store.primitive.choiceTarget.getId(), choiceCid]);
+    }
+    return out;
+  }
+  function orderedKeys(ours, theirs, base) {
+    const out = [...ours];
+    const present = new Set(out);
+    theirs.forEach((key, i2) => {
+      if (present.has(key)) return;
+      let at = -1;
+      for (let j = i2 - 1; j >= 0 && at < 0; j--) {
+        const idx = out.indexOf(theirs[j]);
+        if (idx >= 0) at = idx + 1;
+      }
+      for (let j = i2 + 1; j < theirs.length && at < 0; j++) {
+        const idx = out.indexOf(theirs[j]);
+        if (idx >= 0) at = idx;
+      }
+      if (at < 0) at = out.length;
+      out.splice(at, 0, key);
+      present.add(key);
+    });
+    for (const key of base) if (!present.has(key)) {
+      out.push(key);
+      present.add(key);
+    }
+    return out;
+  }
+  function sameEdge(a, b) {
+    if (!a || !b) return a === b;
+    return a[0] === b[0] && a[1] === b[1];
+  }
+  function resolveChoiceIn(store, value, choiceId, pick, now) {
+    const key = `a:${choiceId}`;
+    const edge = value.children.find((e) => edgeKey(store, e) === key);
+    if (!edge || !isChoiceEdge(store, edge)) return value;
+    const children = [];
+    for (const existing of value.children) {
+      if (existing !== edge) {
+        children.push(existing);
+        continue;
+      }
+      if (pick === null) continue;
+      const choice = content(store, edge[1]);
+      const alternatives = choice.children.filter(([i2]) => i2 === store.primitive.optionNotSelectedConstructor.getId());
+      const alt = alternatives[pick];
+      if (!alt) throw new Error(`choice ${choiceId} has no option ${pick}`);
+      const pointer = content(store, alt[1]);
+      let instr = null;
+      let target = null;
+      for (const [i2, t] of pointer.children) {
+        if (i2 === store.primitive.instructionPointerConstructor.getId()) instr = t;
+        if (i2 === store.primitive.targetPointerConstructor.getId()) target = t;
+      }
+      if (!instr || !target) continue;
+      const picked = [instr, target];
+      const idCid = identityCid(store, picked);
+      const touched = put(store, { ...content(store, idCid), data: { ...content(store, idCid).data, updated: { time: now } } });
+      children.push(withIdentity(store, picked, touched));
+    }
+    return { ...value, children };
+  }
+
+  // shared/sync/node-provider.ts
+  init_prelude();
+
+  // shared/dag-implementation/cid.ts
+  init_prelude();
+  var jsSha3 = __toESM(require_sha3(), 1);
+  var sha3_2562 = jsSha3.sha3_256 ?? jsSha3.default.sha3_256;
+  var PREFIXED = /^v(\d+)-([0-9a-f]+)$/;
+  var LEGACY = /^[0-9a-f]{64}$/;
+  function normalizeObject(obj) {
+    if (obj === null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(normalizeObject);
+    const source = obj;
+    return Object.keys(source).sort().reduce((result, key) => {
+      result[key] = normalizeObject(source[key]);
+      return result;
+    }, {});
+  }
+  function sortEdgesUndirected(edges) {
+    return edges.map((edge) => [...edge].sort()).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
+  }
+  function sha3Digest(content2) {
+    const normalized = {
+      data: JSON.stringify(normalizeObject(content2.data)),
+      children: sortEdgesUndirected(content2.children || [])
+    };
+    return sha3_2562(JSON.stringify(normalized));
+  }
+  function sha3OrderedDigest(content2) {
+    const normalized = {
+      v: 2,
+      data: JSON.stringify(normalizeObject(content2.data)),
+      children: (content2.children || []).map(([a, b]) => [a, b])
+    };
+    return sha3_2562(JSON.stringify(normalized));
+  }
+  var CID_FORMATS = {
+    0: {
+      version: 0,
+      description: "Legacy: bare sha3-256 hex of {data: canonical JSON, children: sorted edges}; no version prefix.",
+      digest: sha3Digest
+    },
+    1: {
+      version: 1,
+      description: 'Same digest as v0, written as "v1-<hex>" so the format can be told apart and migrated.',
+      digest: sha3Digest
+    },
+    2: {
+      version: 2,
+      description: "Edges hashed in order and direction (child order is part of identity).",
+      digest: sha3OrderedDigest
+    }
+  };
+  var CURRENT_CID_VERSION = 2;
+  function parseCid(cid) {
+    if (typeof cid !== "string") return null;
+    const prefixed = PREFIXED.exec(cid);
+    if (prefixed) {
+      const version2 = Number(prefixed[1]);
+      return version2 in CID_FORMATS ? { version: version2, digest: prefixed[2] } : null;
+    }
+    if (LEGACY.test(cid)) return { version: 0, digest: cid };
+    return null;
+  }
+  function cidVersion(cid) {
+    return parseCid(cid)?.version ?? null;
+  }
+  function formatCid(version2, digest) {
+    if (!(version2 in CID_FORMATS)) throw new Error(`unknown cid version ${version2}`);
+    return version2 === 0 ? digest : `v${version2}-${digest}`;
+  }
+  function isCurrentCid(cid) {
+    return cidVersion(cid) === CURRENT_CID_VERSION;
+  }
+  function hashContentAt(content2, version2) {
+    const format = CID_FORMATS[version2];
+    if (!format) throw new Error(`unknown cid version ${version2}`);
+    return formatCid(version2, format.digest(content2));
+  }
+  function hashContent(content2) {
+    return hashContentAt(content2, CURRENT_CID_VERSION);
+  }
+  function verifyCid(cid, content2) {
+    const parsed = parseCid(cid);
+    if (!parsed) return false;
+    return hashContentAt(content2, parsed.version) === cid;
+  }
+
+  // shared/sync/node-provider.ts
+  var LINK_NAME = "fos:node-link:";
+  var NodeAccessError = class extends Error {
+  };
+  function maskOf(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new NodeAccessError("Invalid node mask.");
+    const mask = value;
+    for (const list of [mask.fields, mask.children]) if (list !== void 0 && (!Array.isArray(list) || list.length > 1e4 || list.some((v) => typeof v !== "string"))) throw new NodeAccessError("Invalid node mask.");
+    return { ...mask.fields ? { fields: [...new Set(mask.fields)] } : {}, ...mask.children ? { children: [...new Set(mask.children)] } : {} };
+  }
+  function permitted(r, cid, peer, inherited) {
+    const member = readMembers(r.store, content(r.store, cid)).find((m) => m.peerId === peer);
+    if (!member) return inherited;
+    if (member.disabled?.includes("read") || member.disabled?.includes("provideNode")) return false;
+    return member.capabilities.includes("read") || member.capabilities.includes("edit");
+  }
+  function hasNodeLinkMasks(store, peer, scope) {
+    const sourceIds = /* @__PURE__ */ new Set([content(store, store.rootNodeId).data.alias?.id ?? store.rootNodeId]);
+    for (let i2 = 1; i2 <= scope.length; i2++) {
+      const cid = resolveScope(store, rootTargetCid(store), scope.slice(0, i2));
+      if (cid) sourceIds.add(content(store, cid).data.alias?.id ?? cid);
+    }
+    const scoped = resolveScope(store, rootTargetCid(store), scope);
+    const pending = scoped ? [scoped] : [], visited = /* @__PURE__ */ new Set();
+    while (pending.length) {
+      const cid = pending.pop();
+      if (visited.has(cid)) continue;
+      visited.add(cid);
+      const node = content(store, cid);
+      sourceIds.add(node.data.alias?.id ?? cid);
+      if (isHandle(node)) continue;
+      for (const edge of valueContent(store, cid).children) if (rowKindOf(store, edge)) pending.push(identityCid(store, edge));
+    }
+    return content(store, store.rootNodeId).children.some((edge) => {
+      if (edge[0] !== capabilityTarget(store, "provideNode")) return false;
+      const ref = content(store, edge[1]), name = ref.data.name?.content;
+      if (!name?.startsWith(LINK_NAME) || peer && ref.data.ref?.peer !== peer) return false;
+      try {
+        const [, id] = JSON.parse(name.slice(LINK_NAME.length));
+        if (!sourceIds.has(id)) return false;
+        if (ref.data.description?.content === "fos:node-projection") return true;
+        const target = refValueCid(store, ref);
+        const mask = maskOf(JSON.parse(target ? content(store, target).data.description?.content ?? "null" : "null"));
+        return mask.fields !== void 0 || mask.children !== void 0;
+      } catch {
+        return true;
+      }
+    });
+  }
+  function hasNodeReadBoundary(r, scope, peer) {
+    return withMainBranchPolicy(r.store, () => {
+      const root = resolveScope(r.store, headCid(r), scope);
+      if (!root) return false;
+      const pending = [root], seen = /* @__PURE__ */ new Set();
+      while (pending.length) {
+        const cid = pending.pop();
+        if (seen.has(cid)) continue;
+        seen.add(cid);
+        if (!permitted(r, cid, peer, true)) return true;
+        if (isHandle(content(r.store, cid))) continue;
+        for (const edge of valueContent(r.store, cid).children) if (rowKindOf(r.store, edge)) pending.push(identityCid(r.store, edge));
+      }
+      return false;
+    });
+  }
+
+  // shared/sync/node-sync.ts
+  var forbidden = /* @__PURE__ */ new Set(["alias", "ref", "versionControl", "disabledCapabilities", "peerId", "__proto__", "constructor", "prototype"]);
+  var empty = () => ({ data: {}, children: [] });
+  var equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  var childValue = (child) => child && { id: child.id, kind: child.kind, ...child.kind === "ref" ? { address: child.address } : {} };
+  var nodeSyncKey = (peer, path, branches) => JSON.stringify(branches?.length ? [peer, path, [...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : [peer, path]);
+  function nodeShape(r, path, root = headCid(r)) {
+    const cid = resolveScope(r.store, root, path);
+    if (!cid || isHandle(content(r.store, cid))) return empty();
+    const value = valueContent(r.store, cid);
+    const children = [];
+    for (const edge of value.children) {
+      const kind = rowKindOf(r.store, edge);
+      if (!kind) continue;
+      const child = content(r.store, identityCid(r.store, edge)), id = child.data.alias?.id;
+      if (!id) continue;
+      const ref = isPeerReference(child) ? child.data.ref : void 0;
+      children.push({ id, kind: ref?.kind && ROW_KINDS.includes(ref.kind) ? ref.kind : kind, address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {} } });
+    }
+    return { data: Object.fromEntries(Object.entries(value.data).filter(([key]) => !forbidden.has(key))), children };
+  }
+  function sameNodeShape(a, b) {
+    return equal(a.data, b.data) && equal(a.children.map(childValue), b.children.map(childValue));
+  }
+  function materializedNodePaths(r, at) {
+    const paths = [], queue = [at];
+    while (queue.length) {
+      const path = queue.pop(), cid = resolveScope(r.store, headCid(r), path);
+      if (!cid || isHandle(content(r.store, cid))) continue;
+      paths.push(path);
+      for (const child of nodeShape(r, path).children) if (child.kind !== "ref") queue.push([...path, child.id]);
+    }
+    return paths.sort((a, b) => a.length - b.length);
+  }
+  function nodePersistenceAllowed(r, path) {
+    for (let i2 = 0; i2 <= path.length; i2++) {
+      const cid = resolveScope(r.store, headCid(r), path.slice(0, i2));
+      if (!cid) return false;
+      if (readMembers(r.store, content(r.store, cid)).some((m) => m.peerId === "fos" && m.disabled?.includes("persist"))) return false;
+    }
+    return true;
+  }
+  function nodeBranches(r, path, remote = true) {
+    const result = [];
+    const offset = remote ? r.meta.scope : [];
+    const root = r.meta.localScope ?? [];
+    if (r.meta.branch) result.push({ scope: [...offset, ...root], name: r.meta.branch });
+    const selections = scopeBranches(r.store, headCid(r), path);
+    for (let i2 = root.length; i2 <= path.length; i2++) {
+      const name = selections[path[i2 - 1]];
+      const scope = [...offset, ...path.slice(0, i2)];
+      if (name && !result.some((b) => JSON.stringify(b.scope) === JSON.stringify(scope))) result.push({ scope, name });
+    }
+    return result;
+  }
+
+  // shared/dag-implementation/store.ts
+  init_prelude();
+
+  // shared/utils.ts
+  init_prelude();
+
+  // shared/dag-implementation/expression.ts
+  init_prelude();
+
+  // shared/dag-implementation/context.ts
   init_prelude();
   var runAvailableFunctions = async (expr) => {
     if (expr.isUpdate()) {
@@ -1532,7 +2018,7 @@
     return false;
   };
 
-  // ../shared/dag-implementation/expression.ts
+  // shared/dag-implementation/expression.ts
   var FosExpression = class _FosExpression {
     constructor(store, instructionOrRoute, target, parent) {
       __publicField(this, "store");
@@ -1860,8 +2346,7 @@
     getChild(index) {
       const edges = this.targetNode.getEdgesResolved();
       const edge = edges[index];
-      if (!edge)
-        return null;
+      if (!edge) return null;
       const [instrNode, targetNode] = edge;
       return new _FosExpression(this.store, instrNode, targetNode, this);
     }
@@ -1870,8 +2355,7 @@
      * Uses object identity comparison instead of CID comparison.
      */
     getIndex() {
-      if (!this._parent)
-        return 0;
+      if (!this._parent) return 0;
       const siblings = this._parent.targetNode.getEdgesResolved();
       return siblings.findIndex(
         ([instrNode, targetNode]) => instrNode === this.instructionNode && targetNode === this.targetNode
@@ -2617,8 +3101,7 @@
         for (const rule of rules) {
           const head = this.getRuleHead(rule);
           const body = this.getRuleBody(rule);
-          if (!head)
-            continue;
+          if (!head) continue;
           const bodySatisfied = body.every(
             (condition) => this.queryFacts(condition).length > 0
           );
@@ -2937,15 +3420,13 @@
         const oursChild = conflictExpr.getTargetChildren().find(
           (c) => c.instructionNode.getId() === conflictOursPrimitive.getId()
         );
-        if (!oursChild)
-          throw new Error("Ours not found in conflict");
+        if (!oursChild) throw new Error("Ours not found in conflict");
         resolvedNode = oursChild.targetNode;
       } else if (resolution === "theirs") {
         const theirsChild = conflictExpr.getTargetChildren().find(
           (c) => c.instructionNode.getId() === conflictTheirsPrimitive.getId()
         );
-        if (!theirsChild)
-          throw new Error("Theirs not found in conflict");
+        if (!theirsChild) throw new Error("Theirs not found in conflict");
         resolvedNode = theirsChild.targetNode;
       } else {
         resolvedNode = resolution;
@@ -3031,8 +3512,7 @@
      */
     getBudgetInfo() {
       const budgetData = this.targetNode.getData().budget;
-      if (!budgetData)
-        return null;
+      if (!budgetData) return null;
       return {
         total: budgetData.total,
         consumed: budgetData.consumed,
@@ -3178,8 +3658,7 @@
      */
     getCalendarInfo() {
       const calendarData = this.targetNode.getData().calendar;
-      if (!calendarData)
-        return null;
+      if (!calendarData) return null;
       return {
         name: calendarData.name,
         slots: calendarData.slots || []
@@ -3266,8 +3745,7 @@
      */
     getAvailableTimeSlots() {
       const calendarInfo = this.getCalendarInfo();
-      if (!calendarInfo)
-        return [];
+      if (!calendarInfo) return [];
       return calendarInfo.slots.filter((s) => !s.allocated).map(({ id, start, end }) => ({ id, start, end }));
     }
     /**
@@ -3392,8 +3870,7 @@
       const personFieldCid = this.store.primitive.personField.getId();
       const existingDM = this.getTargetChildren().find((child) => {
         const groupData = child.targetNode.getData().group;
-        if (!groupData)
-          return false;
+        if (!groupData) return false;
         const profiles = groupData.userProfiles || [];
         return profiles.length === 2 && profiles.includes(this.targetNode.getId()) && profiles.includes(targetUserNodeCid);
       });
@@ -3663,8 +4140,8 @@
       const { targetIndexInParent, parent } = this.getParentInfo();
       const parentContent = parent.targetNode.getContent();
       const parentChildren = parentContent.children;
-      const newParentRows = parentContent.children.reduce((acc, child, i) => {
-        if (i !== targetIndexInParent) {
+      const newParentRows = parentContent.children.reduce((acc, child, i2) => {
+        if (i2 !== targetIndexInParent) {
           return [...acc, ...parentChildren];
         }
         return [...acc, child];
@@ -3752,8 +4229,8 @@
       } else if (index === 0) {
         newParentRows = [newElem, ...targetContent.children];
       } else {
-        newParentRows = targetContent.children.reduce((acc, child, i) => {
-          if (i === index) {
+        newParentRows = targetContent.children.reduce((acc, child, i2) => {
+          if (i2 === index) {
             return [...acc, newElem, child];
           }
           return [...acc, child];
@@ -3801,13 +4278,13 @@
       if (parent.route.length === 1) {
         return;
       }
-      siblingRoutes().forEach((siblingRoute, i) => {
-        if (i < targetIndexInParent + 1) {
+      siblingRoutes().forEach((siblingRoute, i2) => {
+        if (i2 < targetIndexInParent + 1) {
           return;
         } else {
-          console.log("siblingRoute", siblingRoute, this.route, i, targetIndexInParent);
+          console.log("siblingRoute", siblingRoute, this.route, i2, targetIndexInParent);
           throw new Error("Not implemented");
-          this.moveNodeIntoRoute(this.route, i - targetIndexInParent + 1);
+          this.moveNodeIntoRoute(this.route, i2 - targetIndexInParent + 1);
         }
       });
       const exprInNewPath = this.moveNodeBelowRoute(parent.route);
@@ -4008,10 +4485,10 @@
     }
   };
 
-  // ../shared/defaults.ts
+  // shared/defaults.ts
   init_prelude();
 
-  // ../shared/utils.ts
+  // shared/utils.ts
   var getDownNode = (expression) => {
     const parent = expression.getParent();
     const children = parent.getTargetChildren();
@@ -4135,9 +4612,9 @@
     let resultMap = /* @__PURE__ */ new Map();
     const helper = (acc, expr) => {
       const nodeRoute = expr.route;
-      for (let i = 0; i < nodeRoute.length; i++) {
-        for (let j = i + 1; j < nodeRoute.length; j++) {
-          if (nodeRoute[i]?.[0] === nodeRoute[j]?.[0] && nodeRoute[i]?.[1] === nodeRoute[j]?.[1]) {
+      for (let i2 = 0; i2 < nodeRoute.length; i2++) {
+        for (let j = i2 + 1; j < nodeRoute.length; j++) {
+          if (nodeRoute[i2]?.[0] === nodeRoute[j]?.[0] && nodeRoute[i2]?.[1] === nodeRoute[j]?.[1]) {
             return;
           }
         }
@@ -4170,7 +4647,7 @@
     }
   };
 
-  // ../shared/dag-implementation/node.ts
+  // shared/dag-implementation/node.ts
   init_prelude();
   var FosNode = class {
     constructor(value, store) {
@@ -4379,7 +4856,7 @@
       if (orderArray.length != this.getEdges().length) {
         throw new Error("Order array length must match the number of edges");
       }
-      const orderedEdges = orderArray.map((i) => this.getEdges()[i]).map((edge) => {
+      const orderedEdges = orderArray.map((i2) => this.getEdges()[i2]).map((edge) => {
         if (edge === void 0) {
           throw new Error("Edge not found");
         }
@@ -4600,7 +5077,7 @@
     // }
   };
 
-  // ../shared/dag-implementation/primitive-node.ts
+  // shared/dag-implementation/primitive-node.ts
   init_prelude();
   init_esm_browser();
   var getTerminalNode = (store) => {
@@ -4843,8 +5320,7 @@
       children: constructedChildren
     };
     const newNode = store.create(nodeContent, alias);
-    if (!newNode)
-      throw new Error("could not create node");
+    if (!newNode) throw new Error("could not create node");
     return newNode;
   };
   var constructPrimitiveAliases = (store) => {
@@ -5256,99 +5732,7 @@
     };
   };
 
-  // ../shared/dag-implementation/cid.ts
-  init_prelude();
-  var jsSha3 = __toESM(require_sha3(), 1);
-  var sha3_2562 = jsSha3.sha3_256 ?? jsSha3.default.sha3_256;
-  var PREFIXED = /^v(\d+)-([0-9a-f]+)$/;
-  var LEGACY = /^[0-9a-f]{64}$/;
-  function normalizeObject(obj) {
-    if (obj === null || typeof obj !== "object")
-      return obj;
-    if (Array.isArray(obj))
-      return obj.map(normalizeObject);
-    const source = obj;
-    return Object.keys(source).sort().reduce((result, key) => {
-      result[key] = normalizeObject(source[key]);
-      return result;
-    }, {});
-  }
-  function sortEdgesUndirected(edges) {
-    return edges.map((edge) => [...edge].sort()).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
-  }
-  function sha3Digest(content2) {
-    const normalized = {
-      data: JSON.stringify(normalizeObject(content2.data)),
-      children: sortEdgesUndirected(content2.children || [])
-    };
-    return sha3_2562(JSON.stringify(normalized));
-  }
-  function sha3OrderedDigest(content2) {
-    const normalized = {
-      v: 2,
-      data: JSON.stringify(normalizeObject(content2.data)),
-      children: (content2.children || []).map(([a, b]) => [a, b])
-    };
-    return sha3_2562(JSON.stringify(normalized));
-  }
-  var CID_FORMATS = {
-    0: {
-      version: 0,
-      description: "Legacy: bare sha3-256 hex of {data: canonical JSON, children: sorted edges}; no version prefix.",
-      digest: sha3Digest
-    },
-    1: {
-      version: 1,
-      description: 'Same digest as v0, written as "v1-<hex>" so the format can be told apart and migrated.',
-      digest: sha3Digest
-    },
-    2: {
-      version: 2,
-      description: "Edges hashed in order and direction (child order is part of identity).",
-      digest: sha3OrderedDigest
-    }
-  };
-  var CURRENT_CID_VERSION = 2;
-  function parseCid(cid) {
-    if (typeof cid !== "string")
-      return null;
-    const prefixed = PREFIXED.exec(cid);
-    if (prefixed) {
-      const version2 = Number(prefixed[1]);
-      return version2 in CID_FORMATS ? { version: version2, digest: prefixed[2] } : null;
-    }
-    if (LEGACY.test(cid))
-      return { version: 0, digest: cid };
-    return null;
-  }
-  function cidVersion(cid) {
-    return parseCid(cid)?.version ?? null;
-  }
-  function formatCid(version2, digest) {
-    if (!(version2 in CID_FORMATS))
-      throw new Error(`unknown cid version ${version2}`);
-    return version2 === 0 ? digest : `v${version2}-${digest}`;
-  }
-  function isCurrentCid(cid) {
-    return cidVersion(cid) === CURRENT_CID_VERSION;
-  }
-  function hashContentAt(content2, version2) {
-    const format = CID_FORMATS[version2];
-    if (!format)
-      throw new Error(`unknown cid version ${version2}`);
-    return formatCid(version2, format.digest(content2));
-  }
-  function hashContent(content2) {
-    return hashContentAt(content2, CURRENT_CID_VERSION);
-  }
-  function verifyCid(cid, content2) {
-    const parsed = parseCid(cid);
-    if (!parsed)
-      return false;
-    return hashContentAt(content2, parsed.version) === cid;
-  }
-
-  // ../shared/dag-implementation/migrations.ts
+  // shared/dag-implementation/migrations.ts
   init_prelude();
   var MIGRATIONS = [
     {
@@ -5378,13 +5762,11 @@
     let at = from;
     while (at < to) {
       const step = MIGRATIONS.find((m) => m.from === at);
-      if (!step)
-        throw new Error(`no migration from cid version ${at}`);
+      if (!step) throw new Error(`no migration from cid version ${at}`);
       steps.push(step);
       at = step.to;
     }
-    if (at !== to)
-      throw new Error(`cannot migrate from cid version ${from} to ${to}`);
+    if (at !== to) throw new Error(`cannot migrate from cid version ${from} to ${to}`);
     return steps;
   }
   function migrateContext(context, target = CURRENT_CID_VERSION) {
@@ -5395,41 +5777,32 @@
     const inProgress = /* @__PURE__ */ new Set();
     const migrate = (cid) => {
       const done = mapping[cid];
-      if (done !== void 0)
-        return done;
+      if (done !== void 0) return done;
       const content2 = input[cid];
-      if (!content2)
-        throw new MigrationError(`node ${cid} referenced but not present in the context`, cid);
-      if (inProgress.has(cid))
-        throw new MigrationError(`cycle through node ${cid}`, cid);
+      if (!content2) throw new MigrationError(`node ${cid} referenced but not present in the context`, cid);
+      if (inProgress.has(cid)) throw new MigrationError(`cycle through node ${cid}`, cid);
       inProgress.add(cid);
       const version2 = cidVersion(cid);
-      if (version2 === null)
-        throw new MigrationError(`node ${cid} is not a recognised cid`, cid);
-      if (version2 > target)
-        throw new MigrationError(`node ${cid} is newer (v${version2}) than the target format v${target}`, cid);
+      if (version2 === null) throw new MigrationError(`node ${cid} is not a recognised cid`, cid);
+      if (version2 > target) throw new MigrationError(`node ${cid} is newer (v${version2}) than the target format v${target}`, cid);
       fromVersions.add(version2);
       let upgraded = content2;
       for (const step of stepsBetween(version2, target)) {
-        if (step.upgrade)
-          upgraded = step.upgrade(upgraded);
+        if (step.upgrade) upgraded = step.upgrade(upgraded);
       }
       const children = upgraded.children.map(([instr, targetCid]) => [migrate(instr), migrate(targetCid)]);
       const next = { ...upgraded, children };
-      const unchanged = version2 === target && children.every((edge, i) => edge[0] === upgraded.children[i]?.[0] && edge[1] === upgraded.children[i]?.[1]);
+      const unchanged = version2 === target && children.every((edge, i2) => edge[0] === upgraded.children[i2]?.[0] && edge[1] === upgraded.children[i2]?.[1]);
       const newCid = unchanged ? cid : hashContentAt(next, target);
       inProgress.delete(cid);
       mapping[cid] = newCid;
       output[newCid] = unchanged ? content2 : next;
       return newCid;
     };
-    for (const cid of Object.keys(input))
-      migrate(cid);
+    for (const cid of Object.keys(input)) migrate(cid);
     const remapPath = (path) => path.map(([a, b]) => [mapping[a] ?? a, mapping[b] ?? b]);
     const changed = {};
-    for (const [oldCid, newCid] of Object.entries(mapping))
-      if (oldCid !== newCid)
-        changed[oldCid] = newCid;
+    for (const [oldCid, newCid] of Object.entries(mapping)) if (oldCid !== newCid) changed[oldCid] = newCid;
     return {
       context: {
         nodes: output,
@@ -5442,13 +5815,13 @@
     };
   }
 
-  // ../node_modules/@n1ru4l/json-patch-plus/esm/index.js
+  // node_modules/@n1ru4l/json-patch-plus/esm/index.js
   init_prelude();
 
-  // ../node_modules/@n1ru4l/json-patch-plus/esm/diff.js
+  // node_modules/@n1ru4l/json-patch-plus/esm/diff.js
   init_prelude();
 
-  // ../node_modules/@n1ru4l/json-patch-plus/esm/lcs.js
+  // node_modules/@n1ru4l/json-patch-plus/esm/lcs.js
   init_prelude();
   function defaultMatch(array1, array2, index1, index2) {
     return array1[index1] === array2[index2];
@@ -5510,7 +5883,7 @@
     return backtrack(matrix, array1, array2, innerContext);
   }
 
-  // ../node_modules/@n1ru4l/json-patch-plus/esm/diff.js
+  // node_modules/@n1ru4l/json-patch-plus/esm/diff.js
   function diff(input, options) {
     var _a;
     const includePreviousValue = (_a = options === null || options === void 0 ? void 0 : options.includePreviousValue) !== null && _a !== void 0 ? _a : false;
@@ -5899,10 +6272,10 @@
     return hash1 === hash2;
   }
 
-  // ../node_modules/@n1ru4l/json-patch-plus/esm/patch.js
+  // node_modules/@n1ru4l/json-patch-plus/esm/patch.js
   init_prelude();
 
-  // ../shared/dag-implementation/store.ts
+  // shared/dag-implementation/store.ts
   var FosStore = class _FosStore {
     constructor({
       fosCtxData,
@@ -6376,7 +6749,7 @@
     }
     exportContext(route) {
       const nodes = {};
-      Array.from(this.table.entries()).forEach(([address, content2], i) => {
+      Array.from(this.table.entries()).forEach(([address, content2], i2) => {
         nodes[address] = content2;
       });
       const rootContent = nodes[this.rootNodeId];
@@ -6397,15 +6770,13 @@
       };
     }
     getNodeByAddress(address) {
-      if (this.cache.has(address))
-        return this.cache.get(address);
+      if (this.cache.has(address)) return this.cache.get(address);
       if (!this.checkAddress(address)) {
         throw new Error(`address ${address} not found`);
       }
       const nodeContent = this.table.get(address);
       const result = this.create(nodeContent);
-      if (!result)
-        throw new Error(`Unable to construct node for address ${address}`);
+      if (!result) throw new Error(`Unable to construct node for address ${address}`);
       this.cache.set(result.cid, result);
       return result;
     }
@@ -6433,8 +6804,7 @@
       const result = [];
       const tableEntries = [...this.table.entries()];
       tableEntries.forEach(([entrykey, entryvalue]) => {
-        if (entrykey === queryCid)
-          return;
+        if (entrykey === queryCid) return;
         this.create(entryvalue);
         try {
           const thisNode = this.getNodeByAddress(entrykey);
@@ -6613,7 +6983,7 @@
         });
       });
       this.table = new Map([...otherStore.table, ...this.table]);
-      Array.from(otherStore.table.entries()).filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent], i) => {
+      Array.from(otherStore.table.entries()).filter(([x, _]) => this.table.has(x)).forEach(([otherAddress, otherContent], i2) => {
         if (this.insert(otherContent) !== otherAddress) {
           throw new Error(`stores mismatched`);
         }
@@ -6673,73 +7043,57 @@
     }
   };
 
-  // ../shared/sync/replication.ts
+  // shared/sync/replication.ts
   init_prelude();
   function replicationView(store, roots, provider) {
     const nodes = reachableNodes(store, roots);
     const excluded = /* @__PURE__ */ new Map();
     for (const node of Object.values(nodes)) {
       const id = node.data.alias?.id;
-      if (!id)
-        continue;
-      if (isPeerReference(node))
-        excluded.set(id, node.data.ref.peer);
+      if (!id) continue;
+      if (isPeerReference(node)) excluded.set(id, node.data.ref.peer);
       else if (readMembers(store, node).some((m) => m.peerId === "fos" && m.disabled?.includes("persist"))) {
         const peers = node.children.filter((edge) => isPeerEdge(store, edge)).map(([, cid]) => content(store, cid).data.peerId?.content).filter((id2) => !!id2 && id2 !== "fos").sort();
-        if (!excluded.has(id))
-          excluded.set(id, peers[0] ?? provider);
+        if (!excluded.has(id)) excluded.set(id, peers[0] ?? provider);
       }
     }
     const visited = /* @__PURE__ */ new Set();
     const protect = (cid, peer) => {
-      if (visited.has(cid))
-        return;
+      if (visited.has(cid)) return;
       visited.add(cid);
       const node = content(store, cid), id = node.data.alias?.id;
-      if (id && !excluded.has(id))
-        excluded.set(id, peer);
+      if (id && !excluded.has(id)) excluded.set(id, peer);
       for (const edge of node.children) {
-        if (isMemberEdge(store, edge) || isPeerEdge(store, edge))
-          continue;
-        for (const child of edge)
-          protect(child, peer);
+        if (isMemberEdge(store, edge) || isPeerEdge(store, edge)) continue;
+        for (const child of edge) protect(child, peer);
       }
     };
     for (const [cid, node] of Object.entries(nodes)) {
       const peer = excluded.get(node.data.alias?.id ?? "");
-      if (peer && !isPeerReference(node))
-        protect(cid, peer);
+      if (peer && !isPeerReference(node)) protect(cid, peer);
     }
     const allowed = /* @__PURE__ */ new Set(), liveSeen = /* @__PURE__ */ new Set();
     const live = (cid, inherited = false) => {
       const key = cid + ":" + inherited;
-      if (liveSeen.has(key))
-        return;
+      if (liveSeen.has(key)) return;
       liveSeen.add(key);
       const node = content(store, cid);
-      if (isHandle(node))
-        return;
+      if (isHandle(node)) return;
       const fos = readMembers(store, node).find((m) => m.peerId === "fos");
-      if (fos?.disabled?.includes("persist"))
-        return;
+      if (fos?.disabled?.includes("persist")) return;
       const enabled = fos ? !fos.disabled?.includes("persist") && (fos.capabilities.includes("persist") || fos.accepts?.includes("persist") === true) : inherited;
-      if (enabled)
-        allowed.add(cid);
+      if (enabled) allowed.add(cid);
       for (const edge of node.children) {
-        if (isBookkeepingEdge(store, edge))
-          continue;
-        for (const child of edge)
-          live(child, enabled);
+        if (isBookkeepingEdge(store, edge)) continue;
+        for (const child of edge) live(child, enabled);
       }
     };
     const liveRoot = roots[0];
-    if (liveRoot && store.table.has(liveRoot))
-      live(liveRoot);
+    if (liveRoot && store.table.has(liveRoot)) live(liveRoot);
     const memo = /* @__PURE__ */ new Map();
     const project = (cid) => {
       const cached = memo.get(cid);
-      if (cached)
-        return cached;
+      if (cached) return cached;
       const node = content(store, cid), id = node.data.alias?.id;
       if (isPeerReference(node)) {
         memo.set(cid, cid);
@@ -6754,7 +7108,7 @@
         return result2;
       }
       const children = node.children.map(([left, right]) => [project(left), project(right)]);
-      const result = children.every((edge, i) => edge[0] === node.children[i][0] && edge[1] === node.children[i][1]) ? cid : put(store, { ...node, children });
+      const result = children.every((edge, i2) => edge[0] === node.children[i2][0] && edge[1] === node.children[i2][1]) ? cid : put(store, { ...node, children });
       memo.set(cid, result);
       return result;
     };
@@ -6765,8 +7119,7 @@
     const memo = /* @__PURE__ */ new Map();
     const restore = (cid) => {
       const cached = memo.get(cid);
-      if (cached)
-        return cached;
+      if (cached) return cached;
       const node = content(store, cid);
       if (isPeerReference(node)) {
         const version2 = node.data.ref.version;
@@ -6778,343 +7131,28 @@
         return cid;
       }
       const children = node.children.map(([left, right]) => [restore(left), restore(right)]);
-      const result = children.every((edge, i) => edge[0] === node.children[i][0] && edge[1] === node.children[i][1]) ? cid : put(store, { ...node, children });
+      const result = children.every((edge, i2) => edge[0] === node.children[i2][0] && edge[1] === node.children[i2][1]) ? cid : put(store, { ...node, children });
       memo.set(cid, result);
       return result;
     };
     return restore(root);
   }
 
-  // ../shared/sync/merge.ts
-  init_prelude();
-  var EMPTY = { data: {}, children: [] };
-  function mergeNodes(store, baseCid, oursCid, theirsCid, labels) {
-    const newChoiceCids = [];
-    const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true);
-    if (outcome.kind !== "node")
-      throw new Error("conflicting typed refs must be merged through their owning node to resolve the choice");
-    return { cid: outcome.cid, newChoiceCids };
-  }
-  function mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, isTop) {
-    if (oursCid === theirsCid)
-      return { kind: "node", cid: oursCid };
-    if (baseCid === oursCid)
-      return { kind: "node", cid: theirsCid };
-    if (baseCid === theirsCid)
-      return { kind: "node", cid: oursCid };
-    const base = baseCid ? content(store, baseCid) : EMPTY;
-    const ours = content(store, oursCid);
-    const theirs = content(store, theirsCid);
-    if (isBranchChoice(store, ours) !== isBranchChoice(store, theirs)) {
-      const choice = readChoice(store, isBranchChoice(store, ours) ? oursCid : theirsCid);
-      const main = choice.options.find((option) => option.peerId === choice.defaultName) ?? choice.options[0];
-      const mainEdge = main?.edge;
-      if (main && mainEdge) {
-        const lift = (cid) => putBranches(store, choice.id, choice.base, [{ peerId: main.peerId, edge: withIdentity(store, mainEdge, cid) }], choice.defaultName);
-        return mergeNode(
-          store,
-          baseCid && !isBranchChoice(store, base) ? lift(baseCid) : baseCid,
-          isBranchChoice(store, ours) ? oursCid : lift(oursCid),
-          isBranchChoice(store, theirs) ? theirsCid : lift(theirsCid),
-          labels,
-          newChoiceCids,
-          isTop
-        );
-      }
-    }
-    if (isBranchChoice(store, ours) && isBranchChoice(store, theirs)) {
-      const o = readChoice(store, oursCid), t = readChoice(store, theirsCid);
-      const b = baseCid && isBranchChoice(store, base) ? readChoice(store, baseCid) : null;
-      const options = [];
-      for (const name of new Set([...o.options, ...t.options].map((option) => option.peerId))) {
-        const oo = o.options.find((x) => x.peerId === name), tt = t.options.find((x) => x.peerId === name);
-        const oe = oo?.edge, te = tt?.edge;
-        const be = b?.options.find((x) => x.peerId === name)?.edge;
-        if (!oe || !te) {
-          const edge = oe ?? te;
-          if (edge)
-            options.push({ ...oo ?? tt, peerId: name, edge });
-          continue;
-        }
-        if (!sameShape(store, oe, te))
-          return { kind: "conflict" };
-        const merged = mergeNode(store, be ? identityCid(store, be) : null, identityCid(store, oe), identityCid(store, te), labels, newChoiceCids, false);
-        if (merged.kind === "conflict")
-          return merged;
-        const beforeRequest = b?.options.find((x) => x.peerId === name)?.requestMerge;
-        let requestMerge = oo.requestMerge === beforeRequest ? tt.requestMerge : oo.requestMerge;
-        if (oo.requestMerge !== beforeRequest && tt.requestMerge !== beforeRequest && oo.requestMerge !== tt.requestMerge) {
-          if (!oo.requestMerge || !tt.requestMerge)
-            return { kind: "conflict" };
-          const request = mergeNode(store, beforeRequest ?? null, oo.requestMerge, tt.requestMerge, labels, newChoiceCids, false);
-          if (request.kind === "conflict")
-            return request;
-          requestMerge = request.cid;
-        }
-        options.push({ ...oo, peerId: name, edge: withIdentity(store, oe, merged.cid), requestMerge });
-      }
-      return { kind: "node", cid: putBranches(store, o.id, b?.base ?? o.base, options, b?.defaultName ?? o.defaultName) };
-    }
-    const asRef = (value) => isRefNode(store, value) && !isHandle(value) || isLegacyInlineLink(store, value);
-    if (asRef(ours) || asRef(theirs)) {
-      const refOf = (cid, value) => {
-        if (!cid)
-          return null;
-        if (isRefNode(store, value) && !isHandle(value))
-          return { cid, node: value };
-        const node = makeLink(store, value, 0);
-        return { cid: put(store, node), node };
-      };
-      const o = refOf(oursCid, ours);
-      const t = refOf(theirsCid, theirs);
-      const b = baseCid ? refOf(baseCid, base) : null;
-      const valueOf = (r) => r ? refValueCid(store, r.node) : null;
-      const oursValue = valueOf(o) ?? put(store, stripLink(store, ours));
-      const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs));
-      const typed = refTypeCid(store, o.node) || refTypeCid(store, t.node);
-      if (typed && refTypeCid(store, o.node) !== refTypeCid(store, t.node))
-        return { kind: "conflict" };
-      let mergedValue;
-      if (typed) {
-        const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b);
-        if (ov === tv || tv === bv)
-          mergedValue = ov;
-        else if (ov === bv)
-          mergedValue = tv;
-        else {
-          const baseChoice = bv && isBranchChoice(store, content(store, bv)) ? readChoice(store, bv) : null;
-          const defaultValue = baseChoice ? baseChoice.options.find((option) => option.peerId === baseChoice.defaultName)?.edge?.[0] : bv;
-          mergedValue = putRefValueBranches(store, o.node, [bv, ...[ov, tv].filter((cid) => !!cid).sort()], "main", defaultValue);
-        }
-      } else {
-        const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true);
-        mergedValue = merged.kind === "node" ? merged.cid : oursValue;
-      }
-      const book = (r) => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] });
-      const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids);
-      const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue;
-      const prevEdge = (cid) => [store.primitive.previousVersion.getId(), cid];
-      const existingPrev = (r) => r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [];
-      const prev = valueChanged ? o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)] : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))];
-      const data2 = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data;
-      return { kind: "node", cid: put(store, refNodeContent(store, data2, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) };
-    }
-    const data = mergeData(base.data, ours.data, theirs.data, isTop);
-    if (!data)
-      return { kind: "conflict" };
-    const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids);
-    return { kind: "node", cid: put(store, { data, children }) };
-  }
-  function mergeData(base, ours, theirs, theirsWins) {
-    const out = {};
-    const keys = /* @__PURE__ */ new Set([...Object.keys(base), ...Object.keys(ours), ...Object.keys(theirs)]);
-    const b = base;
-    const o = ours;
-    const t = theirs;
-    for (const key of keys) {
-      if (key === "versionControl")
-        continue;
-      if (key === "updated") {
-        const time = Math.max(timeOf(o[key]), timeOf(t[key]), timeOf(b[key]));
-        if (time > 0)
-          out[key] = { time };
-        continue;
-      }
-      const bv = b[key], ov = o[key], tv = t[key];
-      if (same(ov, tv)) {
-        if (ov !== void 0)
-          out[key] = ov;
-        continue;
-      }
-      if (same(bv, ov)) {
-        if (tv !== void 0)
-          out[key] = tv;
-        continue;
-      }
-      if (same(bv, tv)) {
-        if (ov !== void 0)
-          out[key] = ov;
-        continue;
-      }
-      if (!theirsWins)
-        return null;
-      if (tv !== void 0)
-        out[key] = tv;
-    }
-    return out;
-  }
-  function timeOf(value) {
-    return value && typeof value === "object" && typeof value.time === "number" ? value.time : 0;
-  }
-  function same(a, b) {
-    if (a === b)
-      return true;
-    if (a === void 0 || b === void 0)
-      return false;
-    return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
-  }
-  function sortKeys(value) {
-    if (Array.isArray(value))
-      return value.map(sortKeys);
-    if (value && typeof value === "object") {
-      const src = value;
-      const out = {};
-      for (const k of Object.keys(src).sort())
-        out[k] = sortKeys(src[k]);
-      return out;
-    }
-    return value;
-  }
-  function mergeChildren(store, base, ours, theirs, labels, newChoiceCids) {
-    const index = (value) => {
-      const map = /* @__PURE__ */ new Map();
-      for (const edge of value.children)
-        map.set(edgeKey(store, edge), edge);
-      return map;
-    };
-    const bMap = index(base);
-    const oMap = index(ours);
-    const tMap = index(theirs);
-    const keys = orderedKeys([...oMap.keys()], [...tMap.keys()], [...bMap.keys()]);
-    const out = [];
-    for (const key of keys) {
-      const b = bMap.get(key) ?? null;
-      const o = oMap.get(key) ?? null;
-      const t = tMap.get(key) ?? null;
-      if (sameEdge(o, t)) {
-        if (o)
-          out.push(o);
-        continue;
-      }
-      if (sameEdge(b, o)) {
-        if (t)
-          out.push(t);
-        continue;
-      }
-      if (sameEdge(b, t)) {
-        if (o)
-          out.push(o);
-        continue;
-      }
-      if (key.startsWith("p:") && o && t) {
-        const ot = readProposal(store, o[1])?.timestamp ?? 0;
-        const tt = readProposal(store, t[1])?.timestamp ?? 0;
-        out.push(tt > ot ? t : o);
-        continue;
-      }
-      if (o && t && sameShape(store, o, t) && (!isChoiceEdge(store, o) || isBranchChoice(store, content(store, o[1])))) {
-        const baseIdentity = b && sameShape(store, b, o) && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? identityCid(store, b) : null;
-        const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false);
-        if (merged.kind === "node") {
-          out.push(withIdentity(store, o, merged.cid));
-          continue;
-        }
-      }
-      const id = key.startsWith("a:") ? key.slice(2) : key;
-      const options = [
-        { peerId: labels.ours, edge: o },
-        { peerId: labels.theirs, edge: t }
-      ];
-      const choiceCid = putChoice(store, id, b && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? b : null, options);
-      newChoiceCids.push(choiceCid);
-      out.push([store.primitive.choiceTarget.getId(), choiceCid]);
-    }
-    return out;
-  }
-  function orderedKeys(ours, theirs, base) {
-    const out = [...ours];
-    const present = new Set(out);
-    theirs.forEach((key, i) => {
-      if (present.has(key))
-        return;
-      let at = -1;
-      for (let j = i - 1; j >= 0 && at < 0; j--) {
-        const idx = out.indexOf(theirs[j]);
-        if (idx >= 0)
-          at = idx + 1;
-      }
-      for (let j = i + 1; j < theirs.length && at < 0; j++) {
-        const idx = out.indexOf(theirs[j]);
-        if (idx >= 0)
-          at = idx;
-      }
-      if (at < 0)
-        at = out.length;
-      out.splice(at, 0, key);
-      present.add(key);
-    });
-    for (const key of base)
-      if (!present.has(key)) {
-        out.push(key);
-        present.add(key);
-      }
-    return out;
-  }
-  function sameEdge(a, b) {
-    if (!a || !b)
-      return a === b;
-    return a[0] === b[0] && a[1] === b[1];
-  }
-  function resolveChoiceIn(store, value, choiceId, pick, now) {
-    const key = `a:${choiceId}`;
-    const edge = value.children.find((e) => edgeKey(store, e) === key);
-    if (!edge || !isChoiceEdge(store, edge))
-      return value;
-    const children = [];
-    for (const existing of value.children) {
-      if (existing !== edge) {
-        children.push(existing);
-        continue;
-      }
-      if (pick === null)
-        continue;
-      const choice = content(store, edge[1]);
-      const alternatives = choice.children.filter(([i]) => i === store.primitive.optionNotSelectedConstructor.getId());
-      const alt = alternatives[pick];
-      if (!alt)
-        throw new Error(`choice ${choiceId} has no option ${pick}`);
-      const pointer = content(store, alt[1]);
-      let instr = null;
-      let target = null;
-      for (const [i, t] of pointer.children) {
-        if (i === store.primitive.instructionPointerConstructor.getId())
-          instr = t;
-        if (i === store.primitive.targetPointerConstructor.getId())
-          target = t;
-      }
-      if (!instr || !target)
-        continue;
-      const picked = [instr, target];
-      const idCid = identityCid(store, picked);
-      const touched = put(store, { ...content(store, idCid), data: { ...content(store, idCid).data, updated: { time: now } } });
-      children.push(withIdentity(store, picked, touched));
-    }
-    return { ...value, children };
-  }
-
-  // ../shared/sync/protocol.ts
+  // shared/sync/protocol.ts
   init_prelude();
   function parseSyncRequest(body) {
-    if (!body || typeof body !== "object")
-      return { error: "request body must be an object", code: "bad-request" };
+    if (!body || typeof body !== "object") return { error: "request body must be an object", code: "bad-request" };
     const raw = body;
-    if (raw.version !== SYNC_FORMAT_VERSION)
-      return { error: `unsupported sync version ${String(raw.version)}; update the app`, code: "version-mismatch" };
-    if (typeof raw.cidVersion !== "number")
-      return { error: "cidVersion required", code: "bad-request" };
-    if (typeof raw.peerId !== "string" || !raw.peerId || raw.peerId.length > 128)
-      return { error: "peerId must be a non-empty string", code: "bad-request" };
+    if (raw.version !== SYNC_FORMAT_VERSION) return { error: `unsupported sync version ${String(raw.version)}; update the app`, code: "version-mismatch" };
+    if (typeof raw.cidVersion !== "number") return { error: "cidVersion required", code: "bad-request" };
+    if (typeof raw.peerId !== "string" || !raw.peerId || raw.peerId.length > 128) return { error: "peerId must be a non-empty string", code: "bad-request" };
     if (!Array.isArray(raw.scope) || raw.scope.length > 32 || !raw.scope.every((s) => typeof s === "string" && s.length > 0 && s.length <= 128)) {
       return { error: "scope must be an array of ids", code: "bad-request" };
     }
-    if (typeof raw.headCid !== "string" || !raw.headCid)
-      return { error: "headCid required", code: "bad-request" };
-    if (raw.baseCid !== null && raw.baseCid !== void 0 && typeof raw.baseCid !== "string")
-      return { error: "baseCid must be a cid or null", code: "bad-request" };
-    if (raw.nodes !== void 0 && (typeof raw.nodes !== "object" || raw.nodes === null))
-      return { error: "nodes must be an object", code: "bad-request" };
-    if (raw.branches !== void 0 && (!raw.branches || typeof raw.branches !== "object" || Array.isArray(raw.branches) || Object.keys(raw.branches).length > 32 || Object.entries(raw.branches).some(([id, name]) => !id || id.length > 128 || typeof name !== "string" || !name || name.length > 200)))
-      return { error: "Invalid ancestor branch selections", code: "bad-request" };
+    if (typeof raw.headCid !== "string" || !raw.headCid) return { error: "headCid required", code: "bad-request" };
+    if (raw.baseCid !== null && raw.baseCid !== void 0 && typeof raw.baseCid !== "string") return { error: "baseCid must be a cid or null", code: "bad-request" };
+    if (raw.nodes !== void 0 && (typeof raw.nodes !== "object" || raw.nodes === null)) return { error: "nodes must be an object", code: "bad-request" };
+    if (raw.branches !== void 0 && (!raw.branches || typeof raw.branches !== "object" || Array.isArray(raw.branches) || Object.keys(raw.branches).length > 32 || Object.entries(raw.branches).some(([id, name]) => !id || id.length > 128 || typeof name !== "string" || !name || name.length > 200))) return { error: "Invalid ancestor branch selections", code: "bad-request" };
     return {
       version: SYNC_FORMAT_VERSION,
       cidVersion: raw.cidVersion,
@@ -7130,10 +7168,11 @@
     };
   }
   function serveSync(store, request, serverPeerId, now = Date.now(), options = {}) {
-    if (request.branches)
-      return withBranches(store, request.branches, () => serveSync(store, { ...request, branches: void 0 }, serverPeerId, now, options));
-    if (request.version !== SYNC_FORMAT_VERSION)
-      return { error: "Sync format changed; update the app", code: "version-mismatch" };
+    if (hasNodeLinkMasks(store, request.peerId, request.scope)) return { error: "This attachment has node masks; use provideNode for permission-filtered traversal.", code: "bad-request" };
+    if (hasNodeReadBoundary(createReplica(serverPeerId, store), request.scope, request.peerId)) return { error: "This attachment has a read boundary; use provideNode for permission-filtered traversal.", code: "bad-request" };
+    if (Object.values(request.nodes).some((node) => node?.data?.ref?.version === "unloaded")) return { error: "An unloaded node cannot be merged as a complete subtree.", code: "bad-request" };
+    if (request.branches) return withBranches(store, request.branches, () => serveSync(store, { ...request, branches: void 0 }, serverPeerId, now, options));
+    if (request.version !== SYNC_FORMAT_VERSION) return { error: "Sync format changed; update the app", code: "version-mismatch" };
     if (request.cidVersion !== CURRENT_CID_VERSION) {
       return { error: `peer uses cid format v${request.cidVersion}, this side uses v${CURRENT_CID_VERSION}`, code: "version-mismatch" };
     }
@@ -7155,13 +7194,11 @@
     const scopedRequest = scope === request.scope ? request : { ...request, scope };
     if (scopedRequest !== request) {
       const result = serveSync(store, scopedRequest, serverPeerId, now, options);
-      if (!("error" in result))
-        result.response.scope = request.scope;
+      if (!("error" in result)) result.response.scope = request.scope;
       return result;
     }
     let currentCid = resolveScope(store, rootTarget, request.scope);
-    if (!currentCid)
-      return { error: "scope not found", code: "scope-not-found" };
+    if (!currentCid) return { error: "scope not found", code: "scope-not-found" };
     const originalCurrent = currentCid;
     if (request.selective || options.recipient === "server") {
       const sent = content(store, request.headCid);
@@ -7179,14 +7216,12 @@
       const choice = readChoice(store, currentCid);
       const name = request.branch ?? branchSelection(store, currentCid);
       const selected = choice.options.find((option) => option.peerId === name)?.edge;
-      if (!selected)
-        return { error: `branch not found: ${name}`, code: "scope-not-found" };
+      if (!selected) return { error: `branch not found: ${name}`, code: "scope-not-found" };
       const branchStore = new FosStore();
       importNodes(branchStore, reachableNodes(store, [identityCid(store, selected), request.headCid, request.baseCid]));
       commitRoot(branchStore, identityCid(store, selected), now);
       const served = serveSync(branchStore, { ...request, scope: [], branch: void 0, nodes: {} }, serverPeerId, now, options);
-      if ("error" in served)
-        return served;
+      if ("error" in served) return served;
       const branchHead = rootTargetCid(branchStore);
       importNodes(store, reachableNodes(branchStore, [branchHead, served.response.resultCid]));
       if (served.changed) {
@@ -7284,8 +7319,7 @@
       const status = existing?.status === "rejected" && !peerEdited ? "rejected" : "open";
       const unchanged = sameContent && existing.status === status;
       proposalCid = unchanged ? existing.cid : put(store, proposalContent(store, request.peerId, branchName, branchCid, mainStripped, existing && !peerEdited ? existing.timestamp : now, status));
-      if (unchanged)
-        action = "noop";
+      if (unchanged) action = "noop";
     }
     const nextLink = withProposal(store, linkValue, request.peerId, proposalCid, branchName);
     const withPeerContent = withPeer(store, nextLink, request.peerId);
@@ -7300,10 +7334,8 @@
     const resultContent = refNodeContent(store, { ...persisted.data, alias: persisted.data.alias ?? content(store, branchCid).data.alias ?? { id: request.scope[request.scope.length - 1] ?? "" } }, branchCid, bookkeeping, refTypeCid(store, persisted));
     const resultExisted = store.table.has(store.hash(resultContent));
     const resultCid = put(store, resultContent);
-    if (!resultExisted)
-      changed = true;
-    if (action === "noop" && resultCid !== request.headCid)
-      action = "pull";
+    if (!resultExisted) changed = true;
+    if (action === "noop" && resultCid !== request.headCid) action = "pull";
     const known = /* @__PURE__ */ new Set([...Object.keys(request.nodes), ...reachableSet(store, [request.headCid, request.baseCid])]);
     return {
       changed,
@@ -7323,18 +7355,15 @@
     };
   }
   function applySyncResponse(store, request, response, localPeerId, now, localScope = []) {
-    if (response.version !== SYNC_FORMAT_VERSION)
-      throw new Error("Sync format changed; update the app and server");
+    if (response.version !== SYNC_FORMAT_VERSION) throw new Error("Sync format changed; update the app and server");
     if (response.cidVersion !== CURRENT_CID_VERSION) {
       throw new Error(`server uses cid format v${response.cidVersion}, this client uses v${CURRENT_CID_VERSION}`);
     }
     importNodes(store, response.nodes);
-    if (!hasNode(store, response.resultCid))
-      throw new Error("sync response did not include the result node");
+    if (!hasNode(store, response.resultCid)) throw new Error("sync response did not include the result node");
     const root = rootTargetCid(store);
     let current = resolveScope(store, root, localScope);
-    if (!current)
-      throw new Error("The shared node was removed while sync was in flight.");
+    if (!current) throw new Error("The shared node was removed while sync was in flight.");
     const localContent = current;
     if (request.selective) {
       const projection = replicationView(store, [current, request.headCid, response.resultCid], localPeerId);
@@ -7356,7 +7385,7 @@
     return { reMerged: true, newChoiceIds: [...response.newChoiceIds, ...localChoiceIds] };
   }
 
-  // ../shared/sync/replica.ts
+  // shared/sync/replica.ts
   function createReplica(peerId = newId(), store = new FosStore()) {
     return {
       store,
@@ -7366,8 +7395,7 @@
   function normalizeReplicaRefs(store) {
     const head = rootTargetCid(store);
     const next = normalizeRefs(store, head);
-    if (next === head)
-      return false;
+    if (next === head) return false;
     commitRoot(store, next, 0);
     return true;
   }
@@ -7376,19 +7404,16 @@
   }
   function loadReplica(input) {
     const fresh = createReplica();
-    if (!input || typeof input !== "object")
-      return fresh;
+    if (!input || typeof input !== "object") return fresh;
     const raw = input;
     const meta = raw.meta;
-    if (!meta || typeof meta !== "object")
-      return fresh;
+    if (!meta || typeof meta !== "object") return fresh;
     const peerId = typeof meta.peerId === "string" && meta.peerId ? meta.peerId : fresh.meta.peerId;
     const scope = Array.isArray(meta.scope) ? meta.scope.filter((s) => typeof s === "string" && s.length > 0) : [];
     let store;
     try {
       const ctx = raw.context;
-      if (!ctx || typeof ctx !== "object" || typeof ctx.rootNodeId !== "string")
-        throw new Error("no context");
+      if (!ctx || typeof ctx !== "object" || typeof ctx.rootNodeId !== "string") throw new Error("no context");
       store = new FosStore({ fosCtxData: { fosData: { nodes: ctx.nodes ?? {}, route: [], rootNodeId: ctx.rootNodeId }, trellisData: fresh.store.trellisData } });
       rootTargetCid(store);
       normalizeReplicaRefs(store);
@@ -7406,6 +7431,7 @@
         scope,
         scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
         baseCid,
+        ...meta.nodeSync && typeof meta.nodeSync === "object" ? { nodeSync: meta.nodeSync } : {},
         ...Array.isArray(meta.localScope) && meta.localScope.length <= 64 && meta.localScope.every((id) => typeof id === "string") ? { localScope: [...meta.localScope] } : {},
         lastSyncAt: typeof meta.lastSyncAt === "number" ? meta.lastSyncAt : null,
         serverPeerId: typeof meta.serverPeerId === "string" ? meta.serverPeerId : null,
@@ -7418,8 +7444,7 @@
     return findChild(replica.store, headCid(replica), HOME_ID) ? [HOME_ID] : [];
   }
   function shareHome(replica) {
-    if (replica.meta.scope.length || replica.meta.localScope?.length || !homePath(replica).length)
-      return replica;
+    if (replica.meta.scope.length || replica.meta.localScope?.length || !homePath(replica).length) return replica;
     const baseCid = replica.meta.baseCid ? findChild(replica.store, replica.meta.baseCid, HOME_ID) : null;
     return { ...replica, meta: { ...replica.meta, localScope: [HOME_ID], baseCid } };
   }
@@ -7427,11 +7452,14 @@
     return rootTargetCid(replica.store);
   }
   function isDirty(replica) {
+    if (replica.meta.nodeSync && replica.meta.serverPeerId) return materializedNodePaths(replica, replica.meta.localScope ?? []).some((path) => {
+      if (!nodePersistenceAllowed(replica, path)) return false;
+      const state = replica.meta.nodeSync[nodeSyncKey(replica.meta.serverPeerId, path, nodeBranches(replica, path))];
+      return !state || !sameNodeShape(nodeShape(replica, path), state.local);
+    });
     const head = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []);
-    if (!head)
-      return true;
-    if (replica.meta.baseCid)
-      return head !== replica.meta.baseCid && replicationView(replica.store, [head, replica.meta.baseCid], replica.meta.peerId).project(head) !== replica.meta.baseCid;
+    if (!head) return true;
+    if (replica.meta.baseCid) return head !== replica.meta.baseCid && replicationView(replica.store, [head, replica.meta.baseCid], replica.meta.peerId).project(head) !== replica.meta.baseCid;
     return valueContent(replica.store, head).children.length > 0;
   }
   function view(replica, at, constructors = false) {
@@ -7459,10 +7487,8 @@
     const names = [...new Set(Array.from((node.data.description?.content ?? "").matchAll(/(?<![\\{@])\{([A-Za-z_][\w.-]*)\}(?!\})/g), (m) => m[1]))];
     const type = store.primitive.documentField.getId(), children = [...node.children];
     for (const name of names) {
-      if (name === void 0)
-        continue;
-      if (children.some((edge) => content(store, identityCid(store, edge)).data.name?.content === name))
-        continue;
+      if (name === void 0) continue;
+      if (children.some((edge) => content(store, identityCid(store, edge)).data.name?.content === name)) continue;
       const id = `${node.data.alias?.id ?? newId()}:param:${name}`;
       const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, null, [], type));
       children.push([type, ref]);
@@ -7471,8 +7497,7 @@
   }
   function addTask(replica, at, title, now, id = newId()) {
     const trimmed = title.trim();
-    if (!trimmed)
-      return replica;
+    if (!trimmed) return replica;
     return edit(replica, at, now, (value) => {
       const cid = put(replica.store, withTextParameters(replica.store, taskContent(id, trimmed, false, now, now)));
       return { ...value, children: [...value.children, taskEdge(replica.store, cid)] };
@@ -7480,10 +7505,8 @@
   }
   function addRow(replica, at, kind, text, now, options = {}) {
     const body = kind === "note" ? text.replace(/\s+$/, "") : text.trim();
-    if (!body && !["ref", "plain", "comment", "requirement", "supply", "allocation"].includes(kind))
-      return replica;
-    if (kind === "ref" && !options.refId)
-      return replica;
+    if (!body && !["ref", "plain", "comment", "requirement", "supply", "allocation"].includes(kind)) return replica;
+    if (kind === "ref" && !options.refId) return replica;
     const id = options.id ?? newId();
     return edit(replica, at, now, (value) => {
       const { position: _p, id: _i, ...extras } = options;
@@ -7506,10 +7529,8 @@
   function setRowKind(replica, at, aliasId, kind, now) {
     return edit(replica, at, now, (value) => {
       const edge = findChildEdge(replica, value, aliasId);
-      if (!edge)
-        return value;
-      if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge))
-        return value;
+      if (!edge) return value;
+      if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge)) return value;
       const node = valueContent(replica.store, identityCid(replica.store, edge));
       const converted = withChildValue(replica.store, edge, convertRowContent(node, kind, now), now);
       return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, converted)));
@@ -7518,25 +7539,20 @@
   function addRef(replica, at, targetAliasId, now, position) {
     const found = resolveRef(replica, targetAliasId);
     let r = replica;
-    if (found && !found.row.isLink)
-      r = makeLinkAt(r, [...found.path, targetAliasId], now);
+    if (found && !found.row.isLink) r = makeLinkAt(r, [...found.path, targetAliasId], now);
     const targetPath = found ? [...found.path, targetAliasId] : null;
     const targetCid = targetPath ? resolveScope(r.store, headCid(r), targetPath) : null;
     const options = { refId: targetAliasId, targetCid: targetCid ?? void 0 };
-    if (position && "into" in position)
-      return addRow(r, [...at, position.into], "ref", "", now, options);
+    if (position && "into" in position) return addRow(r, [...at, position.into], "ref", "", now, options);
     return addRow(r, at, "ref", "", now, { ...options, position });
   }
   function copyNode(replica, fromPath, aliasId, toPath, position, now) {
     const from = resolveScope(replica.store, headCid(replica), fromPath);
-    if (!from)
-      return replica;
+    if (!from) return replica;
     const found = findEdge(replica.store, valueContent(replica.store, from), `a:${aliasId}`);
-    if (!found)
-      return replica;
+    if (!found) return replica;
     const kind = rowKindOf(replica.store, found);
-    if (!kind)
-      return replica;
+    if (!kind) return replica;
     const copied = copyRowContent(replica.store, identityCid(replica.store, found), now, newId);
     const edge = rowEdge(replica.store, kind, copied);
     const target = "into" in position ? [...toPath, position.into] : toPath;
@@ -7561,12 +7577,10 @@
   function updateTask(replica, at, taskId, now, change) {
     return edit(replica, at, now, (value) => {
       const edge = findChildEdge(replica, value, taskId);
-      if (!edge)
-        return value;
+      if (!edge) return value;
       const node = valueContent(replica.store, identityCid(replica.store, edge));
       const next = change(node);
-      if (!next)
-        return value;
+      if (!next) return value;
       const nextValue = { ...next, data: { ...next.data, updated: { time: now } } };
       return replaceEdge(replica.store, value, `a:${taskId}`, withChildValue(replica.store, edge, nextValue, now));
     });
@@ -7575,35 +7589,28 @@
     if (done) {
       const parent = resolveScope(replica.store, headCid(replica), at);
       const taskCid = parent ? findChild(replica.store, parent, taskId) : null;
-      if (taskCid && taskBlockers(replica.store, taskCid).length)
-        return replica;
+      if (taskCid && taskBlockers(replica.store, taskCid).length) return replica;
     }
     return updateTask(replica, at, taskId, now, (task) => {
-      if (!task.data.todo)
-        return null;
-      if (!!task.data.todo?.completed === done)
-        return null;
+      if (!task.data.todo) return null;
+      if (!!task.data.todo?.completed === done) return null;
       return { ...task, data: { ...task.data, todo: { completed: done, time: task.data.todo?.time ?? now } } };
     });
   }
   function renameTask(replica, at, taskId, title, now) {
     const trimmed = title.trim();
-    if (!trimmed)
-      return replica;
+    if (!trimmed) return replica;
     return updateTask(replica, at, taskId, now, (task) => {
-      if (task.data.description?.content === trimmed)
-        return null;
+      if (task.data.description?.content === trimmed) return null;
       return withTextParameters(replica.store, { ...task, data: { ...task.data, description: { content: trimmed } } });
     });
   }
   function deleteTask(replica, at, taskId, now) {
     const parent = resolveScope(replica.store, headCid(replica), at);
     const edge = parent && findEdge(replica.store, content(replica.store, parent), `a:${taskId}`);
-    if (edge && [replica.store.primitive.memberField.getId(), replica.store.primitive.peerField.getId()].includes(edge[0]))
-      return editNode(replica, at, now, (node) => replaceEdge(replica.store, node, `a:${taskId}`, null));
+    if (edge && [replica.store.primitive.memberField.getId(), replica.store.primitive.peerField.getId()].includes(edge[0])) return editNode(replica, at, now, (node) => replaceEdge(replica.store, node, `a:${taskId}`, null));
     return edit(replica, at, now, (value) => {
-      if (!findChildEdge(replica, value, taskId))
-        return value;
+      if (!findChildEdge(replica, value, taskId)) return value;
       return replaceEdge(replica.store, value, `a:${taskId}`, null);
     });
   }
@@ -7612,8 +7619,7 @@
   }
   function moveNode(replica, fromPath, aliasId, toPath, position, now) {
     const next = moveChild(replica.store, headCid(replica), fromPath, aliasId, toPath, position);
-    if (!next || next === headCid(replica))
-      return replica;
+    if (!next || next === headCid(replica)) return replica;
     commitRoot(replica.store, next, now);
     return { ...replica };
   }
@@ -7624,12 +7630,10 @@
     const store = replica.store;
     return editNode(replica, at, now, (value) => {
       const proposal = readProposal(store, proposalCid);
-      if (!proposal || proposal.status !== "open" || !readProposals(store, value).some((p) => p.cid === proposalCid))
-        return value;
+      if (!proposal || proposal.status !== "open" || !readProposals(store, value).some((p) => p.cid === proposalCid)) return value;
       const main = putStripped(store, value);
       if (refTypeCid(store, value)) {
-        if (proposal.baseCid !== refBindingBaseCid(store, value))
-          return value;
+        if (proposal.baseCid !== refBindingBaseCid(store, value)) return value;
         const previous = refValueCid(store, value);
         let target = proposal.contentCid;
         if (previous && previous !== target) {
@@ -7651,23 +7655,22 @@
   }
   function assertServerReplicationAllowed(replica) {
     const local = replica.meta.localScope ?? [];
-    const excluded = withMainBranchPolicy(replica.store, () => Array.from({ length: local.length + 1 }, (_, i) => view(replica, local.slice(0, i))).some((node) => node?.members.some((m) => m.peerId === "fos" && m.disabled?.includes("persist"))));
-    if (excluded)
-      throw new Error("Fos storage is excluded by this shared node or its local parent context.");
+    const excluded = withMainBranchPolicy(replica.store, () => Array.from({ length: local.length + 1 }, (_, i2) => view(replica, local.slice(0, i2))).some((node) => node?.members.some((m) => m.peerId === "fos" && m.disabled?.includes("persist"))));
+    if (excluded) throw new Error("Fos storage is excluded by this shared node or its local parent context.");
   }
   function buildSyncRequest(replica, branch, options = {}) {
-    if (options.recipient !== "device")
-      assertServerReplicationAllowed(replica);
+    if (hasNodeLinkMasks(replica.store, replica.meta.serverPeerId, replica.meta.localScope ?? [])) throw new Error("This attachment has node masks; use provideNode for permission-filtered traversal.");
+    if (replica.meta.serverPeerId && hasNodeReadBoundary(replica, replica.meta.localScope ?? [], replica.meta.serverPeerId)) throw new Error("This attachment has a read boundary; use provideNode for permission-filtered traversal.");
+    if (options.recipient !== "device") assertServerReplicationAllowed(replica);
     branch ?? (branch = replica.meta.branch);
     let base = replica.meta.baseCid;
     const localHead = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []);
-    if (!localHead)
-      throw new Error("The shared node no longer exists locally.");
+    if (!localHead) throw new Error("The shared node no longer exists locally.");
     const selective = options.recipient !== "device";
     const projection = selective ? replicationView(replica.store, [localHead, base], replica.meta.peerId) : null;
-    if (base && projection)
-      base = projection.project(base);
+    if (base && projection) base = projection.project(base);
     const head = options.push === false ? base ?? put(replica.store, { data: {}, children: [] }) : projection ? projection.project(localHead) : localHead;
+    if (Object.values(reachableNodes(replica.store, [head])).some((node) => node.data.ref?.version === "unloaded")) throw new Error("Unloaded peer nodes require node-by-node sync; a partial subtree cannot be pushed through legacy sync.");
     const known = replica.meta.baseCid && !options.full ? reachableSet(replica.store, [replica.meta.baseCid]) : /* @__PURE__ */ new Set();
     return {
       version: SYNC_FORMAT_VERSION,
@@ -7684,7 +7687,7 @@
     };
   }
   function completeSync(replica, request, response, now = Date.now()) {
-    if (response.scope.length !== request.scope.length || response.scope.some((s, i) => s !== request.scope[i])) {
+    if (response.scope.length !== request.scope.length || response.scope.some((s, i2) => s !== request.scope[i2])) {
       throw new Error("sync response scope does not match request scope");
     }
     const applied = applySyncResponse(replica.store, request, response, replica.meta.peerId, now, replica.meta.localScope);
@@ -7698,18 +7701,16 @@
     };
   }
   function reattach(replica, newScope, now, names) {
-    if (isDirty(replica))
-      throw new Error("cannot change scope with unsynced local changes");
+    if (isDirty(replica)) throw new Error("cannot change scope with unsynced local changes");
     const { store, meta } = replica;
     if (meta.localScope?.length) {
       const local = newScope.length ? newScope.slice(meta.scope.length) : [HOME_ID];
-      if (!meta.scope.every((id, i) => newScope[i] === id) || !resolveScope(store, headCid(replica), local))
-        throw new Error("The requested shared node is not available below this device root.");
-      const descends = meta.localScope.every((id, i) => local[i] === id);
+      if (!meta.scope.every((id, i2) => newScope[i2] === id) || !resolveScope(store, headCid(replica), local)) throw new Error("The requested shared node is not available below this device root.");
+      const descends = meta.localScope.every((id, i2) => local[i2] === id);
       const baseCid = descends && meta.baseCid ? resolveScope(store, meta.baseCid, local.slice(meta.localScope.length)) : null;
       return { store, meta: { ...meta, localScope: local, baseCid, branch: void 0, branches: void 0 } };
     }
-    const isPrefix = meta.scope.length <= newScope.length && meta.scope.every((s, i) => newScope[i] === s);
+    const isPrefix = meta.scope.length <= newScope.length && meta.scope.every((s, i2) => newScope[i2] === s);
     const relative = newScope.slice(meta.scope.length);
     const target = isPrefix ? resolveScope(store, headCid(replica), relative) : null;
     if (target) {
@@ -7726,7 +7727,7 @@
     return { store, meta: { ...meta, scope: [...newScope], branch: void 0, branches: void 0, scopeNames: names ?? [...newScope], baseCid: null } };
   }
 
-  // ../shared/sync/destructure.ts
+  // shared/sync/destructure.ts
   function requirementOutputs(store, cid) {
     return valueContent(store, cid).children.flatMap((edge) => {
       const ref = content(store, identityCid(store, edge)), type = refTypeCid(store, ref);
@@ -7735,46 +7736,35 @@
   }
   function resolveRequirementOutput(store, cid) {
     const ref = content(store, cid);
-    if (!refTypeCid(store, ref) || !ref.data.ref)
-      return null;
-    if (ref.data.ref.owner)
-      return { error: "The source requirement is outside this workspace." };
+    if (!refTypeCid(store, ref) || !ref.data.ref) return null;
+    if (ref.data.ref.owner) return { error: "The source requirement is outside this workspace." };
     const source = findRowByAlias(store, rootTargetCid(store), ref.data.ref.id);
-    if (!source)
-      return { error: "The source requirement is unavailable." };
+    if (!source) return { error: "The source requirement is unavailable." };
     const sourceCid = resolveScope(store, rootTargetCid(store), [...source.path, source.row.id]);
     const currentOutput = requirementOutputs(store, sourceCid).find((output) => output.id === ref.data.alias?.id);
-    if (!currentOutput)
-      return { error: "The placeholder is no longer part of the source requirement." };
+    if (!currentOutput) return { error: "The placeholder is no longer part of the source requirement." };
     const req = demandOf(valueContent(store, sourceCid));
-    if (!req || !["allocation", "choice"].includes(req.capability))
-      return { error: "The source is no longer an amount or choice requirement." };
-    if (!requirementSatisfied(store, sourceCid))
-      return { error: "The source requirement must be fulfilled first." };
+    if (!req || !["allocation", "choice"].includes(req.capability)) return { error: "The source is no longer an amount or choice requirement." };
+    if (!requirementSatisfied(store, sourceCid)) return { error: "The source requirement must be fulfilled first." };
     if (req.capability === "allocation") {
       const slice = content(store, currentOutput.cid).data.allocation;
       const total = requirementOutputs(store, sourceCid).reduce((sum, o) => sum + (o.amount ?? 0), 0);
-      if (!slice || !Number.isFinite(slice.amount) || slice.amount <= 0 || req.amount === void 0 || total > req.amount + 1e-9 || slice.amount > req.amount || slice.type !== (req.resource ?? "account") || slice.unit !== (req.unit ?? "USD"))
-        return { error: "The pieces no longer fit the source requirement." };
+      if (!slice || !Number.isFinite(slice.amount) || slice.amount <= 0 || req.amount === void 0 || total > req.amount + 1e-9 || slice.amount > req.amount || slice.type !== (req.resource ?? "account") || slice.unit !== (req.unit ?? "USD")) return { error: "The pieces no longer fit the source requirement." };
       return { cid: put(store, { data: { allocation: slice, description: { content: `${slice.amount} ${slice.unit}` } }, children: [] }) };
     }
     const choices = [...new Set(childRows(store, sourceCid, "supply").map((row) => supplyOf(row.value)?.choice).filter((n) => n !== void 0))];
-    if (choices.length !== 1 || !req.options?.[choices[0]])
-      return { error: "Choose exactly one constructor for the source requirement." };
+    if (choices.length !== 1 || !req.options?.[choices[0]]) return { error: "Choose exactly one constructor for the source requirement." };
     return { cid: put(store, { data: { description: { content: req.options[choices[0]] } }, children: [] }) };
   }
   var resolvingAllocations = /* @__PURE__ */ new WeakMap();
   function allocationValue(store, cid) {
     const value = valueContent(store, cid), original = value.data.allocation;
-    if (!original)
-      return void 0;
+    if (!original) return void 0;
     const argument = value.children.find((edge) => edge[0] === store.primitive.allocationField.getId() && content(store, edge[1]).data.name?.content === "amount");
-    if (!argument)
-      return original;
+    if (!argument) return original;
     const active = resolvingAllocations.get(store) ?? /* @__PURE__ */ new Set();
     resolvingAllocations.set(store, active);
-    if (active.has(cid))
-      return void 0;
+    if (active.has(cid)) return void 0;
     active.add(cid);
     try {
       let current = argument[1];
@@ -7782,8 +7772,7 @@
       while (current && !seen.has(current) && seen.size < 100) {
         seen.add(current);
         const output = resolveRequirementOutput(store, current);
-        if (output)
-          return output.cid ? { ...original, ...content(store, output.cid).data.allocation } : void 0;
+        if (output) return output.cid ? { ...original, ...content(store, output.cid).data.allocation } : void 0;
         current = refValueCid(store, content(store, current));
       }
       return void 0;
@@ -7792,12 +7781,11 @@
     }
   }
 
-  // ../shared/sync/graph.ts
+  // shared/sync/graph.ts
   var SYNC_FORMAT_VERSION = 3;
   function content(store, cid) {
     const value = store.table.get(cid);
-    if (!value)
-      throw new Error(`node ${cid.slice(0, 12)} not found`);
+    if (!value) throw new Error(`node ${cid.slice(0, 12)} not found`);
     return value;
   }
   function hasNode(store, cid) {
@@ -7810,7 +7798,7 @@
     return value.data.alias?.id ?? null;
   }
   function isRefNode(store, value) {
-    return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId() || !!value.data.alias && i === store.primitive.instructionPointerConstructor.getId());
+    return value.children.some(([i2]) => i2 === store.primitive.targetPointerConstructor.getId() || !!value.data.alias && i2 === store.primitive.instructionPointerConstructor.getId());
   }
   function isHandle(value) {
     return !!value.data.ref;
@@ -7819,16 +7807,14 @@
     return !!node.data.ref?.peer && !!node.data.ref.version && node.data.ref.id === node.data.alias?.id;
   }
   function refValueCid(store, value) {
-    const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    const edge = value.children.find(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
     return edge ? edge[1] : null;
   }
   function refBranches(store, ref) {
     const cid = refValueCid(store, ref);
-    if (!cid || !isBranchChoice(store, content(store, cid)))
-      return null;
+    if (!cid || !isBranchChoice(store, content(store, cid))) return null;
     const record = readChoice(store, cid);
-    if (record.id !== ref.data.alias?.id)
-      return null;
+    if (record.id !== ref.data.alias?.id) return null;
     return { cid, id: record.id, names: record.options.map((o) => o.peerId), selected: branchSelection(store, cid) };
   }
   function putRefValueBranches(store, ref, values, baseName = "main", selectedValue) {
@@ -7836,18 +7822,14 @@
     const incoming = put(store, refNodeContent(store, { alias: { id }, ...ref.data.name ? { name: ref.data.name } : {} }, null, [], refTypeCid(store, ref)));
     const options = [];
     const add = (cid, preferred) => {
-      if (options.some((o) => o.edge?.[0] === cid))
-        return;
+      if (options.some((o) => o.edge?.[0] === cid)) return;
       const name = preferred && !options.some((o) => o.peerId === preferred) ? preferred : options.length ? `value-${cid}` : baseName;
       options.push({ peerId: name, edge: [cid, incoming] });
     };
     for (const cid of values) {
-      if (!cid)
-        continue;
+      if (!cid) continue;
       if (isBranchChoice(store, content(store, cid)) && readChoice(store, cid).id === id) {
-        for (const option of readChoice(store, cid).options)
-          if (option.edge)
-            add(option.edge[0], option.peerId);
+        for (const option of readChoice(store, cid).options) if (option.edge) add(option.edge[0], option.peerId);
       } else {
         const prior = values.filter((value) => !!value && isBranchChoice(store, content(store, value)) && readChoice(store, value).id === id).flatMap((value) => readChoice(store, value).options).find((option) => option.edge?.[0] === cid);
         add(cid, prior?.peerId);
@@ -7858,13 +7840,12 @@
   }
   function selectedBranchValue(store, cid) {
     const edge = branchEdge(store, cid);
-    if (!edge)
-      return null;
+    if (!edge) return null;
     const right = content(store, edge[1]);
     return refTypeCid(store, right) && right.data.alias?.id === readChoice(store, cid).id ? edge[0] : identityCid(store, edge);
   }
   function refTypeCid(store, value) {
-    const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId());
+    const edge = value.children.find(([i2]) => i2 === store.primitive.instructionPointerConstructor.getId());
     return edge ? edge[1] : null;
   }
   function valueContent(store, cid) {
@@ -7873,8 +7854,7 @@
       const selected = selectedBranchValue(store, cid);
       return selected ? valueContent(store, selected) : value;
     }
-    if (isHandle(value))
-      return value;
+    if (isHandle(value)) return value;
     const target = refValueCid(store, value);
     return target && store.table.has(target) ? isBranchChoice(store, content(store, target)) ? valueContent(store, target) : content(store, target) : value;
   }
@@ -7883,31 +7863,27 @@
   }
   function refNodeContent(store, data, valueCid, bookkeeping = [], typeCid = null) {
     const children = valueCid ? [[store.primitive.targetPointerConstructor.getId(), valueCid]] : [];
-    if (typeCid)
-      children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
+    if (typeCid) children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
     return { data, children: [...children, ...bookkeeping] };
   }
   function newId() {
     const cryptoApi = globalThis.crypto;
-    if (cryptoApi?.randomUUID)
-      return cryptoApi.randomUUID();
+    if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
     return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
   }
   function edgeKey(store, edge) {
     const [instr, target] = edge;
     if (instr === store.primitive.proposalField.getId()) {
       const p = readProposal(store, target);
-      if (p)
-        return `p:${p.peerId}/${p.name}`;
+      if (p) return `p:${p.peerId}/${p.name}`;
     }
     const targetAlias = aliasIdOf(content(store, target));
-    if (targetAlias)
-      return `a:${targetAlias}`;
+    if (targetAlias) return `a:${targetAlias}`;
     const instrAlias = aliasIdOf(content(store, instr));
-    if (instrAlias)
-      return `a:${instrAlias}`;
+    if (instrAlias) return `a:${instrAlias}`;
     return `e:${instr}:${target}`;
   }
+  var ROW_KINDS = ["task", "plain", "note", "comment", "ref", "requirement", "supply", "query", "resource", "allocation", "template"];
   function rowPrimitive(store, kind) {
     switch (kind) {
       case "task":
@@ -7935,38 +7911,25 @@
     }
   }
   function rowKindOf(store, edge) {
-    if (isChoiceEdge(store, edge) && isPeerReference(content(store, edge[1])))
-      return "ref";
+    if (isChoiceEdge(store, edge) && isPeerReference(content(store, edge[1]))) return "ref";
     if (isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))) {
       const active = branchEdge(store, edge[1]);
       return active ? rowKindOf(store, active) : null;
     }
-    if (isPartitionEdge(store, edge))
-      return "plain";
+    if (isPartitionEdge(store, edge)) return "plain";
     const [, target] = edge;
     const p = store.primitive;
-    if (target === p.completeField.getId())
-      return valueContent(store, edge[0]).data.todo ? "task" : "plain";
-    if (target === p.descriptionField.getId())
-      return "plain";
-    if (target === p.documentField.getId())
-      return "note";
-    if (target === p.commentField.getId())
-      return "comment";
-    if (target === p.linkField.getId())
-      return "ref";
-    if (target === p.requirementField.getId())
-      return "requirement";
-    if (target === p.supplyField.getId())
-      return "supply";
-    if (target === p.queryField.getId())
-      return "query";
-    if (target === p.resourceField.getId())
-      return "resource";
-    if (target === p.allocationField.getId())
-      return demandOf(valueContent(store, edge[0])) ? "requirement" : supplyOf(valueContent(store, edge[0])) ? "supply" : "allocation";
-    if (target === p.templateField.getId())
-      return "template";
+    if (target === p.completeField.getId()) return valueContent(store, edge[0]).data.todo ? "task" : "plain";
+    if (target === p.descriptionField.getId()) return "plain";
+    if (target === p.documentField.getId()) return "note";
+    if (target === p.commentField.getId()) return "comment";
+    if (target === p.linkField.getId()) return "ref";
+    if (target === p.requirementField.getId()) return "requirement";
+    if (target === p.supplyField.getId()) return "supply";
+    if (target === p.queryField.getId()) return "query";
+    if (target === p.resourceField.getId()) return "resource";
+    if (target === p.allocationField.getId()) return demandOf(valueContent(store, edge[0])) ? "requirement" : supplyOf(valueContent(store, edge[0])) ? "supply" : "allocation";
+    if (target === p.templateField.getId()) return "template";
     return null;
   }
   function isRowEdge(store, edge) {
@@ -7996,28 +7959,23 @@
   function withBranches(store, selections, run) {
     const previous = branchSelections.get(store);
     const next = new Map(previous);
-    for (const [id, name] of Object.entries(selections))
-      next.set(id, name);
+    for (const [id, name] of Object.entries(selections)) next.set(id, name);
     branchSelections.set(store, next);
     try {
       return run();
     } finally {
-      if (previous)
-        branchSelections.set(store, previous);
-      else
-        branchSelections.delete(store);
+      if (previous) branchSelections.set(store, previous);
+      else branchSelections.delete(store);
     }
   }
   function scopeBranches(store, root, path) {
     const result = {};
-    for (let i = 0; i <= path.length; i++) {
-      const cid = resolveScope(store, root, path.slice(0, i));
-      if (cid && isBranchChoice(store, content(store, cid)))
-        result[readChoice(store, cid).id] = branchSelection(store, cid);
+    for (let i2 = 0; i2 <= path.length; i2++) {
+      const cid = resolveScope(store, root, path.slice(0, i2));
+      if (cid && isBranchChoice(store, content(store, cid))) result[readChoice(store, cid).id] = branchSelection(store, cid);
       else if (cid) {
         const branches = refBranches(store, content(store, cid));
-        if (branches)
-          result[branches.id] = branches.selected;
+        if (branches) result[branches.id] = branches.selected;
       }
     }
     return result;
@@ -8029,14 +7987,12 @@
     try {
       return run();
     } finally {
-      if (!nested)
-        policyReads.delete(store);
+      if (!nested) policyReads.delete(store);
     }
   }
   function branchSelection(store, cid) {
     const choice = readChoice(store, cid);
-    if (policyReads.has(store))
-      return choice.options.find((o) => o.peerId === "main")?.peerId ?? choice.defaultName ?? choice.options[0]?.peerId ?? "";
+    if (policyReads.has(store)) return choice.options.find((o) => o.peerId === "main")?.peerId ?? choice.defaultName ?? choice.options[0]?.peerId ?? "";
     const name = branchSelections.get(store)?.get(choice.id);
     return choice.options.find((o) => o.peerId === name)?.peerId ?? choice.defaultName ?? choice.options.map((o) => o.peerId).sort()[0] ?? "";
   }
@@ -8066,8 +8022,7 @@
   function sameShape(store, a, b) {
     const aRow = identityOnInstruction(store, a);
     const bRow = identityOnInstruction(store, b);
-    if (aRow !== bRow)
-      return false;
+    if (aRow !== bRow) return false;
     return aRow ? a[1] === b[1] : a[0] === b[0];
   }
   function taskContent(id, title, done, createdAt, updatedAt) {
@@ -8083,24 +8038,16 @@
   }
   function rowContent(kind, id, text, now, extra = {}) {
     const data = { alias: { id }, description: { content: text }, updated: { time: now } };
-    if (kind === "task")
-      data.todo = { completed: !!extra.done, time: now };
-    if (kind === "requirement")
-      data.requirement = extra.requirement ?? { capability: "confirmation" };
-    if (kind === "supply")
-      data.supply = extra.supply ?? { capability: "confirmation", by: "", at: now };
-    if (kind === "query")
-      data.query = extra.query ?? {};
-    if (kind === "resource")
-      data.resource = extra.resource ?? { type: "inventory", unit: "unit" };
-    if (kind === "allocation")
-      data.allocation = extra.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
-    if (kind === "comment")
-      data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
+    if (kind === "task") data.todo = { completed: !!extra.done, time: now };
+    if (kind === "requirement") data.requirement = extra.requirement ?? { capability: "confirmation" };
+    if (kind === "supply") data.supply = extra.supply ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query") data.query = extra.query ?? {};
+    if (kind === "resource") data.resource = extra.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation") data.allocation = extra.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
+    if (kind === "comment") data.comment = { content: text, authorID: extra.author?.id ?? "", authorName: extra.author?.name ?? "", time: now, votes: {} };
     if (kind === "ref") {
       data.ref = extra.refOwner ? { id: extra.refId ?? "", owner: extra.refOwner } : { id: extra.refId ?? "" };
-      if (extra.targetCid && extra.store)
-        return refNodeContent(extra.store, data, extra.targetCid);
+      if (extra.targetCid && extra.store) return refNodeContent(extra.store, data, extra.targetCid);
     }
     canonicalRowData(data);
     return { data, children: [] };
@@ -8127,22 +8074,14 @@
   function convertRowContent(value, kind, now) {
     const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, ...rest } = value.data;
     const data = { ...rest, updated: { time: now } };
-    if (kind === "task")
-      data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
-    if (kind === "comment")
-      data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
-    if (kind === "ref")
-      data.ref = value.data.ref ?? { id: "" };
-    if (kind === "requirement")
-      data.requirement = demandOf(value) ?? { capability: "confirmation" };
-    if (kind === "supply")
-      data.supply = supplyOf(value) ?? { capability: "confirmation", by: "", at: now };
-    if (kind === "query")
-      data.query = value.data.query ?? {};
-    if (kind === "resource")
-      data.resource = value.data.resource ?? { type: "inventory", unit: "unit" };
-    if (kind === "allocation")
-      data.allocation = value.data.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
+    if (kind === "task") data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now };
+    if (kind === "comment") data.comment = value.data.comment ?? { content: value.data.description?.content ?? "", authorID: "", authorName: "", time: now, votes: {} };
+    if (kind === "ref") data.ref = value.data.ref ?? { id: "" };
+    if (kind === "requirement") data.requirement = demandOf(value) ?? { capability: "confirmation" };
+    if (kind === "supply") data.supply = supplyOf(value) ?? { capability: "confirmation", by: "", at: now };
+    if (kind === "query") data.query = value.data.query ?? {};
+    if (kind === "resource") data.resource = value.data.resource ?? { type: "inventory", unit: "unit" };
+    if (kind === "allocation") data.allocation = value.data.allocation ?? { resource: "", type: "inventory", amount: 0, unit: "unit" };
     return { ...value, data: canonicalRowData(data) };
   }
   function peerRefContent(peerId) {
@@ -8163,11 +8102,9 @@
     const value = content(store, cid);
     let instr = null;
     let target = null;
-    for (const [i, t] of value.children) {
-      if (i === store.primitive.instructionPointerConstructor.getId())
-        instr = t;
-      if (i === store.primitive.targetPointerConstructor.getId())
-        target = t;
+    for (const [i2, t] of value.children) {
+      if (i2 === store.primitive.instructionPointerConstructor.getId()) instr = t;
+      if (i2 === store.primitive.targetPointerConstructor.getId()) target = t;
     }
     return {
       peerId: value.data.peerId?.content ?? null,
@@ -8175,16 +8112,14 @@
     };
   }
   function mergeRequestEdge(store, id) {
-    const type = capabilityTarget2(store, "approve");
+    const type = capabilityTarget(store, "approve");
     return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: "request merge" } }, null, [], type))];
   }
   function putChoice(store, id, base, options) {
     const alternatives = options.map((o) => {
       const pointer = pointerContent(o.peerId, o.edge, store);
-      if (o.requestMerge)
-        pointer.children.push([capabilityTarget2(store, "approve"), o.requestMerge]);
-      if (o.base)
-        pointer.children.push([store.primitive.conflictBaseNode.getId(), put(store, pointerContent(null, o.base, store))]);
+      if (o.requestMerge) pointer.children.push([capabilityTarget(store, "approve"), o.requestMerge]);
+      if (o.base) pointer.children.push([store.primitive.conflictBaseNode.getId(), put(store, pointerContent(null, o.base, store))]);
       return { peerId: o.peerId, cid: put(store, pointer) };
     }).sort((a, b) => a.cid < b.cid ? -1 : a.cid > b.cid ? 1 : 0);
     const baseCid = put(store, pointerContent(null, base, store));
@@ -8223,20 +8158,17 @@
   function resolveScope(store, nodeCid, scope) {
     let current = nodeCid;
     for (const step of scope) {
-      if (!current)
-        break;
+      if (!current) break;
       current = findChild(store, current, step);
     }
     if (!current && nodeCid && scope[0] !== "fos:home") {
       const home = findChild(store, nodeCid, "fos:home");
-      if (home)
-        return resolveScope(store, home, scope);
+      if (home) return resolveScope(store, home, scope);
     }
     return current;
   }
   function contextScope(store, nodeCid, scope) {
-    if (!scope.length || findChild(store, nodeCid, scope[0]))
-      return scope;
+    if (!scope.length || findChild(store, nodeCid, scope[0])) return scope;
     const home = findChild(store, nodeCid, "fos:home");
     return home && resolveScope(store, home, scope) ? ["fos:home", ...scope] : scope;
   }
@@ -8246,39 +8178,33 @@
     for (const existing of value.children) {
       if (edgeKey(store, existing) === key) {
         found = true;
-        if (edge)
-          children.push(edge);
+        if (edge) children.push(edge);
       } else {
         children.push(existing);
       }
     }
-    if (!found && edge)
-      children.push(edge);
+    if (!found && edge) children.push(edge);
     return { ...value, children };
   }
   function updateAtScope(store, nodeCid, scope, fn, mode = "value") {
     const canonical = contextScope(store, nodeCid, scope);
-    if (canonical !== scope)
-      return updateAtScope(store, nodeCid, canonical, fn, mode);
+    if (canonical !== scope) return updateAtScope(store, nodeCid, canonical, fn, mode);
     const identity = content(store, nodeCid);
-    if (isPeerReference(identity) && mode !== "replace")
-      throw new Error("This node is held by another peer. Connect to that peer before editing its content.");
+    if (isPeerReference(identity) && mode !== "replace") throw new Error("This node is held by another peer. Connect to that peer before editing its content.");
     if (!scope.length && mode === "replace") {
       const next = fn(identity);
       return next === identity ? nodeCid : put(store, next);
     }
     if (isBranchChoice(store, identity)) {
       const active = branchEdge(store, nodeCid);
-      if (!active)
-        throw new Error("No selected branch");
+      if (!active) throw new Error("No selected branch");
       const next = updateAtScope(store, identityCid(store, active), scope, fn, mode);
       return next === identityCid(store, active) ? nodeCid : updateBranch(store, nodeCid, withIdentity(store, active, next));
     }
     const ref = isRefNode(store, identity) && !isHandle(identity);
     const value = ref ? valueContent(store, nodeCid) : identity;
     const advance = (nextValue) => {
-      if (nextValue === value)
-        return nodeCid;
+      if (nextValue === value) return nodeCid;
       if (ref) {
         const now = nextValue.data.updated?.time ?? value.data.updated?.time ?? 0;
         return put(store, relinkContent(store, identity, nodeCid, nextValue, now));
@@ -8303,19 +8229,16 @@
       if (argument) {
         const before = identityCid(store, argument.edge);
         const after = updateAtScope(store, before, rest, fn, mode);
-        if (before === after)
-          return nodeCid;
+        if (before === after) return nodeCid;
         const children2 = [...identity.children];
         children2[argument.index] = withIdentity(store, argument.edge, after);
         return put(store, withPrev(store, { ...identity, children: children2 }, nodeCid));
       }
     }
-    if (!found || isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])) && !isPeerReference(content(store, found.edge[1])))
-      throw new Error(`node ${step} not found`);
+    if (!found || isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])) && !isPeerReference(content(store, found.edge[1]))) throw new Error(`node ${step} not found`);
     const childCid = identityCid(store, found.edge);
     const nextChild = updateAtScope(store, childCid, rest, fn, mode);
-    if (nextChild === childCid)
-      return nodeCid;
+    if (nextChild === childCid) return nodeCid;
     const children = [...value.children];
     children[found.index] = withIdentity(store, found.edge, nextChild);
     return advance({ ...value, children });
@@ -8323,8 +8246,7 @@
   function withChildValue(store, edge, nextValue, now) {
     const idCid = identityCid(store, edge);
     const identity = content(store, idCid);
-    if (isPeerReference(identity))
-      throw new Error("This node is held by another peer. Connect to that peer before editing its content.");
+    if (isPeerReference(identity)) throw new Error("This node is held by another peer. Connect to that peer before editing its content.");
     if (isBranchChoice(store, identity)) {
       const active = branchEdge(store, idCid);
       return active ? withIdentity(store, edge, updateBranch(store, idCid, withChildValue(store, active, nextValue, now))) : edge;
@@ -8337,31 +8259,28 @@
   function withPeer(store, value, peerId) {
     const refCid = put(store, peerRefContent(peerId));
     const edge = [store.primitive.peerField.getId(), refCid];
-    if (value.children.some(([i, t]) => i === edge[0] && t === edge[1]))
-      return value;
+    if (value.children.some(([i2, t]) => i2 === edge[0] && t === edge[1])) return value;
     return { ...value, children: [...value.children, edge] };
   }
   function rootTargetCid(store) {
     const root = content(store, store.rootNodeId);
-    const pointer = root.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    const pointer = root.children.find(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
     return pointer ? pointer[1] : store.rootNodeId;
   }
   function rootIsAlias(store) {
-    return content(store, store.rootNodeId).children.some(([i]) => i === store.primitive.targetPointerConstructor.getId());
+    return content(store, store.rootNodeId).children.some(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
   }
   var HOME_ID = "fos:home";
   function homeContextCid(store, rootCid, now) {
     const root = valueContent(store, rootCid);
     const identity = makeLink(store, content(store, rootCid), 0);
     let bindings = identity;
-    if (!readMembers(store, bindings).some((member) => member.peerId === "fos"))
-      bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
+    if (!readMembers(store, bindings).some((member) => member.peerId === "fos")) bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
     const homeCid = findChild(store, rootCid, HOME_ID);
     if (homeCid && isBranchChoice(store, content(store, homeCid))) {
       const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
       const nextEdge = rowEdge(store, "plain", homeCid);
-      if (nextEdge[0] === edge[0] && nextEdge[1] === edge[1] && bindings === identity && identity === content(store, rootCid))
-        return rootCid;
+      if (nextEdge[0] === edge[0] && nextEdge[1] === edge[1] && bindings === identity && identity === content(store, rootCid)) return rootCid;
       const nextValue2 = put(store, { ...root, children: root.children.map((e) => e === edge ? nextEdge : e) });
       return put(store, refNodeContent(store, identity.data, nextValue2, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
     }
@@ -8369,34 +8288,27 @@
     const homeValue = homeCid ? valueContent(store, homeCid) : rowContent("plain", HOME_ID, "Home", 0);
     let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0);
     const legacyIntegrations = bindings.children.filter((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith("integration:"));
-    for (const edge of legacyIntegrations)
-      if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content))
-        home = { ...home, children: [...home.children, edge] };
-    if (legacyIntegrations.length)
-      bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
-    for (const peer of INTEGRATION_PEERS)
-      if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`))
-        home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
+    for (const edge of legacyIntegrations) if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content)) home = { ...home, children: [...home.children, edge] };
+    if (legacyIntegrations.length) bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
+    for (const peer of INTEGRATION_PEERS) if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
     const nextHome = put(store, home);
     const homeEdge = root.children.find((edge) => identityCid(store, edge) === homeCid);
-    if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid))
-      return rootCid;
+    if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid)) return rootCid;
     const keep = root.children.filter((edge) => !movable.includes(edge) && (!homeCid || identityCid(store, edge) !== homeCid));
     const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, "plain", nextHome)] });
     return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings), refTypeCid(store, identity)));
   }
   function commitRoot(store, newTargetCid, now, mergeSourceCid = null) {
-    if (newTargetCid === rootTargetCid(store) && !mergeSourceCid)
-      return;
+    if (newTargetCid === rootTargetCid(store) && !mergeSourceCid) return;
     const previous = content(store, store.rootNodeId);
-    const instruction = rootIsAlias(store) ? previous.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId()) : void 0;
+    const instruction = rootIsAlias(store) ? previous.children.find(([i2]) => i2 === store.primitive.instructionPointerConstructor.getId()) : void 0;
     const children = [
       [store.primitive.targetPointerConstructor.getId(), newTargetCid],
       [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : store.primitive.rootInstructionNode.getId()],
       [store.primitive.previousVersion.getId(), store.rootNodeId]
     ];
-    if (mergeSourceCid)
-      children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid]);
+    if (mergeSourceCid) children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid]);
+    children.push(...previous.children.filter(([i2, t]) => i2 === capabilityTarget(store, "provideNode") && content(store, t).data.name?.content.startsWith("fos:node-link:")));
     const alias = previous.data.alias ?? { id: newId() };
     store.rootNodeId = put(store, { data: { alias, updated: { time: now } }, children });
     store.updateCtxCallback?.(store.exportContext([]));
@@ -8407,17 +8319,13 @@
     const seen = /* @__PURE__ */ new Set();
     while (stack.length) {
       const cid = stack.pop();
-      if (seen.has(cid))
-        continue;
+      if (seen.has(cid)) continue;
       seen.add(cid);
       const value = content(store, cid);
-      if (!skip.has(cid))
-        out[cid] = value;
-      for (const [i, t] of value.children) {
-        if (!seen.has(i))
-          stack.push(i);
-        if (!seen.has(t))
-          stack.push(t);
+      if (!skip.has(cid)) out[cid] = value;
+      for (const [i2, t] of value.children) {
+        if (!seen.has(i2)) stack.push(i2);
+        if (!seen.has(t)) stack.push(t);
       }
     }
     return out;
@@ -8428,10 +8336,8 @@
   function importNodes(store, nodes) {
     const accepted = [];
     let pending = Object.entries(nodes).filter(([cid, value]) => {
-      if (store.table.has(cid))
-        return false;
-      if (!value || typeof value !== "object" || !Array.isArray(value.children))
-        return false;
+      if (store.table.has(cid)) return false;
+      if (!value || typeof value !== "object" || !Array.isArray(value.children)) return false;
       return isCurrentCid(cid) && verifyCid(cid, value);
     });
     let progress = true;
@@ -8440,7 +8346,7 @@
       const rest = [];
       for (const entry of pending) {
         const [cid, value] = entry;
-        if (value.children.every(([i, t]) => store.table.has(i) && store.table.has(t))) {
+        if (value.children.every(([i2, t]) => store.table.has(i2) && store.table.has(t))) {
           store.table.set(cid, value);
           accepted.push(cid);
           progress = true;
@@ -8463,8 +8369,7 @@
     const identity = content(store, nodeCid);
     const value = valueContent(store, nodeCid);
     const created = value.data.todo?.time ?? value.data.updated?.time ?? 0;
-    if (isPeerReference(identity))
-      kind = "ref";
+    if (isPeerReference(identity)) kind = "ref";
     const sub = countNode(store, nodeCid);
     const view2 = {
       id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
@@ -8486,54 +8391,41 @@
     }
     const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null;
     const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity;
-    if (refTypeCid(store, constructor) === capabilityTarget2(store, "peer") && constructor.data.name)
-      view2.construction = { handler: constructor.data.name.content };
+    if (refTypeCid(store, constructor) === capabilityTarget(store, "peer") && constructor.data.name) view2.construction = { handler: constructor.data.name.content };
     if (kind === "ref") {
       view2.refId = identity.data.ref?.id ?? "";
-      if (identity.data.ref?.owner)
-        view2.refOwner = identity.data.ref.owner;
+      if (identity.data.ref?.owner) view2.refOwner = identity.data.ref.owner;
     }
-    if (kind === "comment" && value.data.comment)
-      view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
-    if (value.data.template)
-      view2.template = value.data.template;
+    if (kind === "comment" && value.data.comment) view2.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time };
+    if (value.data.template) view2.template = value.data.template;
     if (kind === "task") {
       const blockers = taskBlockers(store, nodeCid);
-      if (blockers.length)
-        view2.blockedBy = blockers;
-      if (value.data.template)
-        view2.template = value.data.template;
+      if (blockers.length) view2.blockedBy = blockers;
+      if (value.data.template) view2.template = value.data.template;
     }
-    if (isBranchChoice(store, identity))
-      view2.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map((o) => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter((o) => o.requestMerge).map((o) => o.peerId) };
+    if (isBranchChoice(store, identity)) view2.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map((o) => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter((o) => o.requestMerge).map((o) => o.peerId) };
     const demand = demandOf(value);
     if (kind === "requirement" && demand) {
       const progress = requirementProgress(store, nodeCid);
       view2.requirement = { ...demand, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(demand), ...progress ? progress : {} };
     }
-    if (kind === "supply")
-      view2.supply = supplyOf(value);
-    if (kind === "query")
-      view2.query = value.data.query ?? {};
+    if (kind === "supply") view2.supply = supplyOf(value);
+    if (kind === "query") view2.query = value.data.query ?? {};
     if (kind === "resource" && value.data.resource) {
       const allocated = allocatedIn(store, nodeCid);
       view2.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === void 0 ? null : value.data.resource.capacity - allocated };
     }
-    if (kind === "allocation" && value.data.allocation)
-      view2.allocation = allocationValue(store, nodeCid);
-    if (identity.data.listing)
-      view2.market = true;
+    if (kind === "allocation" && value.data.allocation) view2.allocation = allocationValue(store, nodeCid);
+    if (identity.data.listing) view2.market = true;
     return view2;
   }
   function supplyOf(value) {
-    if (value.data.supply)
-      return value.data.supply;
+    if (value.data.supply) return value.data.supply;
     const a = value.data.allocation;
     return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? "", at: a.at ?? 0, ...a.ref ? { ref: a.ref } : {}, ...a.choice !== void 0 ? { choice: a.choice } : {} } : void 0;
   }
   function demandOf(value) {
-    if (value.data.requirement)
-      return value.data.requirement;
+    if (value.data.requirement) return value.data.requirement;
     const a = value.data.allocation;
     return a && (a.amount < 0 || a.amount === 0 && !!a.capability) ? { capability: a.capability ?? "allocation", ...!a.capability || a.capability === "allocation" ? { resource: a.type, amount: -a.amount, unit: a.unit } : {}, ...a.options ? { options: a.options } : {}, ...a.peer ? { peer: a.peer } : {}, ...a.repo ? { repo: a.repo } : {}, ...a.tool ? { tool: a.tool } : {}, ...a.start !== void 0 ? { start: a.start } : {}, ...a.end !== void 0 ? { end: a.end } : {} } : void 0;
   }
@@ -8567,8 +8459,7 @@
     const out = [];
     for (const edge of valueContent(store, cid).children) {
       const k = rowKindOf(store, edge);
-      if (!k || kind && k !== kind)
-        continue;
+      if (!k || kind && k !== kind) continue;
       const id = identityCid(store, edge);
       out.push({ cid: id, kind: k, value: valueContent(store, id) });
     }
@@ -8582,30 +8473,25 @@
   }
   function requirementProgress(store, requirementCid, root) {
     const req = demandOf(valueContent(store, requirementCid));
-    if (!req || req.capability !== "allocation" || req.amount === void 0)
-      return null;
+    if (!req || req.capability !== "allocation" || req.amount === void 0) return null;
     let have = 0;
     for (const { kind, value, cid } of childRows(store, requirementCid)) {
       if (kind === "allocation") {
         const allocation = allocationValue(store, cid);
-        if (allocationMatches(req, allocation))
-          have += allocation?.amount ?? 0;
+        if (allocationMatches(req, allocation)) have += allocation?.amount ?? 0;
       }
       const supply = supplyOf(value);
       if (kind === "supply" && supply?.capability === "allocation" && supply.ref) {
         const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref);
-        if (!found)
-          have += req.amount;
-        else if (allocationMatches(req, found.row.allocation))
-          have += found.row.allocation?.amount ?? 0;
+        if (!found) have += req.amount;
+        else if (allocationMatches(req, found.row.allocation)) have += found.row.allocation?.amount ?? 0;
       }
     }
     return { have, need: req.amount };
   }
   function requirementSatisfied(store, requirementCid, root) {
     const req = demandOf(valueContent(store, requirementCid));
-    if (!req)
-      return true;
+    if (!req) return true;
     const rows = childRows(store, requirementCid);
     const filledByChild = rows.some(({ kind, value, cid }) => {
       switch (req.capability) {
@@ -8615,23 +8501,21 @@
           return kind === "allocation" && allocationFills(req, allocationValue(store, cid));
         case "search":
           return kind === "query" && !!value.data.query?.executedAt;
+        // "-@name": the named person allocates themself ("@name 2h") inside it
         case "peer":
           return kind === "allocation" && value.data.allocation?.type === "person" && (!req.peer || value.data.allocation.person === req.peer);
         default:
           return false;
       }
     });
-    if (filledByChild)
-      return true;
+    if (filledByChild) return true;
     if (req.capability === "allocation" && req.amount !== void 0 && req.amount > 0) {
       const progress = requirementProgress(store, requirementCid, root);
-      if (progress && progress.have >= progress.need)
-        return true;
+      if (progress && progress.have >= progress.need) return true;
     }
     return rows.some(({ kind, value }) => {
       const s = kind === "supply" ? supplyOf(value) : void 0;
-      if (!s || s.capability !== req.capability)
-        return false;
+      if (!s || s.capability !== req.capability) return false;
       switch (req.capability) {
         case "confirmation":
           return !!s.by;
@@ -8654,11 +8538,9 @@
         case "peer":
           return !!s.by && (!req.peer || s.by === req.peer);
         case "allocation": {
-          if (!s.ref)
-            return false;
+          if (!s.ref) return false;
           const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref);
-          if (!found)
-            return true;
+          if (!found) return true;
           return allocationFills(req, found.row.allocation);
         }
       }
@@ -8677,11 +8559,9 @@
     return sum(bankCid);
   }
   function describeEdge(store, edge) {
-    if (!edge)
-      return { task: null, label: null };
+    if (!edge) return { task: null, label: null };
     const kind = rowKindOf(store, edge);
-    if (kind)
-      return { task: rowView(store, identityCid(store, edge), kind), label: null };
+    if (kind) return { task: rowView(store, identityCid(store, edge), kind), label: null };
     const value = valueContent(store, identityCid(store, edge));
     return { task: null, label: value.data.description?.content ?? value.data.alias?.id ?? "node" };
   }
@@ -8700,8 +8580,7 @@
       if (rowKindOf(store, edge) === "task") {
         tasks++;
         const taskCid = identityCid(store, edge);
-        if (valueContent(store, taskCid).data.todo?.completed)
-          done++;
+        if (valueContent(store, taskCid).data.todo?.completed) done++;
         const sub = countNode(store, taskCid);
         tasks += sub.tasks;
         done += sub.done;
@@ -8720,8 +8599,7 @@
   function viewNode(store, cid, constructors = false) {
     if (isBranchChoice(store, content(store, cid))) {
       const active = branchEdge(store, cid);
-      if (active)
-        return { ...viewNode(store, identityCid(store, active), constructors), members: readMembers(store, content(store, cid)) };
+      if (active) return { ...viewNode(store, identityCid(store, active), constructors), members: readMembers(store, content(store, cid)) };
     }
     const identity = content(store, cid);
     const value = valueContent(store, cid);
@@ -8741,8 +8619,7 @@
     for (const edge of peerEdges) {
       if (isPeerEdge(store, edge)) {
         const peerId = content(store, edge[1]).data.peerId?.content;
-        if (peerId && !view2.peers.includes(peerId))
-          view2.peers.push(peerId);
+        if (peerId && !view2.peers.includes(peerId)) view2.peers.push(peerId);
       }
     }
     for (const edge of value.children) {
@@ -8759,10 +8636,8 @@
         const child = content(store, identityCid(store, edge));
         const peerId = isMemberEdge(store, edge) || isPeerEdge(store, edge) ? child.data.peerId?.content : void 0;
         const name = refTypeCid(store, child) ? child.data.name?.content : void 0;
-        if (!peerId && !name?.startsWith("fos:setting:") || !child.data.alias?.id)
-          continue;
-        if (seen.has(peerId ?? child.data.alias.id))
-          continue;
+        if (!peerId && !name?.startsWith("fos:setting:") || !child.data.alias?.id) continue;
+        if (seen.has(peerId ?? child.data.alias.id)) continue;
         seen.add(peerId ?? child.data.alias.id);
         const row = rowView(store, identityCid(store, edge), "plain");
         row.title = peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name;
@@ -8786,7 +8661,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist", "provideNode", "sync"];
   var INTEGRATION_PEERS = [
     { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
     { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
@@ -8794,10 +8669,9 @@
     { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
     { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
   ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer", "persist"];
+  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer", "persist", "provideNode", "sync"];
   function isLink(store, value) {
-    if (isHandle(value))
-      return false;
+    if (isHandle(value)) return false;
     return isRefNode(store, value) || !!value.data.link;
   }
   function isLegacyInlineLink(store, value) {
@@ -8830,8 +8704,7 @@
     return put(store, stripLink(store, value));
   }
   function makeLink(store, value, now) {
-    if (isRefNode(store, value) && !isHandle(value))
-      return value;
+    if (isRefNode(store, value) && !isHandle(value)) return value;
     const stripped = stripLink(store, value);
     const valueCid = put(store, stripped);
     const data = { alias: value.data.alias ?? { id: newId() }, updated: { time: now } };
@@ -8848,14 +8721,12 @@
     while (current && out.length < limit) {
       const prev = content(store, current).children.find((e) => isPrevEdge(store, e));
       current = prev ? prev[1] : null;
-      if (current && store.table.has(current))
-        out.push(current);
-      else
-        break;
+      if (current && store.table.has(current)) out.push(current);
+      else break;
     }
     return out;
   }
-  function capabilityTarget2(store, capability) {
+  function capabilityTarget(store, capability) {
     const p = store.primitive;
     switch (capability) {
       case "edit":
@@ -8904,6 +8775,8 @@
       case "poll":
       case "peer":
       case "persist":
+      case "provideNode":
+      case "sync":
       case "timer":
       case "cron":
       case "task-completion":
@@ -8913,16 +8786,14 @@
   }
   function capabilityOfTarget(store, target) {
     const type = refTypeCid(store, content(store, target)) ?? target;
-    return CAPABILITIES.find((c) => type === capabilityTarget2(store, c)) ?? null;
+    return CAPABILITIES.find((c) => type === capabilityTarget(store, c)) ?? null;
   }
   function capabilityOf2(store, edge) {
-    if (edge[0] !== store.primitive.capabilityNode.getId())
-      return null;
+    if (edge[0] !== store.primitive.capabilityNode.getId()) return null;
     return capabilityOfTarget(store, edge[1]);
   }
   function acceptsOf(store, edge) {
-    if (edge[0] !== store.primitive.acceptsNode.getId())
-      return null;
+    if (edge[0] !== store.primitive.acceptsNode.getId()) return null;
     return capabilityOfTarget(store, edge[1]);
   }
   function memberRefContent(store, peerId, name, capabilities, disabled = [], accepts = []) {
@@ -8937,25 +8808,22 @@
         ...off.length ? { disabledCapabilities: { content: off } } : {}
       },
       children: [
-        ...unique.map((c) => [store.primitive.capabilityNode.getId(), capabilityTarget2(store, c)]),
-        ...from.map((c) => [store.primitive.acceptsNode.getId(), capabilityTarget2(store, c)])
+        ...unique.map((c) => [store.primitive.capabilityNode.getId(), capabilityTarget(store, c)]),
+        ...from.map((c) => [store.primitive.acceptsNode.getId(), capabilityTarget(store, c)])
       ]
     };
   }
   function readMembers(store, value) {
     if (isBranchChoice(store, value)) {
       const edge = withMainBranchPolicy(store, () => branchEdge(store, put(store, value)));
-      if (edge)
-        return readMembers(store, content(store, identityCid(store, edge)));
+      if (edge) return readMembers(store, content(store, identityCid(store, edge)));
     }
     const out = [];
     for (const edge of value.children) {
-      if (!isMemberEdge(store, edge))
-        continue;
+      if (!isMemberEdge(store, edge)) continue;
       const ref = content(store, edge[1]);
       const peerId = ref.data.peerId?.content;
-      if (!peerId)
-        continue;
+      if (!peerId) continue;
       const caps = [...new Set(ref.children.map((e) => capabilityOf2(store, e)).filter((c) => c !== null))];
       const accepts = [...new Set(ref.children.map((e) => acceptsOf(store, e)).filter((c) => c !== null))];
       const off = (ref.data.disabledCapabilities?.content ?? []).filter((c) => CAPABILITIES.includes(c) && (caps.includes(c) || accepts.includes(c)));
@@ -8966,8 +8834,7 @@
   function memberHandlers(store, value, peerId, direction) {
     if (isBranchChoice(store, value)) {
       const edge = branchEdge(store, put(store, value));
-      if (edge)
-        return memberHandlers(store, content(store, identityCid(store, edge)), peerId, direction);
+      if (edge) return memberHandlers(store, content(store, identityCid(store, edge)), peerId, direction);
     }
     const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId);
     return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && (e[0] === store.primitive.capabilityNode.getId() || e[0] === store.primitive.acceptsNode.getId()) && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : [];
@@ -8979,8 +8846,7 @@
       const old = content(store, previous[1]);
       next.children.push(...old.children.filter((edge) => edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId() || !!refTypeCid(store, content(store, edge[1])) && !capabilityOfTarget(store, edge[1])));
       const custom = (old.data.disabledCapabilities?.content ?? []).filter((id) => !CAPABILITIES.includes(id));
-      if (custom.length)
-        next.data.disabledCapabilities = { content: [.../* @__PURE__ */ new Set([...next.data.disabledCapabilities?.content ?? [], ...custom])] };
+      if (custom.length) next.data.disabledCapabilities = { content: [.../* @__PURE__ */ new Set([...next.data.disabledCapabilities?.content ?? [], ...custom])] };
     }
     next.children = next.children.flatMap((edge) => {
       const capability = capabilityOf2(store, edge) ?? acceptsOf(store, edge);
@@ -9020,8 +8886,7 @@
       const baseCid2 = branch?.children.find((edge) => isPrevEdge(store, edge))?.[1];
       const peerId2 = value2.data.peerId?.content;
       const statusCid = status && refValueCid(store, status);
-      if (!contentCid2 || !baseCid2 || !peerId2)
-        return null;
+      if (!contentCid2 || !baseCid2 || !peerId2) return null;
       return { cid, peerId: peerId2, name: value2.data.description?.content ?? "", contentCid: contentCid2, baseCid: baseCid2, timestamp: value2.data.updated?.time ?? 0, status: statusCid && ["rejected", '"rejected"'].includes(content(store, statusCid).data.description?.content ?? "") ? "rejected" : "open" };
     }
     const value = identity;
@@ -9031,36 +8896,27 @@
     let baseCid = "";
     let timestamp = 0;
     for (const [instr, target] of value.children) {
-      if (instr === store.primitive.proposalNameField.getId())
-        name = content(store, target).data.description?.content ?? "";
-      else if (instr === store.primitive.proposedContentField.getId())
-        contentCid = target;
-      else if (instr === store.primitive.senderField.getId())
-        peerId = content(store, target).data.description?.content ?? "";
-      else if (instr === store.primitive.timestampField.getId())
-        timestamp = Number(content(store, target).data.description?.content ?? 0) || 0;
-      else if (instr === store.primitive.previousVersion.getId())
-        baseCid = target;
+      if (instr === store.primitive.proposalNameField.getId()) name = content(store, target).data.description?.content ?? "";
+      else if (instr === store.primitive.proposedContentField.getId()) contentCid = target;
+      else if (instr === store.primitive.senderField.getId()) peerId = content(store, target).data.description?.content ?? "";
+      else if (instr === store.primitive.timestampField.getId()) timestamp = Number(content(store, target).data.description?.content ?? 0) || 0;
+      else if (instr === store.primitive.previousVersion.getId()) baseCid = target;
     }
-    if (!peerId || !contentCid || !baseCid)
-      return null;
+    if (!peerId || !contentCid || !baseCid) return null;
     return { cid, peerId, name, status: value.data.proposal?.status === "rejected" ? "rejected" : "open", contentCid, baseCid, timestamp };
   }
   function markProposalRejected(store, value, proposalCid) {
     const record = readProposal(store, proposalCid);
-    if (!record || record.status === "rejected")
-      return value;
+    if (!record || record.status === "rejected") return value;
     const rejectedCid = put(store, proposalContent(store, record.peerId, record.name, record.contentCid, record.baseCid, record.timestamp, "rejected"));
     return withProposal(store, value, record.peerId, rejectedCid, record.name);
   }
   function readProposals(store, value) {
     const out = [];
     for (const edge of value.children) {
-      if (!isProposalEdge(store, edge))
-        continue;
+      if (!isProposalEdge(store, edge)) continue;
       const record = readProposal(store, edge[1]);
-      if (record)
-        out.push(record);
+      if (record) out.push(record);
     }
     return out;
   }
@@ -9070,8 +8926,7 @@
       return !!p && p.peerId === peerId && (name === void 0 || p.name === name);
     };
     const children = value.children.filter((e) => !(isProposalEdge(store, e) && matches(e[1])));
-    if (proposalCid)
-      children.push([store.primitive.proposalField.getId(), proposalCid]);
+    if (proposalCid) children.push([store.primitive.proposalField.getId(), proposalCid]);
     return { ...value, children };
   }
   function removeProposalByCid(store, value, proposalCid) {
@@ -9080,10 +8935,8 @@
   function relinkContent(store, previous, previousCid, strippedContent, now) {
     const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e));
     const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
-    if (previous.data.ref)
-      data.ref = previous.data.ref;
-    if (previous.data.name)
-      data.name = previous.data.name;
+    if (previous.data.ref) data.ref = previous.data.ref;
+    if (previous.data.name) data.name = previous.data.name;
     const branches = refBranches(store, previous);
     const active = branches && branchEdge(store, branches.cid);
     const value = put(store, strippedContent);
@@ -9093,18 +8946,15 @@
   }
   function normalizeRefs(store, nodeCid, now = 0) {
     const identity = content(store, nodeCid);
-    if (isHandle(identity))
-      return nodeCid;
+    if (isHandle(identity)) return nodeCid;
     const ref = isRefNode(store, identity);
     const value = ref ? valueContent(store, nodeCid) : identity;
     let changed = false;
     const children = value.children.map((edge) => {
-      if (!isRowEdge(store, edge) || isPartitionEdge(store, edge))
-        return edge;
+      if (!isRowEdge(store, edge) || isPartitionEdge(store, edge)) return edge;
       const childCid = identityCid(store, edge);
       const next = normalizeRefs(store, childCid, now);
-      if (next === childCid)
-        return edge;
+      if (next === childCid) return edge;
       changed = true;
       return withIdentity(store, edge, next);
     });
@@ -9113,10 +8963,8 @@
       const stripped = stripLink(store, nextValue);
       return put(store, refNodeContent(store, { alias: identity.data.alias ?? { id: newId() }, updated: { time: identity.data.updated?.time ?? now } }, put(store, stripped), bookkeepingOf(store, identity)));
     }
-    if (!changed)
-      return nodeCid;
-    if (ref)
-      return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now));
+    if (!changed) return nodeCid;
+    if (ref) return put(store, relinkContent(store, identity, nodeCid, nextValue, identity.data.updated?.time ?? now));
     return put(store, nextValue);
   }
   function findAliasEdge(store, value, aliasId) {
@@ -9126,27 +8974,21 @@
   }
   function findChild(store, nodeCid, aliasId) {
     const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId);
-    if (!found)
-      return null;
+    if (!found) return null;
     const { edge } = found;
-    if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1])))
-      return null;
+    if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) return null;
     return identityCid(store, edge);
   }
   function findRowByAlias(store, rootCid, aliasId, prefix = []) {
     for (const edge of valueContent(store, rootCid).children) {
       const kind = rowKindOf(store, edge);
-      if (!kind)
-        continue;
+      if (!kind) continue;
       const cid = identityCid(store, edge);
       const id = aliasIdOf(content(store, cid));
-      if (!id)
-        continue;
-      if (id === aliasId)
-        return { path: prefix, row: rowView(store, cid, kind) };
+      if (!id) continue;
+      if (id === aliasId) return { path: prefix, row: rowView(store, cid, kind) };
       const found = findRowByAlias(store, cid, aliasId, [...prefix, id]);
-      if (found)
-        return found;
+      if (found) return found;
     }
     return null;
   }
@@ -9157,40 +8999,30 @@
     const childEdges = (value) => value.children.filter((edge) => {
       const kind = rowKindOf(store, edge);
       const name = content(store, identityCid(store, edge)).data.name?.content;
-      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && name === "fos:trigger")
-        return false;
-      if (kind)
-        return !(instantiate && kind === "supply");
-      if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId())
-        return false;
+      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && name === "fos:trigger") return false;
+      if (kind) return !(instantiate && kind === "supply");
+      if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false;
       return isRefNode(store, content(store, identityCid(store, edge)));
     });
     const collect = (cid) => {
-      if (owned.has(cid))
-        return;
+      if (owned.has(cid)) return;
       owned.add(cid);
       const identity = content(store, cid);
       const id = aliasIdOf(identity);
-      if (id && !ids.has(id))
-        ids.set(id, cid === nodeCid && options.rootId ? options.rootId : freshId());
+      if (id && !ids.has(id)) ids.set(id, cid === nodeCid && options.rootId ? options.rootId : freshId());
       if (isBranchChoice(store, identity)) {
         const choice = readChoice(store, cid);
-        for (const edge of [choice.base, ...choice.options.flatMap((o) => [o.edge, o.base])])
-          if (edge)
-            collect(identityCid(store, edge));
+        for (const edge of [choice.base, ...choice.options.flatMap((o) => [o.edge, o.base])]) if (edge) collect(identityCid(store, edge));
         return;
       }
-      if (refTypeCid(store, identity))
-        return;
-      for (const edge of childEdges(stripLink(store, identity)))
-        collect(identityCid(store, edge));
+      if (refTypeCid(store, identity)) return;
+      for (const edge of childEdges(stripLink(store, identity))) collect(identityCid(store, edge));
     };
     collect(nodeCid);
     const copied = /* @__PURE__ */ new Map();
     const copy = (cid) => {
       const cached = copied.get(cid);
-      if (cached)
-        return cached;
+      if (cached) return cached;
       const identity = content(store, cid);
       if (isBranchChoice(store, identity)) {
         const choice = readChoice(store, cid);
@@ -9202,22 +9034,15 @@
       const type = refTypeCid(store, identity);
       const value = type ? identity : stripLink(store, identity);
       const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? "") ?? freshId() }, updated: { time: now } };
-      if (instantiate && data.todo)
-        data.todo = { ...data.todo, completed: false, time: now };
-      if (instantiate && data.query)
-        data.query = { market: data.query.market };
-      if (data.ref && !data.ref.owner)
-        data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id };
-      if (data.supply?.ref)
-        data.supply = { ...data.supply, ref: ids.get(data.supply.ref) ?? data.supply.ref };
-      if (data.allocation)
-        data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {} };
-      if (data.template)
-        data.template = { ...data.template, id: ids.get(data.template.id) ?? data.template.id };
+      if (instantiate && data.todo) data.todo = { ...data.todo, completed: false, time: now };
+      if (instantiate && data.query) data.query = { market: data.query.market };
+      if (data.ref && !data.ref.owner) data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id };
+      if (data.supply?.ref) data.supply = { ...data.supply, ref: ids.get(data.supply.ref) ?? data.supply.ref };
+      if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {} };
+      if (data.template) data.template = { ...data.template, id: ids.get(data.template.id) ?? data.template.id };
       const target = refValueCid(store, identity);
       const children = type ? [] : childEdges(value).map((edge) => withIdentity(store, edge, copy(identityCid(store, edge))));
-      if (!type && isHandle(identity) && target)
-        children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target]);
+      if (!type && isHandle(identity) && target) children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target]);
       let bound = target && owned.has(target) ? copy(target) : target;
       const alternatives = type && refBranches(store, identity);
       if (alternatives) {
@@ -9233,22 +9058,18 @@
     return copy(nodeCid);
   }
   function moveChild(store, rootCid, fromPath, aliasId, toPath, position) {
-    if (toPath.includes(aliasId))
-      return null;
+    if (toPath.includes(aliasId)) return null;
     const fromCid = resolveScope(store, rootCid, fromPath);
-    if (!fromCid)
-      return null;
+    if (!fromCid) return null;
     const found = findAliasEdge(store, valueContent(store, fromCid), aliasId);
-    if (!found)
-      return null;
+    if (!found) return null;
     const moving = found.edge;
     let root = updateAtScope(store, rootCid, fromPath, (value) => ({ ...value, children: value.children.filter((e) => e !== moving) }));
     const insert = (value) => {
       const children = [...value.children];
       if ("into" in position) {
         const parent = findAliasEdge(store, value, position.into);
-        if (!parent)
-          throw new Error("destination not found");
+        if (!parent) throw new Error("destination not found");
         const target = identityCid(store, parent.edge);
         const targetContent = valueContent(store, target);
         const kids = [...targetContent.children];
@@ -9258,8 +9079,7 @@
         return { ...value, children };
       }
       const sibling = findAliasEdge(store, value, position.relativeTo);
-      if (!sibling)
-        throw new Error("destination not found");
+      if (!sibling) throw new Error("destination not found");
       children.splice(position.position === "above" ? sibling.index : sibling.index + 1, 0, moving);
       return { ...value, children };
     };
@@ -9275,15 +9095,13 @@
         if (isChoiceEdge(store, edge)) {
           const choice = readChoice(store, edge[1]);
           for (const option of [choice.base, ...choice.options.map((o) => o.edge)]) {
-            if (!option || !isRowEdge(store, option))
-              continue;
+            if (!option || !isRowEdge(store, option)) continue;
             const id2 = identityCid(store, option);
             map.set(edgeKey(store, option), { title: valueContent(store, id2).data.description?.content ?? "", cid: id2 });
           }
           continue;
         }
-        if (!isRowEdge(store, edge))
-          continue;
+        if (!isRowEdge(store, edge)) continue;
         const id = identityCid(store, edge);
         map.set(edgeKey(store, edge), { title: content(store, id).data.description?.content ?? "", cid: id });
       }
@@ -9294,53 +9112,45 @@
     const summary = { added: [], changed: [], removed: [] };
     for (const [key, entry] of b) {
       const before = a.get(key);
-      if (!before)
-        summary.added.push(entry.title);
-      else if (before.cid !== entry.cid)
-        summary.changed.push(entry.title);
+      if (!before) summary.added.push(entry.title);
+      else if (before.cid !== entry.cid) summary.changed.push(entry.title);
     }
-    for (const [key, entry] of a)
-      if (!b.has(key))
-        summary.removed.push(entry.title);
+    for (const [key, entry] of a) if (!b.has(key)) summary.removed.push(entry.title);
     return { id: proposal.cid, peerId: proposal.peerId, name: proposal.name, status: proposal.status, timestamp: proposal.timestamp, summary };
   }
 
-  // ../shared/sync/project.ts
+  // shared/sync/project.ts
   init_prelude();
 
-  // ../shared/sync/work.ts
+  // shared/sync/work.ts
   init_prelude();
 
-  // ../shared/sync/handlers.ts
+  // shared/sync/handlers.ts
   init_prelude();
 
-  // ../shared/sync/bindings.ts
+  // shared/sync/bindings.ts
   init_prelude();
 
-  // ../shared/sync/notes.ts
+  // shared/sync/notes.ts
   init_prelude();
 
-  // ../shared/sync/branches.ts
+  // shared/sync/repository.ts
   init_prelude();
 
-  // ../shared/sync/repository.ts
+  // shared/sync/evaluation.ts
   init_prelude();
 
-  // ../shared/sync/evaluation.ts
+  // shared/sync/triggers.ts
   init_prelude();
 
-  // ../shared/sync/triggers.ts
+  // shared/sync/sharing.ts
   init_prelude();
 
-  // ../shared/sync/sharing.ts
-  init_prelude();
-
-  // ../shared/sync/embed.ts
+  // shared/sync/embed.ts
   var replicas = /* @__PURE__ */ new Map();
   function get2(handle) {
     const r = replicas.get(handle);
-    if (!r)
-      throw new Error(`no replica ${handle}`);
+    if (!r) throw new Error(`no replica ${handle}`);
     return r;
   }
   function set(handle, r) {
@@ -9397,17 +9207,13 @@
       const lines = [];
       const walk = (at, depth) => {
         const node = view(r, at);
-        if (!node)
-          return;
+        if (!node) return;
         for (const t of node.tasks) {
           lines.push(`${"  ".repeat(depth)}${t.kind === "task" ? t.done ? "[x]" : "[ ]" : t.kind === "note" ? " \u2261 " : t.kind === "comment" ? ' " ' : t.kind === "ref" ? " \u2192 " : " \xB7 "} ${t.id.slice(0, 8)} ${t.kind === "ref" ? `ref ${t.refId?.slice(0, 8) ?? ""}` : t.title.split("\n")[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ""}${t.isLink ? " \u26D3" : ""}`);
-          if (t.childCount)
-            walk([...at, t.id], depth + 1);
+          if (t.childCount) walk([...at, t.id], depth + 1);
         }
-        for (const c of node.choices)
-          lines.push(`${"  ".repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`);
-        for (const p of node.proposals)
-          lines.push(`${"  ".repeat(depth)}[>] ${p.id.slice(0, 8)} proposal "${p.name}" by ${p.peerId.slice(0, 8)} (${p.status}) +${p.summary.added.length} ~${p.summary.changed.length} -${p.summary.removed.length}`);
+        for (const c of node.choices) lines.push(`${"  ".repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`);
+        for (const p of node.proposals) lines.push(`${"  ".repeat(depth)}[>] ${p.id.slice(0, 8)} proposal "${p.name}" by ${p.peerId.slice(0, 8)} (${p.status}) +${p.summary.added.length} ~${p.summary.changed.length} -${p.summary.removed.length}`);
       };
       walk(parse2(atJson, []), 0);
       return JSON.stringify(lines);
@@ -9417,15 +9223,12 @@
       const r = get2(handle);
       const search = (at) => {
         const node = view(r, at);
-        if (!node)
-          return null;
+        if (!node) return null;
         const direct = node.tasks.find((t) => t.id.startsWith(prefix));
-        if (direct)
-          return { id: direct.id, at };
+        if (direct) return { id: direct.id, at };
         for (const t of node.tasks) {
           const f2 = search([...at, t.id]);
-          if (f2)
-            return f2;
+          if (f2) return f2;
         }
         return null;
       };
@@ -9473,14 +9276,11 @@
     /** Serve another peer against this replica (the directory as a node). */
     serveSync(handle, requestJson, serverPeerId, now, optionsJson) {
       const parsed = parseSyncRequest(JSON.parse(requestJson));
-      if ("error" in parsed)
-        return JSON.stringify({ error: parsed.error, code: parsed.code });
+      if ("error" in parsed) return JSON.stringify({ error: parsed.error, code: parsed.code });
       const r = get2(handle);
       const served = serveSync(r.store, parsed, serverPeerId, now, parse2(optionsJson, {}));
-      if ("error" in served)
-        return JSON.stringify(served);
-      if (served.changed)
-        set(handle, { ...r });
+      if ("error" in served) return JSON.stringify(served);
+      if (served.changed) set(handle, { ...r });
       return JSON.stringify({ changed: served.changed, response: served.response });
     }
   };

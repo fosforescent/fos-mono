@@ -3218,7 +3218,7 @@ export class FosExpression {
 
 
 
-  keyUpEvents(e: React.KeyboardEvent<HTMLDivElement>) {
+  keyUpEvents(e: Pick<KeyboardEvent, 'target' | 'key' | 'shiftKey' | 'ctrlKey' | 'metaKey' | 'altKey' | 'preventDefault' | 'stopPropagation'>) {
     const value = e.target
 
     if (e.key === 'Backspace' && this.focusChar() === 0) {
@@ -3305,7 +3305,7 @@ export class FosExpression {
 
   }
 
-  keyDownEvents(e: React.KeyboardEvent<HTMLDivElement>) {
+  keyDownEvents(e: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'preventDefault' | 'stopPropagation'>) {
 
 
     // console.log('keydown', e.key)
@@ -3334,7 +3334,7 @@ export class FosExpression {
   }
 
 
-  keyPressEvents(event: React.KeyboardEvent<HTMLDivElement>) {
+  keyPressEvents(event: Pick<KeyboardEvent, 'key'>) {
 
   }
 

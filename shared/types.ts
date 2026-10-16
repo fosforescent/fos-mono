@@ -198,6 +198,8 @@ export type FosDataContent = {
     owner?: string
     /** Device holding this version; content is fetched separately from the reference. */
     peer?: string
+    /** Scoped locator for an unloaded node supplied by this peer. */
+    scope?: string[]; branches?: Array<{ scope: string[]; name: string }>; kind?: string
     version?: string
   },
   proposal?: {

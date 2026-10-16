@@ -59,6 +59,8 @@ import {
 } from './graph'
 import type { Capability } from './graph'
 import { replicationView, restorePeerReferences } from './replication'
+import { hasNodeLinkMasks, hasNodeReadBoundary } from './node-provider'
+import { createReplica } from './replica'
 import { mergeNodes } from './merge'
 
 export type SyncAction = 'noop' | 'fast-forward' | 'pull' | 'merge' | 'propose'
@@ -156,6 +158,9 @@ export type ServeResult = { response: SyncResponse; changed: boolean } | SyncErr
 
 /** Serve a request against the receiving peer's store (mutates it on change). */
 export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: string, now: number = Date.now(), options: ServeOptions = {}): ServeResult {
+  if (hasNodeLinkMasks(store, request.peerId, request.scope)) return { error: 'This attachment has node masks; use provideNode for permission-filtered traversal.', code: 'bad-request' }
+  if (hasNodeReadBoundary(createReplica(serverPeerId, store), request.scope, request.peerId)) return { error: 'This attachment has a read boundary; use provideNode for permission-filtered traversal.', code: 'bad-request' }
+  if (Object.values(request.nodes).some(node => node?.data?.ref?.version === 'unloaded')) return { error: 'An unloaded node cannot be merged as a complete subtree.', code: 'bad-request' }
   if (request.branches) return withBranches(store, request.branches, () => serveSync(store, { ...request, branches: undefined }, serverPeerId, now, options))
   if (request.version !== SYNC_FORMAT_VERSION) return { error: 'Sync format changed; update the app', code: 'version-mismatch' }
   if (request.cidVersion !== CURRENT_CID_VERSION) {

@@ -18,12 +18,15 @@
  */
 
 import type { SyncError, SyncRequest, SyncResponse } from '../../shared/sync/index'
+import type { NodeRequest, ProvidedNode, Capability, Scope } from '../../shared/sync/index'
 
 export type Signal = { v: 1; role: 'offer' | 'answer'; sdp: string; peerId: string; name: string }
 
 export type ChannelMessage =
-  | { t: 'hello'; peerId: string; name: string }
-  | { t: 'welcome'; peerId: string; name: string }
+  | { t: 'hello'; peerId: string; name: string; capabilities?: Capability[]; scope?: Scope }
+  | { t: 'welcome'; peerId: string; name: string; capabilities?: Capability[]; scope?: Scope }
+  | { t: 'node'; id: number; request: NodeRequest }
+  | { t: 'node-result'; id: number; node?: ProvidedNode; error?: string }
   | { t: 'denied' }
   | { t: 'sync'; id: number; request: SyncRequest }
   | { t: 'sync-result'; id: number; response?: SyncResponse; error?: SyncError }
@@ -90,8 +93,11 @@ export class DirectLink {
   readonly channel: RTCDataChannel
   remotePeerId: string | null = null
   remoteName: string | null = null
+  remoteScope: Scope = []
+  remoteCapabilities: Capability[] = []
   private nextId = 1
   private pending = new Map<number, Pending>()
+  private nodePending = new Map<number, { resolve: (node: ProvidedNode) => void; reject: (error: Error) => void }>()
   onMessage: ((message: ChannelMessage) => void) | null = null
   onClose: (() => void) | null = null
 
@@ -101,6 +107,12 @@ export class DirectLink {
     channel.addEventListener('message', (event) => {
       let message: ChannelMessage
       try { message = JSON.parse(String(event.data)) as ChannelMessage } catch { return }
+      if ((message.t === 'welcome' || message.t === 'hello') && message.peerId === this.remotePeerId) { this.remoteScope = message.scope ?? []; this.remoteCapabilities = message.capabilities ?? [] }
+      if (message.t === 'node-result') {
+        const pending = this.nodePending.get(message.id)
+        if (pending) { this.nodePending.delete(message.id); if (message.node) pending.resolve(message.node); else pending.reject(new Error(message.error ?? 'Node request failed.')) }
+        return
+      }
       if (message.t === 'sync-result') {
         const waiter = this.pending.get(message.id)
         if (waiter) {
@@ -115,6 +127,8 @@ export class DirectLink {
     channel.addEventListener('close', () => {
       for (const waiter of this.pending.values()) waiter.reject(new Error('connection closed'))
       this.pending.clear()
+      for (const waiter of this.nodePending.values()) waiter.reject(new Error('connection closed'))
+      this.nodePending.clear()
       this.onClose?.()
     })
   }
@@ -129,6 +143,16 @@ export class DirectLink {
   }
 
   /** Guest side: run one sync round trip over the channel. */
+  requestNode(request: NodeRequest, timeoutMs = 20000): Promise<ProvidedNode> {
+    const id = this.nextId++
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.nodePending.delete(id); reject(new Error('Node request timed out.')) }, timeoutMs)
+      this.nodePending.set(id, { resolve: node => { clearTimeout(timer); resolve(node) }, reject: error => { clearTimeout(timer); reject(error) } })
+      try { this.send({ t: 'node', id, request }) }
+      catch (error) { clearTimeout(timer); this.nodePending.delete(id); reject(error) }
+    })
+  }
+
   sync(request: SyncRequest, timeoutMs = 20000): Promise<SyncResponse> {
     const id = this.nextId++
     return new Promise<SyncResponse>((resolve, reject) => {
