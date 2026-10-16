@@ -58,11 +58,14 @@ import {
   withProposal
 } from './graph'
 import type { Capability } from './graph'
+import { replicationView, restorePeerReferences } from './replication'
 import { mergeNodes } from './merge'
 
 export type SyncAction = 'noop' | 'fast-forward' | 'pull' | 'merge' | 'propose'
 
 export type ServeOptions = {
+  /** Account servers never resolve opaque device references from old stored history. */
+  recipient?: 'server' | 'device'
   /**
    * The requesting peer may not change this node directly: at a link node its
    * head becomes (or updates) a proposal, a branch that members approve. Used
@@ -89,6 +92,8 @@ export type SyncRequest = {
   nodes: FosNodesData
   /** Synchronize this mutable node including its branch constructor, rather than a selected alternative. */
   wholeNode?: boolean
+  /** Content uses peer-held references at nested server-exclusion boundaries. */
+  selective?: boolean
   /**
    * Name of the branch this head belongs to (e.g. a git branch). In branch
    * mode each (peer, branch) is its own proposal, so a directory checked out on
@@ -140,6 +145,7 @@ export function parseSyncRequest(body: unknown): SyncRequest | SyncError {
     baseCid: raw.baseCid ?? null,
     headCid: raw.headCid,
     nodes: raw.nodes ?? {},
+    ...(raw.selective === true ? { selective: true } : {}),
     ...(raw.wholeNode === true ? { wholeNode: true } : {}),
     ...(raw.branches ? { branches: { ...raw.branches } } : {}),
     ...(typeof raw.branch === 'string' && raw.branch.length > 0 && raw.branch.length <= 200 ? { branch: raw.branch } : {})
@@ -178,8 +184,21 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
     if (!('error' in result)) result.response.scope = request.scope
     return result
   }
-  const currentCid = resolveScope(store, rootTarget, request.scope)
+  let currentCid = resolveScope(store, rootTarget, request.scope)
   if (!currentCid) return { error: 'scope not found', code: 'scope-not-found' }
+  const originalCurrent = currentCid
+  if (request.selective || options.recipient === 'server') {
+    const sent = content(store, request.headCid)
+    const live = request.headCid === request.baseCid || (!Object.keys(sent.data).length && !sent.children.length) ? currentCid : request.headCid
+    const projection = replicationView(store, [live, currentCid, request.headCid, request.baseCid], request.peerId)
+    currentCid = projection.project(currentCid)
+    request = { ...request, headCid: projection.project(request.headCid), baseCid: request.baseCid && hasNode(store, request.baseCid) ? projection.project(request.baseCid) : null }
+  }
+  if (!request.selective && options.recipient !== 'server') {
+    const available = [currentCid, request.headCid]
+    currentCid = restorePeerReferences(store, currentCid, available)
+    request = { ...request, headCid: restorePeerReferences(store, request.headCid, available), baseCid: request.baseCid && hasNode(store, request.baseCid) ? restorePeerReferences(store, request.baseCid, available) : null }
+  }
   if ((!request.wholeNode || options.proposeOnly) && isBranchChoice(store, content(store, currentCid))) {
     // Serve exactly one alternative. A temporary root lets the ordinary sync and
     // permission/proposal path run unchanged, without a global selection mutation.
@@ -234,7 +253,7 @@ export function serveSync(store: FosStore, request: SyncRequest, serverPeerId: s
   const withPeerContent = withPeer(store, content(store, mergedCid), request.peerId)
   const resultCid = withPeerContent === content(store, mergedCid) ? mergedCid : put(store, withPeerContent)
 
-  const changed = resultCid !== currentCid
+  const changed = resultCid !== originalCurrent
   if (changed) {
     const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), request.wholeNode ? 'replace' : 'node')
     commitRoot(store, newRootTarget, now)
@@ -368,9 +387,20 @@ export function applySyncResponse(store: FosStore, request: SyncRequest, respons
   importNodes(store, response.nodes)
   if (!hasNode(store, response.resultCid)) throw new Error('sync response did not include the result node')
 
-  const root = rootTargetCid(store), current = resolveScope(store, root, localScope)
+  const root = rootTargetCid(store)
+  let current = resolveScope(store, root, localScope)
   if (!current) throw new Error('The shared node was removed while sync was in flight.')
-  const publish = (cid: string) => commitRoot(store, localScope.length ? updateAtScope(store, root, localScope, () => content(store, cid), 'replace') : cid, now)
+  const localContent = current
+  if (request.selective) {
+    const projection = replicationView(store, [current, request.headCid, response.resultCid], localPeerId)
+    current = projection.project(current)
+    request = { ...request, headCid: projection.project(request.headCid) }
+    response = { ...response, resultCid: projection.project(response.resultCid) }
+  }
+  const publish = (value: string) => {
+    const cid = request.selective ? restorePeerReferences(store, value, [localContent]) : value
+    return commitRoot(store, localScope.length ? updateAtScope(store, root, localScope, () => content(store, cid), 'replace') : cid, now)
+  }
   if (current === request.headCid) {
     publish(response.resultCid)
     return { reMerged: false, newChoiceIds: [...response.newChoiceIds] }

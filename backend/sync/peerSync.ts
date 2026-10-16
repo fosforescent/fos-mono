@@ -107,6 +107,7 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
           const claims = claimsOf(req)
           // Invited peers propose at link nodes (branches members approve); the owner's own devices merge.
           const options = {
+            recipient: 'server' as const,
             ...(claims.kind === 'peer' ? { proposeOnly: true, peerName: claims.name } : {}),
             onlinePeers: deps.onlinePeers ? deps.onlinePeers(user.id) : undefined,
             // what this server registers with the peer: reachable over http/ws, a relay for peers that cannot connect directly, and its services

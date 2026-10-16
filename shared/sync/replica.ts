@@ -79,9 +79,11 @@ import {
   withIdentity,
   readMembers,
   withMember,
+  withPeer,
   withoutMember,
   withoutPeer
 } from './graph'
+import { replicationView } from './replication'
 import { mergeNodes, resolveChoiceIn } from './merge'
 import { applySyncResponse, type SyncRequest, type SyncResponse } from './protocol'
 
@@ -195,7 +197,7 @@ export function headCid(replica: Replica): string {
 export function isDirty(replica: Replica): boolean {
   const head = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? [])
   if (!head) return true
-  if (replica.meta.baseCid) return head !== replica.meta.baseCid
+  if (replica.meta.baseCid) return head !== replica.meta.baseCid && replicationView(replica.store, [head, replica.meta.baseCid], replica.meta.peerId).project(head) !== replica.meta.baseCid
   return valueContent(replica.store, head).children.length > 0 // a scoped replica's head may be a ref node
 }
 
@@ -542,7 +544,8 @@ export function setMemberCapabilitiesAt(replica: Replica, at: Scope, peerId: str
   return editPolicy(replica, at, now, (node) => {
     const link = makeLink(replica.store, node, now)
     const existing = readMembers(replica.store, link).find((m) => m.peerId === peerId)
-    return withMember(replica.store, link, peerId, existing?.name ?? null, capabilities, disabled, accepts ?? existing?.accepts ?? [])
+    const next = withMember(replica.store, link, peerId, existing?.name ?? null, capabilities, disabled, accepts ?? existing?.accepts ?? [])
+    return peerId === 'fos' && disabled.includes('persist') ? withPeer(replica.store, next, replica.meta.peerId) : next
   })
 }
 
@@ -681,39 +684,36 @@ export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: strin
  * peer only serves what it has and nothing but the connection leaves the device; local edits stay local, re-merged
  * over whatever comes back (`completeSync` merges sent head → local head → result).
  */
-/** Never send a graph containing an explicit server exclusion to the account transport.
- * Includes history, proposals, constructors and inactive branches: these are all in the wire closure.
- * Device transports still replicate the original content-addressed graph without rewriting its IDs.
- */
+/** Exclusion of the attachment itself still prevents server sync; nested exclusions become references. */
 export function assertServerReplicationAllowed(replica: Replica): void {
   const local = replica.meta.localScope ?? []
   const excluded = withMainBranchPolicy(replica.store, () => Array.from({ length: local.length + 1 }, (_, i) => view(replica, local.slice(0, i))).some(node => node?.members.some(m => m.peerId === 'fos' && m.disabled?.includes('persist'))))
   if (excluded) throw new Error('Fos storage is excluded by this shared node or its local parent context.')
-  for (const node of Object.values(reachableNodes(replica.store, [resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []), replica.meta.baseCid]))) {
-    if (node.data.peerId?.content === 'fos' && node.data.disabledCapabilities?.content.includes('persist')) {
-      throw new Error('Fos storage is excluded from this group or its history. Use direct device replication. Account sync is paused for the entire attached group, including historical versions.')
-    }
-  }
+
 }
 
 export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean; full?: boolean; recipient?: 'server' | 'device' } = {}): SyncRequest {
   if (options.recipient !== 'device') assertServerReplicationAllowed(replica)
   branch ??= replica.meta.branch
-  const base = replica.meta.baseCid
+  let base = replica.meta.baseCid
   const localHead = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? [])
   if (!localHead) throw new Error('The shared node no longer exists locally.')
-  const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : localHead
+  const selective = options.recipient !== 'device'
+  const projection = selective ? replicationView(replica.store, [localHead, base], replica.meta.peerId) : null
+  if (base && projection) base = projection.project(base)
+  const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : projection ? projection.project(localHead) : localHead
   // The server already holds everything reachable from the agreed base.
-  const known = base && !options.full ? reachableSet(replica.store, [base]) : new Set<string>()
+  const known = replica.meta.baseCid && !options.full ? reachableSet(replica.store, [replica.meta.baseCid]) : new Set<string>()
   return {
     version: SYNC_FORMAT_VERSION,
     cidVersion: CURRENT_CID_VERSION,
     peerId: replica.meta.peerId,
+    ...(selective ? { selective: true } : {}),
     scope: [...replica.meta.scope, ...(replica.meta.localScope ?? [])],
     ...(replica.meta.localScope?.length ? { wholeNode: true } : {}),
     baseCid: base,
     headCid: head,
-    nodes: reachableNodes(replica.store, options.full ? [head, base] : [head], known),
+    nodes: reachableNodes(replica.store, [head, base], known),
     ...(branch ? { branch } : {}),
     ...(replica.meta.branches ? { branches: replica.meta.branches } : {})
   }

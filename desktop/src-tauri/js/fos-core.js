@@ -6673,6 +6673,118 @@
     }
   };
 
+  // ../shared/sync/replication.ts
+  init_prelude();
+  function replicationView(store, roots, provider) {
+    const nodes = reachableNodes(store, roots);
+    const excluded = /* @__PURE__ */ new Map();
+    for (const node of Object.values(nodes)) {
+      const id = node.data.alias?.id;
+      if (!id)
+        continue;
+      if (isPeerReference(node))
+        excluded.set(id, node.data.ref.peer);
+      else if (readMembers(store, node).some((m) => m.peerId === "fos" && m.disabled?.includes("persist"))) {
+        const peers = node.children.filter((edge) => isPeerEdge(store, edge)).map(([, cid]) => content(store, cid).data.peerId?.content).filter((id2) => !!id2 && id2 !== "fos").sort();
+        if (!excluded.has(id))
+          excluded.set(id, peers[0] ?? provider);
+      }
+    }
+    const visited = /* @__PURE__ */ new Set();
+    const protect = (cid, peer) => {
+      if (visited.has(cid))
+        return;
+      visited.add(cid);
+      const node = content(store, cid), id = node.data.alias?.id;
+      if (id && !excluded.has(id))
+        excluded.set(id, peer);
+      for (const edge of node.children) {
+        if (isMemberEdge(store, edge) || isPeerEdge(store, edge))
+          continue;
+        for (const child of edge)
+          protect(child, peer);
+      }
+    };
+    for (const [cid, node] of Object.entries(nodes)) {
+      const peer = excluded.get(node.data.alias?.id ?? "");
+      if (peer && !isPeerReference(node))
+        protect(cid, peer);
+    }
+    const allowed = /* @__PURE__ */ new Set(), liveSeen = /* @__PURE__ */ new Set();
+    const live = (cid, inherited = false) => {
+      const key = cid + ":" + inherited;
+      if (liveSeen.has(key))
+        return;
+      liveSeen.add(key);
+      const node = content(store, cid);
+      if (isHandle(node))
+        return;
+      const fos = readMembers(store, node).find((m) => m.peerId === "fos");
+      if (fos?.disabled?.includes("persist"))
+        return;
+      const enabled = fos ? !fos.disabled?.includes("persist") && (fos.capabilities.includes("persist") || fos.accepts?.includes("persist") === true) : inherited;
+      if (enabled)
+        allowed.add(cid);
+      for (const edge of node.children) {
+        if (isBookkeepingEdge(store, edge))
+          continue;
+        for (const child of edge)
+          live(child, enabled);
+      }
+    };
+    const liveRoot = roots[0];
+    if (liveRoot && store.table.has(liveRoot))
+      live(liveRoot);
+    const memo = /* @__PURE__ */ new Map();
+    const project = (cid) => {
+      const cached = memo.get(cid);
+      if (cached)
+        return cached;
+      const node = content(store, cid), id = node.data.alias?.id;
+      if (isPeerReference(node)) {
+        memo.set(cid, cid);
+        return cid;
+      }
+      const peer = id && excluded.get(id);
+      if (peer && !allowed.has(cid)) {
+        let ref = { data: { alias: { id }, ref: { id, peer, version: cid } }, children: [] };
+        ref = withPeer(store, withMember(store, ref, "fos", "fos", CAPABILITIES, CAPABILITIES, []), peer);
+        const result2 = put(store, ref);
+        memo.set(cid, result2);
+        return result2;
+      }
+      const children = node.children.map(([left, right]) => [project(left), project(right)]);
+      const result = children.every((edge, i) => edge[0] === node.children[i][0] && edge[1] === node.children[i][1]) ? cid : put(store, { ...node, children });
+      memo.set(cid, result);
+      return result;
+    };
+    return { project };
+  }
+  function restorePeerReferences(store, root, availableRoots) {
+    const available = new Set(Object.keys(reachableNodes(store, availableRoots)));
+    const memo = /* @__PURE__ */ new Map();
+    const restore = (cid) => {
+      const cached = memo.get(cid);
+      if (cached)
+        return cached;
+      const node = content(store, cid);
+      if (isPeerReference(node)) {
+        const version2 = node.data.ref.version;
+        if (available.has(version2) && store.table.has(version2) && content(store, version2).data.alias?.id === node.data.ref.id && !isPeerReference(content(store, version2))) {
+          memo.set(cid, version2);
+          return version2;
+        }
+        memo.set(cid, cid);
+        return cid;
+      }
+      const children = node.children.map(([left, right]) => [restore(left), restore(right)]);
+      const result = children.every((edge, i) => edge[0] === node.children[i][0] && edge[1] === node.children[i][1]) ? cid : put(store, { ...node, children });
+      memo.set(cid, result);
+      return result;
+    };
+    return restore(root);
+  }
+
   // ../shared/sync/merge.ts
   init_prelude();
   var EMPTY = { data: {}, children: [] };
@@ -7011,6 +7123,7 @@
       baseCid: raw.baseCid ?? null,
       headCid: raw.headCid,
       nodes: raw.nodes ?? {},
+      ...raw.selective === true ? { selective: true } : {},
       ...raw.wholeNode === true ? { wholeNode: true } : {},
       ...raw.branches ? { branches: { ...raw.branches } } : {},
       ...typeof raw.branch === "string" && raw.branch.length > 0 && raw.branch.length <= 200 ? { branch: raw.branch } : {}
@@ -7046,9 +7159,22 @@
         result.response.scope = request.scope;
       return result;
     }
-    const currentCid = resolveScope(store, rootTarget, request.scope);
+    let currentCid = resolveScope(store, rootTarget, request.scope);
     if (!currentCid)
       return { error: "scope not found", code: "scope-not-found" };
+    const originalCurrent = currentCid;
+    if (request.selective || options.recipient === "server") {
+      const sent = content(store, request.headCid);
+      const live = request.headCid === request.baseCid || !Object.keys(sent.data).length && !sent.children.length ? currentCid : request.headCid;
+      const projection = replicationView(store, [live, currentCid, request.headCid, request.baseCid], request.peerId);
+      currentCid = projection.project(currentCid);
+      request = { ...request, headCid: projection.project(request.headCid), baseCid: request.baseCid && hasNode(store, request.baseCid) ? projection.project(request.baseCid) : null };
+    }
+    if (!request.selective && options.recipient !== "server") {
+      const available = [currentCid, request.headCid];
+      currentCid = restorePeerReferences(store, currentCid, available);
+      request = { ...request, headCid: restorePeerReferences(store, request.headCid, available), baseCid: request.baseCid && hasNode(store, request.baseCid) ? restorePeerReferences(store, request.baseCid, available) : null };
+    }
     if ((!request.wholeNode || options.proposeOnly) && isBranchChoice(store, content(store, currentCid))) {
       const choice = readChoice(store, currentCid);
       const name = request.branch ?? branchSelection(store, currentCid);
@@ -7098,7 +7224,7 @@
     }
     const withPeerContent = withPeer(store, content(store, mergedCid), request.peerId);
     const resultCid = withPeerContent === content(store, mergedCid) ? mergedCid : put(store, withPeerContent);
-    const changed = resultCid !== currentCid;
+    const changed = resultCid !== originalCurrent;
     if (changed) {
       const newRootTarget = updateAtScope(store, rootTarget, request.scope, () => content(store, resultCid), request.wholeNode ? "replace" : "node");
       commitRoot(store, newRootTarget, now);
@@ -7205,10 +7331,21 @@
     importNodes(store, response.nodes);
     if (!hasNode(store, response.resultCid))
       throw new Error("sync response did not include the result node");
-    const root = rootTargetCid(store), current = resolveScope(store, root, localScope);
+    const root = rootTargetCid(store);
+    let current = resolveScope(store, root, localScope);
     if (!current)
       throw new Error("The shared node was removed while sync was in flight.");
-    const publish = (cid) => commitRoot(store, localScope.length ? updateAtScope(store, root, localScope, () => content(store, cid), "replace") : cid, now);
+    const localContent = current;
+    if (request.selective) {
+      const projection = replicationView(store, [current, request.headCid, response.resultCid], localPeerId);
+      current = projection.project(current);
+      request = { ...request, headCid: projection.project(request.headCid) };
+      response = { ...response, resultCid: projection.project(response.resultCid) };
+    }
+    const publish = (value) => {
+      const cid = request.selective ? restorePeerReferences(store, value, [localContent]) : value;
+      return commitRoot(store, localScope.length ? updateAtScope(store, root, localScope, () => content(store, cid), "replace") : cid, now);
+    };
     if (current === request.headCid) {
       publish(response.resultCid);
       return { reMerged: false, newChoiceIds: [...response.newChoiceIds] };
@@ -7294,7 +7431,7 @@
     if (!head)
       return true;
     if (replica.meta.baseCid)
-      return head !== replica.meta.baseCid;
+      return head !== replica.meta.baseCid && replicationView(replica.store, [head, replica.meta.baseCid], replica.meta.peerId).project(head) !== replica.meta.baseCid;
     return valueContent(replica.store, head).children.length > 0;
   }
   function view(replica, at, constructors = false) {
@@ -7517,31 +7654,31 @@
     const excluded = withMainBranchPolicy(replica.store, () => Array.from({ length: local.length + 1 }, (_, i) => view(replica, local.slice(0, i))).some((node) => node?.members.some((m) => m.peerId === "fos" && m.disabled?.includes("persist"))));
     if (excluded)
       throw new Error("Fos storage is excluded by this shared node or its local parent context.");
-    for (const node of Object.values(reachableNodes(replica.store, [resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []), replica.meta.baseCid]))) {
-      if (node.data.peerId?.content === "fos" && node.data.disabledCapabilities?.content.includes("persist")) {
-        throw new Error("Fos storage is excluded from this group or its history. Use direct device replication. Account sync is paused for the entire attached group, including historical versions.");
-      }
-    }
   }
   function buildSyncRequest(replica, branch, options = {}) {
     if (options.recipient !== "device")
       assertServerReplicationAllowed(replica);
     branch ?? (branch = replica.meta.branch);
-    const base = replica.meta.baseCid;
+    let base = replica.meta.baseCid;
     const localHead = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? []);
     if (!localHead)
       throw new Error("The shared node no longer exists locally.");
-    const head = options.push === false ? base ?? put(replica.store, { data: {}, children: [] }) : localHead;
-    const known = base && !options.full ? reachableSet(replica.store, [base]) : /* @__PURE__ */ new Set();
+    const selective = options.recipient !== "device";
+    const projection = selective ? replicationView(replica.store, [localHead, base], replica.meta.peerId) : null;
+    if (base && projection)
+      base = projection.project(base);
+    const head = options.push === false ? base ?? put(replica.store, { data: {}, children: [] }) : projection ? projection.project(localHead) : localHead;
+    const known = replica.meta.baseCid && !options.full ? reachableSet(replica.store, [replica.meta.baseCid]) : /* @__PURE__ */ new Set();
     return {
       version: SYNC_FORMAT_VERSION,
       cidVersion: CURRENT_CID_VERSION,
       peerId: replica.meta.peerId,
+      ...selective ? { selective: true } : {},
       scope: [...replica.meta.scope, ...replica.meta.localScope ?? []],
       ...replica.meta.localScope?.length ? { wholeNode: true } : {},
       baseCid: base,
       headCid: head,
-      nodes: reachableNodes(replica.store, options.full ? [head, base] : [head], known),
+      nodes: reachableNodes(replica.store, [head, base], known),
       ...branch ? { branch } : {},
       ...replica.meta.branches ? { branches: replica.meta.branches } : {}
     };
@@ -7678,6 +7815,9 @@
   function isHandle(value) {
     return !!value.data.ref;
   }
+  function isPeerReference(node) {
+    return !!node.data.ref?.peer && !!node.data.ref.version && node.data.ref.id === node.data.alias?.id;
+  }
   function refValueCid(store, value) {
     const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId());
     return edge ? edge[1] : null;
@@ -7795,6 +7935,8 @@
     }
   }
   function rowKindOf(store, edge) {
+    if (isChoiceEdge(store, edge) && isPeerReference(content(store, edge[1])))
+      return "ref";
     if (isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))) {
       const active = branchEdge(store, edge[1]);
       return active ? rowKindOf(store, active) : null;
@@ -8119,6 +8261,8 @@
     if (canonical !== scope)
       return updateAtScope(store, nodeCid, canonical, fn, mode);
     const identity = content(store, nodeCid);
+    if (isPeerReference(identity) && mode !== "replace")
+      throw new Error("This node is held by another peer. Connect to that peer before editing its content.");
     if (!scope.length && mode === "replace") {
       const next = fn(identity);
       return next === identity ? nodeCid : put(store, next);
@@ -8166,7 +8310,7 @@
         return put(store, withPrev(store, { ...identity, children: children2 }, nodeCid));
       }
     }
-    if (!found || isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])))
+    if (!found || isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])) && !isPeerReference(content(store, found.edge[1])))
       throw new Error(`node ${step} not found`);
     const childCid = identityCid(store, found.edge);
     const nextChild = updateAtScope(store, childCid, rest, fn, mode);
@@ -8179,6 +8323,8 @@
   function withChildValue(store, edge, nextValue, now) {
     const idCid = identityCid(store, edge);
     const identity = content(store, idCid);
+    if (isPeerReference(identity))
+      throw new Error("This node is held by another peer. Connect to that peer before editing its content.");
     if (isBranchChoice(store, identity)) {
       const active = branchEdge(store, idCid);
       return active ? withIdentity(store, edge, updateBranch(store, idCid, withChildValue(store, active, nextValue, now))) : edge;
@@ -8317,6 +8463,8 @@
     const identity = content(store, nodeCid);
     const value = valueContent(store, nodeCid);
     const created = value.data.todo?.time ?? value.data.updated?.time ?? 0;
+    if (isPeerReference(identity))
+      kind = "ref";
     const sub = countNode(store, nodeCid);
     const view2 = {
       id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
@@ -8332,6 +8480,10 @@
       subtreeDone: sub.done,
       isLink: isLink(store, identity)
     };
+    if (isPeerReference(identity)) {
+      view2.refPeer = identity.data.ref.peer;
+      view2.title = "Peer-held node";
+    }
     const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null;
     const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity;
     if (refTypeCid(store, constructor) === capabilityTarget2(store, "peer") && constructor.data.name)
@@ -8554,7 +8706,7 @@
         tasks += sub.tasks;
         done += sub.done;
         choices += sub.choices;
-      } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) {
+      } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) {
         choices++;
       } else if (isRowEdge(store, edge)) {
         const sub = countNode(store, identityCid(store, edge));
@@ -8581,7 +8733,7 @@
       choices: [],
       peers: [],
       isLink: link,
-      members: link ? readMembers(store, identity) : [],
+      members: link || isPeerReference(identity) ? readMembers(store, identity) : [],
       proposals: link ? readProposals(store, identity).map((p) => proposalView(store, identity, p)) : [],
       versions: link ? linkHistory(store, cid).length : 0
     };
@@ -8660,7 +8812,7 @@
   function isProposalEdge(store, edge) {
     return edge[0] === store.primitive.proposalField.getId();
   }
-  function isBookkeepingEdge2(store, edge) {
+  function isBookkeepingEdge(store, edge) {
     return isPrevEdge(store, edge) || isMemberEdge(store, edge) || isProposalEdge(store, edge) || isPeerEdge(store, edge);
   }
   function stripLink(store, value) {
@@ -8669,10 +8821,10 @@
       return store.table.has(target) ? content(store, target) : { data: {}, children: [] };
     }
     const { link: _link, ...data } = value.data;
-    return { data, children: value.children.filter((e) => !isBookkeepingEdge2(store, e)) };
+    return { data, children: value.children.filter((e) => !isBookkeepingEdge(store, e)) };
   }
   function bookkeepingOf(store, value) {
-    return value.children.filter((e) => isBookkeepingEdge2(store, e));
+    return value.children.filter((e) => isBookkeepingEdge(store, e));
   }
   function putStripped(store, value) {
     return put(store, stripLink(store, value));
@@ -8926,7 +9078,7 @@
     return { ...value, children: value.children.filter((e) => !(isProposalEdge(store, e) && e[1] === proposalCid)) };
   }
   function relinkContent(store, previous, previousCid, strippedContent, now) {
-    const bookkeeping = previous.children.filter((e) => isBookkeepingEdge2(store, e) && !isPrevEdge(store, e));
+    const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e));
     const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
     if (previous.data.ref)
       data.ref = previous.data.ref;
@@ -8977,7 +9129,7 @@
     if (!found)
       return null;
     const { edge } = found;
-    if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])))
+    if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1])))
       return null;
     return identityCid(store, edge);
   }
@@ -9009,7 +9161,7 @@
         return false;
       if (kind)
         return !(instantiate && kind === "supply");
-      if (isBookkeepingEdge2(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId())
+      if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId())
         return false;
       return isRefNode(store, content(store, identityCid(store, edge)));
     });

@@ -81,6 +81,11 @@ export function isHandle(value: FosNodeContent): boolean {
   return !!value.data.ref
 }
 
+/** An unavailable version held by a device, represented without a content edge. */
+export function isPeerReference(node: FosNodeContent): boolean {
+  return !!node.data.ref?.peer && !!node.data.ref.version && node.data.ref.id === node.data.alias?.id
+}
+
 export function refValueCid(store: FosStore, value: FosNodeContent): string | null {
   const edge = value.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId())
   return edge ? edge[1] : null
@@ -233,6 +238,7 @@ export function rowPrimitive(store: FosStore, kind: RowKind): string {
 
 /** What kind of row an edge is, or null when it is not a row (choice, peer, member, …). */
 export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
+  if (isChoiceEdge(store, edge) && isPeerReference(content(store, edge[1]))) return 'ref'
   if (isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))) {
     const active = branchEdge(store, edge[1]); return active ? rowKindOf(store, active) : null
   }
@@ -597,6 +603,7 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
   const canonical = contextScope(store, nodeCid, scope)
   if (canonical !== scope) return updateAtScope(store, nodeCid, canonical, fn, mode)
   const identity = content(store, nodeCid)
+  if (isPeerReference(identity) && mode !== 'replace') throw new Error('This node is held by another peer. Connect to that peer before editing its content.')
   if (!scope.length && mode === 'replace') {
     const next = fn(identity)
     return next === identity ? nodeCid : put(store, next)
@@ -644,7 +651,7 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
       return put(store, withPrev(store, { ...identity, children }, nodeCid))
     }
   }
-  if (!found || (isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])))) throw new Error(`node ${step} not found`)
+  if (!found || (isChoiceEdge(store, found.edge) && !isBranchChoice(store, content(store, found.edge[1])) && !isPeerReference(content(store, found.edge[1])))) throw new Error(`node ${step} not found`)
   const childCid = identityCid(store, found.edge)
   const nextChild = updateAtScope(store, childCid, rest, fn, mode)
   if (nextChild === childCid) return nodeCid
@@ -657,6 +664,7 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
 export function withChildValue(store: FosStore, edge: FosPathElem, nextValue: FosNodeContent, now: number): FosPathElem {
   const idCid = identityCid(store, edge)
   const identity = content(store, idCid)
+  if (isPeerReference(identity)) throw new Error('This node is held by another peer. Connect to that peer before editing its content.')
   if (isBranchChoice(store, identity)) {
     const active = branchEdge(store, idCid)
     return active ? withIdentity(store, edge, updateBranch(store, idCid, withChildValue(store, active, nextValue, now))) : edge
@@ -840,6 +848,8 @@ export type TaskView = {
   refId?: string
   /** Reference rows pointing at another account's listed node (market results). */
   refOwner?: string
+  /** Content is held by this device and has not been received here. */
+  refPeer?: string
   /** For comments: who wrote it. */
   author?: { id: string; name: string; time: number }
   /** Tasks: unsatisfied requirements (summaries) that block completion. */
@@ -904,6 +914,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   const identity = content(store, nodeCid)
   const value = valueContent(store, nodeCid)
   const created = value.data.todo?.time ?? value.data.updated?.time ?? 0
+  if (isPeerReference(identity)) kind = 'ref'
   const sub = countNode(store, nodeCid)
   const view: TaskView = {
     id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
@@ -919,6 +930,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
     subtreeDone: sub.done,
     isLink: isLink(store, identity)
   }
+  if (isPeerReference(identity)) { view.refPeer = identity.data.ref!.peer; view.title = 'Peer-held node' }
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
   const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity
   if (refTypeCid(store, constructor) === capabilityTarget(store, 'peer') && constructor.data.name) view.construction = { handler: constructor.data.name.content }
@@ -1132,7 +1144,7 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
       if (valueContent(store, taskCid).data.todo?.completed) done++
       const sub = countNode(store, taskCid)
       tasks += sub.tasks; done += sub.done; choices += sub.choices
-    } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) {
+    } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) {
       choices++
     } else if (isRowEdge(store, edge)) {
       const sub = countNode(store, identityCid(store, edge))
@@ -1152,7 +1164,7 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
     done: value.data.todo ? !!value.data.todo.completed : null,
     tasks: [], choices: [], peers: [],
     isLink: link,
-    members: link ? readMembers(store, identity) : [],
+    members: link || isPeerReference(identity) ? readMembers(store, identity) : [],
     proposals: link ? readProposals(store, identity).map((p) => proposalView(store, identity, p)) : [],
     versions: link ? linkHistory(store, cid).length : 0
   }
@@ -1674,7 +1686,7 @@ export function findChild(store: FosStore, nodeCid: string, aliasId: string): st
   const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId)
   if (!found) return null
   const { edge } = found
-  if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1]))) return null
+  if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) return null
   return identityCid(store, edge)
 }
 

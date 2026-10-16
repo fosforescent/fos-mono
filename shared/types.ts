@@ -196,6 +196,9 @@ export type FosDataContent = {
     id: string
     /** Set on a market result: the account that owns the referenced node (the row lives in their store, not ours). */
     owner?: string
+    /** Device holding this version; content is fetched separately from the reference. */
+    peer?: string
+    version?: string
   },
   proposal?: {
     status: 'open' | 'rejected'
