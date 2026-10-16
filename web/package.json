@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node tests/regressions.cjs && node tests/sharing.cjs && node tests/proposals.cjs && node tests/peer-branches.cjs && node tests/templates.cjs && node tests/row-workspace.cjs && node tests/agents.cjs && node tests/handlers.cjs"
+    "test": "node tests/regressions.cjs && node tests/sharing.cjs && node tests/proposals.cjs && node tests/peer-branches.cjs && node tests/templates.cjs && node tests/row-workspace.cjs && node tests/agents.cjs && node tests/handlers.cjs && node tests/timeblocks.cjs"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.6",
@@ -15,6 +15,8 @@
     "vite": "^7.1.7"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fortawesome/fontawesome-svg-core": "^7.3.1",
     "@fortawesome/free-solid-svg-icons": "^7.3.1",
     "dompurify": "^3.4.16",
