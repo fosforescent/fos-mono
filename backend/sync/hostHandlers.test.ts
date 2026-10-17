@@ -1,13 +1,16 @@
 import type { Request, Response } from 'express'
-import { addMemberAt, addRow, addTask, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, HOME_ID, setMemberCapabilitiesAt, view, workAttempts, type Replica } from '@fosforescent/shared/sync/index'
+import { createHash } from 'node:crypto'
+import { addMemberAt, addRow, addSupply, addTask, configurePoll, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, HOME_ID, loadReplica, serializeReplica, setMemberCapabilitiesAt, setSharing, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
-import { calendarHandler, llmHandler } from './hostHandlers'
+import { calendarHandler, llmHandler, marketHandler, pointsHandler, pollHandler } from './hostHandlers'
 
+/** Each scenario gets its own store: a failed run leaves its journal in the store it ran against. */
+const fresh = (r: Replica) => loadReplica(serializeReplica(r))
 function host(r: Replica, registry: ReturnType<typeof createHandlerRegistry>) {
   const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user: unknown, store: any) => { r = { ...r, store } }, now: () => 100 }
   const events = createEventService(deps, createEvaluationService(deps, registry).runNode)
@@ -77,4 +80,80 @@ test('an effect whose peer is not connected blocks instead of running', async ()
   expect(String(result.body.error)).toMatch(/Google is not active/)
   expect(createEvent).not.toHaveBeenCalled()
   void addMemberAt; void setMemberCapabilitiesAt
+})
+
+
+test('the market effect lists the task, indexes the account, and records the supply as the server (the client writes neither)', async () => {
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['market'] })
+  r = addTask(r, [HOME_ID], 'Design a logo', 2, 'logo')
+  r = addRow(r, [HOME_ID, 'logo'], 'requirement', 'market', 2, { id: 'list', requirement: { capability: 'market' } })
+  const indexed: Array<{ username: string; listed: boolean }> = []
+  const index = jest.fn(async (user: { username: string }, store: any) => { indexed.push({ username: user.username, listed: !!view(createReplica('x', store), [HOME_ID])!.tasks.find(t => t.id === 'logo')!.market }) })
+  const h = host(r, createHandlerRegistry([marketHandler({ index })]))
+  const result = await h.complete([HOME_ID, 'logo'], ['list'])
+  if (!result.body.evaluation) throw new Error(`listing failed: ${JSON.stringify(result.body)}`)
+  expect(result.body.evaluation.status).toBe('committed')
+  // listed before it was indexed, indexed before it was reported as supplied
+  expect(indexed).toEqual([{ username: 'owner', listed: true }])
+  const after = view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'logo')!
+  expect(after.market).toBe(true)
+  expect(after.done).toBe(false) // listing a task does not complete it; only its listing requirement is filled
+  const supplies = view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.filter(t => t.kind === 'supply')
+  expect(supplies.map(s => [s.supply!.capability, s.supply!.by, s.supply!.ref])).toEqual([['market', 'fos', 'logo']])
+})
+
+test('a poll resolves its choice from the responses when the node runs; ties and silence block', async () => {
+  const share = 'public-link-0123456789'
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['poll'] })
+  r = addTask(r, [HOME_ID], 'Dinner', 2, 'dinner')
+  r = addRow(r, [HOME_ID, 'dinner'], 'requirement', 'Where?', 2, { id: 'where', requirement: { capability: 'choice', options: ['Soup', 'Salad', 'Tacos'] } })
+  r = setSharing(r, [HOME_ID, 'dinner', 'where'], { id: share, audience: 'public', enabled: true }, 3)
+  r = configurePoll(r, [HOME_ID, 'dinner', 'where'], 'rank', 3)
+  const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  const vote = (replica: Replica, peer: string, ranking: string[]) => {
+    const joined = addMemberAt(replica, [HOME_ID, 'dinner', 'where'], peer, peer, ['read', 'approve', 'rank'], 4)
+    const revision = sharedProjection(joined, [HOME_ID, 'dinner', 'where'], digest, peer).revision
+    return writeParticipation(joined, [HOME_ID, 'dinner', 'where'], { peer, audience: share, revision, updated: 5, approvals: [], ranking, fields: {} }, 5)
+  }
+  const silent = host(fresh(r), createHandlerRegistry([pollHandler()]))
+  expect(String((await silent.complete([HOME_ID, 'dinner'], ['where'])).body.error)).toMatch(/No poll responses yet/)
+  const tied = host(fresh(vote(vote(r, 'visitor:a', ['option:0', 'option:1', 'option:2']), 'visitor:b', ['option:1', 'option:0', 'option:2'])), createHandlerRegistry([pollHandler()]))
+  expect(String((await tied.complete([HOME_ID, 'dinner'], ['where'])).body.error)).toMatch(/tied between/)
+  const decided = host(fresh(vote(vote(vote(r, 'visitor:a', ['option:1', 'option:0', 'option:2']), 'visitor:b', ['option:1', 'option:2', 'option:0']), 'user:carol', ['option:0', 'option:1', 'option:2'])), createHandlerRegistry([pollHandler()]))
+  const result = await decided.complete([HOME_ID, 'dinner'], ['where'])
+  if (!result.body.evaluation) throw new Error(`poll failed: ${JSON.stringify(result.body)}`)
+  expect(result.body.evaluation.status).toBe('committed')
+  const where = view(decided.get(), [HOME_ID, 'dinner'])!.tasks.find(t => t.id === 'where')!
+  expect(where.requirement!.satisfied).toBe(true)
+  expect(view(decided.get(), [HOME_ID, 'dinner', 'where'])!.tasks.filter(t => t.kind === 'supply').map(t => [t.supply!.by, t.supply!.choice])).toEqual([['fos', 1]])
+})
+
+test('a fos-points payout moves points on the ledger to the respondent and records the allocation as the server', async () => {
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['points'] })
+  r = addTask(r, [HOME_ID], 'Answer the survey', 2, 'survey')
+  r = addRow(r, [HOME_ID, 'survey'], 'requirement', 'Favourite colour?', 2, { id: 'q', requirement: { capability: 'choice', options: ['Red', 'Blue'] } })
+  r = addRow(r, [HOME_ID, 'survey'], 'requirement', 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } })
+  const transfers: unknown[] = []
+  const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
+  // nobody has answered: nothing to pay
+  const early = host(fresh(r), createHandlerRegistry([pointsHandler({ transfer })]))
+  expect(String((await early.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/No one to pay yet/)
+  expect(transfer).not.toHaveBeenCalled()
+  // bob answers (a supply by his account), then the task runs
+  const answered = addSupply(r, [HOME_ID, 'survey'], 'q', { capability: 'choice', by: 'user:bob', choice: 1 }, 6)
+  const h = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer })]))
+  const result = await h.complete([HOME_ID, 'survey'], [])
+  if (!result.body.evaluation) throw new Error(`payout failed: ${JSON.stringify(result.body)}`)
+  expect(result.body.evaluation.status).toBe('committed')
+  expect(transfers).toEqual([['owner', 'bob', 5]])
+  const pay = view(h.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!
+  expect(pay.requirement!.satisfied).toBe(true)
+  const rows = view(h.get(), [HOME_ID, 'survey', 'pay'])!.tasks
+  expect(rows.find(t => t.kind === 'allocation')!.allocation).toMatchObject({ resource: 'fos:points', type: 'points', amount: 5, unit: 'ff', by: 'fos', person: 'bob' })
+  expect(rows.find(t => t.kind === 'supply')!.supply).toMatchObject({ capability: 'allocation', by: 'fos' })
+  expect(view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'survey')!.done).toBe(true)
+  // a failing ledger leaves the requirement open and the task unfinished
+  const broke = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer: async () => { throw new Error('Insufficient tokens') } })]))
+  expect(String((await broke.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/Insufficient tokens/)
+  expect(view(broke.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(false)
 })

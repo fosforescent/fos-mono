@@ -15,6 +15,7 @@ import { SERVER_TRANSPORT_CAPABILITIES, type Capability, type EvaluationStep, ty
 
 export type EffectContext = {
   userId: number
+  username: string
   step: EvaluationStep
   replica(): Replica
   /** Persist a new replica state (the evaluator journals before and after). */
@@ -28,8 +29,8 @@ export type HostHandler = {
   capability: Capability
   /** Peer ids this handler stands for when `peerId` is a family (attached MCP servers are `mcp:<id>`). */
   matches?(peerId: string): boolean
-  /** Which evaluation steps it executes; default: requirements of its capability. */
-  handles?(step: EvaluationStep): boolean
+  /** Which evaluation steps it executes (the replica lets it read the node's configuration); default: requirements of its capability. */
+  handles?(step: EvaluationStep, replica: Replica): boolean
   /** Live availability for one account and peer (an OAuth connection, a verified phone, a connected MCP server). Absent = always available. */
   available?(userId: number, peerId: string): Promise<boolean>
   /**
@@ -62,8 +63,8 @@ export function createHandlerRegistry(handlers: HostHandler[]) {
     /** Everything `ensureHomeContext` needs to write into an account's context. */
     hostOffers(): HostOffers { return { server: this.serverCapabilities(), integrations: this.integrationOffers() } },
     /** Handlers that can execute this step as an effect. */
-    executors(step: EvaluationStep): HostHandler[] {
-      return handlers.filter(h => !!h.effect && (h.handles ? h.handles(step) : step.row?.requirement?.capability === h.capability))
+    executors(step: EvaluationStep, replica: Replica): HostHandler[] {
+      return handlers.filter(h => !!h.effect && (h.handles ? h.handles(step, replica) : step.row?.requirement?.capability === h.capability))
     },
     /** Is `peerId` able to serve this account right now? */
     async active(peerId: string, userId: number): Promise<boolean> {

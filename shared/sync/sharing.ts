@@ -123,6 +123,22 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), title: textVisible(path) ? (current?.title ?? node.name ?? 'Shared node').slice(0, 8000) : 'Shared node', rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
 }
 
+/** A node another account made this one a member of: an ordinary foreign ref below that account's host row in Home. */
+export function ensureMemberLink(r: Replica, owner: string, aliasId: string, title: string, now: number): { replica: Replica; path: Scope } {
+  const home = homePath(r), peer = `user:${owner}`, hostId = `shared-host:${owner}`, linkId = `member:${aliasId}`
+  const existing = resolveRef(r, linkId)
+  if (existing) return { replica: r, path: [...existing.path, existing.row.id] }
+  let host = (view(r, home)?.tasks ?? []).find(row => row.id === hostId || (row.requirement?.capability === 'peer' && row.requirement.peer === peer))
+  if (!host) {
+    r = addRow(r, home, 'plain', owner, now, { id: hostId })
+    host = view(r, home)!.tasks.find(row => row.id === hostId)!
+  }
+  const hostPath = [...home, host.id]
+  if (!view(r, hostPath)?.members.some(member => member.peerId === peer)) r = addMemberAt(r, hostPath, peer, owner, [], now)
+  r = addRow(r, hostPath, 'ref', title, now, { id: linkId, refOwner: owner, refId: aliasId })
+  return { replica: r, path: [...hostPath, linkId] }
+}
+
 export type SharedAddress = { owner: string; path: Scope; share: string }
 /** A received link is an ordinary foreign ref below its host peer in Home. No guest context is granted to the host. */
 export function ensureSharedLink(r: Replica, address: SharedAddress, title: string, now: number, anonymous = false): { replica: Replica; path: Scope } {

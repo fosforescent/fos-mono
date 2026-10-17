@@ -186,10 +186,9 @@ export type FosDataContent = {
     /** Person allocations ("@name 2h"): who is allocated. */
     person?: string
   },
-  /** On a ref node: the reference is listed on the market (searchable by other accounts, open to proposals). */
+  /** On a published handler offer (sync/handlers.ts `publishTemplate`): advertised on the marketplace. Rows are listed through the `fos:listing` node value instead (sync/market.ts). */
   listing?: {
     listedAt: number
-    by?: string
   },
   /** A reference row: this node stands for the node whose alias id is `id` (shown by title; follows it on click). */
   ref?: {

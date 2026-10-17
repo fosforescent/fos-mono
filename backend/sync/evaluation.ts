@@ -20,8 +20,8 @@ export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerReg
       const evaluate = async (path: Scope) => {
         // Live availability of every provider that could execute something below `path`, checked once per run.
         const active = new Map<string, boolean>()
-        for (const step of evaluationSteps(r, path)) for (const h of registry.executors(step)) for (const p of providers(step, h)) if (!active.has(p)) active.set(p, await registry.active(p, user.id))
-        const executorFor = (step: EvaluationStep): HostHandler | null => registry.executors(step).find(h => providers(step, h).some(p => active.get(p))) ?? null
+        for (const step of evaluationSteps(r, path)) for (const h of registry.executors(step, r)) for (const p of providers(step, h)) if (!active.has(p)) active.set(p, await registry.active(p, user.id))
+        const executorFor = (step: EvaluationStep): HostHandler | null => registry.executors(step, r).find(h => providers(step, h).some(p => active.get(p))) ?? null
         // An interrupted run is reviewed before anything new is bound or called (the evaluator checks this too).
         const prior = evaluationRecord(r, path)
         if (prior && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
@@ -30,20 +30,20 @@ export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerReg
         for (const step of evaluationSteps(r, path)) {
           const handler = executorFor(step)
           if (!handler?.prepare || step.row?.requirement?.satisfied) continue
-          const prepared = await handler.prepare({ userId: user.id, step, replica: () => r, update: save, now })
+          const prepared = await handler.prepare({ userId: user.id, username: user.username, step, replica: () => r, update: save, now })
           if (prepared?.outputs?.length) outputs.set(JSON.stringify(step.path), prepared.outputs)
         }
         const result = await evaluateNode(path, {
           get: () => r, save, now,
           // a return slot a handler fills is excluded from the change check of its step and of every step below it (whose context includes it)
           outputs: step => [...outputs.entries()].filter(([at]) => { const prefix = JSON.parse(at) as Scope; return prefix.length <= step.path.length && prefix.every((id, i) => step.path[i] === id) }).flatMap(([, ids]) => ids),
-          handles: step => registry.executors(step).length > 0,
+          handles: step => registry.executors(step, r).length > 0,
           isPeerActive: peer => peer === 'fos' || active.get(peer) === true,
-          check: step => registry.executors(step).length && !executorFor(step) ? [`${[...new Set(registry.executors(step).map(h => peerLabel(h.peerId)))].join(' or ')} is not active in this context.`] : [],
+          check: step => registry.executors(step, r).length && !executorFor(step) ? [`${[...new Set(registry.executors(step, r).map(h => peerLabel(h.peerId)))].join(' or ')} is not active in this context.`] : [],
           effect: async step => {
             const handler = executorFor(step)
             if (!handler) throw new Error('No active handler for this requirement.')
-            return handler.effect!({ userId: user.id, step, replica: () => r, update: save, now })
+            return handler.effect!({ userId: user.id, username: user.username, step, replica: () => r, update: save, now })
           }
         })
         if (result.status !== 'committed' && result.status !== 'awaiting-review') throw new Error(result.error ?? 'Evaluation needs recovery.')

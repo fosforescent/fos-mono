@@ -17,6 +17,8 @@
  *             submission the owner's "on request" trigger evaluates automatically, or the owner reviews by hand.
  *             Requests are accepted only where a peer in that context offers the `request` capability.
  *   decide    approve or reject a submission
+ *   invite    make a Fos user a member of a node (owner). The host delivers the node into that user's Home, so
+ *             membership reaches the invitee instead of being a private edge in the owner's store.
  *
  * Capabilities as session types over this grammar come later; for now events are independent requests.
  */
@@ -26,7 +28,7 @@ import {
   proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, resolveScope, rootTargetCid,
   selectedBranchValue, updateAtScope, valueContent, viewNode, withBranches, withProposal, type Scope,
 } from './graph'
-import { addRow, applyProposalAt, createReplica, headCid, rejectProposalAt, renameTask, setTaskDone, type Replica } from './replica'
+import { addMemberAt, addRow, applyProposalAt, createReplica, headCid, rejectProposalAt, renameTask, setTaskDone, type Replica } from './replica'
 import { createBranch } from './branches'
 import { executionInput, executionSnapshot } from './execution-access'
 import { capabilityPeers } from './bindings'
@@ -56,8 +58,9 @@ export type FosEvent =
   | { kind: 'input'; path?: Scope; expected: string; key: string; value: unknown; branches?: EventBranch[] }
   | { kind: 'complete'; path?: Scope; expected: string; branches?: EventBranch[]; selections?: Record<string, string>; recover?: boolean }
   | { kind: 'decide'; path?: Scope; proposalId: string; decision: 'approve' | 'reject' }
+  | { kind: 'invite'; path?: Scope; user: string }
 export type EventKind = FosEvent['kind']
-export const EVENT_KINDS: EventKind[] = ['read', 'search', 'submit', 'branch', 'input', 'complete', 'decide']
+export const EVENT_KINDS: EventKind[] = ['read', 'search', 'submit', 'branch', 'input', 'complete', 'decide', 'invite']
 
 /** What the host must still do after a dispatch: run its evaluator for `complete` (effects are host-side). */
 export type EvaluateRequest = { path: Scope; branches: Record<string, string>; expected: string; recover?: boolean }
@@ -128,6 +131,11 @@ export function parseEvent(input: unknown): FosEvent {
       if (typeof raw.proposalId !== 'string' || !raw.proposalId) throw new EventError('A proposal id is required.')
       if (raw.decision !== 'approve' && raw.decision !== 'reject') throw new EventError('decision must be approve or reject.')
       return { kind, path, proposalId: raw.proposalId, decision: raw.decision }
+    }
+    case 'invite': {
+      const user = typeof raw.user === 'string' ? raw.user.trim().replace(/^@/, '') : ''
+      if (!/^[\w.-]{1,64}$/.test(user)) throw new EventError('A Fos user name is required.')
+      return { kind, path, user }
     }
   }
 }
@@ -260,6 +268,17 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       if (!permission(cid, 'approve')) throw new EventError('The approve capability is required on this node.')
       const next = event.decision === 'approve' ? applyProposalAt(r, absolute(path), event.proposalId, principal.peerId, now) : rejectProposalAt(r, absolute(path), event.proposalId, now)
       return { replica: next, changed: headCid(next) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } }
+    }
+    if (event.kind === 'invite') {
+      if (!owner) throw new EventError('Only the account owner invites users to a node.')
+      const peer = `user:${event.user}`
+      if (peer === principal.peerId) throw new EventError('You already own this node.')
+      const identity = content(store, selectedIdentity(store, cid)), id = identity.data.alias?.id
+      if (!id) throw new EventError('This node cannot be shared.')
+      const delivery = { peer, user: event.user, node: absolute(path), id, title: node.name }
+      if (readMembers(store, identity).some(m => m.peerId === peer)) return unchanged({ status: 'member', ...delivery })
+      // The member edge is the grant (edit: they may propose); the host delivers the node to the invitee's Home.
+      return { replica: addMemberAt(r, absolute(path), peer, event.user, ['edit'], now), changed: true, result: { status: 'invited', ...delivery } }
     }
     if (event.kind === 'input') {
       if (!editable) throw new EventError('Peer cannot interact with this node.')

@@ -26,7 +26,8 @@ import { checkUsernameExists } from './auth/checkUsername'
 import { postContactMessage } from './email/contactMessage'
 
 import { getSuggest } from './suggest'
-import { postPeerSync, getPeerSyncDoc, getPeerAttachment, deleteAttachment, prismaPeerSyncDeps, serverPeerIdFor, withUserLock } from './sync/peerSync'
+import { postPeerSync, getPeerSyncDoc, getPeerAttachment, deleteAttachment, indexNow, prismaPeerSyncDeps, serverPeerIdFor, withUserLock } from './sync/peerSync'
+import { tokenManager } from './tokenManager'
 import { createSearchHandlers } from './search/routes'
 import { vertexEmbed } from './search/rowIndex'
 import { peerInviteHandlers } from './sync/peerInvites'
@@ -268,7 +269,7 @@ app.post('/auth/check-username', slowDown({
 app.put('/error', maxRequests(10), putError)
 
 // Public links use audience-scoped guest receipts; they never grant account-sync credentials.
-const sharingHandlers = createSharingHandlers(prismaPeerSyncDeps, process.env.JWT_SECRET!)
+const sharingHandlers = createSharingHandlers(prismaPeerSyncDeps, process.env.JWT_SECRET!, (username, request) => evaluationService.runNode(username, request))
 const guestThrottle = slowDown({ windowMs: 60_000, delayAfter: 30, delayMs: 500 })
 app.post('/public/node/visit', guestThrottle, sharingHandlers.visit)
 app.post('/public/node/input', guestThrottle, sharingHandlers.submit)
@@ -489,6 +490,17 @@ const registry = createHandlerRegistry(createHostHandlers({
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
   google: { connected: async id => !!await integrationDeps.connections.get(id, 'google'), createEvent: (userId, event) => integrations.createCalendarEvent(userId, event) },
   llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },
+  market: { index: indexNow },
+  points: {
+    // fos points are the account's token balance (tokenManager); a payout is a debit on the owner and a credit on the payee
+    async transfer(from, toUsername, amount, memo) {
+      const to = await prisma.userModel.findUnique({ where: { user_name: toUsername }, select: { id: true } })
+      if (!to) throw new Error(`No Fos user is named @${toUsername}.`)
+      await tokenManager.getUserTokenBalance(from.id)
+      await tokenManager.debitTokens(from.id, amount, `fos points: ${memo}`, undefined, { kind: 'points', to: toUsername })
+      await tokenManager.creditTokens(to.id, amount, `fos points from @${from.username}: ${memo}`, 'credit', undefined, undefined, { kind: 'points', from: from.username })
+    }
+  },
   tool: mcpToolHandler(mcpPeerDeps),
   connected: async (id, provider) => { const c = await integrationDeps.connections.get(id, provider); return !!c && (provider !== 'phone' || c.metadata.verified === true) },
   sms: !!smsAdapter?.configured(),

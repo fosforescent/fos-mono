@@ -4,7 +4,7 @@
  * lock. `complete` hands the authorized request to the evaluation service, which runs the handler registry.
  */
 import type { Request, Response } from 'express'
-import { createReplica, dispatchEvent, EventError, handleMcp, parseEvent, pathOf, MCP_PROTOCOL_VERSIONS, type EvaluateRequest, type FosEvent, type Principal, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, dispatchEvent, ensureHomeContext, ensureMemberLink, EventError, handleMcp, headCid, parseEvent, pathOf, MCP_PROTOCOL_VERSIONS, type EvaluateRequest, type FosEvent, type Principal, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, serverPeerIdFor, type PeerSyncDeps } from './peerSync'
 
 type Claims = { username?: string; kind?: string; peerId?: string; scope?: string[]; name?: string; exp?: number }
@@ -29,6 +29,8 @@ export function principalOf(claims: Claims | undefined, ownerScope?: unknown): P
 export function createEventService(deps: PeerSyncDeps, evaluate?: Evaluate) {
   /** Dispatch one event for a principal: load, dispatch, save, notify; then let the host evaluate if asked. */
   async function handle(principal: Principal & { username: string }, event: FosEvent): Promise<unknown> {
+    // An invite names another account: it must exist before the owner's store records the membership.
+    if (event.kind === 'invite' && !await deps.loadStore(event.user)) throw new EventError(`No Fos user is named @${event.user}.`)
     const outcome = await withUserLock(`user:${principal.username}`, async () => {
       const loaded = await deps.loadStore(principal.username)
       if (!loaded) throw new EventError('Account unavailable.')
@@ -40,6 +42,22 @@ export function createEventService(deps: PeerSyncDeps, evaluate?: Evaluate) {
       }
       return dispatched
     })
+    // Membership reaches the invitee through the server's `relay` capability (the fos peer relays between the
+    // accounts it hosts): the node appears below the owner's host row in their Home, and they open it and propose
+    // through the market routes, which honour the member grant.
+    const delivery = outcome.result as { status?: string; id?: string; title?: string } | null
+    if (event.kind === 'invite' && delivery?.status === 'invited' && delivery.id) {
+      if (deps.registry && !deps.registry.serverCapabilities().includes('relay')) throw new EventError('This host does not relay between accounts; the member grant is recorded but not delivered.')
+      await withUserLock(`user:${event.user}`, async () => {
+        const loaded = await deps.loadStore(event.user)
+        if (!loaded) return
+        const now = deps.now?.() ?? Date.now(), before = createReplica(`user:${event.user}`, loaded.store), head = headCid(before)
+        const r = ensureMemberLink(ensureHomeContext(before, now, deps.registry?.hostOffers()), principal.username, delivery.id!, delivery.title || principal.username, now).replica
+        if (headCid(r) === head) return
+        await deps.saveStore(loaded.user, r.store)
+        deps.notify?.(loaded.user.id, { type: 'sync_changed', byPeerId: 'fos:invite' })
+      })
+    }
     // The evaluator acquires the same lock itself and rechecks the version before dispatching effects.
     if (outcome.evaluate) {
       if (!evaluate) throw new EventError('Evaluation is not available on this host.')

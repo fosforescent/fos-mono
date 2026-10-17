@@ -111,7 +111,7 @@ test('only an owner can configure a link; enabling polls requires the Fos handle
   expect((await s.call('configure', { ...body, expected: expected() }, 'host')).status).toBe(200)
 })
 
-test('approving a proposed edit records input without merging or removing the proposal', async () => {
+test('approving a proposed edit is input the owner decides with (the tally never merges or removes the proposal)', async () => {
   const s = setup(), r = s.replicas.host, store = r.store
   const cid = resolveScope(store, headCid(r), ['poll'])!
   const base = putStripped(store, content(store, cid))

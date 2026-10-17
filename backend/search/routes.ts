@@ -5,7 +5,7 @@
  *   GET  /user/data/market/node?owner=&id=   a listed node as a bidder sees it (own proposal only)
  *   POST /user/data/market/proposals  {owner, aliasId, rows} → this account's proposal on that node
  *
- * The market: a row listed by its owner (`listing` on its ref node) is searchable by other
+ * The market: a row listed by its owner (the `fos:listing` value on it) is searchable by other
  * accounts. A bidder sees the node's value and comments but only its own proposal; the owner
  * sees every proposal and approves one. Proposals are branches (shared/sync proposals) whose
  * content is the node's value plus the rows the bidder adds (comments, allocation references,
@@ -14,7 +14,7 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { createReplica, marketplaceOffers, commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdge, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
+import { LISTING_ARGUMENT, namedValueOf, createReplica, marketplaceOffers, commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdge, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
 import { indexStore, searchRows, type Embed } from './rowIndex'
 
 export type SearchDeps = {
@@ -85,7 +85,7 @@ export function createSearchHandlers(deps: SearchDeps) {
       const cid = resolveScope(store, rootTargetCid(store), [...found.path, aliasId])!
       const identity = content(store, cid)
       // open to bidders when listed, and to accounts the owner made members of the node (with `edit`): they may send proposals (e.g. an allocation bin)
-      if (!identity.data.listing && owner !== me && !hasCapability(store, identity, `user:${me}`, 'edit')) return res.status(403).json({ error: 'not listed on the market, and you are not a member of it' })
+      if (!namedValueOf(store, cid, LISTING_ARGUMENT) && owner !== me && !hasCapability(store, identity, `user:${me}`, 'edit')) return res.status(403).json({ error: 'not listed on the market, and you are not a member of it' })
       const view = viewNode(store, cid)
       const mine = `user:${me}`
       const filtered: NodeView = { ...view, peers: [], members: [], proposals: owner === me ? view.proposals : view.proposals.filter((p) => p.peerId === mine) }
@@ -113,7 +113,7 @@ export function createSearchHandlers(deps: SearchDeps) {
         const cid = resolveScope(store, rootTargetCid(store), path)!
         const identity = content(store, cid)
         const peerId = `user:${me}`
-        if (!identity.data.listing && !hasCapability(store, identity, peerId, 'edit')) return { status: 403, body: { error: 'not listed on the market, and you are not a member of it' } } as const
+        if (!namedValueOf(store, cid, LISTING_ARGUMENT) && !hasCapability(store, identity, peerId, 'edit')) return { status: 403, body: { error: 'not listed on the market, and you are not a member of it' } } as const
         const t = now()
         // The branch: the node's current value plus the bidder's rows. Built on the value directly
         // (updateAtScope walks `under` paths inside it) so the owner's root pointer is never touched.

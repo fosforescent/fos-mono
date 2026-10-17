@@ -12,7 +12,7 @@
 
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { createReplica, marketplaceOffers, withMainBranchPolicy, content, identityCid, isRowEdge, rootTargetCid, rowKindOf, valueContent, type Scope } from '@fosforescent/shared/sync/index'
+import { LISTING_ARGUMENT, createReplica, marketplaceOffers, namedValueOf, withMainBranchPolicy, content, identityCid, isRowEdge, rootTargetCid, rowKindOf, valueContent, type Scope } from '@fosforescent/shared/sync/index'
 
 export type Embed = (texts: string[]) => Promise<number[][]>
 
@@ -35,7 +35,7 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       const value = valueContent(store, id)
       const aliasId = identity.data.alias?.id
       if (!aliasId) continue
-      const market = inherited || !!identity.data.listing
+      const market = inherited || !!namedValueOf(store, id, LISTING_ARGUMENT)
       const title = (value.data.description?.content ?? '').trim()
       if (kind !== 'supply' && kind !== 'ref' && title) {
         const text = kind === 'note' ? title.slice(0, 600) : title.slice(0, 300)
