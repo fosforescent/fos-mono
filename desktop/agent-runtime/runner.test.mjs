@@ -37,6 +37,15 @@ test('evaluation delegation rejects non-loopback MCP before loading an SDK', asy
   assert(!stdout.includes('do-not-log'))
 })
 
+test('the node MCP server must be loopback and authenticated', async () => {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./runner.mjs', import.meta.url))], { stdio: ['pipe','pipe','pipe'] })
+  let stdout = ''; child.stdout.on('data', data => stdout += data)
+  child.stdin.write(JSON.stringify({ provider: 'claude', cli: true, cwd: '/tmp', prompt: 'test', mcp: { url: 'http://evil.example/mcp', token: 'do-not-log' } }) + '\n')
+  await once(child, 'close')
+  assert.match(stdout, /authenticated loopback endpoint/)
+  assert(!stdout.includes('do-not-log'))
+})
+
 test('CLI cannot be handed a writable evaluation endpoint', async () => {
   const child = spawn(process.execPath, [fileURLToPath(new URL('./runner.mjs', import.meta.url))], { stdio: ['pipe','pipe','pipe'] })
   let stdout = ''; child.stdout.on('data', data => stdout += data)

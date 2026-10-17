@@ -63,7 +63,7 @@ export type PeerInviteDeps = {
   resolveUserById(id: number): Promise<{ id: number; username: string } | null>
   notify?(userId: number, message: Record<string, unknown>): void
   /** Record the approved device as a member of the invited node (makes it a link) with [CAPABILITY, …] edges. */
-  attachMember?(username: string, scope: string[], peerId: string, name: string | null, capabilities: Array<'edit' | 'approve'>): Promise<boolean>
+  attachMember?(username: string, scope: string[], peerId: string, name: string | null, capabilities: Array<'read' | 'edit' | 'approve' | 'execute'>): Promise<boolean>
   now?(): number
 }
 
@@ -160,14 +160,15 @@ export function createPeerInviteHandlers(deps: PeerInviteDeps) {
       }
     },
 
-    /** POST /user/data/peer-invite/:id/approve {capabilities?: ['edit' | 'approve', …]} — the approver decides what the device may do. */
+    /** POST /user/data/peer-invite/:id/approve {capabilities?: ['read' | 'edit' | 'approve' | 'execute', …]} — the approver decides what the device may do (default: edit). */
     async approveRequest(req: Request, res: Response): Promise<Response | void> {
       try {
         const user = await requireUser(req, res)
         if (!user) return
         const body = (req.body ?? {}) as { capabilities?: unknown }
-        const capabilities: Array<'edit' | 'approve'> = ['edit']
-        if (Array.isArray(body.capabilities) && body.capabilities.includes('approve')) capabilities.push('approve')
+        const allowed = ['read', 'edit', 'approve', 'execute'] as const
+        const requested = Array.isArray(body.capabilities) ? body.capabilities.filter((c): c is typeof allowed[number] => (allowed as readonly string[]).includes(c)) : []
+        const capabilities: Array<typeof allowed[number]> = requested.length ? [...new Set(requested)] : ['edit']
         const invite = await deps.repo.findById(Number(req.params.id))
         if (!invite || invite.userId !== user.id) return res.status(404).json({ error: 'Request not found' })
         if (invite.status !== 'pending' || !invite.peerId) return res.status(409).json({ error: `Request is ${invite.status}` })

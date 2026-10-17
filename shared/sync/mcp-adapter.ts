@@ -3,6 +3,7 @@
  * module serves the account server, the desktop loopback endpoints and the `fos` binary's local server, so agents
  * see one vocabulary wherever they connect. The transport fixes the principal; tool arguments cannot replace it.
  */
+import type { Capability } from './graph'
 import { EVENT_KINDS, parseEvent, type EventKind, type FosEvent } from './events'
 
 const pathSchema = { type: 'array', items: { type: 'string', minLength: 1, maxLength: 128 }, maxItems: 32 }
@@ -31,13 +32,24 @@ export const OWNER_TOOLS = [
 ]
 export const MCP_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']
 
-export function mcpTools(owner: boolean) {
-  return [...MCP_TOOLS, ...(owner ? OWNER_TOOLS : [])].map(({ kind: _kind, ...t }) => t)
+/** Which grants expose a tool to a non-owner (any one of them). Owners see everything. */
+const TOOL_GRANTS: Record<string, Capability[]> = {
+  fos_read: ['read', 'edit'], fos_search: ['read', 'edit'], fos_propose: ['edit'], fos_input: ['edit'],
+  fos_evaluate: ['edit', 'execute'], fos_decide: ['approve'], fos_create_branch: [], fos_invite: [],
+}
+/** The tools a credential may call: all of them for an owner, otherwise those its grants on the attachment allow (none when nothing is granted). */
+function visibleTools(owner: boolean, capabilities?: Capability[]) {
+  if (owner) return [...MCP_TOOLS, ...OWNER_TOOLS]
+  const grants = capabilities ?? ['read', 'edit']
+  return [...MCP_TOOLS, ...OWNER_TOOLS].filter(t => TOOL_GRANTS[t.name]?.some(c => grants.includes(c)))
+}
+export function mcpTools(owner: boolean, capabilities?: Capability[]) {
+  return visibleTools(owner, capabilities).map(({ kind: _kind, ...t }) => t)
 }
 
 /** The event a tool call stands for. Throws `EventError` for unknown tools or bad arguments. */
-export function mcpEvent(name: string, args: unknown, owner: boolean): FosEvent {
-  const found = [...MCP_TOOLS, ...(owner ? OWNER_TOOLS : [])].find(t => t.name === name)
+export function mcpEvent(name: string, args: unknown, owner: boolean, capabilities?: Capability[]): FosEvent {
+  const found = visibleTools(owner, capabilities).find(t => t.name === name)
   if (!found) throw new Error('Tool unavailable for this credential.')
   if (args !== undefined && (!args || typeof args !== 'object' || Array.isArray(args))) throw new Error('Tool arguments must be an object.')
   return parseEvent({ ...(args as object ?? {}), kind: found.kind })
@@ -50,19 +62,19 @@ const invalid = (id: unknown, code: number, message: string) => ({ jsonrpc: '2.0
  * Frame JSON-RPC around the grammar. `dispatch` returns the event's result (sync or async); the result is the same
  * whichever transport carried the message. Returns null for notifications (no reply).
  */
-export function handleMcp(message: unknown, host: { owner: boolean; dispatch(event: FosEvent): unknown | Promise<unknown>; serverName?: string; protocolVersion?: string }): unknown | null | Promise<unknown | null> {
+export function handleMcp(message: unknown, host: { owner: boolean; capabilities?: Capability[]; dispatch(event: FosEvent): unknown | Promise<unknown>; serverName?: string; protocolVersion?: string }): unknown | null | Promise<unknown | null> {
   const m = message as Rpc
   if (!m || Array.isArray(m) || m.jsonrpc !== '2.0' || typeof m.method !== 'string' || ('id' in m && typeof m.id !== 'string' && typeof m.id !== 'number')) return invalid(null, -32600, 'Invalid JSON-RPC request')
   if (!('id' in m)) return null
   const ok = (result: unknown) => ({ jsonrpc: '2.0', id: m.id, result })
   if (m.method === 'initialize') return ok({ protocolVersion: host.protocolVersion ?? '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: host.serverName ?? 'fos', version: '1.0.0' } })
   if (m.method === 'ping') return ok({})
-  if (m.method === 'tools/list') return ok({ tools: mcpTools(host.owner) })
+  if (m.method === 'tools/list') return ok({ tools: mcpTools(host.owner, host.capabilities) })
   if (m.method !== 'tools/call') return invalid(m.id, -32601, 'Unknown method')
   const failure = (error: unknown) => ok({ isError: true, content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }] })
   const success = (result: unknown) => ok({ content: [{ type: 'text', text: JSON.stringify(result) }] })
   try {
-    const event = mcpEvent(m.params?.name, m.params?.arguments, host.owner)
+    const event = mcpEvent(m.params?.name, m.params?.arguments, host.owner, host.capabilities)
     const outcome = host.dispatch(event)
     return outcome instanceof Promise ? outcome.then(success, failure) : success(outcome)
   } catch (error) { return failure(error) }

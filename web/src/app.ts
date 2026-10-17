@@ -1,6 +1,7 @@
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
+import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { CAPABILITY_LABEL } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
@@ -178,7 +179,15 @@ export type ContextPeer = {
   mcp?: { serverId: number; tools: string[] }
   /** An agent CLI found on this computer's PATH (desktop): a read-only local peer, never a graph row. */
   agentCli?: { provider: 'claude' | 'codex'; path: string }
+  /** An MCP server peer: the device's loopback endpoint for this node, or the account server's hosted one. */
+  mcpServer?: { transport: 'desktop' | 'server' }
+  /** A sub-peer: shown as an icon inside its parent's constructor grid rather than as a top-level tab. */
+  parent?: 'device' | 'server'
 }
+/** The three grants a peer's toggles control; everything else a member may hold stays as it is. */
+export const GRANTS = ['read', 'edit', 'execute'] as const
+export type Grant = typeof GRANTS[number]
+export type PeerStatus = 'online' | 'offline' | 'disabled'
 export type LocalAgent = { provider: 'claude' | 'codex'; name: string; path: string }
 
 export type ConnectFlow =
@@ -483,6 +492,45 @@ export class App {
   private runningTriggers = false
   private triggerScanKey = ''
   private triggerCandidates: ReturnType<typeof configuredTriggers> = []
+  /** The read / write / execute grants a peer holds at the context node (the nearest member binding). */
+  peerGrants(peerId: string, path = this.peerContextPath()): Grant[] {
+    const member = [...contextMembers(this.state.replica, path)].reverse().find(m => m.peerId === peerId)
+    if (!member) return []
+    return GRANTS.filter(g => member.capabilities.includes(g) && !member.disabled?.includes(g))
+  }
+  /** Everything the peer may do here (the toggles plus what they imply, such as approve with write), for acting as that peer. */
+  peerCapabilities(peerId: string, path = this.peerContextPath()): Capability[] {
+    const member = [...contextMembers(this.state.replica, path)].reverse().find(m => m.peerId === peerId)
+    return member ? member.capabilities.filter(c => !member.disabled?.includes(c)) : []
+  }
+  /** Toggle one grant for a peer here; a peer with no member binding yet gets one. Other capabilities it holds stay. */
+  setPeerGrant(peerId: string, grant: Grant, on: boolean): void {
+    if (!this.canApprove()) { this.notify('error', 'Only the owner of this node (or a member who may approve) changes what peers get here.'); return }
+    const path = this.peerContextPath()
+    const member = [...contextMembers(this.state.replica, path)].reverse().find(m => m.peerId === peerId)
+    const provider = this.contextPeers().find(p => p.id === peerId)
+    let r = this.state.replica
+    if (!contextMemberRefs(r, path).has(peerId)) r = addMemberAt(r, path, peerId, provider?.name ?? peerId, [], this.now())
+    const capabilities = new Set<Capability>(member?.capabilities ?? [])
+    // "write" is edit and approve together: a peer that may change the node may also accept changes to it
+    const caps: Capability[] = grant === 'edit' ? ['edit', 'approve'] : [grant]
+    for (const cap of caps) { if (on) capabilities.add(cap); else capabilities.delete(cap) }
+    const disabled = (member?.disabled ?? []).filter(c => !caps.includes(c))
+    this.edit(setMemberCapabilitiesAt(r, path, peerId, [...capabilities], disabled, this.now(), member?.accepts ?? provider?.integration?.provides ?? provider?.accepts ?? []))
+    this.syncLocalMcp()
+  }
+  /** Green: reachable and granted something here; orange: granted but unreachable; grey: nothing granted (the device and the account are always their own). */
+  peerStatus(peer: ContextPeer): PeerStatus {
+    if (peer.isAccount || peer.id === this.state.replica.meta.peerId) return peer.online ? 'online' : 'offline'
+    if (!this.peerGrants(peer.id).length) return 'disabled'
+    return peer.online ? 'online' : 'offline'
+  }
+  /** The device's MCP endpoint for the viewed node follows the `mcp:local` grants: started while any is on, stopped when all are off. */
+  syncLocalMcp(): void {
+    if (!inTauri() || this.virtualIdentity) return
+    const scope = [...this.state.view], grants = this.peerGrants('mcp:local', scope)
+    void (grants.length ? ensureLocalMcp(this, scope) : stopLocalMcp(this))
+  }
   /** Which agent CLIs this computer has (desktop only): a PATH query, refreshed at startup. */
   async probeLocalAgents(): Promise<void> {
     if (!inTauri()) return
@@ -1309,6 +1357,15 @@ export class App {
         peers.push({ id: m.id, name: m.name, online: this.isOnline(m.id), capabilities: ['tool', 'read', 'edit'], disabled: [], accepts: [], isAccount: false, member: false, mcp: { serverId: m.serverId, tools: m.tools } })
       }
     }
+    // agent CLIs on this computer and the MCP servers are sub-peers that exist whether or not the node lists them as
+    // members (a grant adds them as one); they come before the members so the member entry never shadows them
+    // agent CLIs on this computer: local sub-peers of the device, read-only (masks apply to them like any peer)
+    if (!this.virtualIdentity) for (const agent of this.state.localAgents) peers.push({ id: `agent-cli:${agent.provider}`, name: agent.name, online: true, capabilities: ['tool'], disabled: [], accepts: ['read'], isAccount: false, member: false, agentCli: { provider: agent.provider, path: agent.path }, parent: 'device' })
+    // MCP servers: the device's loopback endpoint for this node (desktop) and the account server's hosted one; what each exposes follows its grants here
+    if (!this.virtualIdentity && !this.state.atRoot) {
+      if (inTauri()) peers.push({ id: 'mcp:local', name: 'Local MCP server', online: true, capabilities: [], disabled: [], accepts: [], isAccount: false, member: false, mcpServer: { transport: 'desktop' }, parent: 'device' })
+      if (session?.kind === 'user') peers.push({ id: 'mcp:server', name: 'Fos MCP server', online: this.isOnline('fos'), capabilities: [], disabled: [], accepts: [], isAccount: false, member: false, mcpServer: { transport: 'server' }, parent: 'server' })
+    }
     for (const m of node?.members ?? []) {
       if (m.peerId === me || m.peerId === 'fos' || peers.some((x) => x.id === m.peerId)) continue
       peers.push({ id: m.peerId, name: m.name ?? nameOf(m.peerId), online: this.isOnline(m.peerId), capabilities: [...m.capabilities], disabled: [...(m.disabled ?? [])], accepts: [...(m.accepts ?? [])], isAccount: m.peerId.startsWith('user:'), member: true, ...(m.peerId.startsWith('user:') ? { fosUser: m.peerId.slice(5) } : {}), ...(m.peerId.startsWith('github:') ? { repository: { repo: m.peerId.slice(7) } } : {}) })
@@ -1320,9 +1377,8 @@ export class App {
       if (known) { if (p === directPeer && !known.capabilities.includes('direct')) known.capabilities.push('direct'); continue }
       peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false, ...(p.startsWith('user:') ? { fosUser: p.slice(5) } : {}) })
     }
-    // agent CLIs on this computer: local peers next to the device, read-only (masks apply to them like any peer)
-    if (!this.virtualIdentity) for (const agent of this.state.localAgents) peers.push({ id: `agent-cli:${agent.provider}`, name: agent.name, online: true, capabilities: ['tool'], disabled: [], accepts: ['read'], isAccount: false, member: false, agentCli: { provider: agent.provider, path: agent.path } })
     peers.push({ id: me, name: this.state.deviceName, online: true, capabilities: [], disabled: [], accepts: CLIENT_CAPABILITIES, isAccount: false, member: false })
+    for (const p of peers) if (!p.parent && (p.integration || p.mcp || p.repository || p.fosUser)) p.parent = 'server'
     for (const p of peers) {
       const member = members.get(p.name === 'fos' ? 'fos' : p.id)
       if (member) { p.disabled = [...(member.disabled ?? [])]; p.accepts = [...(member.accepts ?? [])] }

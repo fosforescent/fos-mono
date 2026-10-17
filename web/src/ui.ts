@@ -1,8 +1,9 @@
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { openAnalysis } from './analysis'
-import { openNodeAgent } from './node-agent'
+import { connectNodeAgent, hostedMcpConnection, localMcpEndpoint, mcpConfig } from './node-agent'
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack } from './filesystem'
 import { AGENT_CLI_NAME, evaluationAgentControl, localRepository, openCliAgent, openSdkAgent, sdkAvailable } from './agents'
+import { GRANTS, type ContextPeer as Peer, type Grant } from './app'
 import { inTauri, tauriInvoke } from './project'
 import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
@@ -610,7 +611,7 @@ const CONSTRUCTORS = [
   { id: 'bank', label: 'Resource bank', icon: 'bank' },
   { id: 'repository', label: 'Repository', icon: '⑂' }
 ] as const
-type ConstructorItem = { id: string; label: string; icon: string; output: string; group: string; mask?: { peer: string; key: 'fields' | 'children'; id: string } }
+type ConstructorItem = { id: string; label: string; icon: string; output: string; group: string; mask?: { peer: string; key: 'fields' | 'children'; id: string }; peer?: Peer }
 /** Row kinds this device makes by typing a marker; clicking seeds the blank row (or a row inside the selected one) with it. */
 const ROW_SEEDS: Array<[string, string, string]> = [
   ['Task', '[ ] ', '☑'], ['Note', '> ', 'note'], ['Comment', '// ', 'comment'], ['Query', '? ', 'search'],
@@ -636,7 +637,12 @@ function constructorOptions(app: App): ConstructorItem[] {
     ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext()) || app.handlerOffers().some(o => o.capability === cap)).map(cap => ({ id: `action:${cap}`, label: cap === 'llm' ? 'Ask fos' : cap === 'search' ? 'Search' : 'List on the market', icon: cap === 'llm' ? '✦' : cap === 'search' ? 'search' : 'store', output: cap, group: account })),
     ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: 'pull', output: 'tool', group: p.id })),
     // agent CLIs found on this computer: open the CLI here, or run the SDK against the local checkout
-    ...app.state.localAgents.flatMap(a => [{ id: `action:agent-cli:${a.provider}`, label: `Open ${a.name} CLI`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` }, ...(sdkAvailable(app, a.provider) ? [{ id: `action:agent-run:${a.provider}`, label: `Run ${a.name}…`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` }] : [])]),
+    ...app.state.localAgents.flatMap(a => [
+      { id: `action:agent-cli:${a.provider}`, label: `Open ${a.name} CLI`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` },
+      ...(sdkAvailable(app, a.provider) ? [{ id: `action:agent-run:${a.provider}`, label: `Run ${a.name}…`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` }] : []),
+      // with the agent and the local MCP server both enabled here, the agent can work on this node through that server
+      ...(app.peerGrants(`agent-cli:${a.provider}`).length && app.peerGrants('mcp:local').length ? [{ id: `action:agent-task:${a.provider}`, label: `Launch ${a.name} to execute this task`, icon: '▶', output: 'tool', group: `agent-cli:${a.provider}` }] : []),
+    ]),
     ...[...new Set([...app.triggerKinds(app.constructorContext()), ...app.handlerOffers().filter(o => ['timer', 'cron', 'task-completion', 'request'].includes(o.capability ?? '')).map(o => o.capability as 'timer' | 'cron' | 'task-completion' | 'request')])].map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'Child evaluation' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: kind === 'timer' ? 'hourglass' : kind === 'request' ? 'request' : kind === 'task-completion' ? 'flag' : 'trigger', output: kind, group: 'triggers' }))]
 }
 function constructorState(app: App, item: ConstructorItem) {
@@ -666,6 +672,7 @@ function constructorState(app: App, item: ConstructorItem) {
 function constructorControl(app: App, item: ConstructorItem, target: HTMLElement): HTMLElement {
   const state = constructorState(app, item)
   const b = iconButton(item.icon, item.label, () => { if (state.enabled) { if (!item.mask) insertConstructor(app, item.id) } })
+  if (item.peer) { b.classList.add('sub-peer', `peer-status-${app.peerStatus(item.peer)}`); b.title = `${item.label} · ${app.peerStatus(item.peer) === 'disabled' ? 'nothing granted here' : app.peerStatus(item.peer)}` }
   b.classList.toggle('constructor-disabled', !state.enabled)
   b.setAttribute('aria-disabled', String(!state.enabled))
   constructorDrag(b, item.id)
@@ -729,10 +736,16 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (id.startsWith('seed:')) { seedRow(app, id.slice(5), path, replace); return }
   if (id.startsWith('handler:')) { try { app.insertHandler(id.slice(8), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
-  if (id.startsWith('action:agent-cli:') || id.startsWith('action:agent-run:')) {
+  if (id.startsWith('peer:')) { workspace(app).peer = id.slice(5); app.refresh(); return } // a sub-peer icon: open its own constructors
+  if (id.startsWith('action:agent-cli:') || id.startsWith('action:agent-run:') || id.startsWith('action:agent-task:')) {
     const provider = id.slice(id.lastIndexOf(':') + 1) as 'claude' | 'codex', cwd = localRepository(app.state.replica, path) ?? ''
     if (!app.state.localAgents.some(a => a.provider === provider)) { app.notify('error', `${AGENT_CLI_NAME[provider]} is not on this computer's PATH.`); return }
     if (id.startsWith('action:agent-run:')) { if (!cwd) { app.notify('error', 'Attach a local checkout to this node first; the SDK runs against it.'); return } openSdkAgent(app, provider, cwd); return }
+    if (id.startsWith('action:agent-task:')) {
+      const endpoint = localMcpEndpoint(app)
+      if (!endpoint) { app.notify('error', 'Enable the local MCP server on this node first (its read, write or execute toggle).'); return }
+      openCliAgent(app, provider, cwd, app.currentRow()?.title, false, { autoStart: true, mcp: endpoint }); return
+    }
     openCliAgent(app, provider, cwd); return
   }
   if (id.startsWith('action:')) {
@@ -888,6 +901,12 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
 
 function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): boolean {
   const constructor = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
+  if (constructor?.startsWith('peer:')) {
+    event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear()
+    const peer = app.contextPeers().find(p => p.id === constructor.slice(5))
+    try { app.applyConstructor(path, { kind: 'plain', text: peer?.name ?? constructor.slice(5), done: false, peer: constructor.slice(5) }, replace) } catch (error) { app.notify('error', String(error)) }
+    return true
+  }
   if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
@@ -1001,22 +1020,25 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
     activeDrag.clear()
   }
   const prefs = workspace(app), groups = constructorGroups(app), preview = proposalPreview(app)
-  const hosted = groups.filter(g => g.peer?.integration || g.peer?.mcp || g.peer?.repository || g.peer?.fosUser)
   let server = groups.find(g => g.peer?.isAccount && !g.peer.fosUser)
   if (!server) { server = { id: 'fos-server', name: 'Fos server', icon: '\u2601', items: [] }; groups.push(server) }
   groups.push({ id: 'triggers', name: 'Triggers', icon: 'trigger', items: constructorOptions(app).filter(c => c.group === 'triggers') })
   groups.push({ id: 'add-peer', name: 'Add peer', icon: 'person-plus', items: constructorOptions(app).filter(c => c.group === 'add-peer') })
   if (!groups.some(g => g.id === prefs.peer)) prefs.peer = 'device'
   const group = groups.find(g => g.id === prefs.peer)!
-  const inServer = group === server || hosted.includes(group)
-  const local = groups.filter(g => g.peer?.agentCli), inDevice = group.id === 'device' || local.includes(group)
+  // sub-peers live inside their parent's grid: integrations, MCP servers and users under the server; agent CLIs and the local MCP server under the device
+  const parentOf = (g: typeof group) => g.peer?.parent === 'server' ? server! : g.peer?.parent === 'device' ? groups[0]! : null
+  const subPeers = (parent: typeof group) => groups.filter(g => parentOf(g) === parent)
+  const parent = parentOf(group)
+  const statusClass = (p: Peer) => `peer-status-${app.peerStatus(p)}`
   const tabs = div('node-tabs peer-tabs', '')
   tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Peers')
-  for (const g of groups.filter(g => !hosted.includes(g) && !local.includes(g))) {
+  for (const g of groups.filter(g => !parentOf(g))) {
     const b = iconButton(g.icon, g === server ? 'Fos server' : g.name, () => { prefs.peer = g.id; app.refresh() })
-    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g === server ? inServer : g.id === 'device' ? inDevice : g.id === prefs.peer))
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g.id === prefs.peer || parent === g))
     if (g.id === 'add-peer') { b.classList.add('add-peer'); b.disabled = !!preview; constructorDrag(b, 'peer') }
-    if (g.peer && !g.peer.online) b.classList.add('offline')
+    if (g.peer) b.classList.add(statusClass(g.peer))
+    else if (g === server) b.classList.add(app.isOnline('fos') ? 'peer-status-online' : 'peer-status-offline')
     tabs.append(b)
   }
   head.querySelector('.peer-tabs')?.remove(); head.prepend(tabs)
@@ -1032,31 +1054,16 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
     if (actions.childElementCount) head.append(actions)
   }
 
-  head.querySelector('.server-integrations')?.remove()
-  if (inDevice && local.length) {
-    // this computer's agent CLIs sit beneath the device tab: pick one for its actions and the masks that apply to it
-    const submenu = div('server-integrations device-agents', '')
-    const choices = div('node-tabs', ''); choices.setAttribute('role', 'tablist'); choices.setAttribute('aria-label', 'Local agents')
-    for (const g of [groups[0]!, ...local]) {
-      const b = button('secondary small', g.id === 'device' ? 'Device' : g.name, () => { prefs.peer = g.id; app.refresh() })
-      b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g.id === prefs.peer)); choices.append(b)
-    }
-    submenu.append(choices)
-    head.append(submenu)
+  // inside a sub-peer: where we are, and the way back to the parent's grid
+  head.querySelector('.peer-crumb')?.remove()
+  if (parent) {
+    const crumb = div('peer-crumb', '')
+    const back = button('link small', parent === server ? 'Fos server' : 'This device', () => { prefs.peer = parent.id; app.refresh() })
+    crumb.append(back, span('sep', '›'), span('peer-crumb-current', group.name))
+    head.append(crumb)
   }
-  if (inServer && server) {
-    const submenu = div('server-integrations', '')
-    const choices = div('node-tabs', ''); choices.setAttribute('role', 'tablist'); choices.setAttribute('aria-label', 'Fos server integrations')
-    for (const g of [server, ...hosted]) {
-      const b = button('secondary small', g === server ? 'Server' : g.name, () => { prefs.peer = g.id; app.refresh() })
-      b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g.id === prefs.peer)); choices.append(b)
-    }
-    submenu.append(choices)
-    if (!app.isOnline('fos')) {
-      submenu.append(div('muted', 'Fos server is offline. Connect to use GitHub and other server integrations.'), button('secondary small', 'Connect Fos server', () => app.goToAccountPeer()))
-    }
-    head.append(submenu)
-  }
+  // the parent's grid shows its sub-peers as icons: click to open one, drag into a row for a row bound to it
+  for (const sub of subPeers(group)) if (sub.peer) group.items.unshift({ id: `peer:${sub.id}`, label: sub.name, icon: sub.icon, output: 'peer', group: group.id, peer: sub.peer })
 
   if (!preview && group.id !== 'add-peer' && group.id !== 'triggers') {
     const peer = group.peer?.id ?? NODE_PERMISSION_DEFAULT
@@ -1089,36 +1096,63 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
       button('secondary small', 'Direct device connection\u2026', () => app.openModal('direct')),
       button('secondary small', 'Join with an invite code\u2026', () => app.openModal('connect')))
   } else if (state.atRoot) panel.push(span('muted', 'Settings and peer constructors are editable child rows below.'))
-  else if (group === server && !group.peer) panel.push(span('muted', 'Integrations are provided by your Fos server.'))
-  else if (group.peer) {
+  else if (group === server && !group.peer) panel.push(span('muted', app.isOnline('fos') ? 'Integrations are provided by your Fos server.' : 'Fos server is offline. Connect to use GitHub and other server integrations.'))
+  else if (group.peer && !group.peer.isAccount && group.peer.id !== state.replica.meta.peerId) {
     const p = group.peer
-    if (p.integration) panel.push(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
-    if (p.agentCli) panel.push(div('muted', `${p.name} is on this computer's PATH (${p.agentCli.path}). A read-only local peer: it opens here with the actions above, and the masks below decide what it may see.`))
-    rows.append(...renderRootRows(state, app, p.integration || p.mcp || p.repository || p.agentCli ? 'integrations' : 'peers', p.id)); panel.push(rows)
-    if (p.isAccount && !p.fosUser) {
-      const form = document.createElement('form'), query = document.createElement('input')
-      query.placeholder = 'Find a capability on the marketplace…'; query.setAttribute('aria-label', 'Search marketplace'); query.required = true
-      const submit = button('secondary', 'Search', () => undefined); submit.type = 'submit'; submit.disabled = !app.isOnline('fos')
-      form.append(query, submit); form.className = 'marketplace-search'
-      form.onsubmit = event => { event.preventDefault(); const id = app.addRowAt([], 'query', query.value, { extras: { query: { market: true } } }); const row = app.currentView()?.tasks.find(r => r.id === id); if (row) void app.runQueryAt([], row) }
-      panel.push(form)
-      if (app.currentRow()?.kind === 'template') panel.push(button('secondary small', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
+    // what this peer may do here: three switches; everything else about the peer stays on its row in Settings
+    const grants = app.peerGrants(p.id)
+    const switches = div('peer-grants', ''); switches.setAttribute('role', 'group'); switches.setAttribute('aria-label', `${p.name} grants`)
+    const labels: Record<Grant, string> = { read: 'Read', edit: 'Write', execute: 'Execute' }
+    for (const grant of GRANTS) {
+      const label = document.createElement('label'); label.className = 'switch'
+      const input = document.createElement('input'); input.type = 'checkbox'; input.checked = grants.includes(grant); input.disabled = !app.canApprove() || !!preview
+      input.setAttribute('aria-label', `${p.name}: ${labels[grant].toLowerCase()}`)
+      input.onchange = () => app.setPeerGrant(p.id, grant, input.checked)
+      label.append(input, span('switch-track', ''), span('switch-label', labels[grant]))
+      switches.append(label)
     }
-  } else {
-    rows.append(...renderRootRows(state, app, 'device')); if (rows.childElementCount) panel.push(rows)
-    if (app.transport()) panel.push(span('muted', `Device syncs ${pathLabel(app.labels().scope)}`))
-    panel.push(span('muted', `Type @{ in a new row to add a peer · ${app.currentView()?.versions ?? 0} previous versions`))
+    panel.push(switches)
+    if (!grants.length) panel.push(div('muted', p.mcpServer ? 'Disabled: this server accepts no connections for this node until a grant is on.' : `Disabled here: ${p.name} gets nothing on this node until a grant is on.`))
+    if (p.agentCli) panel.push(div('muted', `${p.name} is on this computer's PATH (${p.agentCli.path}).${app.peerGrants('mcp:local').length ? '' : ' Enable the local MCP server too and it can work on this node directly.'}`))
+    if (p.mcpServer?.transport === 'desktop' && grants.length) {
+      const endpoint = localMcpEndpoint(app)
+      if (endpoint) {
+        const config = document.createElement('textarea'); config.readOnly = true; config.rows = 7; config.value = mcpConfig(endpoint.url, endpoint.token); config.setAttribute('aria-label', 'MCP configuration')
+        panel.push(div('muted', `Serving this node on this computer with ${grants.map(g => labels[g].toLowerCase()).join(', ')}. Paste this into any MCP client:`), config)
+      } else { panel.push(div('muted', 'Starting the local MCP server…')); app.syncLocalMcp() }
+    }
+    if (p.mcpServer?.transport === 'server' && grants.length) {
+      const connection = hostedMcpConnection(app)
+      if (connection) {
+        const config = document.createElement('textarea'); config.readOnly = true; config.rows = 7; config.value = mcpConfig(connection.url, connection.token); config.setAttribute('aria-label', 'MCP configuration')
+        panel.push(div('muted', 'A credential for this node on your Fos server, limited to the grants above:'), config, button('secondary small', 'Revoke credential', () => void connection.stop().then(() => app.refresh())))
+      } else {
+        const create = button('secondary small', 'Create credential', () => void connectNodeAgent(app, 'server', 'Fos MCP server', { peerId: 'mcp:server', capabilities: app.peerCapabilities('mcp:server').filter((c): c is 'read' | 'edit' | 'approve' | 'execute' => ['read', 'edit', 'approve', 'execute'].includes(c)) }).then(() => app.refresh()).catch(error => app.notify('error', String(error))))
+        create.disabled = !app.isOnline('fos') || state.session?.kind !== 'user'
+        panel.push(div('muted', 'A scoped credential lets an agent reach this node through your Fos server with the grants above.'), create)
+      }
+    }
+    if (p.integration) {
+      // the connection to the outside service (sign in, phone number) stays here; its offers are on the Settings row
+      const row = renderRootRows(state, app, 'integrations', p.id)[0]
+      const connection = row?.querySelector('.peer-connection')
+      if (connection) panel.push(connection as HTMLElement)
+    }
+    if (p.fosUser && p.member) panel.push(button('secondary small', `Remove @${p.name} from this node`, () => app.removePeerHere(p.id)))
+  } else if (group.peer?.isAccount && !group.peer.fosUser) {
+    const form = document.createElement('form'), query = document.createElement('input')
+    query.placeholder = 'Find a capability on the marketplace…'; query.setAttribute('aria-label', 'Search marketplace'); query.required = true
+    const submit = button('secondary', 'Search', () => undefined); submit.type = 'submit'; submit.disabled = !app.isOnline('fos')
+    form.append(query, submit); form.className = 'marketplace-search'
+    form.onsubmit = event => { event.preventDefault(); const id = app.addRowAt([], 'query', query.value, { extras: { query: { market: true } } }); const row = app.currentView()?.tasks.find(r => r.id === id); if (row) void app.runQueryAt([], row) }
+    panel.push(form)
+    if (app.currentRow()?.kind === 'template') panel.push(button('secondary small', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
+    if (!app.isOnline('fos')) panel.push(div('muted', 'Fos server is offline. Connect to use GitHub and other server integrations.'), button('secondary small', 'Connect Fos server', () => app.goToAccountPeer()))
   }
   if (group === server && !preview) {
     panel.push(fosUserSearch(app))
   }
-  if (!preview && (group.id === 'device' || group === server)) {
-    const host = group === server ? 'server' : 'desktop'
-    const agent = button('secondary small', 'Connect to agent', () => openNodeAgent(app, host))
-    agent.disabled = !app.canApprove() || (host === 'desktop' ? !inTauri() : state.session?.kind !== 'user' || !app.isOnline('fos'))
-    agent.title = host === 'desktop' ? 'Host this node on the desktop app for an agent' : 'Host this node on Fos server for an agent'
-    panel.push(agent)
-  }
+
   context.replaceChildren(...panel)
 }
 function settingControl(key: string, state: AppState, app: App): HTMLElement {
@@ -1184,6 +1218,18 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
     box.classList.add('setting-row'); box.append(span('constructor-label', SETTING_LABELS[key] ?? key))
     if (task.construction?.name === app.settingKey(key)) box.append(settingControl(key, state, app))
     else box.append(span('muted', 'Owned by another device'))
+  }
+  else if (task.construction?.handler && (task.construction.handler.startsWith('agent-cli:') || task.construction.handler.startsWith('mcp:'))) {
+    // a sub-peer dropped into a row: pick one of its actions
+    const handler = task.construction.handler, peer = app.contextPeers().find(p => p.id === handler)
+    box.append(span('constructor-label', `@{${peer?.name ?? handler}}`))
+    const actions = constructorOptions(app).filter(c => c.group === handler)
+    const select = document.createElement('select'); select.setAttribute('aria-label', `${peer?.name ?? handler} action`)
+    for (const action of actions) select.append(new Option(action.label, action.id))
+    if (!actions.length) select.append(new Option('No actions available here', ''))
+    const go = button('secondary small', 'Go', () => { if (select.value) insertConstructor(app, select.value, path) }); go.disabled = !actions.length
+    box.append(select, go)
+    box.addEventListener('click', event => event.stopPropagation())
   }
   else if (task.construction?.handler) {
     const handler = task.construction.handler

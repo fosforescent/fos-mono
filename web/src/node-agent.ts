@@ -6,24 +6,83 @@ import { inTauri, tauriInvoke } from './project'
 type Connection = { transport: 'desktop' | 'server'; peer: string; scope: string[]; url: string; token: string; stop(): Promise<void> }
 const connections = new WeakMap<App, Connection[]>()
 
-export async function connectNodeAgent(app: App, transport: 'desktop' | 'server', name: string): Promise<Connection> {
+/**
+ * The device's MCP server for the viewed node (`mcp:local`, a sub-peer of the device): a loopback endpoint that
+ * serves the node through the event grammar as that peer, exposing exactly the tools its grants here allow. It runs
+ * while any grant is on and stops when all are off (then it accepts no connections). Credentials never enter the graph.
+ */
+type LocalMcp = { scope: string[]; store: App['state']['replica']['store']; url: string; token: string; stop(): Promise<void> }
+const localMcp = new WeakMap<App, LocalMcp>()
+export function localMcpEndpoint(app: App, scope = app.state.view): { url: string; token: string } | null {
+  const running = localMcp.get(app)
+  return running && running.store === app.state.replica.store && JSON.stringify(running.scope) === JSON.stringify(scope) ? { url: running.url, token: running.token } : null
+}
+export async function ensureLocalMcp(app: App, scope: string[]): Promise<{ url: string; token: string } | null> {
+  if (!inTauri()) return null
+  const existing = localMcp.get(app)
+  if (existing && existing.store === app.state.replica.store && JSON.stringify(existing.scope) === JSON.stringify(scope)) return { url: existing.url, token: existing.token }
+  if (existing) await existing.stop().catch(() => {})
+  const store = app.state.replica.store, branches = nodeBranches(app.state.replica, scope)
+  const endpoint = await tauriInvoke<{ id: string; url: string; token: string }>('node_agent_start')
+  if (!endpoint) return null
+  let stopped = false, timer: ReturnType<typeof setTimeout> | undefined
+  const running: LocalMcp = { scope, store, url: endpoint.url, token: endpoint.token, async stop() {
+    if (stopped) return
+    stopped = true; clearTimeout(timer)
+    if (localMcp.get(app) === running) localMcp.delete(app)
+    running.token = ''
+    await tauriInvoke('node_agent_stop', { id: endpoint.id })
+    app.refresh()
+  } }
+  localMcp.set(app, running)
+  const poll = async () => {
+    if (stopped) return
+    // the endpoint lives as long as this node is viewed in this data session and the peer keeps a grant here
+    if (app.state.replica.store !== store || !app.peerGrants('mcp:local', scope).length) { await running.stop().catch(() => {}); return }
+    try {
+      const requests = await tauriInvoke<Array<{ id: string; message: unknown }>>('node_agent_poll', { id: endpoint.id })
+      for (const request of requests ?? []) {
+        const capabilities = app.peerCapabilities('mcp:local', scope)
+        const response = await handleMcp(request.message, { owner: false, capabilities, serverName: 'fos-node', dispatch: async event => {
+          if (stopped || app.state.replica.store !== store) throw new Error('MCP server stopped.')
+          const scoped: FosEvent = event.kind !== 'decide' && event.kind !== 'invite' && branches.length && !event.branches?.length ? { ...event, branches: branches.map(b => ({ path: b.scope.slice(scope.length), name: b.name })) } as FosEvent : event
+          return app.dispatchLocalEvent({ peerId: 'mcp:local', owner: false, scope, name: 'Local MCP server' }, scoped)
+        } })
+        await tauriInvoke('node_agent_reply', { id: endpoint.id, requestId: request.id, response })
+      }
+    } catch { await running.stop().catch(() => {}); return }
+    if (!stopped) timer = setTimeout(() => void poll(), 300)
+  }
+  window.addEventListener('pagehide', () => { void running.stop().catch(() => {}) }, { once: true })
+  void poll()
+  app.refresh()
+  return { url: endpoint.url, token: endpoint.token }
+}
+export async function stopLocalMcp(app: App): Promise<void> { await localMcp.get(app)?.stop().catch(() => {}) }
+
+/** The MCP connection configuration an agent pastes (Claude Code, Codex, any MCP client). */
+export function mcpConfig(url: string, token: string): string {
+  return JSON.stringify({ mcpServers: { fos: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2)
+}
+
+export async function connectNodeAgent(app: App, transport: 'desktop' | 'server', name: string, options: { peerId?: string; capabilities?: Array<'read' | 'edit' | 'approve' | 'execute'> } = {}): Promise<Connection> {
   const scope = [...app.state.view], session = app.state.session, store = app.state.replica.store
   const current = () => app.state.session === session && app.state.replica.store === store
   const selected = () => current() && JSON.stringify(scope) === JSON.stringify(app.state.view)
   if (!app.canApprove()) throw new Error('Only the node owner can connect an agent.')
-  const peer = `agent:${crypto.randomUUID()}`, branches = nodeBranches(app.state.replica, scope)
+  const peer = options.peerId ?? `agent:${crypto.randomUUID()}`, branches = nodeBranches(app.state.replica, scope)
   let connection: Connection
   if (transport === 'desktop') {
     const endpoint = await tauriInvoke<{ id: string; url: string; token: string }>('node_agent_start')
     if (!endpoint) throw new Error('Desktop app required.')
     const stopNative = async () => { await tauriInvoke('node_agent_stop', { id: endpoint.id }) }
     if (!selected()) { await stopNative(); throw new Error('Selected node changed.') }
-    try { app.attachAgentPeer(scope, peer, name) } catch (error) { await stopNative(); throw error }
+    try { if (!options.peerId) app.attachAgentPeer(scope, peer, name) } catch (error) { await stopNative(); throw error }
     let stopped = false, timer: ReturnType<typeof setTimeout> | undefined
     connection = { transport, peer, scope, url: endpoint.url, token: endpoint.token, async stop() {
       if (stopped) return
       stopped = true; clearTimeout(timer)
-      try { await stopNative() } finally { connection.token = ''; if (current()) app.removeAgentPeer(scope, peer) }
+      try { await stopNative() } finally { connection.token = ''; if (current() && !options.peerId) app.removeAgentPeer(scope, peer) }
     } }
     const poll = async () => {
       if (stopped) return
@@ -53,15 +112,15 @@ export async function connectNodeAgent(app: App, transport: 'desktop' | 'server'
     const invite = await createInvite(session, serverScope, app.labels().view)
     const claim = await claimInvite(session.baseUrl, invite.token, peer, name)
     if (!selected()) { await answerInviteRequest(session, invite.inviteId, 'deny'); throw new Error('Selected node changed.') }
-    await answerInviteRequest(session, invite.inviteId, 'approve', ['edit'])
+    await answerInviteRequest(session, invite.inviteId, 'approve', options.capabilities ?? ['edit'])
     try {
       const credential = await pollConnect(session.baseUrl, claim.requestId, peer)
       if (credential.status !== 'approved' || !credential.jwt || !selected()) throw new Error('Agent credential unavailable or account changed.')
-      app.attachAgentPeer(scope, peer, name)
+      if (!options.peerId) app.attachAgentPeer(scope, peer, name)
       connection = { transport, peer, scope, url: `${session.baseUrl.replace(/\/$/, '')}/user/data/peer-sync/mcp`, token: credential.jwt, async stop() {
         await detachSelf(session, peer)
         connection.token = ''
-        if (current()) { app.removeAgentPeer(scope, peer); await app.syncNow('agent disconnected') }
+        if (current()) { if (!options.peerId) app.removeAgentPeer(scope, peer); await app.syncNow('agent disconnected') }
       } }
       await app.syncNow('agent connected')
     } catch (error) { await detachSelf(session, peer); throw error }
@@ -70,6 +129,10 @@ export async function connectNodeAgent(app: App, transport: 'desktop' | 'server'
   return connection
 }
 
+/** The hosted MCP connections made from this app (the `mcp:server` sub-peer), by node. */
+export function hostedMcpConnection(app: App, scope = app.state.view): Connection | null {
+  return (connections.get(app) ?? []).find(c => c.transport === 'server' && c.token && JSON.stringify(c.scope) === JSON.stringify(scope)) ?? null
+}
 export function openNodeAgent(app: App, transport: 'desktop' | 'server'): void {
   const dialog = document.createElement('dialog'), form = document.createElement('form')
   dialog.className = 'constructor-dialog node-agent-dialog'

@@ -28,12 +28,18 @@ async function run(request) {
     }
     if (!['codex','claude'].includes(request.provider) || !request.cwd || !request.prompt?.trim()) throw new Error('Provider, repository, and task prompt are required')
     if (request.cli && request.evaluation) throw new Error('CLI launches require read-only node context')
-    if (request.evaluation) {
+    if (request.mcp && request.evaluation) throw new Error('A run uses either the node MCP server or an evaluation endpoint')
+    if (request.mcp) {
+      // the node's own MCP server on this device: the tools it exposes are exactly the grants the user toggled on
+      const url = new URL(request.mcp.url)
+      if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || typeof request.mcp.token !== 'string') throw new Error('The node MCP server must be an authenticated loopback endpoint')
+      context = { url: url.href, token: request.mcp.token, close() {} }
+    } else if (request.evaluation) {
       const url = new URL(request.evaluation.url)
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || typeof request.evaluation.token !== 'string') throw new Error('Evaluation requires an authenticated loopback endpoint')
       context = { url: url.href, token: request.evaluation.token, close() {} }
     } else context = await serveContext(request.context)
-    const prompt = request.evaluation ? `Use the fos evaluation MCP tools to perform this task. Start with fos_evaluation_read. Provide only declared inputs and consume only offered allocations. Complete when satisfied.\n\n${request.prompt}` : `Work in the selected repository. The fos MCP server exposes the task subtree from which this run was launched, captured at revision ${request.context.revision}. Start with fos_read at []. Read relevant descendants before implementing.\n\n${request.prompt}`
+    const prompt = request.mcp ? `The fos MCP server is this node on the user's device, with the tools the user granted you (read, propose changes, decide or evaluate). Start with fos_read at []. Record outcomes on the node through those tools.\n\n${request.prompt}` : request.evaluation ? `Use the fos evaluation MCP tools to perform this task. Start with fos_evaluation_read. Provide only declared inputs and consume only offered allocations. Complete when satisfied.\n\n${request.prompt}` : `Work in the selected repository. The fos MCP server exposes the task subtree from which this run was launched, captured at revision ${request.context.revision}. Start with fos_read at []. Read relevant descendants before implementing.\n\n${request.prompt}`
     if (request.cli) {
       await launchCli(request, context, abort.signal, emit)
       emit({ type: abort.signal.aborted ? 'cancelled' : 'completed' }); return
