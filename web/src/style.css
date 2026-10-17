@@ -121,6 +121,11 @@ input[type="text"], input[type="password"], input[type="search"], input[type="nu
   font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); color: var(--fg); min-width: 0;
 }
 input::placeholder, textarea::placeholder { color: var(--muted-2); }
+/* Mobile WebKit zooms the page (and leaves it horizontally scrollable) when a focused field is under 16px. Fields stay
+   at 16px on touch devices whatever the type scale says; !important beats the per-field sizes below. */
+@media (pointer: coarse) {
+  input, textarea, select { font-size: 16px !important; }
+}
 input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 select { padding-right: 24px; }
 .muted { color: var(--muted); font-size: 0.85rem; }
