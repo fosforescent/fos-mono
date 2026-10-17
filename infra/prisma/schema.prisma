@@ -78,6 +78,7 @@ model UserModel {
   OwnedMCPServers               MCPServerModel[]               @relation("MCPServerOwner")
   ProvidedServices              MCPToolModel[]                 @relation("ServiceProvider")
   VoiceNotes                    VoiceNoteModel[]               @relation("VoiceNoteOwner")
+  VoiceUsage                    VoiceUsageModel[]
   PeerInvites                   PeerInviteModel[]
 }
 
@@ -521,6 +522,23 @@ model VoiceNoteModel {
   
   @@index([userId, createdAt])
   @@index([sessionToken, createdAt])
+}
+
+/// Voice-note usage metering: the provider cost of one transcription (USD, with the token count and audio size), kept
+/// apart from the fos-points ledger (TokenTransactionModel) because it is a usage record, not a balance movement.
+/// `backend/voice/voiceNotes.ts` sums it against the free budget.
+model VoiceUsageModel {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  usd       Float
+  tokens    Int
+  seconds   Float
+  bytes     Int
+  clusters  Int
+  createdAt DateTime @default(now())
+  user      UserModel @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 /// An integration peer connection: OAuth tokens (encrypted, `secret`), or a linked phone number (`accountName`,

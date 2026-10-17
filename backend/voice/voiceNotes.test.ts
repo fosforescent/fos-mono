@@ -77,12 +77,12 @@ test('free budget: non-paying users are cut off at the budget, paying users are 
   await call(true); expect(sent.status).toBe(200); expect(records).toHaveLength(2)
 })
 
-test('prisma usage: paying detection, spend summed from voice-note debits, records as token transactions', async () => {
+test('prisma usage: paying detection, spend summed from usage rows, records usage rows (never ledger entries)', async () => {
   const created: any[] = []
   const prisma = {
     userModel: { async findUnique({ where }: any) { return where.user_name === 'free@x' ? { id: 1, subscription_status: '', role: 'user' } : where.user_name === 'pro@x' ? { id: 2, subscription_status: 'active', role: 'user' } : null } },
-    tokenTransactionModel: {
-      async findMany({ where }: any) { expect(where.type).toBe('debit'); return where.userId === 1 ? [{ metadata: { usd: 0.4 } }, { metadata: { usd: 0.35 } }, { metadata: {} }] : [] },
+    voiceUsageModel: {
+      async aggregate({ where }: any) { return { _sum: { usd: where.userId === 1 ? 0.75 : null } } },
       async create({ data }: any) { created.push(data) }
     }
   }
@@ -92,9 +92,7 @@ test('prisma usage: paying detection, spend summed from voice-note debits, recor
   expect(await usage.userOf({ claims: {} } as any)).toBeNull()
   expect(await usage.spent(1)).toBeCloseTo(0.75)
   await usage.record(1, { usd: 0.01, tokens: 1234, seconds: 3.2, bytes: 8000, clusters: 2 })
-  expect(created[0]).toMatchObject({ userId: 1, type: 'debit', amount: -1234, metadata: { kind: 'voice-note', usd: 0.01 } })
-  expect(created[0].description).toMatch(/^Voice note \(2 clusters/)
-  expect(typeof created[0].transactionId).toBe('string')
+  expect(created[0]).toEqual({ userId: 1, usd: 0.01, tokens: 1234, seconds: 3.2, bytes: 8000, clusters: 2 })
 })
 
 test('media input uses the same organization pipeline and rejects unsupported or oversized files', async () => {

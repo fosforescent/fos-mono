@@ -415,16 +415,6 @@ export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: st
   }))
 }
 
-/** List (or delist) a link row on the market: a flag on its ref node, no content version. */
-export function setMarketAt(replica: Replica, at: Scope, listed: boolean, now: number, by?: string): Replica {
-  return editNode(replica, at, now, (node) => {
-    const ref = makeLink(replica.store, node, now)
-    if (listed === !!ref.data.listing) return ref === node ? node : ref
-    const { listing: _m, ...rest } = ref.data
-    return { ...ref, data: listed ? { ...rest, listing: { listedAt: now, ...(by ? { by } : {}) } } : rest }
-  })
-}
-
 /** Change a query row's options (market flag, executed stamp). */
 export function setQueryOptionsAt(replica: Replica, at: Scope, queryId: string, patch: Partial<NonNullable<FosNodeContent['data']['query']>>, now: number): Replica {
   return updateTask(replica, at, queryId, now, (row) => (row.data.query ? { ...row, data: { ...row.data, query: { ...row.data.query, ...patch } } } : null))

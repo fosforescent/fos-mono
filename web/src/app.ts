@@ -60,7 +60,6 @@ import {
   setRowContentAt,
   type PeerPolicy,
   type ResourceType,
-  setMarketAt,
   setQueryOptionsAt,
   setRowKind,
   applyProposalAt,
@@ -123,6 +122,7 @@ import {
   type VoiceNote,
   getMarketNode,
   getTokenBalance,
+  sendEvent,
   listIntegrations,
   startIntegration,
   disconnectIntegration,
@@ -1075,7 +1075,7 @@ export class App {
     if (base.type === 'person' && !windowed) return { ...base, by }
     const bank = this.bankFor(at, allocation ? base.type : null, base.person, replica)
     if (!bank && base.type === 'points') {
-      // fos points without a bank row draw from the account's balance (the fos peer is the pool); it is checked server-side when spent
+      // fos points without a bank row draw from the account's balance (the fos peer is the pool); a payout moves them on the server's ledger when the task runs
       if (this.state.points !== null && base.amount > this.state.points) this.notify('error', `That is more than the ${this.state.points} fos points on the account; the allocation is recorded anyway.`)
       return { ...base, resource: 'fos:points', by }
     }
@@ -1359,7 +1359,7 @@ export class App {
     if (!session || session.kind !== 'user') { if (this.state.points !== null) this.set({ points: null }); return }
     try {
       const { balance } = await getTokenBalance(session)
-      if (this.state.session === session && typeof balance === 'number' && balance !== this.state.points) this.set({ points: balance })
+      if (this.state.session === session && typeof balance?.availableTokens === 'number' && balance.availableTokens !== this.state.points) this.set({ points: balance.availableTokens })
     } catch { /* the balance is informational; keep the last value */ }
   }
   /** Owner side: the capability rows under the peer `peerId` on the viewed node: `to` (granted, and which are switched off) and `from` (accepted). */
@@ -1415,13 +1415,25 @@ export class App {
     if (!this.canApprove(view(this.state.replica, path)) || !id.startsWith('agent:')) throw new Error('Only node owners can remove agents.')
     this.edit(removeMemberAt(this.state.replica, path, id, this.now()))
   }
-  addPeerHere(username: string): void {
+  /**
+   * Make a Fos user a member of the viewed node: an `invite` event. The account server records the member grant and
+   * delivers the node into that user's Home, so the membership reaches them (a local edge alone never would).
+   */
+  async addPeerHere(username: string): Promise<void> {
     const name = username.trim().replace(/^@/, '')
     if (!name) return
     if (!this.canApprove()) { this.notify('error', 'Only the owner of this node adds peers to it.'); return }
     if (contextMembers(this.state.replica, this.peerContextPath()).some(m => m.peerId === `user:${name}`)) return
-    this.edit(addMemberAt(this.state.replica, this.peerContextPath(), `user:${name}`, name, ['edit'], this.now()))
-    this.notify('info', `@${name} is a member here: they can propose on this node once they sync. Add or switch off capabilities on their row.`)
+    const session = this.state.session
+    if (!session || session.kind !== 'user' || !this.isOnline('fos')) { this.notify('error', 'Connect to your account to invite a Fos user: the server delivers the node to them.'); return }
+    try {
+      await this.syncNow('before invite') // the server must hold the node before it records the grant
+      await sendEvent(session, { kind: 'invite', path: [], user: name }, [...this.state.replica.meta.scope, ...this.peerContextPath()])
+      await this.syncNow('invite')
+      this.notify('info', `@${name} is a member here: the node is in their Home and they can propose on it. Add or switch off capabilities on their row.`)
+    } catch (error) {
+      this.notify('error', error instanceof Error ? error.message : String(error))
+    }
   }
   /** Owner side: drop a peer row (and everything it was granted) from the viewed node. */
   removePeerHere(peerId: string): void {
@@ -2030,8 +2042,11 @@ export class App {
   private serverHandles(step: import('../../shared/sync/evaluation').EvaluationStep): boolean {
     const r = step.row?.requirement
     if (!r || r.satisfied) return false
-    if (r.capability === 'llm' || r.capability === 'repo') return true
+    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market') return true
     if (r.capability === 'tool') return r.tool !== 'fos.pull'
+    // a poll resolves its choice on the server (the fos poll handler tallies the responses)
+    if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
+    if (r.capability === 'allocation' && r.resource === 'points') return true
     return r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined && capabilityPeers(this.state.replica, step.path, 'calendar').some(p => p.startsWith('integration:'))
   }
   async evaluateAt(path: Scope, triggered = false): Promise<void> {
@@ -2346,19 +2361,13 @@ export class App {
       this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
       return
     }
-    if (r.capability === 'market') {
-      const taskId = at[at.length - 1]
-      if (!taskId) { this.notify('error', 'Market requirements go under a task; the task is what gets listed.'); return }
-      this.setMarketAtRow(at.slice(0, -1), taskId, true)
-      if (this.state.session?.kind === 'user') this.edit(addSupply(this.state.replica, [...this.state.view, ...at], req.id, { capability: 'market', by: 'fos', ref: taskId }, this.now()))
-      return
-    }
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account: its peers handle this.'); this.openModal('connect'); return }
     const task = this.rowAt(at)
     try {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
-      if (r.capability === 'repo' || r.capability === 'tool' || (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)) {
+      const poll = r.capability === 'choice' && !!readNodeValue(this.state.replica, [...this.state.view, ...at, req.id], 'fos:poll')
+      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || poll || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
         if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
         await this.evaluateAt([...this.state.view, ...at, req.id])
@@ -2465,12 +2474,6 @@ export class App {
   toggleQueryMarket(at: Scope, query: TaskView): void {
     const market = !query.query?.market
     this.edit(setQueryOptionsAt(this.state.replica, [...this.state.view, ...at], query.id, { market }, this.now()))
-  }
-  /** List or delist a link row on the market (owner only). */
-  setMarketAtRow(at: Scope, id: string, listed: boolean): void {
-    if (!this.state.session || this.state.session.kind !== 'user') { this.notify('error', 'Sign in to your account to list on the market.'); return }
-    this.edit(setMarketAt(this.state.replica, [...this.state.view, ...at, id], listed, this.now(), this.state.session.username))
-    this.notify('info', listed ? 'Listed on the market: other accounts can find it and propose.' : 'Removed from the market.')
   }
   /** Workflowy-style Enter: a blank plain row right after `id` (same parent), selected for typing. */
   addRowBelow(at: Scope, id: string): void {

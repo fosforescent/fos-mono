@@ -89,7 +89,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     <header class="topbar">
       <div class="brand-row">
         <button type="button" class="icon menu-button" data-region="menu-button" aria-label="Menu">☰</button>
-        <div class="brand"><img src="/icon-192.png" width="24" height="24" alt="">Fosforescent</div>
+        <div class="brand"><img src="/icon-192.png" width="24" height="24" alt=""><span class="brand-name">Fosforescent</span></div>
       </div>
       <nav class="crumbs" data-region="crumbs" aria-label="Breadcrumb"></nav>
       <div class="status" data-region="status"></div>
@@ -398,7 +398,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   crumbs.className = 'crumb-path'
   const settingsContext = view.length > 0 && view[0] !== HOME_ID && !state.replica.meta.scope.length && !!viewAt(state.replica, [])?.tasks.some(row => row.id === HOME_ID)
   const homeCrumb = button('crumb', settingsContext ? 'Settings' : labels.scope.length ? shortCrumb(pathLabel(labels.scope)) : '⌂', () => settingsContext ? app.goToRoot() : app.goTo([]))
-  if (!settingsContext && !labels.scope.length) { homeCrumb.innerHTML = iconSvg('⌂')!; homeCrumb.setAttribute('aria-label', 'Home'); homeCrumb.title = 'Home' }
+  if (!settingsContext && !labels.scope.length) { homeCrumb.innerHTML = iconSvg('⌂')!; homeCrumb.classList.add('crumb-home'); homeCrumb.setAttribute('aria-label', 'Home'); homeCrumb.title = 'Home' }
   if (state.atRoot) {
     crumbs.append(span('crumb current', 'Settings'))
   } else {
@@ -960,7 +960,7 @@ function fosUserSearch(app: App): HTMLElement {
         const attached = app.contextPeers().some(p => p.id === `user:${username}` && p.member)
         const add = button('secondary small', attached ? `@${username} - attached` : `Add @${username}`, () => {
           if (!current() || !app.isOnline('fos')) return
-          app.addPeerHere(username)
+          void app.addPeerHere(username)
         })
         add.disabled = attached || !app.canApprove(); results.append(add)
       }
@@ -1233,7 +1233,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
     const editToggle = iconButton('✎', 'Input / edit', () => { workspace(app).input = !workspace(app).input; app.refresh() })
     editToggle.classList.add('input-toggle')
-    toolbar.append(run, iconButton('analysis', 'Analyze node', () => openAnalysis(app)))
+    const analyze = button('analyze', '', () => openAnalysis(app))
+    analyze.innerHTML = `${iconSvg('analysis') ?? ''}<span>Analyze</span>`
+    analyze.title = 'Analyze node'; analyze.setAttribute('aria-label', 'Analyze node')
+    toolbar.append(run, analyze)
     const titleSection = div('node-title-section', ''); titleSection.append(heading, editToggle)
     header.append(titleSection, toolbar)
     const values = div('node-values', '')
@@ -1401,7 +1404,8 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && !rows.length && node.tasks.length === 0) {
     const hint = document.createElement('li'); hint.className = 'first-run'
     const keys = div('first-run-keys', '')
-    keys.append('Press ', Object.assign(document.createElement('kbd'), { textContent: 'Ctrl' }), span('sep', '+'), Object.assign(document.createElement('kbd'), { textContent: 'H' }), ' for help')
+    if (window.matchMedia?.('(pointer: coarse)').matches) keys.append('Tap ', Object.assign(document.createElement('kbd'), { textContent: '?' }), ' for row syntax and tips')
+    else keys.append('Press ', Object.assign(document.createElement('kbd'), { textContent: 'Ctrl' }), span('sep', '+'), Object.assign(document.createElement('kbd'), { textContent: 'H' }), ' for help')
     hint.append(keys); rows.push(hint)
   }
   if (preview) {
@@ -1942,7 +1946,7 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
   if (task.refOwner) {
     // a market result: the node lives in another account; open it to read it and propose
     const link = button('link ref-link', `🛒 ${firstLine(task.title) || '(untitled)'}`, () => void app.openMarket(task.refOwner!, task.refId ?? '', task.title))
-    link.title = `Listed on the market by ${task.refOwner}; click to view and propose`
+    link.title = `Shared by ${task.refOwner} (listed on the market, or you are a member); click to view and propose`
     body.append(arrow, link, span('muted', ` — ${task.refOwner}`))
     return body
   }
@@ -2081,6 +2085,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
+      // a poll on the choice: the server's poll handler resolves it from the responses
+      if (r.capability === 'choice' && readNodeValue(state.replica, [...state.view, ...at, task.id], 'fos:poll')) body.append(stop(button('secondary small', 'Apply poll result', () => void app.askPeerAt(at, task))))
       if (r.capability === 'task') hint('add a [ ] task inside and check it off')
       if (r.capability === 'search') {
         const fos = handler('search')

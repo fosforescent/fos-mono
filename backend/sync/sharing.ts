@@ -20,7 +20,8 @@ async function locks<T>(names: string[], work: () => Promise<T>): Promise<T> {
   const next = (i: number): Promise<T> => i === keys.length ? work() : withUserLock(`user:${keys[i]}`, () => next(i + 1))
   return next(0)
 }
-export function createSharingHandlers(deps: PeerSyncDeps, secret: string) {
+/** `evaluate` is the host's evaluation service (its handler registry runs the effects of a finished execution). */
+export function createSharingHandlers(deps: PeerSyncDeps, secret: string, evaluate?: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string }) => Promise<unknown>) {
   if (!secret) throw new Error('Sharing requires a signing secret.')
   // A guest receipt cannot be used as an account or peer-sync JWT, even if presented to another endpoint.
   const guestSecret = createHmac('sha256', secret).update('fos:public-participation:v1').digest('hex')
@@ -161,7 +162,7 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string) {
     }),
     submit: run(async (req, res) => {
       const at = address(req.body), account = username(req)
-      return locks([at.owner, ...(account ? [account] : [])], async () => {
+      const outcome = await locks([at.owner, ...(account ? [account] : [])], async () => {
         const { user, r: host, policy } = await load(at, account, account ? `user:${account}` : readVisitor(req.body.visitorToken, at).peer)
         const peer = account ? `user:${account}` : readVisitor(req.body.visitorToken, at).peer
         if ((policy.execution || req.body.interaction === true) && !['idle', 'rolled-back'].includes(evaluationRecord(host, at.path)?.status ?? 'idle')) throw new Failure(409, 'This execution no longer accepts input.')
@@ -232,12 +233,24 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string) {
           }
         }
         await save(user, r)
-        if ((policy.execution || req.body.interaction === true) && !executionInputs(r, at.path).length) {
-          try { await evaluateNode(at.path, { get: () => r, save: async next => { r = next; await save(user, r) }, now, check: () => [], handles: () => false }) }
-          catch (error) { if (evaluationRecord(r, at.path)?.status === 'idle') r = writeNodeValue(r, at.path, 'fos:evaluation', { ...evaluationRecord(r, at.path), error: error instanceof Error ? error.message : 'Execution needs another handler.' }, now()); await save(user, r) }
-        }
-        return res.json({ node: { ...sharedProjection(r, at.path, digest, peer, req.body.interaction === true), sources: account ? links : undefined, mine: record, capabilities: ['read', 'approve', 'rank'].filter(c => participantAccess(r, at.path, peer, c as 'read' | 'approve' | 'rank')) } })
+        const complete = (policy.execution || req.body.interaction === true) && !executionInputs(r, at.path).length
+        return { peer, links, record, complete, expected: put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), at.path)!)) }
       })
+      // The last input finishes the execution: the host evaluates it (its registry runs the effects, e.g. a fos-points
+      // payout) outside the request's locks, since the evaluator takes the owner's lock itself.
+      if (outcome.complete) {
+        try {
+          if (evaluate) await evaluate(at.owner, { path: at.path, branches: {}, expected: outcome.expected })
+          else await withUserLock(`user:${at.owner}`, async () => { const loaded = (await deps.loadStore(at.owner))!; let r = createReplica(`user:${at.owner}`, loaded.store); await evaluateNode(at.path, { get: () => r, save: async next => { r = next; await save(loaded.user, r) }, now, check: () => [], handles: () => false }) })
+        } catch (error) {
+          await withUserLock(`user:${at.owner}`, async () => {
+            const loaded = (await deps.loadStore(at.owner))!, r = createReplica(`user:${at.owner}`, loaded.store)
+            if ((evaluationRecord(r, at.path)?.status ?? 'idle') === 'idle') await save(loaded.user, writeNodeValue(r, at.path, 'fos:evaluation', { ...(evaluationRecord(r, at.path) ?? { id: randomUUID(), status: 'idle', started: now(), effects: [] }), error: error instanceof Error ? error.message : 'Execution needs another handler.' }, now()))
+          })
+        }
+      }
+      const r = createReplica(`user:${at.owner}`, (await deps.loadStore(at.owner))!.store), { peer, links, record } = outcome
+      return res.json({ node: { ...sharedProjection(r, at.path, digest, peer, req.body.interaction === true), sources: account ? links : undefined, mine: record, capabilities: ['read', 'approve', 'rank'].filter(c => participantAccess(r, at.path, peer, c as 'read' | 'approve' | 'rank')) } })
     })
   }
 }

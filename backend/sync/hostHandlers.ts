@@ -3,7 +3,9 @@
  * entries with an `effect` execute requirements through the shared evaluator when a `complete` event reaches them,
  * the rest are services reached by their own routes and are only advertised.
  */
-import { addRow, addSupply, beginTaskWork, proposeTaskResult, taskWorkContext, type ResourceType } from '@fosforescent/shared/sync/index'
+import { createHash } from 'node:crypto'
+import { FosStore } from '@fosforescent/shared/dag-implementation/store'
+import { addRow, addSupply, beginTaskWork, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
 import type { HostHandler } from './registry'
 
 export type GitHubIssueDeps = {
@@ -81,10 +83,108 @@ export function llmHandler(deps: LlmDeps): HostHandler {
   }
 }
 
+export type MarketDeps = {
+  /** Index the account's rows now, so the listing is searchable by other accounts before it is recorded as supplied. */
+  index(user: { id: number; username: string }, store: FosStore): Promise<void>
+}
+
+/**
+ * `-market` requirements under a task: the server lists the task (the `listing` flag on its ref node), indexes the
+ * account so other accounts find it, and only then records the supply as its own. The client never writes a supply
+ * in the server's name.
+ */
+export function marketHandler(deps: MarketDeps): HostHandler {
+  return {
+    peerId: 'fos', capability: 'market',
+    async effect(ctx) {
+      const path = ctx.step.path
+      if (path.length < 2) throw new Error('Market requirements go under a task; the task is what gets listed.')
+      const taskPath = path.slice(0, -1)
+      await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now(), ctx.username))
+      await deps.index({ id: ctx.userId, username: ctx.username }, ctx.replica().store)
+      await ctx.update(addSupply(ctx.replica(), taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: taskPath.at(-1)! }, ctx.now()))
+    }
+  }
+}
+
+const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+/** A `choice` requirement with a poll configured on it (`fos:poll`, sync/sharing.ts `configurePoll`). */
+export const pollConfigured = (step: EvaluationStep, r: Replica) => step.row?.requirement?.capability === 'choice' && !!readNodeValue(r, step.path, 'fos:poll')
+
+/**
+ * Polls as the choice handler: a `choice` requirement with a poll configured is resolved by the tally when the node
+ * runs. Rank polls take the top Borda score, approval polls the most approvals; a tie blocks until more responses
+ * come in or the owner decides by hand. Approvals on pending submissions stay what they are, input the owner sees
+ * when deciding them.
+ */
+export function pollHandler(): HostHandler {
+  return {
+    peerId: 'fos', capability: 'poll',
+    handles: pollConfigured,
+    async effect(ctx) {
+      const r = ctx.replica(), path = ctx.step.path
+      if (!sharing(r, path)?.enabled) throw new Error('Publish this choice as a poll first (its share link is off).')
+      const node = sharedProjection(r, path, digest)
+      if (!node.poll) throw new Error('No poll is configured on this choice.')
+      if (!node.participants) throw new Error('No poll responses yet.')
+      const scores = node.options.map((option, index) => ({ index, label: option.label, score: (node.poll!.mode === 'rank' ? node.rankings : node.counts)[option.id] ?? 0 }))
+      const best = Math.max(...scores.map(s => s.score))
+      if (best <= 0) throw new Error('No poll responses yet.')
+      const winners = scores.filter(s => s.score === best)
+      if (winners.length > 1) throw new Error(`The poll is tied between ${winners.map(w => `“${w.label}”`).join(' and ')}; wait for more responses or decide by hand.`)
+      await ctx.update(addSupply(r, path.slice(0, -1), path.at(-1)!, { capability: 'choice', by: 'fos', choice: winners[0]!.index }, ctx.now()))
+    }
+  }
+}
+
+export type PointsDeps = {
+  /** Move fos points between accounts on the server's ledger; throws when the payer cannot cover it or the payee is unknown. */
+  transfer(from: { id: number; username: string }, toUsername: string, amount: number, memo: string): Promise<void>
+}
+
+/**
+ * A fos-points requirement (`ff 5 reward`) under a task is a payout: when the task runs, the server moves that many
+ * points from the owner's balance to the respondent (the signed-in user whose supplies filled the task's other
+ * requirements, or the user the requirement names with @) and records the allocation and supply as its own.
+ */
+export function pointsHandler(deps: PointsDeps): HostHandler {
+  return {
+    peerId: 'fos', capability: 'points',
+    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'points' },
+    async effect(ctx) {
+      const r = ctx.replica(), path = ctx.step.path, req = ctx.step.row!.requirement!
+      const amount = req.amount ?? 0
+      if (!(amount > 0)) throw new Error('Name an amount of fos points to pay.')
+      if (path.length < 2) throw new Error('A fos-points payout goes under the task it rewards.')
+      const taskPath = path.slice(0, -1), self = `user:${ctx.username}`
+      let recipient = req.peer
+      if (!recipient) {
+        const suppliers = new Set<string>()
+        for (const row of view(r, taskPath)?.tasks ?? []) if (row.kind === 'requirement' && row.id !== path.at(-1)) for (const supply of view(r, [...taskPath, row.id])?.tasks ?? []) if (supply.supply?.by) suppliers.add(supply.supply.by)
+        const people = [...suppliers].filter(p => p !== self && p !== 'fos')
+        if (people.some(p => p.startsWith('visitor:'))) throw new Error('Fos points go to signed-in Fos users; this respondent is anonymous.')
+        const users = people.filter(p => p.startsWith('user:')).map(p => p.slice('user:'.length))
+        if (!users.length) throw new Error('No one to pay yet: the other requirements of this task have no respondent.')
+        if (users.length > 1) throw new Error(`Several users answered (${users.map(u => `@${u}`).join(', ')}); name the recipient with @name on the points row.`)
+        recipient = users[0]!
+      }
+      if (recipient === ctx.username) throw new Error('The owner cannot pay themselves.')
+      const memo = `${ctx.step.row!.title || 'fos points'} (${taskPath.join('/')})`
+      await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient, amount, memo)
+      const id = `points:${ctx.now().toString(36)}`
+      let next = addRow(ctx.replica(), path, 'allocation', `${amount} fos points to @${recipient}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos', person: recipient } })
+      next = addSupply(next, taskPath, path.at(-1)!, { capability: 'allocation', by: 'fos', ref: id }, ctx.now())
+      await ctx.update(next)
+    }
+  }
+}
+
 export type HostHandlerDeps = {
   github: GitHubIssueDeps
   google: CalendarDeps
   llm: LlmDeps
+  market: MarketDeps
+  points: PointsDeps
   /** Attached MCP servers run `-tool` requirements (integrations/mcpPeers.ts `mcpToolHandler`). */
   tool?: HostHandler
   /** Is the account connected to the provider (`phone`)? */
@@ -97,10 +197,12 @@ export type HostHandlerDeps = {
 
 export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
   return [
-    // the server's own services: the row search index and market (search/routes.ts) and polls on shared nodes (sync/sharing.ts)
+    // the server's own services: the row search index (search/routes.ts) is a route; market listing, polls and
+    // fos points run as effects
     { peerId: 'fos', capability: 'search' },
-    { peerId: 'fos', capability: 'market' },
-    { peerId: 'fos', capability: 'poll' },
+    marketHandler(deps.market),
+    pollHandler(),
+    pointsHandler(deps.points),
     llmHandler(deps.llm),
     ...(deps.cron ? [{ peerId: 'fos', capability: 'cron' as const }] : []),
     githubRepoHandler(deps.github),

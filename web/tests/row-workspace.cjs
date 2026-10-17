@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-template-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'FormData', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location', 'FileReader']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'app.cjs'))
+const { parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm', 'poll']
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -35,13 +35,27 @@ async function main() {
   a.refresh()
   document.querySelector('.peer-tabs [aria-label="Fos server"]').click(); await tick()
   let lookup
-  globalThis.fetch = async (url, init) => { lookup = { url, init }; return { ok: true, json: async () => ({ users: [{ user_name: 'directory-owner' }, { user_name: 'alice' }] }) } }
+  const requests = []
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init })
+    if (String(url).endsWith('/user/data/events')) return { ok: true, json: async () => ({ status: 'invited', peer: 'user:alice', user: 'alice' }) }
+    lookup = { url, init }; return { ok: true, json: async () => ({ users: [{ user_name: 'directory-owner' }, { user_name: 'alice' }] }) }
+  }
+  const savedSync = a.syncNow; a.syncNow = async () => {}
   const userSearch = document.querySelector('[aria-label="Search Fos users"]')
   userSearch.value = 'ali ce'
   userSearch.closest('form').dispatchEvent(new window.Event('submit', { cancelable: true })); await tick()
   assert(lookup.url.endsWith('/groups/search/name?name=ali%20ce'))
   assert(!document.querySelector('.fos-user-results').textContent.includes('directory-owner'))
-  document.querySelector('.fos-user-results button').click(); await tick()
+  document.querySelector('.fos-user-results button').click(); await tick(); await tick()
+  // adding a Fos user is an `invite` event: the account server records the grant and delivers the node to them
+  const invite = requests.find(r => r.url.endsWith('/user/data/events'))
+  assert(invite, 'the invite went to the account server')
+  assert.deepEqual(JSON.parse(invite.init.body).event, { kind: 'invite', path: [], user: 'alice' })
+  assert(!view(a.state.replica, a.state.view).members.some(m => m.peerId === 'user:alice'), 'the client writes no member edge of its own')
+  a.syncNow = savedSync
+  // the grant the server recorded arrives with the next sync
+  a.set({ replica: addMemberAt(a.state.replica, a.state.view, 'user:alice', 'alice', ['edit'], 1) }); a.refresh(); await tick()
   assert(view(a.state.replica, a.state.view).members.some(m => m.peerId === 'user:alice' && m.capabilities.includes('edit')))
   assert(!document.querySelector('.peer-tabs [aria-label="alice"]'), 'Fos users are nested beneath the server')
   const userTab = [...document.querySelectorAll('.server-integrations button')].find(b => b.textContent === 'alice')

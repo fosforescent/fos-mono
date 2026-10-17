@@ -54,7 +54,7 @@ export function sharingControls(app: App, audience: 'public' | 'users', template
       const address = await configureSharing(session, { path: app.currentScope(), expected: put(r.store, valueContent(r.store, cid)), audience, enabled, template: templateTrigger, poll: (mode.value || null) as Poll['mode'] | null })
       if (templateTrigger) endpoint.value = enabled ? JSON.stringify({ method: 'POST', url: `${session.baseUrl.replace(/\/$/, '')}/${audience === 'public' ? 'public/node' : 'user/data/sharing'}/visit`, body: { owner: address.owner, path: address.path, share: address.share } }, null, 2) : ''
       output.value = enabled ? shareUrl(address) : ''; copy.disabled = !enabled
-      status.textContent = enabled ? 'Link ready. Visitors can submit input; approval does not merge edits.' : 'Link revoked.'
+      status.textContent = enabled ? 'Link ready. Visitors can submit input; “Apply poll result” on the choice resolves it from their responses.' : 'Link revoked.'
       await app.syncNow('sharing changed')
     } catch (error) { status.textContent = error instanceof Error ? error.message : String(error) }
     finally { publish.disabled = revoke.disabled = false }
@@ -216,7 +216,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
       } catch (error) { if (id === generation) showError(error) }
       finally { submit.disabled = false }
     }
-    form.append(element('p', `${snapshot.participants} response${snapshot.participants === 1 ? '' : 's'}. Approval records input; it does not merge proposed edits.`)); panel.append(form)
+    form.append(element('p', `${snapshot.participants} response${snapshot.participants === 1 ? '' : 's'}. Responses are tallied; the owner applies the result to the choice. Approvals on proposed edits inform the owner's decision.`)); panel.append(form)
   }
   const update = () => {
     if (app.state.connection === 'connecting' && !currentSession()) return

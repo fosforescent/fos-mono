@@ -294,6 +294,14 @@ function scheduleIndex(user: PeerSyncUser, store: FosStore): void {
   indexTimers.get(user.id)?.unref?.()
 }
 
+/** Index an account's rows right away (the market effect lists a task and wants it searchable before it reports success). */
+export async function indexNow(user: { id: number; username: string }, store: FosStore): Promise<void> {
+  if (process.env.ROW_INDEX_DISABLED === 'true') return
+  const pending = indexTimers.get(user.id)
+  if (pending) { clearTimeout(pending); indexTimers.delete(user.id) }
+  await indexStore(prisma, user, store, indexEmbed)
+}
+
 export const prismaPeerSyncDeps: PeerSyncDeps = {
   async loadStore(username) {
     const user = await prisma.userModel.findUnique({ where: { user_name: username }, include: { fosNode: true } })
