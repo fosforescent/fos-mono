@@ -1,4 +1,23 @@
+// The loopback MCP endpoint for local agents runs a tiny HTTP server, a desktop-only dependency: the mobile apps
+// (GUI only, agents connect from desktops) carry a stub so the web app's commands still resolve.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod node_agent;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+mod node_agent {
+    use serde_json::Value;
+    use tauri::State;
+    #[derive(Default)]
+    pub struct NodeAgents;
+    const UNAVAILABLE: &str = "Local agent connections are available in the desktop app";
+    #[tauri::command]
+    pub fn node_agent_start(_state: State<NodeAgents>) -> Result<Value, String> { Err(UNAVAILABLE.into()) }
+    #[tauri::command]
+    pub fn node_agent_poll(_id: String, _state: State<NodeAgents>) -> Result<Vec<Value>, String> { Err(UNAVAILABLE.into()) }
+    #[tauri::command]
+    pub fn node_agent_reply(_id: String, _request_id: String, _response: Value, _state: State<NodeAgents>) -> Result<(), String> { Err(UNAVAILABLE.into()) }
+    #[tauri::command]
+    pub fn node_agent_stop(_id: String, _state: State<NodeAgents>) -> Result<(), String> { Err(UNAVAILABLE.into()) }
+}
 mod agents;
 use serde::{Deserialize, Serialize};
 use std::fs;
