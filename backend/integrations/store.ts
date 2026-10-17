@@ -4,7 +4,7 @@
  */
 
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { createReplica, homePath, addRow, addSupply, addTask, headCid, setTaskDone, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
+import { createReplica, addSupply, headCid, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
 import type { PeerSyncDeps, PeerSyncUser } from '../sync/peerSync'
 
 /** The account's peer id (as `serverPeerIdFor` in peerSync; repeated here so this module loads without express/prisma in tests). */
@@ -48,31 +48,4 @@ export function walkRows(replica: Replica, at: Scope = []): Array<{ at: Scope; r
 }
 
 /** The texted-commands view of a tree: add a row at the root, list open tasks, check one off. */
-export function rowsDeps(deps: StoreDeps) {
-  const now = () => (deps.now ? deps.now() : Date.now())
-  return {
-    async add(userId: number, text: string): Promise<string> {
-      const task = text.match(/^(?:\[\s?\]|todo|task)\s*:?\s+(.+)$/is)
-      const title = (task ? (task[1] as string) : text).trim().slice(0, 500)
-      await editTree(deps, userId, async (replica) => ({ replica: task ? addTask(replica, homePath(replica), title, now()) : addRow(replica, homePath(replica), 'plain', title, now()), result: title }))
-      return title
-    },
-    async listOpen(userId: number, limit: number): Promise<string[]> {
-      const titles = await editTree(deps, userId, async (replica) => ({ replica: null, result: walkRows(replica).filter(({ row }) => row.kind === 'task' && !row.done).slice(0, limit).map(({ row }) => row.title) }))
-      return titles ?? []
-    },
-    async markDone(userId: number, words: string): Promise<string | null> {
-      const wanted = words.trim().toLowerCase()
-      if (!wanted) return null
-      return editTree(deps, userId, async (replica) => {
-        const hit = walkRows(replica).find(({ row }) => row.kind === 'task' && !row.done && row.title.toLowerCase().includes(wanted))
-        if (!hit) return { replica: null, result: null }
-        const next = setTaskDone(replica, hit.at, hit.row.id, true, now())
-        const done = view(next, hit.at)?.tasks.find((t) => t.id === hit.row.id)?.done
-        return { replica: done ? next : null, result: done ? hit.row.title : null }
-      })
-    }
-  }
-}
-
 export { addSupply }

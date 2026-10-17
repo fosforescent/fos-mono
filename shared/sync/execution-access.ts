@@ -37,25 +37,3 @@ export function executionInput(r: Replica, path: Scope, body: any, peer: string,
   r = addRow(r, target, 'allocation', field.name, now, { id, allocation })
   return addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: 'allocation', by: peer, ref: id }, now)
 }
-
-/** Same interaction vocabulary over stateless MCP. Scope is supplied by the transport. */
-export async function executionMcp(message: any, interact: (body: any) => Promise<unknown>) {
-  if (!message || Array.isArray(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' || ('id' in message && !['string', 'number'].includes(typeof message.id))) return { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid request' } }
-  if (!('id' in message)) return null
-  const ok = (result: unknown) => ({ jsonrpc: '2.0', id: message.id, result })
-  if (message.method === 'initialize') return ok({ protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'fos-evaluation', version: '1.0.0' } })
-  if (message.method === 'ping') return ok({})
-  if (message.method === 'tools/list') return ok({ tools: [
-    { name: 'fos_evaluation_read', description: 'Read this evaluation and its declared inputs.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-    { name: 'fos_evaluation_input', description: 'Provide one declared input or consume one offered allocation. Read first for keys, bounds and revision.', inputSchema: { type: 'object', properties: { revision: { type: 'string' }, key: { type: 'string' }, value: {} }, required: ['revision', 'key', 'value'], additionalProperties: false } },
-    { name: 'fos_evaluation_complete', description: 'Complete this evaluation after satisfying its inputs.', inputSchema: { type: 'object', properties: { revision: { type: 'string' } }, required: ['revision'], additionalProperties: false } }
-  ] })
-  if (message.method !== 'tools/call') return { jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Unknown method' } }
-  try {
-    const action = ({ fos_evaluation_read: 'read', fos_evaluation_input: 'input', fos_evaluation_complete: 'complete' } as Record<string, string>)[message.params?.name]
-    if (!action) throw new Error('Unknown tool')
-    const args = message.params?.arguments ?? {}
-    const result = await interact({ revision: args.revision, key: args.key, value: args.value, action })
-    return ok({ content: [{ type: 'text', text: JSON.stringify(result) }] })
-  } catch (error) { return ok({ isError: true, content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }] }) }
-}

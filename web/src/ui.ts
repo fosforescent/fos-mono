@@ -890,10 +890,7 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
   return true
 }
 function choiceButton(app: App, at: Scope, id: string, choice: number, label: string, absolute = false): HTMLButtonElement {
-  const b = button('secondary small', label, () => app.supplyRequirementAt(at, id, { capability: 'choice', choice }, absolute))
-  const connection = app.connectionOption([...(absolute ? at : [...app.state.view, ...at]), id], choice)
-  if (connection && !connection.enabled) { b.disabled = true; b.title = 'Requires an active Fos server and a configured provider' }
-  return b
+  return button('secondary small', label, () => app.supplyRequirementAt(at, id, { capability: 'choice', choice }, absolute))
 }
 function yamlImportButton(app: App): HTMLElement {
   return button('secondary small', 'Import', () => openImport(app))

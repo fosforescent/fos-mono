@@ -4,9 +4,9 @@ const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-execution-trigger-'))
 async function main() {
-  await build({ nodePaths: [path.resolve(__dirname, '../node_modules'), ...(process.env.NODE_PATH ?? '').split(path.delimiter).filter(Boolean)], stdin: { contents: `export {createSharingHandlers} from './backend/sync/sharing'; export {createExecutionHandlers} from './backend/sync/execution'; export * from './shared/sync/execution-access'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'persistence', setup(b) {
+  await build({ nodePaths: [path.resolve(__dirname, '../node_modules'), ...(process.env.NODE_PATH ?? '').split(path.delimiter).filter(Boolean)], stdin: { contents: `export {createSharingHandlers} from './backend/sync/sharing'; export {createEventService} from './backend/sync/events'; export * from './shared/sync/execution-access'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'persistence', setup(b) {
     b.onResolve({ filter: /\/peerSync$/ }, () => ({ path: 'locks', namespace: 'test' }))
-    b.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `const locks = new Map(); export async function withUserLock(key, f) { const previous = locks.get(key) ?? Promise.resolve(); let release; const next = new Promise(r => release = r); locks.set(key, previous.then(() => next)); await previous; try { return await f() } finally { release() } }` }))
+    b.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `export const serverPeerIdFor = name => 'user:' + name; const locks = new Map(); export async function withUserLock(key, f) { const previous = locks.get(key) ?? Promise.resolve(); let release; const next = new Promise(r => release = r); locks.set(key, previous.then(() => next)); await previous; try { return await f() } finally { release() } }` }))
     b.onResolve({ filter: /^@fosforescent\/shared\/sync\// }, args => ({ path: path.resolve(__dirname, '../../shared/sync', args.path.split('/').at(-1) + '.ts') }))
   } }] })
   const c = require(path.join(dir, 'test.cjs'))
@@ -21,30 +21,47 @@ async function main() {
   const h = c.createSharingHandlers({ loadStore: async name => replicas[name] ? { user: { id: name === 'host' ? 1 : name === 'alice' ? 2 : 3, username: name }, store: replicas[name].store } : null, saveStore: async (user, store) => { replicas[user.username] = c.createReplica('user:' + user.username, store) }, now: () => 100 }, 'test-secret')
   const call = async (action, body, account) => { const result = { status: 200 }; const res = { setHeader() {}, status(n) { result.status = n; return this }, json(value) { result.body = value; return this } }; await h[action]({ body, ...(account ? { claims: { kind: 'user', username: account } } : {}) }, res); return result }
   const configure = async audience => call('configure', { path: ['form'], expected: c.put(replicas.host.store, c.valueContent(replicas.host.store, c.resolveScope(replicas.host.store, c.headCid(replicas.host), ['form']))), audience, enabled: true, template: true, poll: null }, 'host')
-  const execution = c.createExecutionHandlers({ loadStore: async name => replicas[name] ? { user: { id: 1, username: name }, store: replicas[name].store } : null, saveStore: async (user, store) => { replicas[user.username] = c.createReplica('user:' + user.username, store) }, now: () => 100 }, 'test-secret')
-  await assert.rejects(execution.interact({ username: 'host', kind: 'peer' }, { path: ['private'], action: 'read' }), /peer attachment/)
-  await assert.rejects(execution.interact({ username: 'alice' }, { owner: 'host', path: ['private'], action: 'read' }), /another owner/)
+  // Hosted interaction is the event grammar: one service behind HTTP, MCP and the WebSocket. The host evaluates
+  // `complete` through its own driver (here: graph-only, no external handlers).
+  const hostDeps = { loadStore: async name => replicas[name] ? { user: { id: 1, username: name }, store: replicas[name].store } : null, saveStore: async (user, store) => { replicas[user.username] = c.createReplica('user:' + user.username, store) }, now: () => 100 }
+  const events = c.createEventService(hostDeps, async (username, request) => {
+    let r = c.createReplica('user:' + username, replicas[username].store)
+    const result = await c.evaluateNode(request.path, { get: () => r, save: async next => { r = next; replicas[username] = c.createReplica('user:' + username, next.store) }, now: () => 100, handles: () => false, check: () => [] })
+    if (result.status !== 'committed') throw new Error(result.error ?? 'needs recovery')
+    return result
+  })
+  const interact = async (claims, scope, event) => events.handle(events.principalOf(claims, scope), event)
+  await assert.rejects(interact({ username: 'host', kind: 'peer' }, [], { kind: 'read', path: ['private'] }), /peer attachment/)
   replicas.host = c.addTask(replicas.host, [], 'API task', 3, 'api-task')
   replicas.host = c.addRow(replicas.host, ['api-task'], 'requirement', 'Confirm', 3, { id: 'api-confirm', requirement: { capability: 'confirmation' } })
-  let snapshot = await execution.interact({ username: 'host' }, { path: ['api-task'], action: 'read' })
-  await assert.rejects(execution.interact({ username: 'host' }, { path: ['api-task'], action: 'input', revision: 'stale', key: snapshot.inputs[0].key, value: true }), /changed/)
-  await assert.rejects(execution.interact({ username: 'host' }, { path: ['api-task'], action: 'input', revision: snapshot.revision, key: '["private"]', value: true }), /declared/)
-  snapshot = await execution.interact({ username: 'host' }, { path: ['api-task'], action: 'input', revision: snapshot.revision, key: snapshot.inputs[0].key, value: true })
-  const mcp = await c.executionMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fos_evaluation_complete', arguments: { revision: snapshot.revision, path: ['private'] } } }, body => execution.interact({ username: 'host' }, { ...body, path: ['api-task'] }))
+  let snapshot = await interact({ username: 'host' }, ['api-task'], { kind: 'read', path: [] })
+  assert.equal(snapshot.evaluation.inputs.length, 1, 'declared inputs travel with the read')
+  await assert.rejects(interact({ username: 'host' }, ['api-task'], { kind: 'input', path: [], expected: 'stale', key: snapshot.evaluation.inputs[0].key, value: true }), /changed/)
+  await assert.rejects(interact({ username: 'host' }, ['api-task'], { kind: 'input', path: [], expected: snapshot.revision, key: '["private"]', value: true }), /declared/)
+  snapshot = await interact({ username: 'host' }, ['api-task'], { kind: 'input', path: [], expected: snapshot.revision, key: snapshot.evaluation.inputs[0].key, value: true })
+  const owner = events.principalOf({ username: 'host' }, ['api-task'])
+  const escape = await c.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'fos_evaluate', arguments: { path: ['private'], expected: 'x' } } }, { owner: true, dispatch: event => events.handle(owner, event) })
+  assert(escape.result.isError, 'MCP cannot leave its bound scope')
+  const read = await interact({ username: 'host' }, ['api-task'], { kind: 'read', path: [] })
+  const mcp = await c.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'fos_evaluate', arguments: { path: [], expected: read.valueRevision } } }, { owner: true, dispatch: event => events.handle(owner, event) })
   assert(!mcp.result.isError, JSON.stringify(mcp))
-  assert.equal(c.view(replicas.host, []).tasks.find(t => t.id === 'private').done, false, 'MCP cannot replace its bound scope')
+  assert.equal(c.view(replicas.host, []).tasks.find(t => t.id === 'private').done, false)
   assert.equal(c.evaluationRecord(replicas.host, ['api-task']).status, 'committed')
   replicas.host = c.addTask(replicas.host, [], 'Peer accessible task', 3, 'peer-task')
   replicas.host = c.addMemberAt(replicas.host, ['peer-task'], 'peer:reader', 'Reader', ['read'], 3)
   replicas.host = c.addMemberAt(replicas.host, ['peer-task'], 'peer:editor', 'Editor', ['read', 'edit'], 3)
   const reader = { username: 'host', kind: 'peer', peerId: 'peer:reader', scope: ['peer-task'] }
-  const peerSnapshot = await execution.interact(reader, { action: 'read', path: [] })
-  assert.equal(peerSnapshot.status, 'idle')
+  const peerSnapshot = await interact(reader, [], { kind: 'read', path: [] })
+  assert.equal(peerSnapshot.evaluation.status, 'idle')
   assert.equal(c.evaluationRecord(replicas.host, ['peer-task']), null, 'endpoint exists without evaluation constructor')
-  await assert.rejects(execution.interact(reader, { action: 'complete', path: [], revision: peerSnapshot.revision }), /cannot interact/)
-  await execution.interact({ ...reader, peerId: 'peer:editor' }, { action: 'complete', path: [], revision: peerSnapshot.revision })
+  await assert.rejects(interact(reader, [], { kind: 'complete', path: [], expected: peerSnapshot.valueRevision }), /cannot request/)
+  await assert.rejects(interact({ ...reader, peerId: 'peer:editor' }, [], { kind: 'complete', path: [], expected: peerSnapshot.valueRevision }), /accepts evaluation requests/, 'nobody accepts requests here yet')
+  replicas.host = c.setMemberCapabilitiesAt(c.addMemberAt(replicas.host, ['peer-task'], 'user:host-laptop', 'Laptop', [], 3), ['peer-task'], 'user:host-laptop', [], [], 3, ['request'])
+  const requested = await interact({ ...reader, peerId: 'peer:editor' }, [], { kind: 'complete', path: [], expected: (await interact({ ...reader, peerId: 'peer:editor' }, [], { kind: 'read', path: [] })).valueRevision })
+  assert.equal(requested.status, 'requested', 'an editor\'s completion becomes an evaluation request for the owner\'s rules')
+  assert(c.view(replicas.host, ['peer-task']).proposals.some(p => p.peerId === 'peer:editor' && p.name === 'evaluate []'))
   replicas.host = c.removeMemberAt(replicas.host, ['peer-task'], 'peer:reader', 4)
-  await assert.rejects(execution.interact(reader, { action: 'read', path: [] }), /denied/)
+  await assert.rejects(interact(reader, [], { kind: 'read', path: [] }), /access/)
   const configured = await configure('public'); assert.equal(configured.status, 200)
   const at = { owner: 'host', path: ['form'], share: configured.body.share }
   const [a, b] = await Promise.all([call('visit', at), call('visit', at)])
@@ -56,13 +73,6 @@ async function main() {
   const again = await call('visit', { ...at, visitorToken: a.body.entryToken })
   assert.deepEqual(again.body.address, a.body.address, 'returning browser resumes one instance')
   assert.equal((await call('visit', { ...a.body.address, visitorToken: a.body.visitorToken })).status, 200)
-  const publicMcp = async token => {
-    const out = { status: 200 }, res = { setHeader() {}, status(n) { out.status = n; return this }, json(body) { out.body = body; return this }, end() { return this } }
-    await execution.publicMcp({ method: 'POST', headers: { authorization: 'Bearer ' + token }, query: { address: JSON.stringify(a.body.address) }, body: { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'fos_evaluation_read' } } }, res)
-    return out.body.result
-  }
-  assert(!(await publicMcp(a.body.visitorToken)).isError)
-  assert((await publicMcp(b.body.visitorToken)).isError, 'visitor MCP cannot read another evaluation')
   const offer = a.body.node.inputs.find(f => f.direction === 'consume')
   assert(offer, 'offered allocations are visitor inputs')
   const excessive = await call('submit', { ...a.body.address, visitorToken: a.body.visitorToken, revision: a.body.node.revision, approvals: [], ranking: [], fields: { [offer.key]: { value: { amount: 3, type: 'inventory', unit: 'item' } } } })
@@ -80,6 +90,6 @@ async function main() {
   assert.deepEqual(alice.body.address, aliceAgain.body.address)
   assert.equal((await call('visit', alice.body.address, 'bob')).status, 403)
   assert.equal((await call('visit', { ...a.body.address, visitorToken: a.body.visitorToken })).status, 404, 'reconfigured endpoint revokes old instances')
-  console.log('PASS: template instances, browser/account identity, private link isolation, declared inputs, completion and revocation')
+  console.log('PASS: hosted interaction through the event grammar, template instances, browser/account identity, private link isolation, declared inputs, completion and revocation')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => rmSync(dir, { recursive: true, force: true }))

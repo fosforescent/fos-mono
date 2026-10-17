@@ -561,8 +561,9 @@ shows as "removed".
 `[serve]` in the config), the directory exposes on localhost (or the LAN):
 `/peer-sync`, the same protocol as the account, so nearby devices attach to
 the directory as to a node and their changes ride along in its proposal;
-`/mcp`, an MCP server (`list_tasks`, `add_task`, `set_task_done`,
-`rename_task`, `delete_task`, `sync_now`, `status`) for local agents;
+`/mcp`, the shared MCP vocabulary (`fos_read`, `fos_search`, `fos_propose`,
+`fos_input`, `fos_evaluate`, `fos_create_branch`, `fos_decide`; see "The event
+grammar") as the directory's owner, for local agents;
 `/p2p/offer|answer`, a relay for WebRTC offer/answer codes so two devices can
 bootstrap a direct connection without internet signalling; `/status`; and
 `/events?since=N`, a long-poll for change notifications.
@@ -701,16 +702,16 @@ Binding a CLI replica to the node and launching a terminal remain follow-up work
 
 **This device > Connect to agent** starts an authenticated loopback MCP endpoint
 in the desktop app. **Fos server > Connect to agent** creates a scoped peer
-credential for `/user/data/peer-sync/agent-mcp`. Each dialog provides configuration
-to copy into an agent and a disconnect action. The hosted endpoint requires the
-updated backend and currently supports main branches only; desktop connections
-use the selected branch.
+credential for `/user/data/peer-sync/mcp`. Each dialog provides configuration
+to copy into an agent and a disconnect action. The hosted endpoint supports main
+branches only; desktop connections use the selected branch.
 
-Both endpoints expose `fos_read` and `fos_propose_text`, limited to the selected
-node and its visible descendants. Reads respect peer permissions and field masks.
-Text changes become pending proposals for the owner's existing approval workflow;
-agents cannot merge them. Proposals require the revision returned by a read.
-The protocol is stateless MCP 2025-11-25 over HTTP with JSON responses.
+Both endpoints speak the shared MCP vocabulary (see "The event grammar"): the
+agent is an invited peer at the selected node, so it reads what its grants and
+field masks allow, and its `fos_propose` changes become pending proposals for the
+owner's existing approval workflow; agents cannot merge them. Proposals require
+the revision returned by a read. The protocol is stateless MCP over HTTP with
+JSON responses.
 
 Desktop connections require the window to remain open and stop on account changes.
 Hosted connections use a scoped peer credential, never the owner's login token.
@@ -736,36 +737,44 @@ or resource transfer. Graph-only evaluations run after all inputs are supplied;
 external integration effects still require their host-side handler. Hosted
 endpoints require deployment of the updated backend.
 
-### Evaluation interaction API and MCP
+### The event grammar: one vocabulary for every transport
 
-Account clients POST to `/user/data/evaluation` with an account JWT in the
-Authorization Bearer header. The body contains `path` (node ID segments) and
-`action`: `read`, `input`, or `complete`. Unpublished nodes are restricted to the
-account owner's graph. For another owner's private instance, include its `owner`
-and `share` from the template visit response. The same privacy, masks, membership,
-and entry revocation rules apply as on the shared webpage.
+Every input surface is an adapter of one grammar (`shared/sync/events.ts`): HTTP,
+MCP, the WebSocket, the desktop loopback endpoints, the `fos` binary's local
+server and texted commands all translate what they receive into a `FosEvent` and
+hand it to `dispatchEvent`. Handlers never change per transport, and a new
+transport is only a new adapter. The transport supplies the principal (who acts,
+at which attachment); an event can never widen it.
 
-Read returns `revision`, `inputs`, and node output (shared instances wrap these in
-`node`). Input submits `revision`, a declared input `key`, and `value`. Text is a
-string, confirmation is true, choice is a zero-based index, and allocation is
-`{type, unit, amount, start?, end?}` matching the returned bounds. Complete submits
-the latest revision after inputs are satisfied. Stale or undeclared submissions
-are rejected. Allocations record graph receipts; external side effects still
-require their evaluation handlers.
+| kind | what it does | MCP tool |
+|---|---|---|
+| `read` | one node: text, children, branches, pending submissions, declared inputs of a running evaluation, available actions | `fos_read` |
+| `search` | bounded text search below a node | `fos_search` |
+| `submit` | changes against the attachment (`add_task`, `add_note`, `add_plain`, `rename`, `complete`): the owner applies them, anyone else leaves a named proposal | `fos_propose` |
+| `input` | fill one declared hole of an execution: text, confirmation, choice or allocation | `fos_input` |
+| `complete` | evaluate a node: the owner's host runs its handler registry; anyone else leaves an *evaluation request* (below) | `fos_evaluate` |
+| `branch` | an alternative of a node (owner) | `fos_create_branch` |
+| `decide` | approve or reject a submission (approve capability) | `fos_decide` |
 
-The existing account WebSocket accepts
-`{type: "evaluation", id: "request-id", body: {...same request...}}` and responds
-with `{type: "evaluation_result", id, result}` or `error`. Wait for the socket's
-`connection_established` event before submitting. Each event rechecks JWT expiry
-and evaluation authority; a socket cannot change its authenticated identity.
+Adapters on the account server (`backend/sync/events.ts`): `POST /user/data/events`
+with `{event, scope?}` (owners may name a scope; peers use their signed attachment),
+`POST /user/data/peer-sync/mcp` for JSON-RPC (owners pass `?scope=["id",…]`), and the
+account WebSocket's `{type:"event", id, event, scope?}` →
+`{type:"event_result", id, result|error}`. Paths are relative to the attachment;
+`expected` is the revision returned by a read (`revision` for the attachment,
+`valueRevision` of a node for `fos_evaluate`). Stale or undeclared submissions are
+rejected. Allocations record graph receipts; external effects run only through the
+host's handler registry. Public visitors keep using `/public/node/visit|input`.
 
-MCP clients POST JSON-RPC to `/user/data/evaluation/mcp?address=...`, where address
-is URL-encoded JSON containing `path` and optionally `owner` and `share`. Use the
-account JWT as a Bearer credential. Public visitors can instead use
-`/public/evaluation/mcp?address=...` with their private instance address and its
-visitor JWT as Bearer credential. Their existing HTTP input endpoint remains
-`/public/node/input`. Tools are `fos_evaluation_read`, `fos_evaluation_input`, and
-`fos_evaluation_complete`. Tool arguments cannot replace the connection address.
+**Evaluation requests.** A peer that may edit but does not own the node cannot run
+effects. Its `complete` becomes a proposal on the node named `evaluate <path>`,
+carrying `fos:evaluation-request`, and is accepted only where some peer in that
+context offers the `request` capability (a device does when it has configured an
+"on request" trigger). The owner's `request` trigger evaluates it automatically, or
+the owner reviews it by hand. On the requesting side, `requestContinuation` sets up a
+`response` trigger on the requesting node automatically, so that node's own
+evaluation runs when the answer arrives: the requested node's committed evaluation,
+or the rejected request.
 
 The desktop evaluation toolbar shows an agent icon when a configured Claude or
 Codex SDK is available. Clicking it starts an evaluation-only loopback MCP server
@@ -791,12 +800,11 @@ type and unit. Analysis reads at most 2,000 descendants to depth 32, reports whe
 the row limit is reached, and does not traverse peer references. Refresh rereads
 the graph; query controls never edit it.
 
-Attached peers can use `/user/data/peer-sync/evaluation` and
-`/user/data/peer-sync/evaluation/mcp?address=...` with their scoped peer JWT.
-Paths are relative to the signed attachment. Endpoint access does not require an
-evaluation constructor or template instance. Reads respect node and field masks;
-interactions require edit permission on their target, and completing a transaction
-requires access to all effects it will execute. Revoking the peer removes access.
+Attached peers use the same event endpoints with their scoped peer JWT. Paths are
+relative to the signed attachment. Endpoint access does not require an evaluation
+constructor or template instance. Reads respect node and field masks; inputs and
+submissions require edit permission on their target; completion by a peer is an
+evaluation request. Revoking the peer removes access.
 Ordinary published nodes also expose interactions through their configured peers;
 unlike a visitor's private template instance, executing effects on the shared
 original requires explicit edit permissions.

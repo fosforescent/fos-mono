@@ -52,6 +52,10 @@ import {
   removeMemberAt,
   resolveRef,
   SERVER_TRANSPORT_CAPABILITIES,
+  dispatchEvent,
+  requestContinuation,
+  type FosEvent,
+  type Principal,
   setMemberCapabilitiesAt,
   setRowContentAt,
   type PeerPolicy,
@@ -1269,13 +1273,6 @@ export class App {
       }
     } catch { /* the rows fall back to the static registry */ }
   }
-  connectionOption(path: Scope, choice: number): { provider?: string; enabled: boolean } | null {
-    const config = readNodeValue<{ providers: string[] }>(this.state.replica, path, 'fos:connection')
-    if (!config || !Array.isArray(config.providers)) return null
-    const selected = config.providers[choice]
-    const provider = typeof selected === 'string' && ['google', 'github'].includes(selected) ? selected : undefined, status = this.state.integrations.find(p => p.id === provider)
-    return { provider, enabled: !!provider && !!status?.configured && this.isOnline('fos') && this.state.session?.kind === 'user' }
-  }
   /** Reuse the account OAuth or phone connection transport. */
   async connectIntegration(id: string): Promise<void> {
     const session = this.state.session
@@ -1421,12 +1418,6 @@ export class App {
   removeAgentPeer(path: Scope, id: string): void {
     if (!this.canApprove(view(this.state.replica, path)) || !id.startsWith('agent:')) throw new Error('Only node owners can remove agents.')
     this.edit(removeMemberAt(this.state.replica, path, id, this.now()))
-  }
-  exchangeAgentNode(request: NodeRequest) {
-    const result = exchangeNode(this.state.replica, request, { peerId: request.peerId, scope: request.scope, proposeOnly: true, capabilities: CLIENT_CAPABILITIES }, this.now())
-    this.set({ replica: { ...result.replica } })
-    if (request.update) this.scheduleSync()
-    return result.node
   }
   addPeerHere(username: string): void {
     const name = username.trim().replace(/^@/, '')
@@ -1970,19 +1961,25 @@ export class App {
     this.execution = { path: [...this.state.view], store: this.state.replica.store }
     this.refresh()
   }
-  async interactExecution(body: any): Promise<unknown> {
-    const path = this.executionPath()
-    if (!path || !this.canApprove()) throw new Error('This execution is no longer available.')
-    if (body.action === 'read') return executionSnapshot(this.state.replica, path)
-    if (this.evaluating) throw new Error('Evaluation is running.')
-    if (body.action === 'input') this.edit(executionInput(this.state.replica, path, body, this.state.replica.meta.peerId, this.now()))
-    else if (body.action === 'complete') {
-      const snapshot = executionSnapshot(this.state.replica, path)
-      if (body.revision !== snapshot.revision || snapshot.inputs.length || !['idle', 'rolled-back'].includes(snapshot.status)) throw new Error('Read the evaluation and satisfy its current inputs before completing.')
-      await this.finishExecution()
-    } else throw new Error('Unknown interaction.')
-    await this.config.storage.flush?.()
-    return executionSnapshot(this.state.replica, path)
+  /**
+   * One event of the grammar against this device's replica (the desktop loopback endpoints and local agents). The
+   * principal comes from the transport; owners' evaluations run through this app's own evaluator.
+   */
+  async dispatchLocalEvent(principal: Principal, event: FosEvent): Promise<unknown> {
+    const dispatched = dispatchEvent(this.state.replica, event, principal, this.now())
+    if (dispatched.changed) { this.edit(dispatched.replica); this.scheduleSync(); await this.config.storage.flush?.() }
+    if (dispatched.evaluate) {
+      if (this.evaluating) throw new Error('Evaluation is running.')
+      const path = dispatched.evaluate.path
+      if (JSON.stringify(path) === JSON.stringify(this.executionPath())) {
+        const snapshot = executionSnapshot(this.state.replica, path)
+        if (snapshot.inputs.length || !['idle', 'rolled-back'].includes(snapshot.status)) throw new Error('Satisfy the evaluation\'s current inputs before completing it.')
+        await this.finishExecution()
+      } else await this.evaluateAt(path, true)
+      await this.config.storage.flush?.()
+      return executionSnapshot(this.state.replica, path)
+    }
+    return dispatched.result
   }
   executionTimeEntries(): Array<{ start: number; end?: number; notes: string }> {
     const path = this.executionPath()
@@ -2049,7 +2046,14 @@ export class App {
         if (isDirty(this.state.replica) || !this.isOnline('fos')) throw new Error('Sync these changes before evaluating them.')
         const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
         if (!cid) throw new Error('The node no longer exists.')
-        try { await evaluateOnServer(this.state.session!, [...r.meta.scope, ...path], put(r.store, valueContent(r.store, cid)), this.evaluationBranches(path)) }
+        try {
+          const answer = await evaluateOnServer(this.state.session!, [...r.meta.scope, ...path], put(r.store, valueContent(r.store, cid)), this.evaluationBranches(path))
+          if (answer.status === 'requested') {
+            // Another peer owns this node: the request waits on their rules; this node continues when they answer.
+            this.edit(requestContinuation(this.state.replica, path, { request: answer.request, node: answer.node.slice(r.meta.scope.length), requestedAt: this.now() }, this.now()))
+            this.notify('info', 'Evaluation requested from the node\'s owner. This node continues automatically when they answer.')
+          }
+        }
         finally { if (generation === this.authGeneration) await this.syncNow('evaluation results') }
         valid()
         return
@@ -2402,14 +2406,10 @@ export class App {
   /** Supply a requirement: a confirmation by this user, a choice, or a reference to an allocation/query row. */
   supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: CapabilityKind; ref?: string; choice?: number }, absolute = false): void {
     if ((supply.capability === 'confirmation' || supply.capability === 'peer') && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
-    const connection = supply.capability === 'choice' ? this.connectionOption([...(absolute ? at : [...this.state.view, ...at]), requirementId], supply.choice ?? -1) : null
-    if (connection && !connection.enabled) { this.notify('error', 'Connect to Fos and configure this integration first.'); return }
     const by = this.state.session?.username ?? this.state.deviceName
     const parent = absolute ? at : [...this.state.view, ...at]
-    const replica = connection?.provider ? this.withIntegrationPeer(this.state.replica, parent, connection.provider) : this.state.replica
-    this.edit(addSupply(replica, parent, requirementId, { ...supply, by }, this.now()))
+    this.edit(addSupply(this.state.replica, parent, requirementId, { ...supply, by }, this.now()))
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirementId) })
-    if (connection?.provider && !this.state.integrations.some(p => p.id === connection.provider && p.connected)) void this.connectIntegration(connection.provider)
   }
   /** Run a query row: semantic search through the account; results become reference rows under it (replacing the previous ones). */
   async runQueryAt(at: Scope, query: TaskView): Promise<void> {

@@ -93,20 +93,20 @@ impl Workspace {
         Ok(id)
     }
 
-    pub fn rename(&self, prefix: &str, title: &str) -> Result<String, String> {
-        let (id, at) = self.find_task(prefix).ok_or_else(|| format!("no task matches {}", prefix))?;
-        let at_json = serde_json::to_string(&at).unwrap();
-        self.core.call("renameTask", &[json!(HANDLE), json!(at_json), json!(id), json!(title), json!(now_ms())]).map_err(|e| e.to_string())?;
-        self.save()?;
-        Ok(id)
-    }
-
     pub fn delete(&self, prefix: &str) -> Result<String, String> {
         let (id, at) = self.find_task(prefix).ok_or_else(|| format!("no task matches {}", prefix))?;
         let at_json = serde_json::to_string(&at).unwrap();
         self.core.call("deleteTask", &[json!(HANDLE), json!(at_json), json!(id), json!(now_ms())]).map_err(|e| e.to_string())?;
         self.save()?;
         Ok(id)
+    }
+
+    /// One MCP message (JSON-RPC) through the shared event grammar, as this directory's owner. Saves when the graph changed.
+    pub fn mcp(&self, message: &Value) -> Result<(Option<Value>, bool), String> {
+        let out = self.core.call_json("mcp", &[json!(HANDLE), json!(message.to_string()), json!(self.device.peer_id), json!(now_ms())]).map_err(|e| e.to_string())?;
+        let changed = out.get("changed").and_then(|c| c.as_bool()).unwrap_or(false);
+        if changed { self.save()?; }
+        Ok((out.get("response").filter(|r| !r.is_null()).cloned(), changed))
     }
 
     /// One sync round trip for the current branch. Returns a one-line summary.

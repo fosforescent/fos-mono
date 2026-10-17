@@ -304,8 +304,14 @@ export function createRepositoryBranch(session: Session, repo: string, name: str
   return authed(session, 'POST', '/user/integrations/repo', { action: 'branch', repo, name, from })
 }
 
-export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover'): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord }> {
-  return authed(session, 'POST', '/user/integrations/evaluate', { path, expected, branches, action })
+/** One event of the grammar (shared/sync/events.ts) for the account; owners address a node with `scope`. */
+export function sendEvent<T = unknown>(session: Session, event: import('../../shared/sync/events').FosEvent, scope: string[] = []): Promise<T> {
+  return authed(session, 'POST', '/user/data/events', { event, scope })
+}
+
+/** Evaluate a node on the account server (its handler registry runs the effects): a `complete` event at that node. */
+export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover'): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord; status?: undefined } | { status: 'requested'; proposalId: string; request: string; node: string[] }> {
+  return sendEvent(session, { kind: 'complete', path: [], expected, selections: branches, ...(action === 'recover' ? { recover: true } : {}) }, path)
 }
 
 export type ShareAddress = import('../../shared/sync/sharing').SharedAddress

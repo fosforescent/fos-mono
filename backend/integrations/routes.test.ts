@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { createIntegrationHandlers, createSmsInbound, type IntegrationDeps, type StoredConnection } from './routes'
+import { createIntegrationHandlers, type IntegrationDeps, type StoredConnection } from './routes'
 import { decryptSecret, encryptSecret, hashCode, readState, signState } from './secrets'
 import { parseTwilioWebhook, verifyTwilioSignature, normalizePhone } from '../channels/sms'
 import { createHmac } from 'node:crypto'
@@ -10,7 +10,6 @@ function fakeDeps(answers: Array<{ match: RegExp; status?: number; json: unknown
   const stored = new Map<string, StoredConnection>()
   const calls: Call[] = []
   const texts: Array<[string, string]> = []
-  const rows = { added: [] as string[], open: ['buy milk', 'call bob'], done: [] as string[] }
   const deps: IntegrationDeps = {
     env: { INTEGRATION_SECRET: 'top-secret', API_URL: 'https://api.test', WEB_URL: 'https://web.test', GITHUB_CLIENT_ID: 'gh-id', GITHUB_CLIENT_SECRET: 'gh-secret', GOOGLE_OAUTH_CLIENT_ID: 'g-id', GOOGLE_OAUTH_CLIENT_SECRET: 'g-secret' },
     async fetch(url, init) {
@@ -31,14 +30,9 @@ function fakeDeps(answers: Array<{ match: RegExp; status?: number; json: unknown
     },
     complete: async (_system, user) => `answer to: ${user}`,
     sms: async (to, text) => { texts.push([to, text]) },
-    rows: {
-      add: async (_id, text) => { rows.added.push(text); return text },
-      listOpen: async () => rows.open,
-      markDone: async (_id, words) => { const hit = rows.open.find((t) => t.includes(words)); if (hit) rows.done.push(hit); return hit ?? null }
-    },
     now: () => 1_760_000_000_000
   }
-  return { deps, stored, calls, texts, rows }
+  return { deps, stored, calls, texts }
 }
 
 function call(handler: (req: Request, res: Response) => Promise<unknown>, userId: number, { params = {}, query = {}, body = {} }: { params?: Record<string, string>; query?: Record<string, string>; body?: unknown } = {}) {
@@ -152,8 +146,8 @@ test('llm rejects oversized previews without calling the model and preserves the
   expect(complete).toHaveBeenCalledWith('Review required', prompt)
 })
 
-test('phone channel: a code is texted, verifying links the number; inbound texts add rows, list and check off tasks', async () => {
-  const { deps, stored, texts, rows } = fakeDeps()
+test('phone channel: a code is texted and verifying links the number', async () => {
+  const { deps, stored, texts } = fakeDeps()
   const h = createIntegrationHandlers(deps)
   expect((await call(h.phoneStart, 7, { body: { number: 'nope' } })).status).toBe(400)
   const started = await call(h.phoneStart, 7, { body: { number: '+1 (555) 123-4567' } })
@@ -167,21 +161,6 @@ test('phone channel: a code is texted, verifying links the number; inbound texts
   expect(await h.notifyUser(7, 'hello')).toBe(true)
   expect(texts.at(-1)).toEqual(['+15551234567', 'hello'])
   expect(await h.notifyUser(8, 'hello')).toBe(false)
-
-  const inbound = createSmsInbound(deps)
-  const msg = (text: string, from = '+15551234567') => inbound({ source: 'sms', id: 'm', from, replyTo: from, text, timestamp: 't' })
-  await msg('[ ] water the plants')
-  expect(rows.added).toEqual(['[ ] water the plants'])
-  expect(texts.at(-1)![1]).toBe('fos: added “[ ] water the plants”')
-  await msg('list')
-  expect(texts.at(-1)![1]).toBe('1. buy milk\n2. call bob')
-  await msg('done milk')
-  expect(rows.done).toEqual(['buy milk'])
-  expect(texts.at(-1)![1]).toBe('✓ done: buy milk')
-  await msg('done nothing')
-  expect(texts.at(-1)![1]).toContain('no open task')
-  await msg('hello', '+19990000000')
-  expect(texts.at(-1)![1]).toContain('not linked')
 })
 
 test('Twilio webhook parsing and signature', () => {

@@ -51,9 +51,9 @@ async function main() {
   await app.startExecution(task)
   connection = await c.connectEvaluationAgent(app)
   replies = []
-  pending.push({ id: 'evaluation-read', message: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'fos_evaluation_read', arguments: { path: [id] } } } })
+  pending.push({ id: 'evaluation-read', message: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'fos_read', arguments: {} } } })
   for (let i = 0; i < 20 && !replies.length; i++) await new Promise(resolve => setTimeout(resolve, 50))
-  assert.equal(JSON.parse(replies[0].response.result.content[0].text).nodes[0].text, 'Delegated evaluation')
+  assert.equal(JSON.parse(replies[0].response.result.content[0].text).evaluation.nodes[0].text, 'Delegated evaluation')
   assert(!JSON.stringify(storage.loadReplica()).includes('local-secret'))
   app.exitExecution()
   for (let i = 0; i < 20 && stopped < 2; i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -72,7 +72,7 @@ async function main() {
   }
   const hosted = await c.connectNodeAgent(app, 'server', 'Hosted agent')
   assert.equal(hosted.token, 'scoped-agent-token')
-  assert(hosted.url.endsWith('/peer-sync/agent-mcp'))
+  assert(hosted.url.endsWith('/peer-sync/mcp'))
   assert.deepEqual(JSON.parse(calls.find(call => call.url.endsWith('/peer-invite')).init.body).scope, [id])
   assert.deepEqual(JSON.parse(calls.find(call => call.url.endsWith('/7/approve')).init.body).capabilities, ['edit'])
   await hosted.stop()

@@ -25,7 +25,6 @@ import type { Capability } from '@fosforescent/shared/sync/index'
 import { PROVIDERS, providerById, type Provider } from './providers'
 import { decryptSecret, encryptSecret, hashCode, makeCode, readState, signState } from './secrets'
 import { normalizePhone } from '../channels/sms'
-import type { InboundMessage } from '../channels/types'
 
 export type StoredConnection = { provider: string; kind: string; accountName: string | null; secret: string; scopes: string; expiresAt: Date | null; metadata: Record<string, unknown> }
 
@@ -47,12 +46,6 @@ export type IntegrationDeps = {
   complete(system: string, user: string): Promise<string>
   /** Text a phone number (the SMS channel adapter); null when the platform has no number. */
   sms: ((to: string, text: string) => Promise<void>) | null
-  /** Rows of a user's tree, for texted commands. */
-  rows: {
-    add(userId: number, text: string): Promise<string>
-    listOpen(userId: number, limit: number): Promise<string[]>
-    markDone(userId: number, words: string): Promise<string | null>
-  }
   /** What this host has handlers for per provider (sync/registry.ts); absent means the peer provides nothing yet. */
   offers?(providerId: string): Capability[]
   now?: () => number
@@ -276,35 +269,8 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
   }
 }
 
-/**
- * Inbound texts from linked phones: "done <words>" checks off a task, "list" answers with the open tasks,
- * anything else becomes a row at the root. Unknown numbers get one short reply and nothing else.
- */
-export function createSmsInbound(deps: Pick<IntegrationDeps, 'connections' | 'rows' | 'sms'>) {
-  return async (message: InboundMessage): Promise<void> => {
-    if (message.source !== 'sms' || !deps.sms) return
-    const userId = await deps.connections.userByPhone(message.from)
-    const reply = (text: string) => deps.sms!(message.replyTo, text)
-    if (userId === null) { await reply('fos: this number is not linked to an account. Link it from the app (root › Phone).'); return }
-    const text = message.text.trim()
-    const done = text.match(/^(?:done|did|finished|✓)\s+(.+)$/i)
-    if (done) {
-      const title = await deps.rows.markDone(userId, (done[1] as string).trim())
-      await reply(title ? `✓ done: ${title}` : `fos: no open task matches “${done[1]}”`)
-      return
-    }
-    if (/^(list|ls|todo|tasks)$/i.test(text)) {
-      const open = await deps.rows.listOpen(userId, 8)
-      await reply(open.length ? open.map((t, i) => `${i + 1}. ${t}`).join('\n') : 'fos: nothing open')
-      return
-    }
-    const title = await deps.rows.add(userId, text)
-    await reply(`fos: added “${title}”`)
-  }
-}
-
 /** Prisma-backed deps for the real server; the model, the SMS sender and the row access are passed in. */
-export function prismaIntegrationDeps(prisma: { integrationConnectionModel: any; userModel: any }, userId: (req: Request) => Promise<number>, extra: Pick<IntegrationDeps, 'complete' | 'sms' | 'rows'>): IntegrationDeps {
+export function prismaIntegrationDeps(prisma: { integrationConnectionModel: any; userModel: any }, userId: (req: Request) => Promise<number>, extra: Pick<IntegrationDeps, 'complete' | 'sms'>): IntegrationDeps {
   const toStored = (row: any): StoredConnection => ({ provider: row.provider, kind: row.kind, accountName: row.accountName ?? null, secret: row.secret, scopes: row.scopes ?? '', expiresAt: row.expiresAt ?? null, metadata: (row.metadata ?? {}) as Record<string, unknown> })
   return {
     env: process.env,

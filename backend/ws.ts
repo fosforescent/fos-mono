@@ -12,7 +12,7 @@ const wss = new WebSocketServer({
 
 console.log('WebSocket server created');
 
-export const attachWs = (server: any, evaluation?: (claims: any, body: any) => Promise<unknown>) => {
+export const attachWs = (server: any, event?: (claims: any, body: any) => Promise<unknown>) => {
     // Handle upgrades manually
     server.on('upgrade', (request: any, socket: any, head: any) => {
 
@@ -111,13 +111,14 @@ export const attachWs = (server: any, evaluation?: (claims: any, body: any) => P
               const parsed = JSON.parse(message.toString()) as { type?: unknown }
               if (nodeRelay.receive(user.id, ws, parsed)) return
               if (parsed.type === 'hello') return // handled above
-              if (parsed.type === 'evaluation' && evaluation) {
-                const event = parsed as { id?: unknown; body?: unknown }
-                if (Buffer.byteLength(message.toString()) > 100_000) { ws.close(1009, 'Evaluation message too large'); return }
-                void evaluation(decodedToken, event.body).then(result => {
-                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'evaluation_result', id: event.id, result }))
+              // The WebSocket is one adapter of the event grammar: {type:'event', id, event, scope?} → {type:'event_result', id, result|error}
+              if (parsed.type === 'event' && event) {
+                const envelope = parsed as { id?: unknown; event?: unknown; scope?: unknown }
+                if (Buffer.byteLength(message.toString()) > 100_000) { ws.close(1009, 'Event message too large'); return }
+                void event(decodedToken, { event: envelope.event, scope: envelope.scope }).then(result => {
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'event_result', id: envelope.id, result }))
                 }).catch(error => {
-                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'evaluation_result', id: event.id, error: error instanceof Error ? error.message : 'Evaluation failed' }))
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'event_result', id: envelope.id, error: error instanceof Error ? error.message : 'Event failed' }))
                 })
                 return
               }

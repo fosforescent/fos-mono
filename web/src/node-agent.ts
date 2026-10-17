@@ -1,7 +1,5 @@
-import { executionMcp } from '../../shared/sync/execution-access'
 import type { App } from './app'
-import { agentMcp } from '../../shared/sync/agent-mcp'
-import { contextMembers, isDirty, nodeBranches, nodeRequestLinkId } from '../../shared/sync/index'
+import { contextMembers, handleMcp, isDirty, nodeBranches, type FosEvent } from '../../shared/sync/index'
 import { createInvite, claimInvite, answerInviteRequest, pollConnect, detachSelf } from './api'
 import { inTauri, tauriInvoke } from './project'
 
@@ -33,10 +31,12 @@ export async function connectNodeAgent(app: App, transport: 'desktop' | 'server'
       try {
         const requests = await tauriInvoke<Array<{ id: string; message: unknown }>>('node_agent_poll', { id: endpoint.id })
         for (const request of requests ?? []) {
-          const response = await agentMcp(request.message, async (path, update) => {
+          // The loopback is one adapter of the event grammar: the agent is an invited peer at this node.
+          const response = await handleMcp(request.message, { owner: false, serverName: 'fos-node', dispatch: async event => {
             if (stopped || !current()) throw new Error('Agent connection ended.')
-            return app.exchangeAgentNode({ peerId: peer, scope, path, branches, linkId: nodeRequestLinkId(peer, { peerId: app.state.replica.meta.peerId, scope: [...scope, ...path] }), ...(update ? { update } : {}) })
-          })
+            const scoped: FosEvent = event.kind !== 'decide' && branches.length && !event.branches?.length ? { ...event, branches: branches.map(b => ({ path: b.scope.slice(scope.length), name: b.name })) } as FosEvent : event
+            return app.dispatchLocalEvent({ peerId: peer, owner: false, scope, name }, scoped)
+          } })
           await tauriInvoke('node_agent_reply', { id: endpoint.id, requestId: request.id, response })
         }
       } catch { await connection.stop().catch(() => {}); return }
@@ -58,7 +58,7 @@ export async function connectNodeAgent(app: App, transport: 'desktop' | 'server'
       const credential = await pollConnect(session.baseUrl, claim.requestId, peer)
       if (credential.status !== 'approved' || !credential.jwt || !selected()) throw new Error('Agent credential unavailable or account changed.')
       app.attachAgentPeer(scope, peer, name)
-      connection = { transport, peer, scope, url: `${session.baseUrl.replace(/\/$/, '')}/user/data/peer-sync/agent-mcp`, token: credential.jwt, async stop() {
+      connection = { transport, peer, scope, url: `${session.baseUrl.replace(/\/$/, '')}/user/data/peer-sync/mcp`, token: credential.jwt, async stop() {
         await detachSelf(session, peer)
         connection.token = ''
         if (current()) { app.removeAgentPeer(scope, peer); await app.syncNow('agent disconnected') }
@@ -119,10 +119,12 @@ export async function connectEvaluationAgent(app: App) {
     if (!current()) { await stop().catch(() => {}); return }
     try {
       for (const request of await tauriInvoke<Array<{ id: string; message: unknown }>>('node_agent_poll', { id: endpoint.id }) ?? []) {
-        const response = await executionMcp(request.message, async body => {
+        // Evaluation-only loopback: the same tools, as the owner, scoped to the running execution.
+        const response = await handleMcp(request.message, { owner: true, serverName: 'fos-evaluation', dispatch: async event => {
           if (stopped || !current()) throw new Error('Evaluation connection ended.')
-          return app.interactExecution(body)
-        })
+          if (!['read', 'input', 'complete'].includes(event.kind)) throw new Error('Only reading, inputs and completion are available on an evaluation endpoint.')
+          return app.dispatchLocalEvent({ peerId: app.state.replica.meta.peerId, owner: true, scope: app.executionPath()! }, event)
+        } })
         await tauriInvoke('node_agent_reply', { id: endpoint.id, requestId: request.id, response })
       }
       if (!stopped) timer = setTimeout(() => void poll(), 200)
