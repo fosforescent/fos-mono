@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm run prepare:agents && npm run dev:web",
-    "beforeBuildCommand": "npm run prepare:agents && npm run build:web"
+    "beforeDevCommand": "npm run build:core && npm run prepare:agents && npm run dev:web",
+    "beforeBuildCommand": "npm run build:core && npm run prepare:agents && npm run build:web"
   },
   "app": {
     "withGlobalTauri": true,

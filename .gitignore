@@ -37,6 +37,9 @@ yarn-error.log*
 
 tsconfig.tsbuildinfo
 
+# built from shared/sync/embed.ts by `npm run build:core` (desktop/), run by the Tauri hooks and the release workflows
+desktop/src-tauri/js/fos-core.js
+
 #VS Code
 .vscode/*
 !.vscode/launch.json

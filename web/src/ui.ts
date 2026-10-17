@@ -938,34 +938,48 @@ function currentNodeActions(app: App): Action[] {
   ] : []
 }
 
-/** Search results only attach users to the node on which the search began. */
+/**
+ * "Add sub-peer" under the fos server: a peer nested beneath the server on this node. A Fos user (`@name`,
+ * autocompleted from the account directory while typing) is invited (`App.addPeerHere`: the server records the
+ * grant and delivers the node to them as a request); the same box will take sub-agents and meshed devices.
+ * Results only attach to the node on which the search began.
+ */
 function fosUserSearch(app: App): HTMLElement {
   const form = document.createElement('form'), query = document.createElement('input'), results = div('fos-user-results', '')
   const session = app.state.session, path = JSON.stringify(app.state.view)
-  let request = 0
+  let request = 0, timer: ReturnType<typeof setTimeout> | undefined
   const current = () => form.isConnected && app.state.session === session && JSON.stringify(app.state.view) === path
-  query.placeholder = 'Find Fos users'; query.setAttribute('aria-label', 'Search Fos users'); query.required = true; query.maxLength = 128
-  const search = button('secondary small', 'Search users', () => undefined); search.type = 'submit'
+  form.className = 'add-sub-peer'; form.setAttribute('aria-label', 'Add sub-peer')
+  query.placeholder = 'Add sub-peer: @name'; query.setAttribute('aria-label', 'Search Fos users'); query.required = true; query.maxLength = 128; query.autocomplete = 'off'
+  const search = button('secondary small', 'Add sub-peer', () => undefined); search.type = 'submit'
   search.disabled = session?.kind !== 'user' || !app.isOnline('fos')
   results.setAttribute('aria-live', 'polite')
   form.append(query, search, results)
-  form.onsubmit = async event => {
-    event.preventDefault(); const ticket = ++request
-    results.replaceChildren(span('muted', 'Searching...'))
+  const lookup = async () => {
+    const ticket = ++request, text = query.value.trim().replace(/^@/, '')
+    if (!text) { results.replaceChildren(); return }
     try {
-      const users = await app.findFosUsers(query.value)
+      const users = await app.findFosUsers(text)
       if (!current() || ticket !== request) return
       results.replaceChildren()
       for (const username of users) {
         const attached = app.contextPeers().some(p => p.id === `user:${username}` && p.member)
         const add = button('secondary small', attached ? `@${username} - attached` : `Add @${username}`, () => {
           if (!current() || !app.isOnline('fos')) return
-          void app.addPeerHere(username)
+          void app.addPeerHere(username); query.value = ''; results.replaceChildren()
         })
         add.disabled = attached || !app.canApprove(); results.append(add)
       }
       if (!users.length) results.append(span('muted', 'No users found.'))
     } catch (error) { if (current() && ticket === request) results.textContent = error instanceof Error ? error.message : String(error) }
+  }
+  // autocomplete while typing (debounced), Enter adds the single match
+  query.addEventListener('input', () => { if (search.disabled) return; clearTimeout(timer); timer = setTimeout(() => void lookup(), 250) })
+  form.onsubmit = event => {
+    event.preventDefault(); clearTimeout(timer)
+    const only = results.querySelectorAll('button:not(:disabled)')
+    if (only.length === 1) (only[0] as HTMLButtonElement).click()
+    else { results.replaceChildren(span('muted', 'Searching...')); void lookup() }
   }
   return form
 }
@@ -2126,8 +2140,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         const fos = handler('mail')
         const b = button('secondary small', fos ? `Ask ${fos.name} to send` : 'No mail handler', () => void app.askPeerAt(at, task))
         stop(b)
-        b.disabled = true
-        b.title = 'Mail is registered as a capability of fos, but no handler is wired to it yet'
+        b.disabled = !fos
+        b.title = fos ? 'The account server emails the first address in this row, with the rest as the subject and the task as the body' : 'Connect to your account: fos sends mail'
         if (fos) body.append(b)
       }
       if (r.capability === 'repo') {
@@ -2366,7 +2380,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     relay: 'Relays messages for peers that cannot reach each other',
     search: 'Runs "-? …" requirements: a query inside them, results as reference rows',
     market: 'Lists tasks with "-market" requirements and brings back proposals',
-    mail: 'Registered, no handler wired yet'
+    mail: 'Sends email for -mail requirements (the first address in the row is the recipient)'
   }
   /** One direction of a peer row as chips; with `change` they are editable (click switches off/on, × removes, a select adds). */
   const chips = (list: Capability[], off: Capability[], online: boolean, change: ((next: Capability[], nextOff: Capability[]) => void) | null, lockedNote?: string): HTMLElement[] => {

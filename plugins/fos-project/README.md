@@ -82,11 +82,12 @@ later calls. They do not switch the desktop or repository checkout. Proposal
 contents can be reviewed/copied in Fos; this version does not expose a proposed
 branch as an editable agent workspace.
 
-The server also supports `fos_create_branch` and `fos_evaluate` for an owner
-credential with an explicit URL `scope` JSON array. These are deliberately absent
-from the scoped peer packages. Evaluation delegates to the existing owner-only
-transaction evaluator, with version checks, active integration checks and its
-effect journal. An agent's `edit` grant never implies permission to spend money,
+The server also supports `fos_create_branch`, `fos_decide` and `fos_invite` for an
+owner credential with an explicit URL `scope` JSON array; these are deliberately
+absent from the scoped peer packages. `fos_evaluate` is available to every
+credential: an owner's host runs its handler registry (version checks, active
+integration checks, the effect journal); anyone else leaves an evaluation request
+the owner's rules decide on. An agent's `edit` grant never implies permission to spend money,
 run arbitrary handlers, or execute owner integrations. Uncertain effects require
 review; the bridge never retries writes automatically.
 

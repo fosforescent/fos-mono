@@ -312,7 +312,9 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .constructor-chip:hover:not(:disabled) { color: var(--warn-text); border-color: var(--warn); }
 .constructor-chip svg { width: 14px; height: 14px; }
 .node-context:empty { display: none; }
-.marketplace-search { display: flex; gap: 8px; flex-wrap: wrap; }
+.marketplace-search, .add-sub-peer { display: flex; gap: 8px; flex-wrap: wrap; }
+.add-sub-peer input { flex: 1 1 160px; }
+.add-sub-peer .fos-user-results { flex-basis: 100%; display: flex; gap: 6px; flex-wrap: wrap; }
 .marketplace-search input { flex: 1 1 160px; }
 .node-accordion { border-bottom: 1px solid var(--line); padding: 10px 0; min-width: 0; }
 .node-accordion > summary { cursor: pointer; font-size: .9rem; font-weight: 600; padding: 8px 0; }

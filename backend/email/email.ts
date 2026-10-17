@@ -94,6 +94,23 @@ export const sendConfirmationCodeEmail = async (email: string, code: string, act
   }
 }
 
+/** From address for mail the account server sends on a user's behalf (`-mail` requirements). */
+const MAIL_FROM = process.env.EMAIL_FROM ?? 'auth@fosforescent.com'
+/**
+ * A plain email the fos `mail` handler sends for a `-mail` requirement: recorded as an outbound email with its
+ * delivery attempt, like the templated ones. Throws when Postmark refuses it, so the requirement stays open.
+ */
+export const sendPlainEmail = async (to: string, subject: string, text: string, onBehalfOf: string) => {
+  const outboundEmail = await prisma.outboundEmailModel.create({ data: { from: MAIL_FROM, to, templateAlias: 'plain', templateModel: { subject, text, onBehalfOf } } })
+  try {
+    await postmarkClient.sendEmail({ From: MAIL_FROM, To: to, Subject: subject, TextBody: `${text}\n\n— sent through Fosforescent on behalf of @${onBehalfOf}`, MessageStream: 'outbound' })
+    await prisma.outboundDeliveryAttemptModel.create({ data: { emailId: outboundEmail.id, status: 'success' } })
+  } catch (error) {
+    await prisma.outboundDeliveryAttemptModel.create({ data: { emailId: outboundEmail.id, status: 'fail', reason: error instanceof Error ? error.message : String(error) } })
+    throw error
+  }
+}
+
 export const sendConfirmationEmail = async (email: string, token: string, clientDetails: ClientDetails) => {
   // Send password reset email
   const actionUrl = `${WEB_URL}/?confirm-email-token=${token}`

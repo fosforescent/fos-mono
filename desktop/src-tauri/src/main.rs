@@ -2,7 +2,7 @@
 //!
 //!   fos                   GUI for your account (context: ~, state in ~/.fos)
 //!   fos <dir>             GUI for a project directory (fos.config.toml, state in <dir>/.fos)
-//!   fos [dir] run         CLI: sync, print the tree, then serve nearby devices and local agents
+//!   fos [dir] run         CLI: sync, print the tree, then serve local agents (MCP) and the WebRTC relay
 //!   fos [dir] repl        interactive shell over the same tasks
 //!   fos [dir] ls|add|done|open|status|sync|attach|login|detach|init|serve
 //!
@@ -56,7 +56,7 @@ struct Cli {
 enum Commands {
     /// Launch the GUI (default)
     Gui,
-    /// Sync, show the tasks, then keep serving local devices and agents (peer-sync, MCP, WebRTC relay)
+    /// Sync, show the tasks, then keep serving local agents (MCP) and the WebRTC relay
     Run {
         #[arg(long)]
         port: Option<u16>,

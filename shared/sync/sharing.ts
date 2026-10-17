@@ -3,8 +3,9 @@ import { nodeAuthorityAt } from './node-context'
 import { nodeLinkMaskAt } from './node-provider'
 import { argumentRefs, capabilityPeers } from './bindings'
 import { readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
-import { addMemberAt, homePath, addRow, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
-import { capabilityTarget, content, hasCapability, resolveScope, refValueCid, type Scope } from './graph'
+import { addMemberAt, createReplica, homePath, addRow, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
+import { FosStore } from '../dag-implementation/store'
+import { capabilityTarget, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
 
 export const SHARE_ARGUMENT = 'fos:sharing'
 export const POLL_ARGUMENT = 'fos:poll'
@@ -123,20 +124,49 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), title: textVisible(path) ? (current?.title ?? node.name ?? 'Shared node').slice(0, 8000) : 'Shared node', rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
 }
 
-/** A node another account made this one a member of: an ordinary foreign ref below that account's host row in Home. */
-export function ensureMemberLink(r: Replica, owner: string, aliasId: string, title: string, now: number): { replica: Replica; path: Scope } {
-  const home = homePath(r), peer = `user:${owner}`, hostId = `shared-host:${owner}`, linkId = `member:${aliasId}`
-  const existing = resolveRef(r, linkId)
-  if (existing) return { replica: r, path: [...existing.path, existing.row.id] }
+/** The sub-peer row for another account below this one's Home (their peer id is its member), created on demand. */
+export function subPeerRowAt(r: Replica, owner: string, now: number): { replica: Replica; path: Scope } {
+  const home = homePath(r), peer = `user:${owner}`, hostId = `shared-host:${owner}`
   let host = (view(r, home)?.tasks ?? []).find(row => row.id === hostId || (row.requirement?.capability === 'peer' && row.requirement.peer === peer))
   if (!host) {
     r = addRow(r, home, 'plain', owner, now, { id: hostId })
     host = view(r, home)!.tasks.find(row => row.id === hostId)!
   }
   const hostPath = [...home, host.id]
+  // the sub-peer: a member of this node (so the fos server tab lists them) and of its row, with nothing granted
+  if (!view(r, home)?.members.some(member => member.peerId === peer)) r = addMemberAt(r, home, peer, owner, [], now)
   if (!view(r, hostPath)?.members.some(member => member.peerId === peer)) r = addMemberAt(r, hostPath, peer, owner, [], now)
-  r = addRow(r, hostPath, 'ref', title, now, { id: linkId, refOwner: owner, refId: aliasId })
-  return { replica: r, path: [...hostPath, linkId] }
+  return { replica: r, path: hostPath }
+}
+
+export const inviteRequestName = (title: string) => `invite: ${title}`
+
+/**
+ * Another account made this one a member of a node: the request lands as a *proposal* by that account on its sub-peer
+ * row below Home (the fos server relays it), adding the node as a foreign ref there. Nothing is granted to the
+ * inviter, and the ref appears only when this account accepts the proposal (`decide`); until then it is a pending
+ * submission like any other.
+ */
+export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, title: string, now: number): { replica: Replica; path: Scope; proposalCid: string | null } {
+  const peer = `user:${owner}`, linkId = `member:${aliasId}`, name = inviteRequestName(title || owner)
+  const sub = subPeerRowAt(r, owner, now)
+  r = sub.replica
+  const hostPath = sub.path
+  if (resolveRef(r, linkId)) return { replica: r, path: hostPath, proposalCid: null }
+  const store = r.store, root = headCid(r), hostCid = resolveScope(store, root, hostPath)!
+  const identity = content(store, hostCid)
+  const pending = readProposals(store, identity).find(p => p.peerId === peer && p.name === name && p.status === 'open')
+  if (pending) return { replica: r, path: hostPath, proposalCid: pending.cid }
+  // the proposal's content: the row's current value plus the ref, built in a scratch store rooted at that value
+  const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
+  importNodes(draftStore, reachableNodes(store, [base]))
+  commitRoot(draftStore, base, now)
+  const draft = addRow(createReplica(peer, draftStore), [], 'ref', title, now, { id: linkId, refOwner: owner, refId: aliasId })
+  importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
+  const proposalCid = put(store, proposalContent(store, peer, name, headCid(draft), base, now))
+  commitRoot(store, updateAtScope(store, root, hostPath, current => withProposal(store, makeLink(store, current, now), peer, proposalCid, name), 'node'), now)
+  void rootTargetCid
+  return { replica: { ...r }, path: hostPath, proposalCid }
 }
 
 export type SharedAddress = { owner: string; path: Scope; share: string }

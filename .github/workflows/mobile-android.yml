@@ -54,11 +54,14 @@ jobs:
         with:
           workspaces: desktop/src-tauri
 
-      - name: Install workspace dependencies (tauri CLI)
+      - name: Install workspace dependencies (tauri CLI, esbuild)
         run: npm ci
 
       - name: Install web dependencies
         run: cd web && npm ci
+
+      - name: Build the embedded sync core
+        run: cd desktop && npm run build:core
 
       - name: Initialize Android project
         run: cd desktop && npx tauri android init

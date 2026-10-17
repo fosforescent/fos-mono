@@ -2108,7 +2108,7 @@ export class App {
   private serverHandles(step: import('../../shared/sync/evaluation').EvaluationStep): boolean {
     const r = step.row?.requirement
     if (!r || r.satisfied) return false
-    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market') return true
+    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail') return true
     if (r.capability === 'tool') return r.tool !== 'fos.pull'
     // a poll resolves its choice on the server (the fos poll handler tallies the responses)
     if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
@@ -2433,7 +2433,7 @@ export class App {
     try {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
       const poll = r.capability === 'choice' && !!readNodeValue(this.state.replica, [...this.state.view, ...at, req.id], 'fos:poll')
-      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || poll || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
+      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || poll || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
         if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
         await this.evaluateAt([...this.state.view, ...at, req.id])
