@@ -35,16 +35,26 @@ test('inviting a Fos user records the member grant and delivers the node into th
   expect(first.status).toBe(200)
   expect(first.body).toMatchObject({ status: 'invited', peer: 'user:bob', user: 'bob', title: 'Plan the group trip' })
   expect(view(s.replicas.alice!, [HOME_ID, 'trip'])!.members.map(m => [m.peerId, m.capabilities])).toEqual([['user:bob', ['edit']]])
-  // Bob's Home: a host row for alice with the shared node as a foreign ref he can open and propose on
-  const host = view(s.replicas.bob!, [HOME_ID])!.tasks.find(t => t.id === 'shared-host:alice')!
+  // Bob's Home: alice is a sub-peer of his fos server with nothing granted, and the node is a pending request on her row
+  const bobHome = view(s.replicas.bob!, [HOME_ID])!
+  expect(bobHome.members.find(m => m.peerId === 'user:alice')!.capabilities).toEqual([])
+  const host = bobHome.tasks.find(t => t.id === 'shared-host:alice')!
   expect(host.title).toBe('alice')
-  const link = view(s.replicas.bob!, [HOME_ID, host.id])!.tasks[0]!
-  expect([link.kind, link.title, link.refOwner, link.refId]).toEqual(['ref', 'Plan the group trip', 'alice', first.body.id])
+  const hostView = view(s.replicas.bob!, [HOME_ID, host.id])!
+  expect(hostView.members.map(m => [m.peerId, m.capabilities])).toEqual([['user:alice', []]])
+  expect(hostView.tasks).toHaveLength(0)
+  expect(hostView.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:alice', 'invite: Plan the group trip', 'open']])
   expect(s.notified).toEqual([1, 2])
   // inviting again is idempotent on both sides
   const again = await s.send([HOME_ID, 'trip'], { kind: 'invite', path: [], user: 'bob' })
   expect(again.body.status).toBe('member')
-  expect(view(s.replicas.bob!, [HOME_ID, host.id])!.tasks).toHaveLength(1)
+  expect(view(s.replicas.bob!, [HOME_ID, host.id])!.proposals).toHaveLength(1)
+  // Bob accepts: the foreign ref appears under alice's sub-peer row, which he opens and proposes through
+  const decided = await s.send([HOME_ID, host.id], { kind: 'decide', path: [], proposalId: hostView.proposals[0]!.id, decision: 'approve' }, { username: 'bob' })
+  expect(decided.status).toBe(200)
+  const link = view(s.replicas.bob!, [HOME_ID, host.id])!.tasks[0]!
+  expect([link.kind, link.title, link.refOwner, link.refId]).toEqual(['ref', 'Plan the group trip', 'alice', first.body.id])
+  expect(view(s.replicas.bob!, [HOME_ID, host.id])!.proposals).toHaveLength(0)
 })
 
 test('invites need an existing user, an owner, and a host that relays', async () => {

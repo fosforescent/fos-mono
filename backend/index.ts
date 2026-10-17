@@ -1,6 +1,7 @@
 import { createEventService } from './sync/events'
 import { createSharingHandlers } from './sync/sharing'
 import { createEvaluationService } from './sync/evaluation'
+import { sendPlainEmail } from './email/email'
 import { createHandlerRegistry } from './sync/registry'
 import { createHostHandlers } from './sync/hostHandlers'
 import { startCronRunner } from './sync/cron'
@@ -502,6 +503,7 @@ const registry = createHandlerRegistry(createHostHandlers({
       await tokenManager.creditTokens(to.id, amount, `fos points from @${from.username}: ${memo}`, 'credit', undefined, undefined, { kind: 'points', from: from.username })
     }
   },
+  mail: { send: sendPlainEmail },
   tool: mcpToolHandler(mcpPeerDeps),
   connected: async (id, provider) => { const c = await integrationDeps.connections.get(id, provider); return !!c && (provider !== 'phone' || c.metadata.verified === true) },
   sms: !!smsAdapter?.configured(),

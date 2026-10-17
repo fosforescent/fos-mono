@@ -7,7 +7,7 @@ jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
-import { calendarHandler, llmHandler, marketHandler, pointsHandler, pollHandler } from './hostHandlers'
+import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler } from './hostHandlers'
 
 /** Each scenario gets its own store: a failed run leaves its journal in the store it ran against. */
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
@@ -156,4 +156,29 @@ test('a fos-points payout moves points on the ledger to the respondent and recor
   const broke = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer: async () => { throw new Error('Insufficient tokens') } })]))
   expect(String((await broke.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/Insufficient tokens/)
   expect(view(broke.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(false)
+})
+
+test('the mail effect emails the first address in the row with the task as the body, and records the supply as the server', async () => {
+  expect(mailRequest('team@example.com Trip plans', 'Plan the group trip', ['Book flights', 'Reserve lodging'])).toEqual({ to: 'team@example.com', subject: 'Trip plans', text: 'Plan the group trip\n- Book flights\n- Reserve lodging' })
+  expect(mailRequest('team@example.com', 'Plan the group trip', [])).toMatchObject({ subject: 'Plan the group trip' })
+  expect(mailRequest('no address here', 'x', [])).toBeNull()
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] })
+  r = addTask(r, [HOME_ID], 'Plan the group trip', 2, 'trip')
+  r = addTask(r, [HOME_ID, 'trip'], 'Book flights', 2, 'flights')
+  r = addRow(r, [HOME_ID, 'trip'], 'requirement', 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' } })
+  const sent: unknown[] = []
+  const send = jest.fn(async (to: string, subject: string, text: string, onBehalfOf: string) => { sent.push([to, subject, text, onBehalfOf]) })
+  const h = host(fresh(r), createHandlerRegistry([mailHandler({ send })]))
+  const result = await h.complete([HOME_ID, 'trip'], ['notify'])
+  if (!result.body.evaluation) throw new Error(`mail failed: ${JSON.stringify(result.body)}`)
+  expect(result.body.evaluation.status).toBe('committed')
+  expect(sent).toEqual([['team@example.com', 'Trip plans', 'Plan the group trip\n- Book flights', 'owner']])
+  const rows = view(h.get(), [HOME_ID, 'trip', 'notify'])!.tasks
+  expect(rows.find(t => t.kind === 'plain')!.title).toBe('Sent to team@example.com: Trip plans')
+  expect(rows.find(t => t.kind === 'supply')!.supply).toMatchObject({ capability: 'mail', by: 'fos' })
+  // no recipient: nothing is sent and the requirement stays open
+  const bad = addRow(ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] }), [HOME_ID], 'requirement', 'tell everyone', 2, { id: 'vague', requirement: { capability: 'mail' } })
+  const refused = await host(fresh(bad), createHandlerRegistry([mailHandler({ send })])).complete([HOME_ID], ['vague'])
+  expect(String(refused.body.error)).toMatch(/Name the recipient/)
+  expect(send).toHaveBeenCalledTimes(1)
 })
