@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "dev": "tauri dev",
+    "dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "build": "tauri build",
     "dev:web": "cd ../web && npm run dev",
     "build:web": "cd ../web && npm run build",
@@ -15,7 +15,7 @@
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build",
-    "build:core": "esbuild ../shared/sync/embed.ts --bundle --format=iife --platform=browser --target=es2020 --outfile=src-tauri/js/fos-core.js --inject:src-tauri/js/prelude.js",
+    "build:core": "node ../scripts/build-core.cjs",
     "prepare:agents": "npm ci --prefix agent-runtime --ignore-scripts"
   },
   "keywords": [
