@@ -1,6 +1,13 @@
 import type { Request, Response } from 'express'
 import { evaluationRecord, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
-import { createMcpPeerHandlers, mcpMembersAbove, type McpPeerDeps, type McpServerInfo } from './mcpPeers'
+jest.mock('../prismaClient', () => ({ prisma: {} }))
+jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
+jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
+import { createMcpPeerHandlers, mcpMembersAbove, mcpToolHandler, type McpPeerDeps, type McpServerInfo } from './mcpPeers'
+import { createEventService } from '../sync/events'
+import { createEvaluationService } from '../sync/evaluation'
+import { createHandlerRegistry } from '../sync/registry'
+import { withUserLock } from '../sync/peerSync'
 
 function setup(servers: McpServerInfo[]) {
   let r: Replica = createReplica('server')
@@ -13,14 +20,23 @@ function setup(servers: McpServerInfo[]) {
   const deps: McpPeerDeps = {
     loadStore: async (username) => ({ user: { id: 1, username }, store: r.store }),
     saveStore: async (user) => { saved.push(user.username) },
-    withUserLock: (_k, fn) => fn(),
+    withUserLock,
     usernameOf: async (id) => (id === 1 ? 'ada' : null),
     userId: async (req) => (req as unknown as { userId: number }).userId,
     servers: async () => servers,
     callTool: async (server, tool, input) => { calls.push([server.id, tool, input]); return `${tool}(${input}) = sunny` },
     now: () => 10
   }
-  return { deps, calls, saved, replica: () => ({ store: r.store, meta: r.meta }) as Replica }
+  // `-tool` requirements run as a registry effect reached through a `complete` event (the web's Run on the requirement)
+  const events = createEventService(deps, createEvaluationService(deps, createHandlerRegistry([mcpToolHandler(deps)])).runNode)
+  const run = async (scope: string[], requirementId: string) => {
+    let status = 200, json: any
+    const res = { setHeader() {}, status(c: number) { status = c; return res }, json(v: unknown) { json = v; return res } } as unknown as Response
+    const expected = (await events.handle(events.principalOf({ username: 'ada' }, scope), { kind: 'read', path: [requirementId] }) as { valueRevision: string }).valueRevision
+    await events.http({ claims: { username: 'ada' }, body: { scope, event: { kind: 'complete', path: [requirementId], expected } } } as unknown as Request, res)
+    return { status, json }
+  }
+  return { deps, calls, saved, run, replica: () => ({ store: r.store, meta: r.meta }) as Replica }
 }
 
 function call(handler: (req: Request, res: Response) => Promise<unknown>, body: unknown) {
@@ -45,13 +61,14 @@ test('an MCP server attaches to a node as a member advertising tool; it is found
   expect(mcpMembersAbove(replica(), [])).toEqual([])
 })
 
-test('running a tool requirement calls the attached server and records the answer as a note plus a supply', async () => {
-  const { deps, calls, saved, replica } = setup([weather])
+test('completing a tool requirement calls the attached server and records the answer as a note plus a supply', async () => {
+  const { deps, calls, saved, replica, run } = setup([weather])
   const h = createMcpPeerHandlers(deps)
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409) // nothing attached yet
+  expect((await run(['proj', 'trip'], 'rq')).status).toBe(400) // nothing attached yet: no active provider in this context
   await call(h.attach, { scope: ['proj'], serverId: 5 })
-  const ran = await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })
-  expect(ran.json).toEqual({ text: 'weather(Paris next week) = sunny' })
+  const ran = await run(['proj', 'trip'], 'rq')
+  expect(ran.status).toBe(200)
+  expect(ran.json.evaluation.status).toBe('committed')
   expect(calls).toEqual([[5, 'weather', 'Paris next week']])
   const rq = view(replica(), ['proj', 'trip'])!.tasks.find((t) => t.id === 'rq')!
   expect(rq.requirement?.satisfied).toBe(true)
@@ -67,51 +84,50 @@ test('running a tool requirement calls the attached server and records the answe
 
 test('failed calls retain their binding, retries cannot silently switch to a nearer provider', async () => {
   const other = { ...weather, id: 6, name: 'Other weather' }
-  const { deps, replica, saved } = setup([weather, other])
+  const { deps, replica, saved, run } = setup([weather, other])
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
   const invoked: number[] = []
   deps.callTool = async (server) => { invoked.push(server.id); throw new Error('offline') }
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
+  expect((await run(['proj', 'trip'], 'rq')).status).toBe(400)
   const firstSaves = saved.length
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
-  expect(saved.length).toBe(firstSaves) // no endless after-save retry loop
+  expect((await run(['proj', 'trip'], 'rq')).json.error).toMatch(/needs recovery/)
+  expect(saved.length).toBe(firstSaves) // a failed run is not retried by itself
   await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
   deps.callTool = async (server) => { invoked.push(server.id); return 'returned' }
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).json.error).toMatch(/needs recovery/)
+  expect((await run(['proj', 'trip'], 'rq')).json.error).toMatch(/needs recovery/)
   expect(invoked).toEqual([5])
   let recovered = replica()
   const scope = ['proj', 'trip', 'rq']
   expect(evaluationRecord(recovered, scope)?.status).toBe('needs-recovery')
   for (const row of view(recovered, scope)!.tasks.filter(t => t.id.startsWith('rollback:'))) recovered = setTaskDone(recovered, scope, row.id, true, 20)
   recoverEvaluation(recovered, scope, 21)
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).json).toEqual({ text: 'returned' })
-  expect(invoked).toEqual([5, 5])
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
+  expect((await run(['proj', 'trip'], 'rq')).json.evaluation.status).toBe('committed')
+  expect(invoked).toEqual([5, 5]) // the pinned provider, not the nearer one attached later
+  expect((await run(['proj', 'trip'], 'rq')).status).toBe(200) // already satisfied: nothing to call
   expect(invoked).toHaveLength(2)
   expect(view(replica(), ['proj', 'trip'])!.tasks[0]!.requirement!.satisfied).toBe(true)
 })
 
 test('an unavailable bound provider does not fall back and unsatisfied dependencies block calls', async () => {
-  const { deps, replica, calls } = setup([weather])
+  const { deps, replica, calls, run } = setup([weather])
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
   let r = replica()
   r = addRow(r, ['proj', 'trip', 'rq'], 'requirement', 'Confirm', 20, { id: 'confirm', requirement: { capability: 'confirmation' } })
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).json.error).toMatch(/dependencies/)
+  expect((await run(['proj', 'trip'], 'rq')).json.error).toMatch(/unresolved dependencies|Unfulfilled confirmation/)
   expect(calls).toHaveLength(0)
   // Use the second request to test a bound provider disappearing.
   deps.callTool = async () => { throw new Error('offline') }
-  await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq2' })
+  await run(['proj', 'trip'], 'rq2')
   deps.servers = async () => [{ ...weather, id: 6 }]
   await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq2' })).json.error).toMatch(/needs recovery/)
+  expect((await run(['proj', 'trip'], 'rq2')).json.error).toMatch(/needs recovery/)
 })
-
 
 test('an explicit handler ref is honored and the return ref addresses the result note', async () => {
   const other = { ...weather, id: 6, name: 'Other weather' }
-  const { deps, replica, calls } = setup([weather, other])
+  const { deps, replica, calls, run } = setup([weather, other])
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
   await call(h.attach, { scope: ['proj', 'trip'], serverId: 6 })
@@ -126,7 +142,7 @@ test('an explicit handler ref is honored and the return ref addresses the result
   // Editing grants must preserve handler refs, including template-backed ones.
   r = setMemberCapabilitiesAt(r, ['proj'], 'mcp:5', ['tool', 'read'], [], 23)
   expect(memberHandlers(store, content(store, resolveScope(store, headCid(r), ['proj'])!), 'mcp:5')).toEqual(ads)
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(200)
+  expect((await run(['proj', 'trip'], 'rq')).status).toBe(200)
   expect(calls[0]![0]).toBe(5)
   r = replica()
   const request = valueContent(store, resolveScope(store, headCid(r), scope)!)
@@ -137,42 +153,35 @@ test('an explicit handler ref is honored and the return ref addresses the result
 })
 
 test('manual and listener runs share the user lock and reload completed work', async () => {
-  const { deps, replica, calls } = setup([weather])
-  let tail: Promise<unknown> = Promise.resolve()
-  deps.withUserLock = (_key, fn) => {
-    const pending = tail.then(fn)
-    tail = pending.catch(() => undefined)
-    return pending
-  }
+  const { deps, replica, calls, run } = setup([weather])
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
   const [manual, listened] = await Promise.all([
-    call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' }),
+    run(['proj', 'trip'], 'rq'),
     h.runOpenToolRequests({ id: 1, username: 'ada' }, replica().store)
   ])
-  expect([200, 409]).toContain(manual.status)
+  expect([200, 400]).toContain(manual.status)
   expect(listened).toBe(manual.status === 200 ? 1 : 2)
   expect(calls).toEqual([[5, 'weather', 'Paris next week'], [5, 'weather', 'anything']])
 })
 
 test('multiple matching tools require a choice instead of silently choosing the first', async () => {
-  const { deps, replica, calls } = setup([weather])
+  const { deps, replica, calls, run } = setup([weather])
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
   addRow(replica(), ['proj', 'trip'], 'requirement', 'choose a tool', 20, { id: 'ambiguous', requirement: { capability: 'tool' } })
-  const result = await call(h.run, { scope: ['proj', 'trip'], requirementId: 'ambiguous' })
+  const result = await run(['proj', 'trip'], 'ambiguous')
   expect(result.json.error).toMatch(/Choose a binding/)
   expect(calls).toEqual([])
 })
 
-
 test('disabling one advertised tool cannot fall back to the primitive marker while another remains enabled', async () => {
-  const { deps, calls, replica } = setup([weather])
+  const { deps, calls, replica, run } = setup([weather])
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
   const offer = discoverHandlers(replica(), ['proj']).find(o => valueContent(replica().store, o.cid).data.description?.content === 'weather')!
   setHandlerEnabledAt(replica(), ['proj'], 'mcp:5', offer.id, false, 3)
   expect(mcpMembersAbove(replica(), ['proj'])).toHaveLength(1)
-  expect((await call(h.run, { scope: ['proj', 'trip'], requirementId: 'rq' })).status).toBe(409)
+  expect((await run(['proj', 'trip'], 'rq')).status).toBe(400)
   expect(calls).toEqual([])
 })

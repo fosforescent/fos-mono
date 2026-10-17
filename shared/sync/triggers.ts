@@ -2,14 +2,16 @@
 import { evaluationRecord, readNodeValue, writeNodeValue } from './evaluation'
 import { addTask, headCid, instantiateTemplate, view, type Replica } from './replica'
 import { capabilityTarget, newId, resolveScope, valueContent, type Scope } from './graph'
-export type TriggerKind = 'timer' | 'cron' | 'task-completion' | 'request'
-export type NodeTrigger = { kind: TriggerKind; peer: string; enabled: boolean; created: number; due?: number; expression?: string }
+export type TriggerKind = 'timer' | 'cron' | 'task-completion' | 'request' | 'response'
+/** What a `response` trigger waits for: the evaluation request this peer left on another peer's node. */
+export type AwaitedResponse = { request: string; node: Scope; requestedAt: number }
+export type NodeTrigger = { kind: TriggerKind; peer: string; enabled: boolean; created: number; due?: number; expression?: string; response?: AwaitedResponse }
 export type TriggerState = { occurrence: string; status: 'running' | 'finished' | 'failed'; error?: string; target: Scope; requestTime?: number; requestIds?: string[] }
 export const TRIGGER_ARGUMENT = 'fos:trigger'
 export const TRIGGER_STATE_ARGUMENT = 'fos:trigger-state'
 export function nodeTrigger(r: Replica, path: Scope): NodeTrigger | null {
   const t = readNodeValue<NodeTrigger>(r, path, TRIGGER_ARGUMENT)
-  return t && ['timer', 'cron', 'task-completion', 'request'].includes(t.kind) && typeof t.peer === 'string' && typeof t.created === 'number' ? t : null
+  return t && ['timer', 'cron', 'task-completion', 'request', 'response'].includes(t.kind) && typeof t.peer === 'string' && typeof t.created === 'number' ? t : null
 }
 export const triggerState = (r: Replica, path: Scope) => readNodeValue<TriggerState>(r, path, TRIGGER_STATE_ARGUMENT)
 
@@ -36,7 +38,9 @@ export function cronMatches(expression: string, now: number): boolean {
   return !!(matches[0] && matches[1] && matches[3] && day)
 }
 export function setNodeTrigger(r: Replica, path: Scope, trigger: NodeTrigger, now: number): Replica {
-  if (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.kind !== 'template') throw new Error('Triggers require a template.')
+  // A continuation waits on the node that made the request; every other trigger instantiates a template.
+  if (trigger.kind !== 'response' && (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.kind !== 'template')) throw new Error('Triggers require a template.')
+  if (trigger.kind === 'response' && (!trigger.response || typeof trigger.response.request !== 'string' || !Array.isArray(trigger.response.node))) throw new Error('A response trigger names the request it waits for.')
   if (trigger.kind === 'cron') cronMatches(trigger.expression ?? '', now)
   if (trigger.kind === 'timer' && (!Number.isFinite(trigger.due) || trigger.due! < now)) throw new Error('Choose a future time.')
   return writeNodeValue(r, path, TRIGGER_ARGUMENT, trigger, now, { type: capabilityTarget(r.store, trigger.kind), peer: trigger.peer })
@@ -45,6 +49,14 @@ export function triggerOccurrence(r: Replica, path: Scope, t: NodeTrigger, now: 
   if (!t.enabled) return null
   if (t.kind === 'timer') return t.due !== undefined && now >= t.due ? `timer:${t.created}:${t.due}` : null
   if (t.kind === 'cron') return cronMatches(t.expression ?? '', now) ? `cron:${t.created}:${Math.floor(now / 60000)}` : null
+  if (t.kind === 'response') {
+    // Peer A asked peer B to evaluate `node`; the answer is B's committed evaluation there (or B's rejection of the request).
+    const awaited = t.response!, record = evaluationRecord(r, awaited.node)
+    if (record?.status === 'committed' && record.started >= awaited.requestedAt) return `response:${awaited.request}:${record.id}`
+    // The request was recorded (by name) on the attachment the requester used, at or above the node: look up the chain.
+    for (let i = awaited.node.length; i >= 0; i--) if (view(r, awaited.node.slice(0, i))?.proposals.some(p => p.name === awaited.request && p.status === 'rejected' && p.timestamp >= awaited.requestedAt)) return `response:${awaited.request}:rejected`
+    return null
+  }
   if (t.kind === 'request') {
     const previous = triggerState(r, path)
     const next = view(r, path)?.proposals.filter(p => p.status === 'open' && p.timestamp >= t.created &&
@@ -104,4 +116,13 @@ export async function runNodeTriggers(driver: {
     catch (error) { state = { ...state, status: 'failed', error: error instanceof Error ? error.message : String(error) } }
     await driver.save(writeNodeValue(driver.get(), path, TRIGGER_STATE_ARGUMENT, state, driver.now()))
   }
+}
+
+/**
+ * Peer A sent an evaluation request to peer B (`complete` answered `requested`): set up the continuation on A's node
+ * automatically, so A's own evaluation runs when B's answer arrives. The trigger belongs to this device and runs
+ * while its app is open, like the other device triggers.
+ */
+export function requestContinuation(r: Replica, at: Scope, awaited: AwaitedResponse, now: number): Replica {
+  return setNodeTrigger(r, at, { kind: 'response', peer: r.meta.peerId, enabled: true, created: now, response: awaited }, now)
 }

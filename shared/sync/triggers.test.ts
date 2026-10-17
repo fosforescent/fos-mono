@@ -1,4 +1,4 @@
-import { addTask, addRow, createReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica, serializeReplica } from './index'
+import { addTask, addRow, createReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
 
 test('UTC cron validates fields and handles ranges, steps and day OR semantics', () => {
   const now = Date.UTC(2026, 9, 14, 9, 15)
@@ -90,4 +90,29 @@ test('child evaluation creates a fresh template instance for each completed pare
   expect(targets).toHaveLength(2)
   expect(targets[0]).not.toEqual(targets[1])
   expect(() => setNodeTrigger(r, ['parent'], { kind: 'cron', peer: 'fos', enabled: true, created: 1, expression: '* * * * *' }, 1)).toThrow('Triggers require a template')
+})
+
+test('a response trigger continues the requester when the asked peer commits or rejects', async () => {
+  let r = addTask(createReplica('device-a'), [], 'Plan trip', 1, 'trip')
+  r = addTask(r, [], 'Book flights', 1, 'flights')
+  // peer A asked peer B to evaluate `flights`; the request is proposal "p1" recorded on B's attachment (here: the root)
+  r = requestContinuation(r, ['trip'], { request: 'evaluate flights', node: ['flights'], requestedAt: 5 }, 5)
+  expect(nodeTrigger(r, ['trip'])).toMatchObject({ kind: 'response', peer: 'device-a', enabled: true })
+  expect(triggerOccurrence(r, ['trip'], nodeTrigger(r, ['trip'])!, 6)).toBeNull()
+  // B's answer: a committed evaluation of the requested node after the request
+  const answered = writeNodeValue(r, ['flights'], 'fos:evaluation', { id: 'run-1', status: 'committed', started: 7, effects: [] }, 7)
+  expect(triggerOccurrence(answered, ['trip'], nodeTrigger(answered, ['trip'])!, 8)).toBe('response:evaluate flights:run-1')
+  let runs: string[][] = []
+  await runNodeTriggers({ get: () => answered, save: async () => {}, now: () => 9, available: (peer, kind) => peer === 'device-a' && kind === 'response', evaluate: async path => { runs.push(path) } })
+  expect(runs).toEqual([['trip']])
+  // or B's refusal: on B's side the request is a proposal (device A is an invited peer; B's device accepts requests)
+  let b = addTask(addTask(createReplica('device-b'), [], 'Plan trip', 1, 'trip'), [], 'Book flights', 1, 'flights')
+  b = addMemberAt(b, [], 'device-a', 'A', ['read', 'edit'], 6)
+  b = setMemberCapabilitiesAt(addMemberAt(b, [], 'device-b', 'B', [], 6), [], 'device-b', [], [], 6, ['request'])
+  const asked = dispatchEvent(b, { kind: 'complete', path: ['flights'], expected: put(b.store, valueContent(b.store, resolveScope(b.store, headCid(b), ['flights'])!)) }, { peerId: 'device-a', owner: false, scope: [] }, 6)
+  const proposalId = (asked.result as { proposalId: string }).proposalId
+  expect(view(asked.replica, [])!.proposals.some(p => p.id === proposalId && p.name === 'evaluate flights')).toBe(true)
+  const refused = rejectProposalAt(asked.replica, [], proposalId, 7)
+  const waiting = requestContinuation(refused, ['trip'], { request: 'evaluate flights', node: ['flights'], requestedAt: 5 }, 8)
+  expect(triggerOccurrence(waiting, ['trip'], nodeTrigger(waiting, ['trip'])!, 9)).toBe('response:evaluate flights:rejected')
 })

@@ -5,8 +5,9 @@ import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from '
 import {
   acceptsFrom,
   CAPABILITIES,
-  SERVER_CAPABILITIES,
+  SERVER_TRANSPORT_CAPABILITIES,
   INTEGRATION_PEERS,
+  HOME_ID,
   readMembers,
   withMember,
   bookkeepingOf,
@@ -70,8 +71,7 @@ import {
   setRowKind,
   setTaskDone,
   type Replica,
-  view
-} from './replica'
+  view, ensureHomeContext } from './replica'
 
 const LABELS = { ours: 'A', theirs: 'B' }
 
@@ -887,7 +887,7 @@ describe('approval convergence', () => {
     owner = world.sync(owner, 7)
     const proposals = view(owner, ['proj'])!.proposals
     expect(proposals).toHaveLength(1)
-    // the server applies the proposal (what POST /peer-sync/proposals does), then the owner syncs
+    // the server applies the proposal (what a `decide` event does), then the owner syncs
     const serverReplica: Replica = { store: world.server, meta: { version: SYNC_FORMAT_VERSION, peerId: 'user:alice', scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
     applyProposalAt(serverReplica, ['proj'], proposals[0]!.id, 'user:alice', 8)
     owner = world.sync(owner, 9)
@@ -1270,8 +1270,19 @@ describe('service capability registration', () => {
     expect(readMembers(store, member)[0]).toEqual({ peerId: 'user:services', name: 'Services', capabilities: CAPABILITIES, accepts: CAPABILITIES })
   })
 
-  it('advertises payment and allocation services on fos and only notifications on the phone', () => {
-    expect(SERVER_CAPABILITIES).toEqual(expect.arrayContaining(['send-payment', 'receive-payment', 'allocate', 'request-payment']))
-    expect(INTEGRATION_PEERS.find((p) => p.id === 'phone')).toMatchObject({ provides: ['notify'], consumes: [] })
+  it('advertises only transport facts about fos by default; services come from the host registry', () => {
+    for (const service of ['search', 'market', 'mail', 'llm', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'poll', 'cron']) expect(SERVER_TRANSPORT_CAPABILITIES).not.toContain(service)
+    expect(INTEGRATION_PEERS.find((p) => p.id === 'phone')).toMatchObject({ kind: 'channel', consumes: [] })
+    expect(INTEGRATION_PEERS.some((p) => p.id === 'discord')).toBe(false)
+    const seeded = ensureHomeContext(createReplica('dev'), 1)
+    expect(view(seeded, [])!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(SERVER_TRANSPORT_CAPABILITIES))
+    expect(view(seeded, [])!.members.find(m => m.peerId === 'fos')!.accepts).not.toContain('llm')
+    const advertised = ensureHomeContext(seeded, 2, { server: ['llm', 'search'], integrations: { github: ['repo'] } })
+    expect(view(advertised, [])!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(['llm', 'search', 'http']))
+    expect(view(advertised, [HOME_ID])!.members.find(m => m.peerId === 'integration:github')!.accepts).toEqual(['repo'])
+    expect(view(advertised, [HOME_ID])!.members.find(m => m.peerId === 'integration:google')!.accepts ?? []).toEqual([])
+    const narrowed = ensureHomeContext(advertised, 3, { server: ['search'] })
+    expect(view(narrowed, [])!.members.find(m => m.peerId === 'fos')!.accepts).not.toContain('llm')
+    expect(ensureHomeContext(narrowed, 4, { server: ['search'] })).toBe(narrowed)
   })
 })

@@ -187,7 +187,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   renderCrumbs(regions.crumbs, state, app); renderStatus(regions.status, state, app); renderBanner(regions.banner, state, app)
   const rows: HTMLElement[] = [], root = [...state.view]
   const record = app.evaluationStatus(root)
-  const locked = app.evaluating || !!record && record.status !== 'idle' && record.status !== 'rolled-back'
+  const locked = app.evaluating || !!record && record.status !== 'idle' && record.status !== 'rolled-back' && record.status !== 'awaiting-review'
   const current = app.currentRow()
   if (current?.kind === 'task') {
     const actions = div('execution-task-actions', '')
@@ -635,7 +635,7 @@ function constructorOptions(app: App): ConstructorItem[] {
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
     ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext()) || app.handlerOffers().some(o => o.capability === cap)).map(cap => ({ id: `action:${cap}`, label: cap === 'llm' ? 'Ask fos' : cap === 'search' ? 'Search' : 'List on the market', icon: cap === 'llm' ? '✦' : cap === 'search' ? 'search' : 'store', output: cap, group: account })),
     ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: 'pull', output: 'tool', group: p.id })),
-    ...[...new Set(['cron' as const, 'task-completion' as const, ...app.triggerKinds(app.constructorContext()), ...app.handlerOffers().filter(o => ['timer', 'cron', 'task-completion', 'request'].includes(o.capability ?? '')).map(o => o.capability as 'timer' | 'cron' | 'task-completion' | 'request')])].map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'Child evaluation' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: kind === 'timer' ? 'hourglass' : kind === 'request' ? 'request' : kind === 'task-completion' ? 'flag' : 'trigger', output: kind, group: 'triggers' }))]
+    ...[...new Set([...app.triggerKinds(app.constructorContext()), ...app.handlerOffers().filter(o => ['timer', 'cron', 'task-completion', 'request'].includes(o.capability ?? '')).map(o => o.capability as 'timer' | 'cron' | 'task-completion' | 'request')])].map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'Child evaluation' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: kind === 'timer' ? 'hourglass' : kind === 'request' ? 'request' : kind === 'task-completion' ? 'flag' : 'trigger', output: kind, group: 'triggers' }))]
 }
 function constructorState(app: App, item: ConstructorItem) {
   if (item.mask) {
@@ -687,7 +687,7 @@ function constructorControl(app: App, item: ConstructorItem, target: HTMLElement
 /** Fine-grained link masks use the same enforced rules as node provisioning. */
 function peerIcon(p: ContextPeer): string {
   if (p.isAccount) return '✦'
-  if (p.integration) return ({ 'integration:github': '⑂', 'integration:google': 'calendar', 'integration:discord': '☏', 'integration:stripe': 'card', 'integration:phone': 'phone' } as Record<string, string>)[p.id] ?? 'integration'
+  if (p.integration) return ({ 'integration:github': '⑂', 'integration:google': 'calendar', 'integration:stripe': 'card', 'integration:phone': 'phone' } as Record<string, string>)[p.id] ?? 'integration'
   if (p.repository) return 'github'
   if (p.mcp) return 'plug'
   return p.id.startsWith('user:') ? '♙' : 'device'
@@ -814,7 +814,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   const row = path.length ? viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1)) : undefined
   const title = document.createElement('input'); title.setAttribute('aria-label', 'Constructor label'); title.placeholder = 'Label (optional)'; title.value = replace && row?.kind !== 'requirement' ? row?.title ?? '' : ''
   const select = document.createElement('select'); select.setAttribute('aria-label', 'Constructor type')
-  const options = kind === 'peer' ? [['invite','Invite'],['direct','Direct connection'],['virtual','Virtual peer'],['fos','Fos server']] : kind === 'integration' ? [...(inTauri() ? [['claude','Claude Agent SDK'], ['codex','Codex SDK']] : []), ['google','Google'],['github','GitHub'],['discord','Discord'],['stripe','Stripe'],['phone','Phone']] : kind === 'repository' ? [...(inTauri() ? [['filesystem', 'Filesystem Git repository']] : []), ['github','GitHub'],['gitlab','GitLab (unavailable)']] : [['inventory','Inventory'],['calendar','Calendar'],['account','Money']]
+  const options = kind === 'peer' ? [['invite','Invite'],['direct','Direct connection'],['virtual','Virtual peer'],['fos','Fos server']] : kind === 'integration' ? [['google','Google'],['github','GitHub'],['stripe','Stripe'],['phone','Phone']] : kind === 'repository' ? [...(inTauri() ? [['filesystem', 'Filesystem Git repository']] : []), ['github','GitHub'],['gitlab','GitLab (unavailable)']] : [['inventory','Inventory'],['calendar','Calendar'],['account','Money']]
   for (const [value, label] of options) { const option = new Option(label, value); option.disabled = value === 'gitlab'; select.append(option) }
   if (['inventory','calendar','account'].includes(kind)) select.value = kind
   const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.step = 'any'; amount.value = '1'; amount.setAttribute('aria-label', 'Amount')
@@ -890,10 +890,7 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
   return true
 }
 function choiceButton(app: App, at: Scope, id: string, choice: number, label: string, absolute = false): HTMLButtonElement {
-  const b = button('secondary small', label, () => app.supplyRequirementAt(at, id, { capability: 'choice', choice }, absolute))
-  const connection = app.connectionOption([...(absolute ? at : [...app.state.view, ...at]), id], choice)
-  if (connection && !connection.enabled) { b.disabled = true; b.title = 'Requires an active Fos server and a configured provider' }
-  return b
+  return button('secondary small', label, () => app.supplyRequirementAt(at, id, { capability: 'choice', choice }, absolute))
 }
 function yamlImportButton(app: App): HTMLElement {
   return button('secondary small', 'Import', () => openImport(app))
@@ -1138,12 +1135,12 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
   if (task.construction?.name === 'fos:evaluation') {
     const parent = path.slice(0, -1), record = app.evaluationStatus(parent)
     box.append(span('constructor-label', 'Evaluation'))
-    const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'needs-recovery': 'Needs recovery' }
+    const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'awaiting-review': 'Awaiting review', 'needs-recovery': 'Needs recovery' }
     if (record) box.append(span('muted', labels[record.status] ?? record.status))
     const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating
     box.append(run)
     if (record?.error) box.append(span('error', record.error))
-    if (record && !['idle', 'committed', 'rolled-back'].includes(record.status)) {
+    if (record && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(record.status)) {
       const recovery = button('secondary small', 'Review recovery', () => void app.recoverCurrentEvaluation(parent)); recovery.disabled = app.evaluating; box.append(recovery)
     }
   }
@@ -1160,7 +1157,7 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
       if (handler === 'invite') void app.startInvite()
       else if (handler === 'direct' || handler === 'virtual') app.openModal(handler)
       else if (handler === 'fos') app.goToAccountPeer()
-      else if (['google', 'github', 'discord', 'stripe', 'phone'].includes(handler)) void app.connectIntegration(handler)
+      else if (['google', 'github', 'stripe', 'phone'].includes(handler)) void app.connectIntegration(handler)
       else app.attachNamedPeer(handler)
     }
     const action = button('secondary small', handler === 'invite' ? 'Create invite code' : handler === 'virtual' ? 'Open new tab' : handler === 'peer' ? 'Choose a handler by editing @{…}' : 'Connect', run)
@@ -1309,8 +1306,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (!preview && row?.kind === 'template') controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
   const agents = !preview && desktopAgentControls(app); if (agents) controls.append(agents)
   const git = !preview && localGitControls(app); if (git) controls.append(git)
-  const integration = app.integrationHandler()
-  if (integration && !preview) { const connect = button('secondary small', `Connect ${integration.provider}`, () => void app.connectIntegration(integration.provider)); connect.disabled = !integration.enabled; controls.append(connect) }
   if (row?.construction) controls.append(constructorBody(row, state, app))
   if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.append(auth) }
   if (inTauri() && row && app.repositoryInfo() && !localRepository(state.replica, state.view)) controls.append(button('secondary small', 'Attach local checkout…', () => openConstructor(app, 'repository', [...state.view], true)))
@@ -1452,7 +1447,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
  */
 const lastCreatedRows = new WeakMap<App, { parent: string; id: string }>()
 function peerAutocomplete(input: HTMLTextAreaElement, app: App): HTMLElement {
-  const handlers = ['invite', 'direct', 'virtual', 'fos', 'google', 'github', 'discord', 'stripe', 'phone']
+  const handlers = ['invite', 'direct', 'virtual', 'fos', 'google', 'github', 'stripe', 'phone']
   return combobox('Peer handler', '', () => [...new Set([...handlers, ...app.knownPeers().map(p => p.name)])].map(name => ({
     label: `@{${name}}`, group: 'Peers', run: () => { input.value = `@{${name}}`; input.dispatchEvent(new window.Event('commit-edit')) }
   })), query => query && !handlers.includes(query) ? [{ label: `Use @{${query}}`, group: 'Peers', run: () => { input.value = `@{${query}}`; input.dispatchEvent(new window.Event('commit-edit')) } }] : [], 'Choose a peer…', input)

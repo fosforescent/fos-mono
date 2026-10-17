@@ -28,3 +28,6 @@ export * from './node-sync'
 export * from './node-context'
 
 export * from './specifications'
+
+export * from './events'
+export * from './mcp-adapter'

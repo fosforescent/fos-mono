@@ -843,13 +843,13 @@
         mergedValue = merged.kind === "node" ? merged.cid : oursValue;
       }
       const book = (r) => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] });
-      const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids);
+      const bookkeeping2 = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids);
       const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue;
       const prevEdge = (cid) => [store.primitive.previousVersion.getId(), cid];
       const existingPrev = (r) => r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [];
       const prev = valueChanged ? o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)] : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))];
       const data2 = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data;
-      return { kind: "node", cid: put(store, refNodeContent(store, data2, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) };
+      return { kind: "node", cid: put(store, refNodeContent(store, data2, mergedValue, [...bookkeeping2, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) };
     }
     const data = mergeData(base.data, ours.data, theirs.data, isTop);
     if (!data) return { kind: "conflict" };
@@ -1016,6 +1016,28 @@
     return { ...value, children };
   }
 
+  // ../shared/sync/branches.ts
+  function createBranch(r, at, name, now, baseName = "main") {
+    if (!name.trim() || name.length > 200) throw new Error("A branch name is required (at most 200 characters).");
+    if (!at.length) throw new Error("Select a node to branch.");
+    const id = at.at(-1), parent = at.slice(0, -1), store = r.store;
+    const next = updateAtScope(store, headCid(r), parent, (value) => {
+      const found = findAliasEdge(store, value, id);
+      if (!found) throw new Error("Node not found");
+      const cid = identityCid(store, found.edge);
+      const record = isBranchChoice(store, content(store, cid)) ? readChoice(store, cid) : null;
+      if (record?.options.some((o) => o.peerId === name) || !record && name === baseName) throw new Error("That branch already exists.");
+      const base = record?.base ?? found.edge;
+      const active = record ? branchEdge(store, cid) : found.edge;
+      const options = record?.options ?? [{ peerId: baseName, edge: found.edge }];
+      const choice = putBranches(store, id, base, [...options, { peerId: name, edge: active, base: active }], record?.defaultName ?? baseName);
+      return { ...value, children: value.children.map((edge, i2) => i2 === found.index ? [store.primitive.choiceTarget.getId(), choice] : edge) };
+    });
+    commitRoot(store, next, now);
+    selectBranch(store, id, name);
+    return { ...r };
+  }
+
   // ../shared/sync/node-provider.ts
   init_prelude();
 
@@ -1114,7 +1136,56 @@
     for (const list of [mask.fields, mask.children]) if (list !== void 0 && (!Array.isArray(list) || list.length > 1e4 || list.some((v) => typeof v !== "string"))) throw new NodeAccessError("Invalid node mask.");
     return { ...mask.fields ? { fields: [...new Set(mask.fields)] } : {}, ...mask.children ? { children: [...new Set(mask.children)] } : {} };
   }
+  function sourceId(r, path) {
+    if (!path.length) return content(r.store, r.store.rootNodeId).data.alias.id;
+    const cid = resolveScope(r.store, headCid(r), path);
+    if (!cid) throw new NodeAccessError("Linked node unavailable.");
+    return content(r.store, cid).data.alias?.id ?? cid;
+  }
+  var linkName = (r, peer, path) => LINK_NAME + JSON.stringify([peer, sourceId(r, path)]);
+  function linkAt(r, path, peer, remoteId) {
+    const name = linkName(r, peer, path);
+    const edge = content(r.store, r.store.rootNodeId).children.find((e) => e[0] === capabilityTarget(r.store, "provideNode") && content(r.store, e[1]).data.name?.content === name);
+    return edge ? { cid: edge[1] } : void 0;
+  }
+  function readMask(r, path, peer, remoteId) {
+    const link = linkAt(r, path, peer, remoteId);
+    if (!link) return {};
+    const target = refValueCid(r.store, content(r.store, link.cid));
+    if (!target) throw new NodeAccessError("Node link has no policy.");
+    try {
+      return maskOf(JSON.parse(content(r.store, target).data.description?.content ?? "null"));
+    } catch {
+      throw new NodeAccessError("Invalid node link policy.");
+    }
+  }
   var NODE_PERMISSION_DEFAULT = "fos:all-linked-peers";
+  function nodeLinkMaskAt(r, path, peer) {
+    let fields, children;
+    for (let i2 = 0; i2 <= path.length; i2++) {
+      const at = path.slice(0, i2);
+      if (!resolveScope(r.store, headCid(r), at)) break;
+      for (const target of [NODE_PERMISSION_DEFAULT, peer]) {
+        const mask = readMask(r, at, target, "");
+        if (mask.fields) fields = fields ? fields.filter((f) => mask.fields.includes(f)) : [...mask.fields];
+        if (i2 < path.length && mask.children && !mask.children.includes(path[i2])) throw new NodeAccessError("Parent permissions mask this child.");
+        if (i2 === path.length && mask.children) children = children ? children.filter((id) => mask.children.includes(id)) : [...mask.children];
+      }
+    }
+    return { ...fields ? { fields } : {}, ...children ? { children } : {} };
+  }
+  function inheritedNodeGrants(r, path, authority) {
+    let grants = authority.owner ? [...CAPABILITIES] : [];
+    for (let i2 = 0; i2 <= path.length; i2++) {
+      const cid = resolveScope(r.store, headCid(r), path.slice(0, i2));
+      if (!cid) throw new NodeAccessError("Attachment unavailable.");
+      const member = readMembers(r.store, content(r.store, cid)).find((m) => m.peerId === authority.peerId);
+      if (!member) continue;
+      grants = member.capabilities.filter((cap) => !member.disabled?.includes(cap));
+      if (member.disabled?.includes("read") || member.disabled?.includes("provideNode") || !grants.includes("read") && !grants.includes("edit")) throw new NodeAccessError("Parent permissions deny node access.");
+    }
+    return grants;
+  }
   function permitted(r, cid, peer, inherited) {
     const member = readMembers(r.store, content(r.store, cid)).find((m) => m.peerId === peer);
     if (!member) return inherited;
@@ -1168,6 +1239,30 @@
         for (const edge of valueContent(r.store, cid).children) if (rowKindOf(r.store, edge)) pending.push(identityCid(r.store, edge));
       }
       return false;
+    });
+  }
+
+  // ../shared/sync/node-context.ts
+  var prefix = (a, b) => a.length <= b.length && a.every((v, i2) => v === b[i2]);
+  function nodeAuthorityAt(r, path, authority) {
+    return withMainBranchPolicy(r.store, () => {
+      if (!prefix(authority.scope, path)) throw new NodeAccessError("Node is outside the attachment.");
+      let grants = inheritedNodeGrants(r, authority.scope, authority);
+      for (let i2 = authority.scope.length; i2 <= path.length; i2++) {
+        const at = path.slice(0, i2), cid = resolveScope(r.store, headCid(r), at);
+        if (!cid) {
+          if (i2 === authority.scope.length) throw new NodeAccessError("Attachment unavailable.");
+          break;
+        }
+        const member = readMembers(r.store, content(r.store, cid)).find((m) => m.peerId === authority.peerId);
+        if (member) grants = member.capabilities.filter((c) => !member.disabled?.includes(c) && !(c === "read" && member.disabled?.includes("provideNode")));
+        if (!grants.includes("read") && !grants.includes("edit")) throw new NodeAccessError("Node access denied.");
+        if (member?.disabled?.includes("read") || member?.disabled?.includes("provideNode")) throw new NodeAccessError("Node access denied.");
+        const mask = nodeLinkMaskAt(r, at, authority.peerId);
+        if (i2 < path.length && mask?.children && !mask.children.includes(path[i2])) throw new NodeAccessError("Node child is masked.");
+        if (i2 < path.length && isHandle(content(r.store, cid))) throw new NodeAccessError("Reference targets require their own attachment.");
+      }
+      return grants;
     });
   }
 
@@ -3898,8 +3993,8 @@
       commitRoot(store, newRootTarget, now);
     }
     const persisted = content(store, nextLinkCid);
-    const bookkeeping = bookkeepingOf(store, persisted);
-    const resultContent = refNodeContent(store, { ...persisted.data, alias: persisted.data.alias ?? content(store, branchCid).data.alias ?? { id: request.scope[request.scope.length - 1] ?? "" } }, branchCid, bookkeeping, refTypeCid(store, persisted));
+    const bookkeeping2 = bookkeepingOf(store, persisted);
+    const resultContent = refNodeContent(store, { ...persisted.data, alias: persisted.data.alias ?? content(store, branchCid).data.alias ?? { id: request.scope[request.scope.length - 1] ?? "" } }, branchCid, bookkeeping2, refTypeCid(store, persisted));
     const resultExisted = store.table.has(store.hash(resultContent));
     const resultCid = put(store, resultContent);
     if (!resultExisted) changed = true;
@@ -4114,6 +4209,22 @@
     if (position && "into" in position) return addRow(r, [...at, position.into], "ref", "", now, options);
     return addRow(r, at, "ref", "", now, { ...options, position });
   }
+  function addSupply(replica, at, requirementId, supply, now, id) {
+    const labels = {
+      confirmation: `confirmed by ${supply.by}`,
+      choice: `chose option ${(supply.choice ?? 0) + 1}`,
+      search: "search results",
+      allocation: "allocation",
+      task: "task done",
+      market: `listed on the market by ${supply.by}`,
+      mail: `mail sent by ${supply.by}`,
+      peer: `done by ${supply.by}`,
+      llm: `answered by ${supply.by}`,
+      repo: `issue opened by ${supply.by}`,
+      tool: `run by ${supply.by}`
+    };
+    return addRow(replica, [...at, requirementId], "supply", labels[supply.capability], now, { supply: { ...supply, at: now }, id });
+  }
   function copyNode(replica, fromPath, aliasId, toPath, position, now) {
     const from = resolveScope(replica.store, headCid(replica), fromPath);
     if (!from) return replica;
@@ -4193,6 +4304,22 @@
   }
   function makeLinkAt(replica, at, now) {
     return editNode(replica, at, now, (node) => makeLink(replica.store, node, now));
+  }
+  function addRefAt(replica, at, id, typeCid, now, defaultCid = null, name) {
+    return edit(replica, at, now, (value) => {
+      if (findEdge(replica.store, value, `a:${id}`)) return value;
+      const ref = put(replica.store, refNodeContent(replica.store, { alias: { id }, ...name ? { name: { content: name } } : {}, updated: { time: now } }, defaultCid, [], typeCid));
+      return { ...value, children: [...value.children, [typeCid, ref]] };
+    });
+  }
+  function proposeRefAt(replica, at, targetCid, peerId, now) {
+    const store = replica.store;
+    const cid = resolveScope(store, headCid(replica), at);
+    if (!cid || !store.table.has(targetCid)) throw new Error("ref or proposed value not found");
+    const ref = content(store, cid);
+    if (!isRefNode(store, ref) || !refTypeCid(store, ref)) throw new Error("expected a typed ref");
+    const proposalCid = put(store, proposalContent(store, peerId, "binding", targetCid, refBindingBaseCid(store, ref), now));
+    return { replica: editNode(replica, at, now, (node) => withProposal(store, node, peerId, proposalCid, "binding")), proposalCid };
   }
   function applyProposalAt(replica, at, proposalCid, approverPeerId, now) {
     const store = replica.store;
@@ -4429,10 +4556,19 @@
   function refBindingBaseCid(store, value) {
     return put(store, { ...value, children: value.children.filter((edge) => !isProposalEdge(store, edge)) });
   }
-  function refNodeContent(store, data, valueCid, bookkeeping = [], typeCid = null) {
+  function refNodeContent(store, data, valueCid, bookkeeping2 = [], typeCid = null) {
     const children = valueCid ? [[store.primitive.targetPointerConstructor.getId(), valueCid]] : [];
     if (typeCid) children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
-    return { data, children: [...children, ...bookkeeping] };
+    return { data, children: [...children, ...bookkeeping2] };
+  }
+  function refArguments(store, value, typeCid) {
+    return value.children.flatMap((edge) => {
+      if (edge[0] !== typeCid) return [];
+      const cid = identityCid(store, edge);
+      const ref = content(store, cid);
+      const id = aliasIdOf(ref);
+      return id && refTypeCid(store, ref) === typeCid ? [{ id, cid, targetCid: refValueCid(store, ref) }] : [];
+    });
   }
   function newId() {
     const cryptoApi = globalThis.crypto;
@@ -4839,11 +4975,19 @@
     return content(store, store.rootNodeId).children.some(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
   }
   var HOME_ID = "fos:home";
-  function homeContextCid(store, rootCid, now) {
+  function withMemberOffers(store, value, peerId, name, consumes, offers) {
+    const member = readMembers(store, value).find((m) => m.peerId === peerId);
+    const wanted = [...new Set(offers)].sort();
+    if (member && JSON.stringify([...member.accepts ?? []].sort()) === JSON.stringify(wanted)) return value;
+    return withMember(store, value, peerId, member?.name ?? name, member?.capabilities ?? consumes, member?.disabled ?? [], wanted);
+  }
+  function homeContextCid(store, rootCid, now, offers = {}) {
     const root = valueContent(store, rootCid);
     const identity = makeLink(store, content(store, rootCid), 0);
     let bindings = identity;
-    if (!readMembers(store, bindings).some((member) => member.peerId === "fos")) bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
+    const serverOffers = [.../* @__PURE__ */ new Set([...SERVER_TRANSPORT_CAPABILITIES, ...offers.server ?? []])];
+    if (!readMembers(store, bindings).some((member) => member.peerId === "fos")) bindings = withMember(store, bindings, "fos", "fos", [], [], serverOffers);
+    else if (offers.server) bindings = withMemberOffers(store, bindings, "fos", "fos", [], serverOffers);
     const homeCid = findChild(store, rootCid, HOME_ID);
     if (homeCid && isBranchChoice(store, content(store, homeCid))) {
       const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
@@ -4858,7 +5002,11 @@
     const legacyIntegrations = bindings.children.filter((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith("integration:"));
     for (const edge of legacyIntegrations) if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content)) home = { ...home, children: [...home.children, edge] };
     if (legacyIntegrations.length) bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
-    for (const peer of INTEGRATION_PEERS) if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
+    for (const peer of INTEGRATION_PEERS) {
+      const provides = offers.integrations?.[peer.id];
+      if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], provides ?? []);
+      else if (provides) home = withMemberOffers(store, home, `integration:${peer.id}`, peer.name, peer.consumes, provides);
+    }
     const nextHome = put(store, home);
     const homeEdge = root.children.find((edge) => identityCid(store, edge) === homeCid);
     if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid)) return rootCid;
@@ -5229,15 +5377,14 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist", "provideNode", "sync"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist", "provideNode", "sync", "response"];
   var INTEGRATION_PEERS = [
-    { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
-    { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
-    { id: "discord", name: "Discord", kind: "oauth", provides: ["mail", "relay"], consumes: ["read"] },
-    { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
-    { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
+    { id: "github", name: "GitHub", kind: "oauth", consumes: ["read", "edit"] },
+    { id: "google", name: "Google", kind: "oauth", consumes: ["read", "edit"] },
+    { id: "stripe", name: "Stripe", kind: "platform", consumes: ["read"] },
+    { id: "phone", name: "Phone (SMS)", kind: "channel", consumes: [] }
   ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer", "persist", "provideNode", "sync"];
+  var SERVER_TRANSPORT_CAPABILITIES = ["http", "ws", "relay", "peer", "persist", "provideNode", "sync"];
   function isLink(store, value) {
     if (isHandle(value)) return false;
     return isRefNode(store, value) || !!value.data.link;
@@ -5349,6 +5496,7 @@
       case "cron":
       case "task-completion":
       case "request":
+      case "response":
         return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] });
     }
   }
@@ -5424,6 +5572,9 @@
     const refCid = put(store, next);
     const children = value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId));
     return { ...value, children: [...children, [store.primitive.memberField.getId(), refCid]] };
+  }
+  function hasCapability(store, value, peerId, capability) {
+    return readMembers(store, value).some((m) => m.peerId === peerId && m.capabilities.includes(capability) && !(m.disabled ?? []).includes(capability));
   }
   function textNode(store, text) {
     return put(store, { data: { description: { content: text } }, children: [] });
@@ -5501,7 +5652,7 @@
     return { ...value, children: value.children.filter((e) => !(isProposalEdge(store, e) && e[1] === proposalCid)) };
   }
   function relinkContent(store, previous, previousCid, strippedContent, now) {
-    const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e));
+    const bookkeeping2 = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e));
     const data = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } };
     if (previous.data.ref) data.ref = previous.data.ref;
     if (previous.data.name) data.name = previous.data.name;
@@ -5509,7 +5660,7 @@
     const active = branches && branchEdge(store, branches.cid);
     const value = put(store, strippedContent);
     const target = branches && active ? updateBranch(store, branches.cid, [value, active[1]]) : value;
-    const next = refNodeContent(store, data, target, bookkeeping, refTypeCid(store, previous));
+    const next = refNodeContent(store, data, target, bookkeeping2, refTypeCid(store, previous));
     return withPrev(store, next, previousCid);
   }
   function normalizeRefs(store, nodeCid, now = 0) {
@@ -5547,15 +5698,15 @@
     if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) return null;
     return identityCid(store, edge);
   }
-  function findRowByAlias(store, rootCid, aliasId, prefix = []) {
+  function findRowByAlias(store, rootCid, aliasId, prefix2 = []) {
     for (const edge of valueContent(store, rootCid).children) {
       const kind = rowKindOf(store, edge);
       if (!kind) continue;
       const cid = identityCid(store, edge);
       const id = aliasIdOf(content(store, cid));
       if (!id) continue;
-      if (id === aliasId) return { path: prefix, row: rowView(store, cid, kind) };
-      const found = findRowByAlias(store, cid, aliasId, [...prefix, id]);
+      if (id === aliasId) return { path: prefix2, row: rowView(store, cid, kind) };
+      const found = findRowByAlias(store, cid, aliasId, [...prefix2, id]);
       if (found) return found;
     }
     return null;
@@ -5695,6 +5846,62 @@
 
   // ../shared/sync/handlers.ts
   init_prelude();
+  function contextMemberRefs(r, path) {
+    return withMainBranchPolicy(r.store, () => {
+      const peers = /* @__PURE__ */ new Map();
+      for (let i2 = 0; i2 <= path.length; i2++) {
+        const cid = resolveScope(r.store, headCid(r), path.slice(0, i2));
+        if (!cid) continue;
+        const node = content(r.store, policyIdentity(r.store, cid));
+        for (const edge of node.children.filter((e) => isMemberEdge(r.store, e))) {
+          const peer = content(r.store, edge[1]).data.peerId?.content;
+          if (peer) peers.set(peer, edge[1]);
+        }
+      }
+      return peers;
+    });
+  }
+  function policyIdentity(store, cid) {
+    const node = content(store, cid);
+    const edge = isBranchChoice(store, node) ? branchEdge(store, cid) : null;
+    return edge ? policyIdentity(store, identityCid(store, edge)) : cid;
+  }
+  function discoverHandlers(r, path, environment = {}) {
+    const s = r.store, result = [];
+    for (const [peerId, memberCid] of contextMemberRefs(r, path)) {
+      const member = content(s, memberCid), disabled = member.data.disabledCapabilities?.content ?? [];
+      for (const edge of member.children) {
+        const source = content(s, edge[1]), type = refTypeCid(s, source) ?? edge[1];
+        const capability = CAPABILITIES.find((c) => capabilityTarget(s, c) === type);
+        const incoming = edge[0] === s.primitive.acceptsNode.getId();
+        const legacyOffer = edge[0] === s.primitive.capabilityNode.getId() && (peerId === "fos" || peerId.startsWith("mcp:") && capability === "tool");
+        if (!incoming && !legacyOffer) continue;
+        if (legacyOffer && member.children.some((e) => e[0] === s.primitive.acceptsNode.getId() && (refTypeCid(s, content(s, e[1])) ?? e[1]) === type)) continue;
+        if (!refTypeCid(s, source) && !capability) continue;
+        const cid = refTypeCid(s, source) ? edge[1] : put(s, refNodeContent(
+          s,
+          { alias: { id: `fos:handler:${peerId}:${capability}` } },
+          put(s, { data: { peerId: { content: peerId }, description: { content: capability } }, children: [] }),
+          [],
+          type
+        ));
+        const id = content(s, cid).data.alias?.id ?? cid;
+        if (result.some((o) => o.peerId === peerId && o.cid === cid)) continue;
+        result.push({
+          id,
+          cid,
+          type,
+          peerId,
+          legacy: !refTypeCid(s, source),
+          label: source.data.name?.content ?? valueContent(s, cid).data.description?.content ?? capability ?? "Capability",
+          ...capability ? { capability } : {},
+          enabled: !disabled.includes(id) && !(capability && disabled.includes(capability)),
+          active: environment.isPeerActive?.(peerId) ?? true
+        });
+      }
+    }
+    return result;
+  }
 
   // ../shared/sync/bindings.ts
   init_prelude();
@@ -5702,20 +5909,478 @@
   // ../shared/sync/notes.ts
   init_prelude();
 
+  // ../shared/sync/bindings.ts
+  function argumentRefs(store, cid) {
+    return valueContent(store, cid).children.flatMap((edge) => {
+      const id = identityCid(store, edge), ref = content(store, id), type = refTypeCid(store, ref);
+      return type && ref.data.alias?.id && edge[0] === type ? [{ cid: id, type, name: ref.data.name?.content ?? ref.data.alias?.id }] : [];
+    });
+  }
+  function capabilityPeers(r, path, capability) {
+    return [...new Set(discoverHandlers(r, path).filter((o) => o.enabled && o.capability === capability).map((o) => o.peerId))];
+  }
+
+  // ../shared/sync/work.ts
+  var slots = (r, cid, type) => refArguments(r.store, valueContent(r.store, cid), type);
+  function isAttempt(r, cid) {
+    return slots(r, cid, capabilityTarget(r.store, "llm")).length > 0 && slots(r, cid, r.store.primitive.documentField.getId()).length > 0;
+  }
+
   // ../shared/sync/repository.ts
   init_prelude();
 
   // ../shared/sync/evaluation.ts
   init_prelude();
+  var EVALUATION_ARGUMENT = "fos:evaluation";
+  function readNodeValue(r, path, name) {
+    const cid = resolveScope(r.store, headCid(r), path);
+    const arg = cid && argumentRefs(r.store, cid).find((a) => a.name === name);
+    if (!arg) return null;
+    try {
+      return JSON.parse(valueContent(r.store, arg.cid).data.description?.content ?? "");
+    } catch {
+      return null;
+    }
+  }
+  function writeNodeValue(r, path, name, value, now, handler) {
+    const cid = resolveScope(r.store, headCid(r), path);
+    if (!cid) throw new Error("The node no longer exists.");
+    const arg = argumentRefs(r.store, cid).find((a) => a.name === name);
+    const type = handler?.type ?? arg?.type ?? r.store.primitive.documentField.getId();
+    const previous = arg ? content(r.store, arg.cid) : null;
+    const peer = handler?.peer ?? (arg ? valueContent(r.store, arg.cid).data.peerId?.content : void 0);
+    const target = put(r.store, { data: { description: { content: JSON.stringify(value) }, ...peer ? { peerId: { content: peer } } : {} }, children: [] });
+    if (!arg) return addRefAt(r, path, `${name}:${path.at(-1) ?? r.meta.peerId}`, type, now, target, name);
+    const next = put(r.store, refNodeContent(r.store, previous.data, target, [[r.store.primitive.previousVersion.getId(), arg.cid]], type));
+    commitRoot(r.store, updateAtScope(r.store, headCid(r), path, (node) => ({ ...node, children: node.children.map((edge) => identityCid(r.store, edge) === arg.cid ? [type, next] : edge) })), now);
+    return { ...r };
+  }
+  function evaluationRecord(r, path) {
+    const record = readNodeValue(r, path, EVALUATION_ARGUMENT);
+    return record && typeof record.id === "string" && Array.isArray(record.effects) && typeof record.status === "string" ? record : null;
+  }
+  function evaluationSteps(r, path) {
+    const steps = [];
+    const walk = (at, depth) => {
+      if (depth > 64 || steps.length >= 1e3) throw new Error("Narrow the evaluation to fewer than 1,000 rows and 64 levels.");
+      const row = at.length ? view(r, at.slice(0, -1))?.tasks.find((t) => t.id === at.at(-1)) ?? null : null;
+      if (row?.kind === "template" && row.id !== "fos:home") return;
+      if (row && ["ref", "supply"].includes(row.kind)) return;
+      const cid = resolveScope(r.store, headCid(r), at);
+      if (depth > 0 && cid && isAttempt(r, cid)) return;
+      if (depth > 0 && cid && argumentRefs(r.store, cid).some((a) => a.name === "fos:trigger")) return;
+      const node = view(r, at);
+      if (!node) throw new Error("The evaluated node no longer exists.");
+      if (node.choices.length) throw new Error("Resolve conflicting choices before evaluation.");
+      steps.push({ path: at, row });
+      for (const child of node.tasks) walk([...at, child.id], depth + 1);
+    };
+    walk(path, 0);
+    return steps;
+  }
 
   // ../shared/sync/triggers.ts
   init_prelude();
 
   // ../shared/sync/sharing.ts
   init_prelude();
+  function sharedInputs(r, path) {
+    const cid = resolveScope(r.store, headCid(r), path);
+    if (!cid) return [];
+    const text = argumentRefs(r.store, cid).filter((a) => a.type === r.store.primitive.documentField.getId() && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !a.name.startsWith("fos:")).map((a) => ({ key: content(r.store, a.cid).data.alias.id, name: a.name, kind: "text" }));
+    const allocations = (view(r, path)?.tasks ?? []).flatMap((row) => row.requirement?.capability === "allocation" ? [{ key: row.id, name: row.title, kind: "allocation", type: row.requirement.resource ?? "inventory", unit: row.requirement.unit ?? "unit", amount: row.requirement.amount, ...row.requirement.start !== void 0 ? { start: row.requirement.start } : {}, ...row.requirement.end !== void 0 ? { end: row.requirement.end } : {} }] : []);
+    return [...text, ...allocations].slice(0, 32);
+  }
+  function executionInputs(r, root) {
+    const result = [];
+    const walk = (path, depth) => {
+      if (depth > 8 || result.length >= 32) return;
+      for (const field of sharedInputs(r, path).filter((f) => f.kind === "text")) result.push({ ...field, key: JSON.stringify([...path.slice(root.length), field.key]), path: [...path.slice(root.length), field.key] });
+      for (const row of view(r, path)?.tasks ?? []) {
+        if (result.length >= 32) break;
+        const req2 = row.requirement, relative = [...path.slice(root.length), row.id];
+        if (row.allocation && !view(r, path)?.tasks.some((t) => t.supply?.ref === row.id) && !readNodeValue(r, [...path, row.id], "fos:consumed")) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: "allocation", direction: "consume", type: row.allocation.type, unit: row.allocation.unit, amount: row.allocation.amount, start: row.allocation.start, end: row.allocation.end });
+        if (req2 && !req2.satisfied && ["allocation", "confirmation", "choice"].includes(req2.capability)) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: req2.capability, ...req2.capability === "choice" ? { options: req2.options } : {}, ...req2.capability === "allocation" ? { type: req2.resource ?? "inventory", unit: req2.unit ?? "unit", amount: req2.amount, start: req2.start, end: req2.end } : {} });
+        if (row.kind !== "ref" && row.kind !== "template") walk([...path, row.id], depth + 1);
+      }
+    };
+    const current = root.length ? view(r, root.slice(0, -1))?.tasks.find((row) => row.id === root.at(-1)) : null;
+    const req = current?.requirement;
+    if (req && !req.satisfied && ["allocation", "confirmation", "choice"].includes(req.capability)) result.push({ key: "[]", path: [], name: current.title, kind: req.capability, ...req.capability === "choice" ? { options: req.options } : {}, ...req.capability === "allocation" ? { type: req.resource ?? "inventory", unit: req.unit ?? "unit", amount: req.amount, start: req.start, end: req.end } : {} });
+    if (current?.allocation && !readNodeValue(r, root, "fos:consumed")) result.push({ key: "[]", path: [], name: current.title, kind: "allocation", direction: "consume", ...current.allocation });
+    walk(root, 0);
+    return result.slice(0, 32);
+  }
 
   // ../shared/sync/specifications.ts
   init_prelude();
+
+  // ../shared/sync/events.ts
+  init_prelude();
+
+  // ../shared/sync/execution-access.ts
+  init_prelude();
+  function executionSnapshot(r, path, authority) {
+    if (authority) nodeAuthorityAt(r, path, authority);
+    const allowed = (at, field = "description") => {
+      if (!authority) return true;
+      try {
+        nodeAuthorityAt(r, at, authority);
+        const mask = nodeLinkMaskAt(r, at, authority.peerId);
+        return !mask.fields || mask.fields.includes(field);
+      } catch {
+        return false;
+      }
+    };
+    return { revision: headCid(r), status: evaluationRecord(r, path)?.status ?? "idle", inputs: executionInputs(r, path).filter((f) => allowed([...path, ...f.path], f.kind === "text" ? "description" : f.direction === "consume" ? "allocation" : "requirement")), nodes: evaluationSteps(r, path).filter((s) => !s.row?.construction && allowed(s.path)).map((s) => ({ path: s.path.slice(path.length), text: s.row?.title ?? "", kind: s.row?.kind ?? "task" })) };
+  }
+  function executionInput(r, path, body, peer, now) {
+    if (body.revision !== headCid(r)) throw new Error("Evaluation changed. Read it again before submitting.");
+    const status = evaluationRecord(r, path)?.status ?? "idle";
+    if (!["idle", "rolled-back"].includes(status)) throw new Error("This evaluation no longer accepts input.");
+    const field = executionInputs(r, path).find((f) => f.key === body.key);
+    if (!field?.path) throw new Error("Only declared inputs may be submitted.");
+    const target = [...path, ...field.path], value = body.value;
+    if (field.kind === "text") {
+      if (typeof value !== "string" || value.length > 8e3) throw new Error("Text must be at most 8000 characters.");
+      const proposal = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now);
+      return applyProposalAt(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now);
+    }
+    if (field.kind === "confirmation" || field.kind === "choice") {
+      if (field.kind === "confirmation" ? value !== true : !Number.isInteger(value) || value < 0 || value >= (field.options?.length ?? 0)) throw new Error("Invalid requirement response.");
+      return addSupply(r, target.slice(0, -1), target.at(-1), { capability: field.kind, by: peer, ...field.kind === "choice" ? { choice: value } : {} }, now);
+    }
+    if (!value || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit || field.direction === "consume" && value.amount > (field.amount ?? 0) || field.direction !== "consume" && value.amount < (field.amount ?? 0) || field.start !== void 0 && (!Number.isFinite(value.start) || value.start > field.start) || field.end !== void 0 && (!Number.isFinite(value.end) || value.end < field.end)) throw new Error("Allocation does not match the declared bounds.");
+    const allocation = { resource: "", type: field.type, amount: value.amount, unit: field.unit, ...field.start !== void 0 ? { start: field.start } : {}, ...field.end !== void 0 ? { end: field.end } : {} };
+    if (field.direction === "consume") return writeNodeValue(r, target, "fos:consumed", { peer, value: allocation, time: now }, now);
+    const id = crypto.randomUUID();
+    r = addRow(r, target, "allocation", field.name, now, { id, allocation });
+    return addSupply(r, target.slice(0, -1), target.at(-1), { capability: "allocation", by: peer, ref: id }, now);
+  }
+
+  // ../shared/sync/events.ts
+  var EVALUATION_REQUEST = "fos:evaluation-request";
+  var EVENT_KINDS = ["read", "search", "submit", "branch", "input", "complete", "decide"];
+  var EventError = class extends Error {
+  };
+  function pathOf(value, fallback = []) {
+    if (value === void 0) return fallback;
+    if (!Array.isArray(value) || value.length > 32 || value.some((id) => typeof id !== "string" || !id || id.length > 128 || id === "." || id === "..")) throw new EventError("Use an array of child IDs within the attachment.");
+    return value;
+  }
+  function branchesOf(value) {
+    if (value === void 0) return void 0;
+    if (!Array.isArray(value) || value.length > 32) throw new EventError("Invalid branch selections.");
+    return value.map((s) => {
+      if (!s || typeof s.name !== "string" || !s.name || s.name.length > 200) throw new EventError("Invalid branch name.");
+      return { path: pathOf(s.path), name: s.name };
+    }).sort((a, b) => a.path.length - b.path.length);
+  }
+  function textOf(value, max = 16e3) {
+    if (typeof value !== "string" || !value.trim() || value.length > max) throw new EventError(`Text is required (at most ${max} characters).`);
+    return value.trim();
+  }
+  function offsetOf(value, max = Number.MAX_SAFE_INTEGER) {
+    const offset = value ?? 0;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > max) throw new EventError("Invalid offset.");
+    return offset;
+  }
+  function expectedOf(value) {
+    if (typeof value !== "string" || !value) throw new EventError("Read the node first and pass its revision as `expected`.");
+    return value;
+  }
+  function parseEvent(input) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new EventError("An event object is required.");
+    const raw = input;
+    const kind = raw.kind;
+    if (!EVENT_KINDS.includes(kind)) throw new EventError(`Unknown event kind: ${String(raw.kind)}.`);
+    const path = pathOf(raw.path), branches = branchesOf(raw.branches);
+    switch (kind) {
+      case "read":
+        return { kind, path, branches, offset: offsetOf(raw.offset) };
+      case "search":
+        return { kind, path, branches, query: textOf(raw.query, 200), offset: offsetOf(raw.offset, 5e3) };
+      case "submit": {
+        if (!Array.isArray(raw.changes) || !raw.changes.length || raw.changes.length > 50) throw new EventError("Supply 1\u201350 changes.");
+        const changes = raw.changes.map((change) => {
+          if (!change || typeof change !== "object") throw new EventError("Invalid change.");
+          if (!["add_task", "add_note", "add_plain", "rename", "complete"].includes(change.operation)) throw new EventError("Unknown change operation.");
+          return { path: pathOf(change.path), operation: change.operation, ...change.text !== void 0 ? { text: textOf(change.text) } : {}, ...typeof change.done === "boolean" ? { done: change.done } : {} };
+        });
+        return { kind, path, branches, expected: expectedOf(raw.expected), ...raw.name !== void 0 ? { name: textOf(raw.name, 100) } : {}, changes };
+      }
+      case "branch":
+        return { kind, path, branches, expected: expectedOf(raw.expected), name: textOf(raw.name, 200) };
+      case "input": {
+        if (typeof raw.key !== "string" || !raw.key) throw new EventError("An input key is required.");
+        return { kind, path, branches, expected: expectedOf(raw.expected), key: raw.key, value: raw.value };
+      }
+      case "complete": {
+        const selections = raw.selections;
+        if (selections !== void 0 && (!selections || typeof selections !== "object" || Array.isArray(selections) || Object.entries(selections).length > 64 || Object.entries(selections).some(([id, name]) => id.length > 256 || typeof name !== "string" || name.length > 256))) throw new EventError("Invalid branch selections.");
+        return { kind, path, branches, expected: expectedOf(raw.expected), ...selections ? { selections } : {}, ...raw.recover === true ? { recover: true } : {} };
+      }
+      case "decide": {
+        if (typeof raw.proposalId !== "string" || !raw.proposalId) throw new EventError("A proposal id is required.");
+        if (raw.decision !== "approve" && raw.decision !== "reject") throw new EventError("decision must be approve or reject.");
+        return { kind, path, proposalId: raw.proposalId, decision: raw.decision };
+      }
+    }
+  }
+  function selectedIdentity(store, cid) {
+    return isBranchChoice(store, content(store, cid)) ? selectedBranchValue(store, cid) ?? cid : cid;
+  }
+  function branchInfo(store, cid) {
+    if (isBranchChoice(store, content(store, cid))) return { selected: branchSelection(store, cid), names: readChoice(store, cid).options.map((o) => o.peerId) };
+    return refBranches(store, content(store, cid)) ?? null;
+  }
+  function descend(store, cid, path) {
+    for (const id of path) {
+      if (!viewNode(store, cid).tasks.some((row) => row.id === id)) throw new EventError("Node is not a visible child in this branch.");
+      const next = findChild(store, cid, id);
+      if (!next) throw new EventError("Node not found in this branch.");
+      cid = next;
+    }
+    return cid;
+  }
+  var bookkeeping = /* @__PURE__ */ new Set(["alias", "ref", "versionControl", "disabledCapabilities", "peerId"]);
+  function dispatchEvent(r, event, principal, now) {
+    const store = r.store, root = rootTargetCid(store), owner = principal.owner;
+    const canonical = contextScope(store, root, principal.scope);
+    let attached = resolveScope(store, root, canonical);
+    if (!attached) throw new EventError("Attachment no longer exists.");
+    const permission = (cid, capability) => {
+      if (owner) return true;
+      const identity = content(store, selectedIdentity(store, cid));
+      return hasCapability(store, identity, principal.peerId, capability) || capability === "read" && hasCapability(store, identity, principal.peerId, "edit");
+    };
+    if (!permission(attached, "read")) throw new EventError("Peer no longer has read access to this attachment.");
+    const path = event.path ?? [];
+    const branches = /* @__PURE__ */ Object.create(null);
+    for (const s of "branches" in event && event.branches || []) withBranches(store, branches, () => {
+      const target = descend(store, attached, s.path), info = branchInfo(store, target);
+      if (!info?.names.includes(s.name)) throw new EventError("Branch not found.");
+      branches[content(store, target).data.alias.id] = s.name;
+    });
+    return withBranches(store, branches, () => {
+      attached = resolveScope(store, root, canonical);
+      if (!permission(attached, "read")) throw new EventError("Peer has no access to this branch.");
+      const resolve2 = (relative) => {
+        let cid2 = attached;
+        for (const id of relative) {
+          cid2 = descend(store, cid2, [id]);
+          const member = readMembers(store, content(store, selectedIdentity(store, cid2))).some((m) => m.peerId === principal.peerId);
+          if (member && !permission(cid2, "read")) throw new EventError("Peer has no access to this child.");
+        }
+        return cid2;
+      };
+      const absolute = (relative) => [...canonical, ...relative];
+      const editable = permission(attached, "edit");
+      const describe = (at) => {
+        const current = resolve2(at), v = viewNode(store, current);
+        return { path: at, title: v.name, done: v.done, revision: current, valueRevision: put(store, valueContent(store, current)), branches: branchInfo(store, current) };
+      };
+      const cid = resolve2(path), node = viewNode(store, cid);
+      const unchanged = (result) => ({ replica: r, changed: false, result });
+      if (event.kind === "read") {
+        const offset = event.offset ?? 0;
+        const visible = node.tasks.filter((row) => {
+          try {
+            resolve2([...path, row.id]);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+        const mask = owner ? null : nodeLinkMaskAt(r, absolute(path), principal.peerId);
+        const data = Object.fromEntries(Object.entries(valueContent(store, cid).data).filter(([key]) => !bookkeeping.has(key) && (!mask?.fields || mask.fields.includes(key))));
+        const children = visible.filter((row) => !mask?.children || mask.children.includes(row.id));
+        const described = describe(path);
+        let snapshot = null;
+        try {
+          snapshot = executionSnapshot(r, absolute(path), owner ? void 0 : { peerId: principal.peerId, scope: canonical, capabilities: [] });
+        } catch {
+          snapshot = null;
+        }
+        return unchanged({
+          ...described,
+          ...mask?.fields && !mask.fields.includes("description") ? { title: null } : {},
+          data,
+          ancestors: path.map((_id, i2) => describe(path.slice(0, i2))),
+          children: children.slice(offset, offset + 100).map((row) => ({ ...row, path: [...path, row.id] })),
+          nextOffset: offset + 100 < children.length ? offset + 100 : null,
+          conflicts: node.choices.map((c) => ({ id: c.id, subject: c.subject })),
+          proposals: node.proposals.filter((p) => owner || p.peerId === principal.peerId),
+          evaluation: snapshot ? { status: snapshot.status, inputs: snapshot.inputs, nodes: snapshot.nodes } : null,
+          actions: [...editable ? ["submit", "input", "complete"] : [], ...owner ? ["branch", "decide"] : []]
+        });
+      }
+      if (event.kind === "search") {
+        const query = event.query.toLowerCase(), offset = event.offset ?? 0;
+        const stack = [path], seen = /* @__PURE__ */ new Set(), matches = [];
+        let visited = 0;
+        while (stack.length && visited < 5e3 && matches.length < 50) {
+          const at = stack.pop();
+          let current;
+          try {
+            current = resolve2(at);
+          } catch {
+            continue;
+          }
+          if (seen.has(current)) continue;
+          seen.add(current);
+          const v = viewNode(store, current);
+          if (visited++ >= offset && (v.name ?? "").toLowerCase().includes(query)) matches.push(describe(at));
+          if (at.length < 32) for (const row of [...v.tasks].reverse()) stack.push([...at, row.id]);
+        }
+        return unchanged({ matches, nextOffset: stack.length && visited < 5e3 ? visited : null, truncated: stack.length > 0, scanned: visited });
+      }
+      if (event.kind === "complete") {
+        if (event.expected !== put(store, valueContent(store, cid))) throw new EventError("The node changed. Read and review it before evaluating.");
+        if (owner) return { replica: r, changed: false, result: { status: "evaluating" }, evaluate: { path: absolute(path), branches: { ...branches, ...event.selections ?? {} }, expected: event.expected, ...event.recover ? { recover: true } : {} } };
+        if (!editable) throw new EventError("Peer cannot request evaluation of this attachment.");
+        if (!capabilityPeers(r, absolute(path), "request").length) throw new EventError("No peer accepts evaluation requests in this context.");
+        const requestName = `evaluate ${path.length ? path.join("/") : "[]"}`;
+        const identity2 = content(store, selectedIdentity(store, attached));
+        if (readProposals(store, identity2).some((p) => p.peerId === principal.peerId && p.name === requestName && p.status === "open")) throw new EventError("This evaluation is already requested.");
+        const base2 = put(store, valueContent(store, attached)), draftStore2 = new FosStore();
+        importNodes(draftStore2, reachableNodes(store, [base2]));
+        commitRoot(draftStore2, base2, now);
+        const draft2 = writeNodeValue(createReplica(principal.peerId, draftStore2), path, EVALUATION_REQUEST, { peer: principal.peerId, expected: event.expected, time: now }, now);
+        importNodes(store, reachableNodes(draftStore2, [headCid(draft2)]));
+        const proposal2 = put(store, proposalContent(store, principal.peerId, requestName, headCid(draft2), base2, now));
+        const next2 = updateAtScope(store, root, canonical, (current) => withProposal(store, makeLink(store, current, now), principal.peerId, proposal2, requestName), "node");
+        commitRoot(store, next2, now);
+        return { replica: { ...r }, changed: true, result: { status: "requested", proposalId: proposal2, request: requestName, node: absolute(path) } };
+      }
+      if (event.kind === "decide") {
+        if (!permission(cid, "approve")) throw new EventError("The approve capability is required on this node.");
+        const next2 = event.decision === "approve" ? applyProposalAt(r, absolute(path), event.proposalId, principal.peerId, now) : rejectProposalAt(r, absolute(path), event.proposalId, now);
+        return { replica: next2, changed: headCid(next2) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } };
+      }
+      if (event.kind === "input") {
+        if (!editable) throw new EventError("Peer cannot interact with this node.");
+        if (event.expected !== cid) throw new EventError("The node changed. Read it again before submitting.");
+        const next2 = executionInput(r, absolute(path), { revision: headCid(r), key: event.key, value: event.value }, principal.peerId, now);
+        return { replica: next2, changed: true, result: { ...executionSnapshot(next2, absolute(path)), revision: resolveScope(next2.store, headCid(next2), absolute(path)) } };
+      }
+      if (event.expected !== attached) throw new EventError("The attachment changed. Read [] and review before retrying.");
+      if (event.kind === "branch") {
+        if (!owner) throw new EventError("Only the account owner can create branches directly.");
+        const next2 = createBranch(r, absolute(path), event.name, now);
+        return { replica: next2, changed: true, result: { created: event.name, path } };
+      }
+      if (path.length) throw new EventError("Submissions attach at []. Put relative paths in changes[].path.");
+      if (!editable) throw new EventError("Peer cannot propose edits on this attachment.");
+      const apply = (draft2, draftStore2, base2) => {
+        for (const change of event.changes) {
+          const at = change.path, source = resolve2(at);
+          for (let i2 = 1; i2 <= at.length; i2++) {
+            const child = resolve2(at.slice(0, i2)), value = content(store, selectedIdentity(store, child));
+            if (readMembers(store, value).some((m) => m.peerId === principal.peerId) && !permission(child, "edit")) throw new EventError("Peer cannot edit this child.");
+          }
+          if (!owner && nodeLinkMaskAt(r, absolute(at), principal.peerId).fields?.includes("description") === false) throw new EventError("Node text is not exposed to this peer.");
+          const target = [...base2, ...at];
+          if (change.operation === "add_task" || change.operation === "add_note" || change.operation === "add_plain") draft2 = addRow(draft2, target, change.operation === "add_task" ? "task" : change.operation === "add_note" ? "note" : "plain", textOf(change.text), now);
+          else if (change.operation === "rename") {
+            const text = textOf(change.text);
+            if (!at.length) {
+              const head = headCid(draft2);
+              commitRoot(draftStore2, updateAtScope(draftStore2, head, base2, (value) => ({ ...value, data: { ...value.data, description: { content: text } } })), now);
+              draft2 = { ...draft2 };
+            } else draft2 = renameTask(draft2, target.slice(0, -1), target.at(-1), text, now);
+          } else if (change.operation === "complete" && typeof change.done === "boolean") {
+            if (!at.length) throw new EventError("Completion requires a child path.");
+            if (!valueContent(store, source).data.todo) throw new EventError("Only tasks have a completion state.");
+            const before = headCid(draft2);
+            draft2 = setTaskDone(draft2, target.slice(0, -1), target.at(-1), change.done, now);
+            if (before === headCid(draft2) && viewNode(draftStore2, descend(draftStore2, resolveScope(draftStore2, headCid(draft2), base2), at)).done !== change.done) throw new EventError("Task has unmet requirements.");
+          } else throw new EventError("Unknown change operation.");
+        }
+        return draft2;
+      };
+      if (owner) {
+        const before = headCid(r);
+        const next2 = apply(r, store, canonical);
+        return { replica: next2, changed: headCid(next2) !== before, result: { status: "applied" } };
+      }
+      const proposalName = event.name ? textOf(event.name, 100) : `${principal.name ?? principal.peerId} ${new Date(now).toISOString()}`;
+      const identity = content(store, selectedIdentity(store, attached));
+      if (readProposals(store, identity).some((p) => p.peerId === principal.peerId && p.name === proposalName)) throw new EventError("That proposal name already exists. Review it or choose a new name.");
+      const base = put(store, valueContent(store, attached)), draftStore = new FosStore();
+      importNodes(draftStore, reachableNodes(store, [base]));
+      commitRoot(draftStore, base, now);
+      let draft = createReplica(principal.peerId, draftStore);
+      withBranches(draftStore, branches, () => {
+        draft = apply(draft, draftStore, []);
+      });
+      if (headCid(draft) === base) throw new EventError("No changes to propose.");
+      importNodes(store, reachableNodes(draftStore, [headCid(draft)]));
+      const proposal = put(store, proposalContent(store, principal.peerId, proposalName, headCid(draft), base, now));
+      const next = updateAtScope(store, root, canonical, (current) => withProposal(store, makeLink(store, current, now), principal.peerId, proposal, proposalName), "node");
+      commitRoot(store, next, now);
+      return { replica: { ...r }, changed: true, result: { proposalId: proposal, name: proposalName, status: "awaiting-review" } };
+    });
+  }
+
+  // ../shared/sync/mcp-adapter.ts
+  init_prelude();
+  var pathSchema = { type: "array", items: { type: "string", minLength: 1, maxLength: 128 }, maxItems: 32 };
+  var common = {
+    path: { ...pathSchema, description: "Stable child IDs relative to the attachment. [] is its root; never titles or filesystem paths." },
+    branches: { type: "array", maxItems: 32, items: { type: "object", properties: { path: pathSchema, name: { type: "string" } }, required: ["path", "name"], additionalProperties: false }, description: "Branch selections, outermost first. Paths are relative to the attachment." }
+  };
+  var tool = (name, kind, description, properties, required, readOnlyHint = true) => ({
+    name,
+    kind,
+    description,
+    inputSchema: { type: "object", properties: { ...common, ...properties }, required, additionalProperties: false },
+    annotations: { readOnlyHint, destructiveHint: !readOnlyHint, idempotentHint: readOnlyHint, openWorldHint: kind === "complete" }
+  });
+  var MCP_TOOLS = [
+    tool("fos_read", "read", "Read a node: its text, immediate children, branch choices, pending submissions, declared inputs of a running evaluation and the actions available to you. Start at []. Paginate children with offset.", { offset: { type: "integer", minimum: 0 } }, []),
+    tool("fos_search", "search", "Search node text inside the attachment (bounded depth-first scan, active branches only). Returns paths for fos_read.", { query: { type: "string", minLength: 1, maxLength: 200 }, offset: { type: "integer", minimum: 0, maximum: 5e3 } }, ["query"]),
+    tool("fos_propose", "submit", "Submit changes against the attachment. Read [] first; expected must equal its revision. An owner applies them; anyone else leaves a named proposal for the owner to review. Does not run effects. Batch related edits.", {
+      expected: { type: "string" },
+      name: { type: "string", minLength: 1, maxLength: 100 },
+      changes: { type: "array", minItems: 1, maxItems: 50, items: { type: "object", properties: { path: pathSchema, operation: { enum: ["add_task", "add_note", "add_plain", "rename", "complete"] }, text: { type: "string", maxLength: 16e3 }, done: { type: "boolean" } }, required: ["path", "operation"], additionalProperties: false } }
+    }, ["expected", "changes"], false),
+    tool("fos_input", "input", "Provide one declared input of an evaluation (text, confirmation true, a zero-based choice, or an allocation {type, unit, amount, start?, end?}). Read the node first for keys, bounds and its revision (`expected`).", { expected: { type: "string" }, key: { type: "string" }, value: {} }, ["expected", "key", "value"], false),
+    tool("fos_evaluate", "complete", "Evaluate a node. The owner's host runs it through its handler registry (checks, effect journal, recovery; can create external effects); anyone else leaves an evaluation request for the owner's rules to run or review. expected is valueRevision from fos_read(path). Never retry an uncertain effect automatically.", { expected: { type: "string" }, recover: { type: "boolean" } }, ["path", "expected"], false)
+  ];
+  var OWNER_TOOLS = [
+    tool("fos_create_branch", "branch", "Create a content-addressed alternative at a node. Account owner only. expected is the revision from fos_read([]). Does not change other clients' selection.", { expected: { type: "string" }, name: { type: "string", minLength: 1, maxLength: 200 } }, ["path", "expected", "name"], false),
+    tool("fos_decide", "decide", "Approve or reject a pending submission at a node. Requires the approve capability (owners have it).", { proposalId: { type: "string" }, decision: { enum: ["approve", "reject"] } }, ["proposalId", "decision"], false)
+  ];
+  function mcpTools(owner) {
+    return [...MCP_TOOLS, ...owner ? OWNER_TOOLS : []].map(({ kind: _kind, ...t }) => t);
+  }
+  function mcpEvent(name, args, owner) {
+    const found = [...MCP_TOOLS, ...owner ? OWNER_TOOLS : []].find((t) => t.name === name);
+    if (!found) throw new Error("Tool unavailable for this credential.");
+    if (args !== void 0 && (!args || typeof args !== "object" || Array.isArray(args))) throw new Error("Tool arguments must be an object.");
+    return parseEvent({ ...args ?? {}, kind: found.kind });
+  }
+  var invalid = (id, code, message) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
+  function handleMcp(message, host) {
+    const m = message;
+    if (!m || Array.isArray(m) || m.jsonrpc !== "2.0" || typeof m.method !== "string" || "id" in m && typeof m.id !== "string" && typeof m.id !== "number") return invalid(null, -32600, "Invalid JSON-RPC request");
+    if (!("id" in m)) return null;
+    const ok = (result) => ({ jsonrpc: "2.0", id: m.id, result });
+    if (m.method === "initialize") return ok({ protocolVersion: host.protocolVersion ?? "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: host.serverName ?? "fos", version: "1.0.0" } });
+    if (m.method === "ping") return ok({});
+    if (m.method === "tools/list") return ok({ tools: mcpTools(host.owner) });
+    if (m.method !== "tools/call") return invalid(m.id, -32601, "Unknown method");
+    const failure = (error) => ok({ isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] });
+    const success = (result) => ok({ content: [{ type: "text", text: JSON.stringify(result) }] });
+    try {
+      const event = mcpEvent(m.params?.name, m.params?.arguments, host.owner);
+      const outcome = host.dispatch(event);
+      return outcome instanceof Promise ? outcome.then(success, failure) : success(outcome);
+    } catch (error) {
+      return failure(error);
+    }
+  }
 
   // ../shared/sync/embed.ts
   var replicas = /* @__PURE__ */ new Map();
@@ -5790,12 +6455,12 @@
       return JSON.stringify(lines);
     },
     /** Locate a task by id prefix anywhere below `at`: { id, at } or null. */
-    findTask(handle, atJson, prefix) {
+    findTask(handle, atJson, prefix2) {
       const r = get2(handle);
       const search = (at) => {
         const node = view(r, at);
         if (!node) return null;
-        const direct = node.tasks.find((t) => t.id.startsWith(prefix));
+        const direct = node.tasks.find((t) => t.id.startsWith(prefix2));
         if (direct) return { id: direct.id, at };
         for (const t of node.tasks) {
           const f = search([...at, t.id]);
@@ -5843,6 +6508,21 @@
       const done = completeSync(get2(handle), JSON.parse(requestJson), JSON.parse(responseJson), now);
       set(handle, done.replica);
       return JSON.stringify({ reMerged: done.reMerged, newChoiceIds: done.newChoiceIds });
+    },
+    /** One MCP message (JSON-RPC) through the event grammar as this directory's owner. Returns {response, changed}. */
+    mcp(handle, messageJson, peerId, now) {
+      let changed = false;
+      const response = handleMcp(JSON.parse(messageJson), { owner: true, serverName: "fos", dispatch: (event) => {
+        const dispatched = dispatchEvent(get2(handle), event, { peerId, owner: true, scope: [] }, now);
+        if (dispatched.changed) {
+          set(handle, dispatched.replica);
+          changed = true;
+        }
+        if (dispatched.evaluate) throw new Error("Evaluation is not available through the local server yet; run it from the app.");
+        return dispatched.result;
+      } });
+      if (response instanceof Promise) throw new Error("unexpected asynchronous dispatch");
+      return JSON.stringify({ response, changed });
     },
     /** Serve another peer against this replica (the directory as a node). */
     serveSync(handle, requestJson, serverPeerId, now, optionsJson) {

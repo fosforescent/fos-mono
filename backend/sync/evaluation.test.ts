@@ -1,9 +1,12 @@
 import type { Request, Response } from 'express'
-import { addMemberAt, setMemberCapabilitiesAt, addRow, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view, type Replica } from '@fosforescent/shared/sync/index'
+import { addMemberAt, setMemberCapabilitiesAt, addRow, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEvaluationService } from './evaluation'
+import { createEventService } from './events'
+import { createHandlerRegistry } from './registry'
+import { githubRepoHandler } from './hostHandlers'
 
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
@@ -11,17 +14,22 @@ function setup() {
   r = addMemberAt(r, [], 'integration:github', 'GitHub', [], 1)
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 1, ['repo'])
   let calls = 0
-  const effects = { githubConnected: async () => true, createIssue: async () => {
+  const effects = { connected: async () => true, createIssue: async () => {
     calls++
     expect(evaluationRecord(r, ['project'])?.effects[0]?.status).toBe('attempting')
     return { url: 'https://example.test/issues/1', number: 1 }
   } }
-  const service = createEvaluationService({ loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user, store) => { r = { ...r, store } }, now: () => 10 }, effects)
+  const registry = createHandlerRegistry([githubRepoHandler({ connected: () => effects.connected(), createIssue: () => effects.createIssue() })])
+  const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user: unknown, store: any) => { r = { ...r, store } }, now: () => 10 }
+  const service = createEvaluationService(deps, registry)
+  // Owners evaluate through the event grammar: a `complete` event at the node (backend/sync/events.ts → runNode).
+  const events = createEventService(deps, service.runNode)
   const expected = put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), ['project'])!))
   const call = async (kind = 'user', value = expected) => {
     let status = 200, body: any
-    const res = { status(n: number) { status = n; return res }, json(b: unknown) { body = b; return res } } as unknown as Response
-    await service.handler({ claims: { username: 'owner', kind }, body: { path: ['project'], expected: value } } as unknown as Request, res)
+    const res = { setHeader() {}, status(n: number) { status = n; return res }, json(b: unknown) { body = b; return res } } as unknown as Response
+    const claims = kind === 'peer' ? { username: 'owner', kind: 'peer', peerId: 'stranger', scope: ['project'] } : { username: 'owner' }
+    await events.http({ claims, body: { scope: ['project'], event: { kind: 'complete', path: [], expected: value } } } as unknown as Request, res)
     return { status, body }
   }
   return { call, effects, get: () => r, calls: () => calls }
@@ -29,22 +37,30 @@ function setup() {
 test('serializes simultaneous requests, persists before dispatch, and rejects stale replay', async () => {
   const s = setup()
   const results = await Promise.all([s.call(), s.call()])
-  expect(results.map(r => r.status)).toEqual([200, 409])
+  expect(results.map(r => r.status)).toEqual([200, 400])
   expect(s.calls()).toBe(1)
   expect(view(s.get(), [])!.tasks[0]!.done).toBe(true)
 })
-test('invited peers cannot execute an account integration and stale content cannot run', async () => {
+test('strangers cannot execute an account integration and stale content cannot run', async () => {
   const s = setup()
-  expect((await s.call('peer')).status).toBe(403)
-  expect((await s.call('user', 'changed')).status).toBe(409)
+  expect((await s.call('peer')).status).toBe(400)
+  expect((await s.call('user', 'changed')).status).toBe(400)
   expect(s.calls()).toBe(0)
 })
 test('lost effect response creates a recovery task, with no automatic retry', async () => {
   const s = setup()
   s.effects.createIssue = async () => { throw new Error('Response lost') }
-  expect((await s.call()).status).toBe(409)
+  expect((await s.call()).status).toBe(400)
   expect(evaluationRecord(s.get(), ['project'])?.status).toBe('needs-recovery')
   expect(view(s.get(), ['project'])!.tasks.some(t => t.title.startsWith('Manually roll back'))).toBe(true)
+})
+test('a disconnected provider blocks the step instead of running it', async () => {
+  const s = setup()
+  s.effects.connected = async () => false
+  const { status, body } = await s.call()
+  expect(status).toBe(400)
+  expect(String(body.error)).toMatch(/GitHub is not active/)
+  expect(s.calls()).toBe(0)
 })
 
 test('a rejected persistent claim stops before invoking any integration', async () => {
@@ -53,10 +69,12 @@ test('a rejected persistent claim stops before invoking any integration', async 
   r = addMemberAt(r, [], 'integration:github', 'GitHub', [], 1)
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 1, ['repo'])
   const issue = jest.fn()
-  const service = createEvaluationService({ loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async () => { throw new Error('Stale root') } }, { githubConnected: async () => true, createIssue: issue })
+  const registry = createHandlerRegistry([githubRepoHandler({ connected: async () => true, createIssue: issue })])
+  const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async () => { throw new Error('Stale root') } }
+  const events = createEventService(deps, createEvaluationService(deps, registry).runNode)
   let status = 200
-  const res = { status(n: number) { status = n; return res }, json() { return res } } as unknown as Response
-  await service.handler({ claims: { username: 'owner' }, body: { path: ['project'], expected: put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), ['project'])!)) } } as unknown as Request, res)
-  expect(status).toBe(409)
+  const res = { setHeader() {}, status(n: number) { status = n; return res }, json() { return res } } as unknown as Response
+  await events.http({ claims: { username: 'owner' }, body: { scope: ['project'], event: { kind: 'complete', path: [], expected: put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), ['project'])!)) } } } as unknown as Request, res)
+  expect(status).toBe(400)
   expect(issue).not.toHaveBeenCalled()
 })

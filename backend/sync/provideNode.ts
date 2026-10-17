@@ -1,6 +1,6 @@
 import { nodeRelay } from './nodeRelay'
 import type { Request, Response } from 'express'
-import { createReplica, ensureHomeContext, exchangeNode, parseNodeRequest, SERVER_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, exchangeNodeContext, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
+import { createReplica, ensureHomeContext, exchangeNode, parseNodeRequest, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, exchangeNodeContext, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
 import { withUserLock, serverPeerIdFor, type PeerSyncDeps } from './peerSync'
 
 export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: number, peer: string, address: string[], request: Omit<NodeRequest, 'scope' | 'path'>): Promise<ProvidedNode> } = nodeRelay) {
@@ -10,7 +10,7 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
     try {
       const request = parseNodeRequest(req.body)
       const authority: NodeAuthority = { peerId: claims.kind === 'peer' ? claims.peerId! : request.peerId,
-        scope: claims.kind === 'peer' ? claims.scope! : [], owner: claims.kind !== 'peer', proposeOnly: claims.kind === 'peer', capabilities: SERVER_CAPABILITIES }
+        scope: claims.kind === 'peer' ? claims.scope! : [], owner: claims.kind !== 'peer', proposeOnly: claims.kind === 'peer', capabilities: deps.registry?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES }
       if (claims.kind === 'peer' && (!claims.peerId || !Array.isArray(claims.scope))) throw new NodeAccessError('Invalid peer credential.')
       const pending = !request.update && !request.proposal ? await withUserLock(`user:${claims.username}`, async () => {
         const loaded = await deps.loadStore(claims.username!)
@@ -37,7 +37,7 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
         let r = createReplica(serverPeerIdFor(loaded.user.username), loaded.store)
         const before = loaded.store.rootNodeId
         if (claims.kind === 'peer' && (!claims.peerId || !Array.isArray(claims.scope))) throw new NodeAccessError('Invalid peer credential.')
-        if (claims.kind !== 'peer') r = ensureHomeContext(r, deps.now?.() ?? Date.now())
+        if (claims.kind !== 'peer') r = ensureHomeContext(r, deps.now?.() ?? Date.now(), deps.registry?.hostOffers())
         const now = deps.now?.() ?? Date.now()
         if (pending && upstreamNode) {
           const current = nodeReferenceAt(r, request, authority)

@@ -3,7 +3,7 @@ import { addTask, addMemberAt, applyProposalAt, createBranch, createReplica, rem
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
-import { createTaskTreeMcp } from './taskTree'
+import { createEventService } from './events'
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Private sibling', 1, 'private')
   r = addTask(r, [], 'Project specification', 1, 'project')
@@ -11,7 +11,7 @@ function setup() {
   r = addMemberAt(r, ['project'], 'agent', 'Coding agent', ['read', 'edit'], 2)
   let saves = 0
   const evaluate = jest.fn(async () => ({ status: 'committed' }))
-  const handler = createTaskTreeMcp({ loadStore: async username => username === 'owner' ? { user: { id: 1, username }, store: r.store } : null, saveStore: async (_user, store) => { saves++; r = { ...r, store } }, now: () => 50 }, evaluate)
+  const handler = createEventService({ loadStore: async username => username === 'owner' ? { user: { id: 1, username }, store: r.store } : null, saveStore: async (_user, store) => { saves++; r = { ...r, store } }, now: () => 50 }, evaluate).mcp
   async function rpc(method: string, params?: unknown, extra: any = {}) {
     let status = 200, body: any
     const res = { setHeader() {}, status(n: number) { status = n; return res }, json(v: unknown) { body = v; return res }, end() { return res } } as unknown as Response
@@ -82,10 +82,17 @@ test('read-only and revoked child edit grants cannot submit changes', async () =
   expect((await s.call('fos_propose', { expected: revision, name: 'bad', changes: [{ path: [], operation: 'add_task', text: 'Oops' }] })).error).toMatch(/cannot propose/)
   expect(s.saves()).toBe(0)
 })
-test('owner-only actions are absent for peers and require explicit owner scope', async () => {
+test("a peer's evaluation becomes a request the owner's rules decide on; owner-only tools are absent for peers", async () => {
   const s = setup()
-  expect((await s.rpc('tools/list')).body.result.tools.some((t: any) => t.name === 'fos_evaluate')).toBe(false)
-  expect((await s.call('fos_evaluate', { expected: 'x' })).error).toMatch(/unavailable/)
+  expect((await s.rpc('tools/list')).body.result.tools.some((t: any) => t.name === 'fos_create_branch')).toBe(false)
+  expect((await s.call('fos_create_branch', { path: [], expected: 'x', name: 'alt' })).error).toMatch(/unavailable/)
+  const peerRow = await s.call('fos_read', { path: ['ui'] })
+  expect((await s.call('fos_evaluate', { path: ['ui'], expected: peerRow.valueRevision })).error).toMatch(/accepts evaluation requests/)
+  s.set(setMemberCapabilitiesAt(addMemberAt(s.get(), ['project'], 'owner-device', 'Laptop', [], 5), ['project'], 'owner-device', [], [], 5, ['request']))
+  const requested = await s.call('fos_evaluate', { path: ['ui'], expected: (await s.call('fos_read', { path: ['ui'] })).valueRevision })
+  expect(requested.status).toBe('requested')
+  expect(view(s.get(), ['project'])!.proposals.some(p => p.peerId === 'agent' && p.name === 'evaluate ui')).toBe(true)
+  expect((await s.call('fos_evaluate', { path: ['ui'], expected: (await s.call('fos_read', { path: ['ui'] })).valueRevision })).error).toMatch(/already requested/)
   expect(s.evaluate).not.toHaveBeenCalled()
   const owner = { claims: { username: 'owner' }, query: { scope: '["project"]' } }
   const row = await s.call('fos_read', { path: ['ui'] }, owner)
@@ -113,7 +120,7 @@ test('a proposal on a selected branch stays in that branch and concurrent stale 
 })
 test('a rejected persistent save never reports successful proposal publication', async () => {
   const s = setup()
-  const handler = createTaskTreeMcp({ loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: s.get().store }), saveStore: async () => { throw new Error('Concurrent store update') } })
+  const handler = createEventService({ loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: s.get().store }), saveStore: async () => { throw new Error('Concurrent store update') } }).mcp
   const expected = (await s.call('fos_read')).revision
   let body: any
   const res = { setHeader() {}, status() { return res }, json(v: unknown) { body = v; return res } } as unknown as Response

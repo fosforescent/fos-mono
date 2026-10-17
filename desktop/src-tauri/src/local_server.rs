@@ -1,6 +1,6 @@
 //! Local server exposed by `fos` / `fos serve` for the directory it sits in:
 //!   POST /peer-sync   the sync protocol served from this directory's replica (nearby devices attach here)
-//!   POST /mcp         MCP (JSON-RPC) for local agents: list/add/complete tasks, sync, status
+//!   POST /mcp         MCP (JSON-RPC) for local agents: the shared fos_read/fos_search/fos_propose/… tools over the event grammar
 //!   POST /p2p/offer, GET /p2p/offer/:id, POST|GET /p2p/answer/:id   WebRTC offer/answer relay
 //!   GET  /status, GET /events?since=N (long-poll for "changed")
 
@@ -49,92 +49,20 @@ fn read_body(request: &mut Request) -> Value {
     serde_json::from_str(&text).unwrap_or(Value::Null)
 }
 
-const TOOLS: &str = r#"[
-  {"name":"list_tasks","description":"List the tasks of this directory as an indented tree with id prefixes and done state.","inputSchema":{"type":"object","properties":{"parent":{"type":"string","description":"id prefix of a task to list the subtasks of"}}}},
-  {"name":"add_task","description":"Add a row (optionally under parent). Plain text makes a plain row; prefix with \"[ ] \" for a task, \"[x] \" for a done task, \"- \" for a markdown note, \"// \" for a comment.","inputSchema":{"type":"object","required":["title"],"properties":{"title":{"type":"string"},"parent":{"type":"string"}}}},
-  {"name":"set_task_done","description":"Mark a task done or open.","inputSchema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"},"done":{"type":"boolean","default":true}}}},
-  {"name":"rename_task","description":"Change a task title.","inputSchema":{"type":"object","required":["id","title"],"properties":{"id":{"type":"string"},"title":{"type":"string"}}}},
-  {"name":"delete_task","description":"Delete a task and its subtasks.","inputSchema":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}},
-  {"name":"sync_now","description":"Sync this directory with the account now (its changes become a proposal on the attached node).","inputSchema":{"type":"object","properties":{}}},
-  {"name":"status","description":"Directory, git branch, attachment and connection status.","inputSchema":{"type":"object","properties":{}}}
-]"#;
-
-fn text_result(text: String) -> Value {
-    json!({ "content": [{ "type": "text", "text": text }] })
-}
-
+/// MCP for local agents: the shared fos_* vocabulary (shared/sync/mcp-adapter.ts) over the event grammar, as the directory's owner.
 pub fn handle_mcp(shared: &Shared, req: &Value) -> Option<Value> {
     let id = req.get("id").cloned().unwrap_or(Value::Null);
-    let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
-    let ok = |result: Value| json!({ "jsonrpc": "2.0", "id": id, "result": result });
-    let fail = |code: i64, message: String| json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } });
-    match method {
-        "initialize" => Some(ok(json!({ "protocolVersion": "2024-11-05", "capabilities": { "tools": {} }, "serverInfo": { "name": "fos", "version": env!("CARGO_PKG_VERSION") } }))),
-        "notifications/initialized" => None,
-        "ping" => Some(ok(json!({}))),
-        "tools/list" => Some(ok(json!({ "tools": serde_json::from_str::<Value>(TOOLS).unwrap() }))),
-        "tools/call" => {
-            let name = req.pointer("/params/name").and_then(|n| n.as_str()).unwrap_or("");
-            let args = req.pointer("/params/arguments").cloned().unwrap_or(json!({}));
-            let result = call_tool(shared, name, &args);
-            Some(match result {
-                Ok(v) => ok(v),
-                Err((code, msg)) => fail(code, msg),
-            })
-        }
-        _ => Some(fail(-32601, format!("method not found: {}", method))),
-    }
-}
-
-fn call_tool(shared: &Shared, name: &str, args: &Value) -> Result<Value, (i64, String)> {
+    let fail = |message: String| json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32000, "message": message } });
     let mut ws = shared.workspace.lock().unwrap();
-    ws.refresh_branch().map_err(|e| (-32000, e))?;
-    let locate = |ws: &Workspace, prefix: Option<&str>| -> Result<Vec<String>, (i64, String)> {
-        match prefix {
-            Some(p) if !p.is_empty() => {
-                let (id, mut at) = ws.find_task(p).ok_or((-32000, format!("no task matches id {}", p)))?;
-                at.push(id);
-                Ok(at)
-            }
-            _ => Ok(Vec::new()),
+    if let Err(e) = ws.refresh_branch() { return Some(fail(e)); }
+    match ws.mcp(req) {
+        Ok((response, changed)) => {
+            drop(ws);
+            if changed { shared.notify_changed(); }
+            response
         }
-    };
-    let out = match name {
-        "list_tasks" => {
-            let at = locate(&ws, args.get("parent").and_then(|p| p.as_str()))?;
-            let lines = ws.core.call_json("tree", &[json!(HANDLE), json!(serde_json::to_string(&at).unwrap())]).map_err(|e| (-32000, e.to_string()))?;
-            let text = lines.as_array().map(|a| a.iter().filter_map(|l| l.as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
-            text_result(if text.is_empty() { "(no tasks)".to_string() } else { text })
-        }
-        "add_task" => {
-            let title = args.get("title").and_then(|t| t.as_str()).unwrap_or("").trim().to_string();
-            if title.is_empty() { return Err((-32602, "title required".to_string())); }
-            let at = locate(&ws, args.get("parent").and_then(|p| p.as_str()))?;
-            let created = ws.add_task(&at, &title).map_err(|e| (-32000, e))?;
-            shared.notify_changed();
-            text_result(format!("added {} {}", created.get("id").and_then(|i| i.as_str()).unwrap_or("").chars().take(8).collect::<String>(), title))
-        }
-        "set_task_done" => {
-            let done = args.get("done").and_then(|d| d.as_bool()).unwrap_or(true);
-            let id = ws.set_done(args.get("id").and_then(|i| i.as_str()).unwrap_or(""), done).map_err(|e| (-32000, e))?;
-            shared.notify_changed();
-            text_result(format!("{} is now {}", &id[..8.min(id.len())], if done { "done" } else { "open" }))
-        }
-        "rename_task" => {
-            let id = ws.rename(args.get("id").and_then(|i| i.as_str()).unwrap_or(""), args.get("title").and_then(|t| t.as_str()).unwrap_or("")).map_err(|e| (-32000, e))?;
-            shared.notify_changed();
-            text_result(format!("renamed {}", &id[..8.min(id.len())]))
-        }
-        "delete_task" => {
-            let id = ws.delete(args.get("id").and_then(|i| i.as_str()).unwrap_or("")).map_err(|e| (-32000, e))?;
-            shared.notify_changed();
-            text_result(format!("deleted {}", &id[..8.min(id.len())]))
-        }
-        "sync_now" => text_result(ws.sync().unwrap_or_else(|e| e)),
-        "status" => text_result(serde_json::to_string_pretty(&ws.status()).unwrap_or_default()),
-        _ => return Err((-32602, format!("unknown tool {}", name))),
-    };
-    Ok(out)
+        Err(e) => Some(fail(e)),
+    }
 }
 
 /// Serve until the process exits. Returns the bound address.

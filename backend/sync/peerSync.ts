@@ -11,11 +11,12 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContext, SERVER_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
+import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContext, SERVER_TRANSPORT_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
 import { indexStore, vertexEmbed } from '../search/rowIndex'
+import type { HandlerRegistry } from './registry'
 
 export type PeerSyncUser = { id: number; username: string }
 
@@ -28,6 +29,8 @@ export type PeerSyncDeps = {
   /** Peer ids of the user's devices currently connected over the WebSocket. */
   onlinePeers?(userId: number): string[]
   now?(): number
+  /** What this host can do (sync/registry.ts); absent (tests) means transport only. */
+  registry?: HandlerRegistry
 }
 
 /** Peer id the user group uses when labelling its side of a divergence. */
@@ -99,7 +102,7 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
         // Older scoped peer credentials continue to resolve through Home.
         const beforeContext = rootTargetCid(store)
         if (claimsOf(req).kind !== 'peer' && ((!parsed.scope.length && Object.values(parsed.nodes).some(node => node?.data?.alias?.id === HOME_ID)) || parsed.scope[0] === HOME_ID)) {
-          ensureHomeContext(serverReplica, 0)
+          ensureHomeContext(serverReplica, 0, deps.registry?.hostOffers())
           if (parsed.scope[0] === HOME_ID && !independentRoot) writeNodeValue(serverReplica, [], 'fos:peer-root', 'fos', deps.now?.() ?? Date.now())
         }
         const contextChanged = rootTargetCid(store) !== beforeContext
@@ -116,8 +119,8 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
             recipient: 'server' as const,
             ...(claims.kind === 'peer' ? { proposeOnly: true, peerName: claims.name } : {}),
             onlinePeers: deps.onlinePeers ? deps.onlinePeers(user.id) : undefined,
-            // what this server registers with the peer: reachable over http/ws, a relay for peers that cannot connect directly, and its services
-            capabilities: process.env.FOS_ENABLE_CRON === 'true' ? [...SERVER_CAPABILITIES, 'cron' as const] : SERVER_CAPABILITIES
+            // what this server registers with the peer: its transport facts plus the services its handler registry has
+            capabilities: deps.registry?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES
           }
           const served = serveSync(store, parsed, serverPeerIdFor(user.username), deps.now ? deps.now() : Date.now(), options)
           if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error, code: served.code, ...(served.missingNodeIds ? { missingNodeIds: served.missingNodeIds } : {}) } } as const
@@ -206,61 +209,6 @@ export function createPeerAttachmentHandler(deps: Pick<PeerSyncDeps, 'loadStore'
       })
     } catch (error) {
       console.error('peer attachment lookup failed:', error)
-      return res.status(500).json({ error: 'Internal Server Error' })
-    }
-  }
-}
-
-/**
- * POST /user/data/peer-sync/proposals {scope, proposalId, decision: 'approve'|'reject'}
- * The owner (user session) may decide any proposal; an invited peer needs the
- * `approve` capability on that node. Approval merges the branch into the main
- * content (new version with PREV), rejection drops it.
- */
-export function createProposalDecisionHandler(deps: PeerSyncDeps) {
-  return async (req: Request, res: Response): Promise<Response> => {
-    try {
-      const claims = claimsOf(req)
-      if (!claims.username) return res.status(401).json({ error: 'Unauthorized' })
-      const body = (req.body ?? {}) as { scope?: unknown; proposalId?: unknown; decision?: unknown }
-      const scope = Array.isArray(body.scope) && body.scope.every((s) => typeof s === 'string') ? (body.scope as string[]) : null
-      if (!scope || typeof body.proposalId !== 'string' || (body.decision !== 'approve' && body.decision !== 'reject')) {
-        return res.status(400).json({ error: 'scope, proposalId and decision (approve|reject) required' })
-      }
-      const proposalId: string = body.proposalId
-      const decision: 'approve' | 'reject' = body.decision
-      const username = claims.username
-      const outcome = await withUserLock(`user:${username}`, async () => {
-        const loaded = await deps.loadStore(username)
-        if (!loaded) return { status: 401, body: { error: 'User not found' } } as const
-        const { user, store } = loaded
-        const linkCid = resolveScope(store, rootTargetCid(store), scope)
-        if (!linkCid) return { status: 404, body: { error: 'node not found' } } as const
-        const actor = claims.kind === 'peer' ? claims.peerId ?? '' : serverPeerIdFor(user.username)
-        if (claims.kind === 'peer') {
-          const granted = Array.isArray(claims.scope) ? claims.scope : []
-          const within = granted.length <= scope.length && granted.every((s, i) => scope[i] === s)
-          if (!within || !hasCapability(store, content(store, linkCid), actor, 'approve')) {
-            return { status: 403, body: { error: 'approve capability required on this node' } } as const
-          }
-        }
-        const replica: Replica = createReplica(actor, store)
-        const before = headCid(replica)
-        const now = deps.now ? deps.now() : Date.now()
-        if (decision === 'approve') applyProposalAt(replica, scope, proposalId, actor, now)
-        else rejectProposalAt(replica, scope, proposalId, now)
-        const changed = headCid(replica) !== before
-        if (changed) await deps.saveStore(user, store)
-        const node = resolveScope(store, rootTargetCid(store), scope)
-        console.log(`[proposal] ${decision} ${proposalId.slice(0, 16)} by ${actor} at ${scope.join('/')} → changed=${changed}${node ? ` proposals=${viewNode(store, node).proposals.map((p) => `${p.id.slice(0, 10)}:${p.status}`).join(',')}` : ''}`)
-        return { status: 200, body: { decision, changed, view: node ? viewNode(store, node) : null }, changed, userId: user.id } as const
-      })
-      if (outcome.status === 200 && outcome.changed) {
-        deps.notify?.(outcome.userId, { type: 'sync_changed', scope, byPeerId: `decision:${proposalId}` })
-      }
-      return res.status(outcome.status).json(outcome.body)
-    } catch (error) {
-      console.error('proposal decision failed:', error)
       return res.status(500).json({ error: 'Internal Server Error' })
     }
   }
@@ -376,5 +324,4 @@ export const prismaPeerSyncDeps: PeerSyncDeps = {
 export const postPeerSync = createPeerSyncHandler(prismaPeerSyncDeps)
 export const getPeerSyncDoc = createPeerSyncInspector(prismaPeerSyncDeps)
 export const getPeerAttachment = createPeerAttachmentHandler(prismaPeerSyncDeps)
-export const postProposalDecision = createProposalDecisionHandler(prismaPeerSyncDeps)
 export const deleteAttachment = createDetachHandler(prismaPeerSyncDeps)

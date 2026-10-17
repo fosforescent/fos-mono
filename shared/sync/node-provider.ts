@@ -15,6 +15,8 @@ export type NodeChild = { id: string; kind: RowKind; address: NodeAddress }
 export type ProvidedNode = {
   peerId: string; linkId: string; remoteLinkId: string; address: NodeAddress
   data: FosDataContent; children: NodeChild[]; mask?: NodeMask; proposals?: ProposalView[]; grants?: Capability[]
+  /** What the serving peer offers (its transport facts plus the services its handler registry has), for the requester to record. */
+  capabilities?: Capability[]
 }
 export type NodeAuthority = {
   /** Supplied by the authenticated transport, never by the request body. */
@@ -203,7 +205,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     if (existing && content(r.store, existing.cid).data.ref?.id && content(r.store, existing.cid).data.ref?.id !== request.linkId) throw new NodeAccessError('Node link endpoint mismatch.')
     const id = existing ? content(r.store, existing.cid).data.alias!.id : localLinkId(r.meta.peerId, authority.peerId, request.linkId + JSON.stringify(path))
     if (!existing || !content(r.store, existing.cid).data.ref?.id) r = setNodeLinkMask(r, path, authority.peerId, request.linkId, readMask(r, path, authority.peerId, ''), now, id)
-    return { replica: r, node: { peerId: r.meta.peerId, linkId: id, remoteLinkId: request.linkId,
+    return { replica: r, node: { peerId: r.meta.peerId, linkId: id, remoteLinkId: request.linkId, capabilities: [...authority.capabilities],
       address: { peerId: r.meta.peerId, scope: path }, data, children, proposals, grants, mask: { ...(fields ? { fields: [...fields] } : {}), ...(mask.children ? { children: mask.children } : {}) } } }
   })
 }
