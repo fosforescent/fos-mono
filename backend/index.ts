@@ -39,7 +39,7 @@ import { createMcpPeerHandlers, mcpToolHandler, prismaMcpPeerDeps } from './inte
 import { MCPClient } from './mcp/mcpClient'
 import { getUserId } from './apiTokenAuth'
 import { afterSaveHooks } from './sync/peerSync'
-import { createNodeProvider } from './sync/provideNode'
+import { createNodeLocator, createNodeProvider } from './sync/provideNode'
 import { createVoiceNoteHandler, prismaVoiceUsage, voiceDepsFromEnv } from './voice/voiceNotes'
 import {
   getMCPServers,
@@ -309,6 +309,7 @@ dataRoutes.get('/peer-sync', slowDown({
 
 dataRoutes.get('/peer-sync/attachment', getPeerAttachment)
 dataRoutes.post('/peer-sync/provide-node', createNodeProvider(prismaPeerSyncDeps))
+dataRoutes.get('/peer-sync/locate', createNodeLocator(prismaPeerSyncDeps))
 dataRoutes.delete('/peer-sync/attachment', deleteAttachment)
 
 // Peer invites: the inviting user creates/approves; the invitee claims and polls without a session.

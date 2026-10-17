@@ -73,6 +73,21 @@ saving the answer. Offline providers remain unavailable; there is no bulk fallba
 Relayed children must belong to the same provider at the expected child address;
 foreign reference targets require a separately authorized attachment.
 
+**Nodes shared across accounts.** An owner shares a node with another Fos user by
+granting their peer `user:<name>` capabilities on it (the `to @name` chips on the
+peer row: `read`, `edit` = submit proposals, `approve`, and `execute` = run
+evaluations). The recipient opens the node from the ref in their Home
+(`App.openSharedNode`): `GET /user/data/peer-sync/locate?owner=&id=` answers
+where it lives in the owner's account and what they may do, then the same
+`provide-node` route with `owner` in the body serves it as that account's peer
+`user:<me>` (`proposeOnly`, so every edit is their `node-sync` proposal on the
+owner's node), and the row becomes a live projection: the tree view edits it,
+children load the same way, `Analyze` reads what is loaded, and `Run` sends a
+`complete` event with `owner` (`POST /user/data/events {event, scope, owner}`),
+which the owner's host runs through its registry when `execute` was granted.
+Without any grant (a bare market listing) the read-only market view opens
+instead. The device remembers these projections in `meta.sharedNodes`.
+
 Run the provider, HTTP authorization and bidirectional transport regressions with
 `npm --prefix web run test:nodes`.
 
