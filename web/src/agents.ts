@@ -54,22 +54,17 @@ async function probe(app: App) {
   } catch (e) { state.error = String(e) }
   state.loading = false; app.refresh()
 }
-export function desktopAgentControls(app: App): HTMLElement | null {
-  const cwd = localRepository(app.state.replica, app.state.view)
-  if (!inTauri()) return null
-  const el = document.createElement('div'); el.dataset.capability = 'repo'
-  const label = document.createElement('small'); label.textContent = cwd ? `Local Git · ${cwd}` : 'Local agents'; el.append(label)
-  for (const provider of ['claude', 'codex'] as const) { const launch = document.createElement('button'); launch.textContent = `Open ${provider === 'claude' ? 'Claude Code' : 'Codex'} CLI`; launch.onclick = () => openCliAgent(app, provider, cwd ?? ''); el.append(launch) }
-  if (!cwd) return el
+/** Whether the native SDK for `provider` is usable (probed once per app); null while unknown. */
+export function sdkAvailable(app: App, provider: 'claude' | 'codex'): boolean | null {
+  if (!inTauri()) return false
   const state = availability.get(app)
-  if (!state) { void probe(app); return el }
-  for (const provider of ['claude', 'codex'] as const) if (state[provider]) {
-    const b = document.createElement('button'); b.textContent = `Run ${provider === 'claude' ? 'Claude' : 'Codex'}…`; b.onclick = () => openRun(app, provider, cwd); el.append(b)
-  }
-  for (const provider of ['claude', 'codex'] as const) if (!state[provider] && state.diagnostics?.[provider]) { const info = document.createElement('p'); info.textContent = `${provider === 'claude' ? 'Claude' : 'Codex'}: ${state.diagnostics[provider]}`; el.append(info) }
-  const check = document.createElement('button'); check.textContent = state.loading ? 'Checking SDKs…' : 'Check agent integrations'; check.disabled = !!state.loading; check.onclick = () => void probe(app); el.append(check)
-  if (state.error || (!state.loading && !state.claude && !state.codex && !state.diagnostics)) { const info = document.createElement('p'); info.textContent = state.error ?? 'Configure Codex native sign-in or Claude API credentials in the desktop environment, then check again.'; el.append(info) }
-  return el
+  if (!state) { void probe(app); return null }
+  return state.loading ? null : !!state[provider]
+}
+export const AGENT_CLI_NAME: Record<'claude' | 'codex', string> = { claude: 'Claude Code', codex: 'Codex' }
+/** Run the provider's SDK against the local checkout of the current node (the "Run …" constructor action). */
+export function openSdkAgent(app: App, provider: 'claude' | 'codex', cwd: string): void {
+  openRun(app, provider, cwd)
 }
 function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation = false, cli = false, initialPrompt?: string, verify = false, launchOptions: {autoStart?: boolean; scope?: Scope; chrome?: boolean} = {}) {
   const replica = app.state.replica, store = replica.store, path = [...(launchOptions.scope ?? app.state.view)]

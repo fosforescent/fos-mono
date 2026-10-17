@@ -31,7 +31,7 @@ fos login           home context: browser sign-in (SSO-capable device flow) | --
 - `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync status approve reject attach login branches`)
 - `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file` for linked directory peers (`web/src/filesystem.ts`); plus the `node_agent::*` and `agents::*` commands
 - `node_agent.rs` - authenticated loopback MCP relay for "Connect to agent" (`web/src/node-agent.ts`)
-- `agents.rs` - spawns `../agent-runtime` (Claude Agent SDK / Codex SDK runs, CLI launches, local git) and validates repositories
+- `agents.rs` - spawns `../agent-runtime` (Claude Agent SDK / Codex SDK runs, CLI launches, local git), validates repositories, and `agent_clis` reports which agent CLIs (`claude`, `codex`) are on PATH so the web app shows them as local peers
 
 Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle with `cd desktop && npm run build:core` (esbuild; `web/node_modules/.bin/esbuild` also works when the root workspace is not installed). Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
 

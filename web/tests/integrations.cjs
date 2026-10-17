@@ -9,8 +9,8 @@ for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTM
 
 async function main() {
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
-  buildSync({ stdin: { contents: `export {App} from './src/app'; export {desktopAgentControls} from './src/agents'; export {createMemoryStorage} from './src/storage'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-  const { App, createMemoryStorage, desktopAgentControls } = require(path.join(dir, 'test.cjs'))
+  buildSync({ stdin: { contents: `export {App} from './src/app'; export {sdkAvailable} from './src/agents'; export {createMemoryStorage} from './src/storage'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
+  const { App, createMemoryStorage, sdkAvailable } = require(path.join(dir, 'test.cjs'))
   const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
   app.scheduleSync = () => {}; app.refreshRepositories = async () => {}; app.refreshPoints = async () => {}; app.syncNodes = async () => {}
   const session = { username: 'alice', jwt: 'test', kind: 'user', baseUrl: 'http://localhost' }
@@ -49,11 +49,11 @@ async function main() {
   assert.equal(opened, 1, 'late OAuth response after sign-out does not open a browser')
   const parent = app.applyConstructor(app.state.view, { kind: 'plain', text: 'Repository', done: false, peer: 'filesystem' }, false, undefined, '/tmp/project')
   app.goTo(parent)
-  desktopAgentControls(app)
-  await new Promise(resolve => setImmediate(resolve))
-  const controls = desktopAgentControls(app)
-  assert.match(controls.textContent, /Run Codex/)
-  assert.match(controls.textContent, /Claude: Set ANTHROPIC_API_KEY/)
-  console.log('PASS: desktop OAuth return, delayed callback polling, account isolation, and per-provider SDK diagnostics')
+  // the SDK probe is per provider: codex usable, claude not (with its diagnostic)
+  assert.equal(sdkAvailable(app, 'codex'), null, 'unknown until probed')
+  await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve))
+  assert.equal(sdkAvailable(app, 'codex'), true)
+  assert.equal(sdkAvailable(app, 'claude'), false)
+  console.log('PASS: desktop OAuth return, delayed callback polling, account isolation, and per-provider SDK availability')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => { rmSync(dir, { recursive: true, force: true }); dom.window.close() })

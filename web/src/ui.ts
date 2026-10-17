@@ -2,7 +2,7 @@ import { localGitControls, canVerifySpecifications, openSpecificationVerificatio
 import { openAnalysis } from './analysis'
 import { openNodeAgent } from './node-agent'
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack } from './filesystem'
-import { evaluationAgentControl, desktopAgentControls, localRepository } from './agents'
+import { AGENT_CLI_NAME, evaluationAgentControl, localRepository, openCliAgent, openSdkAgent, sdkAvailable } from './agents'
 import { inTauri, tauriInvoke } from './project'
 import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
@@ -635,6 +635,8 @@ function constructorOptions(app: App): ConstructorItem[] {
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
     ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext()) || app.handlerOffers().some(o => o.capability === cap)).map(cap => ({ id: `action:${cap}`, label: cap === 'llm' ? 'Ask fos' : cap === 'search' ? 'Search' : 'List on the market', icon: cap === 'llm' ? '✦' : cap === 'search' ? 'search' : 'store', output: cap, group: account })),
     ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: 'pull', output: 'tool', group: p.id })),
+    // agent CLIs found on this computer: open the CLI here, or run the SDK against the local checkout
+    ...app.state.localAgents.flatMap(a => [{ id: `action:agent-cli:${a.provider}`, label: `Open ${a.name} CLI`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` }, ...(sdkAvailable(app, a.provider) ? [{ id: `action:agent-run:${a.provider}`, label: `Run ${a.name}…`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` }] : [])]),
     ...[...new Set([...app.triggerKinds(app.constructorContext()), ...app.handlerOffers().filter(o => ['timer', 'cron', 'task-completion', 'request'].includes(o.capability ?? '')).map(o => o.capability as 'timer' | 'cron' | 'task-completion' | 'request')])].map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'Child evaluation' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: kind === 'timer' ? 'hourglass' : kind === 'request' ? 'request' : kind === 'task-completion' ? 'flag' : 'trigger', output: kind, group: 'triggers' }))]
 }
 function constructorState(app: App, item: ConstructorItem) {
@@ -690,6 +692,7 @@ function peerIcon(p: ContextPeer): string {
   if (p.integration) return ({ 'integration:github': '⑂', 'integration:google': 'calendar', 'integration:stripe': 'card', 'integration:phone': 'phone' } as Record<string, string>)[p.id] ?? 'integration'
   if (p.repository) return 'github'
   if (p.mcp) return 'plug'
+  if (p.agentCli) return 'agent'
   return p.id.startsWith('user:') ? '♙' : 'device'
 }
 /** The constructor panel's tabs: this device first, then every peer of the context; each constructor belongs to the peer that provides it. */
@@ -726,6 +729,12 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (id.startsWith('seed:')) { seedRow(app, id.slice(5), path, replace); return }
   if (id.startsWith('handler:')) { try { app.insertHandler(id.slice(8), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
+  if (id.startsWith('action:agent-cli:') || id.startsWith('action:agent-run:')) {
+    const provider = id.slice(id.lastIndexOf(':') + 1) as 'claude' | 'codex', cwd = localRepository(app.state.replica, path) ?? ''
+    if (!app.state.localAgents.some(a => a.provider === provider)) { app.notify('error', `${AGENT_CLI_NAME[provider]} is not on this computer's PATH.`); return }
+    if (id.startsWith('action:agent-run:')) { if (!cwd) { app.notify('error', 'Attach a local checkout to this node first; the SDK runs against it.'); return } openSdkAgent(app, provider, cwd); return }
+    openCliAgent(app, provider, cwd); return
+  }
   if (id.startsWith('action:')) {
     const cap = id.slice(7) as 'search' | 'llm' | 'market'
     if (!['search','llm','market'].includes(cap) || !app.capabilityAvailable(cap, path)) { app.notify('error', 'This action has no active handler here.'); return }
@@ -986,11 +995,12 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   if (!groups.some(g => g.id === prefs.peer)) prefs.peer = 'device'
   const group = groups.find(g => g.id === prefs.peer)!
   const inServer = group === server || hosted.includes(group)
+  const local = groups.filter(g => g.peer?.agentCli), inDevice = group.id === 'device' || local.includes(group)
   const tabs = div('node-tabs peer-tabs', '')
   tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Peers')
-  for (const g of groups.filter(g => !hosted.includes(g))) {
+  for (const g of groups.filter(g => !hosted.includes(g) && !local.includes(g))) {
     const b = iconButton(g.icon, g === server ? 'Fos server' : g.name, () => { prefs.peer = g.id; app.refresh() })
-    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g === server ? inServer : g.id === prefs.peer))
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g === server ? inServer : g.id === 'device' ? inDevice : g.id === prefs.peer))
     if (g.id === 'add-peer') { b.classList.add('add-peer'); b.disabled = !!preview; constructorDrag(b, 'peer') }
     if (g.peer && !g.peer.online) b.classList.add('offline')
     tabs.append(b)
@@ -1009,6 +1019,17 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   }
 
   head.querySelector('.server-integrations')?.remove()
+  if (inDevice && local.length) {
+    // this computer's agent CLIs sit beneath the device tab: pick one for its actions and the masks that apply to it
+    const submenu = div('server-integrations device-agents', '')
+    const choices = div('node-tabs', ''); choices.setAttribute('role', 'tablist'); choices.setAttribute('aria-label', 'Local agents')
+    for (const g of [groups[0]!, ...local]) {
+      const b = button('secondary small', g.id === 'device' ? 'Device' : g.name, () => { prefs.peer = g.id; app.refresh() })
+      b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(g.id === prefs.peer)); choices.append(b)
+    }
+    submenu.append(choices)
+    head.append(submenu)
+  }
   if (inServer && server) {
     const submenu = div('server-integrations', '')
     const choices = div('node-tabs', ''); choices.setAttribute('role', 'tablist'); choices.setAttribute('aria-label', 'Fos server integrations')
@@ -1058,7 +1079,8 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   else if (group.peer) {
     const p = group.peer
     if (p.integration) panel.push(div('muted', app.isOnline('fos') ? 'Connections are managed by your Fos server. Offers can be overridden for this node and its children.' : 'Requires an active Fos server connection.'))
-    rows.append(...renderRootRows(state, app, p.integration || p.mcp || p.repository ? 'integrations' : 'peers', p.id)); panel.push(rows)
+    if (p.agentCli) panel.push(div('muted', `${p.name} is on this computer's PATH (${p.agentCli.path}). A read-only local peer: it opens here with the actions above, and the masks below decide what it may see.`))
+    rows.append(...renderRootRows(state, app, p.integration || p.mcp || p.repository || p.agentCli ? 'integrations' : 'peers', p.id)); panel.push(rows)
     if (p.isAccount && !p.fosUser) {
       const form = document.createElement('form'), query = document.createElement('input')
       query.placeholder = 'Find a capability on the marketplace…'; query.setAttribute('aria-label', 'Search marketplace'); query.required = true
@@ -1307,7 +1329,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (preview.proposal.peerId === state.replica.meta.peerId && preview.proposal.status === 'rejected') controls.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(preview.proposal.id)))
   }
   if (!preview && row?.kind === 'template') controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
-  const agents = !preview && desktopAgentControls(app); if (agents) controls.append(agents)
   const git = !preview && localGitControls(app); if (git) controls.append(git)
   if (row?.construction) controls.append(constructorBody(row, state, app))
   if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.append(auth) }
@@ -2328,7 +2349,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     li.style.setProperty('--depth', '0')
     return li
   }
-  const peers = app.contextPeers().filter(p => onlyPeer ? p.id === onlyPeer || (onlyPeer === 'fos' && p.name === 'fos') : mode === 'integrations' ? !!(p.integration || p.mcp || p.repository) : mode === 'device' ? p.id === state.replica.meta.peerId : !(p.integration || p.mcp || p.repository) && p.id !== state.replica.meta.peerId)
+  const peers = app.contextPeers().filter(p => onlyPeer ? p.id === onlyPeer || (onlyPeer === 'fos' && p.name === 'fos') : mode === 'integrations' ? !!(p.integration || p.mcp || p.repository || p.agentCli) : mode === 'device' ? p.id === state.replica.meta.peerId : !(p.integration || p.mcp || p.repository || p.agentCli) && p.id !== state.replica.meta.peerId)
   const owner = app.canApprove()
   const capTitle: Record<string, string> = {
     read: 'May read the content of the node',
@@ -2387,8 +2408,9 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     const dot = span('presence' + (p.online ? ' online' : ''), '')
     dot.title = p.online ? 'online' : p.isAccount ? 'offline: what it registered shows as offline until it connects again' : 'offline (still a member; its capabilities show as offline)'
     const title = span('title peer-title', '')
-    if (!p.isAccount && !p.integration && !p.mcp) title.append(span('muted small', `${p.id.slice(0, 8)} · `))
-    title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp || p.repository ? p.name : peerLabel(p.id, state)))
+    if (!p.isAccount && !p.integration && !p.mcp && !p.agentCli) title.append(span('muted small', `${p.id.slice(0, 8)} · `))
+    title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp || p.repository || p.agentCli ? p.name : peerLabel(p.id, state)))
+    if (p.agentCli) title.append(span('muted small', `${p.agentCli.path} · read-only local peer`))
     if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.goToAccountPeer()), span('muted', ' not connected: sign in to sync with your account and use its services'))
     if (p.isAccount && p.policy && state.session && !state.virtual) title.append(button('link small', 'Disconnect (keep data)', () => app.disconnect()))
     if (p.isAccount && p.points !== null && p.points !== undefined) { const pts = span('alloc-tag points', `✦ ${p.points} fos points`); pts.title = 'The account\'s balance: the default pool for "ff" allocations'; title.append(pts) }
