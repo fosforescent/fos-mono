@@ -89,7 +89,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     <header class="topbar">
       <div class="brand-row">
         <button type="button" class="icon menu-button" data-region="menu-button" aria-label="Menu">☰</button>
-        <div class="brand"><img src="/icon-192.png" width="24" height="24" alt="">Fosforescent</div>
+        <div class="brand"><img src="/icon-192.png" width="24" height="24" alt=""><span class="brand-name">Fosforescent</span></div>
       </div>
       <nav class="crumbs" data-region="crumbs" aria-label="Breadcrumb"></nav>
       <div class="status" data-region="status"></div>
@@ -1233,7 +1233,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
     const editToggle = iconButton('✎', 'Input / edit', () => { workspace(app).input = !workspace(app).input; app.refresh() })
     editToggle.classList.add('input-toggle')
-    toolbar.append(run, iconButton('analysis', 'Analyze node', () => openAnalysis(app)))
+    const analyze = button('analyze', '', () => openAnalysis(app))
+    analyze.innerHTML = `${iconSvg('analysis') ?? ''}<span>Analyze</span>`
+    analyze.title = 'Analyze node'; analyze.setAttribute('aria-label', 'Analyze node')
+    toolbar.append(run, analyze)
     const titleSection = div('node-title-section', ''); titleSection.append(heading, editToggle)
     header.append(titleSection, toolbar)
     const values = div('node-values', '')
@@ -1401,7 +1404,8 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && !rows.length && node.tasks.length === 0) {
     const hint = document.createElement('li'); hint.className = 'first-run'
     const keys = div('first-run-keys', '')
-    keys.append('Press ', Object.assign(document.createElement('kbd'), { textContent: 'Ctrl' }), span('sep', '+'), Object.assign(document.createElement('kbd'), { textContent: 'H' }), ' for help')
+    if (window.matchMedia?.('(pointer: coarse)').matches) keys.append('Tap ', Object.assign(document.createElement('kbd'), { textContent: '?' }), ' for row syntax and tips')
+    else keys.append('Press ', Object.assign(document.createElement('kbd'), { textContent: 'Ctrl' }), span('sep', '+'), Object.assign(document.createElement('kbd'), { textContent: 'H' }), ' for help')
     hint.append(keys); rows.push(hint)
   }
   if (preview) {

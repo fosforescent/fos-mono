@@ -44,6 +44,10 @@ Vanilla-TS task client used in the browser and wrapped by the Tauri desktop/mobi
 cd web && VITE_API_URL=http://localhost:4000 npx vite --port 5199
 ```
 
+`dev-harness.html` (served by vite at `/dev-harness.html`, not part of the build) mounts the app on an in-memory
+store with a small sample tree for layout checks; `?open` opens the nested sample node. Phone widths render in an
+iframe (headless Chrome enforces a minimum window width).
+
 ## TODOs
 - [ ] Audio transport for direct connect bootstrapping
 - [ ] Tauri file-backed `ReplicaStorage`

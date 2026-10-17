@@ -240,19 +240,22 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .constructor-dialog .pick-time code { font-size: 12px; color: var(--accent-text); }
 
 /* --- node workspace ------------------------------------------------------- */
-.node-detail { margin: 28px 0 12px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+/* `#app > section` sets the section box, so the breathing room above the title needs the same specificity */
+#app > section.node-detail { padding-top: 20px; }
+.node-detail { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .node-detail[hidden] { display: none; }
 /* title row: name · Run · Add · input toggle · ⋯ */
-.node-header { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.node-header { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
 .node-title { flex: 1 1 240px; min-width: 0; margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; overflow-wrap: anywhere; }
 .node-header.home .node-title { color: var(--muted); font-weight: 500; }
 .node-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; }
 .node-toolbar[hidden] { display: none; }
-.node-toolbar .evaluate, .node-toolbar .add-row { height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px; }
-.node-toolbar .evaluate { background: transparent; border: 1px solid var(--accent-line); color: var(--accent-text); font-weight: 600; }
-.node-toolbar .evaluate:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-text); filter: none; }
+/* Run and Analyze are a matched pair: same outline, weight and icon + label */
+.node-toolbar .evaluate, .node-toolbar .analyze, .node-toolbar .add-row { height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px; }
+.node-toolbar .evaluate, .node-toolbar .analyze { background: transparent; border: 1px solid var(--accent-line); color: var(--accent-text); font-weight: 600; }
+.node-toolbar .evaluate:hover:not(:disabled), .node-toolbar .analyze:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-text); filter: none; }
 .node-toolbar .evaluate:disabled { border-color: var(--line); color: var(--dim); opacity: 1; cursor: not-allowed; }
-.node-toolbar .evaluate svg, .node-toolbar .add-row svg { width: 13px; height: 13px; }
+.node-toolbar .evaluate svg, .node-toolbar .analyze svg, .node-toolbar .add-row svg { width: 13px; height: 13px; }
 .node-toolbar .icon, .node-toolbar .node-menu-button { width: 36px; height: 36px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg-2); display: inline-flex; align-items: center; justify-content: center; }
 .node-toolbar .icon:hover:not(:disabled) { border-color: var(--line-strong); color: var(--fg); }
 .node-toolbar .icon[aria-pressed="true"] { background: var(--raised); color: var(--fg); border-color: var(--line-strong); }
@@ -306,16 +309,18 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .context-peers .task { padding-left: 0; display: flex; align-items: flex-start; gap: 6px; }
 .context-peers .peer-body { min-width: 0; }
 .node-text { width: 100%; min-height: 6rem; resize: vertical; font: inherit; color: inherit; background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: .6rem; }
-.node-actions { flex-direction: column; align-items: stretch; gap: 8px; }
-.node-actions[hidden] { display: none; }
-.node-action-body { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: 100%; }
+.node-actions { align-items: center; gap: 8px 12px; }
+.node-actions[hidden], .node-actions:empty { display: none; }
+.node-actions > .node-tabs { flex: 0 0 auto; }
+.node-action-body { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: 1 1 200px; min-width: 0; }
+.node-action-body > button { min-height: 36px; padding: 0 12px; font-size: 13px; }
 .node-filters, .evaluation-status { flex-basis: 100%; }
 .node-filters [aria-pressed=true] { border-color: var(--accent-line); }
 .evaluate { color: var(--accent-fg); background: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: .4rem .8rem; font-weight: 600; }
 .evaluate:hover:not(:disabled) { color: var(--accent-fg); filter: brightness(1.06); }
 .evaluation-status { font-size: 12px; color: var(--muted); }
 .node-input { margin: 0; }
-.node-input[hidden], .node-values[hidden] { display: none; }
+.node-input[hidden], .node-values[hidden], .node-values:not(:has(:not(:empty))) { display: none; }
 .input-controls { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-bottom: 8px; }
 .input-controls .icon { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .constructor-palette { display: flex; flex-wrap: wrap; gap: 4px; margin-block: 8px; }
@@ -360,7 +365,7 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .home-node { cursor: default; }
 
 /* children toolbar: filter + view switch */
-.children-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 12px; padding: 0; border: 0; }
+.children-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; padding: 0; border: 0; }
 .children-toolbar > .child-search { flex: 1 1 12rem; width: auto; margin: 0; min-width: 0; height: 36px; background: var(--card); }
 .children-toolbar > .node-tabs { display: flex; gap: 2px; margin: 0; background: var(--card); }
 .children-toolbar > .constructors-toggle { width: 36px; height: 36px; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
@@ -632,11 +637,22 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
   .topbar .crumbs { order: 10; flex-basis: 100%; }
   .status { padding: 0 10px; font-size: 12px; }
   .status .muted, .status .badge { display: none; }
+}
+@media (max-width: 400px) {
+  .topbar { gap: 6px; }
+  .status { padding: 0 9px; gap: 0; }
+  .status .status-text { display: none; }
+}
+@media (max-width: 340px) {
+  .brand-name { display: none; }
+}
+@media (max-width: 640px) {
   .task { padding: 12px 10px; min-height: 44px; }
   .task .toggle.zoom { font-size: 20px; padding: 0 8px; }
   .tree .task[data-id] { flex-wrap: wrap; }
-  /* the ⋯ button stays on the first line; tags wrap beneath only when there are any */
-  .tree .task .row-meta { order: 10; flex-basis: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  /* the ⋯ button stays on the first line; a bare counter stays beside it, tags and badges wrap beneath */
+  .tree .task .row-meta { justify-content: flex-end; flex-wrap: wrap; }
+  .tree .task .row-meta:has(.kind-badge, .blocked-badge, .alloc-tag, .market-badge) { order: 10; flex-basis: 100%; }
   .tree .task .row-meta:empty, .tree .task .row-meta:not(:has(:not(.op-icon))) { display: none; }
   .tree .task .more { margin-left: auto; }
   .tree .task.has-constructor { flex-wrap: wrap; }
@@ -647,11 +663,16 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
   button.icon { min-width: 44px; }
   .tree .task .zoom-dot, .tree .task .toggle, .tree .task .more { min-width: 0; }
   .node-actions button, .node-context button, .node-values button, .device-settings button { min-height: 44px; }
+  .node-actions > .node-tabs button { width: 44px; height: 44px; min-width: 0; }
+  .node-action-body > button { min-height: 44px; }
   .node-title { font-size: 24px; }
   .node-toolbar { width: 100%; }
-  .node-toolbar .evaluate, .node-toolbar .add-row, .node-toolbar .icon { height: 44px; }
+  .node-toolbar .evaluate, .node-toolbar .analyze, .node-toolbar .add-row, .node-toolbar .icon { height: 44px; }
   .node-toolbar .icon { width: 44px; }
   .children-toolbar > .constructors-toggle { width: 44px; height: 44px; }
+  .children-toolbar > .child-search { height: 44px; }
+  .node-title-section .input-toggle { width: 44px; height: 44px; }
+  #app > section.node-detail { padding-top: 12px; }
   .constructor-grid button, .peer-tabs button { width: 44px; height: 44px; }
   .placeholder-form > * { flex-basis: 100%; }
   .combo-option, .combo-trigger { min-height: 44px; }
@@ -670,13 +691,14 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 .permission-choices[hidden] { display: none; }
 .permission-choices label { display: flex; align-items: center; gap: .4rem; }
 
-.node-title-section { flex: 1 1 240px; min-width: 0; display: flex; align-items: flex-start; gap: 8px; }
+.node-title-section { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: 8px; }
 .node-title-section .node-title { flex: 0 1 auto; }
 .node-title .alternative-picker { display: block; min-width: 0; }
 .node-title .combo-trigger { font: inherit; letter-spacing: inherit; line-height: inherit; color: inherit; background: transparent; border-color: transparent; padding: 0; text-align: left; max-width: 100%; }
 .node-title .combo-trigger > span:first-child { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .node-title .combo-panel { font-size: 14px; font-weight: normal; letter-spacing: normal; line-height: 1.4; }
-.node-title-section .input-toggle { flex: 0 0 auto; }
+.node-title-section .input-toggle { flex: 0 0 auto; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg-2); display: inline-flex; align-items: center; justify-content: center; }
+.node-title-section .input-toggle[aria-pressed="true"] { background: var(--raised); color: var(--fg); border-color: var(--line-strong); }
 
 .constructor-node-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
