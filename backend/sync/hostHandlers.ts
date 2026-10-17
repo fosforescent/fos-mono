@@ -86,6 +86,11 @@ export function llmHandler(deps: LlmDeps): HostHandler {
 export type MarketDeps = {
   /** Index the account's rows now, so the listing is searchable by other accounts before it is recorded as supplied. */
   index(user: { id: number; username: string }, store: FosStore): Promise<void>
+  /**
+   * The market trigger: deliver the listing as a request to the accounts whose published capabilities match it
+   * (search/rowIndex.ts `matchOffers`), the way an invite is delivered. Returns the usernames reached.
+   */
+  notifyProviders?(listing: { user: { id: number; username: string }; aliasId: string; title: string; text: string }): Promise<string[]>
 }
 
 /**
@@ -100,9 +105,16 @@ export function marketHandler(deps: MarketDeps): HostHandler {
       const path = ctx.step.path
       if (path.length < 2) throw new Error('Market requirements go under a task; the task is what gets listed.')
       const taskPath = path.slice(0, -1)
+      const user = { id: ctx.userId, username: ctx.username }
       await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now(), ctx.username))
-      await deps.index({ id: ctx.userId, username: ctx.username }, ctx.replica().store)
-      await ctx.update(addSupply(ctx.replica(), taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: taskPath.at(-1)! }, ctx.now()))
+      await deps.index(user, ctx.replica().store)
+      // what the listing asks for: the task's title and its rows (requirements included), the text providers matched against
+      const task = view(ctx.replica(), taskPath.slice(0, -1))?.tasks.find(t => t.id === taskPath.at(-1))
+      const text = [task?.title ?? '', ...(view(ctx.replica(), taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1)).map(t => t.title)].filter(Boolean).join('\n').slice(0, 2000)
+      const providers = deps.notifyProviders && task ? await deps.notifyProviders({ user, aliasId: task.id, title: task.title, text }) : []
+      let r = ctx.replica()
+      if (providers.length) r = addRow(r, path, 'plain', `Offered to ${providers.map(p => `@${p}`).join(', ')}`, ctx.now())
+      await ctx.update(addSupply(r, taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: taskPath.at(-1)! }, ctx.now()))
     }
   }
 }

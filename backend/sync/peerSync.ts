@@ -15,7 +15,7 @@ import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContex
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
-import { indexStore, vertexEmbed } from '../search/rowIndex'
+import { indexStore, matchOffers, vertexEmbed, type OfferMatch } from '../search/rowIndex'
 import type { HandlerRegistry } from './registry'
 
 export type PeerSyncUser = { id: number; username: string }
@@ -300,6 +300,12 @@ export async function indexNow(user: { id: number; username: string }, store: Fo
   const pending = indexTimers.get(user.id)
   if (pending) { clearTimeout(pending); indexTimers.delete(user.id) }
   await indexStore(prisma, user, store, indexEmbed)
+}
+
+/** Providers whose published capabilities match a listing (the market trigger); none when indexing is off. */
+export async function matchProviders(text: string, excludeUserId: number): Promise<OfferMatch[]> {
+  if (process.env.ROW_INDEX_DISABLED === 'true') return []
+  return matchOffers(prisma, { text, excludeUserId }, indexEmbed)
 }
 
 export const prismaPeerSyncDeps: PeerSyncDeps = {

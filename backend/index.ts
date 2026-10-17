@@ -26,8 +26,10 @@ import { checkUsernameExists } from './auth/checkUsername'
 import { postContactMessage } from './email/contactMessage'
 
 import { getSuggest } from './suggest'
-import { postPeerSync, getPeerSyncDoc, getPeerAttachment, deleteAttachment, indexNow, prismaPeerSyncDeps, serverPeerIdFor, withUserLock } from './sync/peerSync'
+import { postPeerSync, getPeerSyncDoc, getPeerAttachment, deleteAttachment, indexNow, matchProviders, prismaPeerSyncDeps, serverPeerIdFor, withUserLock } from './sync/peerSync'
 import { tokenManager } from './tokenManager'
+import { sendToUser } from './promptNotifications'
+import { createReplica, ensureHomeContext, ensureInviteRequest, headCid } from '@fosforescent/shared/sync/index'
 import { createSearchHandlers } from './search/routes'
 import { vertexEmbed } from './search/rowIndex'
 import { peerInviteHandlers } from './sync/peerInvites'
@@ -490,7 +492,28 @@ const registry = createHandlerRegistry(createHostHandlers({
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
   google: { connected: async id => !!await integrationDeps.connections.get(id, 'google'), createEvent: (userId, event) => integrations.createCalendarEvent(userId, event) },
   llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },
-  market: { index: indexNow },
+  market: {
+    index: indexNow,
+    // the market trigger: a listed task reaches the accounts that advertised a matching capability as a request (the
+    // lister becomes a sub-peer of their fos server, the task a pending proposal on that row), like an invite
+    async notifyProviders(listing) {
+      const matches = await matchProviders(listing.text, listing.user.id)
+      const reached: string[] = []
+      for (const match of matches) {
+        await withUserLock(`user:${match.owner}`, async () => {
+          const loaded = await prismaPeerSyncDeps.loadStore(match.owner)
+          if (!loaded) return
+          const now = Date.now(), before = createReplica(`user:${match.owner}`, loaded.store), head = headCid(before)
+          const r = ensureInviteRequest(ensureHomeContext(before, now, registry.hostOffers()), listing.user.username, listing.aliasId, listing.title, now, `market: ${listing.title}`).replica
+          reached.push(match.owner)
+          if (headCid(r) === head) return
+          await prismaPeerSyncDeps.saveStore(loaded.user, r.store)
+          sendToUser(loaded.user.id, { type: 'sync_changed', byPeerId: 'fos:market' })
+        })
+      }
+      return reached
+    }
+  },
   points: {
     // fos points are the account's token balance (tokenManager); a payout is a debit on the owner and a credit on the payee
     async transfer(from, toUsername, amount, memo) {

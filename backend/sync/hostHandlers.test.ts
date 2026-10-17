@@ -89,12 +89,16 @@ test('the market effect lists the task, indexes the account, and records the sup
   r = addRow(r, [HOME_ID, 'logo'], 'requirement', 'market', 2, { id: 'list', requirement: { capability: 'market' } })
   const indexed: Array<{ username: string; listed: boolean }> = []
   const index = jest.fn(async (user: { username: string }, store: any) => { indexed.push({ username: user.username, listed: !!view(createReplica('x', store), [HOME_ID])!.tasks.find(t => t.id === 'logo')!.market }) })
-  const h = host(r, createHandlerRegistry([marketHandler({ index })]))
+  const notifyProviders = jest.fn(async () => ['carol'])
+  const h = host(r, createHandlerRegistry([marketHandler({ index, notifyProviders })]))
   const result = await h.complete([HOME_ID, 'logo'], ['list'])
   if (!result.body.evaluation) throw new Error(`listing failed: ${JSON.stringify(result.body)}`)
   expect(result.body.evaluation.status).toBe('committed')
   // listed before it was indexed, indexed before it was reported as supplied
   expect(indexed).toEqual([{ username: 'owner', listed: true }])
+  // the market trigger: the listing went to the providers whose capabilities match, and the row says so
+  expect(notifyProviders).toHaveBeenCalledWith({ user: { id: 1, username: 'owner' }, aliasId: 'logo', title: 'Design a logo', text: 'Design a logo' })
+  expect(view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.find(t => t.kind === 'plain')!.title).toBe('Offered to @carol')
   const after = view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'logo')!
   expect(after.market).toBe(true)
   expect(after.done).toBe(false) // listing a task does not complete it; only its listing requirement is filled
