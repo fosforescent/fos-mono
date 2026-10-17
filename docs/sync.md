@@ -297,8 +297,12 @@ children. Each resource type has a marker: `$` money, `:` time, `#` things,
 `@name` a person, `ff` fos points (`-$`, `-:`, `-#`, `-@name`, `-ff` for the
 matching requirements). Fos points are the account's token balance
 (`GET /tokens/balance`, shown on the fos row); an `ff` allocation with no
-`@points` bank above draws from that balance (`resource: 'fos:points'`), and
-spending is accounted server-side. An allocation is
+`@points` bank above draws from that balance (`resource: 'fos:points'`). A
+`-ff N` requirement under a task is a **payout**: when the task runs, the fos
+`points` handler moves N points on the server's ledger from the owner to the
+respondent (the signed-in user whose supplies filled the task's other
+requirements, or the user named with `@` on the row) and records the
+allocation and supply as `fos` (`backend/sync/hostHandlers.ts`). An allocation is
 *taken from the parent context* (`App.bankFor`): the nearest bank of its type
 above it, or, under an allocation requirement, a bank of the resource the
 requirement names, or the type's **default pool**, the first bank of that type
@@ -341,7 +345,7 @@ each sync and node-provider response (`ServeOptions.capabilities` →
 `SyncResponse.capabilities`, `ProvidedNode.capabilities`): the transport facts
 (`SERVER_TRANSPORT_CAPABILITIES`: http, ws, relay, peer, persist, provideNode,
 sync) plus the services its handler registry has (`backend/sync/registry.ts`,
-today search, market, llm, poll and cron when enabled). Devices record the
+today search, market, poll, points, llm and cron when enabled). Devices record the
 reported list on their own fos member (`App.recordServerOffers`), so a
 capability no handler backs is never offered in the palette. The context panel under the tree lists the banks in scope
 and the peers of the viewed node: `fos` with what it registered, the node's
@@ -355,8 +359,8 @@ show as offline while the owner is not online; a row the owner removed before
 the member ever synced is never seen. Services act as resource banks for the
 matching requirement kinds: a `-?` requirement's "Ask fos to search" places a
 query inside it and runs it; a `-market` requirement's "List on the market"
-lists the task and records a `market` supply; mail is registered but has no
-handler yet. Under each peer the panel also lists the `-@name` requirements
+is a `complete` of that requirement, run by the fos `market` effect (below);
+mail is registered but has no handler yet. Under each peer the panel also lists the `-@name` requirements
 in the viewed subtree assigned to it (computed from the viewer's own rows;
 delivering an assignment into the assignee's replica is not wired yet).
 
@@ -457,26 +461,34 @@ attached nodes are run (debounced per user).
 
 **Allocation bins (sending rows to another account).** A row whose children
 are requirement and allocation rows is a proposed transaction: what the
-receiver must fill, and what they get. "Send to @owner (node)" in the row's
-menu posts the row and those children (`App.sendRowTo`) through the market
-proposal route (`POST /user/data/market/proposals`), which now accepts
-`requirement` rows and lets an account propose on any node where it is a
-member with `edit` as well as on listed nodes. The receiver sees it in that
-node's link panel as a proposal named after the sender and approves it to
-take the rows in; the requirements then block the bin's task until filled.
-The sender picks the target among nodes of that account it knows (market
-results in its tree); the receiver makes an account a member of a node with
-the "Add peer" row in the context panel.
+receiver must fill, and what they get. The market proposal route
+(`POST /user/data/market/proposals`) accepts `requirement` rows and lets an
+account propose on any node where it is a member with `edit` as well as on
+listed nodes; the receiver sees the proposal in that node's link panel, named
+after the sender, and approves it to take the rows in, after which the
+requirements block the bin's task until filled.
+
+**Inviting a Fos user.** "Add @name" under the fos server in the context
+panel sends an `invite` event (`fos_invite` over MCP). The account server
+records the member grant (`user:<name>`, `edit`) on the node and, through its
+`relay` capability, delivers the node into that user's Home as a foreign ref
+below a host row for the owner (`ensureMemberLink`, `shared/sync/sharing.ts`).
+The invitee opens it like a market result and proposes through the market
+routes, which honour the member grant. A member edge written locally would
+never reach them; the server is the peer that hosts both stores.
 
 **Queries** (`?` prefix) run a semantic search over the account's rows
 (`POST /user/data/search`, pgvector + Vertex `text-embedding-005`, index kept
 by `backend/search/rowIndex.ts` a few seconds after every save) and place the
-hits as reference rows under the query; Refresh replaces them. "Search the
-market too" includes rows other accounts listed.
+hits as reference rows under the query; Refresh replaces them. A query with
+`market: true` includes rows other accounts listed.
 
-**The market.** "List on market" turns a row into a link node with
-`data.listing` on its ref node (bookkeeping, no version). Listed rows are
-searchable by every account; a hit from another account is a ref row with
+**The market.** "List on the market" on a `-market` requirement completes it
+on the account server: the fos `market` effect lists the task (the named node
+value `fos:listing`, `shared/sync/market.ts`; it survives later edits and the
+sync round trip), indexes the account so the listing is searchable at once,
+then records the `market` supply as `fos`. The client writes neither the flag
+nor the supply. Listed rows are searchable by every account; a hit from another account is a ref row with
 `ref.owner`, which opens the listing (`GET /user/data/market/node`): the
 node's rows and requirements, and the requester's own proposal only (no
 peers, members or other bidders). "Send proposal" posts rows
@@ -761,6 +773,7 @@ at which attachment); an event can never widen it.
 | `complete` | evaluate a node: the owner's host runs its handler registry; anyone else leaves an *evaluation request* (below) | `fos_evaluate` |
 | `branch` | an alternative of a node (owner) | `fos_create_branch` |
 | `decide` | approve or reject a submission (approve capability) | `fos_decide` |
+| `invite` | make a Fos user a member of a node (owner); the host delivers the node into their Home | `fos_invite` |
 
 Adapters on the account server (`backend/sync/events.ts`): `POST /user/data/events`
 with `{event, scope?}` (owners may name a scope; peers use their signed attachment),
@@ -771,6 +784,16 @@ account WebSocket's `{type:"event", id, event, scope?}` →
 `valueRevision` of a node for `fos_evaluate`). Stale or undeclared submissions are
 rejected. Allocations record graph receipts; external effects run only through the
 host's handler registry. Public visitors keep using `/public/node/visit|input`.
+When the last declared input of a template execution arrives, the host evaluates
+the execution through its registry (`backend/sync/sharing.ts` → `runNode`), so a
+survey answer can pay out fos points or run any other effect the owner configured.
+
+**Polls resolve choices.** A `choice` requirement published with a poll
+(`fos:poll`, approval or rank) is resolved by the fos `poll` handler when the node
+runs ("Apply poll result" on the row): rank polls take the top Borda score,
+approval polls the most approvals; a tie or no responses blocks. Approvals and
+rankings on pending proposals are input the owner decides with; the tally never
+merges a proposal by itself.
 
 **Evaluation requests.** A peer that may edit but does not own the node cannot run
 effects. Its `complete` becomes a proposal on the node named `evaluate <path>`,
