@@ -136,7 +136,7 @@ import {
   type MarketNode
 } from './api'
 import { DirectGuest, DirectHost, DirectLink, ManualRelay, isWebRtcAvailable, type ChannelMessage } from './p2p'
-import { openExternal } from './project'
+import { inTauri, openExternal, tauriInvoke } from './project'
 import type { ReplicaStorage } from './storage'
 
 export type Connection = 'offline' | 'connecting' | 'online' | 'syncing'
@@ -174,7 +174,10 @@ export type ContextPeer = {
   fosUser?: string
   repository?: { repo: string }
   mcp?: { serverId: number; tools: string[] }
+  /** An agent CLI found on this computer's PATH (desktop): a read-only local peer, never a graph row. */
+  agentCli?: { provider: 'claude' | 'codex'; path: string }
 }
+export type LocalAgent = { provider: 'claude' | 'codex'; name: string; path: string }
 
 export type ConnectFlow =
   | { phase: 'idle' }
@@ -236,6 +239,8 @@ export type AppState = {
   integrations: IntegrationStatus[]
   /** The account's MCP servers, as peers that can be attached to nodes. */
   mcpPeers: McpPeerInfo[]
+  /** Agent CLIs on this computer (`agent_clis`), discovered at startup; the constructor panel shows each as a local peer. */
+  localAgents: LocalAgent[]
   /** The phone-linking modal: waiting for a number, then for the code texted to it. */
   phone: { phase: 'number' | 'code' | 'busy'; number?: string; error?: string } | null
   /** Open context menu, if any. */
@@ -358,6 +363,7 @@ export class App {
       points: null,
       integrations: [],
       mcpPeers: [],
+      localAgents: [],
       phone: null,
       contextMenu: null,
       device: null,
@@ -475,7 +481,18 @@ export class App {
   private runningTriggers = false
   private triggerScanKey = ''
   private triggerCandidates: ReturnType<typeof configuredTriggers> = []
+  /** Which agent CLIs this computer has (desktop only): a PATH query, refreshed at startup. */
+  async probeLocalAgents(): Promise<void> {
+    if (!inTauri()) return
+    try {
+      const found = await tauriInvoke<{ claude: string | null; codex: string | null }>('agent_clis')
+      const names = { claude: 'Claude Code', codex: 'Codex' } as const
+      const agents: LocalAgent[] = (['claude', 'codex'] as const).flatMap(provider => found?.[provider] ? [{ provider, name: names[provider], path: found[provider]! }] : [])
+      if (JSON.stringify(agents) !== JSON.stringify(this.state.localAgents)) this.set({ localAgents: agents })
+    } catch { /* no desktop shell, or the command is unavailable: no local agents */ }
+  }
   start(): void {
+    void this.probeLocalAgents()
     if (!this.triggerTimer) {
       this.triggerTimer = setInterval(() => void this.runTriggers(), 1000)
       window.addEventListener('pagehide', () => { if (this.triggerTimer) clearInterval(this.triggerTimer); this.triggerTimer = null })
@@ -1212,6 +1229,8 @@ export class App {
       if (known) { if (p === directPeer && !known.capabilities.includes('direct')) known.capabilities.push('direct'); continue }
       peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false, ...(p.startsWith('user:') ? { fosUser: p.slice(5) } : {}) })
     }
+    // agent CLIs on this computer: local peers next to the device, read-only (masks apply to them like any peer)
+    if (!this.virtualIdentity) for (const agent of this.state.localAgents) peers.push({ id: `agent-cli:${agent.provider}`, name: agent.name, online: true, capabilities: ['tool'], disabled: [], accepts: ['read'], isAccount: false, member: false, agentCli: { provider: agent.provider, path: agent.path } })
     peers.push({ id: me, name: this.state.deviceName, online: true, capabilities: [], disabled: [], accepts: CLIENT_CAPABILITIES, isAccount: false, member: false })
     for (const p of peers) {
       const member = members.get(p.name === 'fos' ? 'fos' : p.id)
