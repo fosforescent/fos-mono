@@ -4,7 +4,6 @@ include ./.env
 export $(shell sed 's/=.*//' ./.env)
 LOG_DIR := $(CURDIR)/logs
 INFRA_DIR := $(CURDIR)/infra
-FRONTEND_PORT := 5173
 TAURI_LOG := $(LOG_DIR)/tauri-dev.log
 
 build-backend:
@@ -12,18 +11,12 @@ build-backend:
 	node --version
 	npm run build:backend
 
-build-frontend:
-	npm run build:frontend
+build-web:
+	npm run build:web
 
 
 run:
 	cd infra && $(MAKE) all-up
-
-run-with-smoke:
-	cd infra && $(MAKE) all-up-with-smoke
-
-run-build-smoke:
-	cd infra && $(MAKE) all-up-build-smoke
 
 run-build:
 	cd infra && $(MAKE) all-up-build
@@ -44,13 +37,9 @@ logs-follow:
 logs-backend:
 	cd infra && $(MAKE) logs
 
-logs-frontend:
-	cd infra && $(MAKE) logs-frontend
-
 
 setup:
 	npm install
-	npm run e2e-setup
 
 .PHONY: build
 build:
@@ -64,19 +53,6 @@ format-fix:
 
 test:
 	npm run test
-
-smoke-test:
-	@echo "🧪 Running smoke test..."
-	cd infra && npm run test:smoke
-
-e2e-test:
-	@echo "Running Playwright e2e tests via docker-compose smoke profile..."
-	cd "$(INFRA_DIR)" && docker compose down --remove-orphans || true
-	cd "$(INFRA_DIR)" && docker compose up -d --build postgres qdrant temporal temporal-ui temporal-worker backend frontend
-	cd "$(INFRA_DIR)" && docker compose run --rm smoke-test; \
-	TEST_EXIT_CODE=$$?; \
-	cd "$(INFRA_DIR)" && docker compose down --remove-orphans || true; \
-	exit $$TEST_EXIT_CODE
 
 	
 check: 
@@ -163,13 +139,13 @@ tauri-logs:
 tauri-build:
 	cd desktop && npm run build
 
-# Build everything (frontend + backend + desktop)
+# Build everything (web + backend + desktop)
 build-all:
-	npm run build:frontend
+	npm run build:web
 	npm run build:backend
 	cd desktop && npm run build
 
-# Run dev for everything (frontend dev server + Tauri)
+# Run dev for everything (web dev server + Tauri)
 dev-desktop:
 	cd desktop && npm run dev
 

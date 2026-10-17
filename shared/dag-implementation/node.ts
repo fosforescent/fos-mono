@@ -3,7 +3,6 @@ import { Duration, NodeData, Probability, Cost, CostAllocation } from './node-da
 
 import { FosDataContent, FosNodeContent, FosPath, FosPathElem, FosEdge } from '../types'
 import { FosStore } from './store'
-import { FosExpression } from './expression'
 
 
 
@@ -164,32 +163,6 @@ export class FosNode {
 
 
 
-  getExprOfType(instructionType: FosNode, targetType: FosNode, route: FosPath): FosExpression[] | null {
-    const exprs = this.getEdges().filter(([edgeType, target]) => {
-      const instructionNode = this.store.getNodeByAddress(edgeType)
-      if (!instructionNode) {
-        throw new Error("Instructinon Node not found")
-      }
-      const targetNode = this.store.getNodeByAddress(target)
-      if (!targetNode) {
-        throw new Error("Target Node not found")
-      }
-      const instructionMatch = this.store.matchPattern(instructionType, instructionNode)
-      const targetMatch = this.store.matchPattern(targetType, targetNode)
-      return instructionMatch.length > 0 && targetMatch.length > 0
-    })
-    if (exprs.length === 0) {
-      return null
-    }
-    const expressions = exprs.map(([edgeType, targetType]) => {
-
-      return new FosExpression(this.store, [...route, [edgeType, targetType]])
-    })
-
-    return expressions
-  }
-
-
   // isGroupInstructionNode(): boolean {
   //   const peerEdges = this.value.children.filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
 
@@ -292,18 +265,6 @@ export class FosNode {
     })
     return this.mutate({ ...this.value, children: orderedEdges })
   }
-  addExpression(expression: FosExpression): FosNode {
-    return this.addEdge(expression.instructionNode.getId(), expression.targetNode.getId())
-  }
-
-  removeExpression(expression: FosExpression): FosNode {
-    return this.removeEdge(expression.instructionNode.getId(), expression.targetNode.getId())
-  }
-
-  updateExpression(oldExpression: FosExpression, newExpression: FosExpression): FosNode {
-    return this.updateEdge(oldExpression.instructionNode.getId(), oldExpression.targetNode.getId(), newExpression.instructionNode.getId(), newExpression.targetNode.getId())
-  }
-
   updateData(data: FosDataContent): FosNode {
     return this.mutate({ ...this.value, data: { ...this.value.data, ...data } })
   }

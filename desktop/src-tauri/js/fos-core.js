@@ -22,10 +22,6 @@
       throw mod = 0, e;
     }
   };
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
-  };
   var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
       for (let key of __getOwnPropNames(from))
@@ -44,9 +40,9 @@
   ));
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // desktop/src-tauri/js/prelude.js
+  // src-tauri/js/prelude.js
   var init_prelude = __esm({
-    "desktop/src-tauri/js/prelude.js"() {
+    "src-tauri/js/prelude.js"() {
       "use strict";
       globalThis.console = globalThis.console || {};
       for (const level of ["log", "info", "warn", "error", "debug", "trace"]) {
@@ -84,9 +80,9 @@
     }
   });
 
-  // node_modules/js-sha3/src/sha3.js
+  // ../node_modules/js-sha3/src/sha3.js
   var require_sha3 = __commonJS({
-    "node_modules/js-sha3/src/sha3.js"(exports, module) {
+    "../node_modules/js-sha3/src/sha3.js"(exports, module) {
       init_prelude();
       (function() {
         "use strict";
@@ -362,7 +358,7 @@
               for (i3 = 0; i3 < blockCount; ++i3) {
                 s[i3] ^= blocks[i3];
               }
-              f2(s);
+              f(s);
               this.reset = true;
             } else {
               this.start = i3;
@@ -443,7 +439,7 @@
           for (i3 = 0; i3 < blockCount; ++i3) {
             s[i3] ^= blocks[i3];
           }
-          f2(s);
+          f(s);
         };
         Keccak.prototype.toString = Keccak.prototype.hex = function() {
           this.finalize();
@@ -456,7 +452,7 @@
             }
             if (j2 % blockCount === 0) {
               s = cloneArray(s);
-              f2(s);
+              f(s);
               i3 = 0;
             }
           }
@@ -489,7 +485,7 @@
             }
             if (j2 % blockCount === 0) {
               s = cloneArray(s);
-              f2(s);
+              f(s);
             }
           }
           if (extraBytes) {
@@ -514,7 +510,7 @@
             }
             if (j2 % blockCount === 0) {
               s = cloneArray(s);
-              f2(s);
+              f(s);
             }
           }
           if (extraBytes) {
@@ -538,7 +534,7 @@
           this.encode(this.outputBits, true);
           return Keccak.prototype.finalize.call(this);
         };
-        var f2 = function(s) {
+        var f = function(s) {
           var h, l, n, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31, b32, b33, b34, b35, b36, b37, b38, b39, b40, b41, b42, b43, b44, b45, b46, b47, b48, b49;
           for (n = 0; n < 48; n += 2) {
             c0 = s[0] ^ s[10] ^ s[20] ^ s[30] ^ s[40];
@@ -731,797 +727,31 @@
     }
   });
 
-  // shared/node_modules/uuid/dist/esm-browser/max.js
-  var max_default;
-  var init_max = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/max.js"() {
-      init_prelude();
-      max_default = "ffffffff-ffff-ffff-ffff-ffffffffffff";
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/nil.js
-  var nil_default;
-  var init_nil = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/nil.js"() {
-      init_prelude();
-      nil_default = "00000000-0000-0000-0000-000000000000";
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/regex.js
-  var regex_default;
-  var init_regex = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/regex.js"() {
-      init_prelude();
-      regex_default = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/validate.js
-  function validate(uuid) {
-    return typeof uuid === "string" && regex_default.test(uuid);
-  }
-  var validate_default;
-  var init_validate = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/validate.js"() {
-      init_prelude();
-      init_regex();
-      validate_default = validate;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/parse.js
-  function parse(uuid) {
-    if (!validate_default(uuid)) {
-      throw TypeError("Invalid UUID");
-    }
-    var v;
-    var arr = new Uint8Array(16);
-    arr[0] = (v = parseInt(uuid.slice(0, 8), 16)) >>> 24;
-    arr[1] = v >>> 16 & 255;
-    arr[2] = v >>> 8 & 255;
-    arr[3] = v & 255;
-    arr[4] = (v = parseInt(uuid.slice(9, 13), 16)) >>> 8;
-    arr[5] = v & 255;
-    arr[6] = (v = parseInt(uuid.slice(14, 18), 16)) >>> 8;
-    arr[7] = v & 255;
-    arr[8] = (v = parseInt(uuid.slice(19, 23), 16)) >>> 8;
-    arr[9] = v & 255;
-    arr[10] = (v = parseInt(uuid.slice(24, 36), 16)) / 1099511627776 & 255;
-    arr[11] = v / 4294967296 & 255;
-    arr[12] = v >>> 24 & 255;
-    arr[13] = v >>> 16 & 255;
-    arr[14] = v >>> 8 & 255;
-    arr[15] = v & 255;
-    return arr;
-  }
-  var parse_default;
-  var init_parse = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/parse.js"() {
-      init_prelude();
-      init_validate();
-      parse_default = parse;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/stringify.js
-  function unsafeStringify(arr, offset = 0) {
-    return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
-  }
-  function stringify(arr, offset = 0) {
-    var uuid = unsafeStringify(arr, offset);
-    if (!validate_default(uuid)) {
-      throw TypeError("Stringified UUID is invalid");
-    }
-    return uuid;
-  }
-  var byteToHex, i, stringify_default;
-  var init_stringify = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/stringify.js"() {
-      init_prelude();
-      init_validate();
-      byteToHex = [];
-      for (i = 0; i < 256; ++i) {
-        byteToHex.push((i + 256).toString(16).slice(1));
-      }
-      stringify_default = stringify;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/rng.js
-  function rng() {
-    if (!getRandomValues) {
-      getRandomValues = typeof crypto !== "undefined" && crypto.getRandomValues && crypto.getRandomValues.bind(crypto);
-      if (!getRandomValues) {
-        throw new Error("crypto.getRandomValues() not supported. See https://github.com/uuidjs/uuid#getrandomvalues-not-supported");
-      }
-    }
-    return getRandomValues(rnds8);
-  }
-  var getRandomValues, rnds8;
-  var init_rng = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/rng.js"() {
-      init_prelude();
-      rnds8 = new Uint8Array(16);
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v1.js
-  function v1(options, buf, offset) {
-    var i2 = buf && offset || 0;
-    var b = buf || new Array(16);
-    options = options || {};
-    var node = options.node;
-    var clockseq = options.clockseq;
-    if (!options._v6) {
-      if (!node) {
-        node = _nodeId;
-      }
-      if (clockseq == null) {
-        clockseq = _clockseq;
-      }
-    }
-    if (node == null || clockseq == null) {
-      var seedBytes = options.random || (options.rng || rng)();
-      if (node == null) {
-        node = [seedBytes[0], seedBytes[1], seedBytes[2], seedBytes[3], seedBytes[4], seedBytes[5]];
-        if (!_nodeId && !options._v6) {
-          node[0] |= 1;
-          _nodeId = node;
-        }
-      }
-      if (clockseq == null) {
-        clockseq = (seedBytes[6] << 8 | seedBytes[7]) & 16383;
-        if (_clockseq === void 0 && !options._v6) {
-          _clockseq = clockseq;
-        }
-      }
-    }
-    var msecs = options.msecs !== void 0 ? options.msecs : Date.now();
-    var nsecs = options.nsecs !== void 0 ? options.nsecs : _lastNSecs + 1;
-    var dt = msecs - _lastMSecs + (nsecs - _lastNSecs) / 1e4;
-    if (dt < 0 && options.clockseq === void 0) {
-      clockseq = clockseq + 1 & 16383;
-    }
-    if ((dt < 0 || msecs > _lastMSecs) && options.nsecs === void 0) {
-      nsecs = 0;
-    }
-    if (nsecs >= 1e4) {
-      throw new Error("uuid.v1(): Can't create more than 10M uuids/sec");
-    }
-    _lastMSecs = msecs;
-    _lastNSecs = nsecs;
-    _clockseq = clockseq;
-    msecs += 122192928e5;
-    var tl = ((msecs & 268435455) * 1e4 + nsecs) % 4294967296;
-    b[i2++] = tl >>> 24 & 255;
-    b[i2++] = tl >>> 16 & 255;
-    b[i2++] = tl >>> 8 & 255;
-    b[i2++] = tl & 255;
-    var tmh = msecs / 4294967296 * 1e4 & 268435455;
-    b[i2++] = tmh >>> 8 & 255;
-    b[i2++] = tmh & 255;
-    b[i2++] = tmh >>> 24 & 15 | 16;
-    b[i2++] = tmh >>> 16 & 255;
-    b[i2++] = clockseq >>> 8 | 128;
-    b[i2++] = clockseq & 255;
-    for (var n = 0; n < 6; ++n) {
-      b[i2 + n] = node[n];
-    }
-    return buf || unsafeStringify(b);
-  }
-  var _nodeId, _clockseq, _lastMSecs, _lastNSecs, v1_default;
-  var init_v1 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v1.js"() {
-      init_prelude();
-      init_rng();
-      init_stringify();
-      _lastMSecs = 0;
-      _lastNSecs = 0;
-      v1_default = v1;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v1ToV6.js
-  function v1ToV6(uuid) {
-    var v1Bytes = typeof uuid === "string" ? parse_default(uuid) : uuid;
-    var v6Bytes = _v1ToV6(v1Bytes);
-    return typeof uuid === "string" ? unsafeStringify(v6Bytes) : v6Bytes;
-  }
-  function _v1ToV6(v1Bytes, randomize = false) {
-    return Uint8Array.of((v1Bytes[6] & 15) << 4 | v1Bytes[7] >> 4 & 15, (v1Bytes[7] & 15) << 4 | (v1Bytes[4] & 240) >> 4, (v1Bytes[4] & 15) << 4 | (v1Bytes[5] & 240) >> 4, (v1Bytes[5] & 15) << 4 | (v1Bytes[0] & 240) >> 4, (v1Bytes[0] & 15) << 4 | (v1Bytes[1] & 240) >> 4, (v1Bytes[1] & 15) << 4 | (v1Bytes[2] & 240) >> 4, 96 | v1Bytes[2] & 15, v1Bytes[3], v1Bytes[8], v1Bytes[9], v1Bytes[10], v1Bytes[11], v1Bytes[12], v1Bytes[13], v1Bytes[14], v1Bytes[15]);
-  }
-  var init_v1ToV6 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v1ToV6.js"() {
-      init_prelude();
-      init_parse();
-      init_stringify();
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v35.js
-  function stringToBytes(str) {
-    str = unescape(encodeURIComponent(str));
-    var bytes = [];
-    for (var i2 = 0; i2 < str.length; ++i2) {
-      bytes.push(str.charCodeAt(i2));
-    }
-    return bytes;
-  }
-  function v35(name, version2, hashfunc) {
-    function generateUUID(value, namespace, buf, offset) {
-      var _namespace;
-      if (typeof value === "string") {
-        value = stringToBytes(value);
-      }
-      if (typeof namespace === "string") {
-        namespace = parse_default(namespace);
-      }
-      if (((_namespace = namespace) === null || _namespace === void 0 ? void 0 : _namespace.length) !== 16) {
-        throw TypeError("Namespace must be array-like (16 iterable integer values, 0-255)");
-      }
-      var bytes = new Uint8Array(16 + value.length);
-      bytes.set(namespace);
-      bytes.set(value, namespace.length);
-      bytes = hashfunc(bytes);
-      bytes[6] = bytes[6] & 15 | version2;
-      bytes[8] = bytes[8] & 63 | 128;
-      if (buf) {
-        offset = offset || 0;
-        for (var i2 = 0; i2 < 16; ++i2) {
-          buf[offset + i2] = bytes[i2];
-        }
-        return buf;
-      }
-      return unsafeStringify(bytes);
-    }
-    try {
-      generateUUID.name = name;
-    } catch (err) {
-    }
-    generateUUID.DNS = DNS;
-    generateUUID.URL = URL;
-    return generateUUID;
-  }
-  var DNS, URL;
-  var init_v35 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v35.js"() {
-      init_prelude();
-      init_stringify();
-      init_parse();
-      DNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-      URL = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/md5.js
-  function md5(bytes) {
-    if (typeof bytes === "string") {
-      var msg = unescape(encodeURIComponent(bytes));
-      bytes = new Uint8Array(msg.length);
-      for (var i2 = 0; i2 < msg.length; ++i2) {
-        bytes[i2] = msg.charCodeAt(i2);
-      }
-    }
-    return md5ToHexEncodedArray(wordsToMd5(bytesToWords(bytes), bytes.length * 8));
-  }
-  function md5ToHexEncodedArray(input) {
-    var output = [];
-    var length32 = input.length * 32;
-    var hexTab = "0123456789abcdef";
-    for (var i2 = 0; i2 < length32; i2 += 8) {
-      var x = input[i2 >> 5] >>> i2 % 32 & 255;
-      var hex = parseInt(hexTab.charAt(x >>> 4 & 15) + hexTab.charAt(x & 15), 16);
-      output.push(hex);
-    }
-    return output;
-  }
-  function getOutputLength(inputLength8) {
-    return (inputLength8 + 64 >>> 9 << 4) + 14 + 1;
-  }
-  function wordsToMd5(x, len) {
-    x[len >> 5] |= 128 << len % 32;
-    x[getOutputLength(len) - 1] = len;
-    var a = 1732584193;
-    var b = -271733879;
-    var c = -1732584194;
-    var d = 271733878;
-    for (var i2 = 0; i2 < x.length; i2 += 16) {
-      var olda = a;
-      var oldb = b;
-      var oldc = c;
-      var oldd = d;
-      a = md5ff(a, b, c, d, x[i2], 7, -680876936);
-      d = md5ff(d, a, b, c, x[i2 + 1], 12, -389564586);
-      c = md5ff(c, d, a, b, x[i2 + 2], 17, 606105819);
-      b = md5ff(b, c, d, a, x[i2 + 3], 22, -1044525330);
-      a = md5ff(a, b, c, d, x[i2 + 4], 7, -176418897);
-      d = md5ff(d, a, b, c, x[i2 + 5], 12, 1200080426);
-      c = md5ff(c, d, a, b, x[i2 + 6], 17, -1473231341);
-      b = md5ff(b, c, d, a, x[i2 + 7], 22, -45705983);
-      a = md5ff(a, b, c, d, x[i2 + 8], 7, 1770035416);
-      d = md5ff(d, a, b, c, x[i2 + 9], 12, -1958414417);
-      c = md5ff(c, d, a, b, x[i2 + 10], 17, -42063);
-      b = md5ff(b, c, d, a, x[i2 + 11], 22, -1990404162);
-      a = md5ff(a, b, c, d, x[i2 + 12], 7, 1804603682);
-      d = md5ff(d, a, b, c, x[i2 + 13], 12, -40341101);
-      c = md5ff(c, d, a, b, x[i2 + 14], 17, -1502002290);
-      b = md5ff(b, c, d, a, x[i2 + 15], 22, 1236535329);
-      a = md5gg(a, b, c, d, x[i2 + 1], 5, -165796510);
-      d = md5gg(d, a, b, c, x[i2 + 6], 9, -1069501632);
-      c = md5gg(c, d, a, b, x[i2 + 11], 14, 643717713);
-      b = md5gg(b, c, d, a, x[i2], 20, -373897302);
-      a = md5gg(a, b, c, d, x[i2 + 5], 5, -701558691);
-      d = md5gg(d, a, b, c, x[i2 + 10], 9, 38016083);
-      c = md5gg(c, d, a, b, x[i2 + 15], 14, -660478335);
-      b = md5gg(b, c, d, a, x[i2 + 4], 20, -405537848);
-      a = md5gg(a, b, c, d, x[i2 + 9], 5, 568446438);
-      d = md5gg(d, a, b, c, x[i2 + 14], 9, -1019803690);
-      c = md5gg(c, d, a, b, x[i2 + 3], 14, -187363961);
-      b = md5gg(b, c, d, a, x[i2 + 8], 20, 1163531501);
-      a = md5gg(a, b, c, d, x[i2 + 13], 5, -1444681467);
-      d = md5gg(d, a, b, c, x[i2 + 2], 9, -51403784);
-      c = md5gg(c, d, a, b, x[i2 + 7], 14, 1735328473);
-      b = md5gg(b, c, d, a, x[i2 + 12], 20, -1926607734);
-      a = md5hh(a, b, c, d, x[i2 + 5], 4, -378558);
-      d = md5hh(d, a, b, c, x[i2 + 8], 11, -2022574463);
-      c = md5hh(c, d, a, b, x[i2 + 11], 16, 1839030562);
-      b = md5hh(b, c, d, a, x[i2 + 14], 23, -35309556);
-      a = md5hh(a, b, c, d, x[i2 + 1], 4, -1530992060);
-      d = md5hh(d, a, b, c, x[i2 + 4], 11, 1272893353);
-      c = md5hh(c, d, a, b, x[i2 + 7], 16, -155497632);
-      b = md5hh(b, c, d, a, x[i2 + 10], 23, -1094730640);
-      a = md5hh(a, b, c, d, x[i2 + 13], 4, 681279174);
-      d = md5hh(d, a, b, c, x[i2], 11, -358537222);
-      c = md5hh(c, d, a, b, x[i2 + 3], 16, -722521979);
-      b = md5hh(b, c, d, a, x[i2 + 6], 23, 76029189);
-      a = md5hh(a, b, c, d, x[i2 + 9], 4, -640364487);
-      d = md5hh(d, a, b, c, x[i2 + 12], 11, -421815835);
-      c = md5hh(c, d, a, b, x[i2 + 15], 16, 530742520);
-      b = md5hh(b, c, d, a, x[i2 + 2], 23, -995338651);
-      a = md5ii(a, b, c, d, x[i2], 6, -198630844);
-      d = md5ii(d, a, b, c, x[i2 + 7], 10, 1126891415);
-      c = md5ii(c, d, a, b, x[i2 + 14], 15, -1416354905);
-      b = md5ii(b, c, d, a, x[i2 + 5], 21, -57434055);
-      a = md5ii(a, b, c, d, x[i2 + 12], 6, 1700485571);
-      d = md5ii(d, a, b, c, x[i2 + 3], 10, -1894986606);
-      c = md5ii(c, d, a, b, x[i2 + 10], 15, -1051523);
-      b = md5ii(b, c, d, a, x[i2 + 1], 21, -2054922799);
-      a = md5ii(a, b, c, d, x[i2 + 8], 6, 1873313359);
-      d = md5ii(d, a, b, c, x[i2 + 15], 10, -30611744);
-      c = md5ii(c, d, a, b, x[i2 + 6], 15, -1560198380);
-      b = md5ii(b, c, d, a, x[i2 + 13], 21, 1309151649);
-      a = md5ii(a, b, c, d, x[i2 + 4], 6, -145523070);
-      d = md5ii(d, a, b, c, x[i2 + 11], 10, -1120210379);
-      c = md5ii(c, d, a, b, x[i2 + 2], 15, 718787259);
-      b = md5ii(b, c, d, a, x[i2 + 9], 21, -343485551);
-      a = safeAdd(a, olda);
-      b = safeAdd(b, oldb);
-      c = safeAdd(c, oldc);
-      d = safeAdd(d, oldd);
-    }
-    return [a, b, c, d];
-  }
-  function bytesToWords(input) {
-    if (input.length === 0) {
-      return [];
-    }
-    var length8 = input.length * 8;
-    var output = new Uint32Array(getOutputLength(length8));
-    for (var i2 = 0; i2 < length8; i2 += 8) {
-      output[i2 >> 5] |= (input[i2 / 8] & 255) << i2 % 32;
-    }
-    return output;
-  }
-  function safeAdd(x, y) {
-    var lsw = (x & 65535) + (y & 65535);
-    var msw = (x >> 16) + (y >> 16) + (lsw >> 16);
-    return msw << 16 | lsw & 65535;
-  }
-  function bitRotateLeft(num, cnt) {
-    return num << cnt | num >>> 32 - cnt;
-  }
-  function md5cmn(q, a, b, x, s, t) {
-    return safeAdd(bitRotateLeft(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b);
-  }
-  function md5ff(a, b, c, d, x, s, t) {
-    return md5cmn(b & c | ~b & d, a, b, x, s, t);
-  }
-  function md5gg(a, b, c, d, x, s, t) {
-    return md5cmn(b & d | c & ~d, a, b, x, s, t);
-  }
-  function md5hh(a, b, c, d, x, s, t) {
-    return md5cmn(b ^ c ^ d, a, b, x, s, t);
-  }
-  function md5ii(a, b, c, d, x, s, t) {
-    return md5cmn(c ^ (b | ~d), a, b, x, s, t);
-  }
-  var md5_default;
-  var init_md5 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/md5.js"() {
-      init_prelude();
-      md5_default = md5;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v3.js
-  var v3, v3_default;
-  var init_v3 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v3.js"() {
-      init_prelude();
-      init_v35();
-      init_md5();
-      v3 = v35("v3", 48, md5_default);
-      v3_default = v3;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/native.js
-  var randomUUID, native_default;
-  var init_native = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/native.js"() {
-      init_prelude();
-      randomUUID = typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID.bind(crypto);
-      native_default = {
-        randomUUID
-      };
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v4.js
-  function v4(options, buf, offset) {
-    if (native_default.randomUUID && !buf && !options) {
-      return native_default.randomUUID();
-    }
-    options = options || {};
-    var rnds = options.random || (options.rng || rng)();
-    rnds[6] = rnds[6] & 15 | 64;
-    rnds[8] = rnds[8] & 63 | 128;
-    if (buf) {
-      offset = offset || 0;
-      for (var i2 = 0; i2 < 16; ++i2) {
-        buf[offset + i2] = rnds[i2];
-      }
-      return buf;
-    }
-    return unsafeStringify(rnds);
-  }
-  var v4_default;
-  var init_v4 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v4.js"() {
-      init_prelude();
-      init_native();
-      init_rng();
-      init_stringify();
-      v4_default = v4;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/sha1.js
-  function f(s, x, y, z) {
-    switch (s) {
-      case 0:
-        return x & y ^ ~x & z;
-      case 1:
-        return x ^ y ^ z;
-      case 2:
-        return x & y ^ x & z ^ y & z;
-      case 3:
-        return x ^ y ^ z;
-    }
-  }
-  function ROTL(x, n) {
-    return x << n | x >>> 32 - n;
-  }
-  function sha1(bytes) {
-    var K = [1518500249, 1859775393, 2400959708, 3395469782];
-    var H = [1732584193, 4023233417, 2562383102, 271733878, 3285377520];
-    if (typeof bytes === "string") {
-      var msg = unescape(encodeURIComponent(bytes));
-      bytes = [];
-      for (var i2 = 0; i2 < msg.length; ++i2) {
-        bytes.push(msg.charCodeAt(i2));
-      }
-    } else if (!Array.isArray(bytes)) {
-      bytes = Array.prototype.slice.call(bytes);
-    }
-    bytes.push(128);
-    var l = bytes.length / 4 + 2;
-    var N = Math.ceil(l / 16);
-    var M = new Array(N);
-    for (var _i = 0; _i < N; ++_i) {
-      var arr = new Uint32Array(16);
-      for (var j = 0; j < 16; ++j) {
-        arr[j] = bytes[_i * 64 + j * 4] << 24 | bytes[_i * 64 + j * 4 + 1] << 16 | bytes[_i * 64 + j * 4 + 2] << 8 | bytes[_i * 64 + j * 4 + 3];
-      }
-      M[_i] = arr;
-    }
-    M[N - 1][14] = (bytes.length - 1) * 8 / Math.pow(2, 32);
-    M[N - 1][14] = Math.floor(M[N - 1][14]);
-    M[N - 1][15] = (bytes.length - 1) * 8 & 4294967295;
-    for (var _i2 = 0; _i2 < N; ++_i2) {
-      var W = new Uint32Array(80);
-      for (var t = 0; t < 16; ++t) {
-        W[t] = M[_i2][t];
-      }
-      for (var _t = 16; _t < 80; ++_t) {
-        W[_t] = ROTL(W[_t - 3] ^ W[_t - 8] ^ W[_t - 14] ^ W[_t - 16], 1);
-      }
-      var a = H[0];
-      var b = H[1];
-      var c = H[2];
-      var d = H[3];
-      var e = H[4];
-      for (var _t2 = 0; _t2 < 80; ++_t2) {
-        var s = Math.floor(_t2 / 20);
-        var T = ROTL(a, 5) + f(s, b, c, d) + e + K[s] + W[_t2] >>> 0;
-        e = d;
-        d = c;
-        c = ROTL(b, 30) >>> 0;
-        b = a;
-        a = T;
-      }
-      H[0] = H[0] + a >>> 0;
-      H[1] = H[1] + b >>> 0;
-      H[2] = H[2] + c >>> 0;
-      H[3] = H[3] + d >>> 0;
-      H[4] = H[4] + e >>> 0;
-    }
-    return [H[0] >> 24 & 255, H[0] >> 16 & 255, H[0] >> 8 & 255, H[0] & 255, H[1] >> 24 & 255, H[1] >> 16 & 255, H[1] >> 8 & 255, H[1] & 255, H[2] >> 24 & 255, H[2] >> 16 & 255, H[2] >> 8 & 255, H[2] & 255, H[3] >> 24 & 255, H[3] >> 16 & 255, H[3] >> 8 & 255, H[3] & 255, H[4] >> 24 & 255, H[4] >> 16 & 255, H[4] >> 8 & 255, H[4] & 255];
-  }
-  var sha1_default;
-  var init_sha1 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/sha1.js"() {
-      init_prelude();
-      sha1_default = sha1;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v5.js
-  var v5, v5_default;
-  var init_v5 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v5.js"() {
-      init_prelude();
-      init_v35();
-      init_sha1();
-      v5 = v35("v5", 80, sha1_default);
-      v5_default = v5;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v6.js
-  function ownKeys(e, r) {
-    var t = Object.keys(e);
-    if (Object.getOwnPropertySymbols) {
-      var o = Object.getOwnPropertySymbols(e);
-      r && (o = o.filter(function(r2) {
-        return Object.getOwnPropertyDescriptor(e, r2).enumerable;
-      })), t.push.apply(t, o);
-    }
-    return t;
-  }
-  function _objectSpread(e) {
-    for (var r = 1; r < arguments.length; r++) {
-      var t = null != arguments[r] ? arguments[r] : {};
-      r % 2 ? ownKeys(Object(t), true).forEach(function(r2) {
-        _defineProperty(e, r2, t[r2]);
-      }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function(r2) {
-        Object.defineProperty(e, r2, Object.getOwnPropertyDescriptor(t, r2));
-      });
-    }
-    return e;
-  }
-  function _defineProperty(e, r, t) {
-    return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: true, configurable: true, writable: true }) : e[r] = t, e;
-  }
-  function _toPropertyKey(t) {
-    var i2 = _toPrimitive(t, "string");
-    return "symbol" == typeof i2 ? i2 : i2 + "";
-  }
-  function _toPrimitive(t, r) {
-    if ("object" != typeof t || !t) return t;
-    var e = t[Symbol.toPrimitive];
-    if (void 0 !== e) {
-      var i2 = e.call(t, r || "default");
-      if ("object" != typeof i2) return i2;
-      throw new TypeError("@@toPrimitive must return a primitive value.");
-    }
-    return ("string" === r ? String : Number)(t);
-  }
-  function v6(options = {}, buf, offset = 0) {
-    var bytes = v1_default(_objectSpread(_objectSpread({}, options), {}, {
-      _v6: true
-    }), new Uint8Array(16));
-    bytes = v1ToV6(bytes);
-    if (buf) {
-      for (var i2 = 0; i2 < 16; i2++) {
-        buf[offset + i2] = bytes[i2];
-      }
-      return buf;
-    }
-    return unsafeStringify(bytes);
-  }
-  var init_v6 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v6.js"() {
-      init_prelude();
-      init_stringify();
-      init_v1();
-      init_v1ToV6();
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v6ToV1.js
-  function v6ToV1(uuid) {
-    var v6Bytes = typeof uuid === "string" ? parse_default(uuid) : uuid;
-    var v1Bytes = _v6ToV1(v6Bytes);
-    return typeof uuid === "string" ? unsafeStringify(v1Bytes) : v1Bytes;
-  }
-  function _v6ToV1(v6Bytes) {
-    return Uint8Array.of((v6Bytes[3] & 15) << 4 | v6Bytes[4] >> 4 & 15, (v6Bytes[4] & 15) << 4 | (v6Bytes[5] & 240) >> 4, (v6Bytes[5] & 15) << 4 | v6Bytes[6] & 15, v6Bytes[7], (v6Bytes[1] & 15) << 4 | (v6Bytes[2] & 240) >> 4, (v6Bytes[2] & 15) << 4 | (v6Bytes[3] & 240) >> 4, 16 | (v6Bytes[0] & 240) >> 4, (v6Bytes[0] & 15) << 4 | (v6Bytes[1] & 240) >> 4, v6Bytes[8], v6Bytes[9], v6Bytes[10], v6Bytes[11], v6Bytes[12], v6Bytes[13], v6Bytes[14], v6Bytes[15]);
-  }
-  var init_v6ToV1 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v6ToV1.js"() {
-      init_prelude();
-      init_parse();
-      init_stringify();
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/v7.js
-  function v7(options, buf, offset) {
-    options = options || {};
-    var i2 = buf && offset || 0;
-    var b = buf || new Uint8Array(16);
-    var rnds = options.random || (options.rng || rng)();
-    var msecs = options.msecs !== void 0 ? options.msecs : Date.now();
-    var seq = options.seq !== void 0 ? options.seq : null;
-    var seqHigh = _seqHigh;
-    var seqLow = _seqLow;
-    if (msecs > _msecs && options.msecs === void 0) {
-      _msecs = msecs;
-      if (seq !== null) {
-        seqHigh = null;
-        seqLow = null;
-      }
-    }
-    if (seq !== null) {
-      if (seq > 2147483647) {
-        seq = 2147483647;
-      }
-      seqHigh = seq >>> 19 & 4095;
-      seqLow = seq & 524287;
-    }
-    if (seqHigh === null || seqLow === null) {
-      seqHigh = rnds[6] & 127;
-      seqHigh = seqHigh << 8 | rnds[7];
-      seqLow = rnds[8] & 63;
-      seqLow = seqLow << 8 | rnds[9];
-      seqLow = seqLow << 5 | rnds[10] >>> 3;
-    }
-    if (msecs + 1e4 > _msecs && seq === null) {
-      if (++seqLow > 524287) {
-        seqLow = 0;
-        if (++seqHigh > 4095) {
-          seqHigh = 0;
-          _msecs++;
-        }
-      }
-    } else {
-      _msecs = msecs;
-    }
-    _seqHigh = seqHigh;
-    _seqLow = seqLow;
-    b[i2++] = _msecs / 1099511627776 & 255;
-    b[i2++] = _msecs / 4294967296 & 255;
-    b[i2++] = _msecs / 16777216 & 255;
-    b[i2++] = _msecs / 65536 & 255;
-    b[i2++] = _msecs / 256 & 255;
-    b[i2++] = _msecs & 255;
-    b[i2++] = seqHigh >>> 4 & 15 | 112;
-    b[i2++] = seqHigh & 255;
-    b[i2++] = seqLow >>> 13 & 63 | 128;
-    b[i2++] = seqLow >>> 5 & 255;
-    b[i2++] = seqLow << 3 & 255 | rnds[10] & 7;
-    b[i2++] = rnds[11];
-    b[i2++] = rnds[12];
-    b[i2++] = rnds[13];
-    b[i2++] = rnds[14];
-    b[i2++] = rnds[15];
-    return buf || unsafeStringify(b);
-  }
-  var _seqLow, _seqHigh, _msecs, v7_default;
-  var init_v7 = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/v7.js"() {
-      init_prelude();
-      init_rng();
-      init_stringify();
-      _seqLow = null;
-      _seqHigh = null;
-      _msecs = 0;
-      v7_default = v7;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/version.js
-  function version(uuid) {
-    if (!validate_default(uuid)) {
-      throw TypeError("Invalid UUID");
-    }
-    return parseInt(uuid.slice(14, 15), 16);
-  }
-  var version_default;
-  var init_version = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/version.js"() {
-      init_prelude();
-      init_validate();
-      version_default = version;
-    }
-  });
-
-  // shared/node_modules/uuid/dist/esm-browser/index.js
-  var esm_browser_exports = {};
-  __export(esm_browser_exports, {
-    MAX: () => max_default,
-    NIL: () => nil_default,
-    parse: () => parse_default,
-    stringify: () => stringify_default,
-    v1: () => v1_default,
-    v1ToV6: () => v1ToV6,
-    v3: () => v3_default,
-    v4: () => v4_default,
-    v5: () => v5_default,
-    v6: () => v6,
-    v6ToV1: () => v6ToV1,
-    v7: () => v7_default,
-    validate: () => validate_default,
-    version: () => version_default
-  });
-  var init_esm_browser = __esm({
-    "shared/node_modules/uuid/dist/esm-browser/index.js"() {
-      init_prelude();
-      init_max();
-      init_nil();
-      init_parse();
-      init_stringify();
-      init_v1();
-      init_v1ToV6();
-      init_v3();
-      init_v4();
-      init_v5();
-      init_v6();
-      init_v6ToV1();
-      init_v7();
-      init_validate();
-      init_version();
-    }
-  });
-
-  // shared/sync/embed.ts
+  // ../shared/sync/embed.ts
   init_prelude();
 
-  // shared/sync/index.ts
+  // ../shared/sync/index.ts
   init_prelude();
 
-  // shared/sync/graph.ts
+  // ../shared/sync/graph.ts
   init_prelude();
 
-  // shared/sync/destructure.ts
+  // ../shared/sync/destructure.ts
   init_prelude();
 
-  // shared/sync/replica.ts
+  // ../shared/sync/replica.ts
   init_prelude();
 
-  // shared/sync/node-sync.ts
+  // ../shared/sync/node-sync.ts
   init_prelude();
 
-  // shared/sync/node-context.ts
+  // ../shared/sync/node-context.ts
   init_prelude();
 
-  // shared/sync/branches.ts
+  // ../shared/sync/branches.ts
   init_prelude();
 
-  // shared/sync/merge.ts
+  // ../shared/sync/merge.ts
   init_prelude();
   var EMPTY = { data: {}, children: [] };
   function mergeNodes(store, baseCid, oursCid, theirsCid, labels) {
@@ -1786,10 +1016,10 @@
     return { ...value, children };
   }
 
-  // shared/sync/node-provider.ts
+  // ../shared/sync/node-provider.ts
   init_prelude();
 
-  // shared/dag-implementation/cid.ts
+  // ../shared/dag-implementation/cid.ts
   init_prelude();
   var jsSha3 = __toESM(require_sha3(), 1);
   var sha3_2562 = jsSha3.sha3_256 ?? jsSha3.default.sha3_256;
@@ -1844,8 +1074,8 @@
     if (typeof cid !== "string") return null;
     const prefixed = PREFIXED.exec(cid);
     if (prefixed) {
-      const version2 = Number(prefixed[1]);
-      return version2 in CID_FORMATS ? { version: version2, digest: prefixed[2] } : null;
+      const version = Number(prefixed[1]);
+      return version in CID_FORMATS ? { version, digest: prefixed[2] } : null;
     }
     if (LEGACY.test(cid)) return { version: 0, digest: cid };
     return null;
@@ -1853,17 +1083,17 @@
   function cidVersion(cid) {
     return parseCid(cid)?.version ?? null;
   }
-  function formatCid(version2, digest) {
-    if (!(version2 in CID_FORMATS)) throw new Error(`unknown cid version ${version2}`);
-    return version2 === 0 ? digest : `v${version2}-${digest}`;
+  function formatCid(version, digest) {
+    if (!(version in CID_FORMATS)) throw new Error(`unknown cid version ${version}`);
+    return version === 0 ? digest : `v${version}-${digest}`;
   }
   function isCurrentCid(cid) {
     return cidVersion(cid) === CURRENT_CID_VERSION;
   }
-  function hashContentAt(content2, version2) {
-    const format = CID_FORMATS[version2];
-    if (!format) throw new Error(`unknown cid version ${version2}`);
-    return formatCid(version2, format.digest(content2));
+  function hashContentAt(content2, version) {
+    const format = CID_FORMATS[version];
+    if (!format) throw new Error(`unknown cid version ${version}`);
+    return formatCid(version, format.digest(content2));
   }
   function hashContent(content2) {
     return hashContentAt(content2, CURRENT_CID_VERSION);
@@ -1874,7 +1104,7 @@
     return hashContentAt(content2, parsed.version) === cid;
   }
 
-  // shared/sync/node-provider.ts
+  // ../shared/sync/node-provider.ts
   var LINK_NAME = "fos:node-link:";
   var NodeAccessError = class extends Error {
   };
@@ -1941,7 +1171,7 @@
     });
   }
 
-  // shared/sync/node-sync.ts
+  // ../shared/sync/node-sync.ts
   var forbidden = /* @__PURE__ */ new Set(["alias", "ref", "versionControl", "disabledCapabilities", "peerId", "__proto__", "constructor", "prototype"]);
   var empty = () => ({ data: {}, children: [] });
   var equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -1997,2602 +1227,16 @@
     return result;
   }
 
-  // shared/dag-implementation/store.ts
+  // ../shared/dag-implementation/store.ts
   init_prelude();
 
-  // shared/utils.ts
+  // ../shared/utils.ts
   init_prelude();
 
-  // shared/dag-implementation/expression.ts
+  // ../shared/defaults.ts
   init_prelude();
 
-  // shared/dag-implementation/context.ts
-  init_prelude();
-  var runAvailableFunctions = async (expr) => {
-    if (expr.isUpdate()) {
-      const { parent } = expr.getParentInfo();
-      if (parent.isAlias()) {
-      }
-    }
-    if (expr.isTodo()) {
-    }
-    return false;
-  };
-
-  // shared/dag-implementation/expression.ts
-  var FosExpression = class _FosExpression {
-    constructor(store, instructionOrRoute, target, parent) {
-      __publicField(this, "store");
-      /** Direct reference to instruction node */
-      __publicField(this, "instructionNode");
-      /** Direct reference to target node */
-      __publicField(this, "targetNode");
-      /**
-       * Parent expression - direct reference for navigation.
-       * null only for root expression.
-       */
-      __publicField(this, "_parent");
-      /**
-       * Cached route - computed lazily from parent chain.
-       * Invalidated when parent relationships change.
-       */
-      __publicField(this, "_cachedRoute", null);
-      this.store = store;
-      if (Array.isArray(instructionOrRoute)) {
-        const route = instructionOrRoute;
-        this._cachedRoute = route;
-        this._parent = null;
-        if (route.length === 0) {
-          this.instructionNode = this.store.primitive.voidNode;
-          this.targetNode = this.store.getRootNode();
-        } else {
-          const pathElem = route[route.length - 1];
-          if (!pathElem) {
-            throw new Error("Path element not found");
-          }
-          const [instructionId, targetId] = pathElem;
-          const instructionNode = this.store.getNodeByAddress(instructionId);
-          if (!instructionNode) {
-            throw new Error(`Instruction node not found for ${instructionId}`);
-          }
-          const targetNode = this.store.getNodeByAddress(targetId);
-          if (!targetNode) {
-            throw new Error(`Target node not found for ${targetId}`);
-          }
-          this.instructionNode = instructionNode;
-          this.targetNode = targetNode;
-        }
-      } else {
-        this.instructionNode = instructionOrRoute;
-        this.targetNode = target;
-        this._parent = parent ?? null;
-      }
-    }
-    /**
-     * Get the route (CID-based path).
-     * Computed lazily from parent chain if not cached.
-     */
-    get route() {
-      if (this._cachedRoute !== null) {
-        return this._cachedRoute;
-      }
-      if (!this._parent) {
-        this._cachedRoute = [];
-        return this._cachedRoute;
-      }
-      this._cachedRoute = [
-        ...this._parent.route,
-        [this.instructionNode.getId(), this.targetNode.getId()]
-      ];
-      return this._cachedRoute;
-    }
-    /**
-     * Invalidate the cached route (call when parent chain changes).
-     */
-    invalidateRoute() {
-      this._cachedRoute = null;
-    }
-    /**
-     * Get the parent expression (direct reference, no lookup needed).
-     */
-    getParentDirect() {
-      return this._parent;
-    }
-    /**
-     * Set the parent expression (used during tree restructuring).
-     */
-    setParent(parent) {
-      this._parent = parent;
-      this.invalidateRoute();
-    }
-    async runFunctions(context) {
-      const result = await runAvailableFunctions(this);
-      if (!result) {
-        throw new Error("No function matched context and expression");
-      }
-    }
-    // Core Property Getters
-    expressionType() {
-      return this.instructionNode.getId();
-    }
-    expressionId() {
-      return this.targetNode.getId();
-    }
-    expressionLabel() {
-      return `${this.expressionType}-${this.expressionId}`;
-    }
-    dragLabel() {
-      return this.expressionLabel();
-    }
-    isUpdate() {
-      const leftIsUpdate = this.instructionNode.getId() === this.store.primitive.updateAction.getId();
-      return leftIsUpdate;
-    }
-    // instructionContent(): any {
-    //   return this.instructionNode.getContent()
-    // }
-    // nodeData(): FosDataContent {
-    //   return this.nodeContent().data
-    // }
-    // nodeChildren(): FosPathElem[] {
-    //   return this.nodeContent().children
-    // }
-    // nodeContent(): FosNodeContent {
-    //   return this.instructionNode.getContent()
-    // }
-    // nodeChild(index: number): FosPathElem {
-    //   const child = this.nodeChildren()[index]
-    //   if (!child) {
-    //     throw new Error(`Child at index ${index} not found`)
-    //   }
-    //   return child
-    // }
-    getSelectedChild() {
-      throw new Error("Method not implemented");
-    }
-    childRoutes() {
-      return this.targetNode.getEdges().map((childEdge) => [...this.route, childEdge]);
-    }
-    hasChildren() {
-      return this.targetNode.getEdges().length > 0;
-    }
-    childrenVisible() {
-      return !this.isCollapsed() && !this.isTooDeep();
-    }
-    depth() {
-      return this.route.length;
-    }
-    focusChar() {
-      return this.store.trellisData.focusChar;
-    }
-    pathElem() {
-      return [this.instructionNode.getId(), this.targetNode.getId()];
-    }
-    // State Getters
-    currentMode() {
-      return this.store.trellisData.mode;
-    }
-    currentView() {
-      return this.store.trellisData.view;
-    }
-    currentActivity() {
-      return this.store.trellisData.activity;
-    }
-    currentGroup() {
-      return getGroupFromRoute(this.route, this.store);
-    }
-    equals(other) {
-      const instructionsEqual = this.instructionNode.getId() === other.instructionNode.getId();
-      const targetsEqual = this.targetNode.getId() === other.targetNode.getId();
-      const pathsEqual = pathEqual(this.route, other.route);
-      const allEqual = instructionsEqual && targetsEqual && pathsEqual;
-      return allEqual;
-    }
-    // State Check Methods
-    isLocked() {
-      return false;
-    }
-    isDisabled() {
-      return false;
-    }
-    isEditing() {
-      return false;
-    }
-    isDiffing() {
-      return false;
-    }
-    isCollapsed() {
-      const found = this.store.trellisData.collapsedList.find((collapsedRoute) => {
-        return pathEqual(collapsedRoute, this.route);
-      });
-      return !!found;
-    }
-    isDragging() {
-      return pathEqual(this.store.trellisData.dragInfo.dragging?.nodeRoute || [], this.route);
-    }
-    isDraggingOver() {
-      return pathEqual(this.store.trellisData.dragInfo.dragOverInfo?.nodeRoute || [], this.route);
-    }
-    hasFocus() {
-      return pathEqual(this.store.trellisData.focusRoute, this.route);
-    }
-    isTooDeep() {
-      return this.depth() > this.store.trellisData.rowDepth;
-    }
-    isTodo() {
-      return this.matchesPattern(this.store.primitive.unit, this.store.primitive.completeField);
-    }
-    // Type Check Methods
-    isRoot() {
-      const lastElem = this.route[this.route.length - 1];
-      const isRootInstruction = this.instructionNode.getId() === this.store.primitive.rootInstructionNode.getId();
-      if (!lastElem || isRootInstruction) {
-        return true;
-      }
-    }
-    hasParent() {
-      return this.route.length > 0;
-    }
-    isAlias() {
-      const targetHasTargetEdge = this.targetNode.getEdges().some((edge) => {
-        return edge[0] === this.store.primitive.targetPointerConstructor.getId();
-      });
-      const targetHasAliasInstruction = this.targetNode.getEdges().some((edge) => {
-        return edge[0] === this.store.primitive.instructionPointerConstructor.getId();
-      });
-      return targetHasTargetEdge;
-    }
-    followAlias() {
-      if (!this.isAlias()) {
-        console.log("Follow Alias Error", this.instructionNode.getId(), this.store.primitive.aliasConstructor.getId());
-        throw new Error("Expression is not an alias");
-      }
-      const {
-        instruction: aliasInstruction,
-        target: aliasTarget
-      } = this.targetNode.dereferenceNodes();
-      return new _FosExpression(this.store, aliasInstruction, aliasTarget, this);
-    }
-    isReference() {
-      const isAlias = this.isAlias();
-      return isAlias;
-    }
-    isWorkflow() {
-      return this.store.primitive.workflowField.getId() === this.instructionNode.getId();
-    }
-    isOption() {
-      return this.store.primitive.optionConstructor.getId() === this.targetNode.getId();
-    }
-    isChoice() {
-      return this.store.primitive.choiceTarget.getId() === this.targetNode.getId();
-    }
-    isDocument() {
-      return this.store.primitive.documentField.getId() === this.instructionNode.getId();
-    }
-    isComment() {
-      return this.expressionType() === this.store.primitive.commentConstructor.getId();
-    }
-    isGroup() {
-      return this.expressionType() === this.store.primitive.groupField.getId();
-    }
-    isMarketRequest() {
-      return this.expressionType() === this.store.primitive.marketRequestNode.getId();
-    }
-    isMarketService() {
-      return this.expressionType() === this.store.primitive.marketServiceNode.getId();
-    }
-    isSearch() {
-      return this.expressionType() === this.store.primitive.searchQueryNode.getId();
-    }
-    isSearchResults() {
-      return this.expressionType() === this.store.primitive.searchResultsNode.getId();
-    }
-    isLastNameField() {
-      return this.expressionType() === this.store.primitive.lastNameField.getId();
-    }
-    isFirstNameField() {
-      return this.expressionType() === this.store.primitive.firstNameField.getId();
-    }
-    isEmailField() {
-      return this.expressionType() === this.store.primitive.emailField.getId();
-    }
-    isConflict() {
-      return this.expressionType() === this.store.primitive.conflictNode.getId();
-    }
-    isError() {
-      return this.expressionType() === this.store.primitive.errorNode.getId();
-    }
-    isContact() {
-      return this.expressionType() === this.store.primitive.contactField.getId();
-    }
-    isBase() {
-      return pathEqual(this.route, this.store.fosRoute);
-    }
-    // Navigation Methods
-    /**
-     * Get the parent expression.
-     * Uses direct parent pointer if available (preferred), otherwise falls back to route-based lookup.
-     */
-    getParent() {
-      if (this._parent) {
-        return this._parent;
-      }
-      if (this.hasParent()) {
-        return new _FosExpression(this.store, this.route.slice(0, -1));
-      } else {
-        throw new Error("Cannot get parent of root node");
-      }
-    }
-    /**
-     * Get child expressions with proper parent pointers.
-     * Uses resolved object references - no CID lookups needed.
-     */
-    getTargetChildren(index = null) {
-      const children = this.targetNode.getEdgesResolved().map(([instrNode, targetNode]) => {
-        return new _FosExpression(this.store, instrNode, targetNode, this);
-      });
-      if (index === null) {
-        return children;
-      }
-      const indexedChild = children.slice(index, index + 1)[0];
-      if (!indexedChild) {
-        throw new Error("Child not found");
-      }
-      return [indexedChild];
-    }
-    /**
-     * Get child at specific index with parent pointer.
-     * Uses resolved object references - no CID lookups needed.
-     */
-    getChild(index) {
-      const edges = this.targetNode.getEdgesResolved();
-      const edge = edges[index];
-      if (!edge) return null;
-      const [instrNode, targetNode] = edge;
-      return new _FosExpression(this.store, instrNode, targetNode, this);
-    }
-    /**
-     * Get the index of this expression in its parent's children.
-     * Uses object identity comparison instead of CID comparison.
-     */
-    getIndex() {
-      if (!this._parent) return 0;
-      const siblings = this._parent.targetNode.getEdgesResolved();
-      return siblings.findIndex(
-        ([instrNode, targetNode]) => instrNode === this.instructionNode && targetNode === this.targetNode
-      );
-    }
-    /**
-     * Get the depth of this expression in the tree.
-     */
-    getDepth() {
-      let depth = 0;
-      let current = this._parent;
-      while (current) {
-        depth++;
-        current = current._parent;
-      }
-      return depth;
-    }
-    /**
-     * Navigate from the root to a destination using only instruction CIDs.
-     * This is used after updates when target CIDs have changed but instruction CIDs remain the same.
-     * @param instructionPath Array of instruction CIDs to follow from root
-     * @returns The expression at the destination path
-     */
-    static navigateByInstructions(store, instructionPath) {
-      let currentExpr = store.getRootExpression();
-      let pathToFollow = [...instructionPath];
-      console.log("[navigateByInstructions] Starting navigation");
-      console.log("[navigateByInstructions] Root isAlias:", currentExpr.isAlias());
-      console.log("[navigateByInstructions] Root targetNode edges:", currentExpr.targetNode.getEdges().length);
-      if (currentExpr.isAlias()) {
-        const beforeFollow = currentExpr;
-        currentExpr = currentExpr.followAlias();
-        console.log("[navigateByInstructions] After followAlias:");
-        console.log("[navigateByInstructions]   instruction:", currentExpr.instructionNode.getId());
-        console.log("[navigateByInstructions]   targetNode edges:", currentExpr.targetNode.getEdges().length);
-        console.log("[navigateByInstructions]   pathToFollow[0]:", pathToFollow[0]);
-        if (pathToFollow.length > 0 && currentExpr.instructionNode.getId() === pathToFollow[0]) {
-          pathToFollow = pathToFollow.slice(1);
-          console.log("[navigateByInstructions] Skipped first instruction, new pathToFollow length:", pathToFollow.length);
-        }
-      }
-      for (const instrId of pathToFollow) {
-        const actualExpr = currentExpr.isAlias() ? currentExpr.followAlias() : currentExpr;
-        const children = actualExpr.getTargetChildren();
-        const nextExpr = children.find((c) => c.instructionNode.getId() === instrId);
-        if (!nextExpr) {
-          console.error("[navigateByInstructions] Navigation failed at instruction:", instrId);
-          console.error("[navigateByInstructions] Available children:", children.map((c) => c.instructionNode.getId()));
-          console.error("[navigateByInstructions] Current expr instruction:", currentExpr.instructionNode.getId());
-          console.error("[navigateByInstructions] Current expr targetNode edges:", currentExpr.targetNode.getEdges());
-          console.error("[navigateByInstructions] Full instruction path:", instructionPath);
-          console.error("[navigateByInstructions] Path to follow:", pathToFollow);
-          throw new Error(`Could not navigate to instruction ${instrId}`);
-        }
-        currentExpr = nextExpr;
-      }
-      return currentExpr;
-    }
-    /**
-     * Extract the instruction path (instruction CIDs only) from a route.
-     */
-    static getInstructionPath(route) {
-      return route.map(([instr, _]) => instr);
-    }
-    getInstructionChildren(index = null) {
-      const children = this.instructionNode.getEdgesResolved().map(([instrNode, targetNode]) => {
-        return new _FosExpression(this.store, instrNode, targetNode, this);
-      });
-      if (index === null) {
-        return children;
-      }
-      const indexedChild = children.slice(index, index + 1)[0];
-      if (!indexedChild) {
-        throw new Error("Child not found");
-      }
-      return [indexedChild];
-    }
-    // Content Methods
-    getDescription() {
-      return this.targetNode.getContent().data.description?.content || "";
-    }
-    truncatedDescription() {
-      const description = this.getDescription();
-      return description.length > 20 ? description.slice(0, 17) + "..." : description;
-    }
-    // Pattern Matching Methods
-    matchesPattern(instructionPattern, targetPattern) {
-      const instructionNodesMatch = this.store.matchPattern(instructionPattern, this.instructionNode);
-      const hasInstructionMatch = instructionNodesMatch.length > 0;
-      const targetNodesMatch = this.store.matchPattern(targetPattern, this.targetNode);
-      const hasTargetMatch = targetNodesMatch.length > 0;
-      return hasInstructionMatch && hasTargetMatch;
-    }
-    getTargetChildrenMatchingPattern(typeNode, targetNode) {
-      return this.getTargetChildren().filter((child) => {
-        const instructionNodesMatch = this.store.matchPattern(typeNode, child.instructionNode);
-        const hasInstructionMatch = instructionNodesMatch.length > 0;
-        const targetNodesMatch = this.store.matchPattern(targetNode, child.targetNode);
-        const hasTargetMatch = targetNodesMatch.length > 0;
-        return hasInstructionMatch && hasTargetMatch;
-      });
-    }
-    getTargetChildrenForActivity(activity) {
-      if (activity === "comments") {
-        return this.getTargetChildrenMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit);
-      }
-      if (activity === "todo") {
-        return this.getTargetChildrenMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField);
-      }
-      return [];
-    }
-    getAllDescendentsMatchingPattern(typeNode, targetNode) {
-      const routeMap = mutableReduceToRouteMapFromExpression(this, (acc, expression) => {
-        const instructionNodesMatch = this.store.matchPattern(typeNode, expression.instructionNode);
-        const hasInstructionMatch = instructionNodesMatch.length > 0;
-        const targetNodesMatch = this.store.matchPattern(targetNode, expression.targetNode);
-        const hasTargetMatch = targetNodesMatch.length > 0;
-        if (hasInstructionMatch && hasTargetMatch) {
-          acc.set(expression.route, expression);
-        }
-        console.log("allDescendentsMatchingPattern - instruction", hasInstructionMatch, expression.instructionNode, typeNode, expression.instructionNode.getData().description?.content || expression.instructionNode.getId(), expression.route);
-        console.log("allDescendentsMatchingPattern - target", hasTargetMatch, expression.targetNode, targetNode, expression.targetNode.getData().description?.content || expression.targetNode.getId(), expression.route);
-        console.log("allDescendentsMatchingPattern - info", expression.route, this);
-        return acc;
-      });
-      return [...routeMap.keys()];
-    }
-    getAllDescendentsForActivity(activity) {
-      console.log("getAllDescendentsForActivity", activity);
-      if (activity === "comments") {
-        const existingRoutes = this.getAllDescendentsMatchingPattern(this.store.primitive.commentConstructor, this.store.primitive.unit);
-        const routeKeys = new Set(existingRoutes.map((route) => JSON.stringify(route)));
-        const globalCommentRoutes = [...this.store.table.entries()].filter(([cid, node]) => node.data.comment?.scope === "global").map(([cid]) => {
-          const route = [[this.store.primitive.commentConstructor.getId(), cid]];
-          return route;
-        }).filter((route) => {
-          const key = JSON.stringify(route);
-          if (routeKeys.has(key)) {
-            return false;
-          }
-          routeKeys.add(key);
-          return true;
-        });
-        return [...existingRoutes, ...globalCommentRoutes];
-      }
-      if (activity === "todo") {
-        return this.getAllDescendentsMatchingPattern(this.store.primitive.unit, this.store.primitive.completeField);
-      }
-      if (activity === "document") {
-        return this.getAllDescendentsMatchingPattern(this.store.primitive.documentField, this.store.primitive.unit);
-      }
-      if (activity === "all") {
-        const routeMap = mutableReduceToRouteMapFromExpression(this, (acc, expression) => {
-          acc.set(expression.route, expression);
-          return acc;
-        });
-        return [...routeMap.keys()];
-      }
-      return [];
-    }
-    // Option Related Methods
-    getOptions() {
-      if (this.isOption()) {
-        return this.getTargetChildren().map((child, index) => ({
-          value: index.toString(),
-          label: child.getDescription()
-        }));
-      } else {
-        throw new Error("getOptions must be used on an option expression");
-      }
-    }
-    getOptionInfo() {
-      if (!this.isOption()) {
-        throw new Error("getOptionInfo must be used on an option expression");
-      }
-      const selectedIndex = this.targetNode.getData().option?.selectedIndex || 0;
-      const nodeOptions = this.getOptions();
-      const nodeChildren = this.getTargetChildren();
-      if (nodeChildren.length < 2) {
-        throw new Error("Should not have less than 2 options");
-      }
-      if (!nodeChildren[selectedIndex]) {
-        throw new Error("selectedChild not found");
-      }
-      const selectedChildRoute = this.getTargetChildren(selectedIndex)[0]?.route;
-      if (!selectedChildRoute) {
-        throw new Error("selectedChildRoute not found");
-      }
-      const isOptionChildCollapsed = this.store.trellisData.collapsedList.some(
-        (route) => pathEqual(route, selectedChildRoute)
-      );
-      const resolutionStrategy = this.targetNode.getData().option?.defaultResolutionStrategy || "selected";
-      const selectedOption = nodeOptions[selectedIndex];
-      const selectedChild = new _FosExpression(this.store, selectedChildRoute);
-      if (!selectedOption) {
-        throw new Error("selectedOption not found");
-      }
-      return {
-        selectedIndex,
-        selectedChildRoute,
-        nodeOptions,
-        selectedOption,
-        selectedChild,
-        isOptionChildCollapsed,
-        resolutionStrategy
-      };
-    }
-    // Parent Info Methods
-    getParentInfo() {
-      if (!this.hasParent()) {
-        throw new Error("Cannot get parent of root node");
-      }
-      let thisParent = this.getParent();
-      if (thisParent.instructionNode.getId() === this.store.primitive.targetPointerConstructor.getId()) {
-        const {
-          instruction: aliasInstruction,
-          target: aliasTarget
-        } = thisParent.targetNode.dereferenceNodes();
-        thisParent = new _FosExpression(this.store, [...thisParent.route.slice(-1), [aliasInstruction.getId(), aliasTarget.getId()]]);
-      }
-      let oneWasFound = false;
-      const targetIndexInParent = thisParent.getTargetChildren().findIndex((childExpr) => {
-        if (thisParent.isAlias()) {
-          const {
-            instruction: aliasInstruction,
-            target: aliasTarget
-          } = thisParent.targetNode.dereferenceNodes();
-          if (childExpr.instructionNode.getId() === this.store.primitive.instructionPointerConstructor.getId()) {
-            const isMatch = aliasInstruction.getId() === childExpr.targetNode.getId();
-            if (!isMatch) {
-              throw new Error("Alias parent does not contain alias instruction");
-            }
-            return isMatch && (oneWasFound = true);
-          }
-          if (childExpr.instructionNode.getId() === this.store.primitive.targetPointerConstructor.getId()) {
-            const isMatch = aliasTarget.getId() === childExpr.targetNode.getId();
-            if (!isMatch) {
-              throw new Error("Alias parent does not contain target node");
-            }
-            return isMatch && (oneWasFound = true);
-          }
-        }
-        return this.equals(childExpr);
-      });
-      const instructionIndexInParent = thisParent.getInstructionChildren().findIndex(
-        (childExpr) => this.equals(childExpr)
-      );
-      if (targetIndexInParent === -1 && instructionIndexInParent === -1) {
-        throw new Error("Parent does not contain this child");
-      }
-      if (targetIndexInParent !== -1 && instructionIndexInParent !== -1) {
-        throw new Error("Edge duplicated in instruction and target");
-      }
-      return {
-        parent: thisParent,
-        targetIndexInParent,
-        instructionIndexInParent,
-        siblingRoutes: thisParent.childRoutes
-      };
-    }
-    isOptionChildCollapsed() {
-      const { selectedChildRoute } = this.getOptionInfo();
-      return this.store.trellisData.collapsedList.some(
-        (route) => pathEqual(route, selectedChildRoute)
-      );
-    }
-    // UI Related Methods
-    getDragItem(breadcrumb = false) {
-      return {
-        id: this.expressionLabel(),
-        data: { nodeRoute: this.route, breadcrumb },
-        breadcrumb
-      };
-    }
-    getDragInfo() {
-      return this.store.trellisData.dragInfo;
-    }
-    setDragInfo(dragInfo) {
-      this.store.trellisData.dragInfo = dragInfo;
-    }
-    getShortLabel() {
-      const uuidPre = "";
-      const tCidPre = this.targetNode.getId().slice(0, 8);
-      const iCidPre = this.instructionNode.getId().slice(0, 8);
-      return `<${uuidPre}(${tCidPre}-${iCidPre})>`;
-    }
-    commit() {
-      throw new Error("Method not implemented");
-    }
-    async update(instructionNode, targetNode) {
-      console.log("[update] START", {
-        routeLength: this.route.length,
-        oldInstrId: this.instructionNode.getId().substring(0, 12),
-        oldTargetId: this.targetNode.getId().substring(0, 12),
-        newInstrId: instructionNode.getId().substring(0, 12),
-        newTargetId: targetNode.getId().substring(0, 12)
-      });
-      const updateArgNode = this.store.create({
-        data: {},
-        children: [
-          [this.store.primitive.prevInstructionPointerConstructor.getId(), this.instructionNode.getId()],
-          [this.store.primitive.prevTargetPointerConstructor.getId(), this.targetNode.getId()],
-          [this.store.primitive.instructionPointerConstructor.getId(), instructionNode.getId()],
-          [this.store.primitive.targetPointerConstructor.getId(), targetNode.getId()]
-        ]
-      });
-      const updateElem = [this.store.primitive.updateAction.getId(), updateArgNode.getId()];
-      console.log("[update] Creating newExpr with updateElem", updateElem[0].substring(0, 12));
-      const newExpr = new _FosExpression(this.store, [...this.route, updateElem]);
-      console.log("[update] newExpr created", {
-        newExprInstrId: newExpr.instructionNode.getId().substring(0, 12),
-        newExprTargetId: newExpr.targetNode.getId().substring(0, 12)
-      });
-      const prevInstruction = this.instructionNode;
-      const prevTarget = this.targetNode;
-      this.instructionNode = newExpr.instructionNode;
-      this.targetNode = newExpr.targetNode;
-      this.invalidateRoute();
-      console.log("[update] After assignment", {
-        thisInstrId: this.instructionNode.getId().substring(0, 12),
-        thisTargetId: this.targetNode.getId().substring(0, 12)
-      });
-      newExpr.runUpdateRaw(prevInstruction, prevTarget);
-      console.log("[update] END - runUpdateRaw completed");
-    }
-    runUpdateRaw(prevInstruction, prevTarget) {
-      const parent = this.getParent();
-      if (this.isRoot()) {
-        console.log("runUpdateRaw - root case", this.route, this.instructionNode.getId(), this.targetNode.getId());
-        this.store.rootNodeId = this.targetNode.getId();
-        this.store.updateCtxCallback?.(this.store.exportContext([]));
-      } else {
-        if (this.isAlias()) {
-          console.log("runUpdateRaw - base case alias", this.route, this.instructionNode.getId(), this.targetNode.getId());
-          const {
-            target,
-            instruction
-          } = this.targetNode.dereferenceNodes();
-          const structuralIds = new Set([
-            this.store.primitive.targetPointerConstructor.getId(),
-            this.store.primitive.instructionPointerConstructor.getId(),
-            this.store.primitive.previousVersion.getId(),
-            this.store.primitive.prevTargetPointerConstructor?.getId(),
-            this.store.primitive.prevInstructionPointerConstructor?.getId()
-          ].filter(Boolean));
-          const preservedEdges = this.targetNode.getEdges().filter(
-            ([instrId]) => !structuralIds.has(instrId)
-          );
-          console.log("runUpdateRaw - preserving", preservedEdges.length, "non-structural edges");
-          const newAliasInfo = this.store.create({
-            data: this.targetNode.getContent().data,
-            // Preserve data
-            children: [
-              [this.store.primitive.targetPointerConstructor.getId(), target.getId()],
-              [this.store.primitive.instructionPointerConstructor.getId(), instruction.getId()],
-              [this.store.primitive.previousVersion.getId(), this.targetNode.getId()],
-              // Previous version
-              ...preservedEdges
-              // Preserve proposals, etc.
-            ]
-          });
-          const newParentTarget = parent.targetNode.updateEdge(
-            prevInstruction.getId(),
-            prevTarget.getId(),
-            instruction.getId(),
-            newAliasInfo.getId()
-          );
-          this.propagateTargetChange(parent, newParentTarget);
-        } else {
-          const newParentTarget = parent.targetNode.updateEdge(
-            prevInstruction.getId(),
-            prevTarget.getId(),
-            this.instructionNode.getId(),
-            this.targetNode.getId()
-          );
-          parent.setTargetNode(newParentTarget);
-        }
-      }
-    }
-    /**
-     * Propagate a target node change up the tree to the root without creating update actions.
-     * This is used during runUpdateRaw to avoid infinite recursion when handling aliases.
-     */
-    propagateTargetChange(expr, newTarget) {
-      console.log("[propagateTargetChange] expr.route.length:", expr.route.length, "newTarget edges:", newTarget.getEdges().length);
-      if (expr.route.length <= 1) {
-        console.log("[propagateTargetChange] Setting rootNodeId directly with", newTarget.getEdges().length, "edges");
-        this.store.rootNodeId = newTarget.getId();
-        this.store.updateCtxCallback?.(this.store.exportContext([]));
-      } else {
-        const parent = expr.getParent();
-        const newParentTarget = parent.targetNode.updateEdge(
-          expr.instructionNode.getId(),
-          expr.targetNode.getId(),
-          expr.instructionNode.getId(),
-          newTarget.getId()
-        );
-        this.propagateTargetChange(parent, newParentTarget);
-      }
-    }
-    // Content Modification Methods
-    updateTargetContent(newContent) {
-      const thisEdge = this.route[this.route.length - 1];
-      const newTarget = this.store.create(newContent);
-      if (!thisEdge) {
-        throw new Error("Cannot update root node");
-      }
-      return this.setTargetNode(newTarget);
-    }
-    setTargetNode(targetNode) {
-      return this.update(this.instructionNode, targetNode);
-    }
-    setInstructionNode(instructionNode) {
-      return this.update(instructionNode, this.targetNode);
-    }
-    getAction() {
-    }
-    async addBranch(content2) {
-      const branchArgNode = this.store.create({
-        data: {},
-        children: [
-          [this.store.primitive.prevInstructionPointerConstructor.getId(), this.store.primitive.voidNode.getId()],
-          [this.store.primitive.prevTargetPointerConstructor.getId(), this.store.primitive.voidNode.getId()],
-          [this.store.primitive.instructionPointerConstructor.getId(), this.instructionNode.getId()],
-          [this.store.primitive.targetPointerConstructor.getId(), this.targetNode.getId()]
-        ]
-      });
-      const updateElem = [this.store.primitive.brachConstructorNode.getId(), branchArgNode.getId()];
-      const newExpr = new _FosExpression(this.store, [...this.route, updateElem]);
-      return newExpr;
-    }
-    async setDescription(description) {
-      console.log("[setDescription] START", {
-        description: description.substring(0, 50),
-        route: this.route,
-        targetNodeId: this.targetNode.getId().substring(0, 12),
-        instrNodeId: this.instructionNode.getId().substring(0, 12)
-      });
-      const newTarget = this.targetNode.updateData({
-        description: {
-          content: description
-        }
-      });
-      console.log("[setDescription] newTarget created", {
-        newTargetId: newTarget.getId().substring(0, 12),
-        oldTargetId: this.targetNode.getId().substring(0, 12)
-      });
-      const newExpr = this.update(this.instructionNode, newTarget);
-      console.log("[setDescription] END");
-    }
-    setFocusAndDescription(description, focusChar) {
-      this.setDescription(description);
-      this.updateFocus(focusChar);
-    }
-    async setSelectedOption(selectedOption) {
-      const newTargetNode = this.targetNode.updateData({
-        option: {
-          defaultResolutionStrategy: "selected",
-          selectedIndex: selectedOption
-        }
-      });
-      await this.update(this.instructionNode, newTargetNode);
-    }
-    addOption(nodeContent, index) {
-      throw new Error("Method not implemented");
-    }
-    deleteOption() {
-      throw new Error("Method not implemented");
-    }
-    // Not Implemented Methods - These would need implementation based on requirements
-    getGroupInfo() {
-      throw new Error("Method not implemented");
-    }
-    getTodoInfo() {
-      throw new Error("Method not implemented");
-    }
-    getAllowedChildren() {
-      throw new Error("Method not implemented");
-    }
-    getPreviousVersions() {
-      throw new Error("Method not implemented");
-    }
-    getGroupProposedVersions() {
-      throw new Error("Method not implemented");
-    }
-    getBranchVersions() {
-      throw new Error("Method not implemented");
-    }
-    getBranches() {
-      throw new Error("Method not implemented");
-    }
-    getCommentInfo() {
-      throw new Error("Method not implemented");
-    }
-    async addChoice(content2) {
-      const newAlternative = this.store.create({
-        data: {
-          description: {
-            content: content2
-          }
-        },
-        children: []
-      });
-      const optionTarget = this.store.primitive.optionNotSelectedConstructor;
-      const newTarget = this.targetNode.addEdge(newAlternative.getId(), optionTarget.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, newAlternative, optionTarget, this);
-    }
-    async addWorkflow(content2) {
-      const workflowConstructor = this.store.primitive.workflowField;
-      const workflowTargetNode = this.store.create({
-        data: {
-          description: {
-            content: content2
-          }
-        },
-        children: []
-      });
-      const newTarget = this.targetNode.addEdge(workflowConstructor.getId(), workflowTargetNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, workflowConstructor, workflowTargetNode, this);
-    }
-    async addDocument(content2) {
-      const documentConstructor = this.store.primitive.documentField;
-      const documentTargetNode = this.store.create({
-        data: {
-          description: {
-            content: content2
-          }
-        },
-        children: [
-          [this.store.primitive.targetPointerConstructor.getId(), this.targetNode.getId()]
-        ]
-      });
-      const newTarget = this.targetNode.addEdge(documentConstructor.getId(), documentTargetNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, documentConstructor, documentTargetNode, this);
-    }
-    async addMarketRequest(content2) {
-      throw new Error("Method not implemented");
-    }
-    async addMarketService(content2) {
-      throw new Error("Method not implemented");
-    }
-    registerMarketService(service) {
-      if (!this.isWorkflow()) {
-        throw new Error("Method only implemented for workflow expressions");
-      }
-      const rootExpr = this.store.getRootExpression();
-      const marketServiceNode = this.store.create({
-        data: {
-          description: {
-            content: service
-          }
-        },
-        children: [
-          [this.store.primitive.targetPointerConstructor.getId(), this.targetNode.getId()]
-        ]
-      });
-      const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketServiceNode.getId(), marketServiceNode.getId());
-      rootExpr.update(rootExpr.instructionNode, newRootTarget);
-      const newExpr = new _FosExpression(this.store, [[this.store.primitive.marketServiceNode.getId(), marketServiceNode.getId()]]);
-      return newExpr;
-    }
-    registerMarketRequest(request) {
-      if (!this.isTodo()) {
-        throw new Error("Method only implemented for todo expressions");
-      }
-      const rootExpr = this.store.getRootExpression();
-      const marketRequestNode = this.store.create({
-        data: {
-          description: {
-            content: request
-          }
-        },
-        children: [
-          [this.store.primitive.targetPointerConstructor.getId(), this.instructionNode.getId()]
-        ]
-      });
-      const newRootTarget = rootExpr.targetNode.addEdge(this.store.primitive.marketRequestNode.getId(), marketRequestNode.getId());
-      rootExpr.update(rootExpr.instructionNode, newRootTarget);
-      const newExpr = new _FosExpression(this.store, [[this.store.primitive.marketRequestNode.getId(), marketRequestNode.getId()]]);
-      return newExpr;
-    }
-    applyPattern(instruction, target) {
-      throw new Error("Method not implemented");
-    }
-    /**
-     * Query this expression's children as a Datalog-style scope
-     * Returns all children matching the given instruction/target pattern
-     *
-     * @param instructionPattern Pattern for instruction node (use primitive.unit for wildcard)
-     * @param targetPattern Pattern for target node (use primitive.unit for wildcard)
-     * @returns Array of matching child expressions with bindings
-     */
-    queryPattern(instructionPattern, targetPattern) {
-      return this.getTargetChildren().filter((child) => {
-        const instrMatches = instructionPattern.getId() === this.store.primitive.unit.getId() || this.store.matchPattern(instructionPattern, child.instructionNode).length > 0;
-        const targetMatches = targetPattern.getId() === this.store.primitive.unit.getId() || this.store.matchPattern(targetPattern, child.targetNode).length > 0;
-        return instrMatches && targetMatches;
-      });
-    }
-    /**
-     * Query this scope for facts matching a predicate pattern
-     * Facts are children with the FACT primitive as instruction
-     *
-     * @param predicatePattern The pattern to match against fact predicates
-     * @returns Array of matching fact expressions
-     */
-    queryFacts(predicatePattern) {
-      const factPrimitive = this.store.primitive.factNode;
-      if (!predicatePattern) {
-        return this.getTargetChildren().filter(
-          (child) => child.instructionNode.getId() === factPrimitive.getId()
-        );
-      }
-      return this.getTargetChildren().filter((child) => {
-        if (child.instructionNode.getId() !== factPrimitive.getId()) {
-          return false;
-        }
-        return this.store.matchPattern(predicatePattern, child.targetNode).length > 0;
-      });
-    }
-    /**
-     * Get all rules in this scope
-     * Rules are children with the RULE primitive as instruction
-     */
-    getRulesInScope() {
-      const rulePrimitive = this.store.primitive.ruleNode;
-      return this.getTargetChildren().filter(
-        (child) => child.instructionNode.getId() === rulePrimitive.getId()
-      );
-    }
-    /**
-     * Synthesize expressions that would satisfy a given type/pattern
-     *
-     * This is type-directed synthesis: given a type (pattern),
-     * generate all expressions from this scope that would satisfy it.
-     *
-     * @param typePattern The type/pattern to synthesize for
-     * @returns Array of expressions that satisfy the type
-     */
-    synthesize(typePattern) {
-      const results = [];
-      const directMatches = this.getTargetChildren().filter(
-        (child) => this.store.matchPattern(typePattern, child.targetNode).length > 0
-      );
-      results.push(...directMatches);
-      const factMatches = this.queryFacts(typePattern);
-      for (const fact of factMatches) {
-        if (!results.some((r) => r.targetNode.getId() === fact.targetNode.getId())) {
-          results.push(fact);
-        }
-      }
-      const rules = this.getRulesInScope();
-      for (const rule of rules) {
-        const ruleHead = this.getRuleHead(rule);
-        if (ruleHead && this.store.matchPattern(typePattern, ruleHead).length > 0) {
-        }
-      }
-      return results;
-    }
-    /**
-     * Get the head (derived pattern) of a rule expression
-     */
-    getRuleHead(ruleExpr) {
-      const ruleHeadPrimitive = this.store.primitive.ruleHeadNode;
-      const headChild = ruleExpr.getTargetChildren().find(
-        (child) => child.instructionNode.getId() === ruleHeadPrimitive.getId()
-      );
-      return headChild?.targetNode ?? null;
-    }
-    /**
-     * Get the body (conditions) of a rule expression
-     */
-    getRuleBody(ruleExpr) {
-      const ruleBodyPrimitive = this.store.primitive.ruleBodyNode;
-      return ruleExpr.getTargetChildren().filter((child) => child.instructionNode.getId() === ruleBodyPrimitive.getId()).map((child) => child.targetNode);
-    }
-    /**
-     * Assert a fact into this scope (add as child with FACT instruction)
-     *
-     * @param factNode The fact to assert
-     * @returns The new fact expression
-     */
-    async assertFact(factNode) {
-      const factPrimitive = this.store.primitive.factNode;
-      const existing = this.queryFacts(factNode)[0];
-      if (existing) {
-        return existing;
-      }
-      const newTarget = this.targetNode.addEdge(factPrimitive.getId(), factNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, factPrimitive, factNode, this);
-    }
-    /**
-     * Retract a fact from this scope (remove child matching the fact)
-     *
-     * @param factPattern The fact pattern to retract
-     */
-    async retractFact(factPattern) {
-      const matches = this.queryFacts(factPattern);
-      for (const match of matches) {
-        const { targetIndexInParent } = match.getParentInfo();
-        if (targetIndexInParent !== -1) {
-          const newTarget = this.targetNode.removeEdgeByIndex(targetIndexInParent);
-          await this.update(this.instructionNode, newTarget);
-        }
-      }
-    }
-    /**
-     * Add a derivation rule to this scope
-     *
-     * @param head The pattern this rule derives
-     * @param body The conditions that must match
-     * @returns The new rule expression
-     */
-    async addRule(head, body) {
-      const rulePrimitive = this.store.primitive.ruleNode;
-      const ruleHeadPrimitive = this.store.primitive.ruleHeadNode;
-      const ruleBodyPrimitive = this.store.primitive.ruleBodyNode;
-      const ruleChildren = [
-        [ruleHeadPrimitive.getId(), head.getId()],
-        ...body.map((b) => [ruleBodyPrimitive.getId(), b.getId()])
-      ];
-      const ruleNode = this.store.create({
-        data: { description: { content: "Derivation rule" } },
-        children: ruleChildren
-      });
-      const newTarget = this.targetNode.addEdge(rulePrimitive.getId(), ruleNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, rulePrimitive, ruleNode, this);
-    }
-    /**
-     * Apply all rules to derive new facts (forward chaining)
-     * Continues until no new facts are derived (fixpoint)
-     */
-    async saturate() {
-      let changed = true;
-      while (changed) {
-        changed = false;
-        const rules = this.getRulesInScope();
-        for (const rule of rules) {
-          const head = this.getRuleHead(rule);
-          const body = this.getRuleBody(rule);
-          if (!head) continue;
-          const bodySatisfied = body.every(
-            (condition) => this.queryFacts(condition).length > 0
-          );
-          if (bodySatisfied) {
-            const existingHead = this.queryFacts(head);
-            if (existingHead.length === 0) {
-              await this.assertFact(head);
-              changed = true;
-            }
-          }
-        }
-      }
-    }
-    /**
-     * Complete a task and execute its effects
-     * Default effect: assert completed(task)
-     * Additional effects from TASK_EFFECT children
-     */
-    async completeTaskWithEffects() {
-      const taskEffectPrimitive = this.store.primitive.taskEffectNode;
-      const assertPrimitive = this.store.primitive.assertNode;
-      const retractPrimitive = this.store.primitive.retractNode;
-      const completedPrimitive = this.store.primitive.completedNode;
-      const effects = this.getTargetChildren().filter(
-        (child) => child.instructionNode.getId() === taskEffectPrimitive.getId()
-      );
-      for (const effect of effects) {
-        const effectChildren = effect.getTargetChildren();
-        for (const ec of effectChildren) {
-          if (ec.instructionNode.getId() === assertPrimitive.getId()) {
-            await this.getParent().assertFact(ec.targetNode);
-          } else if (ec.instructionNode.getId() === retractPrimitive.getId()) {
-            await this.getParent().retractFact(ec.targetNode);
-          }
-        }
-      }
-      const completedFact = this.store.create({
-        data: { completed: { taskId: this.targetNode.getId(), time: Date.now() } },
-        children: [[completedPrimitive.getId(), this.targetNode.getId()]]
-      });
-      if (this.hasParent()) {
-        await this.getParent().assertFact(completedFact);
-      }
-      this.completeTask();
-    }
-    /**
-     * Create a variable node for pattern matching
-     */
-    createVariable(name) {
-      const variablePrimitive = this.store.primitive.variableNode;
-      return this.store.create({
-        data: { variable: { name } },
-        children: [[variablePrimitive.getId(), this.store.primitive.terminal.getId()]]
-      }, `VAR_${name}`);
-    }
-    /**
-     * Create a fact node from a predicate name and arguments
-     */
-    createFact(predicate, args) {
-      const factPrimitive = this.store.primitive.factNode;
-      const children = args.map(
-        (arg) => [factPrimitive.getId(), arg.getId()]
-      );
-      return this.store.create({
-        data: { predicate, description: { content: predicate } },
-        children
-      }, `FACT_${predicate}`);
-    }
-    // === Version Control Methods ===
-    /**
-     * Get the version history of this expression by following PREV pointers
-     * Returns an array of commits from newest to oldest
-     */
-    getHistory() {
-      const history = [];
-      const prevPrimitive = this.store.primitive.previousVersion;
-      let current = this;
-      while (current) {
-        history.push(current);
-        const prevChild = current.getTargetChildren().find(
-          (child) => child.instructionNode.getId() === prevPrimitive.getId()
-        );
-        if (prevChild && prevChild.targetNode.getId() !== this.store.primitive.terminal.getId()) {
-          current = new _FosExpression(this.store, [...current.route, [prevPrimitive.getId(), prevChild.targetNode.getId()]]);
-        } else {
-          current = null;
-        }
-      }
-      return history;
-    }
-    /**
-     * Create a commit (versioned snapshot) of this expression
-     *
-     * @param message Commit message
-     * @param branchName Optional branch name (defaults to "main")
-     * @returns The new expression with commit metadata
-     */
-    async createCommit(message, branchName = "main") {
-      const commitPrimitive = this.store.primitive.commitNode;
-      const prevPrimitive = this.store.primitive.previousVersion;
-      const branchNamePrimitive = this.store.primitive.branchNameNode;
-      const branchNode = this.store.create({
-        data: { branch: { name: branchName } },
-        children: []
-      }, `BRANCH_${branchName}`);
-      const commitData = {
-        ...this.targetNode.getData(),
-        commit: {
-          message,
-          timestamp: Date.now(),
-          branch: branchName
-        }
-      };
-      const newTarget = this.store.create({
-        data: commitData,
-        children: [
-          [prevPrimitive.getId(), this.targetNode.getId()],
-          [branchNamePrimitive.getId(), branchNode.getId()],
-          ...this.targetNode.getEdges().filter(
-            ([instr]) => instr !== prevPrimitive.getId() && instr !== branchNamePrimitive.getId()
-          )
-        ]
-      });
-      await this.update(this.instructionNode, newTarget);
-      return this.isAlias() ? this.followAlias() : this;
-    }
-    /**
-     * Get all branches in this scope's history
-     */
-    getBranchNames() {
-      const branches = /* @__PURE__ */ new Set();
-      const branchNamePrimitive = this.store.primitive.branchNameNode;
-      const history = this.getHistory();
-      for (const expr of history) {
-        const branchChild = expr.getTargetChildren().find(
-          (child) => child.instructionNode.getId() === branchNamePrimitive.getId()
-        );
-        if (branchChild) {
-          const branchData = branchChild.targetNode.getData().branch;
-          if (branchData?.name) {
-            branches.add(branchData.name);
-          }
-        }
-      }
-      if (branches.size === 0) {
-        branches.add("main");
-      }
-      return Array.from(branches);
-    }
-    /**
-     * Get the current branch name
-     */
-    getCurrentBranch() {
-      const branchNamePrimitive = this.store.primitive.branchNameNode;
-      const branchChild = this.getTargetChildren().find(
-        (child) => child.instructionNode.getId() === branchNamePrimitive.getId()
-      );
-      if (branchChild) {
-        const branchData = branchChild.targetNode.getData().branch;
-        return branchData?.name ?? "main";
-      }
-      return "main";
-    }
-    /**
-     * Create a new branch from this expression
-     *
-     * @param branchName Name for the new branch
-     * @returns Expression on the new branch
-     */
-    async createNewBranch(branchName) {
-      return this.createCommit(`Branch: ${branchName}`, branchName);
-    }
-    /**
-     * Find the common ancestor between this expression and another
-     *
-     * @param other The other expression to find common ancestor with
-     * @returns The common ancestor expression, or null if none found
-     */
-    findCommonAncestor(other) {
-      const thisHistory = this.getHistory();
-      const otherHistory = other.getHistory();
-      const thisIds = new Set(thisHistory.map((e) => e.targetNode.getId()));
-      for (const expr of otherHistory) {
-        if (thisIds.has(expr.targetNode.getId())) {
-          return expr;
-        }
-      }
-      return null;
-    }
-    /**
-     * Merge another expression into this one
-     *
-     * @param other The expression to merge in
-     * @param message Optional merge commit message
-     * @returns MergeResult with merged expression or conflicts
-     */
-    async merge(other, message) {
-      const mergeSourcePrimitive = this.store.primitive.mergeSourceNode;
-      const conflictPrimitive = this.store.primitive.conflictNode;
-      const conflictOursPrimitive = this.store.primitive.conflictOursNode;
-      const conflictTheirsPrimitive = this.store.primitive.conflictTheirsNode;
-      const conflictBasePrimitive = this.store.primitive.conflictBaseNode;
-      const ancestor = this.findCommonAncestor(other);
-      const ourChildren = this.getTargetChildren();
-      const theirChildren = other.getTargetChildren();
-      const ancestorChildren = ancestor?.getTargetChildren() ?? [];
-      const ourMap = new Map(ourChildren.map((c) => [c.instructionNode.getId(), c]));
-      const theirMap = new Map(theirChildren.map((c) => [c.instructionNode.getId(), c]));
-      const ancestorMap = new Map(ancestorChildren.map((c) => [c.instructionNode.getId(), c]));
-      const conflicts = [];
-      const mergedChildren = [];
-      const allInstrIds = /* @__PURE__ */ new Set([...ourMap.keys(), ...theirMap.keys()]);
-      for (const instrId of allInstrIds) {
-        const ours = ourMap.get(instrId);
-        const theirs = theirMap.get(instrId);
-        const base = ancestorMap.get(instrId);
-        if (ours && theirs) {
-          if (ours.targetNode.getId() === theirs.targetNode.getId()) {
-            mergedChildren.push([instrId, ours.targetNode.getId()]);
-          } else if (base && ours.targetNode.getId() === base.targetNode.getId()) {
-            mergedChildren.push([instrId, theirs.targetNode.getId()]);
-          } else if (base && theirs.targetNode.getId() === base.targetNode.getId()) {
-            mergedChildren.push([instrId, ours.targetNode.getId()]);
-          } else {
-            const conflictNode = this.store.create({
-              data: { conflict: { path: instrId } },
-              children: [
-                [conflictOursPrimitive.getId(), ours.targetNode.getId()],
-                [conflictTheirsPrimitive.getId(), theirs.targetNode.getId()],
-                ...base ? [[conflictBasePrimitive.getId(), base.targetNode.getId()]] : []
-              ]
-            });
-            conflicts.push({
-              path: instrId,
-              ours: ours.targetNode,
-              theirs: theirs.targetNode,
-              base: base?.targetNode ?? null,
-              conflictNode
-            });
-            mergedChildren.push([conflictPrimitive.getId(), conflictNode.getId()]);
-          }
-        } else if (ours) {
-          if (base) {
-            mergedChildren.push([instrId, ours.targetNode.getId()]);
-          } else {
-            mergedChildren.push([instrId, ours.targetNode.getId()]);
-          }
-        } else if (theirs) {
-          if (base) {
-            mergedChildren.push([instrId, theirs.targetNode.getId()]);
-          } else {
-            mergedChildren.push([instrId, theirs.targetNode.getId()]);
-          }
-        }
-      }
-      const mergedData = {
-        ...this.targetNode.getData(),
-        merge: {
-          message: message ?? `Merge ${other.getCurrentBranch()} into ${this.getCurrentBranch()}`,
-          timestamp: Date.now(),
-          hasConflicts: conflicts.length > 0
-        }
-      };
-      const mergedTarget = this.store.create({
-        data: mergedData,
-        children: [
-          [mergeSourcePrimitive.getId(), other.targetNode.getId()],
-          ...mergedChildren
-        ]
-      });
-      if (conflicts.length === 0) {
-        await this.update(this.instructionNode, mergedTarget);
-        return {
-          success: true,
-          merged: this.isAlias() ? this.followAlias() : this,
-          conflicts: []
-        };
-      }
-      return {
-        success: false,
-        merged: null,
-        conflicts
-      };
-    }
-    /**
-     * Get any unresolved conflicts in this expression
-     */
-    getConflicts() {
-      const conflictPrimitive = this.store.primitive.conflictNode;
-      return this.getTargetChildren().filter(
-        (child) => child.instructionNode.getId() === conflictPrimitive.getId()
-      );
-    }
-    /**
-     * Check if this expression has unresolved conflicts
-     */
-    hasConflicts() {
-      return this.getConflicts().length > 0;
-    }
-    /**
-     * Resolve a conflict by choosing a resolution
-     *
-     * @param conflictExpr The conflict expression to resolve
-     * @param resolution Which version to use: 'ours', 'theirs', or a custom node
-     */
-    async resolveConflict(conflictExpr, resolution) {
-      const conflictPrimitive = this.store.primitive.conflictNode;
-      const conflictOursPrimitive = this.store.primitive.conflictOursNode;
-      const conflictTheirsPrimitive = this.store.primitive.conflictTheirsNode;
-      const conflictData = conflictExpr.targetNode.getData().conflict;
-      if (!conflictData?.path) {
-        throw new Error("Invalid conflict expression");
-      }
-      let resolvedNode;
-      if (resolution === "ours") {
-        const oursChild = conflictExpr.getTargetChildren().find(
-          (c) => c.instructionNode.getId() === conflictOursPrimitive.getId()
-        );
-        if (!oursChild) throw new Error("Ours not found in conflict");
-        resolvedNode = oursChild.targetNode;
-      } else if (resolution === "theirs") {
-        const theirsChild = conflictExpr.getTargetChildren().find(
-          (c) => c.instructionNode.getId() === conflictTheirsPrimitive.getId()
-        );
-        if (!theirsChild) throw new Error("Theirs not found in conflict");
-        resolvedNode = theirsChild.targetNode;
-      } else {
-        resolvedNode = resolution;
-      }
-      const newChildren = this.targetNode.getEdges().map(([instr, target]) => {
-        if (instr === conflictPrimitive.getId() && target === conflictExpr.targetNode.getId()) {
-          return [conflictData.path, resolvedNode.getId()];
-        }
-        return [instr, target];
-      });
-      const newTarget = this.store.create({
-        data: this.targetNode.getData(),
-        children: newChildren
-      });
-      await this.update(this.instructionNode, newTarget);
-    }
-    /**
-     * Resolve all conflicts automatically using a strategy
-     *
-     * @param strategy The resolution strategy: 'ours', 'theirs'
-     */
-    async resolveAllConflicts(strategy) {
-      const conflicts = this.getConflicts();
-      for (const conflict of conflicts) {
-        await this.resolveConflict(conflict, strategy);
-      }
-    }
-    /**
-     * Create a tag (named reference) to this version
-     */
-    async createTag(tagName) {
-      const tagPrimitive = this.store.primitive.tagNode;
-      const tagNode = this.store.create({
-        data: { tag: { name: tagName, timestamp: Date.now() } },
-        children: []
-      }, `TAG_${tagName}`);
-      const newTarget = this.targetNode.addEdge(tagPrimitive.getId(), tagNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return this.isAlias() ? this.followAlias() : this;
-    }
-    /**
-     * Get all tags on this expression
-     */
-    getTags() {
-      const tagPrimitive = this.store.primitive.tagNode;
-      return this.getTargetChildren().filter((c) => c.instructionNode.getId() === tagPrimitive.getId()).map((c) => c.targetNode.getData().tag?.name).filter((name) => !!name);
-    }
-    // === Budget Methods (Linear Resources) ===
-    /**
-     * Create a budget as a child of this expression
-     *
-     * @param total Total amount available
-     * @param currency Currency code (e.g., "USD")
-     * @param name Optional budget name
-     * @returns The new budget expression
-     */
-    async createBudget(total, currency = "USD", name) {
-      const budgetPrimitive = this.store.primitive.budgetNode;
-      const budgetTargetNode = this.store.create({
-        data: {
-          budget: {
-            total,
-            consumed: 0,
-            currency,
-            name
-          },
-          description: { content: name || `Budget: ${total} ${currency}` }
-        },
-        children: []
-      });
-      const newTarget = this.targetNode.addEdge(budgetPrimitive.getId(), budgetTargetNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, budgetPrimitive, budgetTargetNode, this);
-    }
-    /**
-     * Check if this expression is a budget
-     */
-    isBudget() {
-      return this.instructionNode.getId() === this.store.primitive.budgetNode.getId();
-    }
-    /**
-     * Get budget data if this is a budget expression
-     */
-    getBudgetInfo() {
-      const budgetData = this.targetNode.getData().budget;
-      if (!budgetData) return null;
-      return {
-        total: budgetData.total,
-        consumed: budgetData.consumed,
-        available: budgetData.total - budgetData.consumed,
-        currency: budgetData.currency,
-        name: budgetData.name
-      };
-    }
-    /**
-     * Create a sub-allocation from this budget
-     *
-     * @param amount Amount to allocate
-     * @param name Optional allocation name
-     * @returns The new allocation expression
-     */
-    async allocateBudget(amount, name) {
-      if (!this.isBudget()) {
-        throw new Error("Can only allocate from a budget expression");
-      }
-      const budgetData = this.targetNode.getData().budget;
-      if (!budgetData) {
-        throw new Error("Invalid budget data");
-      }
-      const available = budgetData.total - budgetData.consumed;
-      if (amount > available) {
-        throw new Error(`Cannot allocate ${amount} from budget with ${available} available`);
-      }
-      const allocationPrimitive = this.store.primitive.allocationNode;
-      const allocationNode = this.store.create({
-        data: {
-          budget: {
-            total: amount,
-            consumed: 0,
-            currency: budgetData.currency,
-            name,
-            parentBudgetId: this.targetNode.getId()
-          },
-          description: { content: name || `Allocation: ${amount} ${budgetData.currency}` }
-        },
-        children: []
-      });
-      const updatedBudgetNode = this.store.create({
-        data: {
-          ...this.targetNode.getData(),
-          budget: {
-            ...budgetData,
-            consumed: budgetData.consumed + amount
-          }
-        },
-        children: [
-          ...this.targetNode.getEdges(),
-          [allocationPrimitive.getId(), allocationNode.getId()]
-        ]
-      });
-      await this.update(this.instructionNode, updatedBudgetNode);
-      return new _FosExpression(this.store, allocationPrimitive, allocationNode, this);
-    }
-    /**
-     * Spend from this budget
-     *
-     * @param amount Amount to spend
-     * @param description Optional description of the spending
-     */
-    async spendBudget(amount, description) {
-      if (!this.isBudget()) {
-        throw new Error("Can only spend from a budget expression");
-      }
-      const budgetData = this.targetNode.getData().budget;
-      if (!budgetData) {
-        throw new Error("Invalid budget data");
-      }
-      const available = budgetData.total - budgetData.consumed;
-      if (amount > available) {
-        throw new Error(`Cannot spend ${amount} from budget with ${available} available`);
-      }
-      const spentPrimitive = this.store.primitive.spentNode;
-      const spentNode = this.store.create({
-        data: {
-          spent: {
-            amount,
-            description,
-            timestamp: Date.now()
-          }
-        },
-        children: []
-      });
-      const updatedBudgetNode = this.store.create({
-        data: {
-          ...this.targetNode.getData(),
-          budget: {
-            ...budgetData,
-            consumed: budgetData.consumed + amount
-          }
-        },
-        children: [
-          ...this.targetNode.getEdges(),
-          [spentPrimitive.getId(), spentNode.getId()]
-        ]
-      });
-      await this.update(this.instructionNode, updatedBudgetNode);
-    }
-    /**
-     * Get all budgets in this scope
-     */
-    getBudgets() {
-      const budgetPrimitive = this.store.primitive.budgetNode;
-      return this.getTargetChildren().filter(
-        (child) => child.instructionNode.getId() === budgetPrimitive.getId()
-      );
-    }
-    // === Calendar Methods (Linear Time Resources) ===
-    /**
-     * Create a calendar as a child of this expression
-     *
-     * @param name Calendar name
-     * @returns The new calendar expression
-     */
-    async createCalendar(name) {
-      const calendarPrimitive = this.store.primitive.calendarNode;
-      const calendarTargetNode = this.store.create({
-        data: {
-          calendar: {
-            name,
-            slots: []
-          },
-          description: { content: name }
-        },
-        children: []
-      });
-      const newTarget = this.targetNode.addEdge(calendarPrimitive.getId(), calendarTargetNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      const calendarExpr = new _FosExpression(this.store, calendarPrimitive, calendarTargetNode, this);
-      return calendarExpr;
-    }
-    /**
-     * Check if this expression is a calendar
-     */
-    isCalendar() {
-      return this.instructionNode.getId() === this.store.primitive.calendarNode.getId();
-    }
-    /**
-     * Get calendar data if this is a calendar expression
-     */
-    getCalendarInfo() {
-      const calendarData = this.targetNode.getData().calendar;
-      if (!calendarData) return null;
-      return {
-        name: calendarData.name,
-        slots: calendarData.slots || []
-      };
-    }
-    /**
-     * Add a time slot to this calendar
-     *
-     * @param start Start time (ISO 8601)
-     * @param end End time (ISO 8601)
-     * @returns The updated calendar expression
-     */
-    async addTimeSlot(start, end) {
-      if (!this.isCalendar()) {
-        throw new Error("Can only add time slots to a calendar expression");
-      }
-      const calendarData = this.targetNode.getData().calendar;
-      if (!calendarData) {
-        throw new Error("Invalid calendar data");
-      }
-      const slotId = `slot_${Date.now()}`;
-      const newSlot = {
-        id: slotId,
-        start,
-        end,
-        allocated: false
-      };
-      const updatedCalendarNode = this.store.create({
-        data: {
-          ...this.targetNode.getData(),
-          calendar: {
-            ...calendarData,
-            slots: [...calendarData.slots || [], newSlot]
-          }
-        },
-        children: this.targetNode.getEdges()
-      });
-      await this.update(this.instructionNode, updatedCalendarNode);
-      return this.isAlias() ? this.followAlias() : this;
-    }
-    /**
-     * Allocate a time slot in this calendar
-     *
-     * @param slotId The slot ID to allocate
-     * @param allocatedTo Description of what the slot is allocated to
-     */
-    async allocateTimeSlot(slotId, allocatedTo) {
-      if (!this.isCalendar()) {
-        throw new Error("Can only allocate time slots in a calendar expression");
-      }
-      const calendarData = this.targetNode.getData().calendar;
-      if (!calendarData) {
-        throw new Error("Invalid calendar data");
-      }
-      const slots = calendarData.slots || [];
-      const slotIndex = slots.findIndex((s) => s.id === slotId);
-      const slot = slots[slotIndex];
-      if (!slot) {
-        throw new Error(`Time slot ${slotId} not found`);
-      }
-      if (slot.allocated) {
-        throw new Error(`Time slot ${slotId} is already allocated`);
-      }
-      const updatedSlots = [...slots];
-      updatedSlots[slotIndex] = {
-        ...slot,
-        allocated: true,
-        allocatedTo
-      };
-      const updatedCalendarNode = this.store.create({
-        data: {
-          ...this.targetNode.getData(),
-          calendar: {
-            ...calendarData,
-            slots: updatedSlots
-          }
-        },
-        children: this.targetNode.getEdges()
-      });
-      await this.update(this.instructionNode, updatedCalendarNode);
-    }
-    /**
-     * Get available (unallocated) time slots in this calendar
-     */
-    getAvailableTimeSlots() {
-      const calendarInfo = this.getCalendarInfo();
-      if (!calendarInfo) return [];
-      return calendarInfo.slots.filter((s) => !s.allocated).map(({ id, start, end }) => ({ id, start, end }));
-    }
-    /**
-     * Get all calendars in this scope
-     */
-    getCalendars() {
-      const calendarPrimitive = this.store.primitive.calendarNode;
-      return this.getTargetChildren().filter(
-        (child) => child.instructionNode.getId() === calendarPrimitive.getId()
-      );
-    }
-    removePattern(instruction, target) {
-      throw new Error("Method not implemented");
-    }
-    createChildExpressionUnderTarget(instruction, target) {
-      throw new Error("Method not implemented");
-    }
-    createChildExpressionUnderInstruction(instruction, target) {
-      throw new Error("Method not implemented");
-    }
-    queryAvailableActionsForPrimitivePattern(instruction, target) {
-      throw new Error("Method not implemented");
-    }
-    setSearchQuery(searchQuery) {
-      throw new Error("Method not implemented");
-    }
-    completeTask() {
-      const currentTargetVal = this.targetNode.value;
-      const newTarget = this.targetNode.updateData({
-        todo: {
-          completed: true,
-          time: Date.now()
-        }
-      });
-      this.update(this.instructionNode, newTarget);
-    }
-    async addTodo(description) {
-      console.log("addTodo - this route", this.route);
-      if (this.isAlias()) {
-        const dereferencedThis = this.followAlias();
-        console.log("addTodo - dereferencedThis route", dereferencedThis.route);
-        return dereferencedThis.addTodo(description);
-      }
-      if (!this.isRoot() && !this.isWorkflow() && !this.isGroup()) {
-        console.log("addTodo - not root or workflow or group", this.route, this.store.primitive);
-        throw new Error("Method only implemented for root expressions groups and workflows");
-      }
-      let thisExpr = this;
-      const [newTarget, todoNode] = thisExpr.targetNode.addTodo(description);
-      console.log("addTodo - newTarget", newTarget.getId(), "todoNode", todoNode.getId());
-      await thisExpr.update(thisExpr.instructionNode, newTarget);
-      console.log("addTodo - updated expression", thisExpr.instructionNode.getId(), thisExpr.targetNode.getId());
-      return new _FosExpression(this.store, todoNode, this.store.primitive.completeField, thisExpr);
-    }
-    async addComment(comment) {
-      const timestamp = Date.now();
-      const newCommentNode = this.store.create({
-        data: {
-          description: {
-            content: comment
-          },
-          comment: {
-            content: comment,
-            authorID: "global",
-            authorName: "",
-            time: timestamp,
-            votes: {},
-            scope: "global"
-          },
-          updated: {
-            time: timestamp
-          }
-        },
-        children: []
-      });
-      if (this.store.updateCtxCallback) {
-        this.store.updateCtxCallback(this.store.exportContext(this.store.fosRoute));
-      }
-      const commentExpr = new _FosExpression(this.store, [[this.store.primitive.commentConstructor.getId(), newCommentNode.getId()]]);
-      return commentExpr;
-    }
-    addTimeInterval(expr, startTime, stopTime) {
-      throw new Error("Method not implemented");
-    }
-    startTimeInterval(expr) {
-      throw new Error("Method not implemented");
-    }
-    stopTimeInterval(expr) {
-      throw new Error("Method not implemented");
-    }
-    /**
-     * Create a new group node
-     */
-    async createGroup(name, description, visibility = "private") {
-      const { v4: uuidv4 } = await Promise.resolve().then(() => (init_esm_browser(), esm_browser_exports));
-      const personFieldCid = this.store.primitive.personField.getId();
-      const groupNode = this.store.create({
-        data: {
-          group: {
-            id: uuidv4(),
-            name,
-            visibility,
-            userProfiles: [this.targetNode.getId()],
-            createdBy: this.targetNode.getId()
-          },
-          description: description ? { content: description } : void 0
-        },
-        children: [
-          [personFieldCid, this.targetNode.getId()]
-          // Creator is first member
-        ]
-      });
-      const newTarget = this.targetNode.addEdge(this.store.primitive.groupField.getId(), groupNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, this.store.primitive.groupField, groupNode, this);
-    }
-    /**
-     * Create a DM (direct message) group between current user and target user
-     */
-    async createDM(targetUserNodeCid) {
-      const { v4: uuidv4 } = await Promise.resolve().then(() => (init_esm_browser(), esm_browser_exports));
-      const personFieldCid = this.store.primitive.personField.getId();
-      const existingDM = this.getTargetChildren().find((child) => {
-        const groupData = child.targetNode.getData().group;
-        if (!groupData) return false;
-        const profiles = groupData.userProfiles || [];
-        return profiles.length === 2 && profiles.includes(this.targetNode.getId()) && profiles.includes(targetUserNodeCid);
-      });
-      if (existingDM) {
-        return existingDM;
-      }
-      const dmNode = this.store.create({
-        data: {
-          group: {
-            id: uuidv4(),
-            name: "Direct Message",
-            userProfiles: [this.targetNode.getId(), targetUserNodeCid]
-          }
-        },
-        children: [
-          [personFieldCid, this.targetNode.getId()],
-          [personFieldCid, targetUserNodeCid]
-        ]
-      });
-      const newTarget = this.targetNode.addEdge(this.store.primitive.groupField.getId(), dmNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      return new _FosExpression(this.store, this.store.primitive.groupField, dmNode, this);
-    }
-    /**
-     * Add a member to a group (adds PERSON_FIELD child)
-     */
-    async addMemberToGroup(memberNodeCid) {
-      if (!this.isGroup()) {
-        throw new Error("Can only add members to group expressions");
-      }
-      const personFieldCid = this.store.primitive.personField.getId();
-      const existingMembers = this.targetNode.getEdges().filter(([inst, _]) => inst === personFieldCid).map(([_, target]) => target);
-      if (existingMembers.includes(memberNodeCid)) {
-        return this;
-      }
-      const newTarget = this.targetNode.addEdge(personFieldCid, memberNodeCid);
-      const groupData = this.targetNode.getData().group;
-      if (groupData) {
-        const updatedGroupData = {
-          ...groupData,
-          userProfiles: [...groupData.userProfiles || [], memberNodeCid]
-        };
-        const updatedTarget = this.store.create({
-          data: {
-            ...newTarget.getData(),
-            group: updatedGroupData
-          },
-          children: newTarget.getEdges()
-        });
-        await this.update(this.instructionNode, updatedTarget);
-      } else {
-        await this.update(this.instructionNode, newTarget);
-      }
-      return this.isAlias() ? this.followAlias() : this;
-    }
-    /**
-     * Send a message to a group (adds COMMENT_FIELD child)
-     */
-    async sendGroupMessage(message, authorCid, authorName) {
-      if (!this.isGroup()) {
-        throw new Error("Can only send messages to group expressions");
-      }
-      const commentNode = this.store.create({
-        data: {
-          comment: {
-            content: message,
-            authorID: authorCid,
-            authorName,
-            time: Date.now(),
-            votes: {}
-          }
-        },
-        children: []
-      });
-      const newTarget = this.targetNode.addEdge(this.store.primitive.commentConstructor.getId(), commentNode.getId());
-      await this.update(this.instructionNode, newTarget);
-      const actualExpr = this.isAlias() ? this.followAlias() : this;
-      const newTargetChildren = actualExpr.getTargetChildren();
-      const messageExpr = newTargetChildren.find(
-        (child) => child.instructionNode.getId() === commentNode.getId()
-      );
-      if (!messageExpr) {
-        throw new Error("Message expression not found");
-      }
-      return messageExpr;
-    }
-    inviteToGroup(expr, groupTarget) {
-      throw new Error("Method not implemented - use addMemberToGroup instead");
-    }
-    addLink(expr, nodeToLink) {
-      throw new Error("Method not implemented");
-    }
-    deleteLink(expr, linkNode) {
-      throw new Error("Method not implemented");
-    }
-    deleteGroup(expr, group) {
-      throw new Error("Method not implemented");
-    }
-    deleteComment(expr, comment) {
-      throw new Error("Method not implemented");
-    }
-    editComment(expr, comment, newComment) {
-      throw new Error("Method not implemented");
-    }
-    makeChoice(expr, option) {
-      throw new Error("Method not implemented");
-    }
-    makeProposal(expr) {
-      throw new Error("Method not implemented");
-    }
-    makeBranch(expr, branch) {
-      throw new Error("Method not implemented");
-    }
-    revertToPrevious(previous) {
-      throw new Error("Method not implemented");
-    }
-    createBid(bid) {
-      throw new Error("Method not implemented");
-    }
-    createOffer(expr, offer) {
-      throw new Error("Method not implemented");
-    }
-    upvote(expr, node) {
-      throw new Error("Method not implemented");
-    }
-    downvote(expr, node) {
-      throw new Error("Method not implemented");
-    }
-    approve(expr, node) {
-      throw new Error("Method not implemented");
-    }
-    sendInvoice(expr, invoice) {
-      throw new Error("Method not implemented");
-    }
-    addEntryToInvoice(expr, invoice, entry) {
-      throw new Error("Method not implemented");
-    }
-    addCommentToInvoice(expr, invoice, comment) {
-      throw new Error("Method not implemented");
-    }
-    updateEntryInInvoice(expr, invoice, entry, newEntry) {
-      throw new Error("Method not implemented");
-    }
-    addPaymentToInvoice(expr, invoice, payment) {
-      throw new Error("Method not implemented");
-    }
-    toggleMarketService(expr) {
-      throw new Error("Method not implemented");
-    }
-    toggleServiceForGroup(expr, group) {
-      throw new Error("Method not implemented");
-    }
-    toggleMarketRequest(expr) {
-      throw new Error("Method not implemented");
-    }
-    async runTask() {
-      await this.executeWorkflow([]);
-      this.updateFocus(0);
-    }
-    async executeWorkflow(attachToRoute) {
-      const newTodoNode = this.targetNode.clone();
-      const targetExpr = new _FosExpression(this.store, attachToRoute);
-      targetExpr.attachChild(newTodoNode, this.store.primitive.completeField, -1);
-    }
-    setVote(id, vote) {
-      throw new Error("Method not implemented");
-    }
-    setApproval(id, approval) {
-      throw new Error("Method not implemented");
-    }
-    addCommit(branch, tag) {
-      throw new Error("Method not implemented");
-    }
-    createBidRequest(todoRoute, bidRequestInfo) {
-      throw new Error("Method not implemented");
-    }
-    approveBid(bidRoute) {
-      throw new Error("Method not implemented");
-    }
-    approveFulfillment(fulfillmentRoute) {
-      throw new Error("Method not implemented");
-    }
-    approvePayment(paymentRoute) {
-      throw new Error("Method not implemented");
-    }
-    createMergeRequest(route) {
-      throw new Error("Method not implemented");
-    }
-    addPin(route) {
-      throw new Error("Method not implemented");
-    }
-    removePin(route) {
-      throw new Error("Method not implemented");
-    }
-    // updateNodeContent (newNodeContent: FosNodeContent) {
-    //   throw new Error('Method not implemented')
-    //   newNodeContent.children.forEach(([childType, childId]: FosPathElem) => {
-    //     if (childId === this.targetNode.getId()) {
-    //         throw new Error('Cannot add node as child of itself')
-    //     }
-    //   })
-    //   const newNode = this.store.create(newNodeContent)
-    //   this.targetNode = newNode
-    // }
-    async updateFocus(focusChar) {
-      this.store.trellisData.focusChar = focusChar;
-    }
-    // updateNodeData(newNodeData: Partial<FosDataContent>) {
-    //   throw new Error('Method not implemented')
-    //   const newNode = this.targetNode.updateData(newNodeData)
-    //   this.targetNode = newNode
-    // }
-    updateZoom() {
-      this.store.fosRoute = this.route;
-    }
-    async addChild(newType, newNodeContent, index = -1) {
-      const childTarget = this.store.create(newNodeContent);
-      const newThisTarget = this.targetNode.addEdge(newType.getId(), childTarget.getId(), index);
-      await this.update(this.instructionNode, newThisTarget);
-      return new _FosExpression(this.store, newType, childTarget, this);
-    }
-    async attachChild(newRowType, newRowTarget, index = -1) {
-      const newTarget = this.targetNode.addEdge(newRowType.getId(), newRowTarget.getId(), index);
-      await this.update(this.instructionNode, newTarget);
-    }
-    attachTargetSibling(newRowType, newRowTarget, position) {
-      const { parent, targetIndexInParent } = this.getParentInfo();
-      if (targetIndexInParent === -1) {
-        throw new Error("Node not found in parent");
-      }
-      let index = 0;
-      const parentChildren = parent.getTargetChildren();
-      const parentRoute = parent.route;
-      if (typeof position === "number") {
-        index = position;
-      } else if (position === "after") {
-        index = targetIndexInParent + 1;
-      } else if (position === "before") {
-        index = targetIndexInParent;
-      } else if (position === "first") {
-        index = 0;
-      } else if (position === "last") {
-        index = parentChildren.length;
-      }
-      const returnVal = this.attachChild(newRowType, newRowTarget, index);
-      return returnVal;
-    }
-    addTargetSibling(newRowType, newNodeContent, position) {
-      const newSiblingTarget = this.store.create(newNodeContent);
-      this.attachTargetSibling(newRowType, newSiblingTarget, position);
-      this.commit();
-    }
-    async removeNode() {
-      const { targetIndexInParent, instructionIndexInParent, parent } = this.getParentInfo();
-      this.moveFocusUp();
-      if (targetIndexInParent !== -1) {
-        const newTarget = parent.targetNode.removeEdgeByIndex(targetIndexInParent);
-        return parent.update(parent.instructionNode, newTarget);
-      }
-      if (instructionIndexInParent !== -1) {
-        const newInstruction = parent.instructionNode.removeEdgeByIndex(instructionIndexInParent);
-        return parent.update(newInstruction, parent.targetNode);
-      }
-      throw new Error("Node not found in parent");
-    }
-    snipNodeTarget() {
-      const { targetIndexInParent, parent } = this.getParentInfo();
-      const parentContent = parent.targetNode.getContent();
-      const parentChildren = parentContent.children;
-      const newParentRows = parentContent.children.reduce((acc, child, i2) => {
-        if (i2 !== targetIndexInParent) {
-          return [...acc, ...parentChildren];
-        }
-        return [...acc, child];
-      }, []);
-      const newParentContent = {
-        ...parentContent,
-        children: newParentRows
-      };
-      const newParentTarget = parent.targetNode.mutate(newParentContent);
-      parent.update(parent.instructionNode, newParentTarget);
-      parent.commit();
-    }
-    moveNodeAboveRoute(targetRoute) {
-      const myInstructionNode = this.instructionNode;
-      const myTargetNode = this.targetNode;
-      const myPathElem = this.pathElem();
-      const targetExpression = new _FosExpression(this.store, targetRoute);
-      const { parent: targetParent } = targetExpression.getParentInfo();
-      const targetPathElem = targetExpression.pathElem();
-      const targetInstrId = targetPathElem[0];
-      const targetTargetId = targetPathElem[1];
-      const targetParentRoute = targetParent.route;
-      this.removeNode();
-      const freshParent = new _FosExpression(this.store, targetParentRoute);
-      const parentContent = freshParent.targetNode.getContent();
-      const newParentRows = [];
-      for (const child of parentContent.children) {
-        if (child[0] === targetInstrId && child[1] === targetTargetId) {
-          newParentRows.push(myPathElem);
-        }
-        newParentRows.push(child);
-      }
-      const newParentContent = {
-        ...parentContent,
-        children: newParentRows
-      };
-      const parentTargetNode = freshParent.targetNode.mutate(newParentContent);
-      freshParent.update(freshParent.instructionNode, parentTargetNode);
-      const movedExpr = new _FosExpression(this.store, myInstructionNode, myTargetNode, freshParent);
-      movedExpr.updateFocus(this.focusChar() || 0);
-    }
-    moveNodeBelowRoute(targetRoute) {
-      const myInstructionNode = this.instructionNode;
-      const myTargetNode = this.targetNode;
-      const myPathElem = this.pathElem();
-      const targetExpression = new _FosExpression(this.store, targetRoute);
-      const { parent } = targetExpression.getParentInfo();
-      const targetPathElem = targetExpression.pathElem();
-      const targetInstrId = targetPathElem[0];
-      const targetTargetId = targetPathElem[1];
-      const parentRoute = parent.route;
-      this.removeNode();
-      const freshParent = new _FosExpression(this.store, parentRoute);
-      const parentContent = freshParent.targetNode.getContent();
-      const newParentRows = [];
-      for (const child of parentContent.children) {
-        newParentRows.push(child);
-        if (child[0] === targetInstrId && child[1] === targetTargetId) {
-          newParentRows.push(myPathElem);
-        }
-      }
-      const newParentContent = {
-        ...parentContent,
-        children: newParentRows
-      };
-      const parentTargetNode = freshParent.targetNode.mutate(newParentContent);
-      freshParent.update(freshParent.instructionNode, parentTargetNode);
-      const movedExpr = new _FosExpression(this.store, myInstructionNode, myTargetNode, freshParent);
-      movedExpr.updateFocus(this.focusChar() || 0);
-      return movedExpr;
-    }
-    moveNodeIntoRoute(targetRoute, index = 0) {
-      const targetExpression = new _FosExpression(this.store, targetRoute);
-      const targetContent = targetExpression.targetNode.getContent();
-      const myInstructionNode = this.instructionNode;
-      const myTargetNode = this.targetNode;
-      const newElem = this.pathElem();
-      const { parent: sourceParent, targetIndexInParent, instructionIndexInParent } = this.getParentInfo();
-      const sourceParentRoute = sourceParent.route;
-      const sourceInstrId = newElem[0];
-      const sourceTargetId = newElem[1];
-      let newParentRows;
-      if (index < 0) {
-        newParentRows = [...targetContent.children, newElem];
-      } else if (index === 0) {
-        newParentRows = [newElem, ...targetContent.children];
-      } else {
-        newParentRows = targetContent.children.reduce((acc, child, i2) => {
-          if (i2 === index) {
-            return [...acc, newElem, child];
-          }
-          return [...acc, child];
-        }, []);
-        if (index >= targetContent.children.length) {
-          newParentRows = [...targetContent.children, newElem];
-        }
-      }
-      console.log("[moveNodeIntoRoute] newParentRows", newParentRows, "targetRoute", targetRoute, "newElem", newElem, "index", index);
-      const newParentContent = {
-        ...targetContent,
-        children: newParentRows
-      };
-      const newTargetNode = targetExpression.targetNode.mutate(newParentContent);
-      targetExpression.update(targetExpression.instructionNode, newTargetNode);
-      this.moveFocusUp();
-      const freshParent = new _FosExpression(this.store, sourceParentRoute);
-      const freshParentContent = freshParent.targetNode.getContent();
-      const newSourceParentRows = freshParentContent.children.filter(
-        (child) => !(child[0] === sourceInstrId && child[1] === sourceTargetId)
-      );
-      console.log("[moveNodeIntoRoute] removing from source parent, before:", freshParentContent.children.length, "after:", newSourceParentRows.length);
-      const newSourceParentContent = {
-        ...freshParentContent,
-        children: newSourceParentRows
-      };
-      const newSourceParentTarget = freshParent.targetNode.mutate(newSourceParentContent);
-      freshParent.update(freshParent.instructionNode, newSourceParentTarget);
-      const movedExpr = new _FosExpression(this.store, myInstructionNode, myTargetNode, targetExpression);
-      movedExpr.updateFocus(this.focusChar() || 0);
-      return movedExpr;
-    }
-    reorderNodeChildren(newOrder) {
-      const nodeContent = this.targetNode.getContent();
-      const newTarget = this.targetNode.orderEdges(newOrder);
-      const newExpr = this.update(this.instructionNode, newTarget);
-      return newExpr;
-    }
-    moveLeft() {
-      const {
-        parent,
-        targetIndexInParent,
-        siblingRoutes
-      } = this.getParentInfo();
-      if (parent.route.length === 1) {
-        return;
-      }
-      siblingRoutes().forEach((siblingRoute, i2) => {
-        if (i2 < targetIndexInParent + 1) {
-          return;
-        } else {
-          console.log("siblingRoute", siblingRoute, this.route, i2, targetIndexInParent);
-          throw new Error("Not implemented");
-          this.moveNodeIntoRoute(this.route, i2 - targetIndexInParent + 1);
-        }
-      });
-      const exprInNewPath = this.moveNodeBelowRoute(parent.route);
-    }
-    moveRight() {
-      const upSiblingExpr = getUpNode(this);
-      const actualUpSiblingExpr = getUpSibling(this);
-      console.log("upSiblingRoute", upSiblingExpr);
-      if (upSiblingExpr) {
-        if (actualUpSiblingExpr) {
-          console.warn("this is a case that needs to be caught for better useability");
-        }
-        return this.moveNodeIntoRoute(upSiblingExpr.route, upSiblingExpr.getTargetChildren().length);
-      }
-      return this;
-    }
-    moveUp() {
-      const upSibling = getUpSibling(this);
-      console.log("upSibling", upSibling);
-      if (upSibling) {
-        return this.moveNodeAboveRoute(upSibling.route);
-      } else {
-        const leastUpSibling = getAncestorLeastUpSibling(this);
-        console.log("leastUpSibling", leastUpSibling);
-        if (leastUpSibling) {
-          return this.moveNodeIntoRoute(leastUpSibling.route, -1);
-        } else {
-          const parent = this.getParent();
-          return this.moveNodeAboveRoute(parent.route);
-        }
-      }
-    }
-    moveDown() {
-      const downSibling = getDownSibling(this);
-      if (downSibling) {
-        return this.moveNodeBelowRoute(downSibling.route);
-      } else {
-        throw new Error("Not implemented");
-      }
-    }
-    async doAction(action, setData) {
-      action().then(() => {
-        this.commit();
-        const updatedContext = this.store.exportContext([]);
-        setData(updatedContext);
-      });
-    }
-    toggleOptionChildCollapse() {
-      const isOptionChildCollapsed = this.isOptionChildCollapsed();
-      const selectedOptionRoute = this.getOptionInfo().selectedChildRoute;
-      const newCollapsedList = isOptionChildCollapsed ? this.store.trellisData.collapsedList.filter((route) => !pathEqual(route, selectedOptionRoute)) : [...this.store.trellisData.collapsedList, selectedOptionRoute];
-      this.store.trellisData.collapsedList = newCollapsedList;
-    }
-    toggleCollapse() {
-      const newCollapsedList = this.isCollapsed() ? this.store.trellisData.collapsedList.filter((route) => !pathEqual(route, this.route)) : [...this.store.trellisData.collapsedList, this.route];
-      this.store.trellisData.collapsedList = newCollapsedList;
-    }
-    moveFocusDown() {
-      console.log(this.store.trellisData);
-      const downNodeExpr = getDownNode(this);
-      if (downNodeExpr) {
-        downNodeExpr.updateFocus(this.focusChar() || 0);
-      }
-    }
-    moveFocusUp() {
-      console.log(this.store.trellisData);
-      const upNodeExpr = getUpNode(this);
-      if (upNodeExpr) {
-        upNodeExpr.updateFocus(this.focusChar() || 0);
-      }
-    }
-    moveFocusToEnd() {
-      const description = this.getDescription();
-      this.updateFocus(description.length);
-    }
-    moveFocusToStart() {
-      this.updateFocus(0);
-    }
-    async addDownSibling() {
-      const { targetIndexInParent, parent } = this.getParentInfo();
-      const newChild = await parent.addChild(
-        this.instructionNode,
-        { data: { description: { content: "" } }, children: [] },
-        targetIndexInParent + 1
-      );
-      await newChild.updateFocus(this.focusChar() || 0);
-      return newChild;
-    }
-    keyUpEvents(e) {
-      const value = e.target;
-      if (e.key === "Backspace" && this.focusChar() === 0) {
-        this.moveFocusUp();
-      }
-      if (e.key === " ") {
-        e.stopPropagation();
-      }
-      if (e.key === "Enter") {
-        if (e.shiftKey) {
-          return;
-        } else {
-          if (this.focusChar() === this.getDescription().length) {
-            e.preventDefault();
-            this.addDownSibling();
-          }
-        }
-      }
-      if (e.key === "ArrowUp") {
-        if (!e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
-          this.moveFocusUp();
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        if (e.ctrlKey) {
-          if (e.altKey) {
-            this.moveUp();
-          } else {
-            this.moveFocusToStart();
-          }
-          e.stopPropagation();
-          return;
-        }
-      }
-      if (e.key === "ArrowDown") {
-        if (!e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.moveFocusDown();
-          return;
-        }
-        if (e.ctrlKey) {
-          if (e.altKey) {
-            this.moveDown();
-          } else {
-            this.moveFocusToEnd();
-          }
-          e.stopPropagation();
-          return;
-        }
-      }
-      if (e.key === "ArrowRight") {
-        if (e.altKey && e.ctrlKey) {
-          console.log("moveRight - comboboxEditable", this.getDescription(), this.route);
-          this.moveRight();
-        }
-      }
-      if (e.key === "ArrowLeft") {
-        if (e.altKey && e.ctrlKey) {
-          this.moveLeft();
-        }
-      }
-      if (e.key === " " && e.ctrlKey) {
-        this.toggleCollapse();
-      }
-    }
-    keyDownEvents(e) {
-      if (e.key === " ") {
-        e.stopPropagation();
-      }
-      if (e.key === "Enter") {
-        e.stopPropagation();
-      }
-      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      if (e.key === "Backspace" && !this.getDescription()) {
-        console.log("deleteRow - comboboxEditable", this.getDescription(), this.route);
-        if (this.hasFocus() && this.focusChar() === 0) {
-          if (!e.shiftKey) {
-            this.snipNodeTarget();
-          } else {
-            this.removeNode();
-          }
-        }
-      }
-    }
-    keyPressEvents(event) {
-    }
-    async addRowAsChild(newType = this.instructionNode) {
-      const newNodeContent = {
-        data: {
-          description: {
-            content: ""
-          },
-          option: {
-            selectedIndex: 0,
-            defaultResolutionStrategy: "selected"
-          },
-          updated: {
-            time: Date.now()
-          }
-        },
-        children: []
-      };
-      const childExpr = await this.addChild(newType, newNodeContent);
-      childExpr.updateFocus(0);
-    }
-  };
-
-  // shared/defaults.ts
-  init_prelude();
-
-  // shared/utils.ts
-  var getDownNode = (expression) => {
-    const parent = expression.getParent();
-    const children = parent.getTargetChildren();
-    if (!parent.childrenVisible()) {
-      throw new Error("Parent is not visible");
-    }
-    if (children.length > 0 && expression.childrenVisible()) {
-      return children[0];
-    }
-    const downSibling = getDownSibling(expression);
-    if (downSibling) {
-      return downSibling;
-    } else {
-      return getAncestorLeastDownSibling(expression);
-    }
-  };
-  var getAncestorLeastDownSibling = (expression) => {
-    const parent = expression.getParent();
-    console.log("leastDownSibling", parent);
-    if (parent.route.length === 1) {
-      return null;
-    }
-    const parentDownSibling = getDownSibling(parent);
-    if (parentDownSibling) {
-      return parentDownSibling;
-    } else {
-      return getAncestorLeastDownSibling(parent);
-    }
-  };
-  var getAncestorLeastUpSibling = (expression) => {
-    const parent = expression.getParent();
-    if (parent.route.length === 1) {
-      return null;
-    }
-    const parentUpSibling = getUpSibling(parent);
-    if (parentUpSibling) {
-      return parentUpSibling;
-    } else {
-      return getAncestorLeastUpSibling(parent);
-    }
-  };
-  var getUpSibling = (expression) => {
-    const { targetIndexInParent, parent } = expression.getParentInfo();
-    const siblings = parent.getTargetChildren();
-    if (targetIndexInParent === 0) {
-      return null;
-    }
-    const newRoute = siblings[targetIndexInParent - 1];
-    if (!newRoute) {
-      return null;
-    }
-    return newRoute;
-  };
-  var getDownSibling = (expression) => {
-    const { targetIndexInParent, parent } = expression.getParentInfo();
-    const siblings = parent.getTargetChildren();
-    if (targetIndexInParent === siblings.length - 1) {
-      return null;
-    }
-    const newExpr = siblings[targetIndexInParent + 1];
-    if (!newExpr) {
-      return null;
-    }
-    return newExpr;
-  };
-  var getDownmostDescendent = (expression, depthLimit = -1) => {
-    if (depthLimit === 0) {
-      return expression;
-    }
-    const childRoutes = expression.childRoutes();
-    const hasChildren = expression.hasChildren();
-    const childrenVisible = expression.childrenVisible();
-    const children = expression.getTargetChildren();
-    if (childrenVisible && hasChildren) {
-      return getDownmostDescendent(children[children.length - 1], depthLimit - 1);
-    } else {
-      return expression;
-    }
-  };
-  var getUpNode = (expression) => {
-    const { targetIndexInParent, parent, siblingRoutes } = expression.getParentInfo();
-    const siblings = parent.getTargetChildren();
-    if (targetIndexInParent > 0) {
-      return getDownmostDescendent(siblings[targetIndexInParent - 1]);
-    } else {
-      return parent;
-    }
-  };
-  var pathEqual = (path1, path2) => {
-    if (!path1 || !path2) {
-      return path1 === path2;
-    }
-    const sameLength = path1.length === path2.length;
-    const sameValues = path1.every(([p1type, p1id], index) => {
-      const p2elem = path2[index];
-      if (!p2elem) {
-        return false;
-      }
-      const [p2type, p2id] = p2elem;
-      return p1type === p2type && p1id === p2id;
-    });
-    return sameLength && sameValues;
-  };
+  // ../shared/utils.ts
   function assert(condition, message) {
     if (!condition) {
       throw new Error(`Assertion Failed: ${message}`);
@@ -4609,46 +1253,8 @@
     });
     return result;
   };
-  var mutableReduceToRouteMapFromExpression = (expression, operation) => {
-    let resultMap = /* @__PURE__ */ new Map();
-    const helper = (acc, expr) => {
-      const nodeRoute = expr.route;
-      for (let i2 = 0; i2 < nodeRoute.length; i2++) {
-        for (let j = i2 + 1; j < nodeRoute.length; j++) {
-          if (nodeRoute[i2]?.[0] === nodeRoute[j]?.[0] && nodeRoute[i2]?.[1] === nodeRoute[j]?.[1]) {
-            return;
-          }
-        }
-      }
-      const childInstructionExpressions = expr.getInstructionChildren();
-      const childExpressions = expr.getTargetChildren();
-      for (const childExpr of childInstructionExpressions) {
-        helper(acc, childExpr);
-      }
-      operation(acc, expr, childInstructionExpressions);
-      for (const childExpr of childExpressions) {
-        helper(acc, childExpr);
-      }
-      operation(acc, expr, childExpressions);
-    };
-    helper(resultMap, expression);
-    return resultMap;
-  };
-  var getGroupFromRoute = (route, store) => {
-    const groupFieldNode = store.primitive.groupField;
-    if (route[0]?.[0] === groupFieldNode.getId()) {
-      const addr = route[0][1];
-      const groupNode = store.getNodeByAddress(route[0][1]);
-      if (!groupNode) {
-        throw new Error("Group node not found");
-      }
-      return groupNode;
-    } else {
-      return store.getRootNode();
-    }
-  };
 
-  // shared/dag-implementation/node.ts
+  // ../shared/dag-implementation/node.ts
   init_prelude();
   var FosNode = class {
     constructor(value, store) {
@@ -4770,28 +1376,6 @@
       }, []);
       return prevNodes;
     }
-    getExprOfType(instructionType, targetType, route) {
-      const exprs = this.getEdges().filter(([edgeType, target]) => {
-        const instructionNode = this.store.getNodeByAddress(edgeType);
-        if (!instructionNode) {
-          throw new Error("Instructinon Node not found");
-        }
-        const targetNode = this.store.getNodeByAddress(target);
-        if (!targetNode) {
-          throw new Error("Target Node not found");
-        }
-        const instructionMatch = this.store.matchPattern(instructionType, instructionNode);
-        const targetMatch = this.store.matchPattern(targetType, targetNode);
-        return instructionMatch.length > 0 && targetMatch.length > 0;
-      });
-      if (exprs.length === 0) {
-        return null;
-      }
-      const expressions = exprs.map(([edgeType, targetType2]) => {
-        return new FosExpression(this.store, [...route, [edgeType, targetType2]]);
-      });
-      return expressions;
-    }
     // isGroupInstructionNode(): boolean {
     //   const peerEdges = this.value.children.filter(([edgeType, target]) => edgeType === this.store.primitive.peerNode.getId())
     //   const hasPeerEdges = peerEdges.length > 0
@@ -4864,15 +1448,6 @@
         return edge;
       });
       return this.mutate({ ...this.value, children: orderedEdges });
-    }
-    addExpression(expression) {
-      return this.addEdge(expression.instructionNode.getId(), expression.targetNode.getId());
-    }
-    removeExpression(expression) {
-      return this.removeEdge(expression.instructionNode.getId(), expression.targetNode.getId());
-    }
-    updateExpression(oldExpression, newExpression) {
-      return this.updateEdge(oldExpression.instructionNode.getId(), oldExpression.targetNode.getId(), newExpression.instructionNode.getId(), newExpression.targetNode.getId());
     }
     updateData(data) {
       return this.mutate({ ...this.value, data: { ...this.value.data, ...data } });
@@ -5078,9 +1653,68 @@
     // }
   };
 
-  // shared/dag-implementation/primitive-node.ts
+  // ../shared/dag-implementation/primitive-node.ts
   init_prelude();
-  init_esm_browser();
+
+  // ../shared/node_modules/uuid/dist/esm-browser/index.js
+  init_prelude();
+
+  // ../shared/node_modules/uuid/dist/esm-browser/stringify.js
+  init_prelude();
+  var byteToHex = [];
+  for (i = 0; i < 256; ++i) {
+    byteToHex.push((i + 256).toString(16).slice(1));
+  }
+  var i;
+  function unsafeStringify(arr, offset = 0) {
+    return (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + "-" + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + "-" + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + "-" + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + "-" + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase();
+  }
+
+  // ../shared/node_modules/uuid/dist/esm-browser/rng.js
+  init_prelude();
+  var getRandomValues;
+  var rnds8 = new Uint8Array(16);
+  function rng() {
+    if (!getRandomValues) {
+      getRandomValues = typeof crypto !== "undefined" && crypto.getRandomValues && crypto.getRandomValues.bind(crypto);
+      if (!getRandomValues) {
+        throw new Error("crypto.getRandomValues() not supported. See https://github.com/uuidjs/uuid#getrandomvalues-not-supported");
+      }
+    }
+    return getRandomValues(rnds8);
+  }
+
+  // ../shared/node_modules/uuid/dist/esm-browser/v4.js
+  init_prelude();
+
+  // ../shared/node_modules/uuid/dist/esm-browser/native.js
+  init_prelude();
+  var randomUUID = typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID.bind(crypto);
+  var native_default = {
+    randomUUID
+  };
+
+  // ../shared/node_modules/uuid/dist/esm-browser/v4.js
+  function v4(options, buf, offset) {
+    if (native_default.randomUUID && !buf && !options) {
+      return native_default.randomUUID();
+    }
+    options = options || {};
+    var rnds = options.random || (options.rng || rng)();
+    rnds[6] = rnds[6] & 15 | 64;
+    rnds[8] = rnds[8] & 63 | 128;
+    if (buf) {
+      offset = offset || 0;
+      for (var i2 = 0; i2 < 16; ++i2) {
+        buf[offset + i2] = rnds[i2];
+      }
+      return buf;
+    }
+    return unsafeStringify(rnds);
+  }
+  var v4_default = v4;
+
+  // ../shared/dag-implementation/primitive-node.ts
   var getTerminalNode = (store) => {
     const terminalNode = store.create({
       data: {},
@@ -5733,7 +2367,7 @@
     };
   };
 
-  // shared/dag-implementation/migrations.ts
+  // ../shared/dag-implementation/migrations.ts
   init_prelude();
   var MIGRATIONS = [
     {
@@ -5783,17 +2417,17 @@
       if (!content2) throw new MigrationError(`node ${cid} referenced but not present in the context`, cid);
       if (inProgress.has(cid)) throw new MigrationError(`cycle through node ${cid}`, cid);
       inProgress.add(cid);
-      const version2 = cidVersion(cid);
-      if (version2 === null) throw new MigrationError(`node ${cid} is not a recognised cid`, cid);
-      if (version2 > target) throw new MigrationError(`node ${cid} is newer (v${version2}) than the target format v${target}`, cid);
-      fromVersions.add(version2);
+      const version = cidVersion(cid);
+      if (version === null) throw new MigrationError(`node ${cid} is not a recognised cid`, cid);
+      if (version > target) throw new MigrationError(`node ${cid} is newer (v${version}) than the target format v${target}`, cid);
+      fromVersions.add(version);
       let upgraded = content2;
-      for (const step of stepsBetween(version2, target)) {
+      for (const step of stepsBetween(version, target)) {
         if (step.upgrade) upgraded = step.upgrade(upgraded);
       }
       const children = upgraded.children.map(([instr, targetCid]) => [migrate(instr), migrate(targetCid)]);
       const next = { ...upgraded, children };
-      const unchanged = version2 === target && children.every((edge, i2) => edge[0] === upgraded.children[i2]?.[0] && edge[1] === upgraded.children[i2]?.[1]);
+      const unchanged = version === target && children.every((edge, i2) => edge[0] === upgraded.children[i2]?.[0] && edge[1] === upgraded.children[i2]?.[1]);
       const newCid = unchanged ? cid : hashContentAt(next, target);
       inProgress.delete(cid);
       mapping[cid] = newCid;
@@ -5816,13 +2450,13 @@
     };
   }
 
-  // node_modules/@n1ru4l/json-patch-plus/esm/index.js
+  // ../node_modules/@n1ru4l/json-patch-plus/esm/index.js
   init_prelude();
 
-  // node_modules/@n1ru4l/json-patch-plus/esm/diff.js
+  // ../node_modules/@n1ru4l/json-patch-plus/esm/diff.js
   init_prelude();
 
-  // node_modules/@n1ru4l/json-patch-plus/esm/lcs.js
+  // ../node_modules/@n1ru4l/json-patch-plus/esm/lcs.js
   init_prelude();
   function defaultMatch(array1, array2, index1, index2) {
     return array1[index1] === array2[index2];
@@ -5884,7 +2518,7 @@
     return backtrack(matrix, array1, array2, innerContext);
   }
 
-  // node_modules/@n1ru4l/json-patch-plus/esm/diff.js
+  // ../node_modules/@n1ru4l/json-patch-plus/esm/diff.js
   function diff(input, options) {
     var _a;
     const includePreviousValue = (_a = options === null || options === void 0 ? void 0 : options.includePreviousValue) !== null && _a !== void 0 ? _a : false;
@@ -6273,10 +2907,10 @@
     return hash1 === hash2;
   }
 
-  // node_modules/@n1ru4l/json-patch-plus/esm/patch.js
+  // ../node_modules/@n1ru4l/json-patch-plus/esm/patch.js
   init_prelude();
 
-  // shared/dag-implementation/store.ts
+  // ../shared/dag-implementation/store.ts
   var FosStore = class _FosStore {
     constructor({
       fosCtxData,
@@ -6304,7 +2938,6 @@
       __publicField(this, "cache", /* @__PURE__ */ new Map());
       // aliasMap = new Map<string, string>()
       __publicField(this, "peers", /* @__PURE__ */ new Map());
-      __publicField(this, "workers", []);
       __publicField(this, "version", 0);
       __publicField(this, "primitive");
       __publicField(this, "hashCache", /* @__PURE__ */ new WeakMap());
@@ -6361,26 +2994,9 @@
         this.rootNodeId = this.primitive.startRootAlias.getId();
       }
     }
-    // run(expr: FosExpression): Promise<FosExpression> {
-    //   // console.log('run expr', expr)
-    //   const taskPromise = new Promise<FosExpression>((resolve, reject) => {
-    //     const result = runAvailableFunctions(expr)
-    //     this.workers.push(taskPromise)
-    //   })
-    //   this.workers.push(taskPromise)
-    //   return taskPromise
-    // }
     /** The current address of a cid from a context loaded in an older format (identity otherwise). */
     remapCid(cid) {
       return this.migration?.mapping[cid] ?? cid;
-    }
-    getRootExpression() {
-      return new FosExpression(
-        this,
-        this.primitive.voidNode,
-        this.getRootNode(),
-        null
-      );
     }
     getRootNode() {
       const rootNode = this.getNodeByAddress(this.rootNodeId);
@@ -6993,58 +3609,9 @@
     }
     addPeer(alias, peerStore) {
     }
-    addGroup(description) {
-      const rootExpression = this.getRootExpression();
-      const startRootAlias = this.primitive.startRootAlias;
-      const thisAlias = startRootAlias.getData().alias?.id;
-      if (!thisAlias) {
-        throw new Error(`no alias found in startRootAlias`);
-      }
-      const { target: rootTarget } = rootExpression.targetNode.dereferenceNodes();
-      const groupContentNode = this.create({
-        data: {
-          description: {
-            content: description
-          }
-        },
-        children: []
-      });
-      const groupShadowNode = this.create({
-        data: {
-          description: {
-            content: `Shadow node for group: ${description}`
-          },
-          peers: {}
-        },
-        children: [
-          [this.primitive.targetPointerConstructor.getId(), groupContentNode.getId()]
-        ]
-      });
-      const rootTargetWithShadow = rootTarget.addEdge(this.primitive.groupField.getId(), groupShadowNode.getId());
-      const groupStore = new _FosStore();
-      groupStore.create(groupContentNode.value);
-      groupStore.create(groupShadowNode.value);
-      groupStore.addPeer(thisAlias, this);
-      const groupDefinitionNode = groupStore.create({
-        data: {
-          description: {
-            content: description
-          }
-        },
-        children: [
-          [this.primitive.targetPointerConstructor.getId(), groupContentNode.getId()],
-          [this.primitive.peerNode.getId(), groupShadowNode.getId()]
-        ]
-      });
-      const groupDefinitionNodeClone = this.cloneNodeFromOtherStore(groupDefinitionNode);
-      const newRootTarget = rootTargetWithShadow.addEdge(this.primitive.groupField.getId(), groupDefinitionNodeClone.getId());
-      rootExpression.setTargetNode(newRootTarget);
-      const groupExpr = new FosExpression(this, [[this.primitive.groupField.getId(), groupDefinitionNode.getId()]]);
-      return [groupStore, groupExpr];
-    }
   };
 
-  // shared/sync/replication.ts
+  // ../shared/sync/replication.ts
   init_prelude();
   function replicationView(store, roots, provider) {
     const nodes = reachableNodes(store, roots);
@@ -7123,10 +3690,10 @@
       if (cached) return cached;
       const node = content(store, cid);
       if (isPeerReference(node)) {
-        const version2 = node.data.ref.version;
-        if (available.has(version2) && store.table.has(version2) && content(store, version2).data.alias?.id === node.data.ref.id && !isPeerReference(content(store, version2))) {
-          memo.set(cid, version2);
-          return version2;
+        const version = node.data.ref.version;
+        if (available.has(version) && store.table.has(version) && content(store, version).data.alias?.id === node.data.ref.id && !isPeerReference(content(store, version))) {
+          memo.set(cid, version);
+          return version;
         }
         memo.set(cid, cid);
         return cid;
@@ -7139,7 +3706,7 @@
     return restore(root);
   }
 
-  // shared/sync/protocol.ts
+  // ../shared/sync/protocol.ts
   init_prelude();
   function parseSyncRequest(body) {
     if (!body || typeof body !== "object") return { error: "request body must be an object", code: "bad-request" };
@@ -7386,7 +3953,7 @@
     return { reMerged: true, newChoiceIds: [...response.newChoiceIds, ...localChoiceIds] };
   }
 
-  // shared/sync/replica.ts
+  // ../shared/sync/replica.ts
   function createReplica(peerId = newId(), store = new FosStore()) {
     return {
       store,
@@ -7728,7 +4295,7 @@
     return { store, meta: { ...meta, scope: [...newScope], branch: void 0, branches: void 0, scopeNames: names ?? [...newScope], baseCid: null } };
   }
 
-  // shared/sync/destructure.ts
+  // ../shared/sync/destructure.ts
   function requirementOutputs(store, cid) {
     return valueContent(store, cid).children.flatMap((edge) => {
       const ref = content(store, identityCid(store, edge)), type = refTypeCid(store, ref);
@@ -7782,7 +4349,7 @@
     }
   }
 
-  // shared/sync/graph.ts
+  // ../shared/sync/graph.ts
   var SYNC_FORMAT_VERSION = 3;
   function content(store, cid) {
     const value = store.table.get(cid);
@@ -8637,11 +5204,11 @@
         const child = content(store, identityCid(store, edge));
         const peerId = isMemberEdge(store, edge) || isPeerEdge(store, edge) ? child.data.peerId?.content : void 0;
         const name = refTypeCid(store, child) ? child.data.name?.content : void 0;
-        if (!peerId && !name?.startsWith("fos:setting:") || !child.data.alias?.id) continue;
+        if (!peerId && (!name?.startsWith("fos:setting:") && name !== "fos:evaluation") || !child.data.alias?.id) continue;
         if (seen.has(peerId ?? child.data.alias.id)) continue;
         seen.add(peerId ?? child.data.alias.id);
         const row = rowView(store, identityCid(store, edge), "plain");
-        row.title = peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name;
+        row.title = name === "fos:evaluation" ? "Evaluation" : peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name;
         row.construction = { ...name ? { name } : {}, ...peerId ? { peerId } : {} };
         view2.tasks.push(row);
       }
@@ -9000,7 +5567,7 @@
     const childEdges = (value) => value.children.filter((edge) => {
       const kind = rowKindOf(store, edge);
       const name = content(store, identityCid(store, edge)).data.name?.content;
-      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && name === "fos:trigger") return false;
+      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && (name === "fos:trigger" || name === "fos:consumed" || name === "fos:execution-time" || name === "fos:sharing" || name?.startsWith("fos:guest:") || name?.startsWith("fos:execution:"))) return false;
       if (kind) return !(instantiate && kind === "supply");
       if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false;
       return isRefNode(store, content(store, identityCid(store, edge)));
@@ -9120,34 +5687,37 @@
     return { id: proposal.cid, peerId: proposal.peerId, name: proposal.name, status: proposal.status, timestamp: proposal.timestamp, summary };
   }
 
-  // shared/sync/project.ts
+  // ../shared/sync/project.ts
   init_prelude();
 
-  // shared/sync/work.ts
+  // ../shared/sync/work.ts
   init_prelude();
 
-  // shared/sync/handlers.ts
+  // ../shared/sync/handlers.ts
   init_prelude();
 
-  // shared/sync/bindings.ts
+  // ../shared/sync/bindings.ts
   init_prelude();
 
-  // shared/sync/notes.ts
+  // ../shared/sync/notes.ts
   init_prelude();
 
-  // shared/sync/repository.ts
+  // ../shared/sync/repository.ts
   init_prelude();
 
-  // shared/sync/evaluation.ts
+  // ../shared/sync/evaluation.ts
   init_prelude();
 
-  // shared/sync/triggers.ts
+  // ../shared/sync/triggers.ts
   init_prelude();
 
-  // shared/sync/sharing.ts
+  // ../shared/sync/sharing.ts
   init_prelude();
 
-  // shared/sync/embed.ts
+  // ../shared/sync/specifications.ts
+  init_prelude();
+
+  // ../shared/sync/embed.ts
   var replicas = /* @__PURE__ */ new Map();
   function get2(handle) {
     const r = replicas.get(handle);
@@ -9157,7 +5727,7 @@
   function set(handle, r) {
     replicas.set(handle, r);
   }
-  var parse2 = (json, fallback) => json ? JSON.parse(json) : fallback;
+  var parse = (json, fallback) => json ? JSON.parse(json) : fallback;
   var api = {
     /** Load a serialized replica (or start a fresh one) under `handle`, forcing the device id. */
     open(handle, serialized, peerId) {
@@ -9176,31 +5746,31 @@
     },
     setScope(handle, scopeJson, namesJson) {
       const r = get2(handle);
-      const requested = parse2(scopeJson, []);
+      const requested = parse(scopeJson, []);
       const home = requested.length === 1 && requested[0] === HOME_ID && homePath(r).length;
-      set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: void 0, scope: home ? [] : requested, scopeNames: home ? [] : parse2(namesJson, []), baseCid: null } }));
+      set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: void 0, scope: home ? [] : requested, scopeNames: home ? [] : parse(namesJson, []), baseCid: null } }));
     },
     view(handle, atJson) {
-      return JSON.stringify(view(get2(handle), parse2(atJson, [])));
+      return JSON.stringify(view(get2(handle), parse(atJson, [])));
     },
     /** Add a row of `kind` ('task' | 'plain' | 'note' | 'comment' | 'ref') under `at`; returns its view. */
     addRow(handle, atJson, kind, text, now, optionsJson) {
       const r = get2(handle);
-      const at = parse2(atJson, []);
-      const options = parse2(optionsJson, {});
+      const at = parse(atJson, []);
+      const options = parse(optionsJson, {});
       const id = options.id ?? crypto.randomUUID();
       set(handle, addRow(r, at, kind, text, now, { ...options, id }));
       const added = view(get2(handle), at)?.tasks.find((t) => t.id === id) ?? null;
       return JSON.stringify(added);
     },
     setRowKind(handle, atJson, id, kind, now) {
-      set(handle, setRowKind(get2(handle), parse2(atJson, []), id, kind, now));
+      set(handle, setRowKind(get2(handle), parse(atJson, []), id, kind, now));
     },
     addRef(handle, atJson, targetId, now) {
-      set(handle, addRef(get2(handle), parse2(atJson, []), targetId, now));
+      set(handle, addRef(get2(handle), parse(atJson, []), targetId, now));
     },
     copyNode(handle, fromJson, id, toJson, positionJson, now) {
-      set(handle, copyNode(get2(handle), parse2(fromJson, []), id, parse2(toJson, []), parse2(positionJson, { into: "" }), now));
+      set(handle, copyNode(get2(handle), parse(fromJson, []), id, parse(toJson, []), parse(positionJson, { into: "" }), now));
     },
     /** Text lines of the tree below `at` (for the CLI/REPL), with short ids. */
     tree(handle, atJson) {
@@ -9216,7 +5786,7 @@
         for (const c of node.choices) lines.push(`${"  ".repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`);
         for (const p of node.proposals) lines.push(`${"  ".repeat(depth)}[>] ${p.id.slice(0, 8)} proposal "${p.name}" by ${p.peerId.slice(0, 8)} (${p.status}) +${p.summary.added.length} ~${p.summary.changed.length} -${p.summary.removed.length}`);
       };
-      walk(parse2(atJson, []), 0);
+      walk(parse(atJson, []), 0);
       return JSON.stringify(lines);
     },
     /** Locate a task by id prefix anywhere below `at`: { id, at } or null. */
@@ -9228,42 +5798,42 @@
         const direct = node.tasks.find((t) => t.id.startsWith(prefix));
         if (direct) return { id: direct.id, at };
         for (const t of node.tasks) {
-          const f2 = search([...at, t.id]);
-          if (f2) return f2;
+          const f = search([...at, t.id]);
+          if (f) return f;
         }
         return null;
       };
-      return JSON.stringify(search(parse2(atJson, [])));
+      return JSON.stringify(search(parse(atJson, [])));
     },
     addTask(handle, atJson, title, now) {
-      const next = addTask(get2(handle), parse2(atJson, []), title, now);
+      const next = addTask(get2(handle), parse(atJson, []), title, now);
       set(handle, next);
-      const node = view(next, parse2(atJson, []));
+      const node = view(next, parse(atJson, []));
       return JSON.stringify(node?.tasks.at(-1) ?? null);
     },
     setTaskDone(handle, atJson, id, done, now) {
-      set(handle, setTaskDone(get2(handle), parse2(atJson, []), id, done, now));
+      set(handle, setTaskDone(get2(handle), parse(atJson, []), id, done, now));
     },
     renameTask(handle, atJson, id, title, now) {
-      set(handle, renameTask(get2(handle), parse2(atJson, []), id, title, now));
+      set(handle, renameTask(get2(handle), parse(atJson, []), id, title, now));
     },
     deleteTask(handle, atJson, id, now) {
-      set(handle, deleteTask(get2(handle), parse2(atJson, []), id, now));
+      set(handle, deleteTask(get2(handle), parse(atJson, []), id, now));
     },
     moveNode(handle, fromJson, id, toJson, positionJson, now) {
-      set(handle, moveNode(get2(handle), parse2(fromJson, []), id, parse2(toJson, []), JSON.parse(positionJson), now));
+      set(handle, moveNode(get2(handle), parse(fromJson, []), id, parse(toJson, []), JSON.parse(positionJson), now));
     },
     resolveChoice(handle, atJson, choiceId, pick, now) {
-      set(handle, resolve(get2(handle), parse2(atJson, []), choiceId, pick < 0 ? null : pick, now));
+      set(handle, resolve(get2(handle), parse(atJson, []), choiceId, pick < 0 ? null : pick, now));
     },
     applyProposal(handle, atJson, proposalId, approver, now) {
-      set(handle, applyProposalAt(get2(handle), parse2(atJson, []), proposalId, approver, now));
+      set(handle, applyProposalAt(get2(handle), parse(atJson, []), proposalId, approver, now));
     },
     rejectProposal(handle, atJson, proposalId, now) {
-      set(handle, rejectProposalAt(get2(handle), parse2(atJson, []), proposalId, now));
+      set(handle, rejectProposalAt(get2(handle), parse(atJson, []), proposalId, now));
     },
     reattach(handle, scopeJson, now, namesJson) {
-      set(handle, reattach(get2(handle), parse2(scopeJson, []), now, namesJson ? parse2(namesJson, []) : void 0));
+      set(handle, reattach(get2(handle), parse(scopeJson, []), now, namesJson ? parse(namesJson, []) : void 0));
     },
     buildSyncRequest(handle, branch, push = true) {
       set(handle, shareHome(get2(handle)));
@@ -9279,7 +5849,7 @@
       const parsed = parseSyncRequest(JSON.parse(requestJson));
       if ("error" in parsed) return JSON.stringify({ error: parsed.error, code: parsed.code });
       const r = get2(handle);
-      const served = serveSync(r.store, parsed, serverPeerId, now, parse2(optionsJson, {}));
+      const served = serveSync(r.store, parsed, serverPeerId, now, parse(optionsJson, {}));
       if ("error" in served) return JSON.stringify(served);
       if (served.changed) set(handle, { ...r });
       return JSON.stringify({ changed: served.changed, response: served.response });

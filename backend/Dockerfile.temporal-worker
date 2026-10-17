@@ -13,7 +13,6 @@ COPY package*.json ./
 COPY infra/ ./infra/
 COPY shared/ ./shared/
 COPY backend/ ./backend/
-COPY frontend/package*.json ./frontend/
 
 # Install dependencies from workspace root
 RUN npm install --legacy-peer-deps --workspaces

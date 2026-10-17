@@ -14,9 +14,7 @@ import { hashContent } from './cid'
 import { migrateContext, needsMigration, type MigrationReport } from './migrations'
 export { hashContent }
 
-import { FosExpression } from './expression'
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
-import { runAvailableFunctions } from './context'
 
 
 export class FosStore {
@@ -53,8 +51,6 @@ export class FosStore {
   // aliasMap = new Map<string, string>()
 
   peers = new Map<string, FosStore>()
-
-  workers: FosExpression[] = []
 
   version = 0
 
@@ -149,32 +145,11 @@ export class FosStore {
   }
 
 
-  // run(expr: FosExpression): Promise<FosExpression> {
-  //   // console.log('run expr', expr)
-  //   const taskPromise = new Promise<FosExpression>((resolve, reject) => {
-  //     const result = runAvailableFunctions(expr)
-  //     this.workers.push(taskPromise)
-  //   })
-  //   this.workers.push(taskPromise)
-  //   return taskPromise
-  // }
-
-
   /** The current address of a cid from a context loaded in an older format (identity otherwise). */
   remapCid(cid: string): string {
     return this.migration?.mapping[cid] ?? cid
   }
 
-
-  getRootExpression(): FosExpression {
-    // Create root expression with voidNode as instruction, root node as target, no parent
-    return new FosExpression(
-      this,
-      this.primitive.voidNode,
-      this.getRootNode(),
-      null
-    )
-  }
 
   getRootNode(): FosNode {
     const rootNode = this.getNodeByAddress(this.rootNodeId)
@@ -1004,78 +979,6 @@ export class FosStore {
 
   }
 
-
-  addGroup(description: string): [FosStore, FosExpression] {
-
-    const rootExpression = this.getRootExpression()
-    // Use the original startRootAlias which should have the alias structure
-    const startRootAlias = this.primitive.startRootAlias
-    const thisAlias = startRootAlias.getData().alias?.id
-
-    if (!thisAlias) {
-      throw new Error(`no alias found in startRootAlias`)
-    }
-
-    const { target: rootTarget } = rootExpression.targetNode.dereferenceNodes()
-
-    const groupContentNode = this.create({
-      data: {
-        description: {
-          content: description
-        }
-      },
-      children: [
-      ]
-    })
-
-    const groupShadowNode = this.create({
-      data: {
-        description: {
-          content: `Shadow node for group: ${description}`
-        },
-        peers: {
-
-        }
-      },
-      children: [
-        [this.primitive.targetPointerConstructor.getId(), groupContentNode.getId()]
-
-      ]
-    })
-
-    const rootTargetWithShadow = rootTarget.addEdge(this.primitive.groupField.getId(), groupShadowNode.getId())
-
-
-    const groupStore = new FosStore()
-    groupStore.create(groupContentNode.value)
-    groupStore.create(groupShadowNode.value)
-
-    groupStore.addPeer(thisAlias, this)
-
-
-    const groupDefinitionNode = groupStore.create({
-      data: {
-        description: {
-          content: description
-        }
-      },
-      children: [
-        [this.primitive.targetPointerConstructor.getId(), groupContentNode.getId()],
-        [this.primitive.peerNode.getId(), groupShadowNode.getId()]
-      ]
-    })
-
-
-    const groupDefinitionNodeClone = this.cloneNodeFromOtherStore(groupDefinitionNode)
-    const newRootTarget = rootTargetWithShadow.addEdge(this.primitive.groupField.getId(), groupDefinitionNodeClone.getId())
-
-    rootExpression.setTargetNode(newRootTarget)
-
-    const groupExpr = new FosExpression(this, [[this.primitive.groupField.getId(), groupDefinitionNode.getId()]])
-
-    return [groupStore, groupExpr]
-
-  }
 
 
 

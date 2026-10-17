@@ -89,7 +89,6 @@ Add methods:
 - **Node Cache**: WeakMap for FosNode instance caching
 - **Primitive Aliases**: Built-in node types and operations
 - **Trellis State**: UI state management (focus, collapsed, view mode)
-- **Workers**: Active expression evaluations
 - **Peer Connections**: Distributed store synchronization
 
 #### FosNode
@@ -97,12 +96,6 @@ Add methods:
 - **Edge Management**: Child relationship manipulation
 - **Mutation Operations**: Content updates creating new instances
 - **Tree Traversal**: Parent/child navigation methods
-
-#### FosExpression
-- **Lazy Evaluation**: On-demand computation of node expressions
-- **Dependency Resolution**: Recursive evaluation of node dependencies
-- **Context Access**: Store-wide data access during evaluation
-- **Result Caching**: Memoization of computed values
 
 #### Content Addressing
 - **Versioned cids**: `cid.ts` writes `v<N>-<digest>` and verifies legacy bare-hex (v0) rows with their own algorithm; `migrations.ts` holds the ordered format migrations and `migrateContext` rehashes a graph bottom-up. `FosStore` migrates older contexts on load (`store.migration`, `store.remapCid`). See `docs/cid-versioning.md` for how to add a format version.

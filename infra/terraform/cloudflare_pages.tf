@@ -34,8 +34,8 @@
 #   }
 
 #   build_config {
-#     build_command   = "make build-frontend"
-#     destination_dir = "dist/frontend"
+#     build_command   = "npm run build:web"
+#     destination_dir = "web/dist"
 #     root_dir        = ""
 #   }
 

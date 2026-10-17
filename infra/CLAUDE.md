@@ -1,11 +1,11 @@
 # Infrastructure CLAUDE.md
 
 ## Directory Summary
-The infra directory contains infrastructure configuration, deployment tools, and end-to-end testing for Fosforescent. It includes Docker Compose configurations, Terraform infrastructure as code, and Playwright E2E tests for comprehensive application testing.
+The infra directory contains infrastructure configuration and deployment tools for Fosforescent: Docker Compose for local services, Terraform infrastructure as code, the Prisma schema, and API smoke scripts.
 
 ## Deploying (GitHub Actions)
 
-Only a `dev` environment exists in GCP today and it serves the live site: Cloud Run `fos-backend-dev` behind `api.fosforescent.com`, bucket `fos-frontend-dev-fosforescent` behind `fosforescent.com`, Cloud SQL `fos-postgres-dev`.
+Only a `dev` environment exists in GCP today and it serves the live site: Cloud Run `fos-backend-dev` behind `api.fosforescent.com`, the web app on Cloudflare Pages behind `fosforescent.com`, Cloud SQL `fos-postgres-dev`.
 
 - `.github/workflows/deploy-backend.yml` — on push to `main` (backend/shared/prisma/web paths) or manual dispatch: builds `backend/Dockerfile` (context = repo root), pushes `gcr.io/fosforescent/fos-backend:<sha>` and `:latest`, runs `prisma db push` through the Cloud SQL proxy (fails on destructive changes instead of applying them), rolls Cloud Run to the new image with `WEB_URL`, then builds `web/` with `VITE_API_URL=https://api.fosforescent.com` and rsyncs it to the bucket. Auth is the `GCP_SA_KEY` secret (service account `github-deployer`); create/rotate it with `bash infra/scripts/setup-gcp-deployer.sh`.
 - `.github/workflows/deploy-infrastructure.yml` — Terraform for `infra/terraform/**`: plan on PRs; plan **and apply** on push to `main` (also manual dispatch with `action=apply`). On 2026-10-12 the config was reconciled with the deployed `dev` resources (f1-micro HDD Cloud SQL on public IP, no VPC/connector, no load balancer, no Cloud DNS; Cloud Run with the `/cloudsql` volume; non-expiring Pub/Sub subscriptions) and `terraform plan` is clean. Secrets: `GCP_TERRAFORM_SA_KEY`, `TF_DOTENV`, `TF_TFVARS` (`infra/scripts/setup-terraform-ci.sh`; re-run after editing `.env` or `terraform.tfvars`). Gotcha: `terraform.tfvars` must hold the *real* database password; the composed `database_url` secret `urlencode()`s it. Putting the encoded form in tfvars makes `google_sql_user` set the wrong password and breaks the backend's DB connection.
@@ -16,15 +16,9 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 
 ### Docker Configuration
 - `docker-compose.yaml` - Multi-service Docker Compose configuration
-- Uses Dockerfiles from `../backend/Dockerfile` and `../frontend/Dockerfile`
+- Uses `../backend/Dockerfile`
 - PostgreSQL database with pgvector extension
 - Development and production service profiles
-
-### End-to-End Testing
-- `e2e-tests/` - Playwright test suites for full browser testing
-- `helpers/` - Test helper functions and utilities
-- `playwright.config.ts` - Playwright configuration
-- `test-results/` - Test execution results and artifacts
 
 ### API Testing
 - `apiTests/` - API integration tests for backend endpoints
@@ -39,7 +33,7 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 - Database and storage provisioning
 
 ### Build and Development Tools
-- `package.json` - E2E test dependencies and scripts
+- `package.json` - Prisma and API smoke scripts
 - `jest.config.js` - Jest configuration for infrastructure tests
 - `Makefile` - Infrastructure-specific build and deployment commands
 
@@ -47,14 +41,12 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 
 ### External Dependencies
 - **Docker & Docker Compose**: Container orchestration
-- **Playwright**: E2E testing framework
 - **Terraform**: Infrastructure as Code
 - **PostgreSQL**: Database with pgvector extension
 - **Node.js**: Runtime for test execution
 
 ### Internal Dependencies
 - `../backend/` - Backend service and Dockerfile
-- `../frontend/` - Frontend service and Dockerfile
 - `../prisma/` - Database schema and initialization
 - `../shared/` - Shared types and utilities
 
@@ -63,9 +55,8 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 ### Input Sources
 - Docker Compose service definitions
 - Terraform configuration files
-- E2E test specifications
 - Environment variables and secrets
-- Application Dockerfiles from backend/frontend
+- The backend Dockerfile
 
 ### Output Destinations
 - Running Docker containers
@@ -77,7 +68,6 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 ## Events Handled
 - Container lifecycle management
 - Database initialization and seeding
-- E2E test execution across multiple browsers
 - Infrastructure provisioning and updates
 - Service health monitoring and restart policies
 
@@ -95,33 +85,12 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
   - Database connectivity and environment configuration
   - Exposes port 4000 → 80 (internal)
 
-- **frontend**: React application
-  - Built from `../frontend/Dockerfile`
-  - Vite build with static asset optimization
-  - API connectivity to backend service
-  - Exposes port 5173 → 80 (internal)
-
 ### Service Profiles
-- `backend` - Run only backend and database
-- `frontend` - Run only frontend (requires backend)
-- `e2e` - Full stack for end-to-end testing
+- `db-only` - PostgreSQL only
+- `backend` - backend and database
+- `full` - backend, database, Temporal
 
-## E2E Testing Strategy
-
-### Test Coverage
-- **Authentication flows**: Login, registration, password reset
-- **Dashboard functionality**: Navigation, user interface, responsive design
-- **Console agent interactions**: AI agent communication and tool usage
-- **Subscription workflows**: Payment, billing, token management
-- **Graph operations**: Node creation, manipulation, visualization
-- **Admin features**: User management, MCP server administration
-
-### Test Configuration
-- Multi-browser testing (Chromium, Firefox, WebKit)
-- Parallel test execution
-- Automatic retry on failure
-- Screenshot and video capture on errors
-- Network request interception and mocking
+The web app is not containerized: run it with `npm run dev:web` (or `npm test` in `web/` for its regression suite).
 
 ## Terraform Infrastructure
 
@@ -154,28 +123,13 @@ docker-compose up
 
 # Start specific profile
 docker-compose --profile backend up
-docker-compose --profile e2e up
+docker-compose --profile full up
 
 # Build and start
 docker-compose up --build
 
 # Clean up
 docker-compose down -v
-```
-
-### E2E Testing
-```bash
-# Run all Playwright tests
-npm test
-
-# Run specific test file
-npx playwright test auth.spec.ts
-
-# Run with UI
-npx playwright test --ui
-
-# Generate test report
-npx playwright show-report
 ```
 
 ### API Testing
@@ -185,12 +139,6 @@ npm run test:api
 
 # Test WebSocket connections
 npm run test:api:ws
-
-# Test MCP protocol
-npm run test:api:mcp
-
-# Test Temporal MCP server
-npm run test:api:temporal
 
 # Run all API tests
 npm run test:api:all
@@ -213,10 +161,4 @@ terraform destroy
 - [ ] Add comprehensive infrastructure testing
 - [ ] Implement secrets management with external tools
 - [ ] Add container security scanning
-- [ ] Optimize E2E test execution time
-- [ ] Implement test parallelization across environments
 - [ ] Add performance testing with load scenarios
-- [x] **Add MCP server that exposes a webhook API for long-running tasks** - ✅ COMPLETED: Created Temporal MCP server (`backend/mcp/temporalMcpServer.ts`) that provides tools for task submission, monitoring, cancellation, and webhook notifications. Supports offline/reconnect scenarios with persistent task storage and status tracking.
-- [ ] **Integrate Temporal MCP server with actual Temporal.io workflows** - Replace simulated task execution with real Temporal workflow orchestration
-- [ ] **Implement webhook HTTP delivery system** - Add actual HTTP webhook delivery for task completion notifications
-- [ ] **Add database persistence for tasks** - Store task data in PostgreSQL instead of in-memory storage

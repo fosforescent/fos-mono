@@ -10,7 +10,7 @@ REGION=${GCP_REGION:-us-central1}
 SA_NAME=github-deployer
 SA="$SA_NAME@$PROJECT.iam.gserviceaccount.com"
 RUNTIME_SA=${RUNTIME_SA:-fos-cloudrun-dev@$PROJECT.iam.gserviceaccount.com}
-WEB_BUCKET=${WEB_BUCKET:-fos-frontend-dev-$PROJECT}
+WEB_BUCKET=${WEB_BUCKET:-}
 DB_SECRET=${DB_SECRET:-fos-database-url-dev}
 
 if ! gcloud iam service-accounts describe "$SA" --project "$PROJECT" >/dev/null 2>&1; then
@@ -29,9 +29,9 @@ bind roles/artifactregistry.writer   # push to gcr.io (hosted on Artifact Regist
 bind roles/cloudsql.client           # cloud-sql-proxy for prisma db push
 # deploy revisions that run as the runtime service account
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" --project "$PROJECT" --member "serviceAccount:$SA" --role roles/iam.serviceAccountUser --quiet >/dev/null && echo "  actAs $RUNTIME_SA"
-# read the database url, write the web bucket
+# read the database url; the web app deploys to Cloudflare Pages, so a bucket grant is only needed when WEB_BUCKET is set
 gcloud secrets add-iam-policy-binding "$DB_SECRET" --project "$PROJECT" --member "serviceAccount:$SA" --role roles/secretmanager.secretAccessor --quiet >/dev/null && echo "  read secret $DB_SECRET"
-gcloud storage buckets add-iam-policy-binding "gs://$WEB_BUCKET" --member "serviceAccount:$SA" --role roles/storage.objectAdmin --quiet >/dev/null && echo "  write gs://$WEB_BUCKET"
+if [ -n "$WEB_BUCKET" ]; then gcloud storage buckets add-iam-policy-binding "gs://$WEB_BUCKET" --member "serviceAccount:$SA" --role roles/storage.objectAdmin --quiet >/dev/null && echo "  write gs://$WEB_BUCKET"; fi
 
 KEY=$(mktemp)
 trap 'rm -f "$KEY"' EXIT

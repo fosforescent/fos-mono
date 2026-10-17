@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken';
 
 import { WebSocketServer, WebSocket } from 'ws';
 import { addUserConnection, setSocketPeer } from './promptNotifications';
-import { addGroupConnection } from './groupEvents';
 import { prisma } from './prismaClient';
 
 // Create WebSocket server attached to HTTP server
@@ -96,9 +95,6 @@ export const attachWs = (server: any, evaluation?: (claims: any, body: any) => P
         // Register this connection for prompt notifications
         addUserConnection(user.id, ws);
         relayUser = user.id; registerProvider()
-
-        // Register this connection for group events
-        addGroupConnection(user.id, user.fosNodeId, ws);
 
         // Send immediate confirmation
         ws.send(JSON.stringify({

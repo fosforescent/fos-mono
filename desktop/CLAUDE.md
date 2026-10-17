@@ -29,15 +29,14 @@ fos login           home context: browser sign-in (SSO-capable device flow) | --
 - `client.rs` - account HTTP (`ureq`): login, connect-token attach with approval polling, device login (`/auth/device/start|poll`), attachment, peer-sync, proposal decisions, detach
 - `local_server.rs` - `tiny_http` server: `/peer-sync` (served from the directory's replica), `/mcp` (JSON-RPC tools: list/add/done/rename/delete/sync_now/status), `/p2p/offer|answer` relay, `/status`, `/events?since=` long-poll
 - `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync status approve reject attach login branches`)
-- `lib.rs` - Tauri commands for the GUI. `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; plus the older directory navigation, `.fos` directory, FosStore, auth and WebRTC peer commands (`peer.rs`)
+- `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file` for linked directory peers (`web/src/filesystem.ts`); plus the `node_agent::*` and `agents::*` commands
+- `node_agent.rs` - authenticated loopback MCP relay for "Connect to agent" (`web/src/node-agent.ts`)
+- `agents.rs` - spawns `../agent-runtime` (Claude Agent SDK / Codex SDK runs, CLI launches, local git) and validates repositories
 
-Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle: `cd desktop && ../node_modules/.bin/esbuild ../shared/sync/embed.ts --bundle --format=iife --platform=browser --target=es2020 --outfile=src-tauri/js/fos-core.js --inject:src-tauri/js/prelude.js`. Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
+Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle with `cd desktop && npm run build:core` (esbuild; `web/node_modules/.bin/esbuild` also works when the root workspace is not installed). Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
 
-### Frontend Integration (`frontend/tauri/`)
-- `api.ts` - TypeScript bindings for Tauri commands
-- `useTauri.ts` - React hook for Tauri functionality
-- `auth.ts` - Browser-based authentication utilities
-- `index.ts` - Re-exports all Tauri modules
+### Web integration
+The web app talks to the shell only through `tauriInvoke` in `web/src/project.ts`, `filesystem.ts`, `node-agent.ts`, `agents.ts` and `local-git.ts`.
 
 ## Dependencies
 
@@ -45,7 +44,7 @@ Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`
 - **tauri 2.9.5** - Core Tauri framework
 - **tauri-plugin-log** - Logging (dev only)
 - **tauri-plugin-opener** (`~2.4`, the newest that keeps tauri 2.9.5 locked; `opener:default` in `capabilities/default.json`) - opens URLs in the system browser. The web app calls it through `openExternal` (`web/src/project.ts`, `plugin:opener|open_url`) for the OAuth integration peers (GitHub/Google/Discord): Google refuses sign-ins from embedded webviews (`disallowed_useragent`), and navigating the app's own webview away would lose the app. The provider's callback lands on the web site; the app checks the connection when it regains focus (`App.checkPendingIntegration`).
-- No shell/fs/dialog/deep-link plugins: file access goes through the app's own commands (`commands.rs`)
+- No shell/fs/dialog/deep-link plugins: file access goes through the app's own commands (`lib.rs`)
 - **rquickjs** - embedded JS engine for the sync core
 - **ureq / tiny_http / toml / clap / rustyline** - account client, local server, config, CLI, REPL
 - **dirs** - Home directory detection
@@ -59,7 +58,7 @@ Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`
 ## Requirements
 
 - **Rust 1.80+**: Stable Rust toolchain
-- **Node.js 18+**: For frontend development
+- **Node.js 22+**: For the web app and the agent runtime
 - **System Dependencies (Linux)**:
   ```bash
   sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev
@@ -72,13 +71,10 @@ The `fos` CLI is the primary way to launch the desktop app:
 ```bash
 fos .             # Launch GUI in current directory
 fos ~/project     # Launch GUI in specific directory
-fos init          # Initialize .fos directory in current folder
-fos repl          # Start interactive REPL for graph navigation
+fos init          # Write fos.config.toml in the current folder
+fos repl          # Start interactive REPL
 fos help          # Show help
 ```
-
-**Options:**
-- `-d, --dir <path>` - Specify .fos directory location explicitly
 
 ## Development Commands
 
@@ -87,11 +83,8 @@ fos help          # Show help
 npm run dev          # Start Tauri in development mode
 npm run build        # Build production release
 
-# From monorepo root:
-cd desktop && npm run dev
-
-# Build CLI:
-cd cli && npm run build
+# Rebuild the embedded sync core after changing shared/sync:
+npm run build:core
 
 # Update Rust if needed:
 rustup update stable
@@ -102,37 +95,23 @@ rustup update stable
 The Tauri app reads these environment variables on startup:
 
 - `FOS_TARGET_DIR` - The directory to open (set by CLI launcher)
-- `FOS_DIR` - Path to the .fos directory (set by CLI launcher)
+- `FOS_SERVER`, `FOS_HOME_CONTEXT` - account server and home mode (set by main.rs)
 
 ## Data Inputs/Outputs
 
 ### Input Sources
-- Local file system (directory contents)
-- .fos directory configuration
-- Deep link URLs for authentication callbacks
-- User interactions via Tauri commands
+- `fos.config.toml` and `.fos/` project state
+- Linked directories (read-only listings and previews)
+- Agent runtime events (NDJSON from `agent-runtime`)
 
 ### Output Destinations
-- Frontend via IPC (invoke results)
-- System browser (authentication URLs)
-- Local .fos directory (future: write operations)
+- Web app via IPC (invoke results)
+- System browser (OAuth sign-ins through `tauri-plugin-opener`)
+- `.fos/` project state files
 
-## .fos Directory Detection
+## Sign-in
 
-The desktop app automatically detects and loads .fos directories:
-
-1. **Local Detection**: First checks current working directory for `.fos/`
-2. **Fallback**: If not found locally, checks `~/.fos/`
-3. **Returns Info**: `FosDirectoryInfo` includes path, existence, and fallback status
-
-## Authentication Flow
-
-1. Frontend calls `openAuthUrl(url)` via Tauri command
-2. System browser opens to authentication URL
-3. After auth, browser redirects to `fosforescent://auth/callback?code=...`
-4. Deep link plugin catches URL and emits event
-5. Frontend receives code via event listener
-6. Frontend exchanges code for session token
+The web app signs in with the account directly; OAuth integration sign-ins open in the system browser and the app re-reads the connection when it regains focus. The CLI uses the device flow (`fos login`, `/auth/device/start|poll`), approved from the signed-in web app.
 
 ## Build Configuration
 
@@ -141,8 +120,8 @@ The desktop app automatically detects and loads .fos directories:
 - Connects to Vite dev server at `http://localhost:5173`
 
 ### Production
-- Builds the web frontend via `npm run build:web`
-- Bundles frontend from `../../web/dist`
+- Builds the web app via `npm run build:web`
+- Bundles it from `../../web/dist`
 - Creates native installers for all desktop platforms
 
 ### Mobile (iOS/Android)
@@ -155,25 +134,17 @@ The desktop app automatically detects and loads .fos directories:
 ## Security
 
 - CSP is currently disabled (`null`) for development
-- File system access is restricted via capabilities
-- Deep link scheme is registered as `fosforescent://`
-- Shell plugin only allows opening URLs
+- Only `core:default` and `opener:default` capabilities; no fs/shell/deep-link plugins
 
 ## Current Implementation Status
 
 ### ✅ Completed
-- **Local graph storage**: FosStore read/write to .fos/main.yml via Tauri commands
-- **Offline mode**: AuthLanding "Continue Offline" button loads local data without authentication
-- **Directory navigation**: Full file browser with .fos detection
-- **CLI launcher**: `fos .` launches GUI, `fos init` creates .fos directory, `fos repl` for terminal
-- **Tauri integration**: TypeScript bindings and React hook (`useTauri`)
-- **Peer connection dialog**: WebRTC setup with QR code exchange
+- **Project state**: `.fos/` shared by the GUI, CLI and REPL (`device.json`, `session.json`, `replicas/<branch>.json`)
+- **CLI launcher**: `fos .` launches the GUI, `fos init` writes `fos.config.toml`, `fos repl` for the terminal
+- **Agents**: SDK runs and CLI launches through `agent-runtime`, node-scoped loopback MCP
 
 ### ✅ Completed (continued)
 - **Online/offline transition**: the `web/` UI keeps a replica in webview localStorage, works offline, and merges with the account on login via `shared/sync` (three-way merge on the FosStore graph, CHOICE nodes for divergences, optional attachment to a single partition). See `docs/sync.md`.
-
-### 🚧 In Progress
-- **Peer data sync**: WebRTC connection established but data transfer not implemented (can reuse `serveSync`/`completeSync` from `shared/sync`)
 
 ### ❌ Not Started
 - File watching for .fos changes
@@ -184,7 +155,6 @@ The desktop app automatically detects and loads .fos directories:
 - Tray icon support
 
 ## TODOs
-- [ ] Implement data sync over WebRTC peer connection
 - [x] Add merge conflict resolution when transitioning offline→online (`shared/sync`, Choice nodes)
 - [ ] File-backed `ReplicaStorage` adapter writing the replica into `.fos/` (currently localStorage on all platforms)
 - [ ] Add file watching for .fos changes

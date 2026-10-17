@@ -204,12 +204,6 @@ resource "google_cloud_run_v2_service" "backend" {
         value = google_sql_database_instance.postgres.connection_name
       }
 
-      # Qdrant configuration - Disabled for now (external Qdrant not yet configured)
-      # env {
-      #   name  = "QDRANT_URL"
-      #   value = "http://qdrant:6333" # Update if using external Qdrant
-      # }
-
       volume_mounts {
         name       = "cloudsql"
         mount_path = "/cloudsql"
@@ -248,42 +242,3 @@ resource "google_cloud_run_service_iam_member" "public_access" {
   member   = "allUsers"
 }
 
-# Cloud Run Service for Frontend (optional - can use Cloudflare Pages)
-# resource "google_cloud_run_v2_service" "frontend" {
-#   name     = "fos-frontend-${var.environment}"
-#   location = var.gcp_region
-#
-#   template {
-#     service_account = google_service_account.fos_cloudrun_sa.email
-#
-#     scaling {
-#       min_instance_count = var.environment == "prod" ? 1 : 0
-#       max_instance_count = var.environment == "prod" ? 5 : 2
-#     }
-#
-#     containers {
-#       image = "gcr.io/${var.gcp_project_id}/fos-frontend:latest"
-#
-#       ports {
-#         container_port = 80
-#       }
-#
-#       resources {
-#         limits = {
-#           cpu    = "1"
-#           memory = "512Mi"
-#         }
-#       }
-#
-#       env {
-#         name  = "FOS_API_URL"
-#         value = google_cloud_run_v2_service.backend.uri
-#       }
-#     }
-#   }
-#
-#   traffic {
-#     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-#     percent = 100
-#   }
-# }
