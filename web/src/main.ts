@@ -59,6 +59,11 @@ if (deviceCode) {
   app.setDeviceCode(deviceCode)
   history.replaceState(null, '', location.pathname)
 }
+// The confirmation email's one-click link, and the password reset link.
+const confirmToken = params.get('confirm-email-token')
+if (confirmToken) { void app.confirmWithToken(confirmToken); history.replaceState(null, '', location.pathname) }
+const resetToken = params.get('reset-password-token')
+if (resetToken) { app.setAuthFlow({ phase: 'reset', token: resetToken }); app.openModal('connect'); history.replaceState(null, '', location.pathname) }
 // Back from an integration peer's sign-in page (?integration=github&ok=1).
 const integration = params.get('integration')
 if (integration) {

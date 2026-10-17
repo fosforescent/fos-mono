@@ -1285,7 +1285,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const editToggle = header.querySelector<HTMLElement>('.input-toggle')!
   editToggle.hidden = !!preview || !row
   editToggle.setAttribute('aria-pressed', String(prefs.input)); editToggle.setAttribute('aria-controls', 'node-input')
-  toolbar.hidden = !!preview
+  toolbar.hidden = !!preview || !!row?.construction?.peerId || !!row?.construction?.handler
   const accordionEl = el.querySelector<HTMLDetailsElement>('[data-accordion="context"]')!
   renderConstructorPanel(el.querySelector<HTMLElement>('.constructor-head')!, el.querySelector<HTMLElement>('.constructor-grid')!, el.querySelector<HTMLElement>('.constructor-suggestions')!, el.querySelector<HTMLElement>('.node-context')!, state, app)
   const inputOptions = el.querySelector<HTMLElement>('.node-input-options')!
@@ -1324,7 +1324,9 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const agents = !preview && desktopAgentControls(app); if (agents) controls.append(agents)
   const git = !preview && localGitControls(app); if (git) controls.append(git)
   if (row?.construction) controls.append(constructorBody(row, state, app))
-  if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.append(auth) }
+  // the account form is its own block under the peer's row, never a column beside it
+  el.querySelector(':scope > .account-form')?.remove()
+  if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.after(auth) }
   if (inTauri() && row && app.repositoryInfo() && !localRepository(state.replica, state.view)) controls.append(button('secondary small', 'Attach local checkout…', () => openConstructor(app, 'repository', [...state.view], true)))
   inputs.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
   const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
@@ -1627,7 +1629,29 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
     if (arg.problems.length && !insideTemplate(state, [...state.view, ...at])) li.append(span('blocked-badge', arg.problems.join('; ')))
     rows.push(li)
   }
-  node.tasks.forEach((task, index) => {
+  // the device root is a settings page: its rows stay rows, shown in groups
+  if (state.atRoot && !at.length && !query) {
+    const groupOf = (task: TaskView): string => {
+      const key = settingKeyFromName(task.construction?.name)
+      if (task.construction?.peerId || key === 'sessions') return 'Account'
+      if (!key) return task.id === HOME_ID ? '' : 'Other'
+      if (['name', 'theme', 'microphone', 'camera', 'geolocation', 'history'].includes(key)) return 'Device'
+      if (['server', 'direct', 'peer', 'invite', 'virtual', 'phone', 'share'].includes(key)) return 'Connections'
+      return 'Data'
+    }
+    const order = ['', 'Account', 'Device', 'Connections', 'Data', 'Other']
+    const grouped = [...node.tasks].sort((a, b) => order.indexOf(groupOf(a)) - order.indexOf(groupOf(b)))
+    let current: string | null = null
+    grouped.forEach((task, index) => {
+      const group = groupOf(task)
+      if (group && group !== current) { const li = document.createElement('li'); li.className = 'task setting-group'; li.style.setProperty('--depth', String(depth)); li.append(span('setting-group-title', group)); rows.push(li) }
+      current = group
+      renderTask(task, index)
+    })
+    return rows
+  }
+  node.tasks.forEach((task, index) => renderTask(task, index))
+  function renderTask(task: TaskView, index: number): void {
     rows.push(renderRow(task, at, depth, index, node.tasks.length, state, app))
     const path = [...at, task.id]
     const editingBelow = !!state.selected && state.selected.length > path.length && path.every((id, i) => state.selected![i] === id)
@@ -1640,7 +1664,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
         rows.push(...renderRows(child, [...at, task.id], depth + 1, state, app))
       }
     }
-  })
+  }
   if (!at.length) for (const choice of node.choices) {
     const li = document.createElement('li'); li.className = 'task conflict-row'; li.style.setProperty('--depth', String(depth))
     li.append(span('title', choice.subject), span('blocked-badge', 'Conflict'), button('secondary small', 'Resolve', () => { const card = document.querySelector<HTMLElement>(`[data-choice="${choice.id}"]`); card?.scrollIntoView({ block: 'start' }); card?.querySelector<HTMLButtonElement>('button')?.focus() }))
@@ -2403,7 +2427,12 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     const title = span('title peer-title', '')
     if (!p.isAccount && !p.integration && !p.mcp) title.append(span('muted small', `${p.id.slice(0, 8)} · `))
     title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp || p.repository ? p.name : peerLabel(p.id, state)))
-    if (p.isAccount && !state.session) title.append(button('primary small', 'Sign in', () => app.goToAccountPeer()), span('muted', ' not connected: sign in to sync with your account and use its services'))
+    if (p.isAccount && !state.session && app.currentRow()?.construction?.peerId === p.id) title.append(span('muted', 'not connected'))
+    else if (p.isAccount && !state.session) {
+      const actions = div('account-actions', '')
+      actions.append(button('primary small', 'Sign in', () => { app.setAuthFlow({ phase: 'signin' }); app.goToAccountPeer() }), button('secondary small', 'Create an account', () => { app.setAuthFlow({ phase: 'register' }); app.goToAccountPeer() }))
+      title.append(span('muted', 'not connected'), actions)
+    }
     if (p.isAccount && p.policy && state.session && !state.virtual) title.append(button('link small', 'Disconnect (keep data)', () => app.disconnect()))
     if (p.isAccount && p.points !== null && p.points !== undefined) { const pts = span('alloc-tag points', `✦ ${p.points} fos points`); pts.title = 'The account\'s balance: the default pool for "ff" allocations'; title.append(pts) }
     const connection = div('peer-connection', '')
@@ -2765,48 +2794,118 @@ function renderDevice(body: HTMLElement, state: AppState, app: App): void {
 
 function renderConnect(body: HTMLElement, state: AppState, app: App): void {
   if (state.device) body.append(div('pending-box', `Sign in to approve the sign-in request from “${state.device.name ?? 'a device'}” (code ${state.device.code}).`))
-  body.append(div('muted', state.virtual ? 'Sign-in is independent of this virtual peer’s document connection.' : 'Sign in to open that account’s separate data session. Offline data stays here unless you choose to merge it.'))
+  const auth = state.authFlow
+  const field = (name: string, type: string, placeholder: string, autocomplete: string, extra: Partial<HTMLInputElement> = {}) => {
+    const input = document.createElement('input'); input.name = name; input.type = type; input.placeholder = placeholder; input.autocomplete = autocomplete as AutoFill; input.required = true
+    input.setAttribute('aria-label', placeholder); Object.assign(input, extra); return input
+  }
+  const errorLine = () => div('error', state.loginError ?? '', 'error')
+  let submitting = false
+  const guard = async (submit: HTMLButtonElement, run: () => Promise<void>) => { if (submitting) return; submitting = true; submit.disabled = true; try { await run() } finally { submitting = false; submit.disabled = false } }
 
-  // --- sign in
-  body.append(h4('Sign in'))
-  const form = document.createElement('form')
-  form.className = 'login'
-  form.innerHTML = `
-    <input name="username" type="text" placeholder="username or email" autocomplete="username" required />
-    <input name="password" type="password" placeholder="password" autocomplete="current-password" required />
-    <button type="submit" class="primary">Sign in</button>
-  `
-  let registering = false, submitting = false
-  const mode = button('link', 'Create an account', () => {
-    registering = !registering
-    mode.textContent = registering ? 'Already have an account? Sign in' : 'Create an account'
-    form.querySelector<HTMLButtonElement>('[type="submit"]')!.textContent = registering ? 'Register' : 'Sign in'
-    form.querySelector<HTMLInputElement>('[name="password"]')!.autocomplete = registering ? 'new-password' : 'current-password'
-    terms.hidden = !registering; accepted.required = registering
-    passwordHint.hidden = !registering
-  })
-  const terms = document.createElement('label'); terms.hidden = true
+  // --- the code step: confirm the email or phone the account was created with
+  if (auth.phase === 'confirm') {
+    body.append(h4('Confirm your account'))
+    body.append(div('muted', `We sent a six-digit code to ${auth.destination ?? `your ${auth.channel}`}${auth.channel === 'email' ? '; the link in that email works too' : ''}.`))
+    if (auth.notice) body.append(div('pending-box', auth.notice))
+    const form = document.createElement('form'); form.className = 'login confirm-code'
+    const code = field('code', 'text', 'six-digit code', 'one-time-code', { inputMode: 'numeric', pattern: '[0-9]{6}', maxLength: 6 })
+    code.classList.add('code-input')
+    const submit = button('primary', 'Confirm', () => undefined); submit.type = 'submit'
+    form.append(code, submit)
+    form.addEventListener('submit', event => { event.preventDefault(); void guard(submit, () => app.confirmAccount(code.value)) })
+    body.append(form, errorLine())
+    const links = div('auth-links', '')
+    links.append(button('link', 'Send a new code', () => void app.resendConfirmation()), button('link', 'Back to sign in', () => app.setAuthFlow({ phase: 'signin' })))
+    body.append(links)
+    queueMicrotask(() => { if (code.isConnected && !document.activeElement?.closest('input, textarea')) code.focus() })
+    return
+  }
+  // --- password reset: the emailed link
+  if (auth.phase === 'reset') {
+    body.append(h4('Choose a new password'))
+    const form = document.createElement('form'); form.className = 'login registering'
+    const username = field('username', 'text', 'username', 'username'), password = field('password', 'password', 'new password', 'new-password'), confirm = field('confirmPassword', 'password', 'repeat the new password', 'new-password')
+    const submit = button('primary', 'Set password', () => undefined); submit.type = 'submit'
+    form.append(username, password, confirm, div('muted', 'Use at least 8 characters, including an uppercase letter and a number.'), submit)
+    form.addEventListener('submit', event => { event.preventDefault(); void guard(submit, () => app.completePasswordReset(username.value, password.value, confirm.value)) })
+    body.append(form, errorLine(), button('link', 'Back to sign in', () => app.setAuthFlow({ phase: 'signin' })))
+    return
+  }
+  // --- forgot password
+  if (auth.phase === 'forgot') {
+    body.append(h4('Reset your password'))
+    if (auth.sent) body.append(div('pending-box', 'If an account with that name has an email address, a reset link is on its way.'))
+    else {
+      body.append(div('muted', 'We email a reset link to the address on the account.'))
+      const form = document.createElement('form'); form.className = 'login'
+      const username = field('username', 'text', 'username', 'username')
+      const submit = button('primary', 'Send reset link', () => undefined); submit.type = 'submit'
+      form.append(username, submit)
+      form.addEventListener('submit', event => { event.preventDefault(); void guard(submit, () => app.requestPasswordReset(username.value)) })
+      body.append(form, errorLine())
+    }
+    body.append(button('link', 'Back to sign in', () => app.setAuthFlow({ phase: 'signin' })))
+    return
+  }
+
+  // --- sign in / create an account: one form, two modes
+  body.append(div('muted', state.virtual ? 'Sign-in is independent of this virtual peer’s document connection.' : 'Sign in to open that account’s separate data session. Offline data stays here unless you choose to merge it.'))
+  let registering = auth.phase === 'register'
+  const tabs = div('node-tabs auth-tabs', ''); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Account')
+  const signinTab = button('', 'Sign in', () => setMode(false)), registerTab = button('', 'Create an account', () => setMode(true))
+  for (const tab of [signinTab, registerTab]) tab.setAttribute('role', 'tab')
+  tabs.append(signinTab, registerTab)
+  const form = document.createElement('form'); form.className = 'login'
+  const username = field('username', 'text', 'username', 'username')
+  const contact = div('contact-row', '')
+  const contactTabs = div('node-tabs contact-toggle', ''); contactTabs.setAttribute('role', 'tablist'); contactTabs.setAttribute('aria-label', 'Confirm with')
+  const email = field('email', 'email', 'email address', 'email'), phone = field('phone', 'tel', 'phone number, with country code', 'tel')
+  let channel: 'email' | 'phone' = 'email'
+  const emailTab = button('', 'Email', () => setChannel('email')), phoneTab = button('', 'Phone', () => setChannel('phone'))
+  for (const tab of [emailTab, phoneTab]) tab.setAttribute('role', 'tab')
+  contactTabs.append(emailTab, phoneTab); contact.append(contactTabs, email, phone)
+  const password = field('password', 'password', 'password', 'current-password')
+  const confirm = field('confirmPassword', 'password', 'repeat the password', 'new-password')
+  const terms = document.createElement('label'); terms.className = 'terms'
   const accepted = document.createElement('input'); accepted.type = 'checkbox'
   terms.append(accepted, document.createTextNode(' I accept the Terms of Service and Privacy Policy.'))
-  const passwordHint = div('muted', 'Use at least 8 characters, including an uppercase letter and a number.'); passwordHint.hidden = true
-  form.append(terms, passwordHint, mode)
-  if (app.canMergeOffline()) {
-    const label = document.createElement('label')
-    const merge = document.createElement('input'); merge.type = 'checkbox'; merge.name = 'mergeOffline'
-    label.append(merge, document.createTextNode(' Merge this offline session’s data into the account'))
-    form.append(label)
+  const passwordHint = div('muted', 'Use at least 8 characters, including an uppercase letter and a number. A code sent to the email or phone confirms the account.')
+  const submit = button('primary', 'Sign in', () => undefined); submit.type = 'submit'
+  const forgot = button('link', 'Forgot password?', () => app.setAuthFlow({ phase: 'forgot' }))
+  const merge = document.createElement('label'); merge.className = 'merge'
+  const mergeBox = document.createElement('input'); mergeBox.type = 'checkbox'; mergeBox.name = 'mergeOffline'
+  merge.append(mergeBox, document.createTextNode(' Merge this offline session’s data into the account'))
+  merge.hidden = !app.canMergeOffline()
+  form.append(username, contact, password, confirm, passwordHint, terms, submit, forgot, merge)
+  const setChannel = (next: 'email' | 'phone') => {
+    channel = next
+    emailTab.setAttribute('aria-selected', String(next === 'email')); phoneTab.setAttribute('aria-selected', String(next === 'phone'))
+    email.hidden = next !== 'email'; email.required = registering && next === 'email'
+    phone.hidden = next !== 'phone'; phone.required = registering && next === 'phone'
   }
-  form.addEventListener('submit', async (event) => {
+  const setMode = (next: boolean) => {
+    registering = next
+    form.classList.toggle('registering', next)
+    signinTab.setAttribute('aria-selected', String(!next)); registerTab.setAttribute('aria-selected', String(next))
+    submit.textContent = next ? 'Register' : 'Sign in'
+    password.autocomplete = next ? 'new-password' : 'current-password'
+    contact.hidden = !next; confirm.hidden = !next; confirm.required = next
+    terms.hidden = !next; accepted.required = next; passwordHint.hidden = !next
+    forgot.hidden = next; merge.hidden = next || !app.canMergeOffline()
+    setChannel(channel)
+    if (state.authFlow.phase !== (next ? 'register' : 'signin')) app.state.authFlow = { phase: next ? 'register' : 'signin' } // remembered for the next render, without re-rendering under the typist
+  }
+  setMode(registering)
+  form.addEventListener('submit', event => {
     event.preventDefault()
-    if (submitting || (registering && !accepted.checked)) return
-    const data = new FormData(form), submit = form.querySelector<HTMLButtonElement>('[type="submit"]')!
-    submitting = true; submit.disabled = true
-    try {
-      if (registering) await app.registerAccount(String(data.get('username') ?? ''), String(data.get('password') ?? ''))
-      else await app.login(String(data.get('username') ?? ''), String(data.get('password') ?? ''), false, data.get('mergeOffline') === 'on')
-    } finally { submitting = false; submit.disabled = false }
+    if (registering && !accepted.checked) return
+    void guard(submit, async () => {
+      if (registering) await app.registerAccount({ username: username.value, password: password.value, confirmPassword: confirm.value, ...(channel === 'email' ? { email: email.value } : { phone: phone.value }) })
+      else await app.login(username.value, password.value, false, mergeBox.checked)
+    })
   })
-  body.append(form, div('error', state.loginError ?? '', 'error'))
+  body.append(tabs, form, errorLine())
   body.append(legalLinks('By signing in you agree to the'))
 
   const other = document.createElement('details')

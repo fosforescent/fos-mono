@@ -18,6 +18,11 @@ app.applyConstructor(lodging, { kind: 'requirement', text: 'deposit', extras: { 
 app.applyConstructor(home, { kind: 'task', text: 'Ship the sync release', done: false })
 app.applyConstructor(home, { kind: 'plain', text: 'Ideas for later' })
 app.applyConstructor(home, { kind: 'template', text: 'Implement and verify' })
-if (new URLSearchParams(location.search).has('open')) app.goTo(trip)
+const params = new URLSearchParams(location.search)
+if (params.has('open')) app.goTo(trip)
+if (params.has('root')) app.goToRoot()
+if (params.has('account')) app.goToAccountPeer()
+if (params.has('register')) { app.setAuthFlow({ phase: 'register' }); app.goToAccountPeer() }
+if (params.has('confirm')) { app.setAuthFlow({ phase: 'confirm', username: 'new-user', channel: 'email', destination: 'ne…@example.com' }); app.goToAccountPeer() }
 app.refresh()
 </script></body></html>

@@ -89,7 +89,8 @@ export const postResetPwd = async (req: Request, res: Response) => {
 
   console.log('clientDetails', username, (req as any).clientDetails)
 
-  await sendPasswordResetEmail(user.user_name, token, (req as any).clientDetails)
+  const to = user.email ?? (user.user_name.includes('@') ? user.user_name : null)
+  if (to) await sendPasswordResetEmail(to, token, (req as any).clientDetails)
 
   return res.json({ message: "If an account with that email exists, we've sent a password reset link." })
 }
