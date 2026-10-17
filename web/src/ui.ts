@@ -398,7 +398,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   crumbs.className = 'crumb-path'
   const settingsContext = view.length > 0 && view[0] !== HOME_ID && !state.replica.meta.scope.length && !!viewAt(state.replica, [])?.tasks.some(row => row.id === HOME_ID)
   const homeCrumb = button('crumb', settingsContext ? 'Settings' : labels.scope.length ? shortCrumb(pathLabel(labels.scope)) : '⌂', () => settingsContext ? app.goToRoot() : app.goTo([]))
-  if (!settingsContext && !labels.scope.length) { homeCrumb.innerHTML = iconSvg('⌂')!; homeCrumb.setAttribute('aria-label', 'Home'); homeCrumb.title = 'Home' }
+  if (!settingsContext && !labels.scope.length) { homeCrumb.innerHTML = iconSvg('⌂')!; homeCrumb.classList.add('crumb-home'); homeCrumb.setAttribute('aria-label', 'Home'); homeCrumb.title = 'Home' }
   if (state.atRoot) {
     crumbs.append(span('crumb current', 'Settings'))
   } else {
