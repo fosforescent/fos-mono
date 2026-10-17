@@ -21,6 +21,8 @@ if (!POSTMARK_API_TOKEN) {
 }
 
 const postmarkClient = new PostmarkClient(POSTMARK_API_TOKEN)
+/** Where emailed links point: the web app (Cloudflare Pages in production). */
+const WEB_URL = (process.env.WEB_URL ?? process.env.FRONTEND_URL ?? 'https://fosforescent.com').replace(/\/$/, '')
 
 
 export const generateLinkToken = () => {
@@ -73,9 +75,28 @@ export const deliverInboundEmail = async (inboundEmail: InboundEmailModel) => {
   })
 }
 
+/**
+ * The account confirmation code, as a plain email (no Postmark template to keep in step): the six digits to type into
+ * the app, and the link that confirms in one click. Recorded as an outbound email like the templated ones.
+ */
+export const sendConfirmationCodeEmail = async (email: string, code: string, actionUrl: string) => {
+  const outboundEmail = await prisma.outboundEmailModel.create({
+    data: { from: 'auth@fosforescent.com', to: email, templateAlias: 'confirmation-code', templateModel: { action_url: actionUrl, product_name: 'Fosforescent', name: email } }
+  })
+  const text = `Your Fosforescent confirmation code is ${code}\n\nEnter it in the app, or open this link to confirm in one step:\n${actionUrl}\n\nThe code expires in 15 minutes. If you did not create a Fosforescent account, ignore this message.`
+  const html = `<p>Your Fosforescent confirmation code is</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;font-family:ui-monospace,monospace">${code}</p><p>Enter it in the app, or <a href="${actionUrl}">confirm in one step</a>.</p><p style="color:#667">The code expires in 15 minutes. If you did not create a Fosforescent account, ignore this message.</p>`
+  try {
+    await postmarkClient.sendEmail({ From: 'auth@fosforescent.com', To: email, Subject: `${code} is your Fosforescent confirmation code`, TextBody: text, HtmlBody: html, MessageStream: 'outbound' })
+    await prisma.outboundDeliveryAttemptModel.create({ data: { emailId: outboundEmail.id, status: 'success' } })
+  } catch (error) {
+    await prisma.outboundDeliveryAttemptModel.create({ data: { emailId: outboundEmail.id, status: 'fail', reason: error instanceof Error ? error.message : String(error) } })
+    throw error
+  }
+}
+
 export const sendConfirmationEmail = async (email: string, token: string, clientDetails: ClientDetails) => {
   // Send password reset email
-  const actionUrl = `http://www.fosforescent.com/?confirm-email-token=${token}`
+  const actionUrl = `${WEB_URL}/?confirm-email-token=${token}`
 
   const outboundEmail = await prisma.outboundEmailModel.create({
     data: {
@@ -98,7 +119,7 @@ export const sendConfirmationEmail = async (email: string, token: string, client
 
 export const sendPasswordResetEmail = async (email: string, token: string, clientDetails: ClientDetails) => {
   // Send password reset email
-  const actionUrl = `http://www.fosforescent.com/?reset-password-token=${token}`
+  const actionUrl = `${WEB_URL}/?reset-password-token=${token}`
 
   const outboundEmail = await prisma.outboundEmailModel.create({
     data: {
@@ -109,9 +130,9 @@ export const sendPasswordResetEmail = async (email: string, token: string, clien
         action_url: actionUrl,
         product_name: 'Fosforescent',
         name: email,
-        operating_system: clientDetails.os,
-        browser_name: clientDetails.browser,
-        ip_address: clientDetails.ipAddress
+        operating_system: clientDetails?.os,
+        browser_name: clientDetails?.browser,
+        ip_address: clientDetails?.ipAddress
       }
     }
   })
@@ -130,9 +151,9 @@ export const sendUpdatePasswordEmail = async (email: string, clientDetails: Clie
       templateModel: {
         product_name: 'Fosforescent',
         name: email,
-        operating_system: clientDetails.os,
-        browser_name: clientDetails.browser,
-        ip_address: clientDetails.ipAddress
+        operating_system: clientDetails?.os,
+        browser_name: clientDetails?.browser,
+        ip_address: clientDetails?.ipAddress
       }
     }
   })

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import bcrypt from 'bcrypt'
-import { generateLinkToken, sendConfirmationEmail } from '../email/email'
+import type { Confirmation } from './confirmation'
+import { validateRegistration } from './confirmation'
 
 import { prisma } from '../prismaClient'
 
@@ -12,45 +13,27 @@ export const hashPassword = async (password: string) => {
   return await bcrypt.hash(password, 10)
 }
 
-export const postRegister = async (req: Request, res: Response) => {
-  console.log('🔵 POST /auth/register received:', { username: req.body.username, hasPassword: !!req.body.password, accepted_terms: req.body.accepted_terms })
-  const { username, password, accepted_terms, cookies } = req.body
-
-  if (!username || !password) {
-    console.log('❌ Missing username or password:', { username, hasPassword: !!password })
-    return res.status(400).json({ error: 'Missing username or password' })
-  }
-
-  if (!accepted_terms) {
-    return res.status(400).json({ error: 'You must accept the terms and conditions' })
-  }
+/**
+ * Registration: username, password (typed twice) and an email address or phone number. The account is created
+ * unapproved and a confirmation code goes to that address or number (auth/confirmation.ts); signing in works once
+ * the code (or the emailed link) confirms it.
+ */
+export const postRegister = (confirmation: Confirmation) => async (req: Request, res: Response) => {
+  const checked = validateRegistration(req.body)
+  if (!checked.ok) return res.status(400).json({ error: checked.error })
+  const { username, password, email, phone, channel } = checked.input
+  const cookies = req.body?.cookies ?? false
+  if (channel === 'phone' && !confirmation.smsAvailable()) return res.status(400).json({ error: 'Texting is not configured on this server; register with an email address instead.' })
 
   // Check if user already exists
-  const existingUser = await prisma.userModel.findUnique({
-    where: {
-      user_name: username
-    }
-  })
-
-  if (existingUser) {
-    return res.status(409).json({ error: 'User already exists' })
-  }
-
-  // validate password
-  // match at least one uppercase letter and number
-  if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-    return res.status(400).json({ error: 'Password must contain at least one uppercase letter and one number' })
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters long' })
-  }
+  const existingUser = await prisma.userModel.findFirst({ where: { OR: [{ user_name: username }, ...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])] } })
+  if (existingUser) return res.status(409).json({ error: existingUser.user_name === username ? 'User already exists' : `That ${channel} already belongs to an account` })
 
   // Hash password
   const hashedPassword = await hashPassword(password) // You can adjust the salt rounds
 
   // Create user
   try {
-    const { token, expiration } = generateLinkToken()
 
     // Create a new FosStore and insert its nodes into the database first
     const newStore = new FosStore()
@@ -120,14 +103,14 @@ export const postRegister = async (req: Request, res: Response) => {
         password: hashedPassword,
         subscription_status: 'inactive',
         user_profile: {},
-        email_confirmation_token: token,
-        email_confirmation_expiration: expiration,
+        email: email ?? null,
+        phone: phone ?? null,
         password_reset_expiration: new Date(),
         accepted_terms: new Date(),
         api_calls_available: 1000,
         api_calls_used: 0,
         api_calls_total: 0,
-        approved: true,
+        approved: false, // until the code sent to the email or phone confirms the account
         cookies,
         fosNodeId: aliasCid,
         FosNodeUserAccessLink: {
@@ -149,22 +132,14 @@ export const postRegister = async (req: Request, res: Response) => {
     }
 
 
-    // Omit sending password back in the response
-    const { password, ...result } = user
-
-    // Send email confirmation email only if username is a valid email
-    if (username.includes('@') && username.includes('.')) {
-      try {
-        await sendConfirmationEmail(username, token, (req as any).clientDetails)
-      } catch (error) {
-        console.warn('Failed to send confirmation email:', error)
-        // Continue without email confirmation for development/testing
-      }
-    } else {
-      console.log('Skipping email confirmation for non-email username:', username)
+    // The code goes out now; if it cannot be delivered the account stays unconfirmed and "Resend" tries again.
+    try {
+      const pending = await confirmation.start(user, channel)
+      return res.status(201).json({ username: user.user_name, pending: pending.channel, destination: pending.destination })
+    } catch (error) {
+      console.warn('Failed to send the confirmation code:', error)
+      return res.status(201).json({ username: user.user_name, pending: channel, destination: null, error: 'The confirmation code could not be sent. Use “Resend” in a moment.' })
     }
-
-    return res.status(201).json(result)
   } catch (error) {
     console.error(error)
     return res.status(500).json({ error: 'Internal server error' })

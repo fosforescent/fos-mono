@@ -18,9 +18,10 @@ Handles user authentication, registration, and account management functionality.
 
 #### HTTP Requests
 - **POST /login**: `{username: string, password: string}`
-- **POST /register**: `{username: string, password: string, accepted_terms: boolean, cookies: object}`
+- **POST /register**: `{username, password, confirmPassword, email? | phone?, accepted_terms, cookies}` → 201 `{username, pending: 'email'|'phone', destination}`; the account stays `approved: false` until confirmed (`confirmation.ts`)
+- **POST /confirm**: `{username, code}` (the six digits sent to the email or phone) or `{token}` (the emailed one-click link) → approves the account; a phone confirmation also links the number as the `phone` integration connection
+- **POST /confirm/resend**: `{username}` → a fresh code to the same place (always 200 for unknown names)
 - **GET /verify-jwt**: JWT token in Authorization header
-- **POST /confirm-email**: `{token: string}`
 - **POST /update-password**: `{currentPassword: string, newPassword: string}`
 - **POST /update-email**: `{newEmail: string}`
 - **POST /reset-password**: `{token: string, newPassword: string}`
@@ -48,8 +49,8 @@ Handles user authentication, registration, and account management functionality.
 - **Email Confirmations**: Sent via email service with verification tokens
 
 ### Events Handled
-- **User Registration**: Creates new account, initializes graph store, sends confirmation email
-- **User Login**: Validates credentials, generates JWT, returns user session data
+- **User Registration**: validates (`validateRegistration`: matching passwords, one of email/phone), creates the unapproved account and its graph store, sends the confirmation code (Postmark `sendConfirmationCodeEmail`, or the SMS channel)
+- **User Login**: validates credentials; an unconfirmed account gets 403 `{code: 'unconfirmed', channel, destination}` so the web app shows the code step; then JWT and session data
 - **Password Updates**: Validates current password, hashes new password
 - **Email Updates**: Generates verification token, sends confirmation email
 - **Password Reset**: Token-based password reset flow

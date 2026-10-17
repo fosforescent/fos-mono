@@ -42,6 +42,13 @@ model UserModel {
   subscription_status           String                       @default("")
   email_confirmation_token      String?                      @unique
   email_confirmation_expiration DateTime?
+  /// Where the account is reached: at least one is set at registration and confirmed with a code (auth/confirmation.ts).
+  email                         String?                      @unique
+  phone                         String?                      @unique
+  /// A pending confirmation: the channel the code went to, its keyed hash and expiry. Cleared when the account is approved.
+  confirmation_channel          String?
+  confirmation_code_hash        String?
+  confirmation_expiration       DateTime?
   password_reset_token          String?                      @unique
   password_reset_expiration     DateTime?
   approved                      Boolean                      @default(false)

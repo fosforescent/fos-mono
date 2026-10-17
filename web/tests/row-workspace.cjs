@@ -118,13 +118,25 @@ async function main() {
   const login = a.login.bind(a); let signedIn
   a.login = async (name, password) => { signedIn = { name, password } }
   document.querySelector('.account-form [name="username"]').value = 'new-user'
+  document.querySelector('.account-form [name="email"]').value = 'new@example.com'
   document.querySelector('.account-form [name="password"]').value = 'ExamplePass1'
+  document.querySelector('.account-form [name="confirmPassword"]').value = 'ExamplePass1'
   document.querySelector('.account-form input[type="checkbox"][required]').checked = true
+  globalThis.fetch = async (url, init) => { registration = { url, body: JSON.parse(init.body) }; return { ok: true, json: async () => ({ username: 'new-user', pending: 'email', destination: 'ne…@example.com' }) } }
   document.querySelector('.account-form form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
-  await tick()
+  await tick(); await tick()
   assert.equal(registration.url, 'http://localhost/auth/register')
-  assert.equal(registration.body.accepted_terms, true); assert.equal(signedIn.name, 'new-user')
+  assert.deepEqual(registration.body, { username: 'new-user', password: 'ExamplePass1', confirmPassword: 'ExamplePass1', email: 'new@example.com', accepted_terms: true, cookies: false })
+  // the account is confirmed with the code sent to that address; the code signs in with the password typed above
+  assert.equal(a.state.authFlow.phase, 'confirm')
+  assert(document.querySelector('.account-form .code-input'), 'the form moves to the code step')
+  globalThis.fetch = async (url) => ({ ok: true, json: async () => ({ confirmed: true, username: 'new-user' }) })
+  document.querySelector('.account-form .code-input').value = '123456'
+  document.querySelector('.account-form form.confirm-code').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  await tick(); await tick()
+  assert.deepEqual(signedIn, { name: 'new-user', password: 'ExamplePass1' })
   a.login = login
+  a.setAuthFlow({ phase: 'signin' }); await tick()
   document.querySelector('.account-form [name="username"]').focus()
   a.goTo([])
   assert(!document.querySelector('.account-form'), 'navigation leaves the focused login form')
