@@ -1,5 +1,7 @@
 -- Voice-note usage metering leaves the token ledger: one row per transcription, summed against the free budget.
-CREATE TABLE "VoiceUsageModel" (
+-- Idempotent: the live database received this table through `prisma db push` before migrations were deployed,
+-- but not the ledger carry-over below, which this migration still performs.
+CREATE TABLE IF NOT EXISTS "VoiceUsageModel" (
     "id" SERIAL NOT NULL,
     "userId" INTEGER NOT NULL,
     "usd" DOUBLE PRECISION NOT NULL,
@@ -12,9 +14,13 @@ CREATE TABLE "VoiceUsageModel" (
     CONSTRAINT "VoiceUsageModel_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "VoiceUsageModel_userId_createdAt_idx" ON "VoiceUsageModel"("userId", "createdAt");
+CREATE INDEX IF NOT EXISTS "VoiceUsageModel_userId_createdAt_idx" ON "VoiceUsageModel"("userId", "createdAt");
 
-ALTER TABLE "VoiceUsageModel" ADD CONSTRAINT "VoiceUsageModel_userId_fkey" FOREIGN KEY ("userId") REFERENCES "UserModel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'VoiceUsageModel_userId_fkey') THEN
+        ALTER TABLE "VoiceUsageModel" ADD CONSTRAINT "VoiceUsageModel_userId_fkey" FOREIGN KEY ("userId") REFERENCES "UserModel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END $$;
 
 -- Earlier voice-note debits were written into the ledger with a zero balance effect; carry them over as usage rows.
 INSERT INTO "VoiceUsageModel" ("userId", "usd", "tokens", "seconds", "bytes", "clusters", "createdAt")

@@ -193,7 +193,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
       }
       form.append(box)
     }
-    const submit = element('button', node.execution ? 'Continue execution' : 'Save input'); submit.type = 'submit'; submit.disabled = !!node.execution && !['idle', 'rolled-back'].includes(node.execution.status); form.append(submit)
+    const submit = element('button', node.execution ? 'Complete' : 'Save input'); submit.type = 'submit'; submit.disabled = !!node.execution && !['idle', 'rolled-back'].includes(node.execution.status); form.append(submit)
     form.onsubmit = async e => {
       e.preventDefault(); submit.disabled = true
       const id = generation
