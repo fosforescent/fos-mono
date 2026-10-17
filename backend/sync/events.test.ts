@@ -45,7 +45,8 @@ test('revocation and per-child restrictions apply immediately, including search'
   expect((await s.call('fos_read', { path: ['ui'] })).error).toMatch(/access/)
   expect((await s.call('fos_search', { query: 'UI' })).matches).toEqual([])
   s.set(removeMemberAt(s.get(), ['project'], 'agent', 4))
-  expect((await s.call('fos_read')).error).toMatch(/read access/)
+  // with nothing granted, the tools are not even offered to the credential
+  expect((await s.call('fos_read')).error).toMatch(/read access|Tool unavailable/)
 })
 test('branch selection is scoped, validated, and does not change subsequent requests', async () => {
   const s = setup()
@@ -79,7 +80,7 @@ test('read-only and revoked child edit grants cannot submit changes', async () =
   expect((await s.call('fos_propose', { expected: revision, name: 'bad', changes: [{ path: ['ui'], operation: 'rename', text: 'Oops' }] })).error).toMatch(/cannot edit/)
   s.set(setMemberCapabilitiesAt(s.get(), ['project'], 'agent', ['read'], [], 4))
   revision = (await s.call('fos_read')).revision
-  expect((await s.call('fos_propose', { expected: revision, name: 'bad', changes: [{ path: [], operation: 'add_task', text: 'Oops' }] })).error).toMatch(/cannot propose/)
+  expect((await s.call('fos_propose', { expected: revision, name: 'bad', changes: [{ path: [], operation: 'add_task', text: 'Oops' }] })).error).toMatch(/cannot propose|Tool unavailable/)
   expect(s.saves()).toBe(0)
 })
 test("a peer's evaluation becomes a request the owner's rules decide on; owner-only tools are absent for peers", async () => {

@@ -4,7 +4,7 @@
  * lock. `complete` hands the authorized request to the evaluation service, which runs the handler registry.
  */
 import type { Request, Response } from 'express'
-import { createReplica, dispatchEvent, ensureHomeContext, ensureInviteRequest, EventError, handleMcp, headCid, parseEvent, pathOf, MCP_PROTOCOL_VERSIONS, type EvaluateRequest, type FosEvent, type Principal, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, dispatchEvent, ensureHomeContext, ensureInviteRequest, EventError, handleMcp, headCid, inheritedNodeGrants, parseEvent, pathOf, MCP_PROTOCOL_VERSIONS, type Capability, type EvaluateRequest, type FosEvent, type Principal, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, serverPeerIdFor, type PeerSyncDeps } from './peerSync'
 
 type Claims = { username?: string; kind?: string; peerId?: string; scope?: string[]; name?: string; exp?: number }
@@ -108,7 +108,18 @@ export function createEventService(deps: PeerSyncDeps, evaluate?: Evaluate) {
         if (claimsOf(req)?.kind !== 'peer') { try { scope = JSON.parse(String(req.query.scope ?? 'null')) } catch { scope = null } }
         principal = principalOf(claimsOf(req), scope, claimsOf(req)?.kind !== 'peer' && typeof req.query.owner === 'string' ? req.query.owner : undefined)
       } catch (error) { return res.status(errorStatus(error)).json({ error: message(error) }) }
-      const result = await handleMcp(req.body, { owner: principal.owner, dispatch: event => handle(principal, event), serverName: 'Fos project tree' })
+      // a peer sees the tools its grants on the attachment allow (nothing when everything was switched off)
+      let capabilities: Capability[] | undefined
+      if (!principal.owner) {
+        try {
+          capabilities = await withUserLock(`user:${principal.username}`, async () => {
+            const loaded = await deps.loadStore(principal.username)
+            if (!loaded) return []
+            return inheritedNodeGrants(createReplica(serverPeerIdFor(loaded.user.username), loaded.store), principal.scope, { peerId: principal.peerId, scope: principal.scope, capabilities: [] })
+          })
+        } catch { capabilities = [] }
+      }
+      const result = await handleMcp(req.body, { owner: principal.owner, capabilities, dispatch: event => handle(principal, event), serverName: 'Fos project tree' })
       return result === null ? res.status(202).end() : res.json(result)
     },
     /** WebSocket `{type:'event', id, event, scope?}` → `{type:'event_result', id, result|error}` (see ws.ts). */

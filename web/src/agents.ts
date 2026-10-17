@@ -54,24 +54,20 @@ async function probe(app: App) {
   } catch (e) { state.error = String(e) }
   state.loading = false; app.refresh()
 }
-export function desktopAgentControls(app: App): HTMLElement | null {
-  const cwd = localRepository(app.state.replica, app.state.view)
-  if (!inTauri()) return null
-  const el = document.createElement('div'); el.dataset.capability = 'repo'
-  const label = document.createElement('small'); label.textContent = cwd ? `Local Git · ${cwd}` : 'Local agents'; el.append(label)
-  for (const provider of ['claude', 'codex'] as const) { const launch = document.createElement('button'); launch.textContent = `Open ${provider === 'claude' ? 'Claude Code' : 'Codex'} CLI`; launch.onclick = () => openCliAgent(app, provider, cwd ?? ''); el.append(launch) }
-  if (!cwd) return el
+/** Whether the native SDK for `provider` is usable (probed once per app); null while unknown. */
+export function sdkAvailable(app: App, provider: 'claude' | 'codex'): boolean | null {
+  if (!inTauri()) return false
   const state = availability.get(app)
-  if (!state) { void probe(app); return el }
-  for (const provider of ['claude', 'codex'] as const) if (state[provider]) {
-    const b = document.createElement('button'); b.textContent = `Run ${provider === 'claude' ? 'Claude' : 'Codex'}…`; b.onclick = () => openRun(app, provider, cwd); el.append(b)
-  }
-  for (const provider of ['claude', 'codex'] as const) if (!state[provider] && state.diagnostics?.[provider]) { const info = document.createElement('p'); info.textContent = `${provider === 'claude' ? 'Claude' : 'Codex'}: ${state.diagnostics[provider]}`; el.append(info) }
-  const check = document.createElement('button'); check.textContent = state.loading ? 'Checking SDKs…' : 'Check agent integrations'; check.disabled = !!state.loading; check.onclick = () => void probe(app); el.append(check)
-  if (state.error || (!state.loading && !state.claude && !state.codex && !state.diagnostics)) { const info = document.createElement('p'); info.textContent = state.error ?? 'Configure Codex native sign-in or Claude API credentials in the desktop environment, then check again.'; el.append(info) }
-  return el
+  if (!state) { void probe(app); return null }
+  return state.loading ? null : !!state[provider]
 }
-function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation = false, cli = false, initialPrompt?: string, verify = false, launchOptions: {autoStart?: boolean; scope?: Scope; chrome?: boolean} = {}) {
+export const AGENT_CLI_NAME: Record<'claude' | 'codex', string> = { claude: 'Claude Code', codex: 'Codex' }
+/** Run the provider's SDK against the local checkout of the current node (the "Run …" constructor action). */
+export function openSdkAgent(app: App, provider: 'claude' | 'codex', cwd: string): void {
+  openRun(app, provider, cwd)
+}
+type LaunchOptions = { autoStart?: boolean; scope?: Scope; chrome?: boolean; /** the node's local MCP server: the agent works on the node itself with the tools it was granted */ mcp?: { url: string; token: string } }
+function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation = false, cli = false, initialPrompt?: string, verify = false, launchOptions: LaunchOptions = {}) {
   const replica = app.state.replica, store = replica.store, path = [...(launchOptions.scope ?? app.state.view)]
   let context: ReturnType<typeof agentContext>
   try { context = evaluation ? { revision: headCid(replica), nodes: [{ path: [], text: app.currentRow()?.title ?? '', kind: 'task', done: false }] } : agentContext(replica, path) } catch (e) { app.notify('error', String(e)); return }
@@ -97,7 +93,7 @@ function openRun(app: App, provider: 'claude' | 'codex', cwd: string, evaluation
     let endpoint: Awaited<ReturnType<typeof connectEvaluationAgent>> | undefined
     try {
       if (evaluation) endpoint = await connectEvaluationAgent(app)
-      id = await tauriInvoke<string>('agent_start', { request: { provider, cwd: cli ? directory.value.trim() : cwd, prompt: prompt.value, context, ...(cli ? { cli: true, chrome: chrome.checked, verify } : {}), ...(endpoint ? { evaluation: { url: endpoint.url, token: endpoint.token } } : {}) } })
+      id = await tauriInvoke<string>('agent_start', { request: { provider, cwd: cli ? directory.value.trim() : cwd, prompt: prompt.value, context, ...(launchOptions.mcp ? { mcp: launchOptions.mcp } : {}), ...(cli ? { cli: true, chrome: chrome.checked, verify } : {}), ...(endpoint ? { evaluation: { url: endpoint.url, token: endpoint.token } } : {}) } })
       while (id) {
         if (app.state.replica.store !== store || evaluation && JSON.stringify(app.executionPath()) !== JSON.stringify(path)) { await control({ cancel: true }); throw new Error('Run cancelled because the data session changed.') }
         const poll = await tauriInvoke<Poll>('agent_poll', { id })
@@ -130,6 +126,6 @@ export function evaluationAgentControl(app: App): HTMLButtonElement | null {
   return button
 }
 
-export function openCliAgent(app: App, provider: 'claude' | 'codex', cwd = '', prompt?: string, verify = false, launchOptions: {autoStart?: boolean; scope?: Scope; chrome?: boolean} = {}): void {
+export function openCliAgent(app: App, provider: 'claude' | 'codex', cwd = '', prompt?: string, verify = false, launchOptions: LaunchOptions = {}): void {
   openRun(app, provider, cwd, false, true, prompt, verify, launchOptions)
 }
