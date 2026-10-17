@@ -1,18 +1,16 @@
 # Backend CLAUDE.md
 
 ## Directory Summary
-The backend directory contains the Node.js/Express API server that provides the core functionality for Fosforescent. It handles authentication, data management, graph operations, subscriptions, and serves as the bridge between the frontend and the database.
+The backend directory contains the Node.js/Express API server that provides the core functionality for Fosforescent. It handles authentication, data management, graph operations, subscriptions, and is the always-on account peer for the web, desktop and CLI clients.
 
 ## Key Components
 
 ### Core API Files
 - `index.ts` - Main server entry point and Express app configuration
 - `auth/` - Authentication system (JWT, registration, login, password reset)
-- `data/` - Data management and search functionality
 - `subscription/` - Stripe payment and subscription handling
 - `email/` - Email service integration (Postmark)
 - `mcp/` - Model Context Protocol server and client implementations
-- `mcp/temporalMcpServer.ts` - Temporal MCP server for long-running task management
 - `voice/voiceNotes.ts` - `POST /user/data/voice-notes` (raw audio body ≤ 25 MB): transcription, hierarchical summary (chunks → summaries → summary), sentiment/topic clusters as JSON. Provider: **Gemini on Vertex AI** by default (`geminiVoiceDeps`, model `VOICE_GEMINI_MODEL` = gemini-2.5-flash, location `VERTEX_LOCATION`/`GCP_REGION`; auth is the Cloud Run service account's `roles/aiplatform.user`, locally application-default credentials); `VOICE_PROVIDER=openai` switches to OpenAI (`OPENAI_API_KEY`). Spend is metered from token counts (`VOICE_PRICE_TEXT_IN/AUDIO_IN/OUT` USD per 1M tokens) and recorded per user as `TokenTransactionModel` debits (description `Voice note …`, `metadata.usd`; `ToolUseModel` is unusable because its `toolUseId` is a foreign key to a bid session); users without an active subscription (`subscription_status` active/trialing/past_due, or admins) get `VOICE_FREE_BUDGET_USD` (default 1.00) in total, then 402. Deps are injectable (`createVoiceNoteHandler(deps, usage)`), tests mock them
 - `search/rowIndex.ts` + `search/routes.ts` - semantic search over rows and the market. `indexStore` embeds every row of a user's store (Vertex `text-embedding-005`, 768 dims, table `RowEmbeddingModel` with a pgvector column written through raw SQL; hash-based upsert, vanished rows deleted) and runs debounced after each `saveStore` in `sync/peerSync.ts` (`ROW_INDEX_DELAY_MS`, `ROW_INDEX_DISABLED=true` to turn off). Routes (user JWT): `POST /user/data/search {query, market, limit}`, `POST /user/data/search/reindex`, `GET /user/data/market/node?owner=&id=` (a listed node with proposals filtered to the requester's own), `POST /user/data/market/proposals {owner, aliasId, rows}` (the requester's branch recorded as a proposal `user:<name>` on the owner's node under the owner's lock; `rows[].id` lets a supply reference an allocation sent in the same proposal; `requirement` rows are accepted so an allocation bin travels whole). Both market routes open a node to accounts the owner made members with `edit` (`hasCapability`), not only listed nodes. Design: `docs/sync.md`, "Requirements, resource banks, queries and the market"
 - `integrations/` - integration peers: `providers.ts` (registry: OAuth GitHub/Google/Discord, platform Stripe, the phone channel), `secrets.ts` (AES-GCM token storage under `INTEGRATION_SECRET`, signed OAuth state, phone codes), `routes.ts` (`GET /user/integrations`, `:provider/start`, public `/integrations/:provider/callback`, `DELETE :provider`, `phone` + `phone/verify`, handlers `llm` (the server's own model), `repo/issue` (GitHub), `calendar/event` (Google); `createSmsInbound` turns texts into rows; `notifyUser` texts a linked phone; `prismaIntegrationDeps`), `store.ts` (a user's tree as a replica for edits: `editTree`, `walkRows`, `rowsDeps`), `mcpPeers.ts` (MCP servers as peers: `GET /user/data/mcp-peers`, `attach` makes a server a member `mcp:<id>` advertising `tool`, `run` executes a `-tool` requirement, `runOpenToolRequests` listens after saves when `MCP_LISTEN=true` via `afterSaveHooks`). Tests: `routes.test.ts`, `mcpPeers.test.ts` (dependency-injected, no network). Model: `IntegrationConnectionModel`.
@@ -25,8 +23,8 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `sync/peerSync.ts` - `POST/GET /user/data/peer-sync` (+ `/attachment`): user-group side of the offline/online sync (`shared/sync`, `docs/sync.md`); merges into the user's FosStore via `dbToStore`/`storeToDb`, serializes per user, nudges other devices over WebSocket (`sendToUser` in `promptNotifications.ts`)
 
 ### Graph System Integration
-- `qdrant.ts` - Qdrant vector database integration for semantic search  
-- `embedding.ts` - Vector embedding generation using OpenAI
+- `embedding.ts` - embeddings for the MCP server registry (same Vertex model and pgvector layout as `search/rowIndex.ts`)
+- `userDirectory.ts` - `GET /groups/search/name|email`: find Fos accounts for the web's peer search
 - Integration with `shared/dag-implementation/` for graph operations
 - `prismaClient.ts` - Database client configuration
 
@@ -48,11 +46,10 @@ The backend directory contains the Node.js/Express API server that provides the 
 ### External Dependencies
 - **Express 4.x**: Web framework for API endpoints (compatible types)
 - **Prisma**: ORM for database operations
-- **Qdrant**: Vector database for semantic search
 - **Stripe**: Payment processing (API version 2024-10-28.acacia)
 - **Postmark**: Email service
 - **JWT**: Authentication tokens
-- **OpenAI**: AI model integration and embeddings
+- **Vertex AI (Gemini, text-embedding-005)**: voice notes, the server's own `llm` handler and row embeddings; OpenAI is an optional voice provider
 - **bcrypt**: Password hashing
 
 ### Internal Dependencies
@@ -62,17 +59,17 @@ The backend directory contains the Node.js/Express API server that provides the 
 ## Data Inputs/Outputs
 
 ### Input Sources
-- HTTP requests from frontend application
+- HTTP requests from the web app, the `fos` binary and agent plugins
 - Webhook events from Stripe
 - Email webhook events from Postmark
 - Database queries via Prisma
 - AI model responses from OpenAI
 
 ### Output Destinations
-- JSON API responses to frontend
+- JSON API responses
 - Database writes via Prisma
 - Email sends via Postmark
-- Vector embeddings to Qdrant database
+- Row embeddings into PostgreSQL (pgvector)
 - WebSocket messages for real-time updates
 
 ## Events Handled
@@ -112,8 +109,6 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `STRIPE_WEBHOOK_SECRET` - Stripe webhook verification
 - `OPENAI_API_KEY` - OpenAI API access for embeddings
 - `POSTMARK_API_TOKEN` - Email service token
-- `QDRANT_URL` - Qdrant vector database URL (default: http://localhost:6333)
-- `QDRANT_API_KEY` - Qdrant API key (optional for local development)
 - `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `DISCORD_TOKEN`, `CHANNELS_ECHO` - chat channels (optional; adapters without credentials stay off)
 - `GCP_PROJECT_ID`, `VERTEX_LOCATION`, `EMBEDDING_MODEL` - Vertex embeddings for row search (service account on Cloud Run; locally `GOOGLE_APPLICATION_CREDENTIALS` must point at a valid credential)
 - `WEB_URL` (falls back to `FRONTEND_URL`) - where the web app lives; used for the device sign-in verify URL
@@ -124,22 +119,12 @@ The backend directory contains the Node.js/Express API server that provides the 
 - Database integration tests
 - Authentication flow testing
 
-## Build Status
-- ✅ **Frontend: Building successfully**
-- ✅ **Backend: Building successfully with ZERO TypeScript errors** 
-- ✅ Fixed Express 4.x type compatibility issues
-- ✅ Migrated from pgvector to Qdrant for vector search
-- ✅ Added comprehensive parameter validation utilities
-- ✅ Fixed all MCP (Model Context Protocol) type issues
-- ✅ Added missing Stripe database fields and relationships
-
 ## TODOs
 
 ### Infrastructure & Deployment
 - [ ] Optimize Docker build for faster deployments (currently npm install is slow)
 - [ ] Add monitoring and health check endpoints
 - [ ] Implement backup and recovery procedures
-- [ ] Add Qdrant collection monitoring and health checks
 
 ### Development & Quality
 - [ ] Implement comprehensive API documentation
@@ -149,12 +134,6 @@ The backend directory contains the Node.js/Express API server that provides the 
 - [ ] Add batch processing optimization for large vector operations
 
 ### Completed Recently
-- [x] **Added Qdrant server to docker-compose and injected via env vars into the logic**
-- [x] **Integrated Qdrant client with automatic collection initialization**
-- [x] **Migrated semantic search from PostgreSQL to Qdrant vector database**
-- [x] **Updated data processing pipeline to use Qdrant batch operations**
-- [x] **Added Temporal.io integration with complete MCP server for long-running tasks**
-- [x] **Integrated Temporal MCP server with actual Temporal workflows and workers**
 - [x] Fixed all TypeScript compilation errors (100+ → 0)
 - [x] Implemented parameter validation utility pattern
 - [x] Fixed Express middleware type compatibility

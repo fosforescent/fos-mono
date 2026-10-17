@@ -60,10 +60,11 @@ shared/
 ├── dag-implementation/     # Core graph system
 │   ├── node.ts            # FosNode - immutable content-addressed nodes
 │   ├── store.ts           # FosStore - graph storage and queries
-│   ├── expression.ts      # FosExpression - expression representation
 │   ├── primitive-node.ts  # Built-in primitive types and constructors
-│   ├── channel.ts         # Communication channels (stub)
-│   └── context.ts         # Evaluation context (partial)
+│   ├── cid.ts / migrations.ts  # versioned content ids and format migrations
+│   └── channel.ts         # Communication channels (stub)
+│
+├── sync/                  # Refs, rows, merge, protocol, evaluation, triggers (docs/sync.md)
 │
 ├── evaluation/            # Evaluation and interpretation
 │   ├── interpreter.ts     # FosInterpreter - expression evaluation
@@ -92,7 +93,6 @@ shared/
 - Mutable aliases with version history
 
 ### Partially Implemented ⚠️
-- Expression evaluation (expression.ts has many stubs)
 - Channel communication (skeleton only)
 - Context/effect handling (mostly commented out)
 

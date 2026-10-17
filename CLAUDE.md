@@ -31,13 +31,12 @@ The primary goal is to implement the evaluation mechanism that allows:
 ## Architecture
 
 ### Monorepo Structure
-- **backend/**: Node.js/Express API server with Prisma ORM and PostgreSQL
-- **frontend/**: React/Vite SPA with TypeScript and Tailwind CSS
-- **shared/**: Core graph implementation and type definitions shared between frontend and backend
+- **backend/**: Node.js/Express API server with Prisma ORM and PostgreSQL (pgvector for row search); the account server is one peer among others
+- **shared/**: Core graph implementation and type definitions shared between web, desktop and backend
 - **shared/sync/**: Offline/online sync on the FosStore graph (identity-keyed three-way merge, CHOICE nodes for divergences, peer-link protocol); see `docs/sync.md`
 - **web/**: Vanilla-TS task UI used by the browser and wrapped by the Tauri desktop/mobile app; offline-first via localStorage replica
 - **prisma/**: Database schema and migrations
-- **infra/**: Infrastructure configuration including Terraform, Docker Compose, and E2E tests
+- **infra/**: Infrastructure configuration including Terraform, Docker Compose, Prisma schema and API smoke tests
 - **desktop/**: Tauri shell = the `fos` binary: GUI mode and a Rust CLI/REPL mode over the same `.fos/` state (`fos <dir>` = project context, `fos` = home/account context); see `desktop/CLAUDE.md` and `docs/sync.md`
 - **docs/**: Documentation and architecture guides
 
@@ -45,17 +44,15 @@ The primary goal is to implement the evaluation mechanism that allows:
 The heart of Fosforescent is a content-addressable graph implementation in `shared/dag-implementation/`:
 - **FosNode**: Primary node implementation with cryptographic content addressing
 - **FosStore**: Graph storage and querying system
-- **FosExpression**: Expression evaluation system
-- **Channels**: Communication mechanism between nodes
+- **shared/sync/**: everything above the store: mutable refs, rows, requirements, merge, protocol, evaluation, triggers (`docs/sync.md`)
 
 ### Key Technologies
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Radix UI components
-- **Backend**: Node.js, Express, Prisma, PostgreSQL
-- **Vector Database**: Qdrant for semantic search and vector embeddings
-- **Database**: PostgreSQL for relational data, Qdrant for vector operations
-- **Build**: Vite with separate frontend/backend builds, Docker multi-stage builds
-- **Testing**: Jest with React Testing Library, Playwright for E2E testing
-- **Infrastructure**: Docker Compose, Terraform for cloud deployment
+- **Web UI**: vanilla TypeScript, Vite (`web/`), wrapped by Tauri for desktop and mobile
+- **Backend**: Node.js, Express, Prisma, PostgreSQL with pgvector (Vertex embeddings for row search)
+- **Desktop/CLI**: Tauri 2 + Rust, with the TypeScript sync core embedded in QuickJS
+- **Build**: Vite for web, tsc for backend, cargo/tauri for desktop, Docker for the backend image
+- **Testing**: node scripts in `web/tests`, Jest in `backend/` and `shared/`, `node --test` in `desktop/agent-runtime` and `plugins/`
+- **Infrastructure**: Docker Compose, Terraform on GCP, Cloudflare Pages for the web app
 
 ## Development Commands
 
@@ -76,103 +73,67 @@ make run-clean-backend
 
 ### Development
 ```bash
-# Run both frontend and backend in development
+# Run backend and the web dev server together
 npm run dev
-# or
-make run-dev
 
-# Frontend only
-npm run dev:frontend
-
-# Backend only  
+# Web only / backend only / desktop (Tauri) only
+npm run dev:web
 npm run dev:backend
+npm run dev:desktop
 ```
 
 ### Building
 ```bash
-# Build both frontend and backend
-npm run build:frontend
+npm run build:web
 npm run build:backend
-
-# Using Makefile
-make build-frontend
-make build-backend
+npm run build:desktop
 ```
 
 ### Testing and Quality
 ```bash
-# Run unit tests
+# Web regressions (plain node scripts) and backend Jest
 npm run test
-# or
-make test
 
-# Run E2E tests (requires services to be running)
-cd infra && npm test
+# Shared graph/sync tests
+cd shared && npx jest sync/
 
-# Linting
-npm run lint
-make format
+# Desktop agent runtime and plugin packaging
+cd desktop/agent-runtime && node --test
+node --test plugins/bridge.test.mjs && python3 plugins/build_test.py
 
-# Fix linting issues
-npm run lint:fix
-make format-fix
-
-# Full check (format + test + build)
-make check
-```
-
-### Storybook
-```bash
-npm run storybook
-npm run build-storybook
-npm run test-storybook
+# Rust
+cd desktop/src-tauri && cargo check
 ```
 
 ## Build Configuration
 
-The project uses multiple build systems:
-
-### Vite Configuration
-- `--mode frontend`: Builds React SPA
-- `--mode backend`: Builds Node.js server as CommonJS library
-- Backend externals are automatically excluded from frontend builds
-- Frontend files are excluded from backend builds
-
-### Docker Configuration
-- Multi-stage Dockerfiles for both frontend and backend
-- Frontend Dockerfile: Builds React app and serves via Node.js
-- Backend Dockerfile: Builds TypeScript and runs production server
-- Docker Compose: Orchestrates services with PostgreSQL and Qdrant databases
+- `web/`: Vite SPA; `tsc && vite build`. The same build runs in the browser and inside the Tauri webview.
+- `backend/`: `tsc`; `Dockerfile` builds the image deployed to Cloud Run (`.github/workflows/deploy-backend.yml`).
+- `desktop/`: `tauri build`; `npm run build:core` rebundles `shared/sync/embed.ts` into `src-tauri/js/fos-core.js` for the CLI/REPL/local server.
+- Docker Compose (`infra/`): PostgreSQL (pgvector), Temporal and the backend.
 
 ## Database Schema
 
-Uses multiple database systems:
-- **PostgreSQL** (via Prisma): Relational data including user accounts, graph nodes, and metadata
-  - **UserModel**: User accounts with Stripe integration
-  - **FosNodeModel**: Content-addressable graph nodes
-  - Email and authentication event tracking
-- **Qdrant**: Vector database for semantic search and embeddings
-  - 3072-dimensional vectors using OpenAI text-embedding-3-large
-  - Automatic collection initialization and content indexing
+PostgreSQL via Prisma (`infra/prisma/schema.prisma`):
+- **UserModel**: User accounts with Stripe integration
+- **FosNodeModel**: Content-addressable graph nodes
+- **RowEmbeddingModel**: pgvector row embeddings (768-dimensional Vertex `text-embedding-005`) for semantic and market search
+- **IntegrationConnectionModel**, **PeerInviteModel**: OAuth connections and peer invite tokens
+- Email and authentication event tracking
 
 ## Testing Strategy
 
-- **Unit Tests**: Jest with React Testing Library for component and logic testing
-- **Integration Tests**: Storybook for component development and testing
-- **E2E Tests**: Playwright tests located in `infra/e2e-tests/` covering:
-  - Authentication flows
-  - Dashboard functionality
-  - Console agent interactions
-  - Subscription and billing workflows
-  - Graph workflow operations
-- **Visual Regression**: Storybook test runner for UI consistency
+- **Web**: `web/tests/*.cjs` drive the real UI controller against an in-memory DOM and fake transports (`npm test` in `web/`)
+- **Shared**: Jest over merge, protocol, refs, evaluation, triggers and CID migration (`shared/sync/*.test.ts`)
+- **Backend**: Jest with injected dependencies, no network (`backend/**/*.test.ts`); `infra/apiTests` holds manual API smoke scripts
+- **Desktop**: `cargo test --bin fos`, `node --test` in `desktop/agent-runtime`
 
 ## Development Notes
 
 - The graph system uses cryptographic hashing (CID) for content addressing; cids carry a format version (`v1-…`) and older formats are migrated on load, see `docs/cid-versioning.md`
 - Nodes are immutable - mutations create new nodes
 - The system supports both local and planned distributed operation via DHT
-- Vector embeddings are stored in Qdrant for high-performance semantic search
+- Row embeddings live in PostgreSQL (pgvector) and are reindexed after each save (`backend/search/rowIndex.ts`)
 - Authentication uses JWT with Stripe for payments/subscriptions
 
 ### Key Design Documents
@@ -217,22 +178,18 @@ Each major directory in this monorepo contains its own `CLAUDE.md` file with det
 ### Directory CLAUDE.md Locations:
 
 - `backend/auth/CLAUDE.md` - Authentication system
-- `backend/data/CLAUDE.md` - Data management and search
 - `backend/email/CLAUDE.md` - Email system
 - `backend/subscription/CLAUDE.md` - Payment and subscriptions
 - `docs/CLAUDE.md` - Documentation and architecture
-- `infra/helpers/CLAUDE.md` - End-to-end test helpers (moved from e2e/)
 - `infra/terraform/CLAUDE.md` - Terraform infrastructure configuration
-- `frontend/components/*/CLAUDE.md` - UI component directories
-- `frontend/hooks/CLAUDE.md` - Custom React hooks
-- `frontend/jest/CLAUDE.md` - Test configuration
-- `frontend/lib/CLAUDE.md` - Frontend utilities
-- `prisma/CLAUDE.md` - Database schema and management
+- `web/CLAUDE.md` - Web UI (browser and Tauri webview)
+- `desktop/CLAUDE.md` - Tauri shell, `fos` CLI/REPL, agent runtime
+- `infra/prisma/CLAUDE.md` - Database schema and management
 - `shared/dag-implementation/CLAUDE.md` - Core graph system
 - `shared/evaluation/CLAUDE.md` - Expression evaluation
 - `shared/sync/CLAUDE.md` - Offline/online sync core
 - `shared/mock/CLAUDE.md` - Example workflows and test data
-- `infra/CLAUDE.md` - Infrastructure, Docker, and E2E testing
+- `infra/CLAUDE.md` - Infrastructure, Docker, deployment
 
 ## Dev Tips
 

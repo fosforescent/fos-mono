@@ -27,7 +27,6 @@
     "@google/genai": "^1.52.0",
     "@langchain/core": "^0.3.37",
     "@prisma/client": "^6.8.2",
-    "@qdrant/js-client-rest": "^1.9.0",
     "@temporalio/activity": "^1.11.3",
     "@temporalio/client": "^1.11.3",
     "@temporalio/common": "^1.11.3",

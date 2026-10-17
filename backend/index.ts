@@ -25,7 +25,6 @@ import { postUpdateEmail } from './auth/updateEmail'
 import { checkUsernameExists } from './auth/checkUsername'
 import { postContactMessage } from './email/contactMessage'
 
-import { getUserData, deleteUserData, postUserDataPartial, getNodeByCid, getNodesByCids, postSync, getChangesSince } from './data'
 import { getSuggest } from './suggest'
 import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, deleteAttachment, prismaPeerSyncDeps, withUserLock } from './sync/peerSync'
 import { createSearchHandlers } from './search/routes'
@@ -115,19 +114,7 @@ import { config } from 'dotenv'
 import { getUserProfile, postUserProfile } from './user'
 import { putError } from './error'
 import { maxRequests } from './maxRequests'
-import {
-  queryUserByEmail,
-  queryUserByDisplayName,
-  getUserGroups,
-  findOrCreateDM,
-  createGroup,
-  addUserToGroup,
-  browsePublicGroups
-} from './group'
-import {
-  sendMessageToGroup,
-  getGroupMessages
-} from './groupMessages'
+import { queryUserByEmail, queryUserByDisplayName } from './userDirectory'
 // import { clientManagerMiddleware } from './clientManager'
 
 
@@ -135,9 +122,6 @@ import {
 import { prisma } from './prismaClient'
 import { attachWs } from './ws'
 import { postCreateOrGetConnectAccount } from './subscription/connectSession'
-import { MCPExpressMiddleware } from './mcp/mcpMiddleware'
-import { MCPProxy } from './mcp/mcpProxy'
-import { initializeCollection } from '@fosforescent/infra/qdrant'
 
 
 import jwt from 'jsonwebtoken'
@@ -173,7 +157,6 @@ const apiRoutes = express.Router()
 // Define your list of allowed origins
 const allowedOrigins = [
   'localhost',
-  'frontend',
   'fosforescent.com',
   'fos-prod.pages.dev',
   'www.fosforescent.com',
@@ -184,7 +167,6 @@ const allowedOrigins = [
   /^.*\.fosforescent\.com$/,
   /^.*\.fos-mono.pages\.dev$/,
   /^localhost\:[0-9]+$/,
-  /^frontend\:[0-9]+$/,
 
 ]
 
@@ -310,44 +292,6 @@ app.post('/auth/device/start', slowDown({ windowMs: 10 * 60 * 1000, delayAfter: 
 app.get('/auth/device/poll', slowDown({ windowMs: 1 * 60 * 1000, delayAfter: 120, delayMs: (used) => 1.5 ** (used - 120) }), deviceLoginHandlers.poll)
 
 dataRoutes.use(verifyJWTMiddleware)
-// dataRoutes.use(clientManagerMiddleware)
-dataRoutes.post('/', slowDown({
-  windowMs: 1 * 60 * 1000, // 1 minute,
-  delayAfter: 100, // allow 100 requests per 1 minute, then...
-  delayMs: (used) => 1.5 ** (used - 100) // begin adding 500ms of delay per request above 100:
-}), postUserDataPartial)
-
-// dataRoutes.use(clientManagerMiddleware)
-dataRoutes.get('/', slowDown({
-  windowMs: 1 * 60 * 1000, // 1 minute,
-  delayAfter: 100, // allow 100 requests per 1 minute, then...
-  delayMs: (used) => 1.5 ** (used - 100) // begin adding 500ms of delay per request above 100:
-}), getUserData)
-
-// Offline-first lazy-load endpoints
-dataRoutes.get('/nodes/:cid', slowDown({
-  windowMs: 1 * 60 * 1000,
-  delayAfter: 200,
-  delayMs: (used) => 1.5 ** (used - 200)
-}), getNodeByCid)
-
-dataRoutes.get('/nodes', slowDown({
-  windowMs: 1 * 60 * 1000,
-  delayAfter: 100,
-  delayMs: (used) => 1.5 ** (used - 100)
-}), getNodesByCids)
-
-dataRoutes.post('/sync', slowDown({
-  windowMs: 1 * 60 * 1000,
-  delayAfter: 50,
-  delayMs: (used) => 1.5 ** (used - 50)
-}), postSync)
-
-dataRoutes.get('/changes', slowDown({
-  windowMs: 1 * 60 * 1000,
-  delayAfter: 100,
-  delayMs: (used) => 1.5 ** (used - 100)
-}), getChangesSince)
 
 // Peer-link sync for the replicated task document (docs/sync.md, shared/sync).
 // Devices attach to the user group's document at a scope and exchange subtrees;
@@ -424,15 +368,6 @@ protectedRoutes.delete('/user', deleteAccount)
 // Group routes
 protectedRoutes.get('/groups/search/email', queryUserByEmail)
 protectedRoutes.get('/groups/search/name', queryUserByDisplayName)
-protectedRoutes.get('/groups', getUserGroups)
-protectedRoutes.get('/groups/public', browsePublicGroups)
-protectedRoutes.post('/groups', createGroup)
-protectedRoutes.post('/groups/dm', findOrCreateDM)
-protectedRoutes.post('/groups/:groupCid/members', addUserToGroup)
-
-// Group messages routes
-protectedRoutes.get('/groups/:groupCid/messages', getGroupMessages)
-protectedRoutes.post('/groups/:groupCid/messages', sendMessageToGroup)
 
 // MCP Server routes
 protectedRoutes.get('/mcp/servers', getMCPServers)
@@ -536,25 +471,6 @@ adminRoutes.post('/tokens/credit', adminCreditTokens)
 adminRoutes.get('/tokens/stats', getTokenStatistics)
 
 
-const mcpMiddleware = new MCPExpressMiddleware({
-  serverName: 'Fosforescent MCP Server',
-  serverVersion: '1.0.0'
-})
-
-
-
-const mcpHttpMiddleware: (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction) => Promise<void>
-  = mcpMiddleware.getHTTPMiddleware()
-
-const mcpRoutes: express.Router = express.Router()
-
-mcpRoutes.use(mcpHttpMiddleware)
-
-
-
 // Integration peers (OAuth sign-ins, the phone channel, MCP servers) and the handlers they provide; see backend/integrations/
 const storeDeps = { loadStore: prismaPeerSyncDeps.loadStore, saveStore: prismaPeerSyncDeps.saveStore, withUserLock, usernameOf: async (id: number) => (await prisma.userModel.findUnique({ where: { id }, select: { user_name: true } }))?.user_name ?? null }
 const smsAdapter = channelBus.adapter('sms')
@@ -623,7 +539,6 @@ app.use('/channels', createChannelsRouter())
 app.use('/api/v1', apiRoutes)
 app.use('/admin', adminRoutes)
 app.use('/', protectedRoutes)
-app.use('/mcp', mcpRoutes)
 
 
 
@@ -645,20 +560,6 @@ export interface Claims {
 
 const server = http.createServer(app);
 
-// Initialize MCP middleware and proxy
-
-const mcpProxy = new MCPProxy()
-
-// Attach MCP WebSocket server
-mcpMiddleware.attachToServer(server, '/mcp');
-
-// Add MCP HTTP endpoint for JSON-RPC over HTTP
-
-
-
-// Make MCP proxy available globally for other parts of the application
-(global as any).mcpProxy = mcpProxy
-
 attachWs(server, executionHandlers.interact)
 
 // Start the server
@@ -668,22 +569,11 @@ server.listen(PORT, '0.0.0.0', async () => {
   void startChannels()
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);
-  console.log(`MCP endpoint: ws://localhost:${PORT}/mcp`);
-  console.log(`MCP HTTP endpoint: http://localhost:${PORT}/mcp/http`);
-  
-  // Initialize Qdrant collection
-  try {
-    await initializeCollection();
-    console.log('Qdrant collection initialized successfully');
-  } catch (error) {
-    console.error('Failed to initialize Qdrant collection:', error);
-  }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully')
-  await mcpProxy.cleanup()
   void stopChannels()
   server.close(() => {
     console.log('Server closed')
@@ -693,7 +583,6 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully')
-  await mcpProxy.cleanup()
   server.close(() => {
     console.log('Server closed')
     process.exit(0)
@@ -718,4 +607,4 @@ process.on('SIGINT', async () => {
 //   socket.on('message', (msg) => {
 //     console.log('message: ' + msg);
 //   });
-// });
+// });

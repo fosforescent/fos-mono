@@ -41,7 +41,8 @@
     "declarations.d.ts",
     "lib/**/*.d.ts",
     "lib/dnd/multi-backend.js",
-    "../vite.config.ts", "vite.config.mts", "frontend/tailwind.config.cjs", "frontend/postcss.config.cjs"  ],
+    "vite.config.mts"
+  ],
   "exclude": [
     "node_modules",
     "src/components/fos-old/**/*",

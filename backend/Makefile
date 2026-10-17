@@ -8,10 +8,6 @@ build-backend:
 	node --version
 	npm run build:backend
 
-build-frontend:
-	npm run build:frontend
-
-
 run-dev:
 	npm run dev
 
@@ -20,7 +16,6 @@ run:
 	
 setup:
 	npm install
-	npm run e2e-setup
 
 .PHONY: build
 build:
@@ -34,29 +29,6 @@ format-fix:
 
 test:
 	npm run test
-
-e2e-test:
-	@echo "Cleaning up existing processes and resetting database..."
-	-pkill -f "npm run dev"
-	-pkill -f "vite"
-	-pkill -f "nodemon"
-	-pkill -f "tsx.*backend"
-	sleep 2
-	$(MAKE) reset
-	@echo "Starting servers and running e2e tests..."
-	cd backend && npm run dev > server.log 2>&1 &
-	cd frontend && npm run dev > server.log 2>&1 &
-	@echo "Waiting for servers to start..."
-	sleep 15
-	@echo "Running Playwright tests..."
-	cd e2e && npx playwright test --headed; \
-	TEST_EXIT_CODE=$$?; \
-	echo "Stopping servers..."; \
-	pkill -f "npm run dev" || true; \
-	pkill -f "vite" || true; \
-	pkill -f "nodemon" || true; \
-	pkill -f "tsx.*backend" || true; \
-	exit $$TEST_EXIT_CODE
 
 	
 check: 

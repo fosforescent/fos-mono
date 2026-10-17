@@ -4,7 +4,6 @@
       "jest",
       "node"
     ],
-    "jsx": "react-jsx",
     "target": "esnext",
     "lib": [
       "dom",
@@ -32,21 +31,14 @@
         "./*"
       ]
     },
-    "strictNullChecks": true,
-    "plugins": [{ "name": "typescript-plugin-css-modules" }]
+    "strictNullChecks": true
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",    
-    "declarations.d.ts",
-    "lib/**/*.d.ts",
-    "lib/dnd/multi-backend.js",
-    "../vite.config.ts", "vite.config.mts", "frontend/tailwind.config.cjs", "frontend/postcss.config.cjs"  ],
+    "declarations.d.ts"
+  ],
   "exclude": [
-    "node_modules",
-    "src/components/fos-old/**/*",
-    "src/fos/old/**/*",
-    "src/lib/old/**/*",
-    "src/main"
+    "node_modules"
   ]
 }
