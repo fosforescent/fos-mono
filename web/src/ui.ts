@@ -2102,8 +2102,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         const fos = handler('mail')
         const b = button('secondary small', fos ? `Ask ${fos.name} to send` : 'No mail handler', () => void app.askPeerAt(at, task))
         stop(b)
-        b.disabled = true
-        b.title = 'Mail is registered as a capability of fos, but no handler is wired to it yet'
+        b.disabled = !fos
+        b.title = fos ? 'The account server emails the first address in this row, with the rest as the subject and the task as the body' : 'Connect to your account: fos sends mail'
         if (fos) body.append(b)
       }
       if (r.capability === 'repo') {
@@ -2342,7 +2342,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     relay: 'Relays messages for peers that cannot reach each other',
     search: 'Runs "-? …" requirements: a query inside them, results as reference rows',
     market: 'Lists tasks with "-market" requirements and brings back proposals',
-    mail: 'Registered, no handler wired yet'
+    mail: 'Sends email for -mail requirements (the first address in the row is the recipient)'
   }
   /** One direction of a peer row as chips; with `change` they are editable (click switches off/on, × removes, a select adds). */
   const chips = (list: Capability[], off: Capability[], online: boolean, change: ((next: Capability[], nextOff: Capability[]) => void) | null, lockedNote?: string): HTMLElement[] => {
