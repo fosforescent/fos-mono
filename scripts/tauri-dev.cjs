@@ -6,7 +6,9 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '..')
 const production = process.argv.includes('--prod')
 const env = { ...process.env, RUST_LOG: 'debug', RUST_BACKTRACE: '1',
-  FOS_TARGET_DIR: fs.realpathSync(process.env.DIR || os.homedir()) }
+  FOS_TARGET_DIR: fs.realpathSync(process.env.DIR || os.homedir()),
+  // the dev app keeps its home-mode state apart from the installed app's ~/.fos (see desktop/src-tauri/tauri.dev.conf.json for its identifier)
+  FOS_STATE_HOME: process.env.FOS_STATE_HOME || path.join(os.homedir(), '.fos-dev') }
 if (production) env.VITE_API_URL = process.env.PROD_API_URL || 'https://api.fosforescent.com'
 const npm = [process.env.npm_execpath,
   path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
