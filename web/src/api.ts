@@ -87,8 +87,9 @@ export function createInvite(session: Session, scope: string[], scopeNames: stri
   return authed(session, 'POST', '/user/data/peer-invite', { scope, scopeNames })
 }
 
-export function decideProposal(session: Session, scope: string[], proposalId: string, decision: 'approve' | 'reject'): Promise<{ changed: boolean }> {
-  return authed(session, 'POST', '/user/data/peer-sync/proposals', { scope, proposalId, decision })
+/** Approve or reject a submission at a node: a `decide` event (requires the approve capability there). */
+export function decideProposal(session: Session, scope: string[], proposalId: string, decision: 'approve' | 'reject'): Promise<{ decision: string; proposalId: string }> {
+  return sendEvent(session, { kind: 'decide', path: [], proposalId, decision }, scope)
 }
 
 export function listInviteRequests(session: Session): Promise<{ requests: InviteRequest[] }> {
@@ -262,17 +263,6 @@ export function verifyPhone(session: Session, code: string): Promise<{ ok: true;
   return authed(session, 'POST', '/user/integrations/phone/verify', { code })
 }
 
-export function askLlm(session: Session, prompt: string, system?: string): Promise<{ text: string; model: string }> {
-  return authed(session, 'POST', '/user/integrations/llm', { prompt, ...(system ? { system } : {}) })
-}
-
-export function createRepoIssue(session: Session, repo: string, title: string, body?: string): Promise<{ url: string; number: number }> {
-  return authed(session, 'POST', '/user/integrations/repo/issue', { repo, title, body })
-}
-
-export function createCalendarEvent(session: Session, event: { summary: string; description?: string; start: number; end: number }): Promise<{ url: string | null; id: string }> {
-  return authed(session, 'POST', '/user/integrations/calendar/event', event)
-}
 
 // --- MCP peers: the account's MCP servers attached to nodes as members that run "-tool" requirements -----------------
 
@@ -286,9 +276,6 @@ export function attachMcpPeer(session: Session, scope: string[], serverId: numbe
   return authed(session, 'POST', '/user/data/mcp-peers/attach', { scope, serverId })
 }
 
-export function runMcpRequirement(session: Session, scope: string[], requirementId: string): Promise<{ text: string }> {
-  return authed(session, 'POST', '/user/data/mcp-peers/run', { scope, requirementId })
-}
 
 export function readRepository(session: Session, repo: string, tracked: number[] = []): Promise<import('../../shared/sync/repository').RepositorySnapshot> {
   return authed(session, 'POST', '/user/integrations/repo', { action: 'read', repo, tracked })
@@ -304,8 +291,14 @@ export function createRepositoryBranch(session: Session, repo: string, name: str
   return authed(session, 'POST', '/user/integrations/repo', { action: 'branch', repo, name, from })
 }
 
-export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover'): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord }> {
-  return authed(session, 'POST', '/user/integrations/evaluate', { path, expected, branches, action })
+/** One event of the grammar (shared/sync/events.ts) for the account; owners address a node with `scope`. */
+export function sendEvent<T = unknown>(session: Session, event: import('../../shared/sync/events').FosEvent, scope: string[] = []): Promise<T> {
+  return authed(session, 'POST', '/user/data/events', { event, scope })
+}
+
+/** Evaluate a node on the account server (its handler registry runs the effects): a `complete` event at that node. */
+export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover'): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord; status?: undefined } | { status: 'requested'; proposalId: string; request: string; node: string[] }> {
+  return sendEvent(session, { kind: 'complete', path: [], expected, selections: branches, ...(action === 'recover' ? { recover: true } : {}) }, path)
 }
 
 export type ShareAddress = import('../../shared/sync/sharing').SharedAddress

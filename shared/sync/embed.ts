@@ -38,6 +38,8 @@ import {
   type SyncRequest,
   type SyncResponse
 } from './index'
+import { dispatchEvent, type FosEvent } from './events'
+import { handleMcp } from './mcp-adapter'
 
 const replicas = new Map<string, Replica>()
 
@@ -142,6 +144,18 @@ export const api = {
     const done = completeSync(get(handle), JSON.parse(requestJson) as SyncRequest, JSON.parse(responseJson) as SyncResponse, now)
     set(handle, done.replica)
     return JSON.stringify({ reMerged: done.reMerged, newChoiceIds: done.newChoiceIds })
+  },
+  /** One MCP message (JSON-RPC) through the event grammar as this directory's owner. Returns {response, changed}. */
+  mcp(handle: string, messageJson: string, peerId: string, now: number): string {
+    let changed = false
+    const response = handleMcp(JSON.parse(messageJson), { owner: true, serverName: 'fos', dispatch: (event: FosEvent) => {
+      const dispatched = dispatchEvent(get(handle), event, { peerId, owner: true, scope: [] }, now)
+      if (dispatched.changed) { set(handle, dispatched.replica); changed = true }
+      if (dispatched.evaluate) throw new Error('Evaluation is not available through the local server yet; run it from the app.')
+      return dispatched.result
+    } })
+    if (response instanceof Promise) throw new Error('unexpected asynchronous dispatch')
+    return JSON.stringify({ response, changed })
   },
   /** Serve another peer against this replica (the directory as a node). */
   serveSync(handle: string, requestJson: string, serverPeerId: string, now: number, optionsJson: string | null): string {

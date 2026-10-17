@@ -5,7 +5,7 @@
  *
  *   GET  /user/data/mcp-peers                   the account's MCP servers as peers (id, name, tools)
  *   POST /user/data/mcp-peers/attach            { scope, serverId }   → the server becomes a member of that node
- *   POST /user/data/mcp-peers/run               { scope, requirementId } → run the requirement now
+ *   (running a `-tool` requirement is a `complete` event: `mcpToolHandler` is the registry effect, see sync/hostHandlers.ts)
  *
  * With MCP_LISTEN=true the peers also listen: after every save of the tree, open tool requirements under nodes
  * they are attached to are run (`runOpenToolRequests`, debounced per user).
@@ -21,6 +21,7 @@ import {
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { editTree, walkRows, type StoreDeps } from './store'
 import type { PeerSyncUser } from '../sync/peerSync'
+import type { HostHandler } from '../sync/registry'
 
 export type McpServerInfo = { id: number; name: string; endpoint: string; credentials: Record<string, unknown>; tools: Array<{ name: string; description: string | null }> }
 
@@ -48,19 +49,18 @@ function toolHandler(replica: Replica, server: McpServerInfo, tool: string): str
   return put(store, refNodeContent(store, { alias: { id: `${MCP_PEER_PREFIX}${server.id}/${tool}` } }, value, [], capabilityTarget(store, 'tool')))
 }
 
-/** Resolve the pinned handler; unavailable explicit bindings never fall back to a different peer. */
-async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyncUser, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): Promise<{ replica: Replica; text: string } | { error: string }> {
+type BoundTool = { replica: Replica; server: McpServerInfo; tool: string; peerId: string; returnId: string }
+
+/** Resolve the pinned handler; unavailable explicit bindings never fall back to a different peer. Writes the binding and the return ref, never calls anything. */
+function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): BoundTool | { error: string } {
   const r = req.requirement
   if (!r || r.capability !== 'tool' || r.satisfied) return { error: 'not an open tool requirement' }
   const store = replica.store
   const scope = [...at, req.id]
-  const prior = evaluationRecord(replica, scope)
-  if (prior && !['committed', 'rolled-back'].includes(prior.status)) return { error: 'This evaluation needs recovery. Review its effects before running again.' }
   const requestView = view(replica, scope)
   if (requestView?.choices.length) return { error: 'tool requirement has unresolved choices' }
   if (requestView?.tasks.some((row) => row.kind === 'requirement' && !row.requirement?.satisfied)) return { error: 'tool requirement has unresolved dependencies' }
-  const before = headCid(replica)
-  const request = valueContent(store, resolveScope(store, before, scope)!)
+  const request = valueContent(store, resolveScope(store, headCid(replica), scope)!)
   const argumentsOfType = refArguments(store, request, capabilityTarget(store, 'tool'))
   if (argumentsOfType.length > 1) return { error: 'tool requirement has ambiguous handler arguments' }
   const bindingId = argumentsOfType[0]?.id ?? newId()
@@ -95,13 +95,68 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyn
   const peerId = handler.data.peerId?.content
   const tool = handler.data.description?.content
   const server = servers.find((s) => `${MCP_PEER_PREFIX}${s.id}` === peerId)
-  if (!server || !attached.some((a) => a.peerId === peerId) || !tool || !server.tools.some((t) => t.name === tool) || (r.tool && tool !== r.tool)) return { error: 'bound MCP handler is unavailable or does not match the requirement' }
-  if (!discoverHandlers(replica, scope).some(o => o.peerId === peerId && o.enabled && o.capability === 'tool' && (o.legacy || valueContent(store, o.cid).data.description?.content === tool))) return { error: 'bound MCP handler is disabled or no longer advertised' }
-  // Persist the binding before calling an external handler, including on failure.
+  if (!server || !peerId || !attached.some((a) => a.peerId === peerId) || !tool || !server.tools.some((t) => t.name === tool) || (r.tool && tool !== r.tool)) return { error: 'bound MCP handler is unavailable or does not match the requirement' }
+  if (!stillAdvertised(replica, scope, peerId, tool)) return { error: 'bound MCP handler is disabled or no longer advertised' }
   const returns = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
   if (returns.length > 1) return { error: 'tool requirement has ambiguous return arguments' }
   const returnId = returns[0]?.id ?? newId()
-  replica = addRefAt(replica, scope, returnId, store.primitive.documentField.getId(), now)
+  if (!returns.length) replica = addRefAt(replica, scope, returnId, store.primitive.documentField.getId(), now)
+  return { replica, server, tool, peerId, returnId }
+}
+
+function stillAdvertised(replica: Replica, scope: Scope, peerId: string, tool: string): boolean {
+  return discoverHandlers(replica, scope).some(o => o.peerId === peerId && o.enabled && o.capability === 'tool' && (o.legacy || valueContent(replica.store, o.cid).data.description?.content === tool))
+}
+
+/** Call the bound tool and record its answer: a note, the return ref and the supply that fills the requirement. */
+async function executeTool(deps: McpPeerDeps, replica: Replica, bound: BoundTool, userId: number, at: Scope, req: TaskView, now: number): Promise<{ replica: Replica; text: string }> {
+  const liveServer = (await deps.servers(userId)).find(s => s.id === bound.server.id && s.tools.some(t => t.name === bound.tool))
+  if (!liveServer) throw new Error('The bound MCP server disconnected.')
+  const text = await deps.callTool(liveServer, bound.tool, req.title)
+  const store = replica.store, scope = [...at, req.id], resultId = newId()
+  replica = addRow(replica, scope, 'note', text.slice(0, 20_000) || '(empty result)', now, { id: resultId })
+  const resultCid = resolveScope(store, headCid(replica), [...scope, resultId])!
+  const returned = proposeRefAt(replica, [...scope, bound.returnId], resultCid, bound.peerId, now)
+  replica = applyProposalAt(returned.replica, [...scope, bound.returnId], returned.proposalCid, replica.meta.peerId, now)
+  replica = addSupply(replica, at, req.id, { capability: 'tool', by: bound.peerId, ref: resultId }, now)
+  return { replica, text }
+}
+
+/** `-tool` requirements as a registry effect: the attached MCP server (`mcp:<id>`) that is bound, or the single candidate, runs the tool. */
+export function mcpToolHandler(deps: McpPeerDeps): HostHandler {
+  return {
+    peerId: 'mcp:*', capability: 'tool',
+    matches: id => id.startsWith(MCP_PEER_PREFIX),
+    handles: step => step.row?.requirement?.capability === 'tool' && step.row.requirement.tool !== 'fos.pull',
+    available: async (userId, peerId) => (await deps.servers(userId)).some(s => `${MCP_PEER_PREFIX}${s.id}` === peerId),
+    // The binding and the return ref are written before the evaluator pins the step, and persist on failure.
+    async prepare(ctx) {
+      const at = ctx.step.path.slice(0, -1), req = ctx.step.row!
+      const bound = bindTool(ctx.replica(), at, req, await deps.servers(ctx.userId), ctx.now())
+      if ('error' in bound) throw new Error(bound.error)
+      if (headCid(bound.replica) !== headCid(ctx.replica())) await ctx.update(bound.replica)
+      return { outputs: [bound.returnId] }
+    },
+    async effect(ctx) {
+      const at = ctx.step.path.slice(0, -1), req = ctx.step.row!
+      const bound = bindTool(ctx.replica(), at, req, await deps.servers(ctx.userId), ctx.now()) // already bound: resolves the pinned ref, writes nothing
+      if ('error' in bound) throw new Error(bound.error)
+      const done = await executeTool(deps, ctx.replica(), bound, ctx.userId, at, req, ctx.now())
+      await ctx.update(done.replica)
+    }
+  }
+}
+
+/** The listener's runner (`runOpenToolRequests`): the same binding and call, under the requirement's own evaluation journal. */
+async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyncUser, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): Promise<{ replica: Replica; text: string } | { error: string }> {
+  const scope = [...at, req.id]
+  const prior = evaluationRecord(replica, scope)
+  if (prior && !['committed', 'rolled-back'].includes(prior.status)) return { error: 'This evaluation needs recovery. Review its effects before running again.' }
+  const before = headCid(replica)
+  const bound = bindTool(replica, at, req, servers, now)
+  if ('error' in bound) return bound
+  replica = bound.replica
+  // Persist the binding before calling an external handler, including on failure.
   if (headCid(replica) !== before) await deps.saveStore(user, replica.store)
   let text = ''
   try {
@@ -110,23 +165,15 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyn
       save: async next => { replica = next; await deps.saveStore(user, next.store) },
       now: () => deps.now?.() ?? Date.now(),
       handles: step => JSON.stringify(step.path) === JSON.stringify(scope),
-      outputs: () => [returnId],
-      check: () => discoverHandlers(replica, scope).some(o => o.peerId === peerId && o.enabled && o.capability === 'tool' && (o.legacy || valueContent(store, o.cid).data.description?.content === tool)) ? [] : ['The bound MCP handler is no longer available.'],
+      outputs: () => [bound.returnId],
+      check: () => stillAdvertised(replica, scope, bound.peerId, bound.tool) ? [] : ['The bound MCP handler is no longer available.'],
       effect: async () => {
-        const liveServer = (await deps.servers(user.id)).find(s => s.id === server.id && s.tools.some(t => t.name === tool))
-        if (!liveServer) throw new Error('The bound MCP server disconnected.')
-        text = await deps.callTool(liveServer, tool, req.title)
-        const resultId = newId(), time = deps.now?.() ?? Date.now()
-        replica = addRow(replica, scope, 'note', text.slice(0, 20_000) || '(empty result)', time, { id: resultId })
-        const resultCid = resolveScope(store, headCid(replica), [...scope, resultId])!
-        const returned = proposeRefAt(replica, [...scope, returnId], resultCid, peerId!, time)
-        replica = applyProposalAt(returned.replica, [...scope, returnId], returned.proposalCid, replica.meta.peerId, time)
-        replica = addSupply(replica, at, req.id, { capability: 'tool', by: peerId!, ref: resultId }, time)
+        const done = await executeTool(deps, replica, bound, user.id, at, req, deps.now?.() ?? Date.now())
+        replica = done.replica; text = done.text
       }
     })
     return record.status === 'committed' ? { replica, text } : { error: record.error ?? 'Tool evaluation needs recovery.' }
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
-
 }
 
 export function createMcpPeerHandlers(deps: McpPeerDeps) {
@@ -159,23 +206,6 @@ export function createMcpPeerHandlers(deps: McpPeerDeps) {
     },
 
     /** Run one tool requirement now (the "Run" button); the answer is a note inside it. */
-    async run(req: Request, res: Response): Promise<Response> {
-      const userId = await deps.userId(req)
-      const scope = scopeOf(req.body)
-      const requirementId = String((req.body as { requirementId?: unknown } | undefined)?.requirementId ?? '')
-      if (!scope || !requirementId) return fail(res, 400, 'scope and requirementId required')
-      const servers = await deps.servers(userId)
-      const outcome = await editTree(deps, userId, async (replica, user) => {
-        const row = view(replica, scope)?.tasks.find((t) => t.id === requirementId)
-        if (!row) return { replica: null, result: { error: 'requirement not found' } as { error: string } | { text: string } }
-        const ran = await runRequirement(deps, replica, user, scope, row, servers, now())
-        return 'error' in ran ? { replica: null, result: ran } : { replica: ran.replica, result: { text: ran.text } }
-      })
-      if (!outcome) return fail(res, 404, 'user not found')
-      if ('error' in outcome) return fail(res, 409, outcome.error)
-      return res.json(outcome)
-    },
-
     /** Listener: every open tool requirement under an attached node, run in turn. Returns how many ran. */
     async runOpenToolRequests(user: PeerSyncUser, _store: FosStore): Promise<number> {
       const servers = await deps.servers(user.id)

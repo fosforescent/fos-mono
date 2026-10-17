@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { createIntegrationHandlers, createSmsInbound, type IntegrationDeps, type StoredConnection } from './routes'
+import { createIntegrationHandlers, type IntegrationDeps, type StoredConnection } from './routes'
 import { decryptSecret, encryptSecret, hashCode, readState, signState } from './secrets'
 import { parseTwilioWebhook, verifyTwilioSignature, normalizePhone } from '../channels/sms'
 import { createHmac } from 'node:crypto'
@@ -10,7 +10,6 @@ function fakeDeps(answers: Array<{ match: RegExp; status?: number; json: unknown
   const stored = new Map<string, StoredConnection>()
   const calls: Call[] = []
   const texts: Array<[string, string]> = []
-  const rows = { added: [] as string[], open: ['buy milk', 'call bob'], done: [] as string[] }
   const deps: IntegrationDeps = {
     env: { INTEGRATION_SECRET: 'top-secret', API_URL: 'https://api.test', WEB_URL: 'https://web.test', GITHUB_CLIENT_ID: 'gh-id', GITHUB_CLIENT_SECRET: 'gh-secret', GOOGLE_OAUTH_CLIENT_ID: 'g-id', GOOGLE_OAUTH_CLIENT_SECRET: 'g-secret' },
     async fetch(url, init) {
@@ -31,14 +30,9 @@ function fakeDeps(answers: Array<{ match: RegExp; status?: number; json: unknown
     },
     complete: async (_system, user) => `answer to: ${user}`,
     sms: async (to, text) => { texts.push([to, text]) },
-    rows: {
-      add: async (_id, text) => { rows.added.push(text); return text },
-      listOpen: async () => rows.open,
-      markDone: async (_id, words) => { const hit = rows.open.find((t) => t.includes(words)); if (hit) rows.done.push(hit); return hit ?? null }
-    },
     now: () => 1_760_000_000_000
   }
-  return { deps, stored, calls, texts, rows }
+  return { deps, stored, calls, texts }
 }
 
 function call(handler: (req: Request, res: Response) => Promise<unknown>, userId: number, { params = {}, query = {}, body = {} }: { params?: Record<string, string>; query?: Record<string, string>; body?: unknown } = {}) {
@@ -110,50 +104,31 @@ test('OAuth: start builds the authorize URL, the callback exchanges the code, st
   expect(stored.has('7:github')).toBe(false)
 })
 
-test('repo and calendar handlers use the stored tokens; refresh happens when a token has expired', async () => {
+test('repo and calendar effects use the stored tokens; refresh happens when a token has expired', async () => {
   const { deps, stored, calls } = fakeDeps([
     { match: /api\.github\.com\/repos\/ada\/site\/issues/, status: 201, json: { html_url: 'https://github.com/ada/site/issues/12', number: 12 } },
     { match: /oauth2\.googleapis\.com\/token/, json: { access_token: 'g-fresh', expires_in: 3600 } },
     { match: /calendar\/v3\/calendars\/primary\/events/, json: { id: 'ev1', htmlLink: 'https://calendar.google.com/ev1' } }
   ])
   const h = createIntegrationHandlers(deps)
-  expect((await call(h.repoIssue, 7, { body: { repo: 'ada/site', title: 'fix login' } })).status).toBe(409)
+  await expect(h.createIssue(7, { repo: 'ada/site', title: 'fix login' })).rejects.toThrow(/not connected/)
   stored.set('7:github', { provider: 'github', kind: 'oauth', accountName: 'ada', secret: encryptSecret(JSON.stringify({ access_token: 'gh-token' }), 'top-secret'), scopes: '', expiresAt: null, metadata: {} })
-  const issue = await call(h.repoIssue, 7, { body: { repo: 'ada/site', title: 'fix login', body: 'from the tree' } })
-  expect(issue.json).toEqual({ url: 'https://github.com/ada/site/issues/12', number: 12 })
+  const issue = await h.createIssue(7, { repo: 'ada/site', title: 'fix login', body: 'from the tree' })
+  expect(issue).toEqual({ url: 'https://github.com/ada/site/issues/12', number: 12 })
   expect(calls.find((c) => /issues/.test(c.url))!.init?.headers?.Authorization).toBe('Bearer gh-token')
-  expect((await call(h.repoIssue, 7, { body: { repo: 'not a repo', title: 'x' } })).status).toBe(400)
+  await expect(h.createIssue(7, { repo: 'not a repo', title: 'x' })).rejects.toThrow(/repo/)
 
   // Google: expired access token, refresh token present → refreshed before the call
   stored.set('7:google', { provider: 'google', kind: 'oauth', accountName: 'ada@x', secret: encryptSecret(JSON.stringify({ access_token: 'g-old', refresh_token: 'g-refresh' }), 'top-secret'), scopes: '', expiresAt: new Date(1_760_000_000_000 - 1000), metadata: {} })
-  const event = await call(h.calendarEvent, 7, { body: { summary: 'standup', start: 1_760_000_000_000, end: 1_760_003_600_000 } })
-  expect(event.json).toEqual({ url: 'https://calendar.google.com/ev1', id: 'ev1' })
+  const event = await h.createCalendarEvent(7, { summary: 'standup', start: 1_760_000_000_000, end: 1_760_003_600_000 })
+  expect(event).toEqual({ url: 'https://calendar.google.com/ev1', id: 'ev1' })
   expect(calls.find((c) => /googleapis\.com\/token/.test(c.url))!.init?.body).toContain('refresh_token=g-refresh')
   expect(calls.find((c) => /calendars\/primary/.test(c.url))!.init?.headers?.Authorization).toBe('Bearer g-fresh')
   expect(JSON.parse(decryptSecret(stored.get('7:google')!.secret, 'top-secret'))).toEqual({ access_token: 'g-fresh', refresh_token: 'g-refresh' })
 })
 
-test('llm answers through the platform model', async () => {
-  const { deps } = fakeDeps()
-  const h = createIntegrationHandlers(deps)
-  expect((await call(h.llm, 7, { body: { prompt: 'what should I cook' } })).json).toMatchObject({ text: 'answer to: what should I cook' })
-  expect((await call(h.llm, 7, { body: {} })).status).toBe(400)
-})
-
-test('llm rejects oversized previews without calling the model and preserves the supplied context', async () => {
-  const { deps } = fakeDeps()
-  const complete = jest.fn(async (_system: string, prompt: string) => prompt)
-  deps.complete = complete
-  const h = createIntegrationHandlers(deps)
-  expect((await call(h.llm, 7, { body: { prompt: 'x'.repeat(20_001) } })).status).toBe(400)
-  expect(complete).not.toHaveBeenCalled()
-  const prompt = 'Ancestor: project\nSelected task: implement reservations'
-  expect((await call(h.llm, 7, { body: { prompt, system: 'Review required' } })).status).toBe(200)
-  expect(complete).toHaveBeenCalledWith('Review required', prompt)
-})
-
-test('phone channel: a code is texted, verifying links the number; inbound texts add rows, list and check off tasks', async () => {
-  const { deps, stored, texts, rows } = fakeDeps()
+test('phone channel: a code is texted and verifying links the number', async () => {
+  const { deps, stored, texts } = fakeDeps()
   const h = createIntegrationHandlers(deps)
   expect((await call(h.phoneStart, 7, { body: { number: 'nope' } })).status).toBe(400)
   const started = await call(h.phoneStart, 7, { body: { number: '+1 (555) 123-4567' } })
@@ -167,21 +142,6 @@ test('phone channel: a code is texted, verifying links the number; inbound texts
   expect(await h.notifyUser(7, 'hello')).toBe(true)
   expect(texts.at(-1)).toEqual(['+15551234567', 'hello'])
   expect(await h.notifyUser(8, 'hello')).toBe(false)
-
-  const inbound = createSmsInbound(deps)
-  const msg = (text: string, from = '+15551234567') => inbound({ source: 'sms', id: 'm', from, replyTo: from, text, timestamp: 't' })
-  await msg('[ ] water the plants')
-  expect(rows.added).toEqual(['[ ] water the plants'])
-  expect(texts.at(-1)![1]).toBe('fos: added “[ ] water the plants”')
-  await msg('list')
-  expect(texts.at(-1)![1]).toBe('1. buy milk\n2. call bob')
-  await msg('done milk')
-  expect(rows.done).toEqual(['buy milk'])
-  expect(texts.at(-1)![1]).toBe('✓ done: buy milk')
-  await msg('done nothing')
-  expect(texts.at(-1)![1]).toContain('no open task')
-  await msg('hello', '+19990000000')
-  expect(texts.at(-1)![1]).toContain('not linked')
 })
 
 test('Twilio webhook parsing and signature', () => {

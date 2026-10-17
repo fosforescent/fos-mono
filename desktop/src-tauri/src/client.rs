@@ -111,8 +111,9 @@ pub fn peer_sync(session: &Session, request: &Value) -> Result<Value, String> {
     post(&session.base_url, "/user/data/peer-sync", request, Some(&session.jwt))
 }
 
+/// Approve or reject a submission: a `decide` event of the shared grammar at the node (`scope`).
 pub fn decide_proposal(session: &Session, scope: &Value, proposal_id: &str, decision: &str) -> Result<Value, String> {
-    post(&session.base_url, "/user/data/peer-sync/proposals", &json!({ "scope": scope, "proposalId": proposal_id, "decision": decision }), Some(&session.jwt))
+    post(&session.base_url, "/user/data/events", &json!({ "scope": scope, "event": { "kind": "decide", "path": [], "proposalId": proposal_id, "decision": decision } }), Some(&session.jwt))
 }
 
 pub fn detach(session: &Session, peer_id: &str) -> Result<Value, String> {

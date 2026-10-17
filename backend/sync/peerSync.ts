@@ -214,61 +214,6 @@ export function createPeerAttachmentHandler(deps: Pick<PeerSyncDeps, 'loadStore'
   }
 }
 
-/**
- * POST /user/data/peer-sync/proposals {scope, proposalId, decision: 'approve'|'reject'}
- * The owner (user session) may decide any proposal; an invited peer needs the
- * `approve` capability on that node. Approval merges the branch into the main
- * content (new version with PREV), rejection drops it.
- */
-export function createProposalDecisionHandler(deps: PeerSyncDeps) {
-  return async (req: Request, res: Response): Promise<Response> => {
-    try {
-      const claims = claimsOf(req)
-      if (!claims.username) return res.status(401).json({ error: 'Unauthorized' })
-      const body = (req.body ?? {}) as { scope?: unknown; proposalId?: unknown; decision?: unknown }
-      const scope = Array.isArray(body.scope) && body.scope.every((s) => typeof s === 'string') ? (body.scope as string[]) : null
-      if (!scope || typeof body.proposalId !== 'string' || (body.decision !== 'approve' && body.decision !== 'reject')) {
-        return res.status(400).json({ error: 'scope, proposalId and decision (approve|reject) required' })
-      }
-      const proposalId: string = body.proposalId
-      const decision: 'approve' | 'reject' = body.decision
-      const username = claims.username
-      const outcome = await withUserLock(`user:${username}`, async () => {
-        const loaded = await deps.loadStore(username)
-        if (!loaded) return { status: 401, body: { error: 'User not found' } } as const
-        const { user, store } = loaded
-        const linkCid = resolveScope(store, rootTargetCid(store), scope)
-        if (!linkCid) return { status: 404, body: { error: 'node not found' } } as const
-        const actor = claims.kind === 'peer' ? claims.peerId ?? '' : serverPeerIdFor(user.username)
-        if (claims.kind === 'peer') {
-          const granted = Array.isArray(claims.scope) ? claims.scope : []
-          const within = granted.length <= scope.length && granted.every((s, i) => scope[i] === s)
-          if (!within || !hasCapability(store, content(store, linkCid), actor, 'approve')) {
-            return { status: 403, body: { error: 'approve capability required on this node' } } as const
-          }
-        }
-        const replica: Replica = createReplica(actor, store)
-        const before = headCid(replica)
-        const now = deps.now ? deps.now() : Date.now()
-        if (decision === 'approve') applyProposalAt(replica, scope, proposalId, actor, now)
-        else rejectProposalAt(replica, scope, proposalId, now)
-        const changed = headCid(replica) !== before
-        if (changed) await deps.saveStore(user, store)
-        const node = resolveScope(store, rootTargetCid(store), scope)
-        console.log(`[proposal] ${decision} ${proposalId.slice(0, 16)} by ${actor} at ${scope.join('/')} → changed=${changed}${node ? ` proposals=${viewNode(store, node).proposals.map((p) => `${p.id.slice(0, 10)}:${p.status}`).join(',')}` : ''}`)
-        return { status: 200, body: { decision, changed, view: node ? viewNode(store, node) : null }, changed, userId: user.id } as const
-      })
-      if (outcome.status === 200 && outcome.changed) {
-        deps.notify?.(outcome.userId, { type: 'sync_changed', scope, byPeerId: `decision:${proposalId}` })
-      }
-      return res.status(outcome.status).json(outcome.body)
-    } catch (error) {
-      console.error('proposal decision failed:', error)
-      return res.status(500).json({ error: 'Internal Server Error' })
-    }
-  }
-}
-
 /** Mark the node at `scope` as a link and add `peerId` as a member with `capabilities` (used when an invite is approved). */
 export async function attachMemberToNode(deps: PeerSyncDeps, username: string, scope: string[], peerId: string, name: string | null, capabilities: Array<'edit' | 'approve'>): Promise<boolean> {
   return withUserLock(`user:${username}`, async () => {
@@ -379,5 +324,4 @@ export const prismaPeerSyncDeps: PeerSyncDeps = {
 export const postPeerSync = createPeerSyncHandler(prismaPeerSyncDeps)
 export const getPeerSyncDoc = createPeerSyncInspector(prismaPeerSyncDeps)
 export const getPeerAttachment = createPeerAttachmentHandler(prismaPeerSyncDeps)
-export const postProposalDecision = createProposalDecisionHandler(prismaPeerSyncDeps)
 export const deleteAttachment = createDetachHandler(prismaPeerSyncDeps)

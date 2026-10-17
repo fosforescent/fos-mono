@@ -1,10 +1,9 @@
 /** Owner-initiated and scheduled evaluation share the same graph evaluator, user-store lock and handler registry. */
-import type { Request, Response } from 'express'
-import { CAPABILITIES, INTEGRATION_PEERS, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, headCid, put, resolveScope, runNodeTriggers, selectBranch, valueContent, type Capability, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
+import { INTEGRATION_PEERS, evaluationRecord, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, evaluationSteps, headCid, put, resolveScope, runNodeTriggers, selectBranch, valueContent, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type PeerSyncDeps } from './peerSync'
 import type { HandlerRegistry, HostHandler } from './registry'
 
-const peerLabel = (peerId: string) => peerId === 'fos' ? 'Fos' : INTEGRATION_PEERS.find(p => `integration:${p.id}` === peerId)?.name ?? peerId
+const peerLabel = (peerId: string) => peerId === 'fos' ? 'Fos' : INTEGRATION_PEERS.find(p => `integration:${p.id}` === peerId)?.name ?? (peerId.startsWith('mcp:') ? 'An attached MCP server' : peerId)
 
 export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerRegistry) {
   async function run(username: string, request?: { path: Scope; branches: Record<string, string>; expected: string; action?: 'recover' }) {
@@ -14,32 +13,40 @@ export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerReg
       const { user } = loaded
       let r = createReplica(`user:${username}`, loaded.store)
       const now = () => deps.now?.() ?? Date.now()
-      // Live availability of every peer that can execute something, checked once per run.
-      const active = new Map<string, boolean>()
-      for (const peerId of new Set(registry.handlers.filter(h => h.effect).map(h => h.peerId))) active.set(peerId, await registry.active(peerId, user.id))
       if (request) for (const [id, name] of Object.entries(request.branches)) selectBranch(r.store, id, name)
       const save = async (next: typeof r) => { r = next; await deps.saveStore(user, r.store); deps.notify?.(user.id, { type: 'sync_changed', by: 'fos:evaluation' }) }
-      /** Requirement kinds that are host capabilities (`repo`, `llm`, …); confirmations, choices and allocations are filled by people. */
-      const capabilityOf = (step: EvaluationStep): Capability | null => { const kind = step.row?.requirement?.capability; return kind && (CAPABILITIES as string[]).includes(kind) ? kind as Capability : null }
-      const executors = (step: EvaluationStep): HostHandler[] => { const cap = capabilityOf(step); return cap ? registry.executors(cap) : [] }
-      /** The executor whose peer provides the capability in this context and is active now. */
-      const executorFor = (step: EvaluationStep): HostHandler | null => {
-        const peers = capabilityPeers(r, step.path, capabilityOf(step)!)
-        return executors(step).find(h => peers.includes(h.peerId) && active.get(h.peerId)) ?? null
-      }
+      /** The peers that provide an executor's capability in this step's context. */
+      const providers = (step: EvaluationStep, h: HostHandler) => capabilityPeers(r, step.path, h.capability).filter(p => registry.provides(h, p))
       const evaluate = async (path: Scope) => {
+        // Live availability of every provider that could execute something below `path`, checked once per run.
+        const active = new Map<string, boolean>()
+        for (const step of evaluationSteps(r, path)) for (const h of registry.executors(step)) for (const p of providers(step, h)) if (!active.has(p)) active.set(p, await registry.active(p, user.id))
+        const executorFor = (step: EvaluationStep): HostHandler | null => registry.executors(step).find(h => providers(step, h).some(p => active.get(p))) ?? null
+        // An interrupted run is reviewed before anything new is bound or called (the evaluator checks this too).
+        const prior = evaluationRecord(r, path)
+        if (prior && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
+        // Handlers bind what they need before the evaluator pins instructions; the return slots they name are theirs to fill.
+        const outputs = new Map<string, string[]>()
+        for (const step of evaluationSteps(r, path)) {
+          const handler = executorFor(step)
+          if (!handler?.prepare || step.row?.requirement?.satisfied) continue
+          const prepared = await handler.prepare({ userId: user.id, step, replica: () => r, update: save, now })
+          if (prepared?.outputs?.length) outputs.set(JSON.stringify(step.path), prepared.outputs)
+        }
         const result = await evaluateNode(path, {
           get: () => r, save, now,
-          handles: step => executors(step).length > 0,
+          // a return slot a handler fills is excluded from the change check of its step and of every step below it (whose context includes it)
+          outputs: step => [...outputs.entries()].filter(([at]) => { const prefix = JSON.parse(at) as Scope; return prefix.length <= step.path.length && prefix.every((id, i) => step.path[i] === id) }).flatMap(([, ids]) => ids),
+          handles: step => registry.executors(step).length > 0,
           isPeerActive: peer => peer === 'fos' || active.get(peer) === true,
-          check: step => executors(step).length && !executorFor(step) ? [`${executors(step).map(h => peerLabel(h.peerId)).join(' or ')} is not active in this context.`] : [],
+          check: step => registry.executors(step).length && !executorFor(step) ? [`${[...new Set(registry.executors(step).map(h => peerLabel(h.peerId)))].join(' or ')} is not active in this context.`] : [],
           effect: async step => {
             const handler = executorFor(step)
             if (!handler) throw new Error('No active handler for this requirement.')
-            await handler.effect!({ userId: user.id, step, replica: () => r, update: save, now })
+            return handler.effect!({ userId: user.id, step, replica: () => r, update: save, now })
           }
         })
-        if (result.status !== 'committed') throw new Error(result.error ?? 'Evaluation needs recovery.')
+        if (result.status !== 'committed' && result.status !== 'awaiting-review') throw new Error(result.error ?? 'Evaluation needs recovery.')
         return result
       }
       if (request) {
@@ -53,15 +60,7 @@ export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerReg
     })
   }
   return {
-    runNode: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string }) => run(username, request),
+    runNode: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string; recover?: boolean }) => run(username, { ...request, ...(request.recover ? { action: 'recover' as const } : {}) }),
     runCron: (username: string) => run(username),
-    async handler(req: Request, res: Response) {
-      const claims = (req as unknown as { claims?: { username?: string; kind?: string } }).claims
-      if (!claims?.username || claims.kind === 'peer') return res.status(403).json({ error: 'An account owner must initiate evaluation.' })
-      const { path, branches = {}, expected, action } = req.body ?? {}
-      if ((action !== undefined && action !== 'recover') || !Array.isArray(path) || path.length > 64 || path.some(id => typeof id !== 'string' || id.length > 256) || typeof expected !== 'string' || !branches || typeof branches !== 'object' || Array.isArray(branches) || Object.entries(branches).length > 64 || Object.entries(branches).some(([id, name]) => id.length > 256 || typeof name !== 'string' || name.length > 256)) return res.status(400).json({ error: 'Invalid evaluation request.' })
-      try { return res.json({ evaluation: await run(claims.username, { path, branches, expected, action }) }) }
-      catch (error) { return res.status(409).json({ error: error instanceof Error ? error.message : String(error) }) }
-    }
   }
 }

@@ -887,7 +887,7 @@ describe('approval convergence', () => {
     owner = world.sync(owner, 7)
     const proposals = view(owner, ['proj'])!.proposals
     expect(proposals).toHaveLength(1)
-    // the server applies the proposal (what POST /peer-sync/proposals does), then the owner syncs
+    // the server applies the proposal (what a `decide` event does), then the owner syncs
     const serverReplica: Replica = { store: world.server, meta: { version: SYNC_FORMAT_VERSION, peerId: 'user:alice', scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
     applyProposalAt(serverReplica, ['proj'], proposals[0]!.id, 'user:alice', 8)
     owner = world.sync(owner, 9)

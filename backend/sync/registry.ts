@@ -1,13 +1,15 @@
 /**
- * The host's handler registry: the single place that says which capabilities this server, and the
- * integration peers it fronts, can actually execute or serve. Everything advertised to devices is derived
- * from it: the `capabilities` list in sync and node-provider responses, the fos member's offers written into
- * each account's Home (`ensureHomeContext(..., offers)`), and the `provides` of `GET /user/integrations`.
- * A capability with no entry here is never advertised, so the palette cannot show a constructor that has
- * no handler behind it.
+ * The host's handler registry: the single place that says which capabilities this server, and the peers it fronts
+ * (integration peers, attached MCP servers), can actually execute or serve. Everything advertised to devices is
+ * derived from it: the `capabilities` list in sync and node-provider responses, the fos member's offers written
+ * into each account's Home (`ensureHomeContext(..., offers)`), and the `provides` of `GET /user/integrations`.
+ * A capability with no entry here is never advertised, so the palette cannot show a constructor that has no
+ * handler behind it.
  *
- * Handlers with an `effect` run through the shared evaluator (backend/sync/evaluation.ts); handlers without
- * one are services reached by their own routes (search, market, llm, poll) and are advertised only.
+ * Handlers with an `effect` run through the shared evaluator (backend/sync/evaluation.ts) when a `complete` event
+ * reaches a node whose requirement they handle; handlers without one are services reached by their own routes
+ * (search, market, poll) and are advertised only. An effect may answer `'pending'`: its result awaits human review
+ * (a proposal on a return ref) and the evaluation pauses as `awaiting-review` instead of committing.
  */
 import { SERVER_TRANSPORT_CAPABILITIES, type Capability, type EvaluationStep, type HostOffers, type Replica } from '@fosforescent/shared/sync/index'
 
@@ -21,23 +23,34 @@ export type EffectContext = {
 }
 
 export type HostHandler = {
-  /** The peer that provides it: `fos` for the server's own services, `integration:<id>` for a fronted service. */
+  /** The peer that provides it: `fos` for the server's own services, `integration:<id>` for a fronted service, or a family such as `mcp:*` (with `matches`). */
   peerId: string
   capability: Capability
-  /** Live availability for one account (an OAuth connection, a verified phone, …). Absent = always available. */
-  available?(userId: number): Promise<boolean>
-  /** Executes a requirement of this capability as an evaluation effect; absent = advertised service without an executor. */
-  effect?(ctx: EffectContext): Promise<void>
+  /** Peer ids this handler stands for when `peerId` is a family (attached MCP servers are `mcp:<id>`). */
+  matches?(peerId: string): boolean
+  /** Which evaluation steps it executes; default: requirements of its capability. */
+  handles?(step: EvaluationStep): boolean
+  /** Live availability for one account and peer (an OAuth connection, a verified phone, a connected MCP server). Absent = always available. */
+  available?(userId: number, peerId: string): Promise<boolean>
+  /**
+   * Before the evaluator pins the step's instructions: write what the effect will need (a handler binding, a return
+   * ref) and name the return slots the effect fills, so they are excluded from the change check.
+   */
+  prepare?(ctx: EffectContext): Promise<{ outputs?: string[] } | void>
+  /** Executes a requirement as an evaluation effect; `'pending'` when the result awaits review. Absent = advertised service without an executor. */
+  effect?(ctx: EffectContext): Promise<void | 'pending'>
 }
 
 export type HandlerRegistry = ReturnType<typeof createHandlerRegistry>
 
 export function createHandlerRegistry(handlers: HostHandler[]) {
   const unique = (caps: Capability[]) => [...new Set(caps)].sort()
+  const provides = (h: HostHandler, peerId: string) => h.peerId === peerId || !!h.matches?.(peerId)
   const offers = (peerId: string): Capability[] => unique(handlers.filter(h => h.peerId === peerId).map(h => h.capability))
-  const peers = unique(handlers.map(h => h.peerId) as Capability[]) as string[]
+  const peers = [...new Set(handlers.map(h => h.peerId))]
   return {
     handlers,
+    provides,
     /** Capabilities `peerId` provides on this host. */
     offers,
     /** What the fos server advertises: its transport facts plus every registered fos service. */
@@ -48,13 +61,15 @@ export function createHandlerRegistry(handlers: HostHandler[]) {
     },
     /** Everything `ensureHomeContext` needs to write into an account's context. */
     hostOffers(): HostOffers { return { server: this.serverCapabilities(), integrations: this.integrationOffers() } },
-    /** Handlers that can execute `capability` as an effect. */
-    executors(capability: Capability): HostHandler[] { return handlers.filter(h => h.capability === capability && !!h.effect) },
+    /** Handlers that can execute this step as an effect. */
+    executors(step: EvaluationStep): HostHandler[] {
+      return handlers.filter(h => !!h.effect && (h.handles ? h.handles(step) : step.row?.requirement?.capability === h.capability))
+    },
     /** Is `peerId` able to serve this account right now? */
     async active(peerId: string, userId: number): Promise<boolean> {
-      const own = handlers.filter(h => h.peerId === peerId)
+      const own = handlers.filter(h => provides(h, peerId))
       if (!own.length) return false
-      for (const h of own) if (h.available && !(await h.available(userId))) return false
+      for (const h of own) if (h.available && !(await h.available(userId, peerId))) return false
       return true
     }
   }
