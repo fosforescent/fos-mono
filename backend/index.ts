@@ -26,7 +26,7 @@ import { checkUsernameExists } from './auth/checkUsername'
 import { postContactMessage } from './email/contactMessage'
 
 import { getSuggest } from './suggest'
-import { postPeerSync, getPeerSyncDoc, getPeerAttachment, postProposalDecision, deleteAttachment, prismaPeerSyncDeps, serverPeerIdFor, withUserLock } from './sync/peerSync'
+import { postPeerSync, getPeerSyncDoc, getPeerAttachment, deleteAttachment, prismaPeerSyncDeps, serverPeerIdFor, withUserLock } from './sync/peerSync'
 import { createSearchHandlers } from './search/routes'
 import { vertexEmbed } from './search/rowIndex'
 import { peerInviteHandlers } from './sync/peerInvites'
@@ -34,7 +34,7 @@ import { deviceLoginHandlers } from './auth/deviceLogin'
 import { channelBus, createChannelsRouter, startChannels, stopChannels } from './channels'
 import { createIntegrationHandlers, prismaIntegrationDeps } from './integrations/routes'
 import { createTextCommandInbound } from './channels/textCommands'
-import { createMcpPeerHandlers, prismaMcpPeerDeps } from './integrations/mcpPeers'
+import { createMcpPeerHandlers, mcpToolHandler, prismaMcpPeerDeps } from './integrations/mcpPeers'
 import { MCPClient } from './mcp/mcpClient'
 import { getUserId } from './apiTokenAuth'
 import { afterSaveHooks } from './sync/peerSync'
@@ -308,7 +308,6 @@ dataRoutes.get('/peer-sync', slowDown({
 
 dataRoutes.get('/peer-sync/attachment', getPeerAttachment)
 dataRoutes.post('/peer-sync/provide-node', createNodeProvider(prismaPeerSyncDeps))
-dataRoutes.post('/peer-sync/proposals', postProposalDecision)
 dataRoutes.delete('/peer-sync/attachment', deleteAttachment)
 
 // Peer invites: the inviting user creates/approves; the invitee claims and polls without a session.
@@ -472,9 +471,25 @@ const integrationDeps = prismaIntegrationDeps(prisma, getUserId, {
   complete: (system, user) => voiceDepsFromEnv().complete(system, user, false),
   sms: smsAdapter?.configured() ? (to, text) => channelBus.send({ destination: 'sms', to, text }).then(() => undefined) : null
 })
+// MCP peers: a server attached to a node runs its tools for "-tool" requirements under it
+const mcpPeerDeps = prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (server, tool, input) => {
+  const client = new MCPClient({ endpoint: server.endpoint, credentials: server.credentials })
+  try {
+    await client.connect()
+    await client.initialize()
+    const result = await client.callTool(tool, { input })
+    return (result.content ?? []).map((c: any) => (typeof c?.text === 'string' ? c.text : JSON.stringify(c))).join('\n')
+  } finally {
+    await client.disconnect().catch(() => undefined)
+  }
+})
 // What this host can do, derived from the handlers below; every capability advertised to devices comes from here.
+// Effects are reached through `complete` events (sync/events.ts → sync/evaluation.ts), never through routes of their own.
 const registry = createHandlerRegistry(createHostHandlers({
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
+  google: { connected: async id => !!await integrationDeps.connections.get(id, 'google'), createEvent: (userId, event) => integrations.createCalendarEvent(userId, event) },
+  llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },
+  tool: mcpToolHandler(mcpPeerDeps),
   connected: async (id, provider) => { const c = await integrationDeps.connections.get(id, provider); return !!c && (provider !== 'phone' || c.metadata.verified === true) },
   sms: !!smsAdapter?.configured(),
   cron: process.env.FOS_ENABLE_CRON === 'true'
@@ -499,10 +514,7 @@ integrationRoutes.get('/:provider/start', (req, res) => void integrations.start(
 integrationRoutes.delete('/:provider', (req, res) => void integrations.disconnect(req, res))
 integrationRoutes.post('/phone', (req, res) => void integrations.phoneStart(req, res))
 integrationRoutes.post('/phone/verify', (req, res) => void integrations.phoneVerify(req, res))
-integrationRoutes.post('/llm', (req, res) => void integrations.llm(req, res))
-integrationRoutes.post('/repo/issue', (req, res) => void integrations.repoIssue(req, res))
 integrationRoutes.post('/repo', (req, res) => void integrations.repository(req, res))
-integrationRoutes.post('/calendar/event', (req, res) => void integrations.calendarEvent(req, res))
 app.use('/user/integrations', integrationRoutes)
 app.get('/integrations/:provider/callback', (req, res) => void integrations.callback(req, res))
 // Chat channels are adapters of the event grammar: a linked sender's text becomes events for that account's owner.
@@ -518,20 +530,9 @@ channelBus.onInbound(createTextCommandInbound({
 }))
 
 // MCP peers: a server attached to a node runs its tools for "-tool" requirements under it
-const mcpPeers = createMcpPeerHandlers(prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (server, tool, input) => {
-  const client = new MCPClient({ endpoint: server.endpoint, credentials: server.credentials })
-  try {
-    await client.connect()
-    await client.initialize()
-    const result = await client.callTool(tool, { input })
-    return (result.content ?? []).map((c: any) => (typeof c?.text === 'string' ? c.text : JSON.stringify(c))).join('\n')
-  } finally {
-    await client.disconnect().catch(() => undefined)
-  }
-}))
+const mcpPeers = createMcpPeerHandlers(mcpPeerDeps)
 dataRoutes.get('/mcp-peers', (req, res) => void mcpPeers.list(req, res))
 dataRoutes.post('/mcp-peers/attach', (req, res) => void mcpPeers.attach(req, res))
-dataRoutes.post('/mcp-peers/run', (req, res) => void mcpPeers.run(req, res))
 if (process.env.MCP_LISTEN === 'true') {
   // listen: after every save, run the open tool requirements under attached nodes (debounced per user)
   const pending = new Map<number, ReturnType<typeof setTimeout>>()

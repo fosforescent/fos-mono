@@ -87,8 +87,9 @@ export function createInvite(session: Session, scope: string[], scopeNames: stri
   return authed(session, 'POST', '/user/data/peer-invite', { scope, scopeNames })
 }
 
-export function decideProposal(session: Session, scope: string[], proposalId: string, decision: 'approve' | 'reject'): Promise<{ changed: boolean }> {
-  return authed(session, 'POST', '/user/data/peer-sync/proposals', { scope, proposalId, decision })
+/** Approve or reject a submission at a node: a `decide` event (requires the approve capability there). */
+export function decideProposal(session: Session, scope: string[], proposalId: string, decision: 'approve' | 'reject'): Promise<{ decision: string; proposalId: string }> {
+  return sendEvent(session, { kind: 'decide', path: [], proposalId, decision }, scope)
 }
 
 export function listInviteRequests(session: Session): Promise<{ requests: InviteRequest[] }> {
@@ -262,17 +263,6 @@ export function verifyPhone(session: Session, code: string): Promise<{ ok: true;
   return authed(session, 'POST', '/user/integrations/phone/verify', { code })
 }
 
-export function askLlm(session: Session, prompt: string, system?: string): Promise<{ text: string; model: string }> {
-  return authed(session, 'POST', '/user/integrations/llm', { prompt, ...(system ? { system } : {}) })
-}
-
-export function createRepoIssue(session: Session, repo: string, title: string, body?: string): Promise<{ url: string; number: number }> {
-  return authed(session, 'POST', '/user/integrations/repo/issue', { repo, title, body })
-}
-
-export function createCalendarEvent(session: Session, event: { summary: string; description?: string; start: number; end: number }): Promise<{ url: string | null; id: string }> {
-  return authed(session, 'POST', '/user/integrations/calendar/event', event)
-}
 
 // --- MCP peers: the account's MCP servers attached to nodes as members that run "-tool" requirements -----------------
 
@@ -286,9 +276,6 @@ export function attachMcpPeer(session: Session, scope: string[], serverId: numbe
   return authed(session, 'POST', '/user/data/mcp-peers/attach', { scope, serverId })
 }
 
-export function runMcpRequirement(session: Session, scope: string[], requirementId: string): Promise<{ text: string }> {
-  return authed(session, 'POST', '/user/data/mcp-peers/run', { scope, requirementId })
-}
 
 export function readRepository(session: Session, repo: string, tracked: number[] = []): Promise<import('../../shared/sync/repository').RepositorySnapshot> {
   return authed(session, 'POST', '/user/integrations/repo', { action: 'read', repo, tracked })

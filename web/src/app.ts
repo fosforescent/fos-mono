@@ -31,7 +31,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -128,12 +128,8 @@ import {
   disconnectIntegration,
   startPhone,
   verifyPhone,
-  askLlm,
-  createRepoIssue,
-  createCalendarEvent,
   listMcpPeers,
   attachMcpPeer,
-  runMcpRequirement,
   type IntegrationStatus,
   type McpPeerInfo,
   submitMarketProposal,
@@ -1973,7 +1969,7 @@ export class App {
       const path = dispatched.evaluate.path
       if (JSON.stringify(path) === JSON.stringify(this.executionPath())) {
         const snapshot = executionSnapshot(this.state.replica, path)
-        if (snapshot.inputs.length || !['idle', 'rolled-back'].includes(snapshot.status)) throw new Error('Satisfy the evaluation\'s current inputs before completing it.')
+        if (snapshot.inputs.length || !['idle', 'rolled-back', 'awaiting-review'].includes(snapshot.status)) throw new Error('Satisfy the evaluation\'s current inputs before completing it.')
         await this.finishExecution()
       } else await this.evaluateAt(path, true)
       await this.config.storage.flush?.()
@@ -2019,7 +2015,7 @@ export class App {
     if (!root || !root.every((id, i) => path[i] === id) || !Number.isFinite(amount) || amount < 0) return
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
     const status = this.evaluationStatus(root)?.status
-    if (!row?.allocation || amount > row.allocation.amount || this.evaluating || status && status !== 'idle' && status !== 'rolled-back' || readNodeValue(this.state.replica, path, 'fos:consumed')) return
+    if (!row?.allocation || amount > row.allocation.amount || this.evaluating || status && status !== 'idle' && status !== 'rolled-back' && status !== 'awaiting-review' || readNodeValue(this.state.replica, path, 'fos:consumed')) return
     this.edit(writeNodeValue(this.state.replica, path, 'fos:consumed', { peer: this.state.replica.meta.peerId, value: { ...row.allocation, amount }, time: this.now() }, this.now()))
   }
   exitExecution(): void { this.execution = null; this.refresh() }
@@ -2030,6 +2026,14 @@ export class App {
     this.edit(writeNodeValue(this.state.replica, path, 'fos:evaluation', { id: crypto.randomUUID(), status: 'idle', started: this.now(), effects: [] }, this.now()))
   }
   async evaluateCurrent(): Promise<void> { await this.evaluateAt(this.currentRow()?.construction?.name === 'fos:evaluation' ? this.state.view.slice(0, -1) : [...this.state.view]) }
+  /** Requirements the account server's handler registry executes: its own model, the integration peers' repositories and calendar, attached MCP tools. */
+  private serverHandles(step: import('../../shared/sync/evaluation').EvaluationStep): boolean {
+    const r = step.row?.requirement
+    if (!r || r.satisfied) return false
+    if (r.capability === 'llm' || r.capability === 'repo') return true
+    if (r.capability === 'tool') return r.tool !== 'fos.pull'
+    return r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined && capabilityPeers(this.state.replica, step.path, 'calendar').some(p => p.startsWith('integration:'))
+  }
   async evaluateAt(path: Scope, triggered = false): Promise<void> {
     if (!triggered) document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
     if (this.evaluating) { if (triggered) throw new Error('Another evaluation is running.'); return }
@@ -2038,7 +2042,7 @@ export class App {
     const valid = () => { if (this.state.replica.store !== store || generation !== this.authGeneration) throw new Error('The data session changed during evaluation.') }
     try {
       const localPull = (step: import('../../shared/sync/evaluation').EvaluationStep) => step.row?.requirement?.tool === 'fos.pull'
-      const needsServer = evaluationSteps(this.state.replica, path).some(step => step.row?.requirement?.capability === 'repo' && !step.row.requirement.satisfied)
+      const needsServer = evaluationSteps(this.state.replica, path).some(step => this.serverHandles(step))
       if (needsServer && evaluationSteps(this.state.replica, path).some(localPull)) throw new Error('Evaluate local Pull separately from server integration effects.')
       if (needsServer) {
         if (!this.isOnline('fos') || this.state.session?.kind !== 'user' || this.virtualIdentity) throw new Error('Connect to the account server to evaluate integration effects.')
@@ -2071,7 +2075,7 @@ export class App {
           this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, ref: 'unit' }, this.now()) })
         }
       })
-      if (record.status !== 'committed') throw new Error(record.error ?? 'Evaluation needs recovery.')
+      if (record.status !== 'committed' && record.status !== 'awaiting-review') throw new Error(record.error ?? 'Evaluation needs recovery.')
     } catch (error) { if (triggered) throw error; this.notify('error', error instanceof Error ? error.message : String(error)) }
     finally { this.evaluating = false; this.refresh() }
   }
@@ -2098,7 +2102,7 @@ export class App {
     const state = this.currentTriggerState()
     if (!state) return
     const evaluation = evaluationRecord(this.state.replica, state.target)
-    if (evaluation && !['idle', 'committed', 'rolled-back'].includes(evaluation.status)) {
+    if (evaluation && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(evaluation.status)) {
       this.goTo(state.target); this.notify('info', 'Review recovery before rearming this trigger.'); return
     }
     this.edit(writeNodeValue(this.state.replica, this.state.view, 'fos:trigger-state', { ...state, occurrence: '', status: 'finished', error: undefined }, this.now()))
@@ -2307,12 +2311,9 @@ export class App {
     try {
       const handler = workHandler(this.state.replica, work.path, { isPeerActive: id => this.isOnline(id) })
       if (handler.status !== 'ready') throw new Error(handler.problems.join('; '))
-      const run = beginTaskWork(this.state.replica, work.path, work.preview, this.now())
-      this.edit(run.replica)
-      this.set({ collapsed: [...this.state.collapsed, run.path.at(-1)!] })
-      const { text } = await askLlm(session, run.prompt, run.system)
-      if (this.state.session !== session) throw new Error('The account changed while the model was running. The answer was not added to another account.')
-      this.edit(proposeTaskResult(this.state.replica, run.resultPath, text, this.now()))
+      // The fos model is the server's llm handler: completing the request node pins the attempt and leaves the answer as a proposal for review.
+      await this.evaluateAt(work.path, true)
+      if (this.state.session !== session) throw new Error('The account changed while the model was running.')
       this.notify('info', 'The result is ready for review. The task is still awaiting acceptance.')
       this.set({ work: { ...work, preview: taskWorkContext(this.state.replica, work.path), busy: false } })
     } catch (error) { this.set({ work: { ...work, busy: false, error: error instanceof Error ? error.message : String(error) } }) }
@@ -2357,29 +2358,10 @@ export class App {
     const task = this.rowAt(at)
     try {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
-      if (r.capability === 'repo') {
-        if (!r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
-        const { url, number } = await createRepoIssue(session, r.repo, req.title || task?.title || 'from fos', task ? `From the fos task “${task.title}”.` : undefined)
-        let replica = addRow(this.state.replica, [...this.state.view, ...at, req.id], 'plain', `${r.repo}#${number} ${url}`, this.now())
-        replica = addSupply(replica, [...this.state.view, ...at], req.id, { capability: 'repo', by: 'github', ref: String(number) }, this.now())
-        this.edit(replica)
-        this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
-        return
-      }
-      if (r.capability === 'tool') {
-        // an MCP peer attached above runs the tool on the server, which writes the answer into the tree; pull it
-        const { text } = await runMcpRequirement(session, [...this.currentScope(), ...at], req.id)
-        this.notify('info', text.slice(0, 200) || 'Ran.')
-        await this.syncNow('tool run')
-        return
-      }
-      if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined) {
-        // the calendar capability: an event for the window, and the time allocation that fills the requirement
-        const end = r.end ?? r.start + Math.round((r.amount ?? 1) * 3_600_000)
-        const summary = task?.title || req.title || 'fos'
-        const { url } = await createCalendarEvent(session, { summary, description: req.title, start: r.start, end })
-        const allocation = this.allocationWithBank([...at, req.id], { resource: '', type: r.resource, amount: r.amount ?? (end - r.start) / 3_600_000, unit: 'h', start: r.start, end, ...(r.peer ? { person: r.peer } : {}) })
-        if (allocation) this.edit(addRow(this.state.replica, [...this.state.view, ...at, req.id], 'allocation', url ? `on Google Calendar ${url}` : 'on Google Calendar', this.now(), { allocation }))
+      if (r.capability === 'repo' || r.capability === 'tool' || (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)) {
+        if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
+        // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
+        await this.evaluateAt([...this.state.view, ...at, req.id])
         this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
         return
       }

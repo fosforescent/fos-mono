@@ -429,22 +429,29 @@ answers with open tasks, anything else is added at the root. Language
 models are the fos server's own capability (`llm` in its handler registry,
 the voice notes' `complete` on `OPENAI_API_KEY`/Vertex), not a user key.
 
-Handlers, as requirement kinds: `-llm question` → "Ask fos" writes the
-answer as a note inside and supplies it; `-repo owner/name title` → "Open
-issue" (GitHub) adds a row with the issue URL and supplies it; a time or
-person requirement with a window (`-: 1h 2026-10-13T09:00..` or `-@bob …`)
-→ "Add to Google Calendar" creates the event and the allocation that fills
-the requirement.
+Handlers, as requirement kinds, all run as *effects of the account server's
+handler registry* (`backend/sync/hostHandlers.ts`) when the requirement is
+completed (the row's Run button sends a `complete` event for that
+requirement; there are no routes per handler): `-llm question` → the fos
+model; the attempt (prompt, system, sources) is pinned under the request and
+the answer becomes a proposal on its return ref, so the evaluation pauses as
+`awaiting-review` until the owner accepts it in **Context & results**
+(acceptance supplies the requirement; completing again commits).
+`-repo owner/name title` → GitHub opens the issue and a row with its URL plus
+the supply are added. A time or person requirement with a window
+(`-: 1h 2026-10-13T09:00..` or `-@bob …`) → Google Calendar creates the
+event and the allocation row that fills the requirement.
 
 **MCP peers (`backend/integrations/mcpPeers.ts`).** The account's MCP
 servers (`MCPServerModel`, their tools) are peers too. "Attach here" (or
 the row menu) makes a server a member of a node (`mcp:<server id>`, name
 from the registry, `tool` + `read` + `edit`), so it advertises its tools
 there. A `-tool <name> input` requirement under that node (or below) is run
-by the nearest attached server that has the tool (`POST
-/user/data/mcp-peers/run`, "Run" on the row; `MCPClient.callTool` with
-`{ input }`); the result is a note inside the requirement with a supply by
-the peer. With `MCP_LISTEN=true` the server also listens: after every save
+by the nearest attached server that has the tool: the registry's `tool`
+effect (`mcpToolHandler`) binds the handler ref before the evaluator pins the
+step and calls `MCPClient.callTool` with `{ input }` when the requirement is
+completed ("Run" on the row); the result is a note inside the requirement,
+the return ref and a supply by the peer. With `MCP_LISTEN=true` the server also listens: after every save
 of a tree (`afterSaveHooks` in `peerSync.ts`), open tool requirements under
 attached nodes are run (debounced per user).
 

@@ -4561,6 +4561,15 @@
     if (typeCid) children.push([store.primitive.instructionPointerConstructor.getId(), typeCid]);
     return { data, children: [...children, ...bookkeeping2] };
   }
+  function refArguments(store, value, typeCid) {
+    return value.children.flatMap((edge) => {
+      if (edge[0] !== typeCid) return [];
+      const cid = identityCid(store, edge);
+      const ref = content(store, cid);
+      const id = aliasIdOf(ref);
+      return id && refTypeCid(store, ref) === typeCid ? [{ id, cid, targetCid: refValueCid(store, ref) }] : [];
+    });
+  }
   function newId() {
     const cryptoApi = globalThis.crypto;
     if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
@@ -5911,6 +5920,12 @@
     return [...new Set(discoverHandlers(r, path).filter((o) => o.enabled && o.capability === capability).map((o) => o.peerId))];
   }
 
+  // ../shared/sync/work.ts
+  var slots = (r, cid, type) => refArguments(r.store, valueContent(r.store, cid), type);
+  function isAttempt(r, cid) {
+    return slots(r, cid, capabilityTarget(r.store, "llm")).length > 0 && slots(r, cid, r.store.primitive.documentField.getId()).length > 0;
+  }
+
   // ../shared/sync/repository.ts
   init_prelude();
 
@@ -5952,6 +5967,7 @@
       if (row?.kind === "template" && row.id !== "fos:home") return;
       if (row && ["ref", "supply"].includes(row.kind)) return;
       const cid = resolveScope(r.store, headCid(r), at);
+      if (depth > 0 && cid && isAttempt(r, cid)) return;
       if (depth > 0 && cid && argumentRefs(r.store, cid).some((a) => a.name === "fos:trigger")) return;
       const node = view(r, at);
       if (!node) throw new Error("The evaluated node no longer exists.");

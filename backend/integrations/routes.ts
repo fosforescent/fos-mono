@@ -8,12 +8,8 @@ import { githubRepository } from './repository'
  *   DELETE /user/integrations/:provider            forget the connection (or the phone)
  *   POST   /user/integrations/phone                { number } → a code is texted to it
  *   POST   /user/integrations/phone/verify         { code } → the phone peer is linked
- *   POST   /user/integrations/llm                  { prompt, system? } → { text, model }      (the fos server's own model)
- *   POST   /user/integrations/repo/issue           { repo: "owner/name", title, body? } → { url, number }   (GitHub)
- *   POST   /user/integrations/calendar/event       { summary, description?, start, end } → { url, id }     (Google)
- *
- * Inbound texts (`createSmsInbound`) become rows in the sender's tree: "done <words>" checks off the first open
- * task matching them, "list" texts back the open tasks, anything else is added as a row at the root
+ *   (GitHub issues and Google Calendar events are registry effects reached through `complete` events; `createIssue` and
+ *   `createCalendarEvent` below are what those effects call. Texted commands are an adapter in channels/textCommands.ts.)
  * ("[ ] …" makes a task). `notifyUser` texts a linked phone.
  *
  * Everything outside (fetch, storage, the model, clock, env) comes through `deps` so the flows can be tested
@@ -106,8 +102,21 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
     return { url: result.html_url, number: result.number }
   }
 
+  /** An event on the account's primary Google Calendar (the calendar effect, backend/sync/hostHandlers.ts). */
+  async function createCalendarEvent(userId: number, event: { summary: string; description?: string; start: number; end: number }): Promise<{ url: string | null; id: string }> {
+    const token = await accessToken(userId, providerById('google') as Provider)
+    if (!token) throw new Error('Google is not connected: sign in with it on its peer row')
+    const summary = event.summary.trim().slice(0, 256)
+    if (!summary || !Number.isFinite(event.start) || !Number.isFinite(event.end) || event.end <= event.start) throw new Error('summary, start and end (ms, end after start) required')
+    const r = await deps.fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ summary, description: event.description?.slice(0, 2000), start: { dateTime: new Date(event.start).toISOString() }, end: { dateTime: new Date(event.end).toISOString() } }) })
+    const j = (await r.json()) as { htmlLink?: string; id?: string; error?: { message?: string } }
+    if (!r.ok || !j.id) throw new Error(`Google Calendar: ${j.error?.message ?? r.status}`)
+    return { url: j.htmlLink ?? null, id: j.id }
+  }
+
   return {
     createIssue,
+    createCalendarEvent,
     /** Every peer, with whether the server can run its flow and whether this account is connected. */
     async list(req: Request, res: Response): Promise<Response> {
       const userId = await deps.userId(req)
@@ -196,34 +205,6 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
     },
 
     /** The llm capability: the fos server's own model answers about a task. */
-    async llm(req: Request, res: Response): Promise<Response> {
-      await deps.userId(req)
-      const body = (req.body ?? {}) as { prompt?: unknown; system?: unknown }
-      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
-      if (!prompt) return fail(res, 400, 'prompt required')
-      if (prompt.length > 20_000) return fail(res, 400, 'prompt exceeds 20,000 characters; narrow the task context')
-      const system = typeof body.system === 'string' ? body.system.slice(0, 4000) : 'You help with a task list. Answer briefly and concretely; use markdown lists when listing.'
-      try {
-        const text = (await deps.complete(system, prompt)).trim()
-        return res.json({ text, model: deps.env.VOICE_SUMMARY_MODEL || 'default' })
-      } catch (error) {
-        return fail(res, 502, `model: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    },
-
-    /** The repo capability: a GitHub issue from a task. */
-    async repoIssue(req: Request, res: Response): Promise<Response> {
-      const userId = await deps.userId(req)
-      try {
-        const body = req.body ?? {}
-        return res.json(await createIssue(userId, { repo: typeof body.repo === 'string' ? body.repo : '', title: typeof body.title === 'string' ? body.title : '', body: typeof body.body === 'string' ? body.body : undefined }))
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return fail(res, message.startsWith('GitHub is not connected') ? 409 : message === 'repo (owner/name) and title required' ? 400 : 502, message)
-      }
-    },
-
-    /** Repository metadata uses the same GitHub OAuth peer as issue creation. */
     async repository(req: Request, res: Response): Promise<Response> {
       const token = await accessToken(await deps.userId(req), providerById('github') as Provider)
       if (!token) return fail(res, 409, 'GitHub is not connected: sign in with it on its peer row')
@@ -244,21 +225,6 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
     },
 
     /** The calendar capability: a Google Calendar event for a time allocation with a window. */
-    async calendarEvent(req: Request, res: Response): Promise<Response> {
-      const userId = await deps.userId(req)
-      const token = await accessToken(userId, providerById('google') as Provider)
-      if (!token) return fail(res, 409, 'Google is not connected: sign in with it on its peer row')
-      const body = (req.body ?? {}) as { summary?: unknown; description?: unknown; start?: unknown; end?: unknown }
-      const summary = typeof body.summary === 'string' ? body.summary.trim().slice(0, 256) : ''
-      const start = typeof body.start === 'number' ? body.start : NaN
-      const end = typeof body.end === 'number' ? body.end : NaN
-      if (!summary || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) return fail(res, 400, 'summary, start and end (ms, end after start) required')
-      const r = await deps.fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ summary, description: typeof body.description === 'string' ? body.description.slice(0, 8000) : '', start: { dateTime: new Date(start).toISOString() }, end: { dateTime: new Date(end).toISOString() } }) })
-      const j = (await r.json()) as { htmlLink?: string; id?: string; error?: { message?: string } }
-      if (!r.ok || !j.id) return fail(res, 502, `Google Calendar: ${j.error?.message ?? r.status}`)
-      return res.json({ url: j.htmlLink ?? null, id: j.id })
-    },
-
     /** Text a user's linked phone (notifications); silently nothing when there is none. */
     async notifyUser(userId: number, text: string): Promise<boolean> {
       if (!deps.sms) return false

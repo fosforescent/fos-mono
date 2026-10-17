@@ -19,7 +19,8 @@ const nodeAt = (r: Replica, path: Scope) => {
   return { cid, value: valueContent(r.store, cid) }
 }
 const slots = (r: Replica, cid: string, type: string) => refArguments(r.store, valueContent(r.store, cid), type)
-function isAttempt(r: Replica, cid: string): boolean {
+/** A model attempt record (`beginTaskWork`): handler binding plus return slot. Runtime bookkeeping, not work to evaluate. */
+export function isAttempt(r: Replica, cid: string): boolean {
   return slots(r, cid, capabilityTarget(r.store, 'llm')).length > 0 && slots(r, cid, r.store.primitive.documentField.getId()).length > 0
 }
 
@@ -69,6 +70,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       }
     }
     for (const input of refArguments(store, value, store.primitive.documentField.getId())) {
+      if (content(store, input.cid).data.name?.content?.startsWith('fos:')) continue // runtime values are not inputs
       const resolved = resolveBinding(store, store.primitive.documentField.getId(), input.cid, contextBindings(r, at))
       if (resolved.status !== 'ready') resolved.problems.forEach(p => blockers.add(p))
       else emit(resolved.cid!, 'Bound input', depth + 1, true)
@@ -78,6 +80,8 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       if (!kind || kind === 'supply' || kind === 'template') continue
       if (ancestorNotes && !['note', 'plain', 'ref'].includes(kind)) continue
       const child = identityCid(store, edge)
+      // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
+      if (content(store, child).data.name?.content?.startsWith('fos:')) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (kind === 'requirement' && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue
       emit(child, kind, depth + 1, external, ancestorNotes, [...at, content(store, child).data.alias!.id])

@@ -1,5 +1,6 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { mergeNodes } from './merge'
+import { isAttempt } from './work'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { childRows, supplyOf, findRowByAlias, commitRoot, content, refValueCid, refTypeCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
@@ -7,8 +8,8 @@ import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeRe
 export const EVALUATION_ARGUMENT = 'fos:evaluation'
 const EVALUATION_BUDGET_MS = 120000
 export type EvaluationRecord = {
-  id: string; status: 'idle' | 'opening' | 'running' | 'committing' | 'committed' | 'rolled-back' | 'needs-recovery'
-  started: number; error?: string; effects: Array<{ path: Scope; title: string; status: 'attempting' | 'applied' | 'reverted' | 'manual' }>
+  id: string; status: 'idle' | 'opening' | 'running' | 'committing' | 'committed' | 'awaiting-review' | 'rolled-back' | 'needs-recovery'
+  started: number; error?: string; effects: Array<{ path: Scope; title: string; status: 'attempting' | 'applied' | 'pending-review' | 'reverted' | 'manual' }>
 }
 
 /** Runtime state is a typed mutable ref, not a new row kind or a separate database. */
@@ -61,7 +62,8 @@ export type EvaluationDriver = BindingEnvironment & {
   /** Explicit return slots may be unfilled before execution and written by the effect. */
   outputs?(step: EvaluationStep): string[]
   open?(step: EvaluationStep, transaction: string): Promise<void>
-  effect?(step: EvaluationStep, operation: string): Promise<void>
+  /** `'pending'`: the result awaits human review (a proposal); the evaluation pauses as `awaiting-review` instead of committing. */
+  effect?(step: EvaluationStep, operation: string): Promise<void | 'pending'>
   commit?(step: EvaluationStep, transaction: string): Promise<void>
   abort?(step: EvaluationStep, transaction: string): Promise<void>
   rollback?(step: EvaluationStep, operation: string): Promise<void>
@@ -75,6 +77,8 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     if (row?.kind === 'template' && row.id !== 'fos:home') return
     if (row && ['ref', 'supply'].includes(row.kind)) return
     const cid = resolveScope(r.store, headCid(r), at)
+    // A handler's attempt records (pinned prompts, return slots) are bookkeeping, never steps.
+    if (depth > 0 && cid && isAttempt(r, cid)) return
     if (depth > 0 && cid && argumentRefs(r.store, cid).some(a => a.name === 'fos:trigger')) return
     const node = view(r, at)
     if (!node) throw new Error('The evaluated node no longer exists.')
@@ -117,7 +121,7 @@ const instruction = (r: Replica, path: Scope, outputs: string[] = []) => {
 
 export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promise<EvaluationRecord> {
   const prior = evaluationRecord(driver.get(), path)
-  if (prior && !['idle', 'committed', 'rolled-back'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
+  if (prior && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
   const steps = evaluationSteps(driver.get(), path)
   if (!steps.length) throw new Error('Apply the template before evaluating it.')
   const initial = driver.get()
@@ -141,7 +145,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   }
   await save()
   const opened: EvaluationStep[] = []
-  let published: { before: string; after: string } | null = null
+  let published: { before: string; after: string } | null = null, awaiting = false
   try {
     for (const step of steps) { check(step); opened.push(step); await driver.open?.(fresh(step), record.id) }
     record.status = 'running'; await save()
@@ -159,7 +163,8 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       const beforeCid = resolveScope(driver.get().store, headCid(driver.get()), step.path)!
       const outputs = new Set(driver.outputs?.(step) ?? [])
       const expectedOutputs = argumentRefs(driver.get().store, beforeCid).filter(a => outputs.has(content(driver.get().store, a.cid).data.alias?.id ?? '')).map(a => ({ id: content(driver.get().store, a.cid).data.alias!.id, type: a.type }))
-      await driver.effect(current, `${record.id}:${JSON.stringify(step.path)}`)
+      const outcome = await driver.effect(current, `${record.id}:${JSON.stringify(step.path)}`)
+      if (outcome === 'pending') { effect.status = 'pending-review'; awaiting = true; await save(); continue }
       for (const output of expectedOutputs) {
         const r = driver.get(), cid = resolveScope(r.store, headCid(r), [...step.path, output.id])
         if (!cid || refTypeCid(r.store, content(r.store, cid)) !== output.type || !refValueCid(r.store, content(r.store, cid)) || resolveBinding(r.store, output.type, cid, contextBindings(r, step.path, driver), undefined, driver).status !== 'ready') throw new Error('The handler did not supply a valid return value. Review its result before continuing.')
@@ -167,6 +172,8 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       effect.status = 'applied'; await save()
       if (!fresh(step).row?.requirement?.satisfied) throw new Error('The handler has not fulfilled its requirement. Review its result before continuing.')
     }
+    // A result left for review stops here: the owner accepts it (which supplies the requirement) and completes again.
+    if (awaiting) { record.status = 'awaiting-review'; await save(); return record }
     record.status = 'committing'; await save()
     for (const step of [...steps].reverse()) {
       check(step)
@@ -260,7 +267,7 @@ export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[
 /** Run under the same executor lock as evaluation, after confirming the old execution has stopped. */
 export function recoverEvaluation(r: Replica, path: Scope, now: number): Replica {
   const record = evaluationRecord(r, path)
-  if (!record || ['idle', 'committed', 'rolled-back'].includes(record.status)) return r
+  if (!record || ['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(record.status)) return r
   if (['opening', 'running', 'committing'].includes(record.status) && now - record.started < EVALUATION_BUDGET_MS + 60000) throw new Error('This evaluation may still be running. Wait three minutes from its start before recovering an interrupted run.')
   for (const [index, effect] of record.effects.entries()) {
     if (effect.status === 'reverted') continue

@@ -10,8 +10,9 @@ test('advertised capabilities are exactly transport facts plus registered handle
   expect(registry.serverCapabilities()).toEqual([...new Set([...SERVER_TRANSPORT_CAPABILITIES, 'search', 'llm'])].sort())
   for (const unbacked of ['mail', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'cron']) expect(registry.serverCapabilities()).not.toContain(unbacked)
   expect(registry.integrationOffers()).toEqual({ github: ['repo'], phone: ['notify'] })
-  expect(registry.executors('repo')).toHaveLength(1)
-  expect(registry.executors('search')).toHaveLength(0)
+  const step = (capability: string) => ({ path: ['t', 'r'], row: { id: 'r', kind: 'requirement', requirement: { capability } } } as any)
+  expect(registry.executors(step('repo'))).toHaveLength(1)
+  expect(registry.executors(step('search'))).toHaveLength(0)
 })
 
 test('availability follows the handler, and every advertised capability is a known one', async () => {

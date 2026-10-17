@@ -187,7 +187,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   renderCrumbs(regions.crumbs, state, app); renderStatus(regions.status, state, app); renderBanner(regions.banner, state, app)
   const rows: HTMLElement[] = [], root = [...state.view]
   const record = app.evaluationStatus(root)
-  const locked = app.evaluating || !!record && record.status !== 'idle' && record.status !== 'rolled-back'
+  const locked = app.evaluating || !!record && record.status !== 'idle' && record.status !== 'rolled-back' && record.status !== 'awaiting-review'
   const current = app.currentRow()
   if (current?.kind === 'task') {
     const actions = div('execution-task-actions', '')
@@ -1135,12 +1135,12 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
   if (task.construction?.name === 'fos:evaluation') {
     const parent = path.slice(0, -1), record = app.evaluationStatus(parent)
     box.append(span('constructor-label', 'Evaluation'))
-    const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'needs-recovery': 'Needs recovery' }
+    const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'awaiting-review': 'Awaiting review', 'needs-recovery': 'Needs recovery' }
     if (record) box.append(span('muted', labels[record.status] ?? record.status))
     const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating
     box.append(run)
     if (record?.error) box.append(span('error', record.error))
-    if (record && !['idle', 'committed', 'rolled-back'].includes(record.status)) {
+    if (record && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(record.status)) {
       const recovery = button('secondary small', 'Review recovery', () => void app.recoverCurrentEvaluation(parent)); recovery.disabled = app.evaluating; box.append(recovery)
     }
   }
