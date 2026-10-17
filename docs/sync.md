@@ -468,14 +468,17 @@ listed nodes; the receiver sees the proposal in that node's link panel, named
 after the sender, and approves it to take the rows in, after which the
 requirements block the bin's task until filled.
 
-**Inviting a Fos user.** "Add @name" under the fos server in the context
-panel sends an `invite` event (`fos_invite` over MCP). The account server
-records the member grant (`user:<name>`, `edit`) on the node and, through its
-`relay` capability, delivers the node into that user's Home as a foreign ref
-below a host row for the owner (`ensureMemberLink`, `shared/sync/sharing.ts`).
-The invitee opens it like a market result and proposes through the market
-routes, which honour the member grant. A member edge written locally would
-never reach them; the server is the peer that hosts both stores.
+**Inviting a Fos user.** "Add sub-peer" under the fos server in the context
+panel autocompletes `@name` from the account directory and sends an `invite`
+event (`fos_invite` over MCP). The account server records the member grant
+(`user:<name>`, `edit`) on the node and, through its `relay` capability,
+delivers a *request* to that user: the inviter becomes a sub-peer of their fos
+server (a member of Home and of a row for them, with nothing granted) and the
+node arrives as a proposal by the inviter on that row (`ensureInviteRequest`,
+`shared/sync/sharing.ts`). Accepting the proposal places the foreign ref
+there; the invitee opens it like a market result and proposes through the
+market routes, which honour the member grant. A member edge written locally
+would never reach them; the server is the peer that hosts both stores.
 
 **Queries** (`?` prefix) run a semantic search over the account's rows
 (`POST /user/data/search`, pgvector + Vertex `text-embedding-005`, index kept
