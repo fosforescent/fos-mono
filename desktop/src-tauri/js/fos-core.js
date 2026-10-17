@@ -4839,11 +4839,19 @@
     return content(store, store.rootNodeId).children.some(([i2]) => i2 === store.primitive.targetPointerConstructor.getId());
   }
   var HOME_ID = "fos:home";
-  function homeContextCid(store, rootCid, now) {
+  function withMemberOffers(store, value, peerId, name, consumes, offers) {
+    const member = readMembers(store, value).find((m) => m.peerId === peerId);
+    const wanted = [...new Set(offers)].sort();
+    if (member && JSON.stringify([...member.accepts ?? []].sort()) === JSON.stringify(wanted)) return value;
+    return withMember(store, value, peerId, member?.name ?? name, member?.capabilities ?? consumes, member?.disabled ?? [], wanted);
+  }
+  function homeContextCid(store, rootCid, now, offers = {}) {
     const root = valueContent(store, rootCid);
     const identity = makeLink(store, content(store, rootCid), 0);
     let bindings = identity;
-    if (!readMembers(store, bindings).some((member) => member.peerId === "fos")) bindings = withMember(store, bindings, "fos", "fos", [], [], SERVER_CAPABILITIES);
+    const serverOffers = [.../* @__PURE__ */ new Set([...SERVER_TRANSPORT_CAPABILITIES, ...offers.server ?? []])];
+    if (!readMembers(store, bindings).some((member) => member.peerId === "fos")) bindings = withMember(store, bindings, "fos", "fos", [], [], serverOffers);
+    else if (offers.server) bindings = withMemberOffers(store, bindings, "fos", "fos", [], serverOffers);
     const homeCid = findChild(store, rootCid, HOME_ID);
     if (homeCid && isBranchChoice(store, content(store, homeCid))) {
       const edge = root.children.find((edge2) => identityCid(store, edge2) === homeCid);
@@ -4858,7 +4866,11 @@
     const legacyIntegrations = bindings.children.filter((edge) => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith("integration:"));
     for (const edge of legacyIntegrations) if (!readMembers(store, home).some((member) => member.peerId === content(store, edge[1]).data.peerId?.content)) home = { ...home, children: [...home.children, edge] };
     if (legacyIntegrations.length) bindings = { ...bindings, children: bindings.children.filter((edge) => !legacyIntegrations.includes(edge)) };
-    for (const peer of INTEGRATION_PEERS) if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides);
+    for (const peer of INTEGRATION_PEERS) {
+      const provides = offers.integrations?.[peer.id];
+      if (!readMembers(store, home).some((member) => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], provides ?? []);
+      else if (provides) home = withMemberOffers(store, home, `integration:${peer.id}`, peer.name, peer.consumes, provides);
+    }
     const nextHome = put(store, home);
     const homeEdge = root.children.find((edge) => identityCid(store, edge) === homeCid);
     if (homeEdge && rowKindOf(store, homeEdge) === "plain" && homeCid === nextHome && bindings === identity && identity === content(store, rootCid)) return rootCid;
@@ -5231,13 +5243,12 @@
   }
   var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist", "provideNode", "sync"];
   var INTEGRATION_PEERS = [
-    { id: "github", name: "GitHub", kind: "oauth", provides: ["repo", "search"], consumes: ["read", "edit"] },
-    { id: "google", name: "Google", kind: "oauth", provides: ["calendar", "mail", "search"], consumes: ["read", "edit"] },
-    { id: "discord", name: "Discord", kind: "oauth", provides: ["mail", "relay"], consumes: ["read"] },
-    { id: "stripe", name: "Stripe", kind: "platform", provides: ["market"], consumes: ["read"] },
-    { id: "phone", name: "Phone (SMS)", kind: "channel", provides: ["notify"], consumes: [] }
+    { id: "github", name: "GitHub", kind: "oauth", consumes: ["read", "edit"] },
+    { id: "google", name: "Google", kind: "oauth", consumes: ["read", "edit"] },
+    { id: "stripe", name: "Stripe", kind: "platform", consumes: ["read"] },
+    { id: "phone", name: "Phone (SMS)", kind: "channel", consumes: [] }
   ];
-  var SERVER_CAPABILITIES = ["http", "ws", "relay", "search", "market", "mail", "llm", "send-payment", "receive-payment", "allocate", "request-payment", "poll", "peer", "persist", "provideNode", "sync"];
+  var SERVER_TRANSPORT_CAPABILITIES = ["http", "ws", "relay", "peer", "persist", "provideNode", "sync"];
   function isLink(store, value) {
     if (isHandle(value)) return false;
     return isRefNode(store, value) || !!value.data.link;

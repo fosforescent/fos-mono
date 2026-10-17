@@ -21,6 +21,7 @@ import { githubRepository } from './repository'
  */
 
 import type { Request, Response } from 'express'
+import type { Capability } from '@fosforescent/shared/sync/index'
 import { PROVIDERS, providerById, type Provider } from './providers'
 import { decryptSecret, encryptSecret, hashCode, makeCode, readState, signState } from './secrets'
 import { normalizePhone } from '../channels/sms'
@@ -52,6 +53,8 @@ export type IntegrationDeps = {
     listOpen(userId: number, limit: number): Promise<string[]>
     markDone(userId: number, words: string): Promise<string | null>
   }
+  /** What this host has handlers for per provider (sync/registry.ts); absent means the peer provides nothing yet. */
+  offers?(providerId: string): Capability[]
   now?: () => number
 }
 
@@ -122,7 +125,7 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
         const platform = p.kind === 'platform' ? await deps.platformConnected(userId, p.id) : null
         const verified = p.kind === 'channel' ? conn?.metadata.verified === true : true
         out.push({
-          id: p.id, name: p.name, kind: p.kind, provides: p.provides, consumes: p.consumes,
+          id: p.id, name: p.name, kind: p.kind, provides: deps.offers?.(p.id) ?? [], consumes: p.consumes,
           configured: configured(p),
           connected: platform ? platform.connected : !!conn && verified,
           pending: p.kind === 'channel' && !!conn && !verified,

@@ -11,11 +11,12 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContext, SERVER_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
+import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContext, SERVER_TRANSPORT_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
 import { indexStore, vertexEmbed } from '../search/rowIndex'
+import type { HandlerRegistry } from './registry'
 
 export type PeerSyncUser = { id: number; username: string }
 
@@ -28,6 +29,8 @@ export type PeerSyncDeps = {
   /** Peer ids of the user's devices currently connected over the WebSocket. */
   onlinePeers?(userId: number): string[]
   now?(): number
+  /** What this host can do (sync/registry.ts); absent (tests) means transport only. */
+  registry?: HandlerRegistry
 }
 
 /** Peer id the user group uses when labelling its side of a divergence. */
@@ -99,7 +102,7 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
         // Older scoped peer credentials continue to resolve through Home.
         const beforeContext = rootTargetCid(store)
         if (claimsOf(req).kind !== 'peer' && ((!parsed.scope.length && Object.values(parsed.nodes).some(node => node?.data?.alias?.id === HOME_ID)) || parsed.scope[0] === HOME_ID)) {
-          ensureHomeContext(serverReplica, 0)
+          ensureHomeContext(serverReplica, 0, deps.registry?.hostOffers())
           if (parsed.scope[0] === HOME_ID && !independentRoot) writeNodeValue(serverReplica, [], 'fos:peer-root', 'fos', deps.now?.() ?? Date.now())
         }
         const contextChanged = rootTargetCid(store) !== beforeContext
@@ -116,8 +119,8 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
             recipient: 'server' as const,
             ...(claims.kind === 'peer' ? { proposeOnly: true, peerName: claims.name } : {}),
             onlinePeers: deps.onlinePeers ? deps.onlinePeers(user.id) : undefined,
-            // what this server registers with the peer: reachable over http/ws, a relay for peers that cannot connect directly, and its services
-            capabilities: process.env.FOS_ENABLE_CRON === 'true' ? [...SERVER_CAPABILITIES, 'cron' as const] : SERVER_CAPABILITIES
+            // what this server registers with the peer: its transport facts plus the services its handler registry has
+            capabilities: deps.registry?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES
           }
           const served = serveSync(store, parsed, serverPeerIdFor(user.username), deps.now ? deps.now() : Date.now(), options)
           if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error, code: served.code, ...(served.missingNodeIds ? { missingNodeIds: served.missingNodeIds } : {}) } } as const

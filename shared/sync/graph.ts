@@ -711,12 +711,26 @@ export function rootIsAlias(store: FosStore): boolean {
 
 export const HOME_ID = 'fos:home'
 
-/** Normalize an account context with ordinary constructor and member edges. */
-export function homeContextCid(store: FosStore, rootCid: string, now: number): string {
+/** Replace a member's offers (ACCEPTS edges) when they differ from `offers`, keeping its grants and switches. */
+export function withMemberOffers(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, consumes: Capability[], offers: Capability[]): FosNodeContent {
+  const member = readMembers(store, value).find(m => m.peerId === peerId)
+  const wanted = [...new Set(offers)].sort()
+  if (member && JSON.stringify([...(member.accepts ?? [])].sort()) === JSON.stringify(wanted)) return value
+  return withMember(store, value, peerId, member?.name ?? name, member?.capabilities ?? consumes, member?.disabled ?? [], wanted)
+}
+
+/**
+ * Normalize an account context with ordinary constructor and member edges. `offers` is what the host currently
+ * provides (the server passes its registry; a device passes what the server last reported): the fos member on the
+ * root and the integration members in Home advertise exactly that, never a built-in list.
+ */
+export function homeContextCid(store: FosStore, rootCid: string, now: number, offers: HostOffers = {}): string {
   const root = valueContent(store, rootCid)
   const identity = makeLink(store, content(store, rootCid), 0)
   let bindings = identity
-  if (!readMembers(store, bindings).some(member => member.peerId === 'fos')) bindings = withMember(store, bindings, 'fos', 'fos', [], [], SERVER_CAPABILITIES)
+  const serverOffers = [...new Set([...SERVER_TRANSPORT_CAPABILITIES, ...(offers.server ?? [])])]
+  if (!readMembers(store, bindings).some(member => member.peerId === 'fos')) bindings = withMember(store, bindings, 'fos', 'fos', [], [], serverOffers)
+  else if (offers.server) bindings = withMemberOffers(store, bindings, 'fos', 'fos', [], serverOffers)
   const homeCid = findChild(store, rootCid, HOME_ID)
   // A branched Home is already a container: preserve its choice wrapper and alternatives.
   if (homeCid && isBranchChoice(store, content(store, homeCid))) {
@@ -733,7 +747,11 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number): s
   const legacyIntegrations = bindings.children.filter(edge => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith('integration:'))
   for (const edge of legacyIntegrations) if (!readMembers(store, home).some(member => member.peerId === content(store, edge[1]).data.peerId?.content)) home = { ...home, children: [...home.children, edge] }
   if (legacyIntegrations.length) bindings = { ...bindings, children: bindings.children.filter(edge => !legacyIntegrations.includes(edge)) }
-  for (const peer of INTEGRATION_PEERS) if (!readMembers(store, home).some(member => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], peer.provides)
+  for (const peer of INTEGRATION_PEERS) {
+    const provides = offers.integrations?.[peer.id]
+    if (!readMembers(store, home).some(member => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], provides ?? [])
+    else if (provides) home = withMemberOffers(store, home, `integration:${peer.id}`, peer.name, peer.consumes, provides)
+  }
   // Resolve inherited handlers through this peer's root at evaluation time.
   // Copying root members into shared Home would publish device-local context and freeze inheritance.
   const nextHome = put(store, home)
@@ -1267,22 +1285,29 @@ export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'app
  */
 export const MCP_PEER_PREFIX = 'mcp:'
 /**
- * Integration peers: outside services a user can sign in with (SSO) that then provide capabilities to the tree and
- * consume some of ours. Listed at the device's root like other peers; the sign-in itself is not wired on the
- * server yet, so they show as not connected.
+ * Integration peers: outside services a user signs in with (OAuth), platform peers the account is set up with
+ * (Stripe) and channel peers (a phone). This list is identity only: what each one *provides* is not declared
+ * here but derived by the account server from the handlers it actually has (backend/sync/registry.ts) and
+ * written into Home as that peer's offers (`HostOffers`). A capability no handler backs is never advertised.
  */
-export type IntegrationPeer = { id: string; name: string; kind: 'oauth' | 'platform' | 'channel'; provides: Capability[]; consumes: Capability[] }
+export type IntegrationPeer = { id: string; name: string; kind: 'oauth' | 'platform' | 'channel'; consumes: Capability[] }
 export const INTEGRATION_PEERS: IntegrationPeer[] = [
-  { id: 'github', name: 'GitHub', kind: 'oauth', provides: ['repo', 'search'], consumes: ['read', 'edit'] },
-  { id: 'google', name: 'Google', kind: 'oauth', provides: ['calendar', 'mail', 'search'], consumes: ['read', 'edit'] },
-  { id: 'discord', name: 'Discord', kind: 'oauth', provides: ['mail', 'relay'], consumes: ['read'] },
-  { id: 'stripe', name: 'Stripe', kind: 'platform', provides: ['market'], consumes: ['read'] },
-  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', provides: ['notify'], consumes: [] }
+  { id: 'github', name: 'GitHub', kind: 'oauth', consumes: ['read', 'edit'] },
+  { id: 'google', name: 'Google', kind: 'oauth', consumes: ['read', 'edit'] },
+  { id: 'stripe', name: 'Stripe', kind: 'platform', consumes: ['read'] },
+  { id: 'phone', name: 'Phone (SMS)', kind: 'channel', consumes: [] }
 ]
 export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'relay']
-/** What the fos account server registers with every peer: reachable over http and ws, always a relay, and the search, market, mail, language-model and payment/allocation services. */
-export const SERVER_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'search', 'market', 'mail', 'llm', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'poll', 'peer', 'persist', 'provideNode', 'sync']
+/**
+ * What is true of the fos account server without any handler: reachable over http and ws, a relay for peers that
+ * cannot connect directly, a peer connection broker, durable storage, and the node-provider protocol. Services
+ * (search, market, llm, poll, cron, …) are advertised only when the server's handler registry has them; the server
+ * reports the derived list in every sync/node response (`capabilities`) and devices record it on their fos member.
+ */
+export const SERVER_TRANSPORT_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'peer', 'persist', 'provideNode', 'sync']
 export const CLIENT_CAPABILITIES: Capability[] = ['provideNode', 'sync', 'timer', 'task-completion', 'request']
+/** What a host (the account server) currently offers: its own services and, per integration peer id, that peer's handlers. */
+export type HostOffers = { server?: Capability[]; integrations?: Record<string, Capability[]> }
 /** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
 export const CAPABILITY_LABEL: Record<Capability, string> = {
   provideNode: 'provide nodes', sync: 'traverse and sync',

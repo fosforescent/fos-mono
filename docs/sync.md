@@ -336,10 +336,14 @@ edges on its member reference (`Capability` in `graph.ts`): what it may do on
 the node (`edit`, `approve`), how it can be reached (`direct` over WebRTC,
 `http` / `ws` through a server that exposes it, `relay` for peers that cannot
 reach each other) and the services it handles (`search`, `market`, `mail`).
-The fos account server registers `SERVER_CAPABILITIES` (http, ws, relay,
-search, market, mail) with every device in each sync response
-(`ServeOptions.capabilities` → `SyncResponse.capabilities`); relaying is
-always among them. The context panel under the tree lists the banks in scope
+The fos account server registers what it can actually do with every device in
+each sync and node-provider response (`ServeOptions.capabilities` →
+`SyncResponse.capabilities`, `ProvidedNode.capabilities`): the transport facts
+(`SERVER_TRANSPORT_CAPABILITIES`: http, ws, relay, peer, persist, provideNode,
+sync) plus the services its handler registry has (`backend/sync/registry.ts`,
+today search, market, llm, poll and cron when enabled). Devices record the
+reported list on their own fos member (`App.recordServerOffers`), so a
+capability no handler backs is never offered in the palette. The context panel under the tree lists the banks in scope
 and the peers of the viewed node: `fos` with what it registered, the node's
 members, and attached devices (a direct-connected one shows `direct`). Within
 the owner's row for a member, the capability rows are what the owner exposes
@@ -422,7 +426,7 @@ number (`backend/channels/sms.ts`, Twilio: `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`; webhook `POST /channels/sms/webhook`,
 signature verified) become rows: "done <words>" checks a task off, "list"
 answers with open tasks, anything else is added at the root. Language
-models are the fos server's own capability (`llm` in `SERVER_CAPABILITIES`,
+models are the fos server's own capability (`llm` in its handler registry,
 the voice notes' `complete` on `OPENAI_API_KEY`/Vertex), not a user key.
 
 Handlers, as requirement kinds: `-llm question` → "Ask fos" writes the

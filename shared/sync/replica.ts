@@ -83,8 +83,7 @@ import {
   withMember,
   withPeer,
   withoutMember,
-  withoutPeer
-} from './graph'
+  withoutPeer, type HostOffers } from './graph'
 import { replicationView } from './replication'
 import { mergeNodes, resolveChoiceIn } from './merge'
 import { applySyncResponse, type SyncRequest, type SyncResponse } from './protocol'
@@ -176,10 +175,10 @@ export function homePath(replica: Replica): Scope {
 }
 
 /** Move legacy document rows into Home without copying their identities or losing root bookkeeping. */
-export function ensureHomeContext(replica: Replica, now: number): Replica {
+export function ensureHomeContext(replica: Replica, now: number, offers?: HostOffers): Replica {
   if (replica.meta.scope.length) return replica
   const before = headCid(replica)
-  const next = homeContextCid(replica.store, before, now)
+  const next = homeContextCid(replica.store, before, now, offers)
   if (next === before) return replica
   commitRoot(replica.store, next, now)
   return { ...replica }
