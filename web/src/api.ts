@@ -234,7 +234,8 @@ export function submitMarketProposal(session: Session, owner: string, aliasId: s
 }
 
 /** The account's fos points (its token balance): the default pool for "ff" allocations. */
-export function getTokenBalance(session: Session): Promise<{ balance: number }> {
+/** The account's fos points: the server's ledger record (`availableTokens` is the spendable balance). */
+export function getTokenBalance(session: Session): Promise<{ balance: { availableTokens: number; totalPurchased: number; totalUsed: number } }> {
   return authed(session, 'GET', '/tokens/balance')
 }
 

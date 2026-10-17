@@ -925,6 +925,21 @@ export type NodeView = {
   versions: number
 }
 
+/** A market listing is a named value on the node (`fos:listing`), like `fos:sharing`: it survives edits and sync. */
+export const LISTING_ARGUMENT = 'fos:listing'
+/**
+ * The JSON value of the named argument ref `name` on the node `nodeCid` (what `readNodeValue` reads, without a
+ * replica). Null when the node has no such value.
+ */
+export function namedValueOf<T>(store: FosStore, nodeCid: string, name: string): T | null {
+  for (const edge of valueContent(store, nodeCid).children) {
+    const id = identityCid(store, edge), ref = content(store, id), type = refTypeCid(store, ref)
+    if (!type || edge[0] !== type || !ref.data.alias?.id || (ref.data.name?.content ?? ref.data.alias.id) !== name) continue
+    try { return JSON.parse(valueContent(store, id).data.description?.content ?? '') as T } catch { return null }
+  }
+  return null
+}
+
 export function taskView(store: FosStore, taskCid: string): TaskView {
   return rowView(store, taskCid, 'task')
 }
@@ -968,7 +983,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind): TaskVi
   if (kind === 'query') view.query = value.data.query ?? {}
   if (kind === 'resource' && value.data.resource) { const allocated = allocatedIn(store, nodeCid); view.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === undefined ? null : value.data.resource.capacity - allocated } }
   if (kind === 'allocation' && value.data.allocation) view.allocation = allocationValue(store, nodeCid)
-  if (identity.data.listing) view.market = true
+  if (namedValueOf(store, nodeCid, LISTING_ARGUMENT)) view.market = true
   return view
 }
 
@@ -1277,8 +1292,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'approve' | 'autopush' | 'direct' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'approve', 'autopush', 'direct', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1314,7 +1329,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'submit proposals', approve: 'approve proposals', autopush: 'autopush',
   direct: 'direct connect', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
   calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response'
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1454,7 +1469,7 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'notify': return p.notifyCapability.getId()
     case 'rank':
     case 'poll': case 'peer': case 'persist': case 'provideNode': case 'sync':
-    case 'timer': case 'cron': case 'task-completion': case 'request': case 'response':
+    case 'timer': case 'cron': case 'task-completion': case 'request': case 'response': case 'points':
       return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
   }
 }
@@ -1743,7 +1758,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const childEdges = (value: FosNodeContent) => value.children.filter((edge) => {
     const kind = rowKindOf(store, edge)
     const name = content(store, identityCid(store, edge)).data.name?.content
-    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' || name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
+    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' || name === LISTING_ARGUMENT || name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
     if (kind) return !(instantiate && kind === 'supply')
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
     return isRefNode(store, content(store, identityCid(store, edge)))

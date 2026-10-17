@@ -27,6 +27,7 @@ export const MCP_TOOLS = [
 export const OWNER_TOOLS = [
   tool('fos_create_branch', 'branch', 'Create a content-addressed alternative at a node. Account owner only. expected is the revision from fos_read([]). Does not change other clients\' selection.', { expected: { type: 'string' }, name: { type: 'string', minLength: 1, maxLength: 200 } }, ['path', 'expected', 'name'], false),
   tool('fos_decide', 'decide', 'Approve or reject a pending submission at a node. Requires the approve capability (owners have it).', { proposalId: { type: 'string' }, decision: { enum: ['approve', 'reject'] } }, ['proposalId', 'decision'], false),
+  tool('fos_invite', 'invite', 'Make a Fos user a member of a node (they may propose on it; the node appears in their Home). Account owner only.', { user: { type: 'string', minLength: 1, maxLength: 64 } }, ['user'], false),
 ]
 export const MCP_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']
 

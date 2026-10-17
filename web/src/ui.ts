@@ -960,7 +960,7 @@ function fosUserSearch(app: App): HTMLElement {
         const attached = app.contextPeers().some(p => p.id === `user:${username}` && p.member)
         const add = button('secondary small', attached ? `@${username} - attached` : `Add @${username}`, () => {
           if (!current() || !app.isOnline('fos')) return
-          app.addPeerHere(username)
+          void app.addPeerHere(username)
         })
         add.disabled = attached || !app.canApprove(); results.append(add)
       }
@@ -1942,7 +1942,7 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
   if (task.refOwner) {
     // a market result: the node lives in another account; open it to read it and propose
     const link = button('link ref-link', `🛒 ${firstLine(task.title) || '(untitled)'}`, () => void app.openMarket(task.refOwner!, task.refId ?? '', task.title))
-    link.title = `Listed on the market by ${task.refOwner}; click to view and propose`
+    link.title = `Shared by ${task.refOwner} (listed on the market, or you are a member); click to view and propose`
     body.append(arrow, link, span('muted', ` — ${task.refOwner}`))
     return body
   }
@@ -2081,6 +2081,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
+      // a poll on the choice: the server's poll handler resolves it from the responses
+      if (r.capability === 'choice' && readNodeValue(state.replica, [...state.view, ...at, task.id], 'fos:poll')) body.append(stop(button('secondary small', 'Apply poll result', () => void app.askPeerAt(at, task))))
       if (r.capability === 'task') hint('add a [ ] task inside and check it off')
       if (r.capability === 'search') {
         const fos = handler('search')

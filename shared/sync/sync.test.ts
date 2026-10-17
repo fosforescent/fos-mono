@@ -1,3 +1,4 @@
+import { listingAt, setMarketAt } from './market'
 import { FosStore } from '../dag-implementation/store'
 import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
@@ -65,7 +66,6 @@ import {
   resolveRef,
   serializeReplica,
   serveSync,
-  setMarketAt,
   setQueryOptionsAt,
   setRowContentAt,
   setRowKind,
@@ -1037,14 +1037,15 @@ describe('requirements, supplies, resource banks and market listings', () => {
     expect(view(r, [])!.tasks[1]!.blockedBy).toBeUndefined()
   })
 
-  it('listing on the market is a flag on the ref node (bookkeeping, no version); queries carry their options', () => {
+  it('listing on the market is a named value on the node that survives edits and round trips; queries carry their options', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'offer', 1, 'o')
     r = makeLinkAt(r, ['o'], 2)
-    const before = view(r, ['o'])!.versions
     r = setMarketAt(r, ['o'], true, 3, 'ada@x')
     expect(view(r, [])!.tasks[0]!.market).toBe(true)
-    expect(view(r, ['o'])!.versions).toBe(before)
+    expect(listingAt(r, ['o'])).toEqual({ listedAt: 3, by: 'ada@x' })
+    expect(view(setTaskDone(r, [], 'o', true, 3), [])!.tasks[0]!.market).toBe(true)
+    expect(view(loadReplica(serializeReplica(r)), [])!.tasks[0]!.market).toBe(true)
     r = setMarketAt(r, ['o'], false, 4)
     expect(view(r, [])!.tasks[0]!.market).toBeUndefined()
     // listing a plain row makes it a link first

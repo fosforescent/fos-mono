@@ -4142,6 +4142,12 @@
     commitRoot(replica.store, next, now);
     return { ...replica };
   }
+  function editPolicy(replica, at, now, fn) {
+    return withMainBranchPolicy(replica.store, () => {
+      if (!resolveScope(replica.store, headCid(replica), at)) throw new Error("Peer policy can only be changed on a node present in main.");
+      return editNode(replica, at, now, fn);
+    });
+  }
   function findChildEdge(replica, value, aliasId) {
     const edge = findEdge(replica.store, value, `a:${aliasId}`);
     return edge && (isRowEdge(replica.store, edge) || content(replica.store, identityCid(replica.store, edge)).data.name?.content.startsWith("fos:setting:")) ? edge : void 0;
@@ -4304,6 +4310,9 @@
   }
   function makeLinkAt(replica, at, now) {
     return editNode(replica, at, now, (node) => makeLink(replica.store, node, now));
+  }
+  function addMemberAt(replica, at, peerId, name, capabilities, now) {
+    return editPolicy(replica, at, now, (node) => withMember(replica.store, makeLink(replica.store, node, now), peerId, name, capabilities));
   }
   function addRefAt(replica, at, id, typeCid, now, defaultCid = null, name) {
     return edit(replica, at, now, (value) => {
@@ -5081,6 +5090,19 @@
       rootNodeId: store.rootNodeId
     };
   }
+  var LISTING_ARGUMENT = "fos:listing";
+  function namedValueOf(store, nodeCid, name) {
+    for (const edge of valueContent(store, nodeCid).children) {
+      const id = identityCid(store, edge), ref = content(store, id), type = refTypeCid(store, ref);
+      if (!type || edge[0] !== type || !ref.data.alias?.id || (ref.data.name?.content ?? ref.data.alias.id) !== name) continue;
+      try {
+        return JSON.parse(valueContent(store, id).data.description?.content ?? "");
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
   function rowView(store, nodeCid, kind) {
     const identity = content(store, nodeCid);
     const value = valueContent(store, nodeCid);
@@ -5132,7 +5154,7 @@
       view2.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === void 0 ? null : value.data.resource.capacity - allocated };
     }
     if (kind === "allocation" && value.data.allocation) view2.allocation = allocationValue(store, nodeCid);
-    if (identity.data.listing) view2.market = true;
+    if (namedValueOf(store, nodeCid, LISTING_ARGUMENT)) view2.market = true;
     return view2;
   }
   function supplyOf(value) {
@@ -5377,7 +5399,7 @@
     }
     return names;
   }
-  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist", "provideNode", "sync", "response"];
+  var CAPABILITIES = ["read", "read-requests", "edit", "approve", "autopush", "direct", "http", "ws", "relay", "search", "market", "mail", "calendar", "llm", "repo", "tool", "send-payment", "receive-payment", "allocate", "request-payment", "notify", "timer", "cron", "task-completion", "request", "rank", "poll", "peer", "persist", "provideNode", "sync", "response", "points"];
   var INTEGRATION_PEERS = [
     { id: "github", name: "GitHub", kind: "oauth", consumes: ["read", "edit"] },
     { id: "google", name: "Google", kind: "oauth", consumes: ["read", "edit"] },
@@ -5497,6 +5519,7 @@
       case "task-completion":
       case "request":
       case "response":
+      case "points":
         return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] });
     }
   }
@@ -5718,7 +5741,7 @@
     const childEdges = (value) => value.children.filter((edge) => {
       const kind = rowKindOf(store, edge);
       const name = content(store, identityCid(store, edge)).data.name?.content;
-      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && (name === "fos:trigger" || name === "fos:consumed" || name === "fos:execution-time" || name === "fos:sharing" || name?.startsWith("fos:guest:") || name?.startsWith("fos:execution:"))) return false;
+      if (name === "fos:evaluation" || name === "fos:trigger-state" || instantiate && (name === "fos:trigger" || name === "fos:consumed" || name === "fos:execution-time" || name === "fos:sharing" || name === LISTING_ARGUMENT || name?.startsWith("fos:guest:") || name?.startsWith("fos:execution:"))) return false;
       if (kind) return !(instantiate && kind === "supply");
       if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false;
       return isRefNode(store, content(store, identityCid(store, edge)));
@@ -6012,6 +6035,9 @@
     return result.slice(0, 32);
   }
 
+  // ../shared/sync/market.ts
+  init_prelude();
+
   // ../shared/sync/specifications.ts
   init_prelude();
 
@@ -6060,7 +6086,7 @@
 
   // ../shared/sync/events.ts
   var EVALUATION_REQUEST = "fos:evaluation-request";
-  var EVENT_KINDS = ["read", "search", "submit", "branch", "input", "complete", "decide"];
+  var EVENT_KINDS = ["read", "search", "submit", "branch", "input", "complete", "decide", "invite"];
   var EventError = class extends Error {
   };
   function pathOf(value, fallback = []) {
@@ -6124,6 +6150,11 @@
         if (typeof raw.proposalId !== "string" || !raw.proposalId) throw new EventError("A proposal id is required.");
         if (raw.decision !== "approve" && raw.decision !== "reject") throw new EventError("decision must be approve or reject.");
         return { kind, path, proposalId: raw.proposalId, decision: raw.decision };
+      }
+      case "invite": {
+        const user = typeof raw.user === "string" ? raw.user.trim().replace(/^@/, "") : "";
+        if (!/^[\w.-]{1,64}$/.test(user)) throw new EventError("A Fos user name is required.");
+        return { kind, path, user };
       }
     }
   }
@@ -6258,6 +6289,16 @@
         const next2 = event.decision === "approve" ? applyProposalAt(r, absolute(path), event.proposalId, principal.peerId, now) : rejectProposalAt(r, absolute(path), event.proposalId, now);
         return { replica: next2, changed: headCid(next2) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } };
       }
+      if (event.kind === "invite") {
+        if (!owner) throw new EventError("Only the account owner invites users to a node.");
+        const peer = `user:${event.user}`;
+        if (peer === principal.peerId) throw new EventError("You already own this node.");
+        const identity2 = content(store, selectedIdentity(store, cid)), id = identity2.data.alias?.id;
+        if (!id) throw new EventError("This node cannot be shared.");
+        const delivery = { peer, user: event.user, node: absolute(path), id, title: node.name };
+        if (readMembers(store, identity2).some((m) => m.peerId === peer)) return unchanged({ status: "member", ...delivery });
+        return { replica: addMemberAt(r, absolute(path), peer, event.user, ["edit"], now), changed: true, result: { status: "invited", ...delivery } };
+      }
       if (event.kind === "input") {
         if (!editable) throw new EventError("Peer cannot interact with this node.");
         if (event.expected !== cid) throw new EventError("The node changed. Read it again before submitting.");
@@ -6350,7 +6391,8 @@
   ];
   var OWNER_TOOLS = [
     tool("fos_create_branch", "branch", "Create a content-addressed alternative at a node. Account owner only. expected is the revision from fos_read([]). Does not change other clients' selection.", { expected: { type: "string" }, name: { type: "string", minLength: 1, maxLength: 200 } }, ["path", "expected", "name"], false),
-    tool("fos_decide", "decide", "Approve or reject a pending submission at a node. Requires the approve capability (owners have it).", { proposalId: { type: "string" }, decision: { enum: ["approve", "reject"] } }, ["proposalId", "decision"], false)
+    tool("fos_decide", "decide", "Approve or reject a pending submission at a node. Requires the approve capability (owners have it).", { proposalId: { type: "string" }, decision: { enum: ["approve", "reject"] } }, ["proposalId", "decision"], false),
+    tool("fos_invite", "invite", "Make a Fos user a member of a node (they may propose on it; the node appears in their Home). Account owner only.", { user: { type: "string", minLength: 1, maxLength: 64 } }, ["user"], false)
   ];
   function mcpTools(owner) {
     return [...MCP_TOOLS, ...owner ? OWNER_TOOLS : []].map(({ kind: _kind, ...t }) => t);

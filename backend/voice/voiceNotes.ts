@@ -275,11 +275,11 @@ export function openAiVoiceDeps(): VoiceDeps {
 }
 
 /**
- * Usage accounting on Prisma: one TokenTransactionModel debit per voice note (description
- * "Voice note", USD in metadata). ToolUseModel cannot be used: its toolUseId is a foreign
- * key to a bid session.
+ * Usage accounting on Prisma: one VoiceUsageModel row per voice note (the provider cost in USD, with the token
+ * count and audio size). Usage is not a balance movement, so it stays out of the fos-points ledger
+ * (TokenTransactionModel).
  */
-export function prismaVoiceUsage(prisma: { userModel: any; tokenTransactionModel: any }, budgetUsd = Number(process.env.VOICE_FREE_BUDGET_USD ?? 1)): VoiceUsage {
+export function prismaVoiceUsage(prisma: { userModel: any; voiceUsageModel: any }, budgetUsd = Number(process.env.VOICE_FREE_BUDGET_USD ?? 1)): VoiceUsage {
   return {
     budgetUsd,
     async userOf(req) {
@@ -291,17 +291,11 @@ export function prismaVoiceUsage(prisma: { userModel: any; tokenTransactionModel
       return { id: user.id, paying }
     },
     async spent(userId) {
-      const rows: Array<{ metadata: unknown }> = await prisma.tokenTransactionModel.findMany({ where: { userId, type: 'debit', description: { startsWith: 'Voice note' } }, select: { metadata: true } })
-      return rows.reduce((sum, r) => sum + Number((r.metadata as { usd?: unknown })?.usd ?? 0), 0)
+      const total = await prisma.voiceUsageModel.aggregate({ where: { userId }, _sum: { usd: true } })
+      return Number(total?._sum?.usd ?? 0)
     },
     async record(userId, entry) {
-      const { randomUUID } = await import('node:crypto')
-      await prisma.tokenTransactionModel.create({ data: {
-        transactionId: randomUUID(), userId, type: 'debit', amount: -Math.round(entry.tokens),
-        description: `Voice note (${entry.clusters} cluster${entry.clusters === 1 ? '' : 's'}, ${(entry.bytes / 1024).toFixed(0)} KB audio)`,
-        balanceBefore: 0, balanceAfter: 0,
-        metadata: { kind: 'voice-note', usd: entry.usd, tokens: entry.tokens, seconds: entry.seconds, bytes: entry.bytes, clusters: entry.clusters }
-      } })
+      await prisma.voiceUsageModel.create({ data: { userId, usd: entry.usd, tokens: Math.round(entry.tokens), seconds: entry.seconds, bytes: entry.bytes, clusters: entry.clusters } })
     }
   }
 }

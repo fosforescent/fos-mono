@@ -34,7 +34,7 @@ export async function connectNodeAgent(app: App, transport: 'desktop' | 'server'
           // The loopback is one adapter of the event grammar: the agent is an invited peer at this node.
           const response = await handleMcp(request.message, { owner: false, serverName: 'fos-node', dispatch: async event => {
             if (stopped || !current()) throw new Error('Agent connection ended.')
-            const scoped: FosEvent = event.kind !== 'decide' && branches.length && !event.branches?.length ? { ...event, branches: branches.map(b => ({ path: b.scope.slice(scope.length), name: b.name })) } as FosEvent : event
+            const scoped: FosEvent = event.kind !== 'decide' && event.kind !== 'invite' && branches.length && !event.branches?.length ? { ...event, branches: branches.map(b => ({ path: b.scope.slice(scope.length), name: b.name })) } as FosEvent : event
             return app.dispatchLocalEvent({ peerId: peer, owner: false, scope, name }, scoped)
           } })
           await tauriInvoke('node_agent_reply', { id: endpoint.id, requestId: request.id, response })
