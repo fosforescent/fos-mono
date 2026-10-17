@@ -80,7 +80,7 @@ jobs:
       - name: Install web dependencies
         run: cd web && npm ci
 
-      - name: Rebuild the embedded sync core
+      - name: Build the embedded sync core
         run: cd desktop && npm run build:core
 
       - name: Build and (on tags) publish installers

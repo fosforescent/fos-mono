@@ -509,8 +509,9 @@ fos [dir] init           write fos.config.toml;  fos [dir] detach;  fos [dir] re
 
 The sync core is not reimplemented in Rust: `shared/sync/embed.ts` exposes the
 replica API as JSON-string functions, is bundled to
-`desktop/src-tauri/js/fos-core.js` (esbuild, with `js/prelude.js` shims) and
-runs in-process with QuickJS (`core.rs`). `workspace.rs` holds the open
+`desktop/src-tauri/js/fos-core.js` (esbuild, with `js/prelude.js` shims; a
+build product the Tauri hooks and release workflows produce, never committed)
+and runs in-process with QuickJS (`core.rs`). `workspace.rs` holds the open
 replica, `project.rs` resolves the context, config, git branch and `.fos/`
 files, `client.rs` talks to the account, `local_server.rs` is the local
 server and `commands.rs` the CLI/REPL. The GUI gets the same context through
@@ -566,8 +567,6 @@ shows as "removed".
 
 **Local server.** While `fos run` / `fos serve` is up (default port 4777,
 `[serve]` in the config), the directory exposes on localhost (or the LAN):
-`/peer-sync`, the same protocol as the account, so nearby devices attach to
-the directory as to a node and their changes ride along in its proposal;
 `/mcp`, the shared MCP vocabulary (`fos_read`, `fos_search`, `fos_propose`,
 `fos_input`, `fos_evaluate`, `fos_create_branch`, `fos_decide`; see "The event
 grammar") as the directory's owner, for local agents;

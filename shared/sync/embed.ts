@@ -22,13 +22,11 @@ import {
   isDirty,
   loadReplica,
   moveNode,
-  parseSyncRequest,
   reattach,
   rejectProposalAt,
   renameTask,
   resolve,
   serializeReplica,
-  serveSync,
   setTaskDone,
   view,
   type MovePosition,
@@ -156,16 +154,6 @@ export const api = {
     } })
     if (response instanceof Promise) throw new Error('unexpected asynchronous dispatch')
     return JSON.stringify({ response, changed })
-  },
-  /** Serve another peer against this replica (the directory as a node). */
-  serveSync(handle: string, requestJson: string, serverPeerId: string, now: number, optionsJson: string | null): string {
-    const parsed = parseSyncRequest(JSON.parse(requestJson))
-    if ('error' in parsed) return JSON.stringify({ error: parsed.error, code: parsed.code })
-    const r = get(handle)
-    const served = serveSync(r.store, parsed, serverPeerId, now, parse(optionsJson, {}))
-    if ('error' in served) return JSON.stringify(served)
-    if (served.changed) set(handle, { ...r })
-    return JSON.stringify({ changed: served.changed, response: served.response })
   }
 }
 
