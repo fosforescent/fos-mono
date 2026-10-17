@@ -243,6 +243,9 @@ fn get_directory_contents_internal(path: &PathBuf) -> Result<DirectoryContents, 
     })
 }
 
+// The mobile apps enter here (the attribute exports the runtime symbols Tauri looks for in the built library);
+// the desktop binary calls `run` from `main.rs`.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
