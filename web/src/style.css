@@ -250,11 +250,12 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .node-header.home .node-title { color: var(--muted); font-weight: 500; }
 .node-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; }
 .node-toolbar[hidden] { display: none; }
-.node-toolbar .evaluate, .node-toolbar .add-row { height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px; }
-.node-toolbar .evaluate { background: transparent; border: 1px solid var(--accent-line); color: var(--accent-text); font-weight: 600; }
-.node-toolbar .evaluate:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-text); filter: none; }
+/* Run and Analyze are a matched pair: same outline, weight and icon + label */
+.node-toolbar .evaluate, .node-toolbar .analyze, .node-toolbar .add-row { height: 36px; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px; }
+.node-toolbar .evaluate, .node-toolbar .analyze { background: transparent; border: 1px solid var(--accent-line); color: var(--accent-text); font-weight: 600; }
+.node-toolbar .evaluate:hover:not(:disabled), .node-toolbar .analyze:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-text); filter: none; }
 .node-toolbar .evaluate:disabled { border-color: var(--line); color: var(--dim); opacity: 1; cursor: not-allowed; }
-.node-toolbar .evaluate svg, .node-toolbar .add-row svg { width: 13px; height: 13px; }
+.node-toolbar .evaluate svg, .node-toolbar .analyze svg, .node-toolbar .add-row svg { width: 13px; height: 13px; }
 .node-toolbar .icon, .node-toolbar .node-menu-button { width: 36px; height: 36px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg-2); display: inline-flex; align-items: center; justify-content: center; }
 .node-toolbar .icon:hover:not(:disabled) { border-color: var(--line-strong); color: var(--fg); }
 .node-toolbar .icon[aria-pressed="true"] { background: var(--raised); color: var(--fg); border-color: var(--line-strong); }
@@ -666,7 +667,7 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
   .node-action-body > button { min-height: 44px; }
   .node-title { font-size: 24px; }
   .node-toolbar { width: 100%; }
-  .node-toolbar .evaluate, .node-toolbar .add-row, .node-toolbar .icon { height: 44px; }
+  .node-toolbar .evaluate, .node-toolbar .analyze, .node-toolbar .add-row, .node-toolbar .icon { height: 44px; }
   .node-toolbar .icon { width: 44px; }
   .children-toolbar > .constructors-toggle { width: 44px; height: 44px; }
   .children-toolbar > .child-search { height: 44px; }

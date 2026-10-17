@@ -1233,7 +1233,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
     const editToggle = iconButton('✎', 'Input / edit', () => { workspace(app).input = !workspace(app).input; app.refresh() })
     editToggle.classList.add('input-toggle')
-    toolbar.append(run, iconButton('analysis', 'Analyze node', () => openAnalysis(app)))
+    const analyze = button('analyze', '', () => openAnalysis(app))
+    analyze.innerHTML = `${iconSvg('analysis') ?? ''}<span>Analyze</span>`
+    analyze.title = 'Analyze node'; analyze.setAttribute('aria-label', 'Analyze node')
+    toolbar.append(run, analyze)
     const titleSection = div('node-title-section', ''); titleSection.append(heading, editToggle)
     header.append(titleSection, toolbar)
     const values = div('node-values', '')
