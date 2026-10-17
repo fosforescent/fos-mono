@@ -90,6 +90,8 @@ import { applySyncResponse, type SyncRequest, type SyncResponse } from './protoc
 
 export type ReplicaMeta = {
   nodeSync?: Record<string, import('./node-sync').NodeSyncState>
+  /** Projections of nodes other accounts shared with this one, by local path (JSON): whose, and where in their account. */
+  sharedNodes?: Record<string, { owner: string; scope: Scope }>
   version: typeof SYNC_FORMAT_VERSION
   peerId: string
   scope: Scope
@@ -160,6 +162,7 @@ export function loadReplica(input: unknown): Replica {
       scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
       baseCid,
       ...(meta.nodeSync && typeof meta.nodeSync === 'object' ? { nodeSync: meta.nodeSync } : {}),
+      ...(meta.sharedNodes && typeof meta.sharedNodes === 'object' ? { sharedNodes: meta.sharedNodes } : {}),
       ...(Array.isArray(meta.localScope) && meta.localScope.length <= 64 && meta.localScope.every(id => typeof id === 'string') ? { localScope: [...meta.localScope] } : {}),
       lastSyncAt: typeof meta.lastSyncAt === 'number' ? meta.lastSyncAt : null,
       serverPeerId: typeof meta.serverPeerId === 'string' ? meta.serverPeerId : null,

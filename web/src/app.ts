@@ -1,6 +1,7 @@
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
+import { CAPABILITY_LABEL } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
@@ -123,6 +124,7 @@ import {
   getMarketNode,
   getTokenBalance,
   sendEvent,
+  locateSharedNode,
   confirmAccount,
   resendConfirmation,
   requestPasswordReset,
@@ -861,6 +863,7 @@ export class App {
     if (transport === 'account' && session?.kind === 'user') this.set({ replica: shareHome(this.state.replica) })
     try {
       await this.syncNodes(pullOnly)
+      await this.syncSharedNodes(pullOnly)
       if (this.state.session !== session || generation !== this.authGeneration) return
       this.set({ connection: 'online' })
       if (transport === 'account') { void this.refreshRepositories(); void this.refreshPoints(); if (this.pendingIntegration) void this.checkPendingIntegration(); else if (!this.state.integrations.length) void this.refreshIntegrations() }
@@ -963,6 +966,94 @@ export class App {
       if (!sameNodeShape(current, merged)) r = installNodeShape(r, path, merged, this.now())
       r = rememberNodeSync(r, path, normalized, accepted)
       this.set({ replica: { ...r, meta: { ...r.meta, lastSyncAt: this.now() } } })
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Nodes other accounts shared with this one
+
+  /** The shared projection a path lies in, if any: whose node, where it lives in their account, and its local root. */
+  sharedNodeAt(path: Scope): { owner: string; scope: Scope; root: Scope } | null {
+    for (const [key, info] of Object.entries(this.state.replica.meta.sharedNodes ?? {})) {
+      const root = JSON.parse(key) as Scope
+      if (root.length <= path.length && root.every((id, i) => path[i] === id)) return { ...info, root }
+    }
+    return null
+  }
+  /** What the owner granted this account on a shared node (from the last pull). */
+  sharedGrants(path: Scope): Capability[] | null {
+    const shared = this.sharedNodeAt(path)
+    if (!shared) return null
+    return this.state.replica.meta.nodeSync?.[nodeSyncKey(`user:${shared.owner}`, shared.root)]?.remote.grants ?? null
+  }
+  /**
+   * Open a node another account shared with this one (a ref row with `refOwner`): it becomes a live projection, like a
+   * peer-held node, provided by the account server as that account's peer `user:<me>`. Edits sync back as proposals,
+   * Run goes to the owner's host (with the `execute` grant), Analyze reads what is loaded. Without a grant (a market
+   * listing only) the read-only market view opens instead.
+   */
+  async openSharedNode(path: Scope): Promise<void> {
+    const session = this.state.session, r = this.state.replica
+    const row = view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+    if (!row?.refOwner || !row.refId) return
+    if (!session || session.kind !== 'user' || !this.isOnline('fos')) { this.notify('error', 'Connect to your account to open a node shared with you.'); this.openModal('connect'); return }
+    if (this.isPeerNode(path)) { this.goTo(path); return }
+    let located: Awaited<ReturnType<typeof locateSharedNode>>
+    try { located = await locateSharedNode(session, row.refOwner, row.refId) }
+    catch (error) {
+      if (error instanceof ApiError && error.status === 403) { await this.openMarket(row.refOwner, row.refId, row.title); return }
+      this.notify('error', error instanceof Error ? error.message : String(error)); return
+    }
+    const owner = located.owner, peer = `user:${owner}`
+    const provider: NodeProvider = { id: peer, capabilities: this.serverOffers(), request: request => requestPeerNode(session, request, owner) }
+    const request: NodeRequest = { peerId: r.meta.peerId, scope: located.path, path: [], linkId: nodeLinkEndpoint(r, path, peer)?.id ?? nodeRequestLinkId(r.meta.peerId, { peerId: peer, scope: located.path }) }
+    try {
+      const node = await pullNode(request, [provider])
+      if (this.state.replica.store !== r.store || this.state.session !== session) return
+      let next = rememberNodeSync(acceptProvidedNode(this.state.replica, path, request, node, this.now()), path, node)
+      next = { ...next, meta: { ...next.meta, sharedNodes: { ...next.meta.sharedNodes, [JSON.stringify(path)]: { owner, scope: located.path } } } }
+      this.set({ replica: next })
+      this.goTo(path)
+      this.notify('info', `Shared by @${owner}: you can ${(node.grants ?? []).map(g => CAPABILITY_LABEL[g] ?? g).join(', ') || 'read'} here.`)
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
+  /** Shared projections sync with their owner's account as `user:<me>`: pulls, and pushes of local edits as proposals there. */
+  private async syncSharedNodes(pullOnly: boolean): Promise<void> {
+    const session = this.state.session, generation = this.authGeneration
+    if (!session || session.kind !== 'user' || this.transport() !== 'account') return
+    const store = this.state.replica.store
+    const valid = () => generation === this.authGeneration && session === this.state.session && store === this.state.replica.store
+    for (const [key, info] of Object.entries(this.state.replica.meta.sharedNodes ?? {})) {
+      const root = JSON.parse(key) as Scope, peer = `user:${info.owner}`
+      if (!resolveScope(this.state.replica.store, headCid(this.state.replica), root)) continue
+      for (const path of materializedNodePaths(this.state.replica, root)) {
+        if (!valid()) return
+        let r = this.state.replica
+        if (!resolveScope(r.store, headCid(r), path)) continue
+        const remotePath = path.slice(root.length)
+        const state = r.meta.nodeSync?.[nodeSyncKey(peer, path)]
+        const local = nodeShape(r, path), baseline = state?.local ?? local
+        const dirty = !pullOnly && !sameNodeShape(local, baseline)
+        const request = nodeSyncRequest(r, path, peer, info.scope, remotePath)
+        try {
+          let remote = await requestPeerNode(session, request, info.owner)
+          if (!valid()) return
+          validateNodeShape(remote)
+          if (remote.peerId !== peer || remote.remoteLinkId !== request.linkId) throw new Error('Node response does not match its attachment.')
+          r = establishNodeSync(this.state.replica, path, request, remote, this.now())
+          const outgoingBase = outgoingNodeShape(r, path, peer, baseline), outgoing = outgoingNodeShape(r, path, peer, local)
+          if (dirty && !sameNodeShape(outgoingBase, outgoing)) {
+            remote = await requestPeerNode(session, { ...request, update: { base: remote, value: mergeNodeShape(outgoingBase, outgoing, remote) } }, info.owner)
+            if (!valid()) return
+            validateNodeShape(remote)
+          }
+          const current = nodeShape(r, path)
+          const accepted = mergeNodeShape(outgoingNodeShape(r, path, peer, state?.remote ?? baseline), outgoingNodeShape(r, path, peer, remote), local)
+          const merged = mergeNodeShape(local, accepted, current)
+          if (!sameNodeShape(current, merged)) r = installNodeShape(r, path, merged, this.now())
+          this.set({ replica: rememberNodeSync(r, path, remote, accepted) })
+        } catch (error) { this.notify('error', `@${info.owner}'s node: ${error instanceof Error ? error.message : String(error)}`); return }
+      }
     }
   }
 
@@ -2123,6 +2214,20 @@ export class App {
     const valid = () => { if (this.state.replica.store !== store || generation !== this.authGeneration) throw new Error('The data session changed during evaluation.') }
     try {
       const localPull = (step: import('../../shared/sync/evaluation').EvaluationStep) => step.row?.requirement?.tool === 'fos.pull'
+      const shared = this.sharedNodeAt(path)
+      if (shared) {
+        // another account's node: their host evaluates it for us (with the `execute` grant), then we pull the result
+        const session = this.state.session
+        if (!session || session.kind !== 'user' || !this.isOnline('fos')) throw new Error('Connect to your account to run a node shared with you.')
+        if (!this.sharedGrants(path)?.includes('execute')) throw new Error(`@${shared.owner} has not granted you “run evaluations” on this node.`)
+        const serverPath = [...shared.scope, ...path.slice(shared.root.length)]
+        await this.syncNow('before evaluation'); valid()
+        const current = await sendEvent<{ valueRevision: string }>(session, { kind: 'read', path: [] }, serverPath, shared.owner)
+        const answer = await evaluateOnServer(session, serverPath, current.valueRevision, {}, undefined, shared.owner)
+        if (answer.status === 'requested') this.notify('info', 'Evaluation requested from the node\'s owner.')
+        if (generation === this.authGeneration) await this.syncNow('evaluation results')
+        return
+      }
       const needsServer = evaluationSteps(this.state.replica, path).some(step => this.serverHandles(step))
       if (needsServer && evaluationSteps(this.state.replica, path).some(localPull)) throw new Error('Evaluate local Pull separately from server integration effects.')
       if (needsServer) {
@@ -2896,6 +3001,11 @@ export class App {
     } else if (session && (ref.peer === 'fos' || ref.peer === replica.meta.serverPeerId) && this.serverOffers().includes('provideNode') && this.state.policy.from.includes('read')) {
       scope = session.kind === 'peer' ? replica.meta.scope : []
       provider = { id: replica.meta.serverPeerId ?? `user:${session.username}`, capabilities: this.serverOffers(), request: request => requestPeerNode(session, request) }
+    } else if (session?.kind === 'user' && ref.peer?.startsWith('user:') && ref.peer !== replica.meta.serverPeerId && ref.peer !== `user:${session.username}` && this.serverOffers().includes('provideNode')) {
+      // a node of another account shared with this one: the account server provides it as that account's peer `user:<me>`
+      const owner = ref.peer.slice('user:'.length)
+      scope = address
+      provider = { id: ref.peer, capabilities: this.serverOffers(), request: request => requestPeerNode(session, request, owner) }
     }
     if (!provider && session && this.state.policy.from.includes('read') && this.state.policy.from.includes('relay')) {
       scope = session.kind === 'peer' ? replica.meta.scope : []

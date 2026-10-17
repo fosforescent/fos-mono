@@ -1,6 +1,6 @@
 import { nodeRelay } from './nodeRelay'
 import type { Request, Response } from 'express'
-import { createReplica, ensureHomeContext, exchangeNode, parseNodeRequest, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, exchangeNodeContext, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
+import { createReplica, ensureHomeContext, exchangeNode, findRowByAlias, nodeAuthorityAt, parseNodeRequest, rootTargetCid, viewNode, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, exchangeNodeContext, resolveScope, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
 import { withUserLock, serverPeerIdFor, type PeerSyncDeps } from './peerSync'
 
 export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: number, peer: string, address: string[], request: Omit<NodeRequest, 'scope' | 'path'>): Promise<ProvidedNode> } = nodeRelay) {
@@ -9,11 +9,16 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
     if (!claims?.username) return res.status(401).json({ error: 'Authentication required.' })
     try {
       const request = parseNodeRequest(req.body)
+      // `owner`: another account's node, shared with this user. They act there as the peer `user:<me>`, inside the
+      // grants that account gave them; every write is a `node-sync` proposal on the owner's node.
+      const owner = claims.kind !== 'peer' && typeof req.body?.owner === 'string' && req.body.owner !== claims.username ? String(req.body.owner) : null
+      if (owner && request.peerId !== serverPeerIdFor(claims.username)) throw new NodeAccessError('On another account\'s node you are the peer user:<you>.')
+      const account = owner ?? claims.username
       const authority: NodeAuthority = { peerId: claims.kind === 'peer' ? claims.peerId! : request.peerId,
-        scope: claims.kind === 'peer' ? claims.scope! : [], owner: claims.kind !== 'peer', proposeOnly: claims.kind === 'peer', capabilities: deps.registry?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES }
+        scope: claims.kind === 'peer' ? claims.scope! : owner ? request.scope : [], owner: claims.kind !== 'peer' && !owner, proposeOnly: claims.kind === 'peer' || !!owner, capabilities: deps.registry?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES }
       if (claims.kind === 'peer' && (!claims.peerId || !Array.isArray(claims.scope))) throw new NodeAccessError('Invalid peer credential.')
-      const pending = !request.update && !request.proposal ? await withUserLock(`user:${claims.username}`, async () => {
-        const loaded = await deps.loadStore(claims.username!)
+      const pending = !request.update && !request.proposal ? await withUserLock(`user:${account}`, async () => {
+        const loaded = await deps.loadStore(account)
         if (!loaded) throw new NodeAccessError('Account unavailable.')
         const r = createReplica(serverPeerIdFor(loaded.user.username), loaded.store)
         const reference = nodeReferenceAt(r, request, authority)
@@ -31,13 +36,13 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
         if (JSON.stringify(upstreamNode.address.branches ?? []) !== JSON.stringify(pending.reference.branches ?? []) || upstreamNode.children.some(child => child.address.peerId !== pending.reference.peer || JSON.stringify(child.address.scope) !== JSON.stringify([...pending.reference.scope, child.id]))) throw new NodeAccessError('Relay response contains an unauthorized child address.')
         if (upstreamNode.peerId !== pending.reference.peer || upstreamNode.address.peerId !== pending.reference.peer || upstreamNode.remoteLinkId !== pending.upstream.linkId || JSON.stringify(upstreamNode.address.scope) !== JSON.stringify(pending.reference.scope)) throw new NodeAccessError('Relay response does not match the provider request.')
       }
-      const result = await withUserLock(`user:${claims.username}`, async () => {
-        const loaded = await deps.loadStore(claims.username!)
+      const result = await withUserLock(`user:${account}`, async () => {
+        const loaded = await deps.loadStore(account)
         if (!loaded) throw new NodeAccessError('Account unavailable.')
         let r = createReplica(serverPeerIdFor(loaded.user.username), loaded.store)
         const before = loaded.store.rootNodeId
         if (claims.kind === 'peer' && (!claims.peerId || !Array.isArray(claims.scope))) throw new NodeAccessError('Invalid peer credential.')
-        if (claims.kind !== 'peer') r = ensureHomeContext(r, deps.now?.() ?? Date.now(), deps.registry?.hostOffers())
+        if (authority.owner) r = ensureHomeContext(r, deps.now?.() ?? Date.now(), deps.registry?.hostOffers())
         const now = deps.now?.() ?? Date.now()
         if (pending && upstreamNode) {
           const current = nodeReferenceAt(r, request, authority)
@@ -64,4 +69,37 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
       return res.status(500).json({ error: 'Node request failed.' })
     }
   }
+}
+
+/**
+ * GET /user/data/peer-sync/locate?owner=&id= — where a node another account shared with this user lives in that
+ * account (its path, which is the attachment scope for provide-node and events), what they may do there, and its
+ * title. 403 when nothing was granted at or above it.
+ */
+export function createNodeLocator(deps: PeerSyncDeps) {
+  return async (req: Request, res: Response): Promise<Response> => {
+    const claims = (req as Request & { claims?: { username?: string; kind?: string } }).claims
+    if (!claims?.username || claims.kind === 'peer') return res.status(401).json({ error: 'Authentication required.' })
+    const owner = typeof req.query.owner === 'string' ? req.query.owner : '', aliasId = typeof req.query.id === 'string' ? req.query.id : ''
+    if (!owner || !aliasId) return res.status(400).json({ error: 'owner and id required' })
+    const loaded = await deps.loadStore(owner)
+    if (!loaded) return res.status(404).json({ error: 'owner not found' })
+    const r = createReplica(serverPeerIdFor(owner), loaded.store)
+    const found = findRowByAlias(loaded.store, rootTargetCid(loaded.store), aliasId)
+    if (!found) return res.status(404).json({ error: 'node not found' })
+    const path = [...found.path, aliasId]
+    try {
+      const grants = owner === claims.username ? ['read', 'edit', 'approve', 'execute'] : nodeAuthorityAt(r, path, { peerId: serverPeerIdFor(claims.username), scope: path, capabilities: [] })
+      res.setHeader('Cache-Control', 'no-store')
+      return res.json({ owner, aliasId, path, title: viewNode(loaded.store, found.row.id ? resolveScopeOrThrow(loaded.store, path) : rootTargetCid(loaded.store)).name, grants })
+    } catch (error) {
+      if (error instanceof NodeAccessError) return res.status(403).json({ error: 'This node is not shared with you.' })
+      throw error
+    }
+  }
+}
+function resolveScopeOrThrow(store: Parameters<typeof rootTargetCid>[0], path: string[]): string {
+  const cid = resolveScope(store, rootTargetCid(store), path)
+  if (!cid) throw new NodeAccessError('node not found')
+  return cid
 }
