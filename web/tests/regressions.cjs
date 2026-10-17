@@ -474,7 +474,7 @@ async function main() {
   assert(!document.querySelector('.peer-tabs [role="tab"][aria-label="GitHub"]'), 'no integration peer tabs in root settings')
   assert(!document.querySelector('[data-peer="integration:github"]'))
   assert(document.querySelector(`.tree .task[data-id="${HOME_ID}"]`), 'Settings shows the stored Home constructor')
-  assert.equal(document.querySelector('.crumb-path').textContent, 'Settings', 'root Settings is not below Home')
+  assert(document.querySelector('.crumb-path .crumb.current.crumb-settings svg') && document.querySelector('.crumb-path .sep + .crumb-home[aria-label="Home"]'), 'root Settings crumbs are the gear, then an arrow back to Home')
   assert(document.querySelector('.ghost textarea.edit'), 'root constructors use the same editor')
   contextApp.setPeerOffers('fos', ['llm'], false)
   contextApp.goTo([])

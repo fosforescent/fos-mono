@@ -1,6 +1,6 @@
 [package]
 name = "fos"
-version = "0.1.1"
+version = "0.1.2"
 description = "Fosforescent - Workflow CLI and Desktop App"
 authors = []
 license = "MIT"

@@ -353,16 +353,16 @@ export class App {
     this.config = config
     this.autoCredentials = config.autoLogin
     const replica = config.scopedDocument || config.project ? loadReplica(config.storage.loadReplica()) : ensureHomeContext(loadReplica(config.storage.loadReplica()), 0)
-    const prefs = (config.storage.loadPrefs() ?? {}) as { repositories?: Array<[string, RepositorySnapshot]>; branches?: Record<string, string>; view?: unknown; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
+    const prefs = (config.storage.loadPrefs() ?? {}) as { repositories?: Array<[string, RepositorySnapshot]>; branches?: Record<string, string>; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
     if (Array.isArray(prefs.repositories)) this.repositories = new Map(prefs.repositories.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && Array.isArray(entry[1]?.pulls)))
     this.branchSelections = prefs.branches && typeof prefs.branches === 'object' ? Object.fromEntries(Object.entries(prefs.branches).filter(([, name]) => typeof name === 'string')) : {}
     for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(replica.store, id, name)
     const configPolicy = config.project?.policy ?? null
-    const savedView = Array.isArray(prefs.view) ? prefs.view.filter((s): s is string => typeof s === 'string') : []
     const session = loadSession(config.storage.loadSession(), config.baseUrl)
     this.state = {
       replica,
-      view: savedView.length && view(replica, savedView) ? contextScope(replica.store, headCid(replica), savedView) : homePath(replica),
+      // A visit resumes at the Home descendant last viewed on this device (a row in Home), else at Home itself.
+      view: this.savedHomeView(replica),
       connection: 'offline',
       session: null,
       loginError: null,
@@ -433,7 +433,6 @@ export class App {
     if (patch.replica && patch.replica !== previous.replica) {
       this.config.storage.saveReplica(serializeReplica(this.state.replica))
     }
-    if (patch.view && patch.view !== previous.view) this.savePrefs()
     if ('session' in patch && (patch.session !== previous.session || patch.session === null)) {
       this.config.storage.saveSession(patch.session ? { jwt: patch.session.jwt, username: patch.session.username, kind: patch.session.kind, baseUrl: patch.session.baseUrl } : null)
     }
@@ -441,7 +440,7 @@ export class App {
   }
 
   private savePrefs(): void {
-    this.config.storage.savePrefs({ repositories: [...this.repositories], branches: this.branchSelections, view: this.state.view, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
+    this.config.storage.savePrefs({ repositories: [...this.repositories], branches: this.branchSelections, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
   notify(kind: Notice['kind'], text: string): void {
@@ -798,11 +797,11 @@ export class App {
     this.history.clear()
     this.virtualPeers?.close(); this.virtualPeers = null
     const replica = this.documentReplica(loadReplica(this.config.storage.loadReplica()))
-    const prefs = (this.config.storage.loadPrefs() ?? {}) as { branches?: Record<string, string>; view?: Scope; collapsed?: string[]; policy?: unknown; deviceName?: string }
+    const prefs = (this.config.storage.loadPrefs() ?? {}) as { branches?: Record<string, string>; collapsed?: string[]; policy?: unknown; deviceName?: string }
     this.branchSelections = prefs.branches ?? {}
     this.repositories.clear()
     this.repositoryPollAt = 0
-    this.set({ replica, session: null, view: Array.isArray(prefs.view) && view(replica, prefs.view) ? prefs.view : homePath(replica), selected: null, atRoot: false,
+    this.set({ replica, session: null, view: this.savedHomeView(replica), selected: null, atRoot: false,
       modal: keepModal ? this.state.modal : null, connectFlow: { phase: 'idle' }, manual: {}, device: null, voice: null, requests: [], invite: null,
       collapsed: Array.isArray(prefs.collapsed) ? prefs.collapsed : [HOME_ID], contextMenu: null, work: undefined, highlighted: [], notice: null,
       onlinePeers: [], serverCapabilities: null, policy: parsePolicy(prefs.policy) ?? DEFAULT_DEVICE_POLICY,
@@ -3102,6 +3101,7 @@ export class App {
     const requested = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
     if (requested && isPeerReference(content(this.state.replica.store, requested))) {
       this.set({ view: path, selected: null, contextMenu: null, atRoot: false })
+      this.rememberView()
       void this.loadPeerNode(path)
       return
     }
@@ -3114,6 +3114,24 @@ export class App {
       path = [...target.path, target.row.id]
     }
     this.set({ view: view(this.state.replica, path) ? path : home, selected: null, contextMenu: null, atRoot: false })
+    this.rememberView()
+  }
+  /** The Home descendant this device last viewed, kept as a setting row inside Home so every visit resumes there. */
+  savedHomeView(replica: Replica): Scope {
+    const home = homePath(replica)
+    if (home[0] !== HOME_ID) return home
+    const saved = readNodeValue<unknown>(replica, home, `fos:setting:${replica.meta.peerId}:view`)
+    const path = Array.isArray(saved) && saved.every((id): id is string => typeof id === 'string') ? [...home, ...saved] : null
+    return path && path.length > home.length && view(replica, path) ? path : home
+  }
+  private rememberView(): void {
+    const { view: current, replica, atRoot } = this.state
+    if (atRoot || homePath(replica)[0] !== HOME_ID || current[0] !== HOME_ID || current.length < 2) return
+    const key = this.settingKey('view'), relative = current.slice(1)
+    if (JSON.stringify(readNodeValue(replica, [HOME_ID], key)) === JSON.stringify(relative)) return
+    // Navigation is not an edit: no undo entry, but the row syncs like any other.
+    this.set({ replica: writeNodeValue(replica, [HOME_ID], key, relative, this.now()) })
+    this.scheduleSync()
   }
 
   /** Zoom out within Home; device settings are reached through the menu. */
@@ -3125,6 +3143,18 @@ export class App {
     else this.notify('error', 'The Fos peer is unavailable in this context.')
   }
   goToRoot(): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); this.ensureSettings(); this.set({ atRoot: true, view: [], selected: null, collapsed: [...new Set([...this.state.collapsed, HOME_ID])], contextMenu: null }) }
+  /** Browser back/forward: return to the node, Settings or execution view a history entry recorded. */
+  restoreNavigation(target: { view?: unknown; atRoot?: unknown; execution?: unknown }): void {
+    document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
+    const path = Array.isArray(target.view) && target.view.every((id): id is string => typeof id === 'string') ? target.view : null
+    const execution = Array.isArray(target.execution) && target.execution.every((id): id is string => typeof id === 'string') ? target.execution : null
+    if (this.executionPath() && !execution) this.execution = null
+    if (target.atRoot === true) { this.goToRoot(); return }
+    if (!path || !view(this.state.replica, path)) { this.goTo([]); return }
+    this.set({ view: path, selected: null, contextMenu: null, atRoot: false })
+    this.rememberView()
+    if (execution && JSON.stringify(execution) === JSON.stringify(path)) void this.startExecution(path)
+  }
   /** Peers this device knows, for the "add as member" menu entries: fos and the members/devices of the viewed node. */
   knownPeers(): Array<{ id: string; name: string }> {
     return this.contextPeers().map((p) => ({ id: p.id, name: p.name }))

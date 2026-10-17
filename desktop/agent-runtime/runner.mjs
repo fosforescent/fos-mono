@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import { probeAgents } from './availability.mjs'
 import { serveContext } from './context.mjs'
+import { executableOptions } from './executables.mjs'
 
 const emit = event => { if (event.text) event.text = event.text.slice(-100_000); if (event.message) event.message = event.message.slice(-100_000); process.stdout.write(JSON.stringify(event) + '\n') }
 const abort = new AbortController(), decisions = new Map()
@@ -46,7 +47,7 @@ async function run(request) {
     }
     if (request.provider === 'codex') {
       const { Codex } = await import('@openai/codex-sdk')
-      const codex = new Codex({ apiKey: process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY, config: { mcp_servers: { fos: { url: context.url, http_headers: { Authorization: `Bearer ${context.token}` } } } } })
+      const codex = new Codex({ ...executableOptions('codex'), apiKey: process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY, config: { mcp_servers: { fos: { url: context.url, http_headers: { Authorization: `Bearer ${context.token}` } } } } })
       const thread = codex.startThread({ workingDirectory: request.cwd, sandboxMode: 'workspace-write', approvalPolicy: 'never', networkAccessEnabled: false })
       const { events } = await thread.runStreamed(prompt, { signal: abort.signal })
       for await (const event of events) {
@@ -57,7 +58,7 @@ async function run(request) {
       }
     } else {
       const { query } = await import('@anthropic-ai/claude-agent-sdk')
-      for await (const message of query({ prompt, options: {
+      for await (const message of query({ prompt, options: { ...executableOptions('claude'),
         cwd: request.cwd, abortController: abort, permissionMode: 'default', settingSources: [], maxTurns: 100,
         mcpServers: { fos: { type: 'http', url: context.url, headers: { Authorization: `Bearer ${context.token}` } } },
         canUseTool: async (tool, args) => {

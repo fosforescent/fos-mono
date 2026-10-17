@@ -158,6 +158,7 @@ export function mountUi(root: HTMLElement, app: App): void {
     if (event.target === regions.modal) app.closeModal()
   })
 
+  installNavigationHistory(app)
   let rendering = false
   let pending: AppState | null = null
   app.subscribe((state) => {
@@ -172,6 +173,31 @@ export function mountUi(root: HTMLElement, app: App): void {
   window.addEventListener('resize', () => {
     if (resizeTimer) clearTimeout(resizeTimer)
     resizeTimer = setTimeout(() => { if (maxDepth() !== lastDepth) { lastDepth = maxDepth(); app.refresh() } }, 150)
+  })
+}
+
+/**
+ * Browser history mirrors navigation: every node, Settings and execution view visited is an entry, so the
+ * browser's back and forward move between them. Entries record where the app was, not the URL, which stays put.
+ */
+function installNavigationHistory(app: App): void {
+  const history = window.history
+  if (!history?.pushState) return
+  const place = () => JSON.stringify({ view: app.state.view, atRoot: app.state.atRoot, execution: app.executionPath() })
+  let current = place(), restoring = false
+  try { history.replaceState({ fos: current }, '', location.href) } catch { return }
+  app.subscribe(() => {
+    const next = place()
+    if (next === current) return
+    current = next
+    if (!restoring) try { history.pushState({ fos: next }, '', location.href) } catch { /* history unavailable: navigation still works */ }
+  })
+  window.addEventListener('popstate', (event) => {
+    const entry = (event.state as { fos?: string } | null)?.fos
+    if (typeof entry !== 'string') return
+    restoring = true
+    try { app.restoreNavigation(JSON.parse(entry)) } finally { restoring = false }
+    current = place()
   })
 }
 
@@ -240,11 +266,15 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     for (const control of controls.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button,select')) control.disabled = locked
     regions.node.append(controls)
   }
+  // Whether this node is work that gets completed (inputs, requirements or allocations anywhere beneath it),
+  // as opposed to content such as a note that is only viewed or interacted with.
+  let work = !!current?.requirement || !!current?.allocation || (!!record && record.status !== 'committed')
   const walk = (path: Scope, depth: number) => {
     if (depth > 32 || rows.length > 1000) return
     for (const arg of app.textArguments(path.slice(root.length))) {
       const li = document.createElement('li'); li.className = 'task argument-row'; li.style.setProperty('--depth', String(depth))
       li.append(span('constructor-label', arg.name))
+      if (arg.problems.length) work = true
       if (arg.problems.length) {
         const input = document.createElement('input'); input.setAttribute('aria-label', arg.name); input.value = arg.text; input.disabled = locked
         const save = button('secondary small', 'Provide', () => app.setTextArgument(path.slice(root.length), arg.id, input.value)); save.disabled = locked
@@ -254,6 +284,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     }
     for (const row of viewAt(state.replica, path)?.tasks ?? []) {
       if (row.construction) continue
+      if (row.requirement || row.allocation) work = true
       const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth)); li.append(span('constructor-label', ROW_KIND_LABEL[row.kind] ?? row.kind), span('title', row.title))
       if (row.allocation && !readNodeValue(state.replica, [...path, row.id], 'fos:consumed') && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
         const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(row.allocation.amount); amount.step = 'any'; amount.value = String(row.allocation.amount); amount.setAttribute('aria-label', `Use ${row.title}`); amount.disabled = locked
@@ -283,8 +314,9 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   walk(root, 0)
   const status = document.createElement('li'); status.className = 'task has-constructor'; status.append(span('title', record?.status === 'committed' ? 'Complete' : record?.status === 'idle' ? '' : record?.status ?? ''))
   if (record?.error) status.append(span('error', record.error))
-  if (current?.kind !== 'task') {
-    const run = button('secondary small', 'Continue execution', () => void app.evaluateAt(root)); run.disabled = locked; status.append(run)
+  // Tasks carry their own Complete above; other work gets one here, and plain content gets none.
+  if (current?.kind !== 'task' && work) {
+    const run = button('secondary small', 'Complete', () => void app.evaluateAt(root)); run.disabled = locked; status.append(run)
   }
   rows.push(status); regions.list.className = 'list tree execution-rows'; regions.list.replaceChildren(...rows)
   regions.list.parentElement?.querySelector('[data-region="children-toolbar"]')?.replaceChildren()
@@ -383,6 +415,13 @@ function shortCrumb(text: string): string {
   const chars = Array.from(clean)
   return chars.length > 17 ? chars.slice(0, 7).join('') + '…' + chars.slice(-7).join('') : clean
 }
+/** An icon-only crumb (the Home house or the Settings gear), labelled for assistive technology. */
+function glyphCrumb<T extends HTMLElement>(el: T, symbol: '⌂' | '⚙', label: string): T {
+  el.innerHTML = iconSvg(symbol)!
+  el.classList.add('crumb-glyph', symbol === '⌂' ? 'crumb-home' : 'crumb-settings')
+  el.setAttribute('aria-label', label); el.title = label
+  return el
+}
 function matchesSearch(row: TaskView, query: string): boolean {
   const types = [...query.matchAll(/(?:^|\s)type:([\w-]+)/g)].map(m => m[1])
   const text = query.replace(/(?:^|\s)type:[\w-]+/g, '').trim().toLowerCase()
@@ -398,10 +437,14 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
   const settingsContext = view.length > 0 && view[0] !== HOME_ID && !state.replica.meta.scope.length && !!viewAt(state.replica, [])?.tasks.some(row => row.id === HOME_ID)
-  const homeCrumb = button('crumb', settingsContext ? 'Settings' : labels.scope.length ? shortCrumb(pathLabel(labels.scope)) : '⌂', () => settingsContext ? app.goToRoot() : app.goTo([]))
-  if (!settingsContext && !labels.scope.length) { homeCrumb.innerHTML = iconSvg('⌂')!; homeCrumb.classList.add('crumb-home'); homeCrumb.setAttribute('aria-label', 'Home'); homeCrumb.title = 'Home' }
+  const homeCrumb = button('crumb', settingsContext || !labels.scope.length ? '' : shortCrumb(pathLabel(labels.scope)), () => settingsContext ? app.goToRoot() : app.goTo([]))
+  if (settingsContext) glyphCrumb(homeCrumb, '⚙', 'Settings')
+  else if (!labels.scope.length) glyphCrumb(homeCrumb, '⌂', 'Home')
   if (state.atRoot) {
-    crumbs.append(span('crumb current', 'Settings'))
+    // Settings sits beside Home rather than beneath it: the gear is current and the arrow leads back to Home.
+    const settings = glyphCrumb(span('crumb current', ''), '⚙', 'Settings')
+    const home = glyphCrumb(button('crumb', '', () => app.goTo([])), '⌂', 'Home')
+    crumbs.append(settings, span('sep', '‹'), home)
   } else {
     crumbs.append(homeCrumb)
     view.forEach((_id, index) => {
@@ -1160,6 +1203,15 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
   if (key === 'resetHome') box.classList.add('reset-data-row')
   if (key === 'sessions') box.classList.add('data-sessions-row')
   if (key === 'history') box.append(span('muted', `${viewAt(state.replica, [])?.versions ?? 0} previous versions`))
+  else if (key === 'view') {
+    // Home's own row: where this device left off, as a link back there.
+    const saved = app.savedHomeView(state.replica)
+    if (saved.length < 2) box.append(span('muted', 'Home'))
+    else {
+      const names = saved.slice(1).map((id, index) => viewAt(state.replica, saved.slice(0, index + 1), true)?.tasks.find(row => row.id === id)?.title ?? '…')
+      box.append(button('link', names.map(shortCrumb).join(' › '), () => app.goTo(saved)))
+    }
+  }
   else if (key === 'name') {
     const input = document.createElement('input'); input.value = app.settingValue<string>('name') ?? state.deviceName; input.setAttribute('aria-label', 'Device name')
     input.onchange = () => app.setDeviceName(input.value); box.append(input)
@@ -1487,6 +1539,11 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const textMatches = (row: TaskView, path: Scope): boolean => matchesSearch(row, prefs.search) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
   const matches = (row: TaskView): boolean => textMatches(row, [...state.view, row.id])
   node = { ...node, tasks: node.tasks.filter(row => settingKeyFromName(row.construction?.name) !== 'history') }
+  // Home lists one of its bookkeeping rows, where this device left off; the other constructors stay in Settings.
+  if (state.view.length === 1 && state.view[0] === HOME_ID && !state.atRoot) {
+    const remembered = viewAt(state.replica, [HOME_ID], true)?.tasks.find(row => row.construction?.name === app.settingKey('view'))
+    if (remembered && !node.tasks.some(row => row.id === remembered.id)) node = { ...node, tasks: [...node.tasks, remembered] }
+  }
   const filtered = prefs.search ? { ...node, tasks: node.tasks.filter(matches) } : node
   let rows = renderRows(filtered, [], 0, state, app)
   const preview = proposalPreview(app)

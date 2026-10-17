@@ -1,6 +1,6 @@
 name: Deploy Backend & Web
 
-# Builds the backend image, pushes it to gcr.io, syncs the database schema,
+# Builds the backend image, pushes it to gcr.io, applies the Prisma migrations,
 # rolls Cloud Run to the new image, and deploys the web app to Cloudflare Pages.
 # - push to main touching backend/shared/prisma/web: deploy automatically
 # - workflow_dispatch: deploy on demand (choose which parts)
@@ -86,7 +86,12 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Sync database schema (prisma db push, refuses destructive changes)
+      - name: Apply database migrations (prisma migrate deploy)
+        env:
+          # The database was first synced with `prisma db push`, so it had no migration history. Migrations
+          # named before this stamp are already reflected in its schema and are recorded as applied instead
+          # of run; later ones (the 2026-10-17 pair onwards) are deployed. The migration SQL is idempotent.
+          BASELINE_BEFORE: '20261017120000'
         run: |
           curl -sfL -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.0/cloud-sql-proxy.linux.amd64
           chmod +x cloud-sql-proxy
@@ -97,7 +102,13 @@ jobs:
           USERINFO=$(echo "$SECRET_URL" | sed -E 's#^postgres(ql)?://([^@]+)@.*#\2#')
           DBNAME=$(echo "$SECRET_URL" | sed -E 's#^[^@]+@[^/]*/([^?]+).*#\1#')
           export DATABASE_URL="postgresql://${USERINFO}@127.0.0.1:5440/${DBNAME}"
-          npx --yes prisma@5 db push --schema=infra/prisma/schema.prisma --skip-generate
+          # Baseline: on later runs these are already recorded and each resolve call is a harmless failure.
+          for dir in infra/prisma/migrations/*/; do
+            name=$(basename "$dir")
+            [[ "$name" < "$BASELINE_BEFORE" ]] || continue
+            npx --yes prisma@6 migrate resolve --applied "$name" --schema=infra/prisma/schema.prisma || true
+          done
+          npx --yes prisma@6 migrate deploy --schema=infra/prisma/schema.prisma
           kill %1 || true
 
       - name: Deploy to Cloud Run
