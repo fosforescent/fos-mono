@@ -38,6 +38,31 @@ async fn repository(path: &str) -> Result<String, String> {
 pub async fn validate_agent_repository(path: String) -> Result<String, String> {
     repository(&path).await
 }
+
+/// The first executable called `name` on PATH (Windows: with each PATHEXT extension), or none.
+fn find_on_path(name: &str, path: &std::ffi::OsStr) -> Option<String> {
+    let exts: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".into()).split(';').filter(|e| !e.is_empty()).map(|e| e.to_lowercase()).collect()
+    } else {
+        vec![String::new()]
+    };
+    for dir in std::env::split_paths(path) {
+        if dir.as_os_str().is_empty() { continue; }
+        for ext in &exts {
+            let candidate = dir.join(format!("{name}{ext}"));
+            if candidate.is_file() { return Some(candidate.to_string_lossy().into_owned()); }
+        }
+    }
+    None
+}
+
+/// Which agent CLIs this computer has (`claude`, `codex` on PATH): the web app shows each one as a local peer with
+/// its constructor actions, and nothing when the CLI is absent. A filesystem query, never a graph row.
+#[tauri::command]
+pub fn agent_clis() -> Value {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    json!({ "claude": find_on_path("claude", &path), "codex": find_on_path("codex", &path) })
+}
 fn runtime(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let path = if cfg!(debug_assertions) {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../agent-runtime/runner.mjs")
@@ -180,6 +205,18 @@ pub async fn agent_control(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn finds_executables_on_path_only() {
+        let dir = std::env::temp_dir().join(format!("fos-agent-clis-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let name = if cfg!(windows) { "claude.cmd" } else { "claude" };
+        std::fs::write(dir.join(name), "").unwrap();
+        let path = std::env::join_paths([dir.clone()]).unwrap();
+        assert!(super::find_on_path("claude", &path).is_some());
+        assert!(super::find_on_path("codex", &path).is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[tokio::test]
     async fn accepts_worktrees_and_rejects_non_repositories() {
         let dir = std::env::temp_dir().join(format!("fos-sdk-{}", uuid::Uuid::new_v4()));
