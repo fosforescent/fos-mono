@@ -36,24 +36,49 @@ export type ConnectPoll =
 export class ApiError extends Error {
   status: number
   code?: string
-  constructor(status: number, message: string, code?: string) {
+  /** The rest of the error body (e.g. where a confirmation code went). */
+  details: Record<string, unknown>
+  constructor(status: number, message: string, code?: string, details: Record<string, unknown> = {}) {
     super(message)
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
 async function responseError(response: Response): Promise<ApiError> {
   try {
-    const data = await response.json() as { error?: string; code?: string }
-    return new ApiError(response.status, typeof data.error === 'string' ? data.error : response.statusText, data.code)
+    const data = await response.json() as { error?: string; code?: string } & Record<string, unknown>
+    return new ApiError(response.status, typeof data.error === 'string' ? data.error : response.statusText, data.code, data)
   } catch { return new ApiError(response.status, response.statusText) }
 }
 
 
-export async function register(baseUrl: string, username: string, password: string): Promise<void> {
-  const response = await fetch(`${baseUrl}/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, accepted_terms: true, cookies: false }) })
+export type RegistrationInput = { username: string; password: string; confirmPassword: string; email?: string; phone?: string }
+/** What a new account still needs: the code sent to its email or phone (`destination` is masked; `error` when it could not be sent yet). */
+export type PendingConfirmation = { username: string; pending: 'email' | 'phone'; destination: string | null; error?: string }
+
+async function publicPost<T>(baseUrl: string, path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!response.ok) throw await responseError(response)
+  return response.json() as Promise<T>
+}
+
+/** Create an account; it is confirmed with the code sent to the email address or phone number given. */
+export function register(baseUrl: string, input: RegistrationInput): Promise<PendingConfirmation> {
+  return publicPost(baseUrl, '/auth/register', { ...input, accepted_terms: true, cookies: false })
+}
+export function confirmAccount(baseUrl: string, body: { username: string; code: string } | { token: string }): Promise<{ confirmed: boolean; username?: string; already?: boolean }> {
+  return publicPost(baseUrl, '/auth/confirm', body)
+}
+export function resendConfirmation(baseUrl: string, username: string): Promise<{ sent: boolean; channel?: 'email' | 'phone'; destination?: string }> {
+  return publicPost(baseUrl, '/auth/confirm/resend', { username })
+}
+export function requestPasswordReset(baseUrl: string, username: string): Promise<{ message: string }> {
+  return publicPost(baseUrl, '/auth/reset-pwd', { username })
+}
+export function completePasswordReset(baseUrl: string, input: { token: string; username: string; password: string }): Promise<unknown> {
+  return publicPost(baseUrl, '/auth/reset-pwd-update', { token: input.token, password: input.password, email: input.username })
 }
 
 export async function login(baseUrl: string, username: string, password: string): Promise<Session> {

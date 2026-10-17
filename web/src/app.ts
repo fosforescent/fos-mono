@@ -125,6 +125,11 @@ import {
   getTokenBalance,
   sendEvent,
   locateSharedNode,
+  confirmAccount,
+  resendConfirmation,
+  requestPasswordReset,
+  completePasswordReset,
+  type RegistrationInput,
   listIntegrations,
   startIntegration,
   disconnectIntegration,
@@ -178,6 +183,13 @@ export type ContextPeer = {
   mcp?: { serverId: number; tools: string[] }
 }
 
+/** The account form's step: sign in, create, confirm the code, or reset a password. */
+export type AuthFlow =
+  | { phase: 'signin' }
+  | { phase: 'register' }
+  | { phase: 'confirm'; username: string; channel: 'email' | 'phone'; destination: string | null; notice?: string }
+  | { phase: 'forgot'; sent?: boolean }
+  | { phase: 'reset'; token: string }
 export type ConnectFlow =
   | { phase: 'idle' }
   | { phase: 'claiming' }
@@ -199,6 +211,7 @@ export type AppState = {
   connection: Connection
   session: Session | null
   loginError: string | null
+  authFlow: AuthFlow
   notice: Notice | null
   highlighted: string[]
   canAutoLogin: boolean
@@ -339,6 +352,7 @@ export class App {
       connection: 'offline',
       session: null,
       loginError: null,
+      authFlow: { phase: 'signin' },
       notice: null,
       highlighted: [],
       canAutoLogin: !!config.autoLogin,
@@ -522,14 +536,59 @@ export class App {
     }
   }
 
-  async registerAccount(username: string, password: string): Promise<void> {
+  /** The password typed at registration or sign-in, kept only until the confirmation code signs the account in. */
+  private pendingPassword: string | null = null
+  setAuthFlow(flow: AuthFlow): void { this.set({ authFlow: flow, loginError: null }) }
+  /** Create the account; the server sends a code to its email or phone and the form moves to the code step. */
+  async registerAccount(input: RegistrationInput): Promise<void> {
     const generation = this.authGeneration
     this.set({ loginError: null })
     try {
-      await register(this.config.baseUrl, username.trim(), password)
+      const pending = await register(this.config.baseUrl, { ...input, username: input.username.trim() })
       if (generation !== this.authGeneration) return
-      await this.login(username, password)
+      this.pendingPassword = input.password
+      this.set({ authFlow: { phase: 'confirm', username: pending.username, channel: pending.pending, destination: pending.destination, notice: pending.error } })
     } catch (error) { if (generation === this.authGeneration) this.set({ loginError: error instanceof Error ? error.message : String(error) }) }
+  }
+  /** The code from the email or text: confirms the account, then signs in with the password typed before. */
+  async confirmAccount(code: string): Promise<void> {
+    const flow = this.state.authFlow
+    if (flow.phase !== 'confirm') return
+    this.set({ loginError: null })
+    try {
+      await confirmAccount(this.config.baseUrl, { username: flow.username, code: code.trim() })
+      if (this.pendingPassword) { const password = this.pendingPassword; this.pendingPassword = null; await this.login(flow.username, password) }
+      else { this.set({ authFlow: { phase: 'signin' } }); this.notify('info', 'Account confirmed. Sign in to continue.') }
+    } catch (error) { this.set({ loginError: error instanceof Error ? error.message : String(error) }) }
+  }
+  /** The one-click link from the confirmation email (?confirm-email-token=…). */
+  async confirmWithToken(token: string): Promise<void> {
+    try {
+      const result = await confirmAccount(this.config.baseUrl, { token })
+      this.set({ authFlow: { phase: 'signin' }, modal: this.state.session ? this.state.modal : 'connect' })
+      this.notify('info', result.already ? 'This account was already confirmed.' : `Account${result.username ? ` @${result.username}` : ''} confirmed. Sign in to continue.`)
+    } catch (error) { this.set({ modal: 'connect', loginError: error instanceof Error ? error.message : String(error) }) }
+  }
+  async resendConfirmation(): Promise<void> {
+    const flow = this.state.authFlow
+    if (flow.phase !== 'confirm') return
+    try {
+      const sent = await resendConfirmation(this.config.baseUrl, flow.username)
+      this.set({ authFlow: { ...flow, destination: sent.destination ?? flow.destination, notice: `A new code is on its way to ${sent.destination ?? flow.destination ?? 'you'}.` }, loginError: null })
+    } catch (error) { this.set({ loginError: error instanceof Error ? error.message : String(error) }) }
+  }
+  async requestPasswordReset(username: string): Promise<void> {
+    try { await requestPasswordReset(this.config.baseUrl, username.trim()); this.set({ authFlow: { phase: 'forgot', sent: true }, loginError: null }) }
+    catch (error) { this.set({ loginError: error instanceof Error ? error.message : String(error) }) }
+  }
+  async completePasswordReset(username: string, password: string, confirm: string): Promise<void> {
+    const flow = this.state.authFlow
+    if (flow.phase !== 'reset') return
+    if (password !== confirm) { this.set({ loginError: 'Passwords do not match' }); return }
+    try {
+      await completePasswordReset(this.config.baseUrl, { token: flow.token, username: username.trim(), password })
+      this.set({ authFlow: { phase: 'signin' }, loginError: null }); this.notify('info', 'Password updated. Sign in with it.')
+    } catch (error) { this.set({ loginError: error instanceof Error ? error.message : String(error) }) }
   }
   async copyNodeLink(path: Scope): Promise<void> {
     try { await navigator.clipboard.writeText(`fos-ref:${encodeURIComponent(path.at(-1)!)}`); this.notify('info', 'Reference copied. Paste into a blank row in this workspace.') }
@@ -590,6 +649,13 @@ export class App {
     } catch (error) {
       if (generation !== this.authGeneration) return
       const message = error instanceof Error ? error.message : String(error)
+      // the right password for an account that has not confirmed its email or phone: offer the code step
+      if (error instanceof ApiError && error.code === 'unconfirmed' && !automatic) {
+        this.pendingPassword = password
+        const channel = error.details.channel === 'phone' ? 'phone' : 'email', destination = typeof error.details.destination === 'string' ? error.details.destination : null
+        this.set({ connection: 'offline', session: null, loginError: null, authFlow: { phase: 'confirm', username: username.trim(), channel, destination } })
+        return
+      }
       this.set({ connection: 'offline', loginError: message, session: null })
       if (automatic) this.scheduleRetry()
     }

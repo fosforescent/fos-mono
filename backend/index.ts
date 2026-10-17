@@ -14,7 +14,8 @@ import { clientDetailsMiddleware } from './clientDetails'
 import { postRegister, deleteAccount } from './auth/register'
 import { postLogin } from './auth/login'
 import { getVerifyJwt } from './auth/verifyJwt'
-import { postConfirmEmail, postConfirmEmailInit } from './auth/confirmEmail'
+import { createConfirmation } from './auth/confirmation'
+import { sendConfirmationCodeEmail } from './email/email'
 import { postResetPwd, postResetPwdUpdate } from './auth/resetPwd'
 import { postUpdatePwd } from './auth/updatePwd'
 import { postCreatePortalSession } from './subscription/portalSession'
@@ -229,16 +230,39 @@ protectedRoutes.use(clientDetailsMiddleware)
 
 app.get('/', getHealthCheck)
 app.get('/health', getHealthCheck)
+// Account confirmation: a code to the registered email (Postmark) or phone (the SMS channel); see auth/confirmation.ts.
+const confirmation = createConfirmation({
+  users: {
+    byName: username => prisma.userModel.findUnique({ where: { user_name: username } }),
+    byToken: token => prisma.userModel.findUnique({ where: { email_confirmation_token: token } }),
+    update: async (id, data) => { await prisma.userModel.update({ where: { id }, data }) },
+  },
+  async linkPhone(userId, number, secret) {
+    await prisma.integrationConnectionModel.upsert({
+      where: { userId_provider: { userId, provider: 'phone' } },
+      create: { userId, provider: 'phone', kind: 'channel', accountName: number, secret: secret.secret, scopes: '', expiresAt: secret.expiresAt, metadata: { verified: true } },
+      update: { accountName: number, expiresAt: secret.expiresAt, metadata: { verified: true } },
+    })
+  },
+  sendEmail: sendConfirmationCodeEmail,
+  // the SMS channel is configured later in this file; ask at call time
+  smsConfigured: () => !!channelBus.adapter('sms')?.configured(),
+  sms: (to, text) => channelBus.send({ destination: 'sms', to, text }).then(() => undefined),
+  secret: process.env.INTEGRATION_SECRET ?? process.env.JWT_SECRET!,
+  webUrl: process.env.WEB_URL ?? process.env.FRONTEND_URL ?? 'https://fosforescent.com',
+})
 app.post('/auth/register', slowDown({
   windowMs: 10 * 60 * 1000, // 15 minutes,
   delayAfter: 1, // allow 3 requests per 15 minutes, then...
   delayMs: (used) => (3 ** used) * 500 // begin adding 500ms of delay per request above 100:
-}), postRegister)
+}), postRegister(confirmation))
 app.post('/auth/login', slowDown({
   windowMs: 10 * 60 * 1000, // 15 minutes,
   delayAfter: 3, // allow 3 requests per 15 minutes, then...
   delayMs: (used) => (2 ** used) * 500 // begin adding 500ms of delay per request above 100:
-}), postLogin)
+}), postLogin(confirmation))
+app.post('/auth/confirm', slowDown({ windowMs: 10 * 60 * 1000, delayAfter: 5, delayMs: (used) => (2 ** used) * 500 }), confirmation.confirm)
+app.post('/auth/confirm/resend', slowDown({ windowMs: 10 * 60 * 1000, delayAfter: 1, delayMs: (used) => (3 ** used) * 500 }), confirmation.resend)
 app.post('/auth/reset-pwd', slowDown({
   windowMs: 10 * 60 * 1000, // 15 minutes,
   delayAfter: 1, // allow 3 requests per 15 minutes, then...
@@ -349,8 +373,6 @@ protectedRoutes.use(slowDown({
 protectedRoutes.use(verifyJWTMiddleware)
 
 protectedRoutes.get('/auth/verify-jwt', getVerifyJwt)
-protectedRoutes.post('/auth/confirm-email-init', postConfirmEmailInit)
-protectedRoutes.post('/auth/confirm-email', postConfirmEmail)
 protectedRoutes.post('/auth/update-password', postUpdatePwd)
 protectedRoutes.post('/auth/update-email', postUpdateEmail)
 
