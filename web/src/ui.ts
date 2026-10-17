@@ -1117,14 +1117,14 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
     if (p.mcpServer?.transport === 'desktop' && grants.length) {
       const endpoint = localMcpEndpoint(app)
       if (endpoint) {
-        const config = document.createElement('textarea'); config.readOnly = true; config.rows = 7; config.value = mcpConfig(endpoint.url, endpoint.token); config.setAttribute('aria-label', 'MCP configuration')
+        const config = document.createElement('textarea'); config.className = 'mcp-config'; config.readOnly = true; config.rows = 7; config.value = mcpConfig(endpoint.url, endpoint.token); config.setAttribute('aria-label', 'MCP configuration')
         panel.push(div('muted', `Serving this node on this computer with ${grants.map(g => labels[g].toLowerCase()).join(', ')}. Paste this into any MCP client:`), config)
       } else { panel.push(div('muted', 'Starting the local MCP server…')); app.syncLocalMcp() }
     }
     if (p.mcpServer?.transport === 'server' && grants.length) {
       const connection = hostedMcpConnection(app)
       if (connection) {
-        const config = document.createElement('textarea'); config.readOnly = true; config.rows = 7; config.value = mcpConfig(connection.url, connection.token); config.setAttribute('aria-label', 'MCP configuration')
+        const config = document.createElement('textarea'); config.className = 'mcp-config'; config.readOnly = true; config.rows = 7; config.value = mcpConfig(connection.url, connection.token); config.setAttribute('aria-label', 'MCP configuration')
         panel.push(div('muted', 'A credential for this node on your Fos server, limited to the grants above:'), config, button('secondary small', 'Revoke credential', () => void connection.stop().then(() => app.refresh())))
       } else {
         const create = button('secondary small', 'Create credential', () => void connectNodeAgent(app, 'server', 'Fos MCP server', { peerId: 'mcp:server', capabilities: app.peerCapabilities('mcp:server').filter((c): c is 'read' | 'edit' | 'approve' | 'execute' => ['read', 'edit', 'approve', 'execute'].includes(c)) }).then(() => app.refresh()).catch(error => app.notify('error', String(error))))

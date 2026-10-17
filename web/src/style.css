@@ -794,3 +794,6 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 .analysis-results { overflow: auto; }
 .analysis-results table { width: 100%; border-collapse: collapse; }
 .analysis-results th, .analysis-results td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line, #8885); white-space: pre-wrap; }
+
+/* an MCP client configuration shown by a server sub-peer: full width, monospace, copyable */
+.node-context .mcp-config { width: 100%; box-sizing: border-box; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; margin: 4px 0 8px; }
