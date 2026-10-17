@@ -163,8 +163,11 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); background: v
 .crumb { border: none; background: none; padding: 2px 4px; color: var(--muted); min-height: 0; border-radius: 6px; max-width: 100%; overflow-wrap: anywhere; }
 .crumb:hover:not(:disabled) { color: var(--fg); background: var(--raised); border: none; }
 .crumb.current { color: var(--fg); font-weight: 500; }
+/* the icon-only Home crumb takes the menu button's box, so the two icons line up when the crumbs wrap under it */
+.crumb.crumb-home { width: 36px; height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .crumb-path .crumb:not(.current) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(16rem, 65vw); }
 .crumb-path .crumb.current { flex: 1 1 8rem; min-width: 0; text-align: left; }
+.crumb-path .crumb.crumb-home { flex: 0 0 auto; }
 .sep { color: var(--dim); }
 .crumb-icon { margin-right: .3rem; color: var(--muted-2); }
 .chip { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 12px; }
@@ -635,6 +638,7 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
   #app > section, #app > nav.crumbs, #app > .voice-controls { padding: 0 12px; }
   .topbar { padding: 8px 12px; gap: 8px; }
   .topbar .crumbs { order: 10; flex-basis: 100%; }
+  .crumb.crumb-home { width: 44px; }
   .status { padding: 0 10px; font-size: 12px; }
   .status .muted, .status .badge { display: none; }
 }
