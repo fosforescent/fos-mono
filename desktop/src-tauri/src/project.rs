@@ -67,7 +67,10 @@ pub struct Project {
     pub is_home: bool,
 }
 
+/// The directory whose `.fos/` holds home-mode state. `FOS_STATE_HOME` redirects it (the dev app uses `~/.fos-dev`
+/// so a developer can run it beside the installed app without the two sharing device identity, sessions or replicas).
 pub fn home_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("FOS_STATE_HOME").filter(|v| !v.is_empty()) { return PathBuf::from(dir); }
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 

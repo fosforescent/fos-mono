@@ -139,6 +139,18 @@ tauri-logs:
 tauri-build:
 	cd desktop && npm run build
 
+# Build the desktop app and install this computer's bundle (Windows: the NSIS installer, silently; macOS: /Applications;
+# Linux: the AppImage into ~/.local/bin). The installed app is "Fosforescent" (com.fosforescent.app, state in ~/.fos);
+# `make tauri-dev` runs "Fosforescent Dev" (com.fosforescent.app.dev, state in ~/.fos-dev), so both can run at once.
+# API_URL overrides the account server the installed app talks to (default: the production API).
+API_URL ?= https://api.fosforescent.com
+desktop-install:
+	VITE_API_URL=$(API_URL) node scripts/desktop-install.cjs
+
+# Install without rebuilding (uses the newest bundle already in desktop/src-tauri/target/release/bundle)
+desktop-install-only:
+	node scripts/desktop-install.cjs --no-build
+
 # Build everything (web + backend + desktop)
 build-all:
 	npm run build:web

@@ -109,7 +109,7 @@ cd desktop/src-tauri && cargo check
 
 - `web/`: Vite SPA; `tsc && vite build`. The same build runs in the browser and inside the Tauri webview.
 - `backend/`: `tsc`; `Dockerfile` builds the image deployed to Cloud Run (`.github/workflows/deploy-backend.yml`).
-- `desktop/`: `tauri build`; `npm run build:core` rebundles `shared/sync/embed.ts` into `src-tauri/js/fos-core.js` for the CLI/REPL/local server.
+- `desktop/`: `tauri build`; its hooks run `npm run build:core` first, bundling `shared/sync/embed.ts` into the gitignored `src-tauri/js/fos-core.js` the binary embeds (run it by hand before a bare `cargo` build or test).
 - Docker Compose (`infra/`): PostgreSQL (pgvector), Temporal and the backend.
 
 ## Database Schema

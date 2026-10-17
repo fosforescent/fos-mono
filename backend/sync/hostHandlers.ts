@@ -179,12 +179,42 @@ export function pointsHandler(deps: PointsDeps): HostHandler {
   }
 }
 
+export type MailDeps = { send(to: string, subject: string, text: string, onBehalfOf: string): Promise<void> }
+
+/** `-mail someone@example.com Subject…` under a task: the recipient is the first address in the row, the subject the rest of it (else the task's title), the body the task and its rows. */
+export function mailRequest(rowTitle: string, taskTitle: string, rows: string[]): { to: string; subject: string; text: string } | null {
+  const match = rowTitle.match(/[^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+/)
+  if (!match) return null
+  const subject = rowTitle.replace(match[0], '').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim() || taskTitle || 'From Fosforescent'
+  const text = [taskTitle, ...rows.filter(Boolean).map(r => `- ${r}`)].filter(Boolean).join('\n').slice(0, 20_000)
+  return { to: match[0], subject: subject.slice(0, 200), text }
+}
+
+/** `-mail` requirements: the account server sends the email (Postmark) on the user's behalf and records the supply as `fos`. */
+export function mailHandler(deps: MailDeps): HostHandler {
+  return {
+    peerId: 'fos', capability: 'mail',
+    async effect(ctx) {
+      const r = ctx.replica(), path = ctx.step.path, taskPath = path.slice(0, -1)
+      const task = taskPath.length ? view(r, taskPath.slice(0, -1))?.tasks.find(t => t.id === taskPath.at(-1)) : null
+      const rows = (view(r, taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1) && t.kind !== 'supply').map(t => t.title)
+      const request = mailRequest(ctx.step.row!.title, task?.title ?? '', rows)
+      if (!request) throw new Error('Name the recipient: "-mail someone@example.com Subject".')
+      await deps.send(request.to, request.subject, request.text, ctx.username)
+      let next = addRow(ctx.replica(), path, 'plain', `Sent to ${request.to}: ${request.subject}`, ctx.now())
+      next = addSupply(next, taskPath, path.at(-1)!, { capability: 'mail', by: 'fos' }, ctx.now())
+      await ctx.update(next)
+    }
+  }
+}
+
 export type HostHandlerDeps = {
   github: GitHubIssueDeps
   google: CalendarDeps
   llm: LlmDeps
   market: MarketDeps
   points: PointsDeps
+  mail: MailDeps
   /** Attached MCP servers run `-tool` requirements (integrations/mcpPeers.ts `mcpToolHandler`). */
   tool?: HostHandler
   /** Is the account connected to the provider (`phone`)? */
@@ -203,6 +233,7 @@ export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
     marketHandler(deps.market),
     pollHandler(),
     pointsHandler(deps.points),
+    mailHandler(deps.mail),
     llmHandler(deps.llm),
     ...(deps.cron ? [{ peerId: 'fos', capability: 'cron' as const }] : []),
     githubRepoHandler(deps.github),

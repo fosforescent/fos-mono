@@ -117,7 +117,7 @@ button.link:hover:not(:disabled) { color: var(--accent-text); }
 button.icon { border: none; background: none; color: var(--muted); font-size: 1rem; line-height: 1; padding: 4px 6px; min-height: 0; }
 button.icon:hover:not(:disabled) { color: var(--fg); }
 button svg.svg-inline--fa { width: 1em; height: 1em; vertical-align: -.125em; }
-input[type="text"], input[type="password"], input[type="search"], input[type="number"], input[type="datetime-local"], input:not([type]), select, textarea {
+input[type="text"], input[type="password"], input[type="search"], input[type="number"], input[type="datetime-local"], input[type="email"], input[type="tel"], input:not([type]), select, textarea {
   font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); color: var(--fg); min-width: 0;
 }
 input::placeholder, textarea::placeholder { color: var(--muted-2); }
@@ -181,9 +181,32 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); background: v
 .banner[hidden] { display: none; }
 .banner { margin: 12px auto; padding: 12px 14px; border-radius: 10px; background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--warn-text); display: flex; flex-direction: column; gap: 8px; }
 .banner .error { color: var(--danger); font-size: 0.9rem; }
-.login { display: flex; gap: 8px; flex-wrap: wrap; }
-.login input { flex: 1 1 160px; }
-.login label input[type=checkbox] { width: auto; }
+/* the account form: sign in / create an account share one form; the code and reset steps are their own */
+.auth-tabs { margin-bottom: 12px; }
+.auth-tabs button, .contact-toggle button { min-width: 0; padding: 0 12px; height: 32px; }
+.login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.login input { width: 100%; height: 40px; }
+.login input[hidden], .login label[hidden], .login div[hidden], .login button[hidden] { display: none; }
+.login label { display: flex; align-items: center; gap: 8px; }
+.login label input[type=checkbox] { width: auto; height: auto; }
+.login button[type=submit] { height: 40px; justify-self: start; min-width: 140px; }
+.login .link { justify-self: start; padding: 0; }
+.login .contact-row { display: grid; gap: 8px; }
+.login.confirm-code { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.code-input { font-family: var(--mono); font-size: 22px; letter-spacing: 6px; text-align: center; height: 48px !important; }
+.code-input::placeholder { font-family: inherit; font-size: 14px; letter-spacing: normal; }
+.auth-links { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.account-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+/* the account form fills its own line under the peer's row on the fos node page */
+.node-detail > .account-form { max-width: 560px; }
+/* the settings root */
+.task.setting-group { border: 0; padding: 18px 12px 6px; background: transparent; }
+.task.setting-group:first-child { padding-top: 6px; }
+.setting-group-title { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+.tree .task.has-constructor .zoom-dot, .tree .task.has-constructor .handle, .tree .task.root-row .zoom-dot, .tree .task.root-row .handle { opacity: 0.35; }
+.tree .task.has-constructor:hover .zoom-dot, .tree .task.has-constructor:hover .handle { opacity: 1; }
+.setting-row .constructor-label { min-width: 160px; font-weight: 500; }
+@media (min-width: 641px) { .login:not(.registering):not(.confirm-code) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .login:not(.registering) button[type=submit], .login:not(.registering) .link, .login:not(.registering) label, .login:not(.registering) .contact-row { grid-column: 1 / -1; } .login.registering { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .login.registering .contact-row, .login.registering label, .login.registering .muted, .login.registering button { grid-column: 1 / -1; } }
 .voice-controls { display: flex; }
 .mic { font-size: 18px; line-height: 1; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .mic.recording { background: var(--danger); border-color: var(--danger); color: #fff; animation: beat 1.2s ease-in-out infinite; }

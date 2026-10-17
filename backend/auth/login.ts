@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 
 import { prisma } from '../prismaClient'
 import { InfoState, LoginResult } from '@fosforescent/shared/types'
+import type { Confirmation } from './confirmation'
 
 const JWT_SECRET = process.env.JWT_SECRET
 
@@ -17,7 +18,7 @@ interface UserLogin {
   password: string;
 }
 
-export const postLogin = async (req: Request, res: Response) => {
+export const postLogin = (confirmation: Confirmation) => async (req: Request, res: Response) => {
   const credentials: UserLogin = req.body
 
   // Check if username or password is a blank string
@@ -40,6 +41,12 @@ export const postLogin = async (req: Request, res: Response) => {
     // Verify password
     const match = await bcrypt.compare(credentials.password, user.password)
 
+    if (match && !user.approved) {
+      // the right password, but the account has not been confirmed (or an admin has not approved it)
+      const pending = confirmation.pending(user)
+      if (pending) return res.status(403).json({ error: `Confirm your account with the code we sent to ${pending.destination}.`, code: 'unconfirmed', ...pending })
+      return res.status(403).json({ error: 'This account is awaiting approval.', code: 'unapproved' })
+    }
     if (match) {
       const claims = {
         username: user.user_name,

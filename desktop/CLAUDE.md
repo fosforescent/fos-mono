@@ -16,24 +16,24 @@ The desktop directory contains the Tauri-based desktop and mobile application fo
 ```
 fos                 GUI for your account      (context ~, state ~/.fos)
 fos <dir>           GUI for a project         (nearest fos.config.toml, state <dir>/.fos)
-fos [dir] run       sync, print the tree, serve local devices/agents (peer-sync, MCP, WebRTC relay, events)
+fos [dir] run       sync, print the tree, serve local agents (MCP), the WebRTC relay and change events
 fos [dir] repl      interactive shell
 fos [dir] ls | add "…" | done <id> | open <id> | status | sync | approve <id> | reject <id> | attach <token> | detach | init | reset
 fos login           home context: browser sign-in (SSO-capable device flow) | --token <connect token> | --password
 ```
 
 - `main.rs` - clap entry: resolves the context (`fos <dir>` or `~`), dispatches to the GUI (`app_lib::run()` with `FOS_TARGET_DIR`, `FOS_DIR`, `FOS_SERVER`, `FOS_HOME_CONTEXT`) or the CLI
-- `core.rs` - QuickJS (`rquickjs`, `parallel` feature) host for the embedded sync core `js/fos-core.js` (built from `shared/sync/embed.ts` + `js/prelude.js` shims); Rust never reimplements merge/sync semantics, it passes JSON strings through `fosCore.*`
+- `core.rs` - QuickJS (`rquickjs`, `parallel` feature) host for the embedded sync core `js/fos-core.js` (a build product, not committed: `npm run build:core` bundles `shared/sync/embed.ts` + `js/prelude.js` shims, and the Tauri dev/build hooks and the release workflows run it; `build.rs` fails with that instruction when it is missing); Rust never reimplements merge/sync semantics, it passes JSON strings through `fosCore.*`
 - `project.rs` - context resolution: `fos.config.toml` discovery (walk up), `[attach]`/`[serve]` config (`toml`; `[server] to/from` and `[peers.<name>]` policy tables pass through to the web app untouched, see `docs/sync.md` "Peer policies"), git branch from `.git/HEAD`, `.fos/` files (`device.json`, `session.json`, `replicas/<branch>.json`, `.gitignore`), home mode = `~/.fos` (optional `~/.fos/config.toml` for the server; `FOS_API_URL` overrides)
 - `workspace.rs` - an open replica for the current branch + session; edits, `sync()` (first sync asks the account where the device attaches), branch switching, `status()`
 - `client.rs` - account HTTP (`ureq`): login, connect-token attach with approval polling, device login (`/auth/device/start|poll`), attachment, peer-sync, proposal decisions, detach
-- `local_server.rs` - `tiny_http` server: `/peer-sync` (served from the directory's replica), `/mcp` (the shared `fos_*` MCP vocabulary through the core's `mcp` entry point, as the directory's owner), `/p2p/offer|answer` relay, `/status`, `/events?since=` long-poll
+- `local_server.rs` - `tiny_http` server: `/mcp` (the shared `fos_*` MCP vocabulary through the core's `mcp` entry point, as the directory's owner), `/p2p/offer|answer` relay, `/status`, `/events?since=` long-poll
 - `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync status approve reject attach login branches`)
 - `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file` for linked directory peers (`web/src/filesystem.ts`); plus the `node_agent::*` and `agents::*` commands
 - `node_agent.rs` - authenticated loopback MCP relay for "Connect to agent" (`web/src/node-agent.ts`)
 - `agents.rs` - spawns `../agent-runtime` (Claude Agent SDK / Codex SDK runs, CLI launches, local git), validates repositories, and `agent_clis` reports which agent CLIs (`claude`, `codex`) are on PATH so the web app shows them as local peers
 
-Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle with `cd desktop && npm run build:core` (esbuild; `web/node_modules/.bin/esbuild` also works when the root workspace is not installed). Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
+Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. `make desktop-install` builds the release bundle and installs it on this computer (`scripts/desktop-install.cjs`); `make tauri-dev` runs the separate dev app (`tauri.dev.conf.json`: identifier `com.fosforescent.app.dev`, state in `~/.fos-dev` through `FOS_STATE_HOME`), so the installed app and the dev app can run side by side without sharing WebView storage, device identity or replicas. Ports: only `tauri dev` opens one (Vite on 5173); the installed app has none, and `fos run` takes `--port` when two CLIs serve at once. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle with `cd desktop && npm run build:core` (esbuild; `web/node_modules/.bin/esbuild` also works when the root workspace is not installed). Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
 
 ### Web integration
 The web app talks to the shell only through `tauriInvoke` in `web/src/project.ts`, `filesystem.ts`, `node-agent.ts`, `agents.ts` and `local-git.ts`.
@@ -83,7 +83,7 @@ fos help          # Show help
 npm run dev          # Start Tauri in development mode
 npm run build        # Build production release
 
-# Rebuild the embedded sync core after changing shared/sync:
+# Build the embedded sync core (gitignored; `tauri dev`/`tauri build` run this first, `cargo` alone does not):
 npm run build:core
 
 # Update Rust if needed:
