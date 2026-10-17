@@ -1,11 +1,11 @@
-//! Local server exposed by `fos` / `fos serve` for the directory it sits in:
-//!   POST /peer-sync   the sync protocol served from this directory's replica (nearby devices attach here)
+//! Local server exposed by `fos run` / `fos serve` for the directory it sits in:
 //!   POST /mcp         MCP (JSON-RPC) for local agents: the shared fos_read/fos_search/fos_propose/… tools over the event grammar
+//!   (replication to other devices goes through the account's node-provider protocol; the directory serves no
+//!   sync protocol of its own)
 //!   POST /p2p/offer, GET /p2p/offer/:id, POST|GET /p2p/answer/:id   WebRTC offer/answer relay
 //!   GET  /status, GET /events?since=N (long-poll for "changed")
 
-use crate::core::now_ms;
-use crate::workspace::{Workspace, HANDLE};
+use crate::workspace::Workspace;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Read;
@@ -89,30 +89,8 @@ fn route(shared: &Shared, request: &mut Request) -> Response<std::io::Cursor<Vec
         return json_response(204, &json!({}));
     }
     match (method, path.as_str()) {
-        (Method::Get, "/") => json_response(200, &json!({ "fos": true, "endpoints": ["/status", "/peer-sync", "/mcp", "/p2p/offer", "/events"] })),
+        (Method::Get, "/") => json_response(200, &json!({ "fos": true, "endpoints": ["/status", "/mcp", "/p2p/offer", "/events"] })),
         (Method::Get, "/status") => json_response(200, &shared.workspace.lock().unwrap().status()),
-        (Method::Post, "/peer-sync") => {
-            let body = read_body(request);
-            let mut ws = shared.workspace.lock().unwrap();
-            if let Err(error) = ws.refresh_branch() { return json_response(500, &json!({ "error": error })); }
-            if body.get("branch").and_then(|b| b.as_str()).map(|b| b != ws.branch).unwrap_or(false) {
-                return json_response(409, &json!({ "error": "This checkout is serving another branch", "code": "scope-not-found", "branch": ws.branch }));
-            }
-            let served = ws.core.call_json("serveSync", &[json!(HANDLE), json!(body.to_string()), json!(ws.device.peer_id), json!(now_ms()), Value::Null]);
-            match served {
-                Ok(v) if v.get("error").is_some() => json_response(if v.get("code").and_then(|c| c.as_str()) == Some("scope-not-found") { 404 } else { 400 }, &v),
-                Ok(mut v) => {
-                    if let Some(response) = v.get_mut("response").and_then(|r| r.as_object_mut()) { response.insert("branch".into(), json!(ws.branch)); }
-                    if v.get("changed").and_then(|c| c.as_bool()).unwrap_or(false) {
-                        let _ = ws.save();
-                        drop(ws);
-                        shared.notify_changed();
-                    }
-                    json_response(200, v.get("response").unwrap_or(&Value::Null))
-                }
-                Err(e) => json_response(500, &json!({ "error": e.to_string() })),
-            }
-        }
         (Method::Post, "/mcp") => {
             let body = read_body(request);
             if let Some(batch) = body.as_array() {
