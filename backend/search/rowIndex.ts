@@ -86,6 +86,28 @@ export async function indexStore(prisma: Prisma, user: { id: number; username: s
   return { embedded, removed: gone.length }
 }
 
+export type OfferMatch = { userId: number; owner: string; aliasId: string; title: string; score: number }
+
+/**
+ * Published capabilities (marketplace offers, `kind: 'capability'`) of other accounts that match a listing's text,
+ * best first, above `minScore` (cosine similarity). This is what makes a listed task show up for the providers who
+ * advertised a matching service.
+ */
+export async function matchOffers(prisma: Prisma, params: { text: string; excludeUserId: number; limit?: number; minScore?: number }, embed: Embed): Promise<OfferMatch[]> {
+  const [vector] = await embed([params.text])
+  if (!vector) return []
+  const limit = Math.max(1, Math.min(20, params.limit ?? 5)), minScore = params.minScore ?? Number(process.env.MARKET_MATCH_MIN_SCORE ?? 0.45)
+  const rows = (await prisma.$queryRawUnsafe(
+    `SELECT "aliasId", "title", "userId", "owner", 1 - ("embedding" <=> $1::vector) AS score
+     FROM "RowEmbeddingModel"
+     WHERE "market" AND "kind" = 'capability' AND "userId" <> $2
+     ORDER BY "embedding" <=> $1::vector
+     LIMIT $3`,
+    `[${vector.join(',')}]`, params.excludeUserId, limit
+  )) as Array<{ aliasId: string; title: string; userId: number; owner: string; score: number }>
+  return rows.map((r) => ({ userId: r.userId, owner: r.owner, aliasId: r.aliasId, title: r.title, score: Number(r.score) })).filter((r) => r.score >= minScore)
+}
+
 export type SearchHit = { aliasId: string; title: string; kind: string; score: number; owner: string | null; path: Scope }
 
 export async function searchRows(prisma: Prisma, params: { userId: number; query: string; market: boolean; limit: number }, embed: Embed): Promise<SearchHit[]> {

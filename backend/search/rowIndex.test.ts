@@ -1,5 +1,5 @@
-import { addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
-import { collectRows, indexStore, searchRows, type Embed } from './rowIndex'
+import { addRow, addTask, createReplica, makeLinkAt, publishTemplate, setMarketAt } from '@fosforescent/shared/sync/index'
+import { collectRows, indexStore, matchOffers, searchRows, type Embed } from './rowIndex'
 
 // a deterministic "embedding": bag of letters, so related texts land close together
 const embed: Embed = async (texts) => texts.map((t) => { const v = new Array(26).fill(0); for (const c of t.toLowerCase()) { const i = c.charCodeAt(0) - 97; if (i >= 0 && i < 26) v[i]++ } const n = Math.hypot(...v) || 1; return v.map((x) => x / n) })
@@ -10,6 +10,11 @@ function fakePrisma() {
     table,
     async $queryRawUnsafe(sql: string, ...p: unknown[]) {
       if (sql.startsWith('SELECT "aliasId", "textHash"')) return table.filter((r) => r.userId === p[0]).map((r) => ({ aliasId: r.aliasId, textHash: r.textHash }))
+      if (sql.includes('"kind\' = \'capability\'') || sql.includes(`"kind" = 'capability'`)) {
+        const q = (p[0] as string).slice(1, -1).split(',').map(Number)
+        const dot = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ?? 0), 0)
+        return table.filter((r) => r.market && r.kind === 'capability' && r.userId !== p[1]).map((r) => ({ ...r, score: dot(q, r.embedding as number[]) })).sort((a, b) => b.score - a.score).slice(0, p[2] as number)
+      }
       if (sql.includes('ORDER BY')) {
         const q = (p[0] as string).slice(1, -1).split(',').map(Number)
         const dot = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ?? 0), 0)
@@ -83,4 +88,23 @@ test('global search aggregates only explicitly published enabled handler offers;
   r = setHandlerEnabledAt(r, [], r.meta.peerId, offer.id, false, 5)
   await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)
   expect(await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)).toEqual([])
+})
+
+test('a listing matches the published capabilities of other accounts, never its own, above the score floor', async () => {
+  const prisma = fakePrisma()
+  let carol = createReplica('c')
+  carol = addRow(carol, [], 'template', 'logo design service', 1, { id: 'svc' })
+  carol = publishTemplate(carol, [], ['svc'], 'logo design service', 2, true)
+  carol = addRow(carol, [], 'template', 'dog walking', 3, { id: 'dog' })
+  carol = publishTemplate(carol, [], ['dog'], 'dog walking', 4, true)
+  await indexStore(prisma, { id: 3, username: 'carol' }, carol.store, embed)
+  let alice = createReplica('a')
+  alice = addRow(alice, [], 'template', 'logo design service', 1, { id: 'own' })
+  alice = publishTemplate(alice, [], ['own'], 'logo design service', 2, true)
+  await indexStore(prisma, { id: 1, username: 'alice' }, alice.store, embed)
+  const matches = await matchOffers(prisma, { text: 'design a logo for my bakery', excludeUserId: 1, minScore: 0.5 }, embed)
+  expect(matches[0]).toMatchObject({ owner: 'carol', title: 'logo design service' })
+  expect(matches.some((m) => m.owner === 'alice')).toBe(false) // never the lister's own offers
+  expect(matches.every((m) => m.score >= 0.5)).toBe(true)
+  expect(await matchOffers(prisma, { text: 'design a logo for my bakery', excludeUserId: 1, minScore: 0.99 }, embed)).toEqual([])
 })

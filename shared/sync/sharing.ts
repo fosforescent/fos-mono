@@ -147,8 +147,8 @@ export const inviteRequestName = (title: string) => `invite: ${title}`
  * inviter, and the ref appears only when this account accepts the proposal (`decide`); until then it is a pending
  * submission like any other.
  */
-export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, title: string, now: number): { replica: Replica; path: Scope; proposalCid: string | null } {
-  const peer = `user:${owner}`, linkId = `member:${aliasId}`, name = inviteRequestName(title || owner)
+export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, title: string, now: number, name = inviteRequestName(title || owner)): { replica: Replica; path: Scope; proposalCid: string | null } {
+  const peer = `user:${owner}`, linkId = `member:${aliasId}`
   const sub = subPeerRowAt(r, owner, now)
   r = sub.replica
   const hostPath = sub.path
