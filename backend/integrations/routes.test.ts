@@ -21,6 +21,7 @@ function fakeDeps(answers: Array<{ match: RegExp; status?: number; json: unknown
     },
     userId: async (req) => (req as unknown as { userId: number }).userId,
     platformConnected: async (_id, provider) => ({ connected: provider === 'stripe', accountName: provider === 'stripe' ? 'cus_1' : null }),
+    offers: (id) => (id === 'github' ? ['repo'] : id === 'phone' ? ['notify'] : []),
     connections: {
       list: async (id) => [...stored.entries()].filter(([k]) => k.startsWith(`${id}:`)).map(([, v]) => v),
       get: async (id, provider) => stored.get(`${id}:${provider}`) ?? null,
@@ -66,8 +67,9 @@ test('list shows every peer with configuration and connection status', async () 
   const h = createIntegrationHandlers(deps)
   const { json } = await call(h.list, 1)
   const byId = Object.fromEntries(json.providers.map((p: any) => [p.id, p]))
-  expect(byId.github).toMatchObject({ kind: 'oauth', configured: true, connected: false, provides: ['repo', 'search'] })
-  expect(byId.discord).toMatchObject({ kind: 'oauth', configured: false, connected: false })
+  expect(byId.github).toMatchObject({ kind: 'oauth', configured: true, connected: false, provides: ['repo'] })
+  expect(byId.google).toMatchObject({ kind: 'oauth', provides: [] })
+  expect(byId.discord).toBeUndefined()
   expect(byId.stripe).toMatchObject({ kind: 'platform', connected: true, accountName: 'cus_1' })
   expect(byId.phone).toMatchObject({ kind: 'channel', configured: true, connected: false, pending: false, provides: ['notify'], consumes: [] })
 })
@@ -86,7 +88,8 @@ test('OAuth: start builds the authorize URL, the callback exchanges the code, st
   expect(url.searchParams.get('scope')).toBe('repo read:user')
   const state = url.searchParams.get('state') as string
   // an unconfigured provider refuses
-  expect((await call(h.start, 7, { params: { provider: 'discord' } })).status).toBe(503)
+  const unconfigured = createIntegrationHandlers({ ...deps, env: { ...deps.env, GOOGLE_OAUTH_CLIENT_ID: undefined } })
+  expect((await call(unconfigured.start, 7, { params: { provider: 'google' } })).status).toBe(503)
 
   const cb = await call(h.callback, 0, { params: { provider: 'github' }, query: { code: 'the-code', state } })
   expect(cb.redirected).toBe('https://web.test/?integration=github&ok=1')

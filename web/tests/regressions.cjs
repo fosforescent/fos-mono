@@ -10,7 +10,9 @@ const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export * from './src/yaml'; export {createProjectStorage} from './src/project'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
-const { exchangeNode, SERVER_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, ensureHomeContext, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
+const { exchangeNode, SERVER_TRANSPORT_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, ensureHomeContext, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
+  // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
+  const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm', 'poll']
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const reply = (data, status = 200) => ({ ok: status < 400, status, statusText: String(status), json: async () => data })
 function nodeReply(server, request) {
@@ -530,6 +532,7 @@ async function main() {
   contextApp.generateSubtasks([argumentTask])
   assert.equal(contextApp.state.modal, null, 'offline handlers do not appear available')
   contextApp.set({ connection: 'online', session: { kind: 'user', username: 'test', jwt: 'test', baseUrl: 'http://localhost' } })
+  contextApp.recordServerOffers(SERVER_CAPABILITIES) // what the first account response would have reported
   contextApp.generateSubtasks([argumentTask])
   assert.equal(contextApp.state.modal, 'work')
   assert(contextApp.state.work.preview.blockers.some(p => p.includes('Incompatible')), 'conflicting text blocks delegation')
@@ -756,21 +759,13 @@ async function main() {
   assert.equal(document.activeElement, childSearch)
   assert(!document.querySelector('.tree').textContent.includes('A child'))
   const integrationApp = app()
-  integrationApp.addIntegrationChoice()
-  assert.equal(integrationApp.currentView().tasks.length, 0, 'no integration constructor without an active Fos peer')
-  integrationApp.isOnline = id => id === 'fos'
-  integrationApp.addIntegrationChoice('github')
+  const peerRowId = integrationApp.applyConstructor([], { kind: 'task', text: 'Peer', done: false })
+  integrationApp.applyConstructor([peerRowId], { kind: 'plain', text: 'Integration' })
   const peer = integrationApp.currentView().tasks.find(r => r.title === 'Peer')
   assert(peer && !peer.requirement)
-  const kind = view(integrationApp.state.replica, [peer.id]).tasks[0]
-  assert.deepEqual(kind.branches.names, ['integration'])
-  const provider = view(integrationApp.state.replica, [peer.id, kind.id]).tasks[0]
-  assert.equal(provider.branches.selected, 'github')
-  integrationApp.goTo([peer.id, kind.id, provider.id])
-  assert.equal(integrationApp.integrationHandler().provider, 'github')
-  assert.equal(integrationApp.integrationHandler().enabled, false, 'unconfigured providers remain unavailable')
   const { exportNodeYaml, parseNodeYaml } = require(path.join(dir, 'app.cjs'))
   const yaml = exportNodeYaml(integrationApp.state.replica, [peer.id])
+  assert(yaml.includes('Integration'), 'export includes the child row')
   const parsedYaml = parseNodeYaml(yaml)
   assert(Object.keys(parsedYaml.nodes).length > 0)
   assert.equal(Object.keys(parsedYaml.nodes)[0], parsedYaml.root, 'depth-first export starts with the selected node')

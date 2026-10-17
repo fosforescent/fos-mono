@@ -3,6 +3,8 @@ import { createNodeAgentMcp } from './mcp/nodeAgent'
 import { createTaskTreeMcp } from './mcp/taskTree'
 import { createSharingHandlers } from './sync/sharing'
 import { createEvaluationService } from './sync/evaluation'
+import { createHandlerRegistry } from './sync/registry'
+import { createHostHandlers } from './sync/hostHandlers'
 import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
 import http from 'http'
@@ -479,11 +481,17 @@ const integrationDeps = prismaIntegrationDeps(prisma, getUserId, {
   sms: smsAdapter?.configured() ? (to, text) => channelBus.send({ destination: 'sms', to, text }).then(() => undefined) : null,
   rows: rowsDeps(storeDeps)
 })
+// What this host can do, derived from the handlers below; every capability advertised to devices comes from here.
+const registry = createHandlerRegistry(createHostHandlers({
+  github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
+  connected: async (id, provider) => { const c = await integrationDeps.connections.get(id, provider); return !!c && (provider !== 'phone' || c.metadata.verified === true) },
+  sms: !!smsAdapter?.configured(),
+  cron: process.env.FOS_ENABLE_CRON === 'true'
+}))
+prismaPeerSyncDeps.registry = registry
+integrationDeps.offers = id => registry.offers(`integration:${id}`)
 const integrations = createIntegrationHandlers(integrationDeps)
-const evaluationService = createEvaluationService(prismaPeerSyncDeps, {
-  githubConnected: async id => !!await integrationDeps.connections.get(id, 'github'),
-  createIssue: integrations.createIssue
-})
+const evaluationService = createEvaluationService(prismaPeerSyncDeps, registry)
 dataRoutes.all('/peer-sync/agent-mcp', createNodeAgentMcp(prismaPeerSyncDeps))
 const taskTreeMcp = createTaskTreeMcp(prismaPeerSyncDeps, evaluationService.runNode)
 dataRoutes.all('/peer-sync/mcp', (req, res) => void taskTreeMcp(req, res))

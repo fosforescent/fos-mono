@@ -1,13 +1,12 @@
-/** Owner-initiated and scheduled evaluation share the same graph evaluator and user-store lock. */
+/** Owner-initiated and scheduled evaluation share the same graph evaluator, user-store lock and handler registry. */
 import type { Request, Response } from 'express'
-import { recoverEvaluation, addRow, addSupply, capabilityPeers, createReplica, evaluateNode, headCid, put, resolveScope, runNodeTriggers, selectBranch, valueContent, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
+import { CAPABILITIES, INTEGRATION_PEERS, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, headCid, put, resolveScope, runNodeTriggers, selectBranch, valueContent, type Capability, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type PeerSyncDeps } from './peerSync'
+import type { HandlerRegistry, HostHandler } from './registry'
 
-type Effects = {
-  githubConnected(userId: number): Promise<boolean>
-  createIssue(userId: number, input: { repo: string; title: string }): Promise<{ url: string; number: number }>
-}
-export function createEvaluationService(deps: PeerSyncDeps, effects: Effects) {
+const peerLabel = (peerId: string) => peerId === 'fos' ? 'Fos' : INTEGRATION_PEERS.find(p => `integration:${p.id}` === peerId)?.name ?? peerId
+
+export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerRegistry) {
   async function run(username: string, request?: { path: Scope; branches: Record<string, string>; expected: string; action?: 'recover' }) {
     return withUserLock(`user:${username}`, async () => {
       const loaded = await deps.loadStore(username)
@@ -15,23 +14,29 @@ export function createEvaluationService(deps: PeerSyncDeps, effects: Effects) {
       const { user } = loaded
       let r = createReplica(`user:${username}`, loaded.store)
       const now = () => deps.now?.() ?? Date.now()
-      const active = await effects.githubConnected(user.id)
+      // Live availability of every peer that can execute something, checked once per run.
+      const active = new Map<string, boolean>()
+      for (const peerId of new Set(registry.handlers.filter(h => h.effect).map(h => h.peerId))) active.set(peerId, await registry.active(peerId, user.id))
       if (request) for (const [id, name] of Object.entries(request.branches)) selectBranch(r.store, id, name)
       const save = async (next: typeof r) => { r = next; await deps.saveStore(user, r.store); deps.notify?.(user.id, { type: 'sync_changed', by: 'fos:evaluation' }) }
+      /** Requirement kinds that are host capabilities (`repo`, `llm`, …); confirmations, choices and allocations are filled by people. */
+      const capabilityOf = (step: EvaluationStep): Capability | null => { const kind = step.row?.requirement?.capability; return kind && (CAPABILITIES as string[]).includes(kind) ? kind as Capability : null }
+      const executors = (step: EvaluationStep): HostHandler[] => { const cap = capabilityOf(step); return cap ? registry.executors(cap) : [] }
+      /** The executor whose peer provides the capability in this context and is active now. */
+      const executorFor = (step: EvaluationStep): HostHandler | null => {
+        const peers = capabilityPeers(r, step.path, capabilityOf(step)!)
+        return executors(step).find(h => peers.includes(h.peerId) && active.get(h.peerId)) ?? null
+      }
       const evaluate = async (path: Scope) => {
-        const handles = (step: EvaluationStep) => step.row?.requirement?.capability === 'repo'
         const result = await evaluateNode(path, {
-          get: () => r, save, now, handles,
-          isPeerActive: peer => peer === 'fos' || (peer === 'integration:github' && active),
-          check: step => handles(step) && (!active || !capabilityPeers(r, step.path, 'repo').includes('integration:github')) ? ['GitHub is not active in this context.'] : [],
+          get: () => r, save, now,
+          handles: step => executors(step).length > 0,
+          isPeerActive: peer => peer === 'fos' || active.get(peer) === true,
+          check: step => executors(step).length && !executorFor(step) ? [`${executors(step).map(h => peerLabel(h.peerId)).join(' or ')} is not active in this context.`] : [],
           effect: async step => {
-            if (!await effects.githubConnected(user.id)) throw new Error('GitHub disconnected before the effect.')
-            const requirement = step.row!.requirement!
-            if (!requirement.repo) throw new Error('Specify the GitHub repository first.')
-            const issue = await effects.createIssue(user.id, { repo: requirement.repo, title: step.row!.title || 'from fos' })
-            r = addRow(r, step.path, 'plain', `${requirement.repo}#${issue.number} ${issue.url}`, now())
-            r = addSupply(r, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'repo', by: 'integration:github', ref: String(issue.number) }, now())
-            await save(r)
+            const handler = executorFor(step)
+            if (!handler) throw new Error('No active handler for this requirement.')
+            await handler.effect!({ userId: user.id, step, replica: () => r, update: save, now })
           }
         })
         if (result.status !== 'committed') throw new Error(result.error ?? 'Evaluation needs recovery.')
@@ -43,7 +48,7 @@ export function createEvaluationService(deps: PeerSyncDeps, effects: Effects) {
         if (request.action === 'recover') { await save(recoverEvaluation(r, request.path, now())); return null }
         return evaluate(request.path)
       }
-      await runNodeTriggers({ get: () => r, save, now, available: (peer, kind, path) => peer === 'fos' && kind === 'cron' && capabilityPeers(r, path, 'cron').includes('fos'), evaluate: async path => { await evaluate(path) } })
+      await runNodeTriggers({ get: () => r, save, now, available: (peer, kind, path) => peer === 'fos' && kind === 'cron' && registry.offers('fos').includes('cron') && capabilityPeers(r, path, 'cron').includes('fos'), evaluate: async path => { await evaluate(path) } })
       return null
     })
   }

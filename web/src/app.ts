@@ -31,7 +31,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, putBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, beginTaskWork, decideTaskResult, proposeTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -51,7 +51,7 @@ import {
   parsePolicy,
   removeMemberAt,
   resolveRef,
-  SERVER_CAPABILITIES,
+  SERVER_TRANSPORT_CAPABILITIES,
   setMemberCapabilitiesAt,
   setRowContentAt,
   type PeerPolicy,
@@ -168,7 +168,7 @@ export type ContextPeer = {
   policyLocked?: boolean
   /** The account server row: the account's fos points (token balance), once fetched. */
   points?: number | null
-  /** An integration peer (GitHub, Google, Discord, Stripe, the phone): what it provides and consumes, and its connection status from the server. */
+  /** An integration peer (GitHub, Google, Stripe, the phone): what it provides and consumes, and its connection status from the server. */
   integration?: { kind: 'oauth' | 'platform' | 'channel'; provides: Capability[]; consumes: Capability[]; configured: boolean; connected: boolean; pending: boolean; accountName: string | null }
   /** An MCP peer: one of the account's MCP servers, with the tools it advertises; attached to nodes as a member `mcp:<id>`. */
   fosUser?: string
@@ -872,7 +872,8 @@ export class App {
       peer = remote.peerId
       if (remote.remoteLinkId !== request.linkId || JSON.stringify(remote.address.scope) !== JSON.stringify([...scope, ...remotePath])) throw new Error('Node response does not match its attachment.')
       r = establishNodeSync(this.state.replica, path, request, remote, this.now())
-      this.set({ replica: r, ...(transport === 'account' ? { serverCapabilities: SERVER_CAPABILITIES } : {}) })
+      if (transport === 'account' && remote.capabilities) r = this.withServerOffers(r, remote.capabilities)
+      this.set({ replica: r, ...(transport === 'account' && remote.capabilities ? { serverCapabilities: [...remote.capabilities] } : {}) })
       const filterRemote = (shape: import('../../shared/sync/index').NodeShape) => ({
         data: Object.fromEntries(Object.entries(shape.data).filter(([key]) => !remote.mask?.fields || remote.mask.fields.includes(key))),
         children: shape.children.filter(child => !remote.mask?.children || remote.mask.children.includes(child.id))
@@ -1168,7 +1169,7 @@ export class App {
   }
   /**
    * Peers in the context of the viewed node: the account server ("fos") with what it registered on the last sync
-   * (`SERVER_CAPABILITIES` until then), the node's members with the capability rows this node's owner exposes to each
+   * (the transport facts until then), the node's members with the capability rows this node's owner exposes to each
    * (editable here by the owner), and devices attached here (a direct-connected one is reachable `direct`).
    */
   private peerContextPath(): Scope { return this.currentRow()?.construction ? this.state.view.slice(0, -1) : this.state.view }
@@ -1186,13 +1187,14 @@ export class App {
     if (!this.config.scopedDocument && !this.virtualIdentity && (session?.kind === 'user' || this.state.view.length <= homePath(this.state.replica).length)) {
       const id = this.state.replica.meta.serverPeerId ?? (session ? `user:${session.username}` : 'fos')
       const online = this.isOnline('fos')
-      peers.push({ id, name: 'fos', online, capabilities: [...(this.state.serverCapabilities ?? SERVER_CAPABILITIES)], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
+      peers.push({ id, name: 'fos', online, capabilities: [...this.serverOffers()], disabled: [], accepts: [], isAccount: true, member: false, policy: this.state.policy, policyLocked: this.state.policyLocked, points: this.state.points })
     }
     // integration peers (sign in with GitHub, Google, Discord; Stripe on the account; the phone): the server's status when signed in, the registry otherwise
     if (!this.virtualIdentity && !this.state.atRoot && (homePath(this.state.replica).every((id, index) => path[index] === id) || node?.members.some(member => member.peerId.startsWith('integration:')))) {
       for (const i of INTEGRATION_PEERS) {
         const s = this.state.integrations.find((p) => p.id === i.id)
-        peers.push({ id: `integration:${i.id}`, name: i.name, online: this.isOnline(`integration:${i.id}`), capabilities: [...i.provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { kind: i.kind, provides: [...i.provides], consumes: [...i.consumes], configured: s?.configured ?? false, connected: s?.connected ?? false, pending: s?.pending ?? false, accountName: s?.accountName ?? null } })
+        const provides = this.integrationOffers(i.id)
+        peers.push({ id: `integration:${i.id}`, name: i.name, online: this.isOnline(`integration:${i.id}`), capabilities: [...provides], disabled: [], accepts: [...i.consumes], isAccount: false, member: false, integration: { kind: i.kind, provides: [...provides], consumes: [...i.consumes], configured: s?.configured ?? false, connected: s?.connected ?? false, pending: s?.pending ?? false, accountName: s?.accountName ?? null } })
       }
       for (const m of this.state.mcpPeers) {
         if (peers.some((x) => x.id === m.id)) continue
@@ -1219,11 +1221,37 @@ export class App {
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
   allCapabilities(): Capability[] { return [...CAPABILITIES] }
+  /**
+   * What the account server offers: the list it reported in its last response, else what this device recorded on its
+   * fos member from an earlier session, else only the transport facts. Services appear here only when the server's
+   * handler registry has them, so the palette never shows a constructor without a handler behind it.
+   */
+  serverOffers(): Capability[] {
+    if (this.state.serverCapabilities) return this.state.serverCapabilities
+    const recorded = this.state.replica.meta.scope.length ? undefined : view(this.state.replica, [])?.members.find(m => m.peerId === 'fos')?.accepts
+    return recorded?.length ? recorded : SERVER_TRANSPORT_CAPABILITIES
+  }
+  /** What an integration peer provides: the server's live answer, else what Home recorded for it. */
+  integrationOffers(id: string): Capability[] {
+    const live = this.state.integrations.find(p => p.id === id)?.provides
+    if (live) return live.filter((c): c is Capability => (CAPABILITIES as string[]).includes(c))
+    return view(this.state.replica, homePath(this.state.replica))?.members.find(m => m.peerId === `integration:${id}`)?.accepts ?? []
+  }
+  /** Record the server's reported offers on this device's own fos member (the root is device-local). */
+  private withServerOffers(replica: Replica, capabilities: Capability[]): Replica {
+    if (this.config.scopedDocument || this.config.project || this.virtualIdentity || replica.meta.scope.length) return replica
+    return ensureHomeContext(replica, this.now(), { server: capabilities })
+  }
+  /** The account server reported what it offers (a sync or node response): remember it and record it on the fos member. */
+  recordServerOffers(capabilities: Capability[]): void {
+    const replica = this.withServerOffers(this.state.replica, capabilities)
+    this.set({ serverCapabilities: [...capabilities], ...(replica !== this.state.replica ? { replica } : {}) })
+  }
   private withIntegrationPeer(replica: Replica, path: Scope, id: string): Replica {
     const integration = INTEGRATION_PEERS.find(peer => peer.id === id)
     if (!integration || view(replica, path)?.members.some(peer => peer.peerId === `integration:${id}`)) return replica
     replica = addMemberAt(replica, path, `integration:${id}`, integration.name, [], this.now())
-    return setMemberCapabilitiesAt(replica, path, `integration:${id}`, [], [], this.now(), [...integration.provides])
+    return setMemberCapabilitiesAt(replica, path, `integration:${id}`, [], [], this.now(), [...this.integrationOffers(id)])
   }
   /** Integration peers and MCP peers as the server sees them for this account. */
   async refreshIntegrations(): Promise<void> {
@@ -1241,40 +1269,11 @@ export class App {
       }
     } catch { /* the rows fall back to the static registry */ }
   }
-  /** Peer → connection kind → provider uses refs and the existing branch constructor. */
-  addIntegrationChoice(provider?: string): void {
-    const home = homePath(this.state.replica)
-    if (JSON.stringify(this.state.view) !== JSON.stringify(home) || !this.isOnline('fos')) { this.notify('info', 'Integration peers are available in Home with an active Fos server.'); return }
-    const r = this.state.replica, s = r.store, peerId = newId(), kindId = newId(), providerId = newId()
-    const type = capabilityTarget(s, 'peer')
-    const server = put(s, { data: { peerId: { content: 'fos' } }, children: [] })
-    const edge = (cid: string): [string, string] => [cid, s.primitive.descriptionField.getId()]
-    const makeRef = (id: string, title: string, children: [string, string][], typed = false) => put(s, refNodeContent(s, { alias: { id } }, put(s, { data: { description: { content: title } }, children }), [], typed ? type : null))
-    const providers = ['google', 'github', 'discord', 'custom-oauth', 'custom-api']
-    const options = providers.map(name => {
-      const data = put(s, { data: { description: { content: JSON.stringify(name) } }, children: [] })
-      const config = put(s, refNodeContent(s, { alias: { id: `${providerId}:provider` }, name: { content: 'fos:integration' } }, data, [], s.primitive.documentField.getId()))
-      const dependency = put(s, refNodeContent(s, { alias: { id: `${providerId}:server` }, name: { content: 'server' } }, server, [], capabilityTarget(s, 'peer')))
-      return { peerId: name, edge: edge(makeRef(providerId, name.startsWith('custom') ? `${name} (unavailable)` : name, [[s.primitive.documentField.getId(), config], [capabilityTarget(s, 'peer'), dependency]], true)) }
-    })
-    const choice = putBranches(s, providerId, options[0].edge, options, providers.includes(provider ?? '') ? provider! : 'google')
-    const integration = makeRef(kindId, 'Integration', [[s.primitive.choiceTarget.getId(), choice]], true)
-    const kind = putBranches(s, kindId, edge(integration), [{ peerId: 'integration', edge: edge(integration) }], 'integration')
-    const peer = makeRef(peerId, 'Peer', [[s.primitive.choiceTarget.getId(), kind]], true)
-    commitRoot(s, updateAtScope(s, headCid(r), home, node => ({ ...node, children: [...node.children, edge(peer)] })), this.now())
-    this.edit({ ...r })
-  }
-  integrationHandler(): { provider: string; enabled: boolean } | null {
-    const provider = readNodeValue<string>(this.state.replica, this.state.view, 'fos:integration')
-    if (!provider) return null
-    const status = this.state.integrations.find(p => p.id === provider)
-    return { provider, enabled: !!status?.configured && this.isOnline('fos') && this.state.session?.kind === 'user' }
-  }
   connectionOption(path: Scope, choice: number): { provider?: string; enabled: boolean } | null {
     const config = readNodeValue<{ providers: string[] }>(this.state.replica, path, 'fos:connection')
     if (!config || !Array.isArray(config.providers)) return null
     const selected = config.providers[choice]
-    const provider = typeof selected === 'string' && ['google', 'github', 'discord'].includes(selected) ? selected : undefined, status = this.state.integrations.find(p => p.id === provider)
+    const provider = typeof selected === 'string' && ['google', 'github'].includes(selected) ? selected : undefined, status = this.state.integrations.find(p => p.id === provider)
     return { provider, enabled: !!provider && !!status?.configured && this.isOnline('fos') && this.state.session?.kind === 'user' }
   }
   /** Reuse the account OAuth or phone connection transport. */
@@ -2104,7 +2103,7 @@ export class App {
   currentTriggerState() { return triggerState(this.state.replica, this.state.view) }
   triggerKinds(path = this.state.view): TriggerKind[] {
     const peers = this.contextPeers(path), device = peers.find(p => p.id === this.state.replica.meta.peerId), server = peers.find(p => p.name === 'fos')
-    return [...(navigator.locks ? (['timer', 'task-completion', 'request'] as TriggerKind[]).filter(kind => !device?.disabled.includes(kind)) : []), ...(this.isOnline('fos') && this.state.serverCapabilities?.includes('cron') && !server?.disabled.includes('cron') ? ['cron' as const] : [])]
+    return [...(navigator.locks ? (['timer', 'task-completion', 'request'] as TriggerKind[]).filter(kind => !device?.disabled.includes(kind)) : []), ...(this.isOnline('fos') && this.serverOffers().includes('cron') && !server?.disabled.includes('cron') ? ['cron' as const] : [])]
   }
   configureTrigger(kind: TriggerKind, value?: string, newTemplate = false, destination = this.state.view, enabled = true): void {
     try {
@@ -2843,14 +2842,14 @@ export class App {
     } else if (this.virtualPeers?.connected && this.virtualIdentity && this.state.replica.meta.serverPeerId === ref.peer) {
       scope = this.virtualIdentity.scope
       provider = { id: ref.peer!, capabilities: CLIENT_CAPABILITIES, request: request => this.virtualPeers!.requestNode(request) }
-    } else if (session && (ref.peer === 'fos' || ref.peer === replica.meta.serverPeerId) && this.state.serverCapabilities?.includes('provideNode') && this.state.policy.from.includes('read')) {
+    } else if (session && (ref.peer === 'fos' || ref.peer === replica.meta.serverPeerId) && this.serverOffers().includes('provideNode') && this.state.policy.from.includes('read')) {
       scope = session.kind === 'peer' ? replica.meta.scope : []
-      provider = { id: replica.meta.serverPeerId ?? `user:${session.username}`, capabilities: this.state.serverCapabilities, request: request => requestPeerNode(session, request) }
+      provider = { id: replica.meta.serverPeerId ?? `user:${session.username}`, capabilities: this.serverOffers(), request: request => requestPeerNode(session, request) }
     }
     if (!provider && session && this.state.policy.from.includes('read') && this.state.policy.from.includes('relay')) {
       scope = session.kind === 'peer' ? replica.meta.scope : []
       address = [...replica.meta.scope, ...path]
-      provider = { id: replica.meta.serverPeerId ?? `user:${session.username}`, capabilities: SERVER_CAPABILITIES, request: request => requestPeerNode(session, request) }
+      provider = { id: replica.meta.serverPeerId ?? `user:${session.username}`, capabilities: this.serverOffers(), request: request => requestPeerNode(session, request) }
     }
     if (!provider || !scope.every((id, i) => address[i] === id)) { this.notify('error', 'The peer that holds this node is unavailable or does not offer provideNode.'); return }
     const request: NodeRequest = { peerId: replica.meta.peerId, scope, path: address.slice(scope.length), ...(ref.branches ? { branches: ref.branches } : {}), linkId: nodeLinkEndpoint(replica, path, provider.id)?.id ?? nodeRequestLinkId(replica.meta.peerId, { peerId: provider.id, scope: address }) }

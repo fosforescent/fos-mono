@@ -150,7 +150,7 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string) {
         if (own) {
           let context = createReplica(`user:${account}`, own.store)
           const before = headCid(context)
-          if (account !== at.owner) context = ensureHomeContext(context, now())
+          if (account !== at.owner) context = ensureHomeContext(context, now(), deps.registry?.hostOffers())
           context = ensureSharedLink(context, at, node.title, now()).replica
           if (headCid(context) !== before) await save(own.user, context)
         }
