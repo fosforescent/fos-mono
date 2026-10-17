@@ -131,8 +131,14 @@ export async function peerSync(session: Session, request: SyncRequest): Promise<
   return (await response.json()) as SyncResponse
 }
 
-export function requestPeerNode(session: Session, request: import('../../shared/sync/node-provider').NodeRequest): Promise<import('../../shared/sync/node-provider').ProvidedNode> {
-  return authed(session, 'POST', '/user/data/peer-sync/provide-node', request)
+/** A node from the account server; with `owner`, a node of that other account shared with this user (acting as `user:<me>` there). */
+export function requestPeerNode(session: Session, request: import('../../shared/sync/node-provider').NodeRequest, owner?: string): Promise<import('../../shared/sync/node-provider').ProvidedNode> {
+  return authed(session, 'POST', '/user/data/peer-sync/provide-node', owner ? { ...request, owner } : request)
+}
+export type SharedNodeLocation = { owner: string; aliasId: string; path: string[]; title: string; grants: import('../../shared/sync/index').Capability[] }
+/** Where a node another account shared with this user lives there, and what they may do on it (403 when nothing was granted). */
+export function locateSharedNode(session: Session, owner: string, aliasId: string): Promise<SharedNodeLocation> {
+  return authed(session, 'GET', `/user/data/peer-sync/locate?owner=${encodeURIComponent(owner)}&id=${encodeURIComponent(aliasId)}`)
 }
 
 export type EventHandlers = {
@@ -293,13 +299,13 @@ export function createRepositoryBranch(session: Session, repo: string, name: str
 }
 
 /** One event of the grammar (shared/sync/events.ts) for the account; owners address a node with `scope`. */
-export function sendEvent<T = unknown>(session: Session, event: import('../../shared/sync/events').FosEvent, scope: string[] = []): Promise<T> {
-  return authed(session, 'POST', '/user/data/events', { event, scope })
+export function sendEvent<T = unknown>(session: Session, event: import('../../shared/sync/events').FosEvent, scope: string[] = [], owner?: string): Promise<T> {
+  return authed(session, 'POST', '/user/data/events', owner ? { event, scope, owner } : { event, scope })
 }
 
 /** Evaluate a node on the account server (its handler registry runs the effects): a `complete` event at that node. */
-export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover'): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord; status?: undefined } | { status: 'requested'; proposalId: string; request: string; node: string[] }> {
-  return sendEvent(session, { kind: 'complete', path: [], expected, selections: branches, ...(action === 'recover' ? { recover: true } : {}) }, path)
+export function evaluateOnServer(session: Session, path: string[], expected: string, branches: Record<string, string>, action?: 'recover', owner?: string): Promise<{ evaluation: import('../../shared/sync/evaluation').EvaluationRecord; status?: undefined } | { status: 'requested'; proposalId: string; request: string; node: string[] }> {
+  return sendEvent(session, { kind: 'complete', path: [], expected, selections: branches, ...(action === 'recover' ? { recover: true } : {}) }, path, owner)
 }
 
 export type ShareAddress = import('../../shared/sync/sharing').SharedAddress

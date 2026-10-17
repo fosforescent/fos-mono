@@ -1299,10 +1299,17 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (row && row.id !== HOME_ID) heading.replaceChildren(alternativePicker(app, state.view, row, true))
   else heading.textContent = title
   header.classList.toggle('home', row?.id === HOME_ID)
+  header.querySelector('.shared-grants')?.remove()
+  const shared = app.sharedNodeAt(state.view)
+  if (shared) {
+    const grants = app.sharedGrants(state.view) ?? []
+    const line = div('muted shared-grants', `Shared by @${shared.owner} · you can ${grants.length ? grants.map(g => CAPABILITY_LABEL[g] ?? g).join(', ') : 'read'} here; your edits reach them as proposals.`)
+    header.append(line)
+  }
   const run = toolbar.querySelector<HTMLButtonElement>('.evaluate')!
   run.hidden = false
-  run.disabled = app.evaluating
-  run.title = app.evaluating ? 'Evaluating…' : row?.blockedBy?.length ? 'Blocked by unfilled requirements' : 'Evaluate this node'
+  run.disabled = app.evaluating || (!!shared && !app.sharedGrants(state.view)?.includes('execute'))
+  run.title = app.evaluating ? 'Evaluating…' : shared && !app.sharedGrants(state.view)?.includes('execute') ? `@${shared.owner} has not granted “run evaluations” here` : row?.blockedBy?.length ? 'Blocked by unfilled requirements' : 'Evaluate this node'
   run.setAttribute('aria-label', app.evaluating ? 'Evaluating' : 'Run (evaluate this node)')
   const editToggle = header.querySelector<HTMLElement>('.input-toggle')!
   editToggle.hidden = !!preview || !row
@@ -1979,9 +1986,9 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
     return body
   }
   if (task.refOwner) {
-    // a market result: the node lives in another account; open it to read it and propose
-    const link = button('link ref-link', `🛒 ${firstLine(task.title) || '(untitled)'}`, () => void app.openMarket(task.refOwner!, task.refId ?? '', task.title))
-    link.title = `Shared by ${task.refOwner} (listed on the market, or you are a member); click to view and propose`
+    // another account's node: a member opens it as a live projection (tree, run, analyze within their grants); a bare market listing opens the proposal view
+    const link = button('link ref-link', `🛒 ${firstLine(task.title) || '(untitled)'}`, () => void app.openSharedNode([...app.state.view, ...path]))
+    link.title = `Shared by ${task.refOwner}; click to open`
     body.append(arrow, link, span('muted', ` — ${task.refOwner}`))
     return body
   }

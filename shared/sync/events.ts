@@ -13,7 +13,7 @@
  *   branch    an alternative of a node (owner)
  *   input     fill one declared hole of an execution: text, confirmation, choice or allocation
  *   complete  evaluate a node. The owner's host runs its handler registry (the dispatcher only authorizes and returns
- *             the request, because effects belong to the host). Anyone else leaves an *evaluation request*: a
+ *             the request, because effects belong to the host); so does a peer granted `execute` there. Anyone else leaves an *evaluation request*: a
  *             submission the owner's "on request" trigger evaluates automatically, or the owner reviews by hand.
  *             Requests are accepted only where a peer in that context offers the `request` capability.
  *   decide    approve or reject a submission
@@ -172,7 +172,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
   const canonical = contextScope(store, root, principal.scope)
   let attached = resolveScope(store, root, canonical)
   if (!attached) throw new EventError('Attachment no longer exists.')
-  const permission = (cid: string, capability: 'read' | 'edit' | 'approve') => {
+  const permission = (cid: string, capability: 'read' | 'edit' | 'approve' | 'execute') => {
     if (owner) return true
     const identity = content(store, selectedIdentity(store, cid))
     return hasCapability(store, identity, principal.peerId, capability) || (capability === 'read' && hasCapability(store, identity, principal.peerId, 'edit'))
@@ -246,7 +246,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
     }
     if (event.kind === 'complete') {
       if (event.expected !== put(store, valueContent(store, cid))) throw new EventError('The node changed. Read and review it before evaluating.')
-      if (owner) return { replica: r, changed: false, result: { status: 'evaluating' }, evaluate: { path: absolute(path), branches: { ...branches, ...(event.selections ?? {}) }, expected: event.expected, ...(event.recover ? { recover: true } : {}) } }
+      if (owner || permission(cid, 'execute')) return { replica: r, changed: false, result: { status: 'evaluating' }, evaluate: { path: absolute(path), branches: { ...branches, ...(event.selections ?? {}) }, expected: event.expected, ...(event.recover ? { recover: true } : {}) } }
       // Effects may reach outside the graph; an edit grant does not include running them. The peer asks instead: its
       // request is a proposal on the node, which the owner's `request` trigger evaluates or the owner reviews.
       if (!editable) throw new EventError('Peer cannot request evaluation of this attachment.')

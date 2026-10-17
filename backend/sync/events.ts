@@ -12,8 +12,12 @@ export type Evaluate = (username: string, request: EvaluateRequest) => Promise<u
 
 export class EventAuthError extends Error { constructor(public status: number, message: string) { super(message) } }
 
-/** The acting principal: an owner (optionally at an explicit scope) or an invited peer at its signed attachment. */
-export function principalOf(claims: Claims | undefined, ownerScope?: unknown): Principal & { username: string } {
+/**
+ * The acting principal: an owner (optionally at an explicit scope), an invited peer at its signed attachment, or a
+ * signed-in user acting on *another* account's node (`owner` names that account): then they are the peer
+ * `user:<me>` there, with exactly the capabilities that account granted them on the node.
+ */
+export function principalOf(claims: Claims | undefined, ownerScope?: unknown, owner?: unknown): Principal & { username: string } {
   if (!claims?.username) throw new EventAuthError(401, 'Authentication required.')
   if (claims.exp && claims.exp * 1000 <= Date.now()) throw new EventAuthError(401, 'Credential expired.')
   if (claims.kind === 'peer') {
@@ -23,6 +27,11 @@ export function principalOf(claims: Claims | undefined, ownerScope?: unknown): P
   }
   let scope: Scope
   try { scope = pathOf(ownerScope) } catch { throw new EventAuthError(400, 'Owner connections require scope=["node-id",…]; peer connections use their signed attachment.') }
+  if (typeof owner === 'string' && owner && owner !== claims.username) {
+    if (!/^[\w.@+-]{1,128}$/.test(owner)) throw new EventAuthError(400, 'Invalid owner.')
+    if (!scope.length) throw new EventAuthError(400, 'Acting on another account needs the scope of the node shared with you.')
+    return { username: owner, peerId: serverPeerIdFor(claims.username), owner: false, scope, name: claims.username }
+  }
   return { username: claims.username, peerId: serverPeerIdFor(claims.username), owner: true, scope }
 }
 
@@ -79,7 +88,7 @@ export function createEventService(deps: PeerSyncDeps, evaluate?: Evaluate) {
       res.setHeader('Cache-Control', 'no-store')
       try {
         const body = req.body ?? {}
-        const principal = principalOf(claimsOf(req), body.scope ?? [])
+        const principal = principalOf(claimsOf(req), body.scope ?? [], body.owner)
         const event = parseEvent(body.event ?? body)
         return res.json(await handle(principal, event))
       } catch (error) { return res.status(errorStatus(error)).json({ error: message(error) }) }
@@ -97,14 +106,14 @@ export function createEventService(deps: PeerSyncDeps, evaluate?: Evaluate) {
       try {
         let scope: unknown = []
         if (claimsOf(req)?.kind !== 'peer') { try { scope = JSON.parse(String(req.query.scope ?? 'null')) } catch { scope = null } }
-        principal = principalOf(claimsOf(req), scope)
+        principal = principalOf(claimsOf(req), scope, claimsOf(req)?.kind !== 'peer' && typeof req.query.owner === 'string' ? req.query.owner : undefined)
       } catch (error) { return res.status(errorStatus(error)).json({ error: message(error) }) }
       const result = await handleMcp(req.body, { owner: principal.owner, dispatch: event => handle(principal, event), serverName: 'Fos project tree' })
       return result === null ? res.status(202).end() : res.json(result)
     },
     /** WebSocket `{type:'event', id, event, scope?}` → `{type:'event_result', id, result|error}` (see ws.ts). */
     async socket(claims: Claims, body: any): Promise<unknown> {
-      const principal = principalOf(claims, body?.scope ?? [])
+      const principal = principalOf(claims, body?.scope ?? [], body?.owner)
       return handle(principal, parseEvent(body?.event ?? body))
     },
   }
