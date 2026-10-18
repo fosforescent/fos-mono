@@ -24,7 +24,7 @@ import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
-import { CAPABILITY_LABEL, LIBRARY_ID, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
+import { CAPABILITY_LABEL, LIBRARY_BUNDLE_ID, LIBRARY_ID, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
   context: HTMLElement
@@ -258,6 +258,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     const supply = (value: any) => app.supplyRequirementAt(root.slice(0, -1), current.id, value, true)
     if (requirement.capability === 'confirmation') controls.append(button('secondary', 'Confirm', () => supply({ capability: 'confirmation' })))
     if (requirement.capability === 'allocation' && requirement.resource === 'account') controls.append(...paymentControls(app, state, root, () => void app.evaluateAt(root)))
+    controls.append(...manualControls(app, state, root.slice(0, -1), current, true))
     if (requirement.capability === 'choice') for (const [choice, label] of (requirement.options ?? []).entries()) controls.append(button('secondary', label, () => supply({ capability: 'choice', choice })))
     if (requirement.capability === 'allocation') {
       const select = document.createElement('select'); select.setAttribute('aria-label', `Provide ${current.title}`); select.append(new Option('Choose an allocation', ''))
@@ -1549,7 +1550,8 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   let rows = renderRows(filtered, [], 0, state, app)
   const preview = proposalPreview(app)
   if (!preview && prefs.layout === 'tree') { const files = filesystemRows(app, prefs.search); if (files) rows.push(files) }
-  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && !rows.length && node.tasks.length === 0) {
+  // a node with nothing of the user's own yet (the seeded standard library does not count) shows the first-run help
+  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => row.id === LIBRARY_ID || row.id === LIBRARY_BUNDLE_ID)) {
     const hint = document.createElement('li'); hint.className = 'first-run'
     const keys = div('first-run-keys', '')
     if (window.matchMedia?.('(pointer: coarse)').matches) keys.append('Tap ', Object.assign(document.createElement('kbd'), { textContent: '?' }), ' for row syntax and tips')
@@ -2245,6 +2247,29 @@ function paymentControls(app: App, state: AppState, path: Scope, pay: () => void
   return controls
 }
 
+/**
+ * The standard library's fallbacks for a requirement nobody's peer handles (or handles yet): a button per handler
+ * that records the person did it by hand; the manual place handler also takes the place's name.
+ */
+function manualControls(app: App, state: AppState, at: Scope, task: TaskView, absolute = false): HTMLElement[] {
+  const req = task.requirement
+  if (!req || req.satisfied) return []
+  const controls: HTMLElement[] = []
+  for (const handler of manualHandlersFor(state.replica, req)) {
+    if (handler.capability === 'allocation' && handler.resource === 'location' && !handler.device) {
+      const place = document.createElement('input'); place.className = 'small manual-place'; place.placeholder = req.place ?? 'Where?'; place.setAttribute('aria-label', 'Place')
+      const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, place.value || undefined, absolute)); record.dataset.handler = handler.id
+      controls.push(place, record)
+      continue
+    }
+    if (handler.device && typeof navigator !== 'undefined' && !navigator.geolocation) continue
+    const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, undefined, absolute)); record.dataset.handler = handler.id
+    record.title = handler.device ? 'Records this device\'s position as the place' : 'Records that you did this by hand; no peer is involved'
+    controls.push(record)
+  }
+  return controls
+}
+
 function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
   const body = span('title special', '')
   const badge = (text: string, cls = '') => { const b = span('kind-badge ' + cls, text); body.append(b) }
@@ -2284,6 +2309,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
       if (r.capability === 'allocation' && r.resource === 'account') for (const control of paymentControls(app, state, [...state.view, ...at, task.id], () => void app.askPeerAt(at, task))) body.append(stop(control))
+      // the standard library's manual fallbacks for this kind of requirement
+      for (const control of manualControls(app, state, at, task)) body.append(stop(control))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
       // a poll on the choice: the server's poll handler resolves it from the responses
       if (r.capability === 'choice' && readNodeValue(state.replica, [...state.view, ...at, task.id], 'fos:poll')) body.append(stop(button('secondary small', 'Apply poll result', () => void app.askPeerAt(at, task))))

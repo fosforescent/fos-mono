@@ -21,6 +21,8 @@ import type { Scope, TaskView } from './graph'
 export const LIBRARY_ID = 'fos:library'
 /** A device's own copy of the library, seeded from its build before the account ever synced. */
 export const LIBRARY_BUNDLE_ID = 'fos:library-bundle'
+/** The library row holding the manual fallback handlers (`manualHandlers`). */
+export const MANUAL_HANDLERS_ID = 'lib:manual'
 /** Node value on the library: which seed version it carries, so later versions add what is missing. */
 export const LIBRARY_ARGUMENT = 'fos:library'
 export const LIBRARY_VERSION = 1
@@ -71,8 +73,56 @@ export const STANDARD_LIBRARY: SeedRow[] = [
     { id: 'lib:research:question', kind: 'plain', text: 'Question: …' },
     { id: 'lib:research:sources', kind: 'requirement', text: 'Sources collected', requirement: { capability: 'task' } },
     { id: 'lib:research:summary', kind: 'requirement', text: 'Summary written', requirement: { capability: 'confirmation' } }
+  ] },
+  // A place at a time is not a primitive: it is the product of two rows (location × time) in one node. Alternatives
+  // are coproducts (submissions on a ref, decided by a choice handler) and composition is a template of templates.
+  { id: 'lib:meet', kind: 'template', text: 'Meet up', children: [
+    { id: 'lib:meet:where', kind: 'requirement', text: 'Be at the meeting place', requirement: { capability: 'allocation', resource: 'location' } },
+    { id: 'lib:meet:when', kind: 'requirement', text: 'Meeting time', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } }
+  ] },
+  // Manual fallbacks: one row per requirement kind, each a handler the app offers on any unsatisfied requirement of
+  // that kind. Clicking one records the supply (and a receipt for money or a place) by the person, no peer needed.
+  { id: MANUAL_HANDLERS_ID, kind: 'template', text: 'Manual handlers', children: [
+    { id: 'lib:manual:readme', kind: 'note', text: 'Fallbacks that work with no peer: the person who did it by hand records it here. Edit the labels to propose better ones; add a row to offer a fallback for another kind of requirement.' },
+    { id: 'lib:manual:payment', kind: 'requirement', text: 'Paid outside Fos', requirement: { capability: 'allocation', resource: 'account' } },
+    { id: 'lib:manual:points', kind: 'requirement', text: 'Settled the points by hand', requirement: { capability: 'allocation', resource: 'points' } },
+    { id: 'lib:manual:time', kind: 'requirement', text: 'Booked the time by hand', requirement: { capability: 'allocation', resource: 'calendar' } },
+    { id: 'lib:manual:things', kind: 'requirement', text: 'Set the items aside by hand', requirement: { capability: 'allocation', resource: 'inventory' } },
+    { id: 'lib:manual:location', kind: 'requirement', text: 'Enter the location', requirement: { capability: 'allocation', resource: 'location' } },
+    { id: 'lib:device:location', kind: 'requirement', text: "Use this device's location", requirement: { capability: 'allocation', resource: 'location' } },
+    { id: 'lib:manual:mail', kind: 'requirement', text: 'Sent it myself', requirement: { capability: 'mail' } },
+    { id: 'lib:manual:repo', kind: 'requirement', text: 'Opened the issue by hand', requirement: { capability: 'repo' } },
+    { id: 'lib:manual:llm', kind: 'requirement', text: 'Answered it myself', requirement: { capability: 'llm' } },
+    { id: 'lib:manual:search', kind: 'requirement', text: 'Searched by hand', requirement: { capability: 'search' } },
+    { id: 'lib:manual:tool', kind: 'requirement', text: 'Ran it by hand', requirement: { capability: 'tool' } },
+    { id: 'lib:manual:market', kind: 'requirement', text: 'Arranged it outside the market', requirement: { capability: 'market' } }
   ] }
 ]
+
+/** A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it fills. */
+export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean }
+
+/** The library's node in this replica: the owner's own row or the live reference's projection, else the bundled copy. */
+export function libraryPath(r: Replica): Scope | null {
+  const found = resolveRef(r, LIBRARY_ID)
+  return found ? [...found.path, found.row.id] : libraryBundlePath(r)
+}
+
+/** The manual (and device) fallback handlers the library carries, from its "Manual handlers" group. */
+export function manualHandlers(r: Replica): ManualHandler[] {
+  const path = libraryPath(r)
+  if (!path) return []
+  return (view(r, [...path, MANUAL_HANDLERS_ID])?.tasks ?? []).flatMap(row => {
+    const req = row.requirement
+    if (row.kind !== 'requirement' || !req || !row.title.trim()) return []
+    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: row.id.startsWith('lib:device:') }]
+  })
+}
+
+/** The library's fallbacks that fit one requirement: same capability and, for allocations, the same resource. */
+export function manualHandlersFor(r: Replica, requirement: { capability: Requirement['capability']; resource?: Requirement['resource'] }): ManualHandler[] {
+  return manualHandlers(r).filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
+}
 
 export function libraryInfo(r: Replica, path: Scope): LibraryInfo | null {
   const value = readNodeValue<LibraryInfo>(r, path, LIBRARY_ARGUMENT)

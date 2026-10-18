@@ -451,7 +451,7 @@ async function main() {
   contextApp.enableVirtualPeers(null)
   document.querySelector('#app').replaceChildren(); mountUi(document.querySelector('#app'), contextApp)
   assert.deepEqual(contextApp.state.view, [HOME_ID])
-  assert.equal(contextApp.currentView().tasks.length, 0)
+  assert.deepEqual(contextApp.currentView().tasks.map(t => t.id), ['fos:library-bundle'], 'a fresh Home holds only the bundled standard library')
   const project = contextApp.addRowAtTop(parseRowInput('[ ] Project\n  @money Budget 100\n    -$ 50 Travel\n      $ 20 First contribution\n      $ 30 Second contribution'))
   const projectView = view(contextApp.state.replica, [HOME_ID, project])
   const bank = projectView.tasks[0]
@@ -460,7 +460,7 @@ async function main() {
   assert.equal(need.requirement.have, 50)
   assert.equal(view(contextApp.state.replica, [HOME_ID,project]).tasks[0].resource.allocated,50,'contributions below demands count in the bank')
   contextApp.undo()
-  assert.equal(view(contextApp.state.replica, [HOME_ID]).tasks.length, 0, 'a parsed tree is one undoable edit')
+  assert.equal(view(contextApp.state.replica, [HOME_ID]).tasks.length, 1, 'a parsed tree is one undoable edit (the bundled library stays)')
   contextApp.redo()
   assert.equal(view(contextApp.state.replica, [HOME_ID, project, bank.id, need.id]).tasks.length, 2)
   const treeDraft = { store: contextApp.state.replica.store, head: require(path.join(dir, 'app.cjs')).headCid(contextApp.state.replica), parent: [HOME_ID] }

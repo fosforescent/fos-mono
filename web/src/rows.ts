@@ -36,12 +36,12 @@ export type ParsedInput = {
 }
 
 /** Words after "@" that open a resource bank rather than allocate a person. */
-const BANK_WORDS: Record<string, ResourceType> = { calendar: 'calendar', account: 'account', money: 'account', inventory: 'inventory', person: 'person', points: 'points', ff: 'points' }
+const BANK_WORDS: Record<string, ResourceType> = { calendar: 'calendar', account: 'account', money: 'account', inventory: 'inventory', person: 'person', points: 'points', ff: 'points', location: 'location', place: 'location' }
 /** The marker of each resource type: allocations ("$ 50", ": 1h", "# 2 widgets", "@bob 2h", "ff 20") and their requirements ("-$ 50" …). */
-export const RESOURCE_MARKER: Record<ResourceType, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
-export const RESOURCE_ICON: Record<ResourceType, string> = { account: '💲', calendar: '🕒', inventory: '📦', person: '👤', points: '✦' }
-export const RESOURCE_NAME: Record<ResourceType, string> = { account: 'money', calendar: 'time', inventory: 'things', person: 'person', points: 'fos points' }
-const DEFAULT_UNIT: Record<ResourceType, string> = { account: 'USD', calendar: 'h', inventory: 'unit', person: 'h', points: 'ff' }
+export const RESOURCE_MARKER: Record<ResourceType, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff', location: 'at' }
+export const RESOURCE_ICON: Record<ResourceType, string> = { account: '💲', calendar: '🕒', inventory: '📦', person: '👤', points: '✦', location: '📍' }
+export const RESOURCE_NAME: Record<ResourceType, string> = { account: 'money', calendar: 'time', inventory: 'things', person: 'person', points: 'fos points', location: 'location' }
+const DEFAULT_UNIT: Record<ResourceType, string> = { account: 'USD', calendar: 'h', inventory: 'unit', person: 'h', points: 'ff', location: 'place' }
 
 const TIME_UNIT = /^(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|d|day|days)$/i
 const MONEY_UNIT = /^([A-Z]{3}|[€$£]|usd|eur|gbp)$/i
@@ -111,7 +111,8 @@ export function formatWindow(a: { start?: number; end?: number }): string {
 function parseAllocation(type: ResourceType, body: string, person?: string): { allocation: NonNullable<RowExtras['allocation']>; text: string } {
   const amt = parseAmount(body, type)
   const win = parseWindow(amt ? amt.rest : body.trim())
-  const allocation: NonNullable<RowExtras['allocation']> = { resource: '', type, amount: amt?.amount ?? (type === 'person' ? 1 : 0), unit: amt?.unit ?? DEFAULT_UNIT[type], ...(win.start !== undefined ? { start: win.start } : {}), ...(win.end !== undefined ? { end: win.end } : {}), ...(person ? { person } : {}) }
+  const allocation: NonNullable<RowExtras['allocation']> = { resource: '', type, amount: amt?.amount ?? (type === 'person' || type === 'location' ? 1 : 0), unit: amt?.unit ?? DEFAULT_UNIT[type], ...(win.start !== undefined ? { start: win.start } : {}), ...(win.end !== undefined ? { end: win.end } : {}), ...(person ? { person } : {}) }
+  if (type === 'location' && win.rest) allocation.location = { name: win.rest }
   return { allocation, text: win.rest }
 }
 
@@ -131,6 +132,8 @@ function markerType(text: string): { type: ResourceType; length: number } | null
   if (ch === ':') return { type: 'calendar', length: 1 }
   if (ch === '#') return { type: 'inventory', length: 1 }
   if (/^ff(?=\s|\d|$)/i.test(text)) return { type: 'points', length: 2 }
+  // "at Paris": a place to be at (a window after it says when)
+  if (/^at(?=\s)/i.test(text)) return { type: 'location', length: 2 }
   return null
 }
 
@@ -152,7 +155,7 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
   const allocationRequirement = (resource: ResourceType, body: string) => {
     const hasAmount = parseAmount(body, resource) !== null
     const { allocation, text: label } = parseAllocation(resource, body)
-    return { requirement: { capability: 'allocation' as const, resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) }, label }
+    return { requirement: { capability: 'allocation' as const, resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}), ...(resource === 'location' && label ? { place: label } : {}) }, label }
   }
   const typed = markerType(t)
   if (typed) return allocationRequirement(typed.type, t.slice(typed.length))

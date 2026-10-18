@@ -34,7 +34,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, LIBRARY_ID, libraryLink, ensureBundledLibrary, type LibraryBundle, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, LIBRARY_ID, libraryLink, ensureBundledLibrary, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -1329,7 +1329,7 @@ export class App {
       return { ...base, resource: 'fos:points', by }
     }
     if (!bank) {
-      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h`, points: '@points Pool 500' }
+      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h`, points: '@points Pool 500', location: '@location Places' }
       this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${base.person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
       return null
     }
@@ -2690,6 +2690,42 @@ export class App {
     const parent = absolute ? at : [...this.state.view, ...at]
     this.edit(addSupply(this.state.replica, parent, requirementId, { ...supply, by }, this.now()))
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirementId) })
+  }
+  /**
+   * A manual fallback from the standard library on an unsatisfied requirement: the person records that they did it
+   * by hand. Allocations get a receipt row inside the requirement (its resource is the requirement itself) plus the
+   * supply that points at it; a place comes from `input` or, for the device handler, from this device's position;
+   * every other kind is a supply by the person. Works offline, with no peer.
+   */
+  async applyManualHandler(at: Scope, requirement: TaskView, handler: ManualHandler, input?: string, absolute = false): Promise<void> {
+    const req = requirement.requirement
+    if (!req || req.satisfied) return
+    const by = this.actorName(), parent = absolute ? at : [...this.state.view, ...at]
+    if (req.capability !== 'allocation') { this.supplyRequirementAt(at, requirement.id, { capability: req.capability }, absolute); return }
+    let location: { name?: string; lat?: number; lng?: number } | undefined
+    if (req.resource === 'location') {
+      if (handler.device) {
+        const geolocation = typeof navigator !== 'undefined' ? navigator.geolocation : undefined
+        if (!geolocation) { this.notify('error', 'This device does not report its location.'); return }
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => geolocation.getCurrentPosition(resolve, reject, { timeout: 15_000, maximumAge: 60_000 }))
+          location = { lat: Math.round(position.coords.latitude * 1e5) / 1e5, lng: Math.round(position.coords.longitude * 1e5) / 1e5, ...(req.place ? { name: req.place } : {}) }
+        } catch (error) { this.notify('error', `Location unavailable: ${error instanceof Error ? error.message : (error as { message?: string })?.message ?? String(error)}`); return }
+      } else {
+        const name = (input ?? req.place ?? '').trim()
+        if (!name) { this.notify('error', 'Name the place.'); return }
+        location = { name }
+      }
+    }
+    const id = newId(), label = req.resource === 'location' ? `at ${location?.name ?? `${location?.lat}, ${location?.lng}`}` : `${handler.label} (${by})`
+    const allocation: NonNullable<TaskView['allocation']> = {
+      resource: requirement.id, type: req.resource ?? 'inventory', amount: req.amount ?? 1, unit: req.unit ?? (req.resource === 'account' ? 'USD' : req.resource === 'calendar' || req.resource === 'person' ? 'h' : req.resource === 'points' ? 'ff' : req.resource === 'location' ? 'place' : 'unit'),
+      by, ...(req.start !== undefined ? { start: req.start } : {}), ...(req.end !== undefined ? { end: req.end } : {}), ...(req.peer ? { person: req.peer } : {}), ...(location ? { location } : {})
+    }
+    let next = addRow(this.state.replica, [...parent, requirement.id], 'allocation', label, this.now(), { id, allocation })
+    next = addSupply(next, parent, requirement.id, { capability: 'allocation', by, ref: id }, this.now())
+    this.edit(next)
+    this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirement.id) })
   }
   /** Run a query row: semantic search through the account; results become reference rows under it (replacing the previous ones). */
   async runQueryAt(at: Scope, query: TaskView): Promise<void> {

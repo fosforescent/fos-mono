@@ -209,7 +209,7 @@ export const ROW_KINDS: RowKind[] = ['task', 'plain', 'note', 'comment', 'ref', 
  * Kinds of resource bank: time, money, things, a person (their own calendar) and fos points (the account's token
  * balance, marker "ff"). Each has its own calendar: an allocation may carry a start/end window.
  */
-export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'points'
+export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
 /**
  * What a requirement asks for, named after the kind of child row that fills it: a done `task`, an `allocation`
  * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
@@ -1043,7 +1043,9 @@ export function allocationMatches(req: NonNullable<FosDataContent['requirement']
   return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit === req.unit) &&
     (req.start === undefined || (a.start !== undefined && a.start <= req.start)) &&
     (req.end === undefined || a.end === undefined || a.end >= req.end) &&
-    (!req.peer || a.person === req.peer)
+    (!req.peer || a.person === req.peer) &&
+    // a named place is met by an allocation at that place by name, or by a position (a device's location) with no name
+    (!req.place || !a.location?.name || a.location.name.trim().toLowerCase() === req.place.trim().toLowerCase())
 }
 
 /**

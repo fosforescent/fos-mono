@@ -8,8 +8,9 @@ const { JSDOM } = require('jsdom')
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-library-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
-buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
+buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
+const { parseRowInput } = c
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {
@@ -76,6 +77,46 @@ async function main() {
   assert.equal(requirements.length, 5, 'the template instantiated offline')
   assert.deepEqual(requirements.map(t => t.requirement.capability), ['confirmation', 'allocation', 'allocation', 'task', 'task'])
   assert.equal(calls.length, before, 'nothing was requested while offline')
-  console.log('PASS: the standard library arrives in Home, opens as a projection, is pulled whole and instantiates offline')
+
+  // The library's manual fallbacks: a device that never synced has them from its build. Doing a thing by hand
+  // records the supply (and a receipt for money or a place) as the person; no peer is involved.
+  const fresh = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() }); fresh.scheduleSync = () => {}
+  assert.deepEqual(c.libraryBundlePath(fresh.state.replica), [HOME, 'fos:library-bundle'], 'a never-synced device seeds the bundled library')
+  assert(c.manualHandlers(fresh.state.replica).length >= 12, 'the bundled copy carries the manual handlers')
+  document.getElementById('app').replaceChildren()
+  c.mountUi(document.getElementById('app'), fresh)
+  const errand = fresh.applyConstructor([HOME], { kind: 'task', text: 'Errand', done: false })
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', 'Tell the client', Date.now(), { id: 'mail', requirement: { capability: 'mail' } }) })
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', 'fee', Date.now(), { id: 'fee', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' } }) })
+  const parsedPlace = parseRowInput('-at Eiffel Tower')
+  assert.deepEqual(parsedPlace.extras.requirement, { capability: 'allocation', resource: 'location', place: 'Eiffel Tower' }, `"-at <place>" is a location requirement: ${JSON.stringify(parsedPlace)}`)
+  assert.equal(parseRowInput('at Paris').extras.allocation.location.name, 'Paris', '"at <place>" is a location allocation')
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', parsedPlace.text, Date.now(), { id: 'where', requirement: parsedPlace.extras.requirement }) })
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', 'Somewhere nearby', Date.now(), { id: 'near', requirement: { capability: 'allocation', resource: 'location' } }) })
+  fresh.goTo(errand); await tick()
+  const handlers = id => [...document.querySelectorAll(`.tree .task[data-id="${id}"] .manual-handler`)]
+  assert.deepEqual(handlers('mail').map(b => b.textContent), ['Sent it myself'])
+  assert.deepEqual(handlers('fee').map(b => b.textContent), ['Paid outside Fos'])
+  assert.deepEqual(handlers('where').map(b => b.textContent), ['Enter the location'], 'a place offers manual entry; the device position only once the device reports one')
+  handlers('mail')[0].click(); await tick()
+  const req = id => fresh.currentView().tasks.find(t => t.id === id)
+  assert.equal(req('mail').requirement.satisfied, true, 'a supply by the person fills a mail requirement')
+  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'mail']).tasks.map(t => [t.kind, t.supply.by]), [['supply', fresh.actorName()]])
+  handlers('fee')[0].click(); await tick()
+  assert.equal(req('fee').requirement.satisfied, true, 'a receipt plus supply fills a money requirement')
+  const receipt = c.view(fresh.state.replica, [...errand, 'fee']).tasks.find(t => t.kind === 'allocation')
+  assert.deepEqual([receipt.allocation.type, receipt.allocation.amount, receipt.allocation.unit, receipt.allocation.by, receipt.allocation.resource], ['account', 20, 'usd', fresh.actorName(), 'fee'])
+  document.querySelector('.tree .task[data-id="where"] .manual-place').value = 'Eiffel Tower, Paris'
+  handlers('where')[0].click(); await tick()
+  assert.equal(req('where').requirement.satisfied, true, 'a named place fills a location requirement')
+  assert.equal(c.view(fresh.state.replica, [...errand, 'where']).tasks.find(t => t.kind === 'allocation').allocation.location.name, 'Eiffel Tower, Paris')
+  Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition: ok => ok({ coords: { latitude: 48.85837, longitude: 2.294481 } }) }, configurable: true })
+  fresh.refresh(); await tick()
+  const device = handlers('near').find(b => b.dataset.handler === 'lib:device:location')
+  assert(device, 'the device handler shows when the device reports its position')
+  device.click(); await tick(); await tick()
+  assert.equal(req('near').requirement.satisfied, true, 'the device position fills a location requirement')
+  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'near']).tasks.find(t => t.kind === 'allocation').allocation.location, { lat: 48.85837, lng: 2.29448 })
+  console.log('PASS: the standard library arrives in Home, opens as a projection, is pulled whole, instantiates offline and offers manual fallbacks')
 }
 main().catch(error => { console.error(error); process.exit(1) })
