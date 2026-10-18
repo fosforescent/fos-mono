@@ -7,7 +7,7 @@ import './style.css'
 import { virtualPeerFromUrl, virtualPeerToken, virtualStorage } from './virtual'
 import { App } from './app'
 import { pickStorage, createMemoryStorage } from './storage'
-import { createProjectStorage, findProject, saveDevice } from './project'
+import { createProjectStorage, findProject, inTauri, saveDevice } from './project'
 import { serverPolicyOf } from '../../shared/sync/index'
 import { mountUi } from './ui'
 import { mountSharedNode } from './sharing'
@@ -48,6 +48,8 @@ if (virtual) {
   const url = new URL(location.href); url.searchParams.set('virtual', virtual.token); history.replaceState(null, '', url)
 }
 mountUi(root, app)
+// The Android shell's web view sits under the status bar without reporting an inset; style.css pads for it.
+if (inTauri() && /Android/i.test(navigator.userAgent)) document.documentElement.classList.add('android-shell')
 if (virtualRequested && !virtual) app.notify('error', 'This virtual peer connection is unavailable. Spawn a new peer from the original tab.')
 else app.start()
 mountSharedNode(root, app, baseUrl)
