@@ -68,6 +68,13 @@ jobs:
       - name: Generate icons
         run: cd desktop && npx tauri icon src-tauri/app-icon.json
 
+      # App Store Connect rejects icons with an alpha channel; tauri writes RGBA
+      - name: Strip alpha from iOS icons
+        run: |
+          node .github/scripts/flatten-ios-icons.mjs '#2b2b2b' \
+            desktop/src-tauri/icons/ios \
+            desktop/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset
+
       - name: Build iOS IPA (cloud signing via App Store Connect API key)
         env:
           # Cloud signing: the API key must have the Admin role, otherwise
