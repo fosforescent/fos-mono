@@ -122,7 +122,7 @@ export type FosDataContent = {
    */
   requirement?: {
     capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
-    resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
+    resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount?: number
     unit?: string
     start?: number
@@ -130,6 +130,8 @@ export type FosDataContent = {
     options?: string[]
     /** `peer` requirements: the peer (username or device name) the task is assigned to. */
     peer?: string
+    /** `location` requirements ("-at Eiffel Tower 18:00..20:00"): the named place to be at, when the row names one. */
+    place?: string
     /** `repo` requirements: the repository (owner/name) the issue goes to. */
     repo?: string
     /** `tool` requirements: the tool (of an MCP peer attached above) to run; the text is its input. */
@@ -160,7 +162,7 @@ export type FosDataContent = {
   },
   /** A resource bank row (calendar, account, inventory): allocations and sub-banks are its children. */
   resource?: {
-    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
+    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     unit: string
     capacity?: number
   },
@@ -176,7 +178,7 @@ export type FosDataContent = {
     ref?: string
     choice?: number
     resource: string
-    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points'
+    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount: number
     unit: string
     /** Window the allocation holds for: start = now when absent, end = forever when absent. Every resource has its own calendar. */
@@ -185,6 +187,8 @@ export type FosDataContent = {
     by?: string
     /** Person allocations ("@name 2h"): who is allocated. */
     person?: string
+    /** Location allocations ("at Paris"): the place, by name and/or coordinates (a device's position). */
+    location?: { name?: string; lat?: number; lng?: number }
   },
   /** On a published handler offer (sync/handlers.ts `publishTemplate`): advertised on the marketplace. Rows are listed through the `fos:listing` node value instead (sync/market.ts). */
   listing?: {

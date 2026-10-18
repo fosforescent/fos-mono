@@ -309,8 +309,11 @@ is trusted (it came through a proposal from another account).
 **Resource banks** (`@calendar`, `@money`, `@inventory`, `@person <name>`,
 `@points`, optional capacity) hold **allocations** and sub-banks as
 children. Each resource type has a marker: `$` money, `:` time, `#` things,
-`@name` a person, `ff` fos points (`-$`, `-:`, `-#`, `-@name`, `-ff` for the
-matching requirements). Fos points are the account's token balance
+`@name` a person, `ff` fos points, `at` a place (`-$`, `-:`, `-#`, `-@name`,
+`-ff`, `-at` for the matching requirements; `-at Eiffel Tower` needs a
+location allocation at that place, by name or by a device's position). A
+place at a time is not its own kind: it is the product of a location row and
+a time row in one node (the library's "Meet up" template). Fos points are the account's token balance
 (`GET /tokens/balance`, shown on the fos row); an `ff` allocation with no
 `@points` bank above draws from that balance (`resource: 'fos:points'`). A
 `-ff N` requirement under a task is a **payout**: when the task runs, the fos
@@ -730,6 +733,32 @@ current revision is merged as the owner. Votes are tied to the revision, so the
 remaining proposals wait for fresh approvals after a merge. Without a policy the
 owner decides by hand, as on any shared node; the policy value is itself part
 of the node, so the group can propose changing it.
+
+**In the build.** Clients carry the library in their bundle so a device that
+never goes online still has its templates: `fos library export [--out file]`
+(the `fos` CLI, signed in as you) pulls the shared node through the account
+node by node and the embedded core turns it into rows
+(`exportProvidedLibrary`); `web/scripts/pull-library.mjs` runs it before `npm
+run build` when the CLI is on PATH (`FOS_BIN` overrides, `FOS_LIBRARY_PULL=0`
+skips) and otherwise keeps the committed `web/src/library.json`. On first run
+`ensureBundledLibrary` seeds Home with that copy under its own id
+(`fos:library-bundle`, falling back to the in-code `STANDARD_LIBRARY` when the
+file is empty); the first owner sync replaces the copy with the live reference.
+
+**Manual fallbacks.** The library's "Manual handlers" group (`lib:manual`)
+carries one requirement row per kind of requirement, each a fallback the app
+offers on any unsatisfied requirement of that kind (`manualHandlersFor`,
+`App.applyManualHandler`): "Paid outside Fos", "Sent it myself", "Opened the
+issue by hand", "Enter the location", "Use this device's location"
+(`lib:device:*` rows are device handlers), and so on. Clicking one records
+that the person did it by hand: allocations get a receipt row inside the
+requirement (its resource is the requirement itself) plus the supply pointing
+at it, places come from the typed name or the device's position, every other
+kind is a supply by the person. No peer is involved, so the fallbacks work
+offline from the bundled copy, and the group edits them like any other rows.
+Combinations of capabilities are never new primitives: product = several rows
+in a node, coproduct = submissions on a mutable ref decided by a choice
+handler, exponential = composition through templates.
 
 ## Limitations / next steps
 

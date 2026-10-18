@@ -1,10 +1,11 @@
 /** The standard library: seeding, the reference in every Home, audience membership as a group, and voted merges. */
 import { FosStore } from '../dag-implementation/store'
-import { HOME_ID, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, resolveScope, updateAtScope, valueContent, withProposal, type Scope } from './graph'
+import { HOME_ID, SERVER_TRANSPORT_CAPABILITIES, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, resolveScope, updateAtScope, valueContent, withProposal, type Scope } from './graph'
+import { exchangeNode } from './node-sync'
 import { addMemberAt, addRow, createReplica, ensureHomeContext, headCid, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { nodeAuthorityAt } from './node-context'
 import { setSharing, sharedProjection, writeParticipation } from './sharing'
-import { DEFAULT_MERGE_POLICY, LIBRARY_ID, STANDARD_LIBRARY, applyMergePolicy, ensureLibraryLink, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
+import { DEFAULT_MERGE_POLICY, LIBRARY_BUNDLE_ID, LIBRARY_ID, STANDARD_LIBRARY, applyMergePolicy, ensureBundledLibrary, ensureLibraryLink, exportLibraryRows, exportProvidedLibrary, libraryBundlePath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
 
 const share = 'library-share-0123456789', address = { owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], share, title: 'Standard library' }
 const revision = (value: unknown) => JSON.stringify(value).length.toString(36)
@@ -43,7 +44,7 @@ test('seeding adds the standard templates once and records the version', () => {
   expect(headCid(again)).toBe(headCid(r))
   // a row the group removed is not reseeded: the seed list remembers what it already added
   const trimmed = seedStandardLibrary(addRow(r, path, 'plain', 'keep', 10), path, 11)
-  expect(view(trimmed, path)!.tasks.filter(t => t.kind === 'template')).toHaveLength(6)
+  expect(view(trimmed, path)!.tasks.filter(t => t.kind === 'template')).toHaveLength(8)
 })
 
 test('every account gets one reference to the library in its Home, carrying the shared address', () => {
@@ -100,4 +101,68 @@ test('a proposal merges once enough members approved it; a lone approval waits',
   expect(mergePolicy(manual, fresh.path)).toBeNull()
   expect(applyMergePolicy(manual, fresh.path, revision, 34).merged).toEqual([])
   expect(view(manual, fresh.path)!.proposals.filter(p => p.status === 'open')).toHaveLength(1)
+})
+
+test('the library exports as rows that seed an identical copy; a device bundles that copy until its first sync replaces it with the reference', () => {
+  const { r: lib, path } = library()
+  const rows = exportLibraryRows(lib, path)
+  expect(rows.map(row => [row.id, row.kind])).toEqual(STANDARD_LIBRARY.map(row => [row.id, row.kind]))
+  expect(rows.find(row => row.id === 'lib:trip')!.children!.map(c => c.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
+  expect(rows.find(row => row.id === 'lib:readme')!.text).toMatch(/^# Standard library/)
+  // a device that never synced: the bundle seeds a local copy with the same rows
+  let device = ensureHomeContext(createReplica('user:device'), 1)
+  const bundled = ensureBundledLibrary(device, { address, version: 7, rows }, 2)
+  expect(bundled.added).toBe(true)
+  expect(bundled.path).toEqual([HOME_ID, LIBRARY_BUNDLE_ID])
+  device = bundled.replica
+  expect(libraryBundlePath(device)).toEqual([HOME_ID, LIBRARY_BUNDLE_ID])
+  expect(libraryLink(device)).toBeNull()
+  expect(view(device, [HOME_ID, LIBRARY_BUNDLE_ID])!.tasks.filter(t => t.kind === 'template').map(t => t.title)).toEqual(rows.filter(row => row.kind === 'template').map(row => row.text))
+  expect(libraryInfo(device, [HOME_ID, LIBRARY_BUNDLE_ID])).toMatchObject({ version: 7, source: 'bundle' })
+  expect(ensureBundledLibrary(device, { address, version: 7, rows }, 3).added).toBe(false)
+  // an empty bundle (a build made without a server) falls back to the in-code seed list
+  const bare = ensureBundledLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: 0, rows: [] }, 2).replica
+  expect(view(bare, [HOME_ID, LIBRARY_BUNDLE_ID])!.tasks.filter(t => t.kind === 'template')).toHaveLength(8)
+  // the first owner sync: the copy gives way to the live reference, once
+  const linked = ensureLibraryLink(device, address, 10)
+  expect(linked.added).toBe(true)
+  expect(libraryBundlePath(linked.replica)).toBeNull()
+  expect(libraryLink(linked.replica)).toEqual([HOME_ID, LIBRARY_ID])
+  expect(view(linked.replica, [HOME_ID])!.tasks.filter(t => t.id === LIBRARY_ID || t.id === LIBRARY_BUNDLE_ID)).toHaveLength(1)
+  expect(ensureBundledLibrary(linked.replica, { address, version: 7, rows }, 11).added).toBe(false)
+})
+
+test('the nodes the fos CLI pulls through the account export as the same bundle the server seeded', () => {
+  const { r: lib, path } = library()
+  const scope = path, pulled: Array<{ request: any; node: any }> = []
+  // breadth first, as `fos library export` walks the shared tree (shared/sync/node-provider.ts protocol)
+  const queue: Scope[] = [[]]
+  while (queue.length) {
+    const relative = queue.shift()!
+    const request = { peerId: 'user:dev', scope, path: relative, linkId: `fos-cli:${relative.join('/')}` }
+    const served = exchangeNode(lib, request, { peerId: 'user:dev', scope, owner: false, proposeOnly: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }, 50 + pulled.length)
+    pulled.push({ request, node: served.node })
+    for (const child of served.node.children) if (child.kind !== 'ref') queue.push([...relative, child.id])
+  }
+  const bundle = exportProvidedLibrary({ address, nodes: pulled }, 99)
+  expect(bundle.address).toEqual(address)
+  expect(bundle.rows).toEqual(exportLibraryRows(lib, path))
+  expect(bundle.rows.filter(row => row.kind === 'template')).toHaveLength(8)
+  expect(exportProvidedLibrary({ address, nodes: [] }, 1)).toEqual({ address, version: 0, rows: [] })
+})
+
+test('the library carries manual fallback handlers for every kind of requirement, matched by capability and resource', () => {
+  const { r } = library()
+  const handlers = manualHandlers(r)
+  expect(handlers.map(h => h.capability === 'allocation' ? `${h.capability}:${h.resource}` : h.capability).sort()).toEqual([
+    'allocation:account', 'allocation:calendar', 'allocation:inventory', 'allocation:location', 'allocation:location', 'allocation:points', 'llm', 'mail', 'market', 'repo', 'search', 'tool'
+  ])
+  expect(manualHandlersFor(r, { capability: 'allocation', resource: 'account' }).map(h => h.label)).toEqual(['Paid outside Fos'])
+  expect(manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).map(h => [h.id, h.device])).toEqual([['lib:manual:location', false], ['lib:device:location', true]])
+  expect(manualHandlersFor(r, { capability: 'mail' }).map(h => h.label)).toEqual(['Sent it myself'])
+  expect(manualHandlersFor(r, { capability: 'confirmation' })).toEqual([])
+  // a device that only has the bundled copy offers the same fallbacks
+  const device = ensureBundledLibrary(ensureHomeContext(createReplica('user:device'), 1), { address, version: 1, rows: exportLibraryRows(r, [HOME_ID, LIBRARY_ID]) }, 2).replica
+  expect(manualHandlers(device)).toEqual(handlers)
+  expect(manualHandlers(createReplica('user:none'))).toEqual([])
 })

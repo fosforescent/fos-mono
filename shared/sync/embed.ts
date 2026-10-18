@@ -37,6 +37,8 @@ import {
   type SyncResponse
 } from './index'
 import { dispatchEvent, type FosEvent } from './events'
+import { readNodeValue } from './evaluation'
+import { exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
 import { handleMcp } from './mcp-adapter'
 
 const replicas = new Map<string, Replica>()
@@ -142,6 +144,18 @@ export const api = {
     const done = completeSync(get(handle), JSON.parse(requestJson) as SyncRequest, JSON.parse(responseJson) as SyncResponse, now)
     set(handle, done.replica)
     return JSON.stringify({ reMerged: done.reMerged, newChoiceIds: done.newChoiceIds })
+  },
+  /** Where this account references the standard library, with its shared address, or null (`fos library export`). */
+  libraryLink(handle: string): string {
+    const r = get(handle), path = libraryLink(r)
+    if (!path) return 'null'
+    const row = view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+    const address = readNodeValue<{ owner: string; path: Scope; share: string }>(r, path, 'fos:shared-link')
+    return JSON.stringify({ path, owner: row?.refOwner ?? address?.owner ?? null, refId: row?.refId ?? null, title: row?.title ?? 'Standard library', address })
+  },
+  /** The nodes `fos library export` pulled, as the bundle a client build carries (web/src/library.json). */
+  libraryExport(pulledJson: string, now: number): string {
+    return JSON.stringify(exportProvidedLibrary(JSON.parse(pulledJson) as PulledLibrary, now))
   },
   /** One MCP message (JSON-RPC) through the event grammar as this directory's owner. Returns {response, changed}. */
   mcp(handle: string, messageJson: string, peerId: string, now: number): string {

@@ -20,6 +20,7 @@ fos [dir] run       sync, print the tree, serve local agents (MCP), the WebRTC r
 fos [dir] repl      interactive shell
 fos [dir] ls | add "…" | done <id> | open <id> | status | sync | approve <id> | reject <id> | attach <token> | detach | init | reset
 fos login           home context: browser sign-in (SSO-capable device flow) | --token <connect token> | --password
+fos library export  the standard library as the bundle the web build carries (stdout, or --out web/src/library.json)
 ```
 
 - `main.rs` - clap entry: resolves the context (`fos <dir>` or `~`), dispatches to the GUI (`app_lib::run()` with `FOS_TARGET_DIR`, `FOS_DIR`, `FOS_SERVER`, `FOS_HOME_CONTEXT`) or the CLI

@@ -116,10 +116,24 @@ enum Commands {
         #[arg(long, default_value_t = 4777)]
         port: u16,
     },
+    /// The standard library: `export` writes the bundle the web build carries (web/src/library.json)
+    Library {
+        #[command(subcommand)]
+        action: LibraryAction,
+    },
     /// Remove this context's local .fos state
     Reset {
         #[arg(short, long)]
         force: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum LibraryAction {
+    /// Pull the shared library through your account and write it as JSON (stdout, or --out <file>)
+    Export {
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -167,6 +181,7 @@ fn main() {
             Commands::Detach => commands::cmd_detach(&mut ws),
             Commands::Approve { id } => commands::cmd_decide(&mut ws, &id, "approve"),
             Commands::Reject { id } => commands::cmd_decide(&mut ws, &id, "reject"),
+            Commands::Library { action: LibraryAction::Export { out } } => commands::cmd_library_export(&mut ws, out.as_deref()),
             Commands::Gui | Commands::Init { .. } | Commands::Reset { .. } => unreachable!(),
         }),
     };

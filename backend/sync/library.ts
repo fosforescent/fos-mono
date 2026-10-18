@@ -6,7 +6,8 @@
  * proposals and merge once enough members approved them (sharing.ts `submit` → `applyMergePolicy`).
  */
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_MERGE_POLICY, LIBRARY_ID, addRow, createReplica, ensureHomeContext, ensureLibraryLink, headCid, homePath, mergePolicy, seedStandardLibrary, setMemberCapabilitiesAt, setMergePolicy, setSharing, sharing, view, type LibraryAddress, type Replica } from '@fosforescent/shared/sync/index'
+import type { Request, Response } from 'express'
+import { DEFAULT_MERGE_POLICY, LIBRARY_ID, LIBRARY_VERSION, addRow, createReplica, ensureHomeContext, exportLibraryRows, headCid, homePath, libraryInfo, mergePolicy, seedStandardLibrary, setMemberCapabilitiesAt, setMergePolicy, setSharing, sharing, view, type LibraryAddress, type LibraryBundle, type Replica } from '@fosforescent/shared/sync/index'
 import type { HandlerRegistry } from './registry'
 import { withUserLock, type PeerSyncDeps } from './peerSync'
 
@@ -18,12 +19,27 @@ export type LibraryDeps = PeerSyncDeps & {
   createAccount(username: string): Promise<void>
 }
 
-/** Home plus, for every account but the library's own, the reference to the standard library. */
-export function ensureAccountContext(r: Replica, now: number, registry?: HandlerRegistry): Replica {
-  r = ensureHomeContext(r, now, registry?.hostOffers())
-  const library = registry?.library
-  if (library && r.meta.peerId !== `user:${library.owner}`) r = ensureLibraryLink(r, library, now).replica
-  return r
+export { ensureAccountContext } from './accountContext'
+
+/**
+ * `GET /library`: the library as data (`LibraryBundle`), for client builds (web/scripts/pull-library.mjs pulls it
+ * into `src/library.json`) so devices carry the templates before they ever sync. Public, cached for a minute.
+ */
+export function createLibraryRoute(deps: PeerSyncDeps, registry: HandlerRegistry) {
+  let cached: { at: number; body: LibraryBundle } | null = null
+  return async (_req: Request, res: Response): Promise<Response> => {
+    res.setHeader('Cache-Control', 'public, max-age=60')
+    const address = registry.library
+    if (!address) return res.status(503).json({ error: 'The standard library is not available on this host yet.' })
+    const now = deps.now?.() ?? Date.now()
+    if (cached && now - cached.at < 60_000) return res.json(cached.body)
+    const loaded = await deps.loadStore(address.owner)
+    if (!loaded) return res.status(503).json({ error: 'The library account is unavailable.' })
+    const r = createReplica(`user:${address.owner}`, loaded.store)
+    const body: LibraryBundle = { address, version: libraryInfo(r, address.path)?.version ?? LIBRARY_VERSION, rows: exportLibraryRows(r, address.path) }
+    cached = { at: now, body }
+    return res.json(body)
+  }
 }
 
 /** The library's node in the owner's store, created, shared and seeded as needed. Returns its address. */

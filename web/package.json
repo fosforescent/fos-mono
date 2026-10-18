@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/pull-library.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:nodes": "node tests/node-provider.cjs && node tests/node-permissions.cjs && node tests/node-api.cjs && node tests/node-transport.cjs && node tests/node-sync.cjs && node tests/node-context.cjs && node tests/node-relay.cjs && node tests/node-socket.cjs",
