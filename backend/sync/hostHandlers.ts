@@ -5,8 +5,8 @@
  */
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addRow, addSupply, beginTaskWork, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
-import type { HostHandler } from './registry'
+import { addRow, addSupply, beginTaskWork, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
+import type { EffectContext, HostHandler } from './registry'
 
 export type GitHubIssueDeps = {
   connected(userId: number): Promise<boolean>
@@ -138,8 +138,34 @@ export function pollHandler(): HostHandler {
 }
 
 export type PointsDeps = {
-  /** Move fos points between accounts on the server's ledger; throws when the payer cannot cover it or the payee is unknown. */
-  transfer(from: { id: number; username: string }, toUsername: string, amount: number, memo: string): Promise<void>
+  /**
+   * Move fos points between accounts on the server's ledger; throws when the payer cannot cover it or the payee is
+   * unknown. `key` identifies the payout (one per requirement): a transfer already recorded under it is not repeated.
+   */
+  transfer(from: { id: number; username: string }, toUsername: string, amount: number, memo: string, key: string): Promise<void>
+}
+
+/**
+ * Who a task pays: the user the requirement names with @, else the one signed-in user whose supplies filled the
+ * task's other requirements. Anonymous respondents, several respondents and the owner themselves are refused.
+ */
+function payeeOf(ctx: EffectContext, unit: string): string {
+  const r = ctx.replica(), path = ctx.step.path, req = ctx.step.row!.requirement!
+  if (path.length < 2) throw new Error(`A ${unit} payment goes under the task it rewards.`)
+  const taskPath = path.slice(0, -1), self = `user:${ctx.username}`
+  let recipient = req.peer
+  if (!recipient) {
+    const suppliers = new Set<string>()
+    for (const row of view(r, taskPath)?.tasks ?? []) if (row.kind === 'requirement' && row.id !== path.at(-1)) for (const supply of view(r, [...taskPath, row.id])?.tasks ?? []) if (supply.supply?.by) suppliers.add(supply.supply.by)
+    const people = [...suppliers].filter(p => p !== self && p !== 'fos')
+    if (people.some(p => p.startsWith('visitor:'))) throw new Error(`${unit[0]!.toUpperCase()}${unit.slice(1)} go to signed-in Fos users; this respondent is anonymous.`)
+    const users = people.filter(p => p.startsWith('user:')).map(p => p.slice('user:'.length))
+    if (!users.length) throw new Error('No one to pay yet: the other requirements of this task have no respondent.')
+    if (users.length > 1) throw new Error(`Several users answered (${users.map(u => `@${u}`).join(', ')}); name the recipient with @name on the ${unit} row.`)
+    recipient = users[0]!
+  }
+  if (recipient === ctx.username) throw new Error('The owner cannot pay themselves.')
+  return recipient
 }
 
 /**
@@ -152,29 +178,59 @@ export function pointsHandler(deps: PointsDeps): HostHandler {
     peerId: 'fos', capability: 'points',
     handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'points' },
     async effect(ctx) {
-      const r = ctx.replica(), path = ctx.step.path, req = ctx.step.row!.requirement!
+      const path = ctx.step.path, req = ctx.step.row!.requirement!
       const amount = req.amount ?? 0
       if (!(amount > 0)) throw new Error('Name an amount of fos points to pay.')
-      if (path.length < 2) throw new Error('A fos-points payout goes under the task it rewards.')
-      const taskPath = path.slice(0, -1), self = `user:${ctx.username}`
-      let recipient = req.peer
-      if (!recipient) {
-        const suppliers = new Set<string>()
-        for (const row of view(r, taskPath)?.tasks ?? []) if (row.kind === 'requirement' && row.id !== path.at(-1)) for (const supply of view(r, [...taskPath, row.id])?.tasks ?? []) if (supply.supply?.by) suppliers.add(supply.supply.by)
-        const people = [...suppliers].filter(p => p !== self && p !== 'fos')
-        if (people.some(p => p.startsWith('visitor:'))) throw new Error('Fos points go to signed-in Fos users; this respondent is anonymous.')
-        const users = people.filter(p => p.startsWith('user:')).map(p => p.slice('user:'.length))
-        if (!users.length) throw new Error('No one to pay yet: the other requirements of this task have no respondent.')
-        if (users.length > 1) throw new Error(`Several users answered (${users.map(u => `@${u}`).join(', ')}); name the recipient with @name on the points row.`)
-        recipient = users[0]!
-      }
-      if (recipient === ctx.username) throw new Error('The owner cannot pay themselves.')
+      const taskPath = path.slice(0, -1), recipient = payeeOf(ctx, 'fos points')
       const memo = `${ctx.step.row!.title || 'fos points'} (${taskPath.join('/')})`
-      await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient, amount, memo)
+      await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient, amount, memo, `points:${ctx.username}:${path.join('/')}`)
       const id = `points:${ctx.now().toString(36)}`
       let next = addRow(ctx.replica(), path, 'allocation', `${amount} fos points to @${recipient}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos', person: recipient } })
       next = addSupply(next, taskPath, path.at(-1)!, { capability: 'allocation', by: 'fos', ref: id }, ctx.now())
       await ctx.update(next)
+    }
+  }
+}
+
+export type PaymentDeps = {
+  /**
+   * Open a payment from the owner to a Fos user with the account's payment provider. Returns the provider's id and,
+   * when the payer has to complete it, the page to send them to; `status: 'paid'` means the provider charged a saved
+   * method and the payment is already settled. Throws when the payee cannot receive payments yet.
+   */
+  request(input: { from: { id: number; username: string }; toUsername: string; amount: number; unit: string; memo: string; key: string; path: string[] }): Promise<{ id: string; url: string | null; status: 'pending' | 'paid'; intent?: string }>
+}
+
+/**
+ * A money requirement (`-$ 20 reward`) under a task is a payment: when the task runs, the server opens one with the
+ * payment provider from the owner to the respondent and leaves the evaluation awaiting review. The provider's
+ * confirmation (its webhook, `sync/payments.ts`) settles the requirement and continues the evaluation, whether or
+ * not the owner's devices are online. Running again while the payment is open does not open a second one.
+ */
+export function paymentHandler(deps: PaymentDeps): HostHandler {
+  return {
+    peerId: 'fos', capability: 'send-payment',
+    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'account' },
+    async effect(ctx) {
+      const path = ctx.step.path, req = ctx.step.row!.requirement!
+      const amount = req.amount ?? 0, unit = (req.unit || 'usd').toLowerCase()
+      if (!(amount > 0)) throw new Error('Name an amount to pay.')
+      const existing = paymentRecord(ctx.replica(), path)
+      if (existing?.status === 'paid') {
+        // confirmed while nobody was running the evaluation: record the settlement now
+        const settled = settlePaymentRecord(ctx.replica(), path, {}, ctx.now())
+        if (settled.settled) await ctx.update(settled.replica)
+        return
+      }
+      if (existing?.status === 'pending') return 'pending'
+      const recipient = payeeOf(ctx, 'payments')
+      const memo = `${ctx.step.row!.title || 'payment'} (${path.slice(0, -1).join('/')})`
+      const opened = await deps.request({ from: { id: ctx.userId, username: ctx.username }, toUsername: recipient, amount, unit, memo, key: `payment:${ctx.username}:${path.join('/')}`, path })
+      // recorded as open first; settlement (here when the provider charged a saved method, else the webhook) marks it paid
+      let next = writePaymentRecord(ctx.replica(), path, { id: opened.id, url: opened.url, status: 'pending', amount, unit, payer: ctx.username, payee: recipient, created: ctx.now(), ...(opened.intent ? { intent: opened.intent } : {}) }, ctx.now())
+      if (opened.status === 'paid') next = settlePaymentRecord(next, path, { intent: opened.intent }, ctx.now()).replica
+      await ctx.update(next)
+      return opened.status === 'paid' ? undefined : 'pending'
     }
   }
 }
@@ -214,6 +270,8 @@ export type HostHandlerDeps = {
   llm: LlmDeps
   market: MarketDeps
   points: PointsDeps
+  /** Money payments through the account's payment provider (payments/stripe.ts); absent when none is configured. */
+  payments?: PaymentDeps
   mail: MailDeps
   /** Attached MCP servers run `-tool` requirements (integrations/mcpPeers.ts `mcpToolHandler`). */
   tool?: HostHandler
@@ -233,6 +291,7 @@ export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
     marketHandler(deps.market),
     pollHandler(),
     pointsHandler(deps.points),
+    ...(deps.payments ? [paymentHandler(deps.payments)] : []),
     mailHandler(deps.mail),
     llmHandler(deps.llm),
     ...(deps.cron ? [{ peerId: 'fos', capability: 'cron' as const }] : []),

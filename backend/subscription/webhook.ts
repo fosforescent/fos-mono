@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 
 import {prisma} from '../prismaClient'
 import { tokenManager } from '../tokenManager'
+import { settleCheckoutSession } from '../payments/stripe'
 
 const JWT_SECRET = process.env.JWT_SECRET
 
@@ -75,6 +76,10 @@ export const postSubscriptionWebhook = async (req: Request, res: Response) => {
       const session = data.object
       // Handle checkout session completion
       await handleSessionCompleted(session)
+      break
+    case 'checkout.session.expired':
+      // an unpaid `-$` payment page expired: the requirement's record is marked failed so the owner can open a new one
+      await settleCheckoutSession(data.object as Stripe.Checkout.Session)
       break
     case 'invoice.paid':
       const invoice = data.object
@@ -241,7 +246,10 @@ async function handleFailedCharge(charge: Stripe.Charge) {
 }
   
 async function handleSessionCompleted (session: Stripe.Checkout.Session) {
-  console.log('Session completed', session.id, session)
+  console.log('Session completed', session.id, session.metadata?.type ?? 'subscription')
+
+  // A `-$` requirement's payment (payments/stripe.ts): settle it in the owner's graph and continue the evaluation.
+  if (await settleCheckoutSession(session)) return
 
   // Check if this is a token purchase
   if (session.metadata?.type === 'token_purchase') {
@@ -286,6 +294,10 @@ async function handleTokenPurchaseCompleted(session: Stripe.Checkout.Session) {
   })
 
   try {
+    // Stripe redelivers events: a purchase already completed is credited exactly once.
+    const pending = await prisma.tokenPurchaseModel.findUnique({ where: { stripeCheckoutSessionId: session.id }, select: { status: true } })
+    if (!pending) { console.error('Token purchase record not found for session', session.id); return }
+    if (pending.status === 'completed') { console.log('Token purchase already processed:', purchaseId); return }
     // Update purchase record with payment intent
     const purchase = await prisma.tokenPurchaseModel.update({
       where: { stripeCheckoutSessionId: session.id },

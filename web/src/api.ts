@@ -283,6 +283,11 @@ export function startIntegration(session: Session, provider: string): Promise<{ 
   return authed(session, 'GET', `/user/integrations/${encodeURIComponent(provider)}/start`)
 }
 
+/** Stripe Connect onboarding for receiving payments (or the Express dashboard once onboarded): the page to send the browser to. */
+export function createConnectSession(session: Session, urls: { success_url: string; cancel_url: string }): Promise<{ url: string }> {
+  return authed(session, 'POST', '/subscription/connect-session', urls)
+}
+
 export function disconnectIntegration(session: Session, provider: string): Promise<{ ok: true }> {
   return authed(session, 'DELETE', `/user/integrations/${encodeURIComponent(provider)}`)
 }

@@ -6,7 +6,7 @@ import type { HandlerRegistry, HostHandler } from './registry'
 const peerLabel = (peerId: string) => peerId === 'fos' ? 'Fos' : INTEGRATION_PEERS.find(p => `integration:${p.id}` === peerId)?.name ?? (peerId.startsWith('mcp:') ? 'An attached MCP server' : peerId)
 
 export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerRegistry) {
-  async function run(username: string, request?: { path: Scope; branches: Record<string, string>; expected: string; action?: 'recover' }) {
+  async function run(username: string, request?: { path: Scope; branches: Record<string, string>; expected: string; action?: 'recover' | 'continue' }) {
     return withUserLock(`user:${username}`, async () => {
       const loaded = await deps.loadStore(username)
       if (!loaded) throw new Error('Account unavailable.')
@@ -51,7 +51,9 @@ export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerReg
       }
       if (request) {
         const cid = resolveScope(r.store, headCid(r), request.path)
-        if (!cid || put(r.store, valueContent(r.store, cid)) !== request.expected) throw new Error('The node changed. Sync and review it before evaluating.')
+        if (!cid) throw new Error('The node changed. Sync and review it before evaluating.')
+        // a continuation (a payment confirmed) resumes whatever the node is now; owners' requests pin the version they saw
+        if (request.action !== 'continue' && put(r.store, valueContent(r.store, cid)) !== request.expected) throw new Error('The node changed. Sync and review it before evaluating.')
         if (request.action === 'recover') { await save(recoverEvaluation(r, request.path, now())); return null }
         return evaluate(request.path)
       }
@@ -62,5 +64,7 @@ export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerReg
   return {
     runNode: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string; recover?: boolean }) => run(username, { ...request, ...(request.recover ? { action: 'recover' as const } : {}) }),
     runCron: (username: string) => run(username),
+    /** Resume an evaluation left awaiting review once the effect it waited on is settled (sync/payments.ts). */
+    continueNode: (username: string, path: Scope) => run(username, { path, branches: {}, expected: '', action: 'continue' }),
   }
 }

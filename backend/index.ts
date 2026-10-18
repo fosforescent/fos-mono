@@ -1,6 +1,9 @@
 import { createEventService } from './sync/events'
 import { createSharingHandlers } from './sync/sharing'
 import { createEvaluationService } from './sync/evaluation'
+import { createPaymentSettlement } from './sync/payments'
+import { setPaymentSettler, stripePayments } from './payments/stripe'
+import Stripe from 'stripe'
 import { sendPlainEmail } from './email/email'
 import { createHandlerRegistry } from './sync/registry'
 import { createHostHandlers } from './sync/hostHandlers'
@@ -516,15 +519,26 @@ const registry = createHandlerRegistry(createHostHandlers({
   llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },
   market: { index: indexNow },
   points: {
-    // fos points are the account's token balance (tokenManager); a payout is a debit on the owner and a credit on the payee
-    async transfer(from, toUsername, amount, memo) {
+    // fos points are the account's token balance (tokenManager); a payout is one ledger transaction, debit on the
+    // owner and credit on the payee, recorded once per requirement (the handler's key)
+    async transfer(from, toUsername, amount, memo, key) {
       const to = await prisma.userModel.findUnique({ where: { user_name: toUsername }, select: { id: true } })
       if (!to) throw new Error(`No Fos user is named @${toUsername}.`)
       await tokenManager.getUserTokenBalance(from.id)
-      await tokenManager.debitTokens(from.id, amount, `fos points: ${memo}`, undefined, { kind: 'points', to: toUsername })
-      await tokenManager.creditTokens(to.id, amount, `fos points from @${from.username}: ${memo}`, 'credit', undefined, undefined, { kind: 'points', from: from.username })
+      await tokenManager.transferTokens(from.id, to.id, amount, { debit: `fos points: ${memo}`, credit: `fos points from @${from.username}: ${memo}` }, key, { kind: 'points', from: from.username, to: toUsername })
     }
   },
+  // money (`-$`) through Stripe Checkout to the payee's connected account; settled by the webhook (payments/stripe.ts)
+  ...(process.env.STRIPE_TOKEN ? { payments: stripePayments({
+    stripe: new Stripe(process.env.STRIPE_TOKEN, { apiVersion: '2024-10-28.acacia' }),
+    webUrl: (process.env.WEB_URL ?? process.env.FRONTEND_URL ?? 'https://fosforescent.com').replace(/\/$/, ''),
+    feePercent: Number(process.env.FOS_PAYMENT_FEE_PERCENT ?? 0) || 0,
+    async payee(username) {
+      const user = await prisma.userModel.findUnique({ where: { user_name: username }, select: { stripe_connected_account_id: true, stripe_payouts_enabled: true } })
+      return user ? { connectedAccountId: user.stripe_connected_account_id, payoutsEnabled: !!user.stripe_payouts_enabled } : null
+    },
+    async customer(userId) { return (await prisma.userModel.findUnique({ where: { id: userId }, select: { stripe_customer_id: true } }))?.stripe_customer_id ?? null }
+  }) } : {}),
   mail: { send: sendPlainEmail },
   tool: mcpToolHandler(mcpPeerDeps),
   connected: async (id, provider) => { const c = await integrationDeps.connections.get(id, provider); return !!c && (provider !== 'phone' || c.metadata.verified === true) },
@@ -535,6 +549,8 @@ prismaPeerSyncDeps.registry = registry
 integrationDeps.offers = id => registry.offers(`integration:${id}`)
 const integrations = createIntegrationHandlers(integrationDeps)
 const evaluationService = createEvaluationService(prismaPeerSyncDeps, registry)
+// Payment confirmations from the Stripe webhook settle the requirement in the owner's graph and resume its evaluation.
+setPaymentSettler(createPaymentSettlement(prismaPeerSyncDeps, evaluationService.continueNode).settle)
 // The event grammar (shared/sync/events.ts): one HTTP route and one MCP route; the WebSocket below carries the same events.
 const eventService = createEventService(prismaPeerSyncDeps, evaluationService.runNode)
 dataRoutes.post('/events', (req, res) => void eventService.http(req, res))
