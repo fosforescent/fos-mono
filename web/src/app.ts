@@ -1,4 +1,5 @@
 import LIBRARY_BUNDLE from './library.json'
+import { libraryPath, MANUAL_HANDLERS_ID } from '../../shared/sync/library'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
@@ -2063,6 +2064,29 @@ export class App {
   handlerOffers(path = this.constructorContext()) {
     return discoverHandlers(this.state.replica, path, { isPeerActive: id => id === this.state.replica.meta.peerId || this.isOnline(id) })
   }
+  /** Read the current library projection (or the bundled copy on an offline device), never a UI catalog. */
+  libraryConstructors() {
+    const path = libraryPath(this.state.replica)
+    if (!path) return []
+    return (view(this.state.replica, path)?.tasks ?? [])
+      .filter(row => row.kind === 'template' && row.id !== MANUAL_HANDLERS_ID && row.title.trim())
+      .map(row => ({ id: row.id, label: row.title.trim(), path: [...path, row.id], icon: this.templateIcon([...path, row.id]) || 'template' }))
+  }
+  insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false): Scope {
+    const template = this.libraryConstructors().find(item => item.id === id)
+    if (!template) throw new Error('This standard library constructor is unavailable.')
+    const queue = [template.path], seen = new Set<string>()
+    while (queue.length) {
+      const at = queue.pop()!, cid = resolveScope(this.state.replica.store, headCid(this.state.replica), at)
+      if (!cid || isPeerReference(content(this.state.replica.store, cid))) throw new Error('This library template is still downloading. Try again once it has loaded.')
+      if (seen.has(cid)) continue
+      seen.add(cid)
+      for (const row of view(this.state.replica, at)?.tasks ?? []) queue.push([...at, row.id])
+    }
+    const current = replace && path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
+    const title = current && current.kind !== 'requirement' && current.id !== HOME_ID ? current.title || template.label : template.label
+    return this.applyConstructor(path, { kind: 'task', text: title, done: false }, replace, undefined, undefined, id)
+  }
   publishCurrentTemplate(market = false): void {
     if (!this.canApprove() || this.currentRow()?.kind !== 'template') return
     if (market && (!this.state.session || !this.isOnline('fos'))) { this.notify('error', 'Connect to Fos before publishing to the marketplace.'); return }
@@ -2118,8 +2142,11 @@ export class App {
     return this.applyConstructor(path, { kind: 'requirement', text: `Pull from ${peer.name}`, done: false, extras: { requirement: { capability: 'tool', tool: 'fos.pull', peer: peer.id } } })
   }
   /** Palette input uses the same row documents as typed input; no separate palette model. */
-  applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string): Scope {
+  applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string): Scope {
     if (!view(this.state.replica, path)) throw new Error('The destination no longer exists.')
+    const template = templateId ? resolveRef(this.state.replica, templateId) : null
+    const templateCid = template?.row.kind === 'template' ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
+    if (templateId && !templateCid) throw new Error('This template is unavailable.')
     const current = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
     replace = replace && !!current && current.id !== HOME_ID && current.kind !== 'requirement'
     const parent = replace ? path.slice(0, -1) : path, id = replace ? path.at(-1)! : newId(), target = [...parent, id]
@@ -2132,13 +2159,14 @@ export class App {
     if (allocation?.resource && !this.banks().some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable or has a different resource type.')
     const parentCid = path.length && resolveScope(this.state.replica.store, headCid(this.state.replica), path.slice(0, -1))
     const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1))
-    const suppliedType = localDirectory ? capabilityTarget(this.state.replica.store, 'repo') : parsed.peer !== undefined ? capabilityTarget(this.state.replica.store, 'peer') : parsed.kind === 'requirement' && parsed.extras?.requirement && CAPABILITIES.includes(parsed.extras.requirement.capability as Capability) ? capabilityTarget(this.state.replica.store, parsed.extras.requirement.capability as Capability) : parsed.kind === 'allocation' ? put(this.state.replica.store, { data: { name: { content: 'fos:type:allocation' } }, children: [] }) : repo ? capabilityTarget(this.state.replica.store, 'repo') : null
+    const suppliedType = templateCid ? (argument && argument.type === templateCid ? templateCid : put(this.state.replica.store, { data: { name: { content: 'fos:type:task' } }, children: [] })) : localDirectory ? capabilityTarget(this.state.replica.store, 'repo') : parsed.peer !== undefined ? capabilityTarget(this.state.replica.store, 'peer') : parsed.kind === 'requirement' && parsed.extras?.requirement && CAPABILITIES.includes(parsed.extras.requirement.capability as Capability) ? capabilityTarget(this.state.replica.store, parsed.extras.requirement.capability as Capability) : parsed.kind === 'allocation' ? put(this.state.replica.store, { data: { name: { content: 'fos:type:allocation' } }, children: [] }) : repo ? capabilityTarget(this.state.replica.store, 'repo') : null
     if (argument && argument.type !== suppliedType) throw new Error('Choose a constructor matching this input type.')
     if (repo && repositoryAt(this.state.replica, target) && repositoryAt(this.state.replica, target) !== repo) throw new Error('Edit the existing repository argument to change its repository.')
     this.together(() => {
       let r = this.state.replica
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
       r = replace ? setRowContentAt(r, parent, id, parsed.kind, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.kind, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
+      if (templateCid) r = instantiateTemplateValue(r, parent, id, templateCid, this.now())
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {

@@ -670,6 +670,7 @@ function constructorOptions(app: App): ConstructorItem[] {
   const me = app.state.replica.meta.peerId
   const offerGroup = (peerId: string) => peerId === me ? 'device' : peerId === 'fos' || peerId.startsWith('user:') ? account : peerId
   return [
+    ...app.libraryConstructors().map(c => ({ id: `library:${c.id}`, label: c.label, icon: c.icon, output: 'task', group: 'library' })),
     { id: 'publish:public', label: 'Publish publicly', icon: 'globe', output: 'peer', group: 'add-peer' },
     { id: 'publish:users', label: 'Publish to Fos users', icon: '\u2726', output: 'peer', group: 'add-peer' },
     { id: 'trigger:public', label: 'Public template endpoint', icon: 'globe', output: 'trigger', group: 'triggers' },
@@ -703,7 +704,7 @@ function constructorState(app: App, item: ConstructorItem) {
       app.setNodeMask(peer, { ...latest, [key]: [...selected] }, path)
     } }
   }
-  const peer = item.group === 'triggers' ? (item.id === 'trigger:cron' ? 'fos' : app.state.replica.meta.peerId) : (item.group === 'device' || item.group === 'add-peer') ? app.state.replica.meta.peerId : item.group
+  const peer = item.group === 'triggers' ? (item.id === 'trigger:cron' ? 'fos' : app.state.replica.meta.peerId) : (item.group === 'device' || item.group === 'library' || item.group === 'add-peer') ? app.state.replica.meta.peerId : item.group
   const offer = item.id.startsWith('handler:') ? app.handlerOffers().find(o => o.cid === item.id.slice(8)) : undefined
   const cap = item.id.startsWith('action:') ? item.id.slice(7) : item.id.startsWith('trigger:') && !['trigger:public', 'trigger:users'].includes(item.id) ? item.id.slice(8) : undefined
   const provider = app.contextPeers().find(p => p.id === peer)
@@ -750,6 +751,7 @@ function peerIcon(p: ContextPeer): string {
 /** The constructor panel's tabs: this device first, then every peer of the context; each constructor belongs to the peer that provides it. */
 function constructorGroups(app: App): Array<{ id: string; name: string; icon: string; items: ConstructorItem[]; peer?: ContextPeer }> {
   const groups: Array<{ id: string; name: string; icon: string; items: ConstructorItem[]; peer?: ContextPeer }> = [{ id: 'device', name: 'This device', icon: 'device', items: [] }]
+  groups.push({ id: 'library', name: 'Standard library', icon: 'template', items: [] })
   for (const peer of app.contextPeers()) if (peer.id !== app.state.replica.meta.peerId) groups.push({ id: peer.id, name: peer.name, icon: peerIcon(peer), items: [], peer })
   for (const item of constructorOptions(app)) {
     if (item.id === 'peer' || item.id === 'integration' || item.group === 'add-peer' || item.group === 'triggers') continue // the "Add peer" button and the search cover these
@@ -774,6 +776,7 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (proposalPreview(app)) return
   const item = constructorOptions(app).find(c => c.id === id)
   if (item && !constructorState(app, item).enabled) return
+  if (id.startsWith('library:')) { try { app.insertLibraryConstructor(id.slice(8), path, replace) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'trigger:public' || id === 'trigger:users') { openPublishing(app, id === 'trigger:public' ? 'public' : 'users', path, true); return }
   if (id === 'publish:public' || id === 'publish:users') { openPublishing(app, id === 'publish:public' ? 'public' : 'users', path); return }
   if (id === 'verify-specifications') { void openSpecificationVerification(app,path); return }
@@ -952,7 +955,7 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
     try { app.applyConstructor(path, { kind: 'plain', text: peer?.name ?? constructor.slice(5), done: false, peer: constructor.slice(5) }, replace) } catch (error) { app.notify('error', String(error)) }
     return true
   }
-  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
+  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:') || constructor.startsWith('library:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -1110,7 +1113,7 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   // the parent's grid shows its sub-peers as icons: click to open one, drag into a row for a row bound to it
   for (const sub of subPeers(group)) if (sub.peer) group.items.unshift({ id: `peer:${sub.id}`, label: sub.name, icon: sub.icon, output: 'peer', group: group.id, peer: sub.peer })
 
-  if (!preview && group.id !== 'add-peer' && group.id !== 'triggers') {
+  if (!preview && group.id !== 'add-peer' && group.id !== 'triggers' && group.id !== 'library') {
     const peer = group.peer?.id ?? NODE_PERMISSION_DEFAULT
     for (const id of Object.keys(nodeShape(state.replica, state.view).data)) group.items.push({ id: `mask:fields:${id}`, label: id === 'description' ? 'Text' : id, icon: 'note', output: 'field', group: group.id, mask: { peer, key: 'fields', id } })
     for (const row of app.currentView()?.tasks ?? []) if (!row.construction) group.items.push({ id: `mask:children:${row.id}`, label: row.title || 'Untitled node', icon: 'device', output: 'child', group: group.id, mask: { peer, key: 'children', id: row.id } })
@@ -1121,7 +1124,7 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   head.before(dropTarget)
   for (const c of group.items) grid.append(constructorControl(app, c, dropTarget))
   grid.hidden = false
-  if (!group.items.length && group.id !== 'add-peer') grid.append(span('muted', group.peer?.online === false ? 'Connect this peer to use its constructors.' : 'No constructors from this peer yet.'))
+  if (!group.items.length && group.id !== 'add-peer') grid.append(span('muted', group.id === 'library' ? 'No standard library constructors are available on this device yet.' : group.peer?.online === false ? 'Connect this peer to use its constructors.' : 'No constructors from this peer yet.'))
   const typed = suggestedConstructors(app); suggestions.hidden = group.id === 'add-peer' || !!preview || typed.hidden; suggestions.replaceChildren(typed)
 
   const active = document.activeElement as HTMLElement | null
