@@ -133,6 +133,7 @@ import {
   type RegistrationInput,
   listIntegrations,
   startIntegration,
+  createConnectSession,
   disconnectIntegration,
   startPhone,
   verifyPhone,
@@ -1539,6 +1540,19 @@ export class App {
     if (status?.connected) { this.pendingIntegration = null; this.notify('info', `${status.name} is connected.`) }
   }
 
+  /** Stripe Connect onboarding (or the dashboard once onboarded), so this account can receive `-$` payments. */
+  async setupPayouts(): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your fos account first; payouts attach to it.'); this.openModal('connect'); return }
+    try {
+      const base = location.origin + location.pathname
+      const { url } = await createConnectSession(session, { success_url: `${base}?integration=stripe&ok=1`, cancel_url: `${base}?integration=stripe&ok=0&message=${encodeURIComponent('Payout setup was not completed.')}` })
+      if (session !== this.state.session) return
+      this.pendingIntegration = { id: 'stripe', session }
+      const external = openExternal(url)
+      if (external) await external; else location.assign(url)
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
   async disconnectIntegration(id: string): Promise<void> {
     const session = this.state.session
     if (!session || session.kind !== 'user') return
@@ -2278,6 +2292,8 @@ export class App {
     // a poll resolves its choice on the server (the fos poll handler tallies the responses)
     if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
     if (r.capability === 'allocation' && r.resource === 'points') return true
+    // money goes through the server's payment provider when the fos peer offers payments in this context
+    if (r.capability === 'allocation' && r.resource === 'account') return capabilityPeers(this.state.replica, step.path, 'send-payment').includes('fos')
     return r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined && capabilityPeers(this.state.replica, step.path, 'calendar').some(p => p.startsWith('integration:'))
   }
   async evaluateAt(path: Scope, triggered = false): Promise<void> {
@@ -2612,7 +2628,8 @@ export class App {
     try {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
       const poll = r.capability === 'choice' && !!readNodeValue(this.state.replica, [...this.state.view, ...at, req.id], 'fos:poll')
-      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || poll || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
+      const payment = r.capability === 'allocation' && r.resource === 'account' && capabilityPeers(this.state.replica, [...this.state.view, ...at, req.id], 'send-payment').includes('fos')
+      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || poll || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
         if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
         await this.evaluateAt([...this.state.view, ...at, req.id])

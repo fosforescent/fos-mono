@@ -137,6 +137,28 @@ export class TokenManager {
   }
 
   /**
+   * Move tokens between two accounts in one transaction (a fos-points payout). `key` identifies the transfer: its
+   * two ledger rows are `<key>:debit` and `<key>:credit`, so a transfer that is already recorded is not repeated
+   * when the effect that asked for it runs again.
+   */
+  async transferTokens(fromUserId: number, toUserId: number, amount: number, description: { debit: string; credit: string }, key: string, metadata?: Record<string, unknown>): Promise<'transferred' | 'already-transferred'> {
+    if (!(Number.isInteger(amount) && amount > 0)) throw new Error('A transfer moves a whole, positive number of tokens')
+    if (fromUserId === toUserId) throw new Error('A transfer needs two different accounts')
+    return await prisma.$transaction(async (tx) => {
+      if (await tx.tokenTransactionModel.findUnique({ where: { transactionId: `${key}:debit` } })) return 'already-transferred'
+      const from = await tx.userTokenBalanceModel.findUnique({ where: { userId: fromUserId } })
+      if (!from) throw new Error('User token balance not found')
+      if (from.availableTokens < amount) throw new Error('Insufficient tokens')
+      const to = await tx.userTokenBalanceModel.findUnique({ where: { userId: toUserId } }) ?? await tx.userTokenBalanceModel.create({ data: { userId: toUserId, availableTokens: 0, totalPurchased: 0, totalUsed: 0, subscriptionTokens: 0, purchasedTokens: 0 } })
+      await tx.userTokenBalanceModel.update({ where: { userId: fromUserId }, data: { availableTokens: from.availableTokens - amount, totalUsed: from.totalUsed + amount } })
+      await tx.userTokenBalanceModel.update({ where: { userId: toUserId }, data: { availableTokens: to.availableTokens + amount, purchasedTokens: to.purchasedTokens + amount, totalPurchased: to.totalPurchased + amount } })
+      await tx.tokenTransactionModel.create({ data: { transactionId: `${key}:debit`, userId: fromUserId, type: 'debit', amount: -amount, description: description.debit, balanceBefore: from.availableTokens, balanceAfter: from.availableTokens - amount, metadata: { ...metadata, to: toUserId } } })
+      await tx.tokenTransactionModel.create({ data: { transactionId: `${key}:credit`, userId: toUserId, type: 'credit', amount, description: description.credit, balanceBefore: to.availableTokens, balanceAfter: to.availableTokens + amount, metadata: { ...metadata, from: fromUserId } } })
+      return 'transferred'
+    })
+  }
+
+  /**
    * Credit tokens to user's balance (for purchases, grants, refunds)
    */
   async creditTokens(

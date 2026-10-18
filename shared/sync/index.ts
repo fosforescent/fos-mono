@@ -17,6 +17,7 @@ export * from './evaluation'
 export * from './triggers'
 
 export * from './sharing'
+export * from './payments'
 export * from './market'
 
 export * from './destructure'

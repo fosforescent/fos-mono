@@ -75,3 +75,9 @@ Handles Stripe payment integration including subscriptions, checkout sessions, c
 - **Portal Access**: Self-service subscription management for customers
 
 ## TODOs
+## Payments for `-$` requirements (2026-10-17)
+
+- `payments/stripe.ts` turns a money requirement into a Stripe Checkout session paying the payee's connected account (destination charge; `FOS_PAYMENT_FEE_PERCENT` keeps a platform fee, default 0). The session metadata (`type: fos-payment`, owner, requirement path, key) is what the webhook needs to find the requirement again.
+- `webhook.ts` hands `checkout.session.completed` / `checkout.session.expired` to `settleCheckoutSession`; `sync/payments.ts` settles the requirement in the owner's store under the user lock (allocation + supply as `fos`, `fos:payment` paid) and resumes the evaluation that waited on it (`evaluationService.continueNode`). Redeliveries find the record paid and change nothing; token-purchase sessions are likewise credited once.
+- Payees onboard through `POST /subscription/connect-session` (the "Set up payouts" button on the Stripe peer in the web app); `account.updated` keeps `stripe_payouts_enabled` current, which the payment handler requires.
+- Fos points payouts use `tokenManager.transferTokens`: one Prisma transaction, ledger rows `<key>:debit` / `<key>:credit`, so a repeated effect never pays twice.

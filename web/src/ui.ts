@@ -4,7 +4,7 @@ import { connectNodeAgent, hostedMcpConnection, localMcpEndpoint, mcpConfig } fr
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack } from './filesystem'
 import { AGENT_CLI_NAME, evaluationAgentControl, localRepository, openCliAgent, openSdkAgent, sdkAvailable } from './agents'
 import { GRANTS, type ContextPeer as Peer, type Grant } from './app'
-import { inTauri, tauriInvoke } from './project'
+import { inTauri, openExternal, tauriInvoke } from './project'
 import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { combobox } from './combobox'
@@ -24,7 +24,7 @@ import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
-import { CAPABILITY_LABEL, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
+import { CAPABILITY_LABEL, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
   context: HTMLElement
@@ -257,6 +257,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     const requirement = current.requirement, controls = div('execution-root-input', '')
     const supply = (value: any) => app.supplyRequirementAt(root.slice(0, -1), current.id, value, true)
     if (requirement.capability === 'confirmation') controls.append(button('secondary', 'Confirm', () => supply({ capability: 'confirmation' })))
+    if (requirement.capability === 'allocation' && requirement.resource === 'account') controls.append(...paymentControls(app, state, root, () => void app.evaluateAt(root)))
     if (requirement.capability === 'choice') for (const [choice, label] of (requirement.options ?? []).entries()) controls.append(button('secondary', label, () => supply({ capability: 'choice', choice })))
     if (requirement.capability === 'allocation') {
       const select = document.createElement('select'); select.setAttribute('aria-label', `Provide ${current.title}`); select.append(new Option('Choose an allocation', ''))
@@ -2215,13 +2216,34 @@ function destructurePanel(task: TaskView, at: Scope, state: AppState, app: App):
   return panel
 }
 
+/**
+ * Controls for a money requirement: the payment page while the server's payment is open, the reason when it failed,
+ * and "Pay" when the fos peer offers payments here. Confirmation arrives through the server (its payment provider's
+ * webhook), so the device never records a payment itself.
+ */
+function paymentControls(app: App, state: AppState, path: Scope, pay: () => void): HTMLElement[] {
+  const record = paymentRecord(state.replica, path), controls: HTMLElement[] = []
+  const amount = formatAmount(record?.amount ?? 0, (record?.unit ?? '').toUpperCase())
+  if (record?.status === 'pending') {
+    if (record.url) { const open = button('secondary small', `Pay ${amount}`, () => { const external = openExternal(record.url!); if (!external) window.open(record.url!, '_blank', 'noopener') }); open.title = `Opens the payment page for @${record.payee}; the task continues once the payment is confirmed`; controls.push(open) }
+    controls.push(span('muted req-hint', ` awaiting payment confirmation for @${record.payee}`))
+    return controls
+  }
+  if (record?.status === 'failed') controls.push(span('error req-hint', ` ${record.error ?? 'Payment failed.'}`))
+  if (!app.capabilityAvailable('send-payment', path)) { if (!record) controls.push(span('muted req-hint', ' the account server pays this when the task runs')); return controls }
+  const open = button('secondary small', record?.status === 'failed' ? 'Pay again' : 'Pay', pay)
+  open.title = 'Opens a payment to the respondent through the account server (Stripe); the task continues when it is confirmed'
+  controls.push(open)
+  return controls
+}
+
 function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
   const body = span('title special', '')
   const badge = (text: string, cls = '') => { const b = span('kind-badge ' + cls, text); body.append(b) }
   const stop = (el: HTMLElement) => { el.addEventListener('click', (e) => e.stopPropagation()); return el }
   if (task.kind === 'requirement' && task.requirement) {
     const r = task.requirement
-    const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@' }
+    const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
     // A legible chip ("Needs money", "Decided", "Filled") with the amount beside it in monospace, instead of the raw marker.
     const what = r.capability === 'peer' ? (r.peer ? `@${r.peer}` : 'person') : r.capability === 'allocation' ? (RESOURCE_NAME[r.resource ?? 'inventory'] ?? r.resource ?? 'allocation') : r.capability === 'task' ? 'task' : r.capability === 'choice' ? 'decision' : r.capability === 'llm' ? 'answer' : r.capability
     const chip = r.satisfied ? (r.capability === 'choice' ? 'Decided' : r.capability === 'confirmation' ? 'Confirmed' : 'Filled') : `Needs ${what}`
@@ -2253,6 +2275,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       const handler = (cap: 'search' | 'market' | 'mail') => app.capabilityAvailable(cap, [...state.view, ...at, task.id]) ? peers.find((p) => p.online && p.capabilities.includes(cap)) : undefined
       const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
+      if (r.capability === 'allocation' && r.resource === 'account') for (const control of paymentControls(app, state, [...state.view, ...at, task.id], () => void app.askPeerAt(at, task))) body.append(stop(control))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
       // a poll on the choice: the server's poll handler resolves it from the responses
       if (r.capability === 'choice' && readNodeValue(state.replica, [...state.view, ...at, task.id], 'fos:poll')) body.append(stop(button('secondary small', 'Apply poll result', () => void app.askPeerAt(at, task))))
@@ -2573,6 +2596,13 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
       connection.append(span('muted', `${i.kind === 'oauth' ? 'OAuth' : i.kind === 'channel' ? 'SMS' : 'Account'} connection: `))
       if (i.kind === 'platform') {
         connection.append(span('muted', i.connected ? ` set up on the account${i.accountName ? ` (${i.accountName})` : ''}` : ' not set up on the account (subscription or payouts)'))
+        if (p.id === 'integration:stripe') {
+          // receiving `-$` payments needs a connected account with payouts enabled; the same button opens the dashboard afterwards
+          const payouts = button('secondary small', i.connected && i.accountName && i.accountName !== 'customer' ? 'Payout dashboard' : 'Set up payouts', () => void app.setupPayouts())
+          payouts.disabled = !state.session || !i.configured
+          payouts.title = !state.session ? 'Sign in to your fos account first' : !i.configured ? 'Stripe is not configured on the server (STRIPE_TOKEN)' : 'Stripe Connect onboarding: lets other users pay you for the tasks you complete'
+          connection.append(payouts)
+        }
       } else if (i.connected) {
         connection.append(span('muted', ` ${i.accountName ?? 'connected'}`), button('link small', 'Disconnect', () => void app.disconnectIntegration(p.id.replace(/^integration:/, ''))))
       } else if (i.kind === 'channel') {

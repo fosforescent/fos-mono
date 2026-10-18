@@ -317,7 +317,17 @@ matching requirements). Fos points are the account's token balance
 `points` handler moves N points on the server's ledger from the owner to the
 respondent (the signed-in user whose supplies filled the task's other
 requirements, or the user named with `@` on the row) and records the
-allocation and supply as `fos` (`backend/sync/hostHandlers.ts`). An allocation is
+allocation and supply as `fos` (`backend/sync/hostHandlers.ts`). A `-$ N`
+requirement is likewise a **payment**: the fos `send-payment` handler opens one
+with the account's payment provider (Stripe Checkout, paying the respondent's
+connected account; `backend/payments/stripe.ts`), records it on the requirement
+as a `fos:payment` value and leaves the evaluation `awaiting-review`; the
+provider's webhook confirms it later, even with every device offline, and the
+server then writes the allocation and supply as `fos` and resumes the
+evaluation (`backend/sync/payments.ts`, `shared/sync/payments.ts`). Running
+the task again while a payment is open does not open a second one; an expired
+page marks the record failed and the next run opens a new payment. Payees set
+up payouts from the Stripe peer (Connect onboarding). An allocation is
 *taken from the parent context* (`App.bankFor`): the nearest bank of its type
 above it, or, under an allocation requirement, a bank of the resource the
 requirement names, or the type's **default pool**, the first bank of that type
