@@ -67,7 +67,7 @@ jobs:
         run: cd desktop && npx tauri android init
 
       - name: Generate icons
-        run: cd desktop && npx tauri icon src-tauri/app-icon.png
+        run: cd desktop && npx tauri icon src-tauri/app-icon.json
 
       - name: Configure release signing
         env:
