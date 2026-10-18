@@ -11,7 +11,7 @@
  * (search, market, poll) and are advertised only. An effect may answer `'pending'`: its result awaits human review
  * (a proposal on a return ref) and the evaluation pauses as `awaiting-review` instead of committing.
  */
-import { SERVER_TRANSPORT_CAPABILITIES, type Capability, type EvaluationStep, type HostOffers, type Replica } from '@fosforescent/shared/sync/index'
+import { SERVER_TRANSPORT_CAPABILITIES, type Capability, type EvaluationStep, type HostOffers, type LibraryAddress, type Replica } from '@fosforescent/shared/sync/index'
 
 export type EffectContext = {
   userId: number
@@ -52,6 +52,8 @@ export function createHandlerRegistry(handlers: HostHandler[]) {
   return {
     handlers,
     provides,
+    /** The standard library this host seeds into every account's Home (sync/library.ts), once it exists at startup. */
+    library: null as LibraryAddress | null,
     /** Capabilities `peerId` provides on this host. */
     offers,
     /** What the fos server advertises: its transport facts plus every registered fos service. */

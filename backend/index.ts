@@ -4,6 +4,8 @@ import { createEvaluationService } from './sync/evaluation'
 import { createPaymentSettlement } from './sync/payments'
 import { setPaymentSettler, stripePayments } from './payments/stripe'
 import Stripe from 'stripe'
+import { ensureStandardLibrary } from './sync/library'
+import { createSystemAccount, libraryOwner } from './library'
 import { sendPlainEmail } from './email/email'
 import { createHandlerRegistry } from './sync/registry'
 import { createHostHandlers } from './sync/hostHandlers'
@@ -630,6 +632,10 @@ const PORT = parseInt(process.env.PORT || '4000', 10);
 
 server.listen(PORT, '0.0.0.0', async () => {
   void startChannels()
+  // The standard library: its system account, node, sharing and seed templates; then every owner sync references it.
+  ensureStandardLibrary({ ...prismaPeerSyncDeps, createAccount: createSystemAccount }, libraryOwner(), registry)
+    .then(address => { registry.library = address; console.log(`[library] @${address.owner} shares ${address.title} (${address.share})`) })
+    .catch(error => console.error('[library] unavailable:', error instanceof Error ? error.message : error))
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);
 });

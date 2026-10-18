@@ -18,6 +18,7 @@ export * from './triggers'
 
 export * from './sharing'
 export * from './payments'
+export * from './library'
 export * from './market'
 
 export * from './destructure'

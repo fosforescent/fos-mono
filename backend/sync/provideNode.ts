@@ -1,6 +1,7 @@
 import { nodeRelay } from './nodeRelay'
 import type { Request, Response } from 'express'
 import { createReplica, ensureHomeContext, exchangeNode, findRowByAlias, nodeAuthorityAt, parseNodeRequest, rootTargetCid, viewNode, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, exchangeNodeContext, resolveScope, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
+import { ensureAccountContext } from './library'
 import { withUserLock, serverPeerIdFor, type PeerSyncDeps } from './peerSync'
 
 export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: number, peer: string, address: string[], request: Omit<NodeRequest, 'scope' | 'path'>): Promise<ProvidedNode> } = nodeRelay) {
@@ -42,7 +43,7 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
         let r = createReplica(serverPeerIdFor(loaded.user.username), loaded.store)
         const before = loaded.store.rootNodeId
         if (claims.kind === 'peer' && (!claims.peerId || !Array.isArray(claims.scope))) throw new NodeAccessError('Invalid peer credential.')
-        if (authority.owner) r = ensureHomeContext(r, deps.now?.() ?? Date.now(), deps.registry?.hostOffers())
+        if (authority.owner) r = ensureAccountContext(r, deps.now?.() ?? Date.now(), deps.registry)
         const now = deps.now?.() ?? Date.now()
         if (pending && upstreamNode) {
           const current = nodeReferenceAt(r, request, authority)

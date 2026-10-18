@@ -1,7 +1,7 @@
 import { exchangeNodeContext } from './node-context'
 import type { FosDataContent } from '../types'
 import { content, valueContent, identityCid, rowKindOf, rowPrimitive, resolveScope, isHandle, isPeerReference,
-  scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
+  scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError,
   type NodeBranch, type NodeRequest, type NodeShape, type NodeChild, type ProvidedNode, type NodeAuthority } from './node-provider'
@@ -93,7 +93,7 @@ function allowedToEdit(r: Replica, path: Scope, authority: NodeAuthority): boole
   for (let i = authority.scope.length; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) return false
-    const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
+    const member = memberFor(r.store, content(r.store, cid), authority.peerId)
     if (member) allowed = member.capabilities.includes('edit') && !member.disabled?.includes('edit')
   }
   return allowed
@@ -180,7 +180,7 @@ export function outgoingNodeShape(r: Replica, path: Scope, peer: string, shape: 
   let fields: string[] | undefined, children: string[] | undefined
   for (let i = 0; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
-    const member = cid && readMembers(r.store, content(r.store, cid)).find(m => m.peerId === peer)
+    const member = cid && memberFor(r.store, content(r.store, cid), peer)
     if (member && (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || (!member.capabilities.includes('read') && !member.capabilities.includes('edit')))) throw new NodeAccessError('Local node access denied.')
     const mask = nodeLinkMaskAt(r, path.slice(0, i), peer)
     if (mask?.fields) fields = fields ? fields.filter(f => mask.fields!.includes(f)) : mask.fields
@@ -207,7 +207,7 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   for (let i = authority.scope.length; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) { if (i === authority.scope.length) throw new NodeAccessError('Attachment unavailable.'); break }
-    const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
+    const member = memberFor(r.store, content(r.store, cid), authority.peerId)
     if (member) {
       grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
       read = !member.disabled?.includes('read') && !member.disabled?.includes('provideNode') && (member.capabilities.includes('read') || member.capabilities.includes('edit'))
@@ -242,7 +242,7 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   served.node.grants = grants
   served.node.children = served.node.children.filter(child => {
     const cid = resolveScope(r.store, headCid(r), [...path, child.id])
-    const member = cid && readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
+    const member = cid && memberFor(r.store, content(r.store, cid), authority.peerId)
     return !member || (!member.disabled?.includes('read') && !member.disabled?.includes('provideNode') && (member.capabilities.includes('read') || member.capabilities.includes('edit')))
   })
   return { replica: { ...r }, node: served.node }

@@ -1,4 +1,4 @@
-import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, readProposals, reachableNodes, resolveScope, rowPrimitive, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
+import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowPrimitive, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
 import { createBranch } from './branches'
 import { headCid, loadReplica, serializeReplica, type Replica } from './replica'
 import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
@@ -15,7 +15,7 @@ export function nodeAuthorityAt(r: Replica, path: Scope, authority: NodeAuthorit
     for (let i = authority.scope.length; i <= path.length; i++) {
       const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
       if (!cid) { if (i === authority.scope.length) throw new NodeAccessError('Attachment unavailable.'); break }
-      const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
+      const member = memberFor(r.store, content(r.store, cid), authority.peerId)
       if (member) grants = member.capabilities.filter(c => !member.disabled?.includes(c) && !(c === 'read' && member.disabled?.includes('provideNode')))
       if (!grants.includes('read') && !grants.includes('edit')) throw new NodeAccessError('Node access denied.')
       if (member?.disabled?.includes('read') || member?.disabled?.includes('provideNode')) throw new NodeAccessError('Node access denied.')

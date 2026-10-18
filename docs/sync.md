@@ -692,6 +692,45 @@ nodes and peers keyed by alias ids.
 
 Sync itself needs no schema change; nodes land in `FosNodeModel` like any other. Invites use the `PeerInviteModel` table.
 
+## The standard library (`shared/sync/library.ts`, `backend/sync/library.ts`)
+
+One node every account reads and can propose changes to, owned by a system
+account on the server (`FOS_LIBRARY_OWNER`, default `fos-library`; created at
+startup by `backend/library.ts`). At startup `ensureStandardLibrary` makes sure
+the account's Home holds the `fos:library` row "Standard library", shares it
+with the `users` audience granting read, edit, approve and rank, gives it a
+**merge policy** (`fos:merge-policy`, default two approvals) and seeds the
+standard templates (`STANDARD_LIBRARY`: Plan a trip, Invoice, Group decision,
+Paid task, Contact form, Research note; `fos:library` records the seed version so
+later versions add only what is missing and rows the group removed stay removed).
+The registry then carries the address and every owner sync
+(`ensureAccountContext` in provide-node) puts a reference row `fos:library`
+into the account's Home with the shared address as `fos:shared-link`.
+
+**Audiences are groups.** `memberFor` (graph.ts) resolves a peer's member entry
+to its own, else to `audience:users` for any `user:*` peer, else to
+`audience:public`; every grant check (`hasCapability`, `inheritedNodeGrants`,
+`nodeAuthorityAt`, `allowedToEdit`, the provider) goes through it. Sharing a
+node with an audience therefore makes it a group nobody has to join one by one;
+an explicit member entry still wins, so a single account can be restricted.
+`participants` lists participation records found on the node, not only
+explicit members.
+
+**Offline.** The web app opens the reference as a live projection
+(`openSharedNode`) on the first online sync and pulls the whole tree
+(`materializeSharedTree`), so `findTemplateByName` finds the library's templates
+in the local replica and `` [ ] `Plan a trip` `` instantiates them offline;
+`syncSharedNodes` keeps the copy current and pushes local edits as the member's
+proposal on the owner's node.
+
+**Governance.** Members approve proposals in the shared view (the row's
+"Updates" link); after each submission the server applies the node's merge
+policy (`applyMergePolicy`): a proposal with at least that many approvals at the
+current revision is merged as the owner. Votes are tied to the revision, so the
+remaining proposals wait for fresh approvals after a merge. Without a policy the
+owner decides by hand, as on any shared node; the policy value is itself part
+of the node, so the group can propose changing it.
+
 ## Limitations / next steps
 
 * Task order is `todo.time` then id; no user-controlled ordering yet.

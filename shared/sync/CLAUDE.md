@@ -53,3 +53,9 @@ Home normalization keeps `fos:home` as an ordinary plain container, not a workfl
 Branch choice pointers may carry a named `request merge` typed approval ref. `ChoiceOption.requestMerge` projects that child; branch edits, copying and serialization preserve it. Three-way merges retain a request toggled concurrently with branch content. Received branch constructors reuse the same approval child; existing proposal wire/authorization APIs remain compatible. Peer constructor syntax `@{handler}` is excluded from single-brace text parameter parsing and substitution.
 
 Requirement destructuring (`destructure.ts`) uses named typed refs whose existing `ref` field identifies the source requirement. Amount outputs are bounded planned slices, unavailable until source fulfillment; choice outputs expose exactly one selected option. Bind outputs to ordinary record arguments or an allocation's `amount` argument. Resolution follows the current source and refuses removed outputs. Fulfilled amount requirements participate in allocation capacity checks as derived banks. Template instantiation remaps owned source identities and supports ordinary record rows; it copies the definition at application time, not live inheritance.
+
+## Standard library and audience membership (2026-10-17)
+
+- `library.ts`: `STANDARD_LIBRARY` seed rows and `seedStandardLibrary` (versioned, idempotent, respects removals), `ensureLibraryLink` (the `fos:library` reference in a Home), `mergePolicy`/`setMergePolicy`/`applyMergePolicy` (merge proposals the shared projection counts enough approvals for).
+- `graph.ts` `memberFor`: audience members are implicit groups (`audience:users` = every `user:*`, `audience:public` = everyone); `hasCapability` and every grant walk use it. `sharing.ts` `participants` reads participation records off the node so audience members' votes count.
+- Tests: `library.test.ts`.

@@ -110,3 +110,7 @@ A single parameter dialog captures the destination/session and gathers handler, 
 - Pull is an existing `tool` requirement with `tool: fos.pull`, targeting the active document transport. The browser evaluation driver performs a receive-only sync, adds the unit result supply, and uses the normal effect/recovery journal. Local Pull and server integration effects must be evaluated separately.
 - Trigger constructors reuse `configureTrigger` and the existing workflow template/ref representation. Menu-created triggers start paused; schedule errors and incompatible input types leave the graph unchanged. Legacy direct trigger configuration retains its existing enable behavior.
 - Editor operations (undo, text/media input) remain controls in the same menu; they do not become workflow effects. Execution and recovery controls inspect/evaluate constructed rows.
+
+## Standard library (2026-10-17)
+
+The `fos:library` reference the server puts into Home renders as "📚 Standard library" (opens the live projection) with an "Updates" link (the shared vote view on proposals). `syncSharedNodes` opens it on the first online sync and `materializeSharedTree` pulls the whole tree, so its templates are in the local replica and instantiate offline (`findTemplateByName` searches the whole replica). `tests/library.cjs` covers the flow against a fake server.
