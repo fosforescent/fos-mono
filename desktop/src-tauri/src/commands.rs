@@ -265,3 +265,18 @@ pub fn cmd_decide(ws: &mut Workspace, prefix: &str, decision: &str) -> Result<()
     print_tree(ws);
     Ok(())
 }
+
+/// `fos library export [--out file]`: the standard library as the bundle the web build carries (web/src/library.json).
+pub fn cmd_library_export(ws: &mut Workspace, out_path: Option<&Path>) -> Result<(), String> {
+    let bundle = ws.library_export()?;
+    let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())? + "\n";
+    match out_path {
+        Some(path) => {
+            std::fs::write(path, text).map_err(|e| format!("cannot write {}: {}", path.display(), e))?;
+            let rows = bundle["rows"].as_array().map(|r| r.len()).unwrap_or(0);
+            out(&format!("{} wrote {} top-level rows of @{}'s library to {}", "✓".green(), rows, bundle["address"]["owner"].as_str().unwrap_or("?"), path.display()));
+        }
+        None => print!("{}", text),
+    }
+    Ok(())
+}

@@ -14,6 +14,7 @@ import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContext, SERVER_TRANSPORT_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
+import { ensureAccountContext } from './accountContext'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
 import { indexStore, vertexEmbed } from '../search/rowIndex'
 import type { HandlerRegistry } from './registry'
@@ -102,7 +103,7 @@ export function createPeerSyncHandler(deps: PeerSyncDeps) {
         // Older scoped peer credentials continue to resolve through Home.
         const beforeContext = rootTargetCid(store)
         if (claimsOf(req).kind !== 'peer' && ((!parsed.scope.length && Object.values(parsed.nodes).some(node => node?.data?.alias?.id === HOME_ID)) || parsed.scope[0] === HOME_ID)) {
-          ensureHomeContext(serverReplica, 0, deps.registry?.hostOffers())
+          ensureAccountContext(serverReplica, 0, deps.registry)
           if (parsed.scope[0] === HOME_ID && !independentRoot) writeNodeValue(serverReplica, [], 'fos:peer-root', 'fos', deps.now?.() ?? Date.now())
         }
         const contextChanged = rootTargetCid(store) !== beforeContext

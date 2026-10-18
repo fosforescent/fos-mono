@@ -1,3 +1,4 @@
+import LIBRARY_BUNDLE from './library.json'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
@@ -33,7 +34,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, LIBRARY_ID, libraryLink, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, LIBRARY_ID, libraryLink, ensureBundledLibrary, type LibraryBundle, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -313,6 +314,14 @@ function loadSession(raw: unknown, baseUrl: string): Session | null {
   return { baseUrl, jwt: s.jwt, username: s.username, kind: s.kind === 'peer' ? 'peer' : 'user' }
 }
 
+/** A device's local copy of the standard library from its build (web/src/library.json), seeded into Home before the
+ * account ever syncs so the templates work offline from the first run; the first owner sync swaps it for the live
+ * reference. Project and document replicas have no Home and get none. */
+function withBundledLibrary(r: Replica): Replica {
+  if (homePath(r)[0] !== HOME_ID) return r
+  return ensureBundledLibrary(r, LIBRARY_BUNDLE as LibraryBundle, Date.now()).replica
+}
+
 export class App {
   state: AppState
   private virtualIdentity: VirtualPeer | null = null
@@ -353,7 +362,7 @@ export class App {
   constructor(config: AppConfig) {
     this.config = config
     this.autoCredentials = config.autoLogin
-    const replica = config.scopedDocument || config.project ? loadReplica(config.storage.loadReplica()) : ensureHomeContext(loadReplica(config.storage.loadReplica()), 0)
+    const replica = config.scopedDocument || config.project ? loadReplica(config.storage.loadReplica()) : withBundledLibrary(ensureHomeContext(loadReplica(config.storage.loadReplica()), 0))
     const prefs = (config.storage.loadPrefs() ?? {}) as { repositories?: Array<[string, RepositorySnapshot]>; branches?: Record<string, string>; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
     if (Array.isArray(prefs.repositories)) this.repositories = new Map(prefs.repositories.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && Array.isArray(entry[1]?.pulls)))
     this.branchSelections = prefs.branches && typeof prefs.branches === 'object' ? Object.fromEntries(Object.entries(prefs.branches).filter(([, name]) => typeof name === 'string')) : {}
@@ -481,7 +490,7 @@ export class App {
 
   /** Project mode: the directory switched git branch; show that branch's replica. */
   reloadReplica(): void {
-    const replica = this.documentReplica(loadReplica(this.config.storage.loadReplica()))
+    const replica = withBundledLibrary(this.documentReplica(loadReplica(this.config.storage.loadReplica())))
     this.set({ replica, view: homePath(replica), selected: null, contextMenu: null })
     this.notify('info', `Now on branch ${this.currentBranch() ?? 'local'}.`)
     if (this.transport()) void this.syncNow('branch switch')
@@ -797,7 +806,7 @@ export class App {
     this.cancelDirect()
     this.history.clear()
     this.virtualPeers?.close(); this.virtualPeers = null
-    const replica = this.documentReplica(loadReplica(this.config.storage.loadReplica()))
+    const replica = withBundledLibrary(this.documentReplica(loadReplica(this.config.storage.loadReplica())))
     const prefs = (this.config.storage.loadPrefs() ?? {}) as { branches?: Record<string, string>; collapsed?: string[]; policy?: unknown; deviceName?: string }
     this.branchSelections = prefs.branches ?? {}
     this.repositories.clear()
