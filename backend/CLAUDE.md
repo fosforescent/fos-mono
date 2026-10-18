@@ -158,3 +158,9 @@ Every input surface is an adapter of `shared/sync/events.ts`: `POST /user/data/e
 
 ### Media notes
 The existing authenticated `/user/data/voice-notes` pipeline also accepts JPEG/PNG/WebP images and MP4/WebM videos, bounded to 25 MB. It returns the same summary/cluster/source-text structure and uses the existing account usage budget (`VoiceUsageModel`, one row per transcription, summed in USD against `VOICE_FREE_BUDGET_USD`; never the fos-points ledger). Gemini handles images and videos; the OpenAI implementation handles images and explicitly rejects video. Picture/video originals are not stored by this endpoint. Provider calls need live-provider validation in addition to the mocked handler tests.
+
+## Standard library (2026-10-17)
+
+- `library.ts` creates the system account `FOS_LIBRARY_OWNER` (default `fos-library`, unusable password); `sync/library.ts` `ensureStandardLibrary` runs at startup (index.ts `server.listen`): the `fos:library` node in that account's Home, shared with the `users` audience (read, edit, approve, rank), merge policy (two approvals), seed templates; the address lands on `registry.library`.
+- `ensureAccountContext` (provide-node owner path) = `ensureHomeContext` + the `fos:library` reference in the account's Home.
+- `sync/sharing.ts` `submit` applies the node's merge policy after recording a vote (`applyMergePolicy`), so library proposals merge at the threshold. Tests: `sync/library.test.ts`.

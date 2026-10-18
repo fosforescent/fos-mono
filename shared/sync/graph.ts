@@ -1566,9 +1566,20 @@ export function withoutMember(store: FosStore, value: FosNodeContent, peerId: st
   return { ...value, children: value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)) }
 }
 
-/** Does `peerId` hold `capability` on this node, granted and not switched off? */
+/**
+ * The member entry that applies to `peerId`: its own, else the audience it belongs to. `audience:users` covers every
+ * account (`user:*`) and `audience:public` everyone, so sharing a node with an audience makes it a group nobody has
+ * to join one by one; an explicit entry for the peer always wins.
+ */
+export function memberFor(store: FosStore, value: FosNodeContent, peerId: string): MemberRecord | undefined {
+  const members = readMembers(store, value)
+  return members.find((m) => m.peerId === peerId) ?? (peerId.startsWith('user:') ? members.find((m) => m.peerId === 'audience:users') : undefined) ?? members.find((m) => m.peerId === 'audience:public')
+}
+
+/** Does `peerId` hold `capability` on this node (itself or through its audience), granted and not switched off? */
 export function hasCapability(store: FosStore, value: FosNodeContent, peerId: string, capability: Capability): boolean {
-  return readMembers(store, value).some((m) => m.peerId === peerId && m.capabilities.includes(capability) && !(m.disabled ?? []).includes(capability))
+  const m = memberFor(store, value, peerId)
+  return !!m && m.capabilities.includes(capability) && !(m.disabled ?? []).includes(capability)
 }
 
 export type ProposalRecord = {

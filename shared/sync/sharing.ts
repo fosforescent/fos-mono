@@ -84,9 +84,12 @@ export function participation(r: Replica, path: Scope, peer: string): Participat
   const value = readNodeValue<Participation>(r, path, `fos:guest:${peer}`)
   return value && value.peer === peer && Array.isArray(value.approvals) && value.approvals.every(v => typeof v === 'string') && Array.isArray(value.ranking) && value.ranking.every(v => typeof v === 'string') && value.fields && typeof value.fields === 'object' ? value : null
 }
+/** Everyone who took part: members with a record, and audience members (implicit, see `memberFor`) whose record is on the node. */
 export function participants(r: Replica, path: Scope): Participation[] {
-  const node = view(r, path)
-  return (node?.members ?? []).flatMap(m => { const record = participation(r, path, m.peerId); return record ? [record] : [] })
+  const cid = resolveScope(r.store, headCid(r), path)
+  if (!cid) return []
+  const peers = new Set([...(view(r, path)?.members ?? []).map(m => m.peerId), ...argumentRefs(r.store, cid).flatMap(a => a.name?.startsWith('fos:guest:') ? [a.name.slice('fos:guest:'.length)] : [])])
+  return [...peers].flatMap(peer => { const record = participation(r, path, peer); return record ? [record] : [] })
 }
 export function sharedProjection(r: Replica, path: Scope, revision: (value: unknown) => string, peer?: string, interactive = false): SharedNode {
   const node = view(r, path), policy = sharing(r, path)

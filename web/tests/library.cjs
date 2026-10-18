@@ -1,0 +1,81 @@
+/* The standard library: a node another account (the server's library account) shares with every user; it opens as a
+   live projection in Home, is pulled whole so its templates work offline, and offers the vote on proposed changes. */
+const assert = require('node:assert/strict')
+const { buildSync } = require('esbuild')
+const { mkdtempSync } = require('node:fs')
+const path = require('node:path')
+const { JSDOM } = require('jsdom')
+const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-library-'))
+const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
+for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
+buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
+const c = require(path.join(dir, 'test.cjs'))
+const tick = () => new Promise(resolve => setTimeout(resolve, 20))
+
+async function main() {
+  const HOME = c.HOME_ID, LIB = c.LIBRARY_ID, share = 'library-share-0123456789'
+  // the library account on the server: the node, shared with every user, seeded
+  let lib = c.ensureHomeContext(c.createReplica('user:fos-library'), 1)
+  lib = c.addRow(lib, [HOME], 'plain', 'Standard library', 1, { id: LIB })
+  lib = c.setSharing(lib, [HOME, LIB], { id: share, audience: 'users', enabled: true }, 2)
+  lib = c.setMemberCapabilitiesAt(lib, [HOME, LIB], 'audience:users', ['read', 'edit', 'approve', 'rank'], [], 2)
+  lib = c.seedStandardLibrary(lib, [HOME, LIB], 3)
+  const address = { owner: 'fos-library', path: [HOME, LIB], share, title: 'Standard library' }
+  let now = 100, offline = false
+  const calls = []
+  globalThis.fetch = async (url, init) => {
+    if (offline) throw new TypeError('fetch failed')
+    const u = new URL(url), body = init?.body ? JSON.parse(init.body) : null
+    calls.push(u.pathname)
+    const json = (status, value) => ({ ok: status < 400, status, statusText: 'x', json: async () => value })
+    if (u.pathname === '/user/data/peer-sync/locate') return json(200, { owner: 'fos-library', aliasId: LIB, path: [HOME, LIB], title: 'Standard library', grants: ['read', 'edit', 'approve', 'rank'] })
+    if (u.pathname === '/user/data/peer-sync/provide-node') {
+      assert.equal(body.owner, 'fos-library'); assert.equal(body.peerId, 'user:me')
+      const { owner, ...request } = body
+      // the server answers as the library account; `user:me` holds its grants only through the users audience
+      const served = c.exchangeNode(lib, request, { peerId: 'user:me', scope: request.scope, owner: false, proposeOnly: true, capabilities: c.SERVER_TRANSPORT_CAPABILITIES }, ++now)
+      lib = served.replica
+      return json(200, served.node)
+    }
+    return json(404, { error: `unexpected ${u.pathname}` })
+  }
+
+  // my device: signed in; the server put the library's reference into Home on the first sync
+  const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
+  app.scheduleSync = () => {}; app.syncNow = async () => {}
+  c.mountUi(document.getElementById('app'), app)
+  let me = c.ensureHomeContext(c.createReplica('user:me'), 1)
+  me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
+  me = c.ensureLibraryLink(me, address, 2).replica
+  app.set({ replica: me, session: { kind: 'user', username: 'me', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
+  app.recordServerOffers(c.SERVER_TRANSPORT_CAPABILITIES) // what the account server advertises: it provides nodes
+  app.goTo([HOME]); await tick()
+  const row = document.querySelector(`.tree .task[data-id="${LIB}"]`)
+  assert(row, 'Home lists the standard library')
+  assert(row.textContent.includes('📚') && row.textContent.includes('Standard library'))
+  assert(row.querySelector('.library-updates'), 'the row offers the vote on updates')
+  assert.deepEqual(c.libraryLink(app.state.replica), [HOME, LIB])
+
+  // opening pulls the projection through the users audience (no explicit membership) and the whole tree follows
+  row.querySelector('.ref-link').click()
+  for (let i = 0; i < 40 && !c.findTemplateByName(app.state.replica, 'Plan a trip'); i++) await tick()
+  assert(app.isPeerNode([HOME, LIB]), 'the reference became a live projection')
+  assert.deepEqual(app.state.view, [HOME, LIB])
+  const trip = c.findTemplateByName(app.state.replica, 'Plan a trip')
+  assert(trip, 'the library\'s templates are in the local replica')
+  for (let i = 0; i < 40 && (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks.length ?? 0) < 5; i++) await tick()
+  assert.equal(c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.length, 5, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
+  assert(calls.filter(p => p.endsWith('provide-node')).length >= 7, `the tree was materialized node by node: ${calls.length} requests`)
+
+  // offline: a task made from a library template gets the template's requirements, with no request to the server
+  offline = true
+  const before = calls.length
+  app.goTo([HOME])
+  const task = [HOME, app.addRowAt([], 'task', 'Trip', { templateName: 'Plan a trip' })]
+  const requirements = c.view(app.state.replica, task).tasks.filter(t => t.kind === 'requirement')
+  assert.equal(requirements.length, 5, 'the template instantiated offline')
+  assert.deepEqual(requirements.map(t => t.requirement.capability), ['confirmation', 'allocation', 'allocation', 'task', 'task'])
+  assert.equal(calls.length, before, 'nothing was requested while offline')
+  console.log('PASS: the standard library arrives in Home, opens as a projection, is pulled whole and instantiates offline')
+}
+main().catch(error => { console.error(error); process.exit(1) })

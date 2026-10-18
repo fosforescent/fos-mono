@@ -24,7 +24,7 @@ import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
-import { CAPABILITY_LABEL, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
+import { CAPABILITY_LABEL, LIBRARY_ID, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
   context: HTMLElement
@@ -2107,6 +2107,14 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
     body.append(button('link ref-link', task.title && task.title !== 'Peer-held node' ? firstLine(task.title) : 'Loading\u2026', () => app.zoomTo(path)))
     body.title = 'Shared node'
     watchPeerNode(body, app, [...app.state.view, ...path])
+    return body
+  }
+  if (task.id === LIBRARY_ID && task.refOwner) {
+    // the standard library: opens as a live projection (its templates then work offline here); Updates is the vote on proposals
+    const open = button('link ref-link', `📚 ${firstLine(task.title) || 'Standard library'}`, () => void app.openSharedNode([...app.state.view, ...path]))
+    open.title = `Shared by @${task.refOwner}: templates every account can use; edits become proposals the members vote on`
+    body.append(arrow, open)
+    if (app.sharedLink(task.id)) { const updates = button('link small library-updates', 'Updates', () => app.openSharedLink(task.id)); updates.title = 'Proposed changes to the library: approve the ones you want merged'; body.append(updates) }
     return body
   }
   if (app.sharedLink(task.id)) {

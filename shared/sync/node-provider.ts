@@ -1,7 +1,7 @@
 import type { FosDataContent } from '../types'
 import { hashContent } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, rowPrimitive, bookkeepingOf, rootTargetCid, withPeer,
-  valueContent, readMembers, isHandle, isPeerReference, isBookkeepingEdge, rowKindOf, identityCid, withMainBranchPolicy,
+  valueContent, readMembers, memberFor, isHandle, isPeerReference, isBookkeepingEdge, rowKindOf, identityCid, withMainBranchPolicy,
   readProposals, CAPABILITIES, type ProposalView, ROW_KINDS, type Capability, type Scope, type RowKind } from './graph'
 import { headCid, type Replica } from './replica'
 
@@ -133,7 +133,7 @@ export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuth
   for (let i = 0; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) throw new NodeAccessError('Attachment unavailable.')
-    const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
+    const member = memberFor(r.store, content(r.store, cid), authority.peerId)
     if (!member) continue
     grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
     if (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || (!grants.includes('read') && !grants.includes('edit'))) throw new NodeAccessError('Parent permissions deny node access.')
@@ -142,7 +142,7 @@ export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuth
 }
 
 function permitted(r: Replica, cid: string, peer: string, inherited: boolean): boolean {
-  const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === peer)
+  const member = memberFor(r.store, content(r.store, cid), peer)
   if (!member) return inherited
   if (member.disabled?.includes('read') || member.disabled?.includes('provideNode')) return false
   return member.capabilities.some(cap => (cap === 'read' || cap === 'edit') && !member.disabled?.includes(cap))
@@ -177,7 +177,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       if (!edge) throw new NodeAccessError('Node unavailable.')
       cid = identityCid(r.store, edge)
       path.push(id)
-      const member = readMembers(r.store, content(r.store, cid)).find(m => m.peerId === authority.peerId)
+      const member = memberFor(r.store, content(r.store, cid), authority.peerId)
       if (member) grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
       access = permitted(r, cid, authority.peerId, access)
       if (!access) throw new NodeAccessError('Node access denied.')

@@ -33,7 +33,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, LIBRARY_ID, libraryLink, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -1057,12 +1057,12 @@ export class App {
    * Run goes to the owner's host (with the `execute` grant), Analyze reads what is loaded. Without a grant (a market
    * listing only) the read-only market view opens instead.
    */
-  async openSharedNode(path: Scope): Promise<void> {
+  async openSharedNode(path: Scope, navigate = true): Promise<void> {
     const session = this.state.session, r = this.state.replica
     const row = view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
     if (!row?.refOwner || !row.refId) return
-    if (!session || session.kind !== 'user' || !this.isOnline('fos')) { this.notify('error', 'Connect to your account to open a node shared with you.'); this.openModal('connect'); return }
-    if (this.isPeerNode(path)) { this.goTo(path); return }
+    if (!session || session.kind !== 'user' || !this.isOnline('fos')) { if (navigate) { this.notify('error', 'Connect to your account to open a node shared with you.'); this.openModal('connect') } return }
+    if (this.isPeerNode(path)) { if (navigate) this.goTo(path); return }
     let located: Awaited<ReturnType<typeof locateSharedNode>>
     try { located = await locateSharedNode(session, row.refOwner, row.refId) }
     catch (error) {
@@ -1078,14 +1078,32 @@ export class App {
       let next = rememberNodeSync(acceptProvidedNode(this.state.replica, path, request, node, this.now()), path, node)
       next = { ...next, meta: { ...next.meta, sharedNodes: { ...next.meta.sharedNodes, [JSON.stringify(path)]: { owner, scope: located.path } } } }
       this.set({ replica: next })
-      this.goTo(path)
-      this.notify('info', `Shared by @${owner}: you can ${(node.grants ?? []).map(g => CAPABILITY_LABEL[g] ?? g).join(', ') || 'read'} here.`)
-    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+      if (navigate) { this.goTo(path); this.notify('info', `Shared by @${owner}: you can ${(node.grants ?? []).map(g => CAPABILITY_LABEL[g] ?? g).join(', ') || 'read'} here.`) }
+      // the standard library is used offline: pull all of it, not just the node being looked at
+      if (path.at(-1) === LIBRARY_ID) void this.materializeSharedTree(path)
+    } catch (error) { if (navigate) this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
+  /** Pull every node below a shared projection (its stubs are peer references loaded one by one) so it is complete offline. */
+  private async materializeSharedTree(root: Scope, limit = 500): Promise<void> {
+    const store = this.state.replica.store, queue: Scope[] = [root]
+    let loaded = 0
+    while (queue.length && loaded < limit) {
+      const at = queue.shift()!
+      if (this.state.replica.store !== store) return
+      const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), at)
+      if (!cid) continue
+      if (isPeerReference(content(this.state.replica.store, cid))) { await this.loadPeerNode(at); loaded++ }
+      for (const row of view(this.state.replica, at)?.tasks ?? []) if (row.kind !== 'ref' || row.refPeer) queue.push([...at, row.id])
+    }
   }
   /** Shared projections sync with their owner's account as `user:<me>`: pulls, and pushes of local edits as proposals there. */
   private async syncSharedNodes(pullOnly: boolean): Promise<void> {
     const session = this.state.session, generation = this.authGeneration
     if (!session || session.kind !== 'user' || this.transport() !== 'account') return
+    // the standard library the server put into Home: open it once so its templates are here offline, then keep it current
+    const library = libraryLink(this.state.replica)
+    if (library && !this.state.replica.meta.sharedNodes?.[JSON.stringify(library)] && !this.isPeerNode(library)) await this.openSharedNode(library, false)
+    if (library && this.state.replica.meta.sharedNodes?.[JSON.stringify(library)]) void this.materializeSharedTree(library)
     const store = this.state.replica.store
     const valid = () => generation === this.authGeneration && session === this.state.session && store === this.state.replica.store
     for (const [key, info] of Object.entries(this.state.replica.meta.sharedNodes ?? {})) {
