@@ -98,6 +98,13 @@ async function main() {
   const mergedFields = c.mergeNodeShape(baseShape, { ...baseShape, data: { name: { content: 'Local' } } }, { ...baseShape, data: { ...baseShape.data, description: { content: 'Remote' } } })
   assert.equal(mergedFields.data.name.content, 'Local')
   assert.equal(mergedFields.data.description.content, 'Remote')
+  // The server's jsonb copy reorders keys; the same value must not read as a concurrent change.
+  const allocation = { data: { allocation: { resource: '', type: 'money', amount: -5, unit: 'USD', capability: 'pay' } }, children: [] }
+  const reordered = { data: { allocation: { type: 'money', unit: 'USD', amount: -5, resource: '', capability: 'pay' } }, children: [] }
+  const edited = { data: { allocation: { ...allocation.data.allocation, amount: -7 } }, children: [] }
+  assert.equal(c.mergeNodeShape(allocation, edited, reordered).data.allocation.amount, -7)
+  assert.ok(c.sameNodeShape(allocation, reordered))
+  assert.throws(() => c.mergeNodeShape(allocation, edited, { data: { allocation: { ...reordered.data.allocation, amount: -9 } }, children: [] }), /Concurrent change to node field "allocation"/)
   console.log('PASS: shallow pulls, provider selection, reciprocal refs, masks, revoked children, scope checks and reload')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => rmSync(dir, { recursive: true, force: true }))

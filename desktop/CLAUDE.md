@@ -131,7 +131,7 @@ The web app signs in with the account directly; OAuth integration sign-ins open 
 - Built in GitHub Actions (`.github/workflows/mobile-android.yml` and `mobile-ios.yml`); `gen/android` and `gen/apple` are initialized fresh in CI
 - Android release signing is injected post-init by `.github/scripts/patch-android-signing.sh`
 - iOS uses Xcode automatic cloud signing via App Store Connect API key
-- App icon source: `src-tauri/app-icon.png` (1024px) — CI runs `npx tauri icon` after init
+- App icon source: `src-tauri/app-icon.png` (1024px) — CI runs `npx tauri icon` after init, then `.github/scripts/flatten-ios-icons.mjs` strips the alpha channel from the iOS icons (App Store Connect rejects RGBA icons, which tauri emits even with `bg_color`)
 - Full release procedure and required secrets: `docs/mobile-release.md`
 
 ## Security

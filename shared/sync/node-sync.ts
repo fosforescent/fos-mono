@@ -5,13 +5,15 @@ import { isCid, isCurrentCid } from '../dag-implementation/cid'
 import { content, valueContent, identityCid, rowKindOf, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTemplateOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
+import { sameValue } from './merge'
 import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError,
   type NodeBranch, type NodeRequest, type NodeShape, type NodeChild, type ProvidedNode, type NodeAuthority } from './node-provider'
 
 export type NodeSyncState = { local: NodeShape; remote: NodeShape & Pick<ProvidedNode, 'proposals' | 'grants'> }
 const forbidden = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId', '__proto__', 'constructor', 'prototype'])
 const empty = (): NodeShape => ({ data: {}, children: [] })
-const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+// Key order is not content: jsonb storage and object spreads reorder keys of the same value.
+const equal = sameValue
 const childValue = (child?: NodeChild) => child && { id: child.id, kind: child.kind, template: child.template, ...(child.kind === 'ref' ? { address: child.address } : {}) }
 export const nodeSyncKey = (peer: string, path: Scope, branches?: NodeBranch[]): string => JSON.stringify(branches?.length ? [peer, path, [...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : [peer, path])
 

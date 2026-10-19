@@ -192,9 +192,9 @@ function mergeData(base: FosDataContent, ours: FosDataContent, theirs: FosDataCo
       continue
     }
     const bv = b[key], ov = o[key], tv = t[key]
-    if (same(ov, tv)) { if (ov !== undefined) out[key] = ov; continue }
-    if (same(bv, ov)) { if (tv !== undefined) out[key] = tv; continue }
-    if (same(bv, tv)) { if (ov !== undefined) out[key] = ov; continue }
+    if (sameValue(ov, tv)) { if (ov !== undefined) out[key] = ov; continue }
+    if (sameValue(bv, ov)) { if (tv !== undefined) out[key] = tv; continue }
+    if (sameValue(bv, tv)) { if (ov !== undefined) out[key] = ov; continue }
     if (!theirsWins) return null
     if (tv !== undefined) out[key] = tv
   }
@@ -207,7 +207,8 @@ function timeOf(value: unknown): number {
     : 0
 }
 
-function same(a: unknown, b: unknown): boolean {
+/** Structural equality that ignores object key order (cids already do). */
+export function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (a === undefined || b === undefined) return false
   return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b))
