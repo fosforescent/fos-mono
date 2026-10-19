@@ -37,8 +37,9 @@ peer-held row also requests it immediately; descendants stay unloaded until need
 The web controller checks the connection and current replica before accepting
 an asynchronous result. Requests for the same row share one in-flight promise.
 
-Background web/account, direct, and virtual synchronization now uses
-`shared/sync/node-sync.ts` through the node-provider transport. Each exchange
+All synchronization (web/account, direct, virtual, the manual relay and the
+`fos` CLI) uses `shared/sync/node-sync.ts` through the node-provider transport;
+see "Node sync" below. Each exchange
 contains only shallow field/child-reference deltas. Polls refresh the attachment
 and displayed path; edited materialized nodes are sent independently. Unopened
 remote descendants stay unloaded. Per-peer shallow baselines survive reloads.
@@ -46,22 +47,21 @@ Existing child bodies, grants, and hidden children survive shallow updates.
 Concurrent edits to different fields merge; overlapping edits fail without
 replacing either value. In-flight local edits are rebased before installation.
 
-The old full-graph protocol remains for explicit legacy/manual flows, except
-account reset, which now uses a node update. It is no longer used by background
-`syncNow`, and still refuses
-partial projections, masked attachments, and nested read boundaries.
-
 Invited account peers and virtual proposers write into their own pending values;
 main stays unchanged until the existing approval operation applies the proposal.
 Reviewers receive proposal identifiers/status, without descendant contents.
-Current main grants are checked even when serving a pending value.
+Current main grants are checked even when serving a pending value. The
+proposer is served its submission rebased onto main as it is now, so it sees
+main's changes and keeps its own rows. A rejected submission stays in the list,
+marked rejected and below the open ones (`readProposals`); only a re-submission
+with different content opens it again for review.
 
 Branch selections travel as explicit scoped contexts. Shallow baselines are keyed
 by branch, and updates restore only the selected alternatives, preserving main.
 Every branch request is authorized against current main grants and link masks.
 
 Reviewers open **Branches**, select a pending proposal, then choose **Approve and
-merge** or **Reject**. Approval requires owner access or the `approve` capability;
+merge** or **Reject**. Approval requires owner access or `edit` (deciding submissions is how edit is exercised on a node with several peers; there is no separate approve grant);
 it merges the pending value against its saved base. Proposal previews fetch one
 node at a time into a separate read-only replica. Rejecting leaves main unchanged.
 
@@ -75,7 +75,7 @@ foreign reference targets require a separately authorized attachment.
 
 **Nodes shared across accounts.** An owner shares a node with another Fos user by
 granting their peer `user:<name>` capabilities on it (the `to @name` chips on the
-peer row: `read`, `edit` = submit proposals, `approve`, and `execute` = run
+peer row: `read`, `edit` = submit and decide proposals, and `execute` = run
 evaluations). The recipient opens the node from the ref in their Home
 (`App.openSharedNode`): `GET /user/data/peer-sync/locate?owner=&id=` answers
 where it lives in the owner's account and what they may do, then the same
@@ -91,17 +91,18 @@ instead. The device remembers these projections in `meta.sharedNodes`.
 Run the provider, HTTP authorization and bidirectional transport regressions with
 `npm --prefix web run test:nodes`.
 
-## Legacy full-graph protocol
+## The replica
 
 How a device keeps working without a server and merges back when it signs in.
-Code: `shared/sync/` (core, shared by every peer), `backend/sync/peerSync.ts`
-(the user group's side), `web/src/app.ts` (the device's side). The same `web/`
-build runs in the browser and inside the Tauri shell on desktop, iOS and
-Android, so one implementation covers all clients.
+Code: `shared/sync/` (core, shared by every peer), `backend/sync/provideNode.ts`
+and `backend/sync/accountStore.ts` (the account's side), `web/src/app.ts` (the
+device's side). The same `web/` build runs in the browser and inside the Tauri
+shell on desktop, iOS and Android, and the `fos` binary embeds the same core.
 
 Everything is expressed in the existing hash-consed graph (`shared/dag-implementation`):
-there is no separate sync data model. The replicated document is the user's
-FosStore; a device's replica is a FosStore too.
+there is no separate sync data model. The account's document is a FosStore; a
+device's replica is a FosStore too, plus what node sync agreed on with its peer
+for every synced node (`meta.nodeSync`).
 
 ## Representation in the graph
 
@@ -110,27 +111,32 @@ All structures use existing primitives. Identity across versions is
 on every edit, its alias id does not.
 
 ```
-row         [rowNode, KIND]              rowNode.data: alias{id}, description{content}, updated{time}; KIND picks the row kind:
-              COMPLETION  task      + todo{completed,time}                         (checkbox; "[ ]"/"[x]" prefix in the add bar)
-              DESCRIPTION plain     the default row: text with links/embeds
-              DOCUMENT    note      description.content is a markdown body (">" prefix); child rows are variables (key: value,
+row         [template, rowNode]          rowNode.data: alias{id}, description{content}, updated{time}. The template (the instruction)
+                                     says what the row is: a node with data.instanceKind, either a row type (see "Row types" below) or a
+                                     template row the row was made from, pinned by the cid of that version's content. Row types by kind:
+              Task        task      + todo{completed,time}                         (checkbox; "[ ]"/"[x]" prefix in the add bar)
+              Row         plain     the default row: text with links/embeds
+              Note        note      description.content is a markdown body (">" prefix); child rows are variables (key: value,
                                      or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
                                      expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
-              COMMENT     comment   + comment{authorID,authorName,time}  ("//" prefix or the menu; replies are child comments)
-              LINK        ref       + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
+              Comment     comment   + comment{authorID,authorName,time}  ("//" prefix or the menu; replies are child comments)
+              Reference   ref       + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
                                      copy; `owner` marks a market result (the row lives in another account; click opens the listing)
-              REQUIREMENT requirement + requirement{capability, resource?, amount?, unit?, start?, end?, options?, peer?}  ("-" prefix, under a task;
+              Allocation  requirement  an allocation row with a negative amount: what a task needs ("-" prefix, under a task;
                                      capability = task | allocation | search | confirmation | choice | market | mail | peer)
-              SUPPLY      supply    + supply{capability, by, at, ref?, choice?}   (under a requirement; `ref` names an allocation/query row)
-              QUERY       query     + query{market?, executedAt?, count?}        ("?" prefix; results are ref rows under it)
-              RESOURCE    resource  + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
-              ALLOCATION  allocation + allocation{resource, type, amount, unit, start?, end?, by?, person?}
+              Allocation  supply    an allocation row with a positive amount and a capability: satisfies a requirement (`ref` names an
+                                     allocation/query row)
+              Query       query     + query{market?, executedAt?, count?}        ("?" prefix; results are ref rows under it)
+              Resource    resource  + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
+              Allocation  allocation + allocation{resource, type, amount, unit, start?, end?, by?, person?}
                                      ("$ 50" money, ": 1h" time, "# 2 widgets" things, "@bob 2h" a person; optional window
                                      "2026-10-13..2026-10-20" after the amount, start = now / end = forever when absent; drawn from the parent
                                      context: the bank above, the bank the requirement names, or the type's default pool = first top-level bank)
-              TEMPLATE    template  its requirement rows are copied under every task that executes it ("`name" prefix;
-                                     "[ ] `name` …" makes a task with todo + template{id, name})
-legacy row  [LIST, node]                 plain row from older data (identity on the target); read like a DESCRIPTION row
+              Template    template  + instanceKind{kind: task}: its requirement rows are copied under every task made from it
+                                     ("`name" prefix; "[ ] `name` …" makes the task [Trip's content, taskNode])
+reference error  [missing, rowNode]      the row is pinned to a template this peer has not received; `missing` is a stand-in template
+                                     (data.missingTemplate{cid, kind}). Node sync reports it as the row it stands for, asks the peer
+                                     for the template (NodeRequest.templates / ProvidedNode.wanted) and pins the row once it arrives
 peer        [PEER, peerRefNode]          peerRefNode.data: peerId{content}          (membership.ts reads the same shape)
 choice      [CHOICE, choiceNode]         an unresolved divergence, replacing the task/node edge it concerns
               choiceNode.data: alias{id of the thing}, conflict{path}, option{defaultResolutionStrategy:'choice'}
@@ -167,57 +173,65 @@ and, apart from container data conflicts, symmetric.
 `resolveChoiceIn` replaces a `[CHOICE, …]` edge with the picked option's edge
 (or removes it) and stamps `updated.time` so the resolution counts as an edit.
 
-## Peer links and the protocol (`shared/sync/protocol.ts`)
+## Node sync (`shared/sync/node-sync.ts`)
 
-A device becomes a **peer** of the user group when it logs in: a
-`[PEER, peerRef]` edge is kept on the node it attaches to. The link has a
-`scope` (a path of node alias ids; `[]` = the whole document) and a base
-(the content node both sides agreed on last time, `null` on a new link).
-
-```
-device → server   { peerId, scope, baseCid, headCid, nodes }
-server → device   { action, resultCid, nodes, newChoiceIds }
-```
-
-`nodes` carries content-addressed nodes the other side may lack: the device
-sends what is reachable from head but not from base; the server returns what
-is reachable from the result but not from head, base or the request. Both
-sides simply union them (`importNodes` verifies every cid against its content).
-
-Server (`serveSync`):
+A device syncs with a peer one node at a time. For each node it holds a record
+of what both sides last agreed (`meta.nodeSync`, keyed by peer, path and branch
+selections): the node's shallow shape (its data and its children's ids, kinds,
+addresses and pinned templates) and what the peer last provided.
 
 ```
-current = node at scope in the root content
-current == head   → noop
-current == base   → fast-forward (adopt head)
-head    == base   → pull (device is behind)
-otherwise         → mergeNodes(base, current, head)   (may add CHOICE edges)
-ensure [PEER, peerRef(device)] on the result
-write result at scope (path copy) → new root alias with PREV → save
+device → peer   NodeRequest  { peerId, scope, path, linkId, branches?, update?: { base, value }, templates?, templateNodes? }
+peer → device   ProvidedNode { data, children, mask?, proposals?, grants?, capabilities?, wanted?, templates? }
 ```
 
-Device (`completeSync`): adopt the result as the new root target and remember
-`resultCid` as the base. Edits made while the request was in flight are
-re-merged with `mergeNodes(sentHead, localNow, result)`, which is exactly the
-base those edits were made against. Both ends then hold the same node.
+One node's round (`planNodeSync` → `nodeSyncPush` → `finishNodeSync`):
 
-A `null` base acts as an empty node, so a device that worked offline and then
-logs in for the first time gets a **union**; choices arise only where ids
-collide.
+```
+plan    local shape vs the agreed one → dirty?   (a writer asks with an empty update so the answer says what it may write)
+push    if this side changed it: update { base: what the peer provided, value: three-way merge of the change onto it }
+finish  install the answer, merged with whatever changed here while the request was in flight; remember both shapes
+```
+
+Concurrent changes to different fields or children merge; the same field
+changed on both sides is refused (`Concurrent change to node field …`) and the
+local value is kept. A child the device adds is sent as a reference to the
+device in its parent's update, and its content in its own round. Afterwards
+`nodeTemplateRequests` asks the peer for templates this replica lacks
+(reference errors) and answers the ones the peer asked for (`wanted`).
+
+Switching Fos storage off on a node (`persist`): the next sync sends the node
+blank (`blankNodeRequest`). A holder sending a node blank means it is no longer
+available there, so the account keeps it as a node that device holds, like any
+peer-held node (the peer marker), with what it had before as its previous
+version, and nothing below it is sent again. When storage is switched back on,
+the device's content is the next version after that blank one.
+
+A receive-only round (`push: false`) sends no update: what the peer has
+becomes the agreed shape, and local changes stay unsent (`isDirty`).
+
+The web app syncs the attachment, the path on screen and every node edited
+here (`App.syncNodes`). The `fos` CLI syncs the whole tree (`nodeTreeSync`, a
+generator the binary drives through `nodeSyncBegin` / `nodeSyncStep` in
+`embed.ts`): the attachment first, then every child the peer's answer lists that
+is here or held by that peer. A child the peer holds only as a reference to this
+device is pushed, whatever was agreed before. `syncNodeTree` drives the same
+walk over an async transport. Nodes Fos may not store (`persist` switched off)
+are never visited.
+
+A device that worked offline and then signs in for the first time has no
+agreed shapes, so the first round is a **union**.
 
 ## Scopes (attaching at a child node)
 
-`scope: []` attaches the device to the user group's root content.
-`scope: [nodeId, …]` attaches it to that node (any task in the tree): the
-device's root alias points at a copy of that node, the server merges there, and
-nothing outside the subtree reaches the device. There is no separate
-"partition" concept: a node a peer attaches to is just a node the peer largely
-controls (today the device still keeps local state for it; a later step may
-make some subtrees peer-only).
+A device's own rows live in Home, the node it syncs with its account
+(`localScope = [fos:home]`); the rest of its root stays private to it. An
+invited peer attaches at the node it was invited to (`meta.scope`, its replica's
+root is a copy of that node). Nothing outside the attachment reaches the device.
 
-Changing scope (`reattach`) requires a fully synced replica. Moving deeper
-keeps the matching subtree and base; anywhere else starts an empty link that
-pulls the server's state on the next sync.
+Changing which node a device syncs (`reattach`) requires a fully synced
+replica. The agreed shapes stay, so moving back onto a node synced before
+resumes it.
 
 ## Tree, order and moves
 
@@ -249,7 +263,7 @@ ref node   data: alias{id} (+ ref{id} for a reference row)
 - **The root** of every replica and of the user group is a ref node; `commitRoot`
   advances it (new ref node, PREV → the old one, MERGESOURCE → a merged root).
 - **A link row** (what devices are invited to and propose against) is a row
-  whose identity node is a ref node: `[refNode, KIND]`. Its text and rows are
+  whose identity node is a ref node: `[template, refNode]`. Its text and rows are
   read through TARGETPOINTER (`valueContent`); an edit inside it advances the
   ref (`relinkContent`: new ref node pointing at the new content, PREV → the
   old ref node, bookkeeping carried over). Members, proposals and attached
@@ -279,8 +293,8 @@ Invited peers never change a link's main value: in branch mode the server
 records each peer's head as a `[PROPOSAL, p]` on the ref node (proposal.ts
 shape: PROPOSALNAME, PROPOSEDCONTENT, SENDER, TIMESTAMP, PREV = the main
 value it was based on; `data.proposal.status` open|rejected), one per
-(peer, git branch), rebased onto main when main moved. A member with the
-`approve` capability (`[CAPABILITY, APPROVE]` on its MEMBER reference) merges
+(peer, git branch), rebased onto main when main moved. A member with `edit`
+(`[CAPABILITY, PROPOSE]` on its MEMBER reference) merges
 it (`applyProposalAt`: three-way merge onto main, new version, proposal
 removed) or rejects it (kept, marked rejected; a further edit by the peer
 reopens it). The link panel shows members, version count and proposals with
@@ -356,21 +370,115 @@ Editing a row shows its raw marker form (`rawRowText`: `-$ 50 lunch`,
 `[x] done`, `> note`) and re-parses it on commit; `setRowContentAt` rewrites
 the row in place, keeping its id and children.
 
+**Terms.** A *store root* is the top node of one store; every replica has one
+(the device's own replica, a project opened with `fos <dir>`, a virtual peer's
+document, the server's copy of an account, a scratch draft). The *device root*
+is the store root of a device's own replica (Home, attached devices, ...).
+A *mutable node* (ref) is any node with a stable alias whose content changes
+by version; rows are mutable nodes.
+
+**Nearest ancestor.** Mutable refs resolve by nearest ancestor
+(`findNearestRow`): from where the ref is used, the first match in the
+closest ancestor's subtree (shallowest first), widening to the store root.
+`resolveRef`, `findTemplate` (`` [ ] `Trip` ``) and the row types all resolve
+this way. A store root that ships no library of its own is a *nested scope*
+(`nestScope`): a browser virtual-peer document is nested in the browser's
+device root, a server account store in the server's own device root, a draft
+in the node it drafts, so what it does not resolve itself continues there.
+
+**Stores on one machine (desktop).** Every `.fos` store is a device root of its
+own: Home's (`~/.fos`, the home context, the only one with Home) and each
+project's (`<dir>/.fos`). Each ships the client's read-only standard library;
+only Home links the shared one to contribute and vote. A store is a peer of the
+others on the machine by its own `device.json` id: opening it (`fos <dir>`, or
+its GUI window) links it with Home's store and every project store in a
+directory above it, both ways, as members of each other's root granted
+everything (`linkLocalStore`, transport `local`). On the first link the other
+store appears like any peer: under its entry in Settings, a row held by it,
+standing for what it shares (Home in Home's store, else its root); it can be
+moved or linked anywhere, and so can its nodes. What crosses a link is still
+only what those grants allow, through node exchange on the store's files: the
+reader loads the other store's replica and exchanges nodes with it (the app's
+peer provider for `local` peers, `App.localStoreProvider` with the `local_store`
+command; `browseStore`, `fos peers ls <name>`), never reading its graph
+directly. Edits to a node opened from another store go back to it like edits to
+any peer's node (`meta.heldNodes`, keyed by the row's alias so moves keep them;
+`App.syncLocalStores`), and that store's file is saved. Only one fos process runs
+at a time, so linking writes both stores and an exchange writes the other
+store's file directly, with no locking; the other store remembers where this one
+is (`.fos/stores.json`, never in the graph; `desktop/src-tauri/src/stores.rs`).
+`fos peers` lists the links.
+
+**Row types.** What every row is made from lives in the standard library's
+"Row types" group (`lib:types`): one template row per kind (`lib:type:task`,
+`lib:type:note`, ...) whose content is the row type a row edge pins. New rows
+are made from the nearest library row (`fos:library`) above them that has the
+type (`rowTemplate`); with none, making a row is an error. The library is a
+row in two places. The **device root ships one**, filled from the client's
+build (`ensureLibraryRow`, `ensureDeviceLibrary`); it is local to that device:
+node exchange of a root leaves it out on both sides (`isShippedLibrary`).
+**People who contribute link the
+shared library into Home** (`ensureLibraryLink`, "Contribute to the standard
+library" on the shipped library row) with the fos server as its peer, and
+under Home it overrides the shipped one. A changed row type is a new version:
+new rows are made from it, rows made before keep the version they pin. The
+seed (`dag-implementation/row-templates.ts`) is the library's first version,
+what a new device root ships and what cid migration v4 pins existing rows to.
+A version is its types' contents, which rows pin by cid, so the build's bundle
+holds those contents exactly (with the pattern rows they hold, `SeedRow.nodes`).
+Every row on the wire names its template; a peer missing one shows the row as a
+reference error and asks for it.
+
+**What a type accepts** (`shared/sync/patterns.ts`). Every type says which rows
+it accepts as children with **pattern rows** of its own, made from the Pattern
+type (patterns as types, `docs/language-design.md` §2.1). A pattern names a row
+type (`pattern.type`, e.g. `lib:type:home`) and optionally the versions of it
+that match (`pattern.versions`, pinned cids; none = any version); `pattern.any`
+is the wildcard. Without the wildcard a type accepts what its patterns match;
+with it, everything except what they match. A child is matched by its row type
+(the library type of its kind) and its version (the template its edge pins).
+The seed's ordinary types accept anything but Home and the store roots. A
+template row is the type of the tasks made from it, so a new template gets the
+Task type's pattern rows as its own (`withInstancePatterns`); an instance does
+not copy them. Being rows, patterns sync, copy and change by vote like the rest.
+
+**Store roots and Home are types.** A store root's type is its root alias's
+instruction (`rootTypeOf`): a **Device root** (a device's own root, and each
+account's store on the server, the server's device root for that account) or a
+**Document** root (a fresh store: a project, a virtual-peer document, a draft).
+Only a Device root accepts **Home**, a row of its own Home type; nothing accepts
+a store root. So Home lives only directly under a device root.
+
+**Type errors.** A local edit that would put a row where its parent's type does
+not accept it is refused (`assertNoNewTypeErrors`, the store left as it was). A
+received row in such a place (sync, a paste, an older replica) makes its parent
+a **type error**: the parent's edge becomes `[TYPE_ERROR, error]`, the error
+node keeping the parent's edge exactly and naming the rejected children
+(`data.typeError.rejected`); a store root in error keeps its content behind an
+error node as the root alias's target. Reading through it sees the row as it was
+(`identityCid`, `rowKindOf`, …), so the UI shows the same rows, the parent and
+the rejected children marked red (`TaskView.typeError`, `rejected`). Type errors
+are derived, never edited: every commit re-derives them (`canonicalTypeErrors`,
+memoized per cid), merges compare the rows without them (`withoutTypeErrors`),
+and the parent turns back into its plain edge once nothing rejected is left.
+
 **Templates** (`` `name `` row) hold requirement rows. A task written as
 `[ ] `name` text` executes the template: `instantiateTemplate` copies the
-template's requirements under the task (fresh ids, unfilled) and stamps
-`data.template{id, name}` on the task, so each execution shows the rows that
-still need filling. `-[ ] `name`` is a task requirement whose child task is
+template's requirements under the task (fresh ids, unfilled) and makes the
+template the instruction of the task's row edge, `[templateContent, task]`, so
+each execution shows the rows that still need filling. The edge pins the
+template version it was made from; editing the template later does not change
+existing executions (upgrading one is explicit). Copying a subtree that holds
+both a template and its executions pins the copies to the copied template. `-[ ] `name`` is a task requirement whose child task is
 created as an execution at once.
 
 **Peers and capabilities.** A peer's capabilities are the `[CAPABILITY, x]`
 edges on its member reference (`Capability` in `graph.ts`): what it may do on
-the node (`edit`, `approve`), how it can be reached (`direct` over WebRTC,
+the node (`edit`: change it, through submissions and their decisions where it has several peers), how it can be reached (`direct` over WebRTC,
 `http` / `ws` through a server that exposes it, `relay` for peers that cannot
 reach each other) and the services it handles (`search`, `market`, `mail`).
 The fos account server registers what it can actually do with every device in
-each sync and node-provider response (`ServeOptions.capabilities` →
-`SyncResponse.capabilities`, `ProvidedNode.capabilities`): the transport facts
+each node-provider response (`ProvidedNode.capabilities`): the transport facts
 (`SERVER_TRANSPORT_CAPABILITIES`: http, ws, relay, peer, persist, provideNode,
 sync) plus the services its handler registry has (`backend/sync/registry.ts`,
 today search, market, poll, points, llm and cron when enabled). Devices record the
@@ -397,7 +505,7 @@ peer never adds rows to another peer's context; it can only be queried for
 them, and a device's sync round is that query. Every peer relationship has
 two directions, each a list of capabilities (`PeerPolicy` in `graph.ts`):
 `to` is what this side lets the peer have or do (`read` its content,
-`autopush` its changes on every sync, `edit` = submit proposals, `approve`,
+`autopush` its changes on every sync, `edit` = submit and decide proposals,
 the connection kinds, the services it handles), `from` is what this side
 takes in from the peer (`read` pulls the peer's node, `read-requests` shows
 the proposals addressed to it, `autopush` lets the peer's changes merge in,
@@ -410,9 +518,8 @@ from` in `fos.config.toml` for a project directory (fixed there, shown locked
 in the app) or the app's saved preference otherwise, `DEFAULT_DEVICE_POLICY`
 (everything both ways) when neither says. The web client enforces it where
 data leaves or enters the device: without `to: autopush`
-`buildSyncRequest(…, { push: false })` sends the agreed base as the head, so
-a sync round carries no local content and local edits are only re-merged
-locally; without `to: edit` explicit sends (market proposals, allocation
+node sync runs receive-only (`push: false`): no round carries local content,
+and local edits stay unsent; without `to: edit` explicit sends (market proposals, allocation
 bins) are refused; without `from: read` no sync round runs at all; without
 `from: read-requests` proposals that arrived with the node are not shown.
 `RECEIVE_ONLY_POLICY` (`to = ["http", "ws"]`, `from = ["read",
@@ -484,7 +591,7 @@ effect (`mcpToolHandler`) binds the handler ref before the evaluator pins the
 step and calls `MCPClient.callTool` with `{ input }` when the requirement is
 completed ("Run" on the row); the result is a note inside the requirement,
 the return ref and a supply by the peer. With `MCP_LISTEN=true` the server also listens: after every save
-of a tree (`afterSaveHooks` in `peerSync.ts`), open tool requirements under
+of a tree (`afterSaveHooks` in `accountStore.ts`), open tool requirements under
 attached nodes are run (debounced per user).
 
 **Allocation bins (sending rows to another account).** A row whose children
@@ -624,9 +731,8 @@ someone removes it deliberately: the owner through the device's menu on the
 node, or the device itself (*Detach this device* in the ☰ menu, which calls
 `DELETE /user/data/peer-sync/attachment`). Signing out keeps the attachment.
 Whether a device is currently connected is separate: each device announces
-its peer id over the WebSocket, the server includes the user's online peer ids
-as `presence` in sync responses, and the UI shows attached devices and members
-with an online/offline dot.
+its peer id over the WebSocket, the server tracks the user's online peer ids,
+and the UI shows attached devices and members with an online/offline dot.
 
 ## Connecting a device (`web/src/app.ts`, `web/src/ui.ts`)
 
@@ -647,25 +753,27 @@ and a dismissable **Connect** modal with three ways in:
    and approves or denies (*Connection requests*), and the device polls
    (`GET /peer/connect/:requestId`) until it receives a **peer credential**: a
    JWT with `kind: 'peer'`, the peer id and the scope. The JWT middleware
-   confines it to the peer-sync routes and the sync handler to that node.
+   confines it to the `/user/data/peer-sync/*` routes and the node provider to
+   that node.
 3. **Direct, device to device** (`web/src/p2p.ts`), no account needed. The
-   inviting device (host) serves the same sync protocol for the node it is
-   showing; the guest's replica attaches to it exactly as it would to an
-   account, and if the host is signed in, the guest's changes reach the account
+   inviting device (host) provides the node it is showing through node
+   exchange, as the account server does; the guest's replica attaches to it
+   exactly as it would to an account, and if the host is signed in, the guest's changes reach the account
    through it. Bootstrapping exchanges one offer and one answer code over any
    transport the devices share: text (copy/paste), video (QR shown and scanned),
    audio (not implemented; the slot is the `Transport` idea in `p2p.ts`). Once
    the WebRTC data channel is open, sync runs over it and the host pushes
    `changed` nudges. If no channel can be established, the **manual relay**
-   carries sync request/result codes by hand over the same transport.
+   carries the node requests (one per node the guest syncs, its edits included)
+   and the provided nodes back as codes by hand over the same transport.
 
 Dev builds may still auto sign in when `VITE_API_USERNAME`/`VITE_API_PASSWORD`
 are set; production bundles contain no credentials.
 
 ## Device lifecycle (`web/src/app.ts`)
 
-1. Load the replica from localStorage (`fos.replica.v1`: link metadata plus
-   the nodes reachable from the root alias and the base). Edits work
+1. Load the replica from localStorage (`fos.replica.v1`: link metadata, the
+   agreed node shapes, and the nodes reachable from the root alias). Edits work
    immediately; each one creates new nodes and advances the root alias.
 2. Auto-login with build-time credentials (`VITE_API_USERNAME/PASSWORD`) or
    via the sign-in form in the offline banner.
@@ -678,19 +786,20 @@ are set; production bundles contain no credentials.
 The UI never sees cids: `viewNode` turns a node into tasks, choices,
 nodes and peers keyed by alias ids.
 
-## Server (`backend/sync/peerSync.ts`)
+## Server (`backend/sync/provideNode.ts`, `backend/sync/accountStore.ts`)
 
-* `POST /user/data/peer-sync` (JWT): loads the user's store with `dbToStore`,
-  runs `serveSync`, saves with `storeToDb` when changed (which repoints the
-  user's `fosNodeId` at the new root alias), and sends `sync_changed` over the
-  user's WebSocket connections.
-* `GET /user/data/peer-sync?scope=id,id` returns the view of a node.
-* `GET /user/data/peer-sync/attachment?peerId=` says where a device attaches.
+* `POST /user/data/peer-sync/provide-node` (JWT): loads the account's store
+  (`dbToStore`, one request at a time per account, `withUserLock`), makes sure
+  of Home (`ensureAccountContext`), answers with `exchangeNode`, saves with
+  `storeToDb` when changed (which repoints the user's `fosNodeId` at the new
+  root alias), and sends `sync_changed` over the user's WebSocket connections
+  after an update.
+* `GET /user/data/peer-sync/attachment?peerId=` says where a device attaches;
+  `DELETE` detaches it.
 * Invites: `POST /user/data/peer-invite`, `GET /user/data/peer-invite/requests`,
   `POST /user/data/peer-invite/:id/approve|deny`; public `POST /peer/connect`
   and `GET /peer/connect/:requestId`. Table `PeerInviteModel` (apply with
   `npx prisma db push --schema=infra/prisma/schema.prisma`).
-* Requests for one user are serialized in-process.
 * The server's peer id is `user:<username>`.
 
 Sync itself needs no schema change; nodes land in `FosNodeModel` like any other. Invites use the `PeerInviteModel` table.
@@ -701,14 +810,15 @@ One node every account reads and can propose changes to, owned by a system
 account on the server (`FOS_LIBRARY_OWNER`, default `fos-library`; created at
 startup by `backend/library.ts`). At startup `ensureStandardLibrary` makes sure
 the account's Home holds the `fos:library` row "Standard library", shares it
-with the `users` audience granting read, edit, approve and rank, gives it a
+with the `users` audience granting read, edit and rank, gives it a
 **merge policy** (`fos:merge-policy`, default two approvals) and seeds the
 standard templates (`STANDARD_LIBRARY`: Plan a trip, Invoice, Group decision,
 Paid task, Contact form, Research note; `fos:library` records the seed version so
 later versions add only what is missing and rows the group removed stay removed).
-The registry then carries the address and every owner sync
-(`ensureAccountContext` in provide-node) puts a reference row `fos:library`
-into the account's Home with the shared address as `fos:shared-link`.
+The registry then carries the address. Accounts do not get the library
+linked: devices ship it, and people who contribute link this node into their
+Home (a reference row `fos:library` with the shared address as
+`fos:shared-link`).
 
 **Audiences are groups.** `memberFor` (graph.ts) resolves a peer's member entry
 to its own, else to `audience:users` for any `user:*` peer, else to
@@ -740,10 +850,13 @@ never goes online still has its templates: `fos library export [--out file]`
 node by node and the embedded core turns it into rows
 (`exportProvidedLibrary`); `web/scripts/pull-library.mjs` runs it before `npm
 run build` when the CLI is on PATH (`FOS_BIN` overrides, `FOS_LIBRARY_PULL=0`
-skips) and otherwise keeps the committed `web/src/library.json`. On first run
-`ensureBundledLibrary` seeds Home with that copy under its own id
-(`fos:library-bundle`, falling back to the in-code `STANDARD_LIBRARY` when the
-file is empty); the first owner sync replaces the copy with the live reference.
+skips) and otherwise keeps the committed `web/src/library.json`. The device
+root ships that copy as its library row (`ensureDeviceLibrary`, falling back to
+the in-code `STANDARD_LIBRARY` when the file is empty). The export also
+records the library's address (owner, path and share id, from
+`peer-sync/locate`), which the "Contribute" action links into Home. Without a
+library linked in Home, `fos library export` finds it by the library account
+(`--owner`, default `fos-library`).
 
 **Manual fallbacks.** The library's "Manual handlers" group (`lib:manual`)
 carries one requirement row per kind of requirement, each a fallback the app
@@ -755,7 +868,7 @@ that the person did it by hand: allocations get a receipt row inside the
 requirement (its resource is the requirement itself) plus the supply pointing
 at it, places come from the typed name or the device's position, every other
 kind is a supply by the person. No peer is involved, so the fallbacks work
-offline from the bundled copy, and the group edits them like any other rows.
+offline from the shipped library, and the group edits them like any other rows.
 Combinations of capabilities are never new primitives: product = several rows
 in a node, coproduct = submissions on a mutable ref decided by a choice
 handler, exponential = composition through templates.
@@ -767,8 +880,6 @@ handler, exponential = composition through templates.
   bounded to what is reachable but not pruned.
 * The replica lives in localStorage on every platform. A Tauri file adapter
   (`.fos/`) can implement `ReplicaStorage` in `web/src/storage.ts`.
-* WebRTC peer-to-peer links (`desktop/src-tauri/src/peer.rs`) can reuse
-  `serveSync`/`completeSync` unchanged: every peer runs the same code.
 * Expression-level helpers (`FosExpression.merge`, `addTodo`) predate this and
   use the same primitives; folding them together is a cleanup for later.
 * The `fos` CLI's `add` only knows the task (`[ ]`), note (`>`) and comment
@@ -778,8 +889,6 @@ handler, exponential = composition through templates.
   assignee's replica does not receive them yet (needs the proposal path).
 * Browser node relay requires a live authenticated WebSocket; offline devices
   cannot answer requests. Relay does not traverse foreign reference targets.
-* Explicit legacy full-graph flows still exist for manual operations; background
-  synchronization uses capability-checked shallow exchanges.
 * Discord provides `mail`/`relay` on paper; its OAuth sign-in only identifies
   the user (no handler sends through it yet; the channels bot does).
 * OAuth tokens are refreshed on use (Google); GitHub tokens do not expire.
@@ -868,7 +977,7 @@ at which attachment); an event can never widen it.
 | `input` | fill one declared hole of an execution: text, confirmation, choice or allocation | `fos_input` |
 | `complete` | evaluate a node: the owner's host runs its handler registry; anyone else leaves an *evaluation request* (below) | `fos_evaluate` |
 | `branch` | an alternative of a node (owner) | `fos_create_branch` |
-| `decide` | approve or reject a submission (approve capability) | `fos_decide` |
+| `decide` | approve or reject a submission (edit) | `fos_decide` |
 | `invite` | make a Fos user a member of a node (owner); the host delivers the node into their Home | `fos_invite` |
 
 Adapters on the account server (`backend/sync/events.ts`): `POST /user/data/events`

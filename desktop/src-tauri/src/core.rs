@@ -99,14 +99,25 @@ mod tests {
     fn core_loads_and_round_trips_a_replica() {
         let core = Core::new().expect("core");
         core.call("open", &[json!("h"), Value::Null, json!("dev")]).unwrap();
-        let task = core.call_json("addTask", &[json!("h"), json!("[]"), json!("hello"), json!(1)]).unwrap();
+        // a device root's own rows live in Home
+        let home = core.call_string("homePath", &[json!("h")]).unwrap();
+        assert_eq!(home, r#"["fos:home"]"#);
+        let task = core.call_json("addTask", &[json!("h"), json!(home), json!("hello"), json!(1)]).unwrap();
         assert_eq!(task["title"], "hello");
         let tree = core.call_json("tree", &[json!("h"), json!("[]")]).unwrap();
-        assert!(tree[0].as_str().unwrap().contains("hello"));
+        // the tree leaves out the library the store ships; the rows are under Home
+        assert!(!tree.as_array().unwrap().iter().any(|line| line.as_str().unwrap().contains("Standard library")));
+        assert!(tree.as_array().unwrap().iter().any(|line| line.as_str().unwrap().contains("hello")));
         let serialized = core.call_string("serialize", &[json!("h")]).unwrap();
         core.call("open", &[json!("h2"), json!(serialized), json!("dev")]).unwrap();
-        let view = core.call_json("view", &[json!("h2"), json!("[]")]).unwrap();
-        assert_eq!(view["tasks"].as_array().unwrap().len(), 1);
+        assert_eq!(core.call_json("view", &[json!("h2"), json!("[]")]).unwrap()["tasks"].as_array().unwrap().len(), 2);
+        assert_eq!(core.call_json("view", &[json!("h2"), json!(home)]).unwrap()["tasks"][0]["title"], "hello");
+        // a project store is a device root of its own (it ships the library too), with its rows at its root, no Home
+        core.call("open", &[json!("p"), Value::Null, json!("dev"), json!(false)]).unwrap();
+        let row = core.call_json("addTask", &[json!("p"), json!("[]"), json!("in project"), json!(2)]).unwrap();
+        assert_eq!(row["title"], "in project");
+        assert_eq!(core.call_string("homePath", &[json!("p")]).unwrap(), "[]");
+        assert_eq!(core.call_json("tree", &[json!("p"), json!("[]")]).unwrap().as_array().unwrap().len(), 1);
         assert!(core.call("nope", &[]).is_err());
     }
 }

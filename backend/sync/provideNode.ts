@@ -1,10 +1,18 @@
 import { nodeRelay } from './nodeRelay'
 import type { Request, Response } from 'express'
-import { createReplica, ensureHomeContext, exchangeNode, findRowByAlias, nodeAuthorityAt, parseNodeRequest, rootTargetCid, viewNode, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, exchangeNodeContext, resolveScope, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
-import { ensureAccountContext } from './library'
-import { withUserLock, serverPeerIdFor, type PeerSyncDeps } from './peerSync'
+import { createReplica, ensureHomeContext, type Replica, exchangeNode, findRowByAlias, nodeAuthorityAt, parseNodeRequest, rootTargetCid, viewNode, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, acceptTemplateNodes, exchangeNodeContext, resolveScope, sharing, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
+import type { HandlerRegistry } from './registry'
+import { withUserLock, serverPeerIdFor, type AccountStoreDeps } from './accountStore'
 
-export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: number, peer: string, address: string[], request: Omit<NodeRequest, 'scope' | 'path'>): Promise<ProvidedNode> } = nodeRelay) {
+/**
+ * What an account's store carries whenever its owner syncs: Home, with the offers of this host's handlers. The
+ * standard library is not linked here: devices ship it, and people who contribute link the shared one themselves.
+ */
+export function ensureAccountContext(r: Replica, now: number, registry?: HandlerRegistry): Replica {
+  return ensureHomeContext(r, now, registry?.hostOffers())
+}
+
+export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user: number, peer: string, address: string[], request: Omit<NodeRequest, 'scope' | 'path'>): Promise<ProvidedNode> } = nodeRelay) {
   return async (req: Request, res: Response): Promise<Response> => {
     const claims = (req as Request & { claims?: { username?: string; kind?: string; peerId?: string; scope?: string[] } }).claims
     if (!claims?.username) return res.status(401).json({ error: 'Authentication required.' })
@@ -26,7 +34,9 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
         if (!reference || reference.peer === r.meta.peerId) return null
         const path = [...request.scope, ...request.path]
         const upstream: NodeRequest = { peerId: r.meta.peerId, scope: [], path: reference.scope, branches: reference.branches,
-          linkId: nodeLinkEndpoint(r, path, reference.peer)?.id ?? nodeRequestLinkId(r.meta.peerId, { peerId: reference.peer, scope: reference.scope }) }
+          linkId: nodeLinkEndpoint(r, path, reference.peer)?.id ?? nodeRequestLinkId(r.meta.peerId, { peerId: reference.peer, scope: reference.scope }),
+          // templates the requester is missing come from the device holding the node
+          ...(request.templates?.length ? { templates: request.templates } : {}) }
         return { reference, upstream, user: loaded.user.id }
       }) : null
       // Release the account lock while the browser answers. Recheck the exact
@@ -49,7 +59,8 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
           const current = nodeReferenceAt(r, request, authority)
           if (!current || current.cid !== pending.reference.cid || current.peer !== pending.reference.peer) throw new NodeAccessError('The referenced node changed while its provider was answering.')
           const hydrate = (target: typeof r, input: NodeRequest) => {
-            const next = acceptProvidedNode(target, [...request.scope, ...request.path], pending.upstream, upstreamNode, now)
+            let next = acceptProvidedNode(target, [...request.scope, ...request.path], pending.upstream, upstreamNode, now)
+            if (upstreamNode.templates) next = acceptTemplateNodes(next, [...request.scope, ...request.path], upstreamNode.templates, now)
             return exchangeNode(next, input, authority, now)
           }
           r = request.branches?.length ? exchangeNodeContext(r, request, authority, now, (target, input) => hydrate(target, input)).replica : hydrate(r, request).replica
@@ -59,7 +70,7 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
           await deps.saveStore(loaded.user, loaded.store)
           if (request.update) deps.notify?.(loaded.user.id, { type: 'sync_changed', peerId: request.peerId })
         }
-        return served.node
+        return { ...served.node, presence: deps.onlinePeers?.(loaded.user.id) ?? [] }
       })
       res.setHeader('Cache-Control', 'no-store')
       return res.json(result)
@@ -74,10 +85,10 @@ export function createNodeProvider(deps: PeerSyncDeps, relay: { request(user: nu
 
 /**
  * GET /user/data/peer-sync/locate?owner=&id= — where a node another account shared with this user lives in that
- * account (its path, which is the attachment scope for provide-node and events), what they may do there, and its
- * title. 403 when nothing was granted at or above it.
+ * account (its path, which is the attachment scope for provide-node and events), what they may do there, its title,
+ * and its share id when it is published (what the shared view opens). 403 when nothing was granted at or above it.
  */
-export function createNodeLocator(deps: PeerSyncDeps) {
+export function createNodeLocator(deps: AccountStoreDeps) {
   return async (req: Request, res: Response): Promise<Response> => {
     const claims = (req as Request & { claims?: { username?: string; kind?: string } }).claims
     if (!claims?.username || claims.kind === 'peer') return res.status(401).json({ error: 'Authentication required.' })
@@ -90,9 +101,10 @@ export function createNodeLocator(deps: PeerSyncDeps) {
     if (!found) return res.status(404).json({ error: 'node not found' })
     const path = [...found.path, aliasId]
     try {
-      const grants = owner === claims.username ? ['read', 'edit', 'approve', 'execute'] : nodeAuthorityAt(r, path, { peerId: serverPeerIdFor(claims.username), scope: path, capabilities: [] })
+      const grants = owner === claims.username ? ['read', 'edit', 'execute'] : nodeAuthorityAt(r, path, { peerId: serverPeerIdFor(claims.username), scope: path, capabilities: [] })
       res.setHeader('Cache-Control', 'no-store')
-      return res.json({ owner, aliasId, path, title: viewNode(loaded.store, found.row.id ? resolveScopeOrThrow(loaded.store, path) : rootTargetCid(loaded.store)).name, grants })
+      const share = sharing(r, path)
+      return res.json({ owner, aliasId, path, title: viewNode(loaded.store, found.row.id ? resolveScopeOrThrow(loaded.store, path) : rootTargetCid(loaded.store)).name, grants, ...(share?.enabled ? { share: share.id } : {}) })
     } catch (error) {
       if (error instanceof NodeAccessError) return res.status(403).json({ error: 'This node is not shared with you.' })
       throw error

@@ -7,7 +7,7 @@ import './style.css'
 import { virtualPeerFromUrl, virtualPeerToken, virtualStorage } from './virtual'
 import { App } from './app'
 import { pickStorage, createMemoryStorage } from './storage'
-import { createProjectStorage, findProject, inTauri, saveDevice } from './project'
+import { createProjectStorage, findProject, inTauri, linkLocalStores, readLocalStore, saveDevice, writeLocalStore } from './project'
 import { serverPolicyOf } from '../../shared/sync/index'
 import { mountUi } from './ui'
 import { mountSharedNode } from './sharing'
@@ -32,17 +32,23 @@ const virtual = virtualPeerFromUrl()
 const project = virtualRequested ? null : await findProject()
 const storage = virtual ? virtualStorage(virtual) : virtualRequested ? createMemoryStorage() : project ? await createProjectStorage(project) : pickStorage()
 const baseUrl = (project?.config.attach?.server ?? env.VITE_API_URL ?? 'http://localhost:4000').replace(/\/$/, '')
+// a virtual peer's document is nested in this browser's device root (a desktop window's store is a device root itself)
+const deviceRoot = virtualRequested ? { serialized: pickStorage().loadReplica() } : null
 
 const app = new App({
   baseUrl,
   autoLogin: project ? null : devCredentials,
   storage,
   scopedDocument: virtualRequested,
+  ...(deviceRoot ? { deviceRoot } : {}),
+  ...(project ? { localStores: { read: (peerId: string) => readLocalStore(project, peerId), write: (peerId: string, serialized: unknown) => writeLocalStore(project, peerId, serialized) } } : {}),
   // [server] to/from in fos.config.toml fixes what this directory sends to and takes from the account server
   project: project ? { dir: project.dir, branch: () => (storage as { branch?: () => string }).branch?.() ?? null, deviceName: project.config.attach?.name ?? project.dir.split(/[\\/]/).filter(Boolean).pop(), policy: serverPolicyOf(project.config) } : undefined
 })
 
 if (!project) app.enableVirtualPeers(virtual)
+// desktop: this store and the other .fos stores on this machine (Home's, those above it) are peers of each other
+if (project) void linkLocalStores(project).then(({ home, stores }) => app.linkLocalStores(stores, home)).catch(error => console.warn('could not link the stores on this machine', error))
 if (virtual) {
   document.title = `${virtual.name} — Fosforescent`
   const url = new URL(location.href); url.searchParams.set('virtual', virtual.token); history.replaceState(null, '', url)

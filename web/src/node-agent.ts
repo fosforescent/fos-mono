@@ -65,7 +65,7 @@ export function mcpConfig(url: string, token: string): string {
   return JSON.stringify({ mcpServers: { fos: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2)
 }
 
-export async function connectNodeAgent(app: App, transport: 'desktop' | 'server', name: string, options: { peerId?: string; capabilities?: Array<'read' | 'edit' | 'approve' | 'execute'> } = {}): Promise<Connection> {
+export async function connectNodeAgent(app: App, transport: 'desktop' | 'server', name: string, options: { peerId?: string; capabilities?: Array<'read' | 'edit' | 'execute'> } = {}): Promise<Connection> {
   const scope = [...app.state.view], session = app.state.session, store = app.state.replica.store
   const current = () => app.state.session === session && app.state.replica.store === store
   const selected = () => current() && JSON.stringify(scope) === JSON.stringify(app.state.view)

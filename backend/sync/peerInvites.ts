@@ -19,7 +19,7 @@ const jwtSign: typeof jsonwebtoken.sign = jsonwebtoken.sign ?? (jsonwebtoken as 
 import type { Request, Response } from 'express'
 import { prisma } from '../prismaClient'
 import { sendToUser } from '../promptNotifications'
-import { attachMemberToNode, prismaPeerSyncDeps } from './peerSync'
+import { attachMemberToNode, prismaAccountStoreDeps } from './accountStore'
 
 const JWT_SECRET = process.env.JWT_SECRET
 if (!JWT_SECRET) {
@@ -63,7 +63,7 @@ export type PeerInviteDeps = {
   resolveUserById(id: number): Promise<{ id: number; username: string } | null>
   notify?(userId: number, message: Record<string, unknown>): void
   /** Record the approved device as a member of the invited node (makes it a link) with [CAPABILITY, …] edges. */
-  attachMember?(username: string, scope: string[], peerId: string, name: string | null, capabilities: Array<'read' | 'edit' | 'approve' | 'execute'>): Promise<boolean>
+  attachMember?(username: string, scope: string[], peerId: string, name: string | null, capabilities: Array<'read' | 'edit' | 'execute'>): Promise<boolean>
   now?(): number
 }
 
@@ -160,13 +160,13 @@ export function createPeerInviteHandlers(deps: PeerInviteDeps) {
       }
     },
 
-    /** POST /user/data/peer-invite/:id/approve {capabilities?: ['read' | 'edit' | 'approve' | 'execute', …]} — the approver decides what the device may do (default: edit). */
+    /** POST /user/data/peer-invite/:id/approve {capabilities?: ['read' | 'edit' | 'execute', …]} — the approver decides what the device may do (default: edit). */
     async approveRequest(req: Request, res: Response): Promise<Response | void> {
       try {
         const user = await requireUser(req, res)
         if (!user) return
         const body = (req.body ?? {}) as { capabilities?: unknown }
-        const allowed = ['read', 'edit', 'approve', 'execute'] as const
+        const allowed = ['read', 'edit', 'execute'] as const
         const requested = Array.isArray(body.capabilities) ? body.capabilities.filter((c): c is typeof allowed[number] => (allowed as readonly string[]).includes(c)) : []
         const capabilities: Array<typeof allowed[number]> = requested.length ? [...new Set(requested)] : ['edit']
         const invite = await deps.repo.findById(Number(req.params.id))
@@ -305,7 +305,7 @@ export const prismaPeerInviteDeps: PeerInviteDeps = {
     sendToUser(userId, message)
   },
   attachMember(username, scope, peerId, name, capabilities) {
-    return attachMemberToNode(prismaPeerSyncDeps, username, scope, peerId, name, capabilities)
+    return attachMemberToNode(prismaAccountStoreDeps, username, scope, peerId, name, capabilities)
   }
 }
 

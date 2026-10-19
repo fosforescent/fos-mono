@@ -21,7 +21,8 @@ v<N>-<digest>        current formats, e.g. v1-3f9a…   (N selects the algorithm
 |---------|-----------------------------------------------------------|-------|
 | 0       | sha3-256 of `{data: canonical JSON, children: sorted edges}` | read-only; never produced |
 | 1       | same digest, prefixed `v1-`                               | superseded |
-| 2       | edges hashed in order and direction                       | current |
+| 2       | edges hashed in order and direction                       | superseded |
+| 3       | same digest as v2; schema: rows are `[template, rowNode]` | current |
 
 `CID_FORMATS` in `cid.ts` is the registry. `hashContent` always writes the
 current format; `verifyCid(cid, content)` checks a cid with the algorithm of
@@ -67,8 +68,25 @@ throw `MigrationError`.
    schema changes to node data in `upgrade`.
 3. Add a case to `cid.test.ts` that builds a graph in version N (see
    `downgradeToLegacy` there for the pattern) and proves it migrates.
-4. Deploy the backend first: clients on the old format are refused with 409
-   rather than mixing formats in one store.
+4. Deploy the backend first: a node shape pinned to another format is refused
+   (`validateNodeShape`, "update the app") rather than mixing formats in one
+   store.
+
+v3 changes the schema only: v2 rows were `[rowNode, KIND]` with a row-kind
+primitive on the target side, and v3 rows are `[template, rowNode]` (see
+`migration-v3.ts`). That step needs the whole graph and the loading store's
+primitives, so it is a `plan` (called once per run with the input nodes and a
+`MigrationEnvironment`) rather than a per-node `upgrade`; it may also emit
+nodes already in the target format (the seed version of the standard library's row types, which every device root ships).
+
+v4 changes the schema only too (`migration-v4.ts`): types get pattern rows
+(what rows they accept; the seed's ordinary ones where a type had none, so the
+v3 seed becomes the v4 seed exactly), Row types groups get the Pattern, Home,
+Device root and Document types, the `fos:home` row is made from the Home type,
+and every root alias is typed (a device root when it holds the library or Home,
+else a document root). Steps of one run see each other's emitted nodes through
+`MigrationTools.read`: v3's emitted seed types are upgraded by v4 where edges
+point at them.
 
 v2 did exactly this: v0/v1 sorted the two cids *within* each edge and the
 edges themselves, so `[a, b]` and `[b, a]` hashed the same and child order was

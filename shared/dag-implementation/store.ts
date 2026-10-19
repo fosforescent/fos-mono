@@ -80,7 +80,7 @@ export class FosStore {
 
     if (fosCtxData && needsMigration(fosCtxData.fosData.nodes)) {
       // Older cid format on disk: rehash bottom-up into the current format (see migrations.ts).
-      const report = migrateContext(fosCtxData.fosData)
+      const report = migrateContext(fosCtxData.fosData, undefined, { table: this.table, primitive: this.primitive as unknown as Record<string, { getId(): string }> })
       this.migration = report
       const remapPath = (path: FosPath): FosPath => path.map(([a, b]) => [report.mapping[a] ?? a, report.mapping[b] ?? b])
       fosCtxData = {

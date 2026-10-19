@@ -313,7 +313,7 @@ export function describeParsed(p: ParsedInput): string {
 }
 
 /** The marker that recreates a row of `kind` when its text is edited from the start (shown in the help). */
-export const ROW_KIND_LABEL: Record<RowKind, string> = { task: 'Task', plain: 'Row', note: 'Note', comment: 'Comment', ref: 'Reference', requirement: 'Requirement', supply: 'Supply', query: 'Query', resource: 'Resource bank', allocation: 'Allocation', template: 'Template' }
+export const ROW_KIND_LABEL: Record<RowKind, string> = { task: 'Task', plain: 'Row', note: 'Note', comment: 'Comment', ref: 'Reference', requirement: 'Requirement', supply: 'Supply', query: 'Query', resource: 'Resource bank', allocation: 'Allocation', template: 'Template', pattern: 'Pattern', home: 'Home', 'reference-error': 'Reference error' }
 
 /** Row syntax, for the Ctrl+H help: [what you type, what it makes]. */
 export const SYNTAX_HELP: Array<[string, string]> = [

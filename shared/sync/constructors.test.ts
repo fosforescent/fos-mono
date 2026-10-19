@@ -1,3 +1,4 @@
+import { userView } from './test-helpers'
 import { createReplica, ensureHomeContext, headCid, view, writeNodeValue, addMemberAt, addTask, setMemberCapabilitiesAt, deleteTask, resolveScope, content, refTypeCid, capabilityTarget } from './index'
 
 test('settings and peer constructors project their existing identities as traversable rows', () => {
@@ -17,5 +18,5 @@ test('settings and peer constructors project their existing identities as traver
   r = deleteTask(r, [], setting.id, 5)
   expect(view(r, [], true)!.tasks.some(row => row.id === setting.id)).toBe(false)
   r = deleteTask(r, [], peer.id, 6)
-  expect(view(r, [])!.members.some(member => member.peerId === 'guest')).toBe(false)
+  expect(userView(r)!.members.some(member => member.peerId === 'guest')).toBe(false)
 })

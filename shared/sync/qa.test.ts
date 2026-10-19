@@ -1,4 +1,5 @@
-import { addTask, buildSyncRequest, commitRoot, completeSync, content, createReplica, discardOwnProposalAt, headCid, makeLinkAt, mergeNodes, proposalContent, proposalView, put, readProposal, rejectProposalAt, renameTask, serveSync, view } from './index'
+import { syncWith, userView } from './test-helpers'
+import { addMemberAt, addTask, commitRoot, content, createReplica, headCid, makeLinkAt, mergeNodes, nodeSyncKey, proposalContent, proposalView, put, readProposal, rejectProposalAt, renameTask, type Replica } from './index'
 
 test('an unresolved row conflict is summarized as a change, not a deletion', () => {
   let replica = addTask(createReplica(), [], 'QA C9', 1, 'row')
@@ -14,41 +15,38 @@ test('an unresolved row conflict is summarized as a change, not a deletion', () 
   expect(summary.changed).toHaveLength(1)
 })
 
-test('rejected proposer changes stay rejected on sync and can be discarded without resubmission', () => {
-  const server = makeLinkAt(addTask(createReplica('host'), [], 'Accepted', 1, 'accepted'), [], 2)
+// the host's own node: the proposer is a peer invited at its root
+const invited = (server: Replica) => addMemberAt(server, [], 'proposer', 'Proposer', ['edit'], 2)
+const remoteProposals = (r: Replica) => r.meta.nodeSync?.[nodeSyncKey(r.meta.serverPeerId!, [])]?.remote.proposals ?? []
+
+test('a rejected submission stays rejected, keeps the proposer’s rows and still brings main’s changes', () => {
+  const server = invited(makeLinkAt(addTask(createReplica('host'), [], 'Accepted', 1, 'accepted'), [], 2))
   let guest = createReplica('proposer')
-  const sync = () => {
-    const request = buildSyncRequest(guest)
-    const result = serveSync(server.store, request, 'host', 3, { proposeOnly: true, peerName: 'Proposer' })
-    if ('error' in result) throw new Error(result.error)
-    guest = completeSync(guest, request, result.response, 4).replica
-  }
+  const sync = () => { guest = syncWith(guest, server, { invited: [] }) }
   sync()
   guest = addTask(guest, [], 'Reject me', 5, 'rejected')
   sync()
-  const proposal = view(server, [])!.proposals[0]!
+  const proposal = userView(server)!.proposals[0]!
   rejectProposalAt(server, [], proposal.id, 6)
   renameTask(server, [], 'accepted', 'Host update after rejection', 7)
   sync(); sync()
-  expect(view(guest, [])!.proposals[0]!.status).toBe('rejected')
-  guest = discardOwnProposalAt(guest, [], view(guest, [])!.proposals[0]!.id, 7)
-  sync()
-  expect(view(guest, [])!.tasks.map((task) => task.id)).toEqual(['accepted'])
-  expect(view(server, [])!.proposals).toEqual([])
+  expect(remoteProposals(guest).map(p => [p.peerId, p.status])).toEqual([['proposer', 'rejected']])
+  expect(userView(guest)!.tasks.map((task) => [task.id, task.title])).toEqual([['accepted', 'Host update after rejection'], ['rejected', 'Reject me']])
+  expect(userView(server)!.tasks.map((task) => task.id)).toEqual(['accepted'])
+  expect(userView(server)!.proposals.map(p => p.status)).toEqual(['rejected'])
 })
 
-test('a new edit after rejection does not silently resubmit previously rejected rows', () => {
-  const server = makeLinkAt(addTask(createReplica('host'), [], 'Accepted', 1, 'accepted'), [], 2)
-  let guest = createReplica('proposer')
-  const sync = () => {
-    const packet = buildSyncRequest(guest)
-    const result = serveSync(server.store, packet, 'host', 3, { proposeOnly: true, peerName: 'Proposer' })
-    if ('error' in result) throw new Error(result.error)
-    guest = completeSync(guest, packet, result.response, 4).replica
-  }
+test('a re-submission with different content is checked again; rejected ones sit at the bottom', () => {
+  const server = invited(addMemberAt(makeLinkAt(addTask(createReplica('host'), [], 'Accepted', 1, 'accepted'), [], 2), [], 'other', 'Other', ['edit'], 2))
+  let guest = createReplica('proposer'), other = createReplica('other')
+  const sync = () => { guest = syncWith(guest, server, { invited: [] }) }
   sync(); guest = addTask(guest, [], 'Reject me', 5, 'rejected'); sync()
-  rejectProposalAt(server, [], view(server, [])!.proposals[0]!.id, 6); sync()
+  rejectProposalAt(server, [], userView(server)!.proposals[0]!.id, 6)
+  other = syncWith(other, server, { invited: [] }); other = addTask(other, [], 'Other idea', 6, 'idea'); other = syncWith(other, server, { invited: [] })
+  expect(userView(server)!.proposals.map(p => [p.peerId, p.status])).toEqual([['other', 'open'], ['proposer', 'rejected']])
   guest = addTask(guest, [], 'New intent', 7, 'new'); sync()
-  expect(view(guest, [])!.tasks.map((row) => row.id)).toEqual(['accepted', 'new'])
-  expect(view(server, [])!.proposals[0]!.summary.added).toEqual(['New intent'])
+  expect(userView(guest)!.tasks.map((row) => row.id)).toEqual(['accepted', 'rejected', 'new'])
+  const resubmitted = userView(server)!.proposals.find(p => p.peerId === 'proposer')!
+  expect(resubmitted.status).toBe('open')
+  expect(resubmitted.summary.added).toEqual(['Reject me', 'New intent'])
 })

@@ -33,7 +33,7 @@ import { checkUsernameExists } from './auth/checkUsername'
 import { postContactMessage } from './email/contactMessage'
 
 import { getSuggest } from './suggest'
-import { postPeerSync, getPeerSyncDoc, getPeerAttachment, deleteAttachment, indexNow, prismaPeerSyncDeps, serverPeerIdFor, withUserLock } from './sync/peerSync'
+import { getPeerAttachment, deleteAttachment, indexNow, prismaAccountStoreDeps, serverPeerIdFor, withUserLock } from './sync/accountStore'
 import { tokenManager } from './tokenManager'
 import { createSearchHandlers } from './search/routes'
 import { vertexEmbed } from './search/rowIndex'
@@ -45,7 +45,7 @@ import { createTextCommandInbound } from './channels/textCommands'
 import { createMcpPeerHandlers, mcpToolHandler, prismaMcpPeerDeps } from './integrations/mcpPeers'
 import { MCPClient } from './mcp/mcpClient'
 import { getUserId } from './apiTokenAuth'
-import { afterSaveHooks } from './sync/peerSync'
+import { afterSaveHooks } from './sync/accountStore'
 import { createNodeLocator, createNodeProvider } from './sync/provideNode'
 import { createVoiceNoteHandler, prismaVoiceUsage, voiceDepsFromEnv } from './voice/voiceNotes'
 import {
@@ -299,7 +299,7 @@ app.post('/auth/check-username', slowDown({
 app.put('/error', maxRequests(10), putError)
 
 // Public links use audience-scoped guest receipts; they never grant account-sync credentials.
-const sharingHandlers = createSharingHandlers(prismaPeerSyncDeps, process.env.JWT_SECRET!, (username, request) => evaluationService.runNode(username, request))
+const sharingHandlers = createSharingHandlers(prismaAccountStoreDeps, process.env.JWT_SECRET!, (username, request) => evaluationService.runNode(username, request))
 const guestThrottle = slowDown({ windowMs: 60_000, delayAfter: 30, delayMs: 500 })
 app.post('/public/node/visit', guestThrottle, sharingHandlers.visit)
 app.post('/public/node/input', guestThrottle, sharingHandlers.submit)
@@ -322,24 +322,11 @@ app.get('/auth/device/poll', slowDown({ windowMs: 1 * 60 * 1000, delayAfter: 120
 
 dataRoutes.use(verifyJWTMiddleware)
 
-// Peer-link sync for the replicated task document (docs/sync.md, shared/sync).
-// Devices attach to the user group's document at a scope and exchange subtrees;
-// divergences become Choice nodes that any device can resolve.
-dataRoutes.post('/peer-sync', slowDown({
-  windowMs: 1 * 60 * 1000,
-  delayAfter: 120,
-  delayMs: (used) => 1.5 ** (used - 120)
-}), postPeerSync)
-
-dataRoutes.get('/peer-sync', slowDown({
-  windowMs: 1 * 60 * 1000,
-  delayAfter: 60,
-  delayMs: (used) => 1.5 ** (used - 60)
-}), getPeerSyncDoc)
-
+// Node exchange with devices and peers (docs/sync.md, shared/sync/node-provider.ts): where a device attaches,
+// one node at a time, and where another account's shared node lives.
 dataRoutes.get('/peer-sync/attachment', getPeerAttachment)
-dataRoutes.post('/peer-sync/provide-node', createNodeProvider(prismaPeerSyncDeps))
-dataRoutes.get('/peer-sync/locate', createNodeLocator(prismaPeerSyncDeps))
+dataRoutes.post('/peer-sync/provide-node', createNodeProvider(prismaAccountStoreDeps))
+dataRoutes.get('/peer-sync/locate', createNodeLocator(prismaAccountStoreDeps))
 dataRoutes.delete('/peer-sync/attachment', deleteAttachment)
 
 // Peer invites: the inviting user creates/approves; the invitee claims and polls without a session.
@@ -349,8 +336,8 @@ dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
 // Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
 dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), prismaVoiceUsage(prisma)))
 // Semantic search over this account's rows (and market listings), market views and proposals (pgvector, Vertex embeddings)
-const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaPeerSyncDeps.loadStore, saveStore: prismaPeerSyncDeps.saveStore, withUserLock, notify: (userId, message) => {
-  prismaPeerSyncDeps.notify?.(userId, message)
+const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, notify: (userId, message) => {
+  prismaAccountStoreDeps.notify?.(userId, message)
   // a proposal from another account also reaches the owner's linked phone
   const by = typeof message.byPeerId === 'string' ? message.byPeerId : ''
   if (message.type === 'sync_changed' && by.startsWith('user:')) void integrations.notifyUser(userId, `fos: new proposal from ${by.slice(5)}. Open the app to review it.`)
@@ -495,7 +482,7 @@ adminRoutes.get('/tokens/stats', getTokenStatistics)
 
 
 // Integration peers (OAuth sign-ins, the phone channel, MCP servers) and the handlers they provide; see backend/integrations/
-const storeDeps = { loadStore: prismaPeerSyncDeps.loadStore, saveStore: prismaPeerSyncDeps.saveStore, withUserLock, usernameOf: async (id: number) => (await prisma.userModel.findUnique({ where: { id }, select: { user_name: true } }))?.user_name ?? null }
+const storeDeps = { loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, usernameOf: async (id: number) => (await prisma.userModel.findUnique({ where: { id }, select: { user_name: true } }))?.user_name ?? null }
 const smsAdapter = channelBus.adapter('sms')
 const integrationDeps = prismaIntegrationDeps(prisma, getUserId, {
   complete: (system, user) => voiceDepsFromEnv().complete(system, user, false),
@@ -547,14 +534,14 @@ const registry = createHandlerRegistry(createHostHandlers({
   sms: !!smsAdapter?.configured(),
   cron: process.env.FOS_ENABLE_CRON === 'true'
 }))
-prismaPeerSyncDeps.registry = registry
+prismaAccountStoreDeps.registry = registry
 integrationDeps.offers = id => registry.offers(`integration:${id}`)
 const integrations = createIntegrationHandlers(integrationDeps)
-const evaluationService = createEvaluationService(prismaPeerSyncDeps, registry)
+const evaluationService = createEvaluationService(prismaAccountStoreDeps, registry)
 // Payment confirmations from the Stripe webhook settle the requirement in the owner's graph and resume its evaluation.
-setPaymentSettler(createPaymentSettlement(prismaPeerSyncDeps, evaluationService.continueNode).settle)
+setPaymentSettler(createPaymentSettlement(prismaAccountStoreDeps, evaluationService.continueNode).settle)
 // The event grammar (shared/sync/events.ts): one HTTP route and one MCP route; the WebSocket below carries the same events.
-const eventService = createEventService(prismaPeerSyncDeps, evaluationService.runNode)
+const eventService = createEventService(prismaAccountStoreDeps, evaluationService.runNode)
 dataRoutes.post('/events', (req, res) => void eventService.http(req, res))
 dataRoutes.all('/peer-sync/mcp', (req, res) => void eventService.mcp(req, res))
 startCronRunner({
@@ -633,7 +620,7 @@ const PORT = parseInt(process.env.PORT || '4000', 10);
 server.listen(PORT, '0.0.0.0', async () => {
   void startChannels()
   // The standard library: its system account, node, sharing and seed templates; then every owner sync references it.
-  ensureStandardLibrary({ ...prismaPeerSyncDeps, createAccount: createSystemAccount }, libraryOwner(), registry)
+  ensureStandardLibrary({ ...prismaAccountStoreDeps, createAccount: createSystemAccount }, libraryOwner(), registry)
     .then(address => { registry.library = address; console.log(`[library] @${address.owner} shares ${address.title} (${address.share})`) })
     .catch(error => console.error('[library] unavailable:', error instanceof Error ? error.message : error))
   console.log(`Server running on port ${PORT}`);

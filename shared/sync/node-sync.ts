@@ -1,6 +1,8 @@
 import { exchangeNodeContext } from './node-context'
-import type { FosDataContent } from '../types'
-import { content, valueContent, identityCid, rowKindOf, rowPrimitive, resolveScope, isHandle, isPeerReference,
+import { mergeNodes } from './merge'
+import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
+import { isCid, isCurrentCid } from '../dag-implementation/cid'
+import { content, valueContent, identityCid, rowKindOf, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTemplateOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError,
@@ -10,12 +12,14 @@ export type NodeSyncState = { local: NodeShape; remote: NodeShape & Pick<Provide
 const forbidden = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId', '__proto__', 'constructor', 'prototype'])
 const empty = (): NodeShape => ({ data: {}, children: [] })
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
-const childValue = (child?: NodeChild) => child && { id: child.id, kind: child.kind, ...(child.kind === 'ref' ? { address: child.address } : {}) }
+const childValue = (child?: NodeChild) => child && { id: child.id, kind: child.kind, template: child.template, ...(child.kind === 'ref' ? { address: child.address } : {}) }
 export const nodeSyncKey = (peer: string, path: Scope, branches?: NodeBranch[]): string => JSON.stringify(branches?.length ? [peer, path, [...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : [peer, path])
 
 export function validateNodeShape(shape: NodeShape): void {
+  // the only cids on the wire are pinned templates: a peer in another cid format has to update first
+  if (Array.isArray(shape?.children) && shape.children.some(c => isCid(c?.template) && !isCurrentCid(c.template))) throw new NodeAccessError('This peer uses another content id format. Update the app to sync.')
   if (!shape || !shape.data || typeof shape.data !== 'object' || Array.isArray(shape.data) || !Array.isArray(shape.children) || shape.children.length > 10000 ||
-    Object.keys(shape.data).some(key => forbidden.has(key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || !ROW_KINDS.includes(c.kind) ||
+    Object.keys(shape.data).some(key => forbidden.has(key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || !ROW_KINDS.includes(c.kind) || c.kind === 'reference-error' || !isCid(c.template) ||
       !c.address || typeof c.address.peerId !== 'string' || !Array.isArray(c.address.scope) || c.address.scope.length > 64 || c.address.scope.some(id => typeof id !== 'string' || !id || id === '.' || id === '..')) ||
     new Set(shape.children.map(c => c.id)).size !== shape.children.length || JSON.stringify(shape).length > 1024 * 1024) throw new NodeAccessError('Invalid node update.')
 }
@@ -30,9 +34,11 @@ export function nodeShape(r: Replica, path: Scope, root = headCid(r)): NodeShape
     const kind = rowKindOf(r.store, edge)
     if (!kind) continue
     const child = content(r.store, identityCid(r.store, edge)), id = child.data.alias?.id
-    if (!id) continue
+    if (!id || isShippedLibrary(r.store, path, edge)) continue
     const ref = isPeerReference(child) ? child.data.ref : undefined
-    children.push({ id, kind: ref?.kind && ROW_KINDS.includes(ref.kind as NodeChild['kind']) ? ref.kind as NodeChild['kind'] : kind, address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) } })
+    // a reference error is the row it stands for, pinned to the template it waits for
+    const missing = missingTemplateOf(r.store, edge), template = pinnedTemplateOf(r.store, edge)!
+    children.push({ id, kind: ref?.kind && ROW_KINDS.includes(ref.kind as NodeChild['kind']) ? ref.kind as NodeChild['kind'] : missing ? missing.kind : kind, address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) }, template })
   }
   return { data: Object.fromEntries(Object.entries(value.data).filter(([key]) => !forbidden.has(key))) as FosDataContent, children }
 }
@@ -75,17 +81,26 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
   const existing = new Map(value.children.filter(e => rowKindOf(r.store, e)).map(e => [content(r.store, identityCid(r.store, e)).data.alias?.id, e]))
   const children = shape.children.map(child => {
     const edge = existing.get(child.id)
-    if (edge) return rowKindOf(r.store, edge) === child.kind ? edge : [identityCid(r.store, edge), rowPrimitive(r.store, child.kind)] as [string, string]
-    if (restored.has(child.id)) return [restored.get(child.id)!, rowPrimitive(r.store, child.kind)] as [string, string]
+    if (edge) {
+      const same = !missingTemplateOf(r.store, edge) && rowKindOf(r.store, edge) === child.kind && pinnedTemplateOf(r.store, edge) === child.template
+      return same ? edge : pinnedRowEdge(r.store, child.kind, identityCid(r.store, edge), child.template)
+    }
+    if (restored.has(child.id)) return pinnedRowEdge(r.store, child.kind, restored.get(child.id)!, child.template)
     const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', kind: child.kind, scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
-    return [stub, rowPrimitive(r.store, child.kind)] as [string, string]
+    return pinnedRowEdge(r.store, child.kind, stub, child.template)
   })
-  const next = { data: { ...Object.fromEntries(Object.entries(value.data).filter(([key]) => forbidden.has(key))), ...shape.data }, children: [...value.children.filter(e => !rowKindOf(r.store, e)), ...children] }
+  const next = { data: { ...Object.fromEntries(Object.entries(value.data).filter(([key]) => forbidden.has(key))), ...shape.data }, children: [...value.children.filter(e => !rowKindOf(r.store, e) || isShippedLibrary(r.store, path, e)), ...children] }
   const root = held
-    ? updateAtScope(r.store, headCid(r), path, () => refNodeContent(r.store, { alias: before.data.alias }, put(r.store, next), bookkeepingOf(r.store, before)), 'replace')
+    // a node its holder sent blank before (a reference with history) gets its content as the version after that reference
+    ? updateAtScope(r.store, headCid(r), path, () => refNodeContent(r.store, { alias: before.data.alias }, put(r.store, next), heldHistory(r.store, before, cid)), 'replace')
     : updateAtScope(r.store, headCid(r), path, () => next)
   if (root !== headCid(r)) commitRoot(r.store, root, now)
   return { ...r }
+}
+
+function heldHistory(store: Replica['store'], held: FosNodeContent, heldCid: string): FosNodeContent['children'] {
+  const prev = store.primitive.previousVersion.getId(), kept = bookkeepingOf(store, held)
+  return kept.some(([i]) => i === prev) ? [...kept.filter(([i]) => i !== prev), [prev, heldCid]] : kept
 }
 
 function allowedToEdit(r: Replica, path: Scope, authority: NodeAuthority): boolean {
@@ -110,7 +125,15 @@ export function exchangeNode(r: Replica, input: NodeRequest, authority: NodeAuth
 function exchangeNodeOnMain(r: Replica, input: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
   const request = parseNodeRequest(input)
   if (request.update) { validateNodeShape(request.update.base); validateNodeShape(request.update.value) }
-  const served = provideNode(r, request, authority, now)
+  // a holder that sends a node blank no longer makes it available here (Fos storage switched off on its side)
+  if (request.update && request.path.length && isBlank(request.update.value) && !isBlank(request.update.base)) return keepAsHeld(r, request, authority, now)
+  let served = provideNode(r, request, authority, now)
+  if (request.templateNodes && served.node.wanted?.length) {
+    // the requester answers our `wanted` list; only those templates are taken in
+    if (!authority.capabilities.includes('sync') || !allowedToEdit(served.replica, [...request.scope, ...request.path], authority)) throw new NodeAccessError('Node editing is not permitted.')
+    const resolved = acceptTemplateNodes(served.replica, [...request.scope, ...request.path], request.templateNodes, now)
+    if (resolved !== served.replica) served = provideNode(resolved, { ...request, templateNodes: undefined }, authority, now)
+  }
   if (!request.update) return served
   if (!authority.capabilities.includes('sync')) throw new NodeAccessError('Peer does not accept node synchronization.')
   const path = [...request.scope, ...request.path]
@@ -141,6 +164,57 @@ function exchangeNodeOnMain(r: Replica, input: NodeRequest, authority: NodeAutho
   }
   if (!sameNodeShape(full, final)) r = installNodeShape(r, path, final, now, restored)
   return provideNode(r, { ...request, update: undefined }, authority, now)
+}
+
+/** Templates the rows at `path` are pinned to and this peer has not received (its reference errors there). */
+export function missingTemplatesAt(r: Replica, path: Scope): string[] {
+  const cid = resolveScope(r.store, headCid(r), path)
+  if (!cid || isHandle(content(r.store, cid))) return []
+  return [...new Set(valueContent(r.store, cid).children.flatMap(edge => missingTemplateOf(r.store, edge)?.cid ?? []))]
+}
+
+/** Content of the templates a peer asked for (`ProvidedNode.wanted`), limited to those the rows at `path` are pinned to. */
+export function templateNodesAt(r: Replica, path: Scope, wanted: string[]): FosNodesData | null {
+  const cid = resolveScope(r.store, headCid(r), path)
+  if (!cid || isHandle(content(r.store, cid))) return null
+  const pinned = new Set(valueContent(r.store, cid).children.flatMap(edge => missingTemplateOf(r.store, edge) ? [] : rowTemplateOf(r.store, edge) ?? []))
+  const ask = wanted.filter(t => pinned.has(t) && r.store.table.has(t))
+  return ask.length ? reachableNodes(r.store, ask) : null
+}
+
+/**
+ * Take in template content received for the reference errors at `path` (verified by cid; nothing else is
+ * accepted) and pin those rows to the arrived templates. Returns the same replica when nothing resolved.
+ */
+export function acceptTemplateNodes(r: Replica, path: Scope, nodes: FosNodesData, now: number): Replica {
+  const missing = new Set(missingTemplatesAt(r, path))
+  const wanted = Object.fromEntries(Object.entries(reachableFrom(nodes, [...missing])))
+  if (!Object.keys(wanted).length) return r
+  importNodes(r.store, wanted)
+  return resolveReferenceErrors(r, path, now)
+}
+
+/** Replace reference errors at `path` whose template this store now holds by rows pinned to it. */
+export function resolveReferenceErrors(r: Replica, path: Scope, now: number): Replica {
+  const cid = resolveScope(r.store, headCid(r), path)
+  if (!cid || isHandle(content(r.store, cid))) return r
+  const ready = (edge: [string, string]) => { const missing = missingTemplateOf(r.store, edge); return !!missing && r.store.table.has(missing.cid) && valueContent(r.store, missing.cid).data.instanceKind?.kind === missing.kind }
+  if (!valueContent(r.store, cid).children.some(ready)) return r
+  const root = updateAtScope(r.store, headCid(r), path, value => ({ ...value, children: value.children.map(edge => ready(edge) ? [missingTemplateOf(r.store, edge)!.cid, edge[1]] as [string, string] : edge) }))
+  commitRoot(r.store, root, now)
+  return { ...r }
+}
+
+/** The part of a received node set reachable from `roots` (what a template's content is). */
+function reachableFrom(nodes: FosNodesData, roots: string[]): FosNodesData {
+  const out: FosNodesData = {}, stack = roots.filter(cid => !!nodes[cid])
+  while (stack.length) {
+    const cid = stack.pop()!
+    if (out[cid] || !nodes[cid]) continue
+    out[cid] = nodes[cid]!
+    for (const [a, b] of nodes[cid]!.children ?? []) stack.push(a, b)
+  }
+  return out
 }
 
 export function materializedNodePaths(r: Replica, at: Scope): Scope[] {
@@ -219,11 +293,16 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   if (!read || (request.update && !edit)) throw new NodeAccessError('Node editing is not permitted.')
   const attachment = resolveScope(r.store, headCid(r), authority.scope)!
   const main = content(r.store, attachment), base = putStripped(r.store, main)
+  // The proposer's submission (open or rejected) is what it is served, rebased onto main as it is now, so it sees what
+  // changed on main and keeps its own rows. Only a submission with different content reopens a rejected one.
   const existing = readProposals(r.store, main).find(p => p.peerId === authority.peerId && p.name === 'node-sync')
   if (!existing && !request.update) return provideNode(r, request, authority, now)
   // Work on an isolated store so errors cannot mutate main or its pending value.
   let fork = loadReplica(serializeReplica(r))
-  if (existing) commitRoot(fork.store, updateAtScope(fork.store, headCid(fork), authority.scope, () => content(fork.store, existing.contentCid), 'replace'), now)
+  const rebased = existing && existing.baseCid !== base
+  const pending = !existing ? null : rebased ? mergeNodes(fork.store, existing.baseCid, base, existing.contentCid, { ours: 'main', theirs: authority.peerId }).cid : existing.contentCid
+  // the pending value replaces main's value; the node itself (a link's ref node, its identity) stays
+  if (pending) commitRoot(fork.store, updateAtScope(fork.store, headCid(fork), authority.scope, value => ({ ...content(fork.store, pending), data: { ...content(fork.store, pending).data, ...(value.data.alias ? { alias: value.data.alias } : {}) } }), 'value'), now)
   const before = resolveScope(fork.store, headCid(fork), authority.scope)!
   const served = exchangeNodeOnMain(fork, request, { ...authority, proposeOnly: false, owner: true }, now)
   fork = served.replica
@@ -232,7 +311,8 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   importNodes(r.store, reachableNodes(fork.store, [fork.store.rootNodeId]))
   if (after !== before) {
     const value = putStripped(r.store, content(r.store, after))
-    const proposal = put(r.store, proposalContent(r.store, authority.peerId, 'node-sync', value, existing?.baseCid ?? base, now))
+    // a changed submission is checked again (open), against the main it was rebased onto
+    const proposal = put(r.store, proposalContent(r.store, authority.peerId, 'node-sync', value, existing && !rebased ? existing.baseCid : base, now))
     const next = withProposal(r.store, main, authority.peerId, proposal, 'node-sync')
     commitRoot(r.store, updateAtScope(r.store, headCid(r), authority.scope, () => next, 'node'), now)
   }
@@ -246,6 +326,29 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
     return !member || (!member.disabled?.includes('read') && !member.disabled?.includes('provideNode') && (member.capabilities.includes('read') || member.capabilities.includes('edit')))
   })
   return { replica: { ...r }, node: served.node }
+}
+
+const isBlank = (shape: NodeShape) => !Object.keys(shape.data).length && !shape.children.length
+
+/**
+ * A node its holder sent blank: no longer available here. It is kept as a reference to that peer, like any node a peer
+ * holds, with what this provider had of it as its previous version, and stays blank. When the holder shares it again,
+ * its content is the next version after that reference (`installNodeShape`).
+ */
+function keepAsHeld(r: Replica, request: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
+  const path = [...request.scope, ...request.path], id = path.at(-1)!
+  if (!authority.capabilities.includes('sync') || !allowedToEdit(r, path, authority)) throw new NodeAccessError('Node editing is not permitted.')
+  const cid = resolveScope(r.store, headCid(r), path), parent = resolveScope(r.store, headCid(r), path.slice(0, -1))
+  if (!cid || !parent) throw new NodeAccessError('Node unavailable.')
+  const node = content(r.store, cid)
+  if (!(isPeerReference(node) && node.data.ref?.peer === request.peerId)) {
+    const edge = valueContent(r.store, parent).children.find(e => rowKindOf(r.store, e) && content(r.store, identityCid(r.store, e)).data.alias?.id === id)
+    const ref = { id, peer: request.peerId, version: 'unloaded', kind: edge ? rowKindOf(r.store, edge)! : 'task', scope: path }
+    const held = { data: { alias: { id }, ref }, children: [[r.store.primitive.previousVersion.getId(), cid]] as FosNodeContent['children'] }
+    commitRoot(r.store, updateAtScope(r.store, headCid(r), path, () => held, 'replace'), now)
+    r = { ...r }
+  }
+  return provideNode(r, { ...request, update: { base: empty(), value: empty() } }, authority, now)
 }
 
 /** Account-owner undo may restore a prior child from this exact attachment,
@@ -289,4 +392,151 @@ export function nodeBranchBase(r: Replica, path: Scope): NodeShape | null {
     if (name !== 'main' && base) return nodeShape(r, path.slice(i), identityCid(r.store, base))
   }
   return null
+}
+
+/**
+ * One node's exchange with a peer, as steps around the transport (the web app awaits each request; the desktop CLI
+ * sends them from Rust): `planNodeSync` says what to ask for, `nodeSyncPush` takes the answer and says what to push
+ * (null when nothing changed here), `finishNodeSync` installs the final answer. Where the node sits in each address
+ * space: `localRoot` is the local path of the attachment, `scope` the peer's attachment scope, `remoteRoot` the remote
+ * path that corresponds to `localRoot`.
+ */
+export type NodeSyncContext = { peer: string | null; scope: Scope; remoteRoot: Scope; localRoot: Scope; branches: NodeBranch[]; push: boolean }
+export type NodeSyncPlan = {
+  path: Scope; peer: string | null; scope: Scope; remotePath: Scope; push: boolean; dirty: boolean
+  request: NodeRequest; first: NodeRequest; local: NodeShape; baseline: NodeShape; previousRemote: NodeShape | null
+}
+
+export function planNodeSync(r: Replica, path: Scope, context: NodeSyncContext): NodeSyncPlan {
+  const { peer, scope, remoteRoot, localRoot, branches, push } = context
+  const local = nodeShape(r, path)
+  const state = peer ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches)] : undefined
+  const main = peer && branches.length ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches.map(b => ({ ...b, name: 'main' })))] ?? r.meta.nodeSync?.[nodeSyncKey(peer, path)] : undefined
+  const branchBase = nodeBranchBase(r, path)
+  const baseline = state?.local ?? branchBase ?? main?.local ?? empty()
+  const dirty = !sameNodeShape(local, baseline)
+  const remotePath = [...remoteRoot.slice(scope.length), ...path.slice(localRoot.length)]
+  const request = { ...nodeSyncRequest(r, path, peer ?? 'virtual-host', scope, remotePath), ...(branches.length ? { branches } : {}) }
+  // a writer asks with an (empty) update, so the answer tells it what it may write
+  const first = push && dirty ? { ...request, update: { base: empty(), value: empty() } } : request
+  return { path, peer, scope, remotePath, push, dirty, request, first, local, baseline, previousRemote: state?.remote ?? branchBase ?? main?.remote ?? null }
+}
+
+/** Check the answer to `plan.first`, record the link, and return the push to make (null: nothing to push). */
+export function nodeSyncPush(r: Replica, plan: NodeSyncPlan, remote: ProvidedNode, now: number): { replica: Replica; peer: string; update: NodeRequest | null } {
+  if (plan.peer && remote.peerId !== plan.peer) throw new Error('Node provider identity changed.')
+  validateNodeShape(remote)
+  if (remote.remoteLinkId !== plan.request.linkId || JSON.stringify(remote.address.scope) !== JSON.stringify([...plan.scope, ...plan.remotePath])) throw new Error('Node response does not match its attachment.')
+  const replica = establishNodeSync(r, plan.path, plan.request, remote, now)
+  const visible = (shape: NodeShape): NodeShape => ({
+    data: Object.fromEntries(Object.entries(shape.data).filter(([key]) => !remote.mask?.fields || remote.mask.fields.includes(key))) as FosDataContent,
+    children: shape.children.filter(child => !remote.mask?.children || remote.mask.children.includes(child.id))
+  })
+  const outgoingBase = visible(outgoingNodeShape(replica, plan.path, remote.peerId, plan.baseline))
+  const outgoing = visible(outgoingNodeShape(replica, plan.path, remote.peerId, plan.local))
+  const update = plan.push && !sameNodeShape(outgoingBase, outgoing) ? { ...plan.request, update: { base: remote, value: mergeNodeShape(outgoingBase, outgoing, remote) } } : null
+  return { replica, peer: remote.peerId, update }
+}
+
+/** Install the final answer: three-way merge of what the peer accepted with what changed here meanwhile. */
+export function finishNodeSync(r: Replica, plan: NodeSyncPlan, remote: ProvidedNode, now: number): Replica {
+  validateNodeShape(remote)
+  const peer = remote.peerId
+  const current = nodeShape(r, plan.path)
+  const normalized = { ...remote, children: remote.children.map(child => {
+    const existing = plan.local.children.find(c => c.id === child.id)
+    return child.address.peerId === r.meta.peerId && existing ? { ...child, kind: existing.kind } : child
+  }) }
+  const filtered = outgoingNodeShape(r, plan.path, peer, normalized)
+  const previousRemote = outgoingNodeShape(r, plan.path, peer, plan.previousRemote ?? empty())
+  // a receive-only round sent nothing: what the peer has is what is agreed, and local changes stay unsent (dirty)
+  const accepted = plan.push ? mergeNodeShape(previousRemote, filtered, plan.local) : filtered
+  const merged = plan.push ? mergeNodeShape(plan.local, accepted, current) : mergeNodeShape(previousRemote, filtered, current)
+  let next = sameNodeShape(current, merged) ? r : installNodeShape(r, plan.path, merged, now)
+  next = rememberNodeSync(next, plan.path, normalized, accepted)
+  return { ...next, meta: { ...next.meta, lastSyncAt: now } }
+}
+
+/**
+ * After a node's exchange, the template requests: ask the peer for the templates this replica is missing at the node
+ * (reference errors), and answer the ones it asked for (`wanted`) when this side writes there.
+ */
+export function nodeTemplateRequests(r: Replica, plan: NodeSyncPlan, remote: ProvidedNode): { ask: NodeRequest | null; answer: NodeRequest | null } {
+  const missing = missingTemplatesAt(r, plan.path)
+  const nodes = plan.push && remote.wanted?.length ? templateNodesAt(r, plan.path, remote.wanted) : null
+  return { ask: missing.length ? { ...plan.request, templates: missing } : null, answer: nodes ? { ...plan.request, templateNodes: nodes } : null }
+}
+
+/**
+ * A node Fos may no longer store (`persist` switched off on it) whose content the peer still has from before: the
+ * update that sends it blank. The peer keeps its earlier versions in history and holds it, from then on, as a node this
+ * device holds (`keepAsHeld`); nothing below it is sent again. Only the topmost such node is sent blank (its
+ * descendants go with it). Null when there is nothing to blank.
+ */
+export function blankNodeRequest(r: Replica, path: Scope, context: NodeSyncContext): NodeRequest | null {
+  if (!context.peer || !path.length || nodePersistenceAllowed(r, path) || (path.length > context.localRoot.length && !nodePersistenceAllowed(r, path.slice(0, -1)))) return null
+  const state = r.meta.nodeSync?.[nodeSyncKey(context.peer, path, context.branches)]
+  if (!state || (!Object.keys(state.remote.data).length && !state.remote.children.length)) return null
+  return { ...planNodeSync(r, path, context).request, update: { base: { data: state.remote.data, children: state.remote.children }, value: empty() } }
+}
+
+/** After sending a node blank: nothing of it is agreed with the peer any more; the peer holds it as this device's. */
+export function finishBlankNode(r: Replica, path: Scope, remote: ProvidedNode): Replica {
+  return rememberNodeSync(r, path, remote, empty())
+}
+
+export type NodeTreeSync = { replica: Replica; peer: string | null; synced: number }
+
+/**
+ * Sync a whole tree with one peer, node by node (the desktop CLI's sync): the attachment first, then each child the
+ * peer's answer lists that is here or held by that peer. A generator so any transport can drive it: it yields
+ * each request to send, with the replica as it stands (keep it if the transport fails), and takes the peer's answer;
+ * `syncNodeTree` drives it with an async transport. Rows Fos may not store are not visited (one the peer still has
+ * content of is sent blank, `blankNodeRequest`); more than `limit` nodes is refused.
+ */
+export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => number, limit = 1000): Generator<{ request: NodeRequest; replica: Replica }, NodeTreeSync, ProvidedNode> {
+  let peer = context.peer, synced = 0
+  // `held`: the peer has only a reference to this device's copy, so it is pushed whatever was agreed before
+  const queue: Array<{ path: Scope; held: boolean }> = [{ path: context.localRoot, held: false }]
+  while (queue.length) {
+    const { path, held } = queue.shift()!
+    if (!resolveScope(r.store, headCid(r), path)) continue
+    // a branch applies to the nodes at and below its scope
+    const address = [...context.remoteRoot, ...path.slice(context.localRoot.length)]
+    const branches = context.branches.filter(b => b.scope.length <= address.length && b.scope.every((id, i) => address[i] === id))
+    if (!nodePersistenceAllowed(r, path)) {
+      const blank = context.push ? blankNodeRequest(r, path, { ...context, peer, branches }) : null
+      if (blank) r = finishBlankNode(r, path, yield { request: blank, replica: r })
+      continue
+    }
+    if (++synced > limit) throw new Error(`More than ${limit} nodes to sync.`)
+    const planned = planNodeSync(r, path, { ...context, peer, branches })
+    const plan = held && context.push ? { ...planned, dirty: true, baseline: empty(), first: { ...planned.request, update: { base: empty(), value: empty() } } } : planned
+    const remote = yield { request: plan.first, replica: r }
+    const step = nodeSyncPush(r, plan, remote, now())
+    r = step.replica; peer = step.peer
+    const accepted = step.update ? yield { request: step.update, replica: r } : remote
+    r = finishNodeSync(r, plan, accepted, now())
+    const templates = nodeTemplateRequests(r, plan, accepted)
+    if (templates.ask) {
+      const reply = yield { request: templates.ask, replica: r }
+      if (reply.templates) r = acceptTemplateNodes(r, path, reply.templates, now())
+    }
+    if (templates.answer) yield { request: templates.answer, replica: r }
+    // a child here is pushed (or pulled into); one only the peer has is pulled; one a third peer holds is left alone
+    // (the peer lists a child it has not received yet as a reference to this device; reference rows are not nodes)
+    for (const child of accepted.children) {
+      const cid = resolveScope(r.store, headCid(r), [...path, child.id]), node = cid ? content(r.store, cid) : null
+      if (node && (isPeerReference(node) ? node.data.ref?.peer === accepted.peerId : !isHandle(node))) queue.push({ path: [...path, child.id], held: child.kind === 'ref' && child.address.peerId === r.meta.peerId })
+    }
+  }
+  return { replica: r, peer, synced }
+}
+
+/** `nodeTreeSync` over an async transport. */
+export async function syncNodeTree(r: Replica, context: NodeSyncContext, send: (request: NodeRequest) => Promise<ProvidedNode>, now: () => number = Date.now): Promise<NodeTreeSync> {
+  const run = nodeTreeSync(r, context, now)
+  let step = run.next()
+  while (!step.done) step = run.next(await send(step.value.request))
+  return step.value
 }

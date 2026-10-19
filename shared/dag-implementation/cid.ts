@@ -98,10 +98,20 @@ export const CID_FORMATS: Record<CidVersion, CidFormat> = {
     version: 2,
     description: 'Edges hashed in order and direction (child order is part of identity).',
     digest: sha3OrderedDigest
+  },
+  3: {
+    version: 3,
+    description: 'Same digest as v2. Schema: every row is the edge [template, rowNode] (see migrations.ts).',
+    digest: sha3OrderedDigest
+  },
+  4: {
+    version: 4,
+    description: 'Same digest as v2. Schema: types carry pattern edges (what rows they accept), Home and store roots are types (see migrations.ts).',
+    digest: sha3OrderedDigest
   }
 }
 
-export const CURRENT_CID_VERSION: CidVersion = 2
+export const CURRENT_CID_VERSION: CidVersion = 4
 
 // --- parsing / formatting ----------------------------------------------------
 

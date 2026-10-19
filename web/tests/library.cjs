@@ -19,7 +19,7 @@ async function main() {
   let lib = c.ensureHomeContext(c.createReplica('user:fos-library'), 1)
   lib = c.addRow(lib, [HOME], 'plain', 'Standard library', 1, { id: LIB })
   lib = c.setSharing(lib, [HOME, LIB], { id: share, audience: 'users', enabled: true }, 2)
-  lib = c.setMemberCapabilitiesAt(lib, [HOME, LIB], 'audience:users', ['read', 'edit', 'approve', 'rank'], [], 2)
+  lib = c.setMemberCapabilitiesAt(lib, [HOME, LIB], 'audience:users', ['read', 'edit', 'rank'], [], 2)
   lib = c.seedStandardLibrary(lib, [HOME, LIB], 3)
   const address = { owner: 'fos-library', path: [HOME, LIB], share, title: 'Standard library' }
   let now = 100, offline = false
@@ -64,8 +64,10 @@ async function main() {
   assert.deepEqual(app.state.view, [HOME, LIB])
   const trip = c.findTemplateByName(app.state.replica, 'Plan a trip')
   assert(trip, 'the library\'s templates are in the local replica')
-  for (let i = 0; i < 40 && (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks.length ?? 0) < 5; i++) await tick()
-  assert.equal(c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.length, 5, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
+  // the template's requirements, beside its pattern rows (what tasks made from it accept)
+  const tripRows = () => (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks ?? []).filter(t => t.kind !== 'pattern')
+  for (let i = 0; i < 40 && tripRows().length < 5; i++) await tick()
+  assert.equal(tripRows().length, 5, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
   assert(calls.filter(p => p.endsWith('provide-node')).length >= 7, `the tree was materialized node by node: ${calls.length} requests`)
 
   // offline: a task made from a library template gets the template's requirements, with no request to the server
@@ -82,8 +84,8 @@ async function main() {
   // The library's manual fallbacks: a device that never synced has them from its build. Doing a thing by hand
   // records the supply (and a receipt for money or a place) as the person; no peer is involved.
   const fresh = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() }); fresh.scheduleSync = () => {}
-  assert.deepEqual(c.libraryBundlePath(fresh.state.replica), [HOME, 'fos:library-bundle'], 'a never-synced device seeds the bundled library')
-  assert(c.manualHandlers(fresh.state.replica).length >= 12, 'the bundled copy carries the manual handlers')
+  assert.deepEqual(c.libraryPath(fresh.state.replica), [c.LIBRARY_ID], 'a never-synced device ships the library in its root')
+  assert(c.manualHandlers(fresh.state.replica).length >= 12, 'the shipped copy carries the manual handlers')
   document.getElementById('app').replaceChildren()
   c.mountUi(document.getElementById('app'), fresh)
   const libraryTab = () => document.querySelector('.peer-tabs [aria-label="Standard library"]')
@@ -99,7 +101,7 @@ async function main() {
   fresh.undo()
   assert.equal(c.headCid(fresh.state.replica), initialHead, 'one undo removes the whole instantiation')
 
-  const bundlePath = c.libraryBundlePath(fresh.state.replica)
+  const bundlePath = c.libraryPath(fresh.state.replica)
   let edited = c.renameTask(fresh.state.replica, bundlePath, 'lib:trip', 'Travel plan', Date.now())
   edited = c.addRow(edited, bundlePath, 'template', 'Custom workflow', Date.now(), { id: 'lib:custom' })
   edited = c.addRow(edited, [...bundlePath, 'lib:custom'], 'requirement', 'Check the result', Date.now(), { id: 'lib:custom:check', requirement: { capability: 'confirmation' } })
@@ -151,7 +153,8 @@ async function main() {
   const boundArgument = c.resolveScope(fresh.state.replica.store, c.headCid(fresh.state.replica), [HOME, workflow.id])
   const boundValue = c.refValueCid(fresh.state.replica.store, c.content(fresh.state.replica.store, boundArgument))
   assert(boundValue, 'a library execution binds an input typed by its definition')
-  assert.equal(c.valueContent(fresh.state.replica.store, boundValue).data.template.id, 'lib:custom')
+  // the argument's type is the template row: the bound value is an execution of it ([template, value] as a typed ref)
+  assert.equal(c.content(fresh.state.replica.store, c.refTypeCid(fresh.state.replica.store, c.content(fresh.state.replica.store, boundArgument))).data.alias.id, 'lib:custom')
   assert.equal(fresh.placeholders().find(arg => arg.id === workflow.id).status, 'missing', 'its confirmation remains unresolved until the workflow is completed')
   fresh.addPlaceholder('text_only', 'text', [HOME])
   const textOnly = fresh.placeholders().find(arg => arg.name === 'text_only')

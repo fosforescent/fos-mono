@@ -3,6 +3,7 @@ import { FosNode } from "./node"
 import { FosStore } from "./store"
 
 import { v4 as uuidv4 } from 'uuid';
+import { seedRowTypeContent } from "./row-templates"
 
 
 
@@ -500,6 +501,12 @@ export const getEffectNode = (store: FosStore) => generateConstructor(store, "EF
 
 // HANDLER: Effect handler implementation
 export const getHandlerNode = (store: FosStore) => generateConstructor(store, "HANDLER", { description: { content: 'Handler - Effect handler' } }, [])
+/**
+ * TYPE_ERROR: [TYPE_ERROR, error] stands where a row's edge was when the row holds children its type does not accept
+ * (sync/patterns.ts). The error node keeps the row's edge as it was ([INSTRUCTIONPOINTER, template] [TARGETPOINTER,
+ * row]) and names the rejected children; nothing is lost, and it turns back into the plain edge once they are gone.
+ */
+export const getTypeErrorConstructorNode = (store: FosStore) => generateConstructor(store, "TYPE_ERROR", { description: { content: 'Type Error Constructor' } }, [])
 
 
 
@@ -666,12 +673,15 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const instructionPointerConstructor = getInstructionPointerConstructorNode(store)
   const dereferenceAlias = getDereferenceAliasActionNode(store)
   const rootInstructionNode = getRootInstructionNode(store)
+  const typeErrorConstructor = getTypeErrorConstructorNode(store)
+  // a fresh store's root is a document root (row-templates.ts): its type is the root alias's instruction
+  const documentRootType = store.create(seedRowTypeContent('document-root', (c) => store.create(c).getId()))
   const startRootAlias = getStartRootAlias(store, {
     terminal,
     previousVersion,
     targetPointerConstructor,
     instructionPointerConstructor,
-    rootInstructionNode
+    rootInstructionNode: documentRootType
   })
   const brachConstructorNode = getBrachConstructorNode(store)
 
@@ -887,6 +897,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     dereferenceAlias,
     getStartRootAlias,
     startRootAlias,
+    typeErrorConstructor,
     brachConstructorNode,
     // allOf: getAllOfNode(store),
     updateAction,
@@ -1068,6 +1079,7 @@ export type PrimitiveAliases = {
   aliasConstructor: FosNode,
   dereferenceAlias: FosNode,
   startRootAlias: FosNode,
+  typeErrorConstructor: FosNode,
   brachConstructorNode: FosNode,
   proposalField: FosNode,
   proposedContentField: FosNode,

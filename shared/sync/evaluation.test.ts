@@ -1,3 +1,4 @@
+import { userView } from './test-helpers'
 import { addRow, addSupply, addTask, createReplica, evaluateNode, evaluationRecord, view, renameTask, setTaskDone, serializeReplica, loadReplica, type EvaluationDriver, type Replica } from './index'
 
 function setup() {
@@ -16,7 +17,7 @@ test('opens parent first, commits leaves first, persists the journal and marks t
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('committed')
   expect(s.events).toEqual(['open parent', 'open child', 'commit child', 'commit parent'])
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(true)
+  expect(userView(s.get())!.tasks[0]!.done).toBe(true)
   expect(view(s.get(), ['parent'])!.tasks[0]!.done).toBe(true)
   expect(evaluationRecord(loadReplica(serializeReplica(s.get())), ['parent'])?.status).toBe('committed')
 })
@@ -34,7 +35,7 @@ test('a failed effect gets a manual recovery task and cannot be repeated after r
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('needs-recovery')
   expect(view(s.get(), ['parent'])!.tasks.some(t => t.title.includes('Manually roll back'))).toBe(true)
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
   s.set(loadReplica(serializeReplica(s.get())))
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/needs recovery/)
 })
@@ -48,7 +49,7 @@ test('compensates successful effects in reverse order when commit fails', async 
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('rolled-back')
   expect(reverted).toEqual(['a', 'b'])
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
   expect(view(s.get(), ['parent'])!.tasks.find(t => t.id === 'child')!.done).toBe(false)
 })
 test('refuses instructions changed during open and keeps unrelated edits', async () => {
@@ -68,7 +69,7 @@ test('completes task requirements bottom up without publishing partial completio
   s.set(addRow(s.get(), ['parent'], 'requirement', 'Child task', 1, { id: 'needs-task', requirement: { capability: 'task' } }))
   s.set(addTask(s.get(), ['parent', 'needs-task'], 'Nested', 1, 'nested'))
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('committed')
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(true)
+  expect(userView(s.get())!.tasks[0]!.done).toBe(true)
 })
 
 test('a new child or changed binding arriving during open aborts the transaction', async () => {
@@ -77,7 +78,7 @@ test('a new child or changed binding arriving during open aborts the transaction
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('rolled-back')
   expect(result.error).toMatch(/child rows changed/)
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
 })
 
 test('failure to persist final completion leaves tasks open', async () => {
@@ -89,7 +90,7 @@ test('failure to persist final completion leaves tasks open', async () => {
     return save(next)
   }
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('rolled-back')
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
   expect(view(s.get(), ['parent'])!.tasks[0]!.done).toBe(false)
 })
 
@@ -112,5 +113,5 @@ test('declared return slots can start empty, but an effect cannot commit with an
   const record = await evaluateNode(['parent'], s.driver)
   expect(record.status).toBe('needs-recovery')
   expect(record.error).toMatch(/valid return value/)
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
 })

@@ -129,7 +129,7 @@ without duplicating the task model or skill.
 From the monorepo root:
 
 ```sh
-npm test --prefix backend -- --runInBand sync/events.test.ts sync/peerSync.test.ts sync/evaluation.test.ts
+npm test --prefix backend -- --runInBand sync/events.test.ts sync/provideNode.test.ts sync/evaluation.test.ts
 node --test plugins/bridge.test.mjs
 python3 plugins/build_test.py
 python3 plugins/build.py --output /tmp/fos-agent-release

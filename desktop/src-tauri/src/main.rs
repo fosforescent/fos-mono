@@ -33,6 +33,7 @@ mod core;
 mod local_server;
 #[cfg(desktop)]
 mod project;
+mod stores;
 #[cfg(desktop)]
 mod workspace;
 
@@ -92,6 +93,8 @@ enum Commands {
     Open { id: String },
     /// Directory, branch, attachment and connection status (JSON)
     Status,
+    /// The .fos stores on this machine this one is linked with (Home's and those above it, both ways); `ls <name>` reads one's tree through node exchange
+    Peers { action: Option<String>, name: Option<String> },
     /// Attach this directory with a connect token (from "Invite a device here" on a node)
     Attach { token: Option<String> },
     /// Sign in to your account (browser sign-in by default; --token for a connect token; --password to type credentials)
@@ -103,7 +106,7 @@ enum Commands {
     },
     /// Detach this directory from the account (local tasks are kept)
     Detach,
-    /// Approve a proposal on the attached node (needs the approve capability)
+    /// Approve a proposal on the attached node (needs edit)
     Approve { id: String },
     /// Reject a proposal on the attached node
     Reject { id: String },
@@ -134,6 +137,9 @@ enum LibraryAction {
     Export {
         #[arg(long)]
         out: Option<PathBuf>,
+        /// The account that owns the library, when your Home does not link one
+        #[arg(long, default_value = "fos-library")]
+        owner: String,
     },
 }
 
@@ -176,12 +182,13 @@ fn main() {
             Commands::Done { id } => commands::cmd_done(&mut ws, &id, true),
             Commands::Open { id } => commands::cmd_done(&mut ws, &id, false),
             Commands::Status => commands::cmd_status(&ws),
+            Commands::Peers { action, name } => commands::cmd_peers(&ws, action.as_deref(), name.as_deref()),
             Commands::Attach { token } => commands::cmd_attach(&mut ws, token.as_deref()),
             Commands::Login { token, password } => commands::cmd_login(&mut ws, token.as_deref(), password),
             Commands::Detach => commands::cmd_detach(&mut ws),
             Commands::Approve { id } => commands::cmd_decide(&mut ws, &id, "approve"),
             Commands::Reject { id } => commands::cmd_decide(&mut ws, &id, "reject"),
-            Commands::Library { action: LibraryAction::Export { out } } => commands::cmd_library_export(&mut ws, out.as_deref()),
+            Commands::Library { action: LibraryAction::Export { out, owner } } => commands::cmd_library_export(&mut ws, out.as_deref(), &owner),
             Commands::Gui | Commands::Init { .. } | Commands::Reset { .. } => unreachable!(),
         }),
     };

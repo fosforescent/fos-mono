@@ -43,6 +43,37 @@ export async function findProject(): Promise<ProjectInfo | null> {
   }
 }
 
+/**
+ * The other `.fos` stores on this machine this window's store links with (Home's and the project stores above it,
+ * desktop/src-tauri/src/stores.rs; each told where this one is). The app links both sides. None outside the shell.
+ */
+export type LocalStore = { peerId: string; name: string; home: boolean }
+export async function linkLocalStores(info: ProjectInfo): Promise<{ home: boolean; stores: LocalStore[] }> {
+  const call = tauriInvoke<{ home: boolean; linked: LocalStore[] }>('link_local_stores', { dir: info.dir })
+  if (!call) return { home: false, stores: [] }
+  const { home, linked } = await call
+  return { home, stores: linked.map(({ peerId, name, home }) => ({ peerId, name, home: !!home })) }
+}
+
+/** Where a linked store's replica is on disk (its checked-out branch); null when not known here. */
+async function localStoreFile(info: ProjectInfo, peerId: string): Promise<{ dir: string; name: string } | null> {
+  const place = await tauriInvoke<{ dir: string; branch: string | null } | null>('local_store', { dir: info.dir, peerId })
+  return place ? { dir: place.dir, name: `replicas/${branchFileName(place.branch ?? 'local')}.json` } : null
+}
+
+/** A linked store's replica as it is on disk, to exchange nodes with it on its files (null: not on this machine). */
+export async function readLocalStore(info: ProjectInfo, peerId: string): Promise<unknown | null> {
+  const file = await localStoreFile(info, peerId)
+  return file ? readFile(file.dir, file.name) : null
+}
+
+/** Save a linked store's replica after an exchange changed it (one fos process runs at a time). */
+export async function writeLocalStore(info: ProjectInfo, peerId: string, serialized: unknown): Promise<void> {
+  const file = await localStoreFile(info, peerId)
+  if (!file) throw new Error('That store is not on this machine.')
+  await writeFile(file.dir, file.name, serialized)
+}
+
 async function readFile(dir: string, name: string): Promise<unknown> {
   const call = tauriInvoke<string | null>('read_project_file', { dir, name })
   if (!call) return null

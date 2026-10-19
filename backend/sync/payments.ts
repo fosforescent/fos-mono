@@ -6,7 +6,7 @@
  * confirmations find the record already paid and change nothing.
  */
 import { createReplica, evaluationRecord, headCid, paymentRecord, resolveScope, settlePaymentRecord, writePaymentRecord, type Scope } from '@fosforescent/shared/sync/index'
-import { withUserLock, type PeerSyncDeps } from './peerSync'
+import { withUserLock, type AccountStoreDeps } from './accountStore'
 
 export type PaymentConfirmation = {
   owner: string
@@ -21,7 +21,7 @@ export type PaymentConfirmation = {
 
 export type ContinueEvaluation = (username: string, path: Scope) => Promise<unknown>
 
-export function createPaymentSettlement(deps: PeerSyncDeps, continueEvaluation?: ContinueEvaluation) {
+export function createPaymentSettlement(deps: AccountStoreDeps, continueEvaluation?: ContinueEvaluation) {
   const now = () => deps.now?.() ?? Date.now()
   return {
     /** Apply one confirmation; returns what changed so the webhook can log it. */

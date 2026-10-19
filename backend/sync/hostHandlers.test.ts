@@ -111,7 +111,7 @@ test('a poll resolves its choice from the responses when the node runs; ties and
   r = configurePoll(r, [HOME_ID, 'dinner', 'where'], 'rank', 3)
   const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
   const vote = (replica: Replica, peer: string, ranking: string[]) => {
-    const joined = addMemberAt(replica, [HOME_ID, 'dinner', 'where'], peer, peer, ['read', 'approve', 'rank'], 4)
+    const joined = addMemberAt(replica, [HOME_ID, 'dinner', 'where'], peer, peer, ['read', 'edit', 'rank'], 4)
     const revision = sharedProjection(joined, [HOME_ID, 'dinner', 'where'], digest, peer).revision
     return writeParticipation(joined, [HOME_ID, 'dinner', 'where'], { peer, audience: share, revision, updated: 5, approvals: [], ranking, fields: {} }, 5)
   }

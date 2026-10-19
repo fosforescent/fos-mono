@@ -24,7 +24,7 @@ import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
-import { CAPABILITY_LABEL, LIBRARY_BUNDLE_ID, LIBRARY_ID, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
+import { CAPABILITY_LABEL, LIBRARY_ID, libraryLink, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
 
 type Regions = {
   context: HTMLElement
@@ -602,7 +602,7 @@ function installRowClipboard(list: HTMLElement, app: App): void {
     const text = event.clipboardData?.getData('text/plain') ?? '', element = input.closest<HTMLElement>('.task[data-path]'), path: Scope = element ? JSON.parse(element.dataset.path!) : []
     try {
       if (!input.value.trim() && text.startsWith('fos-ref:') && !input.matches('.node-text')) { event.preventDefault(); event.stopImmediatePropagation(); app.pasteNodeLink(path.slice(0, -1), path.at(-1) ?? null, decodeURIComponent(text.slice(8).trim())); return }
-      if (/^\s*["']?v2-[a-f0-9]+["']?:\s*\n/i.test(text)) {
+      if (/^\s*["']?v\d+-[a-f0-9]+["']?:\s*\n/i.test(text)) {
         event.preventDefault(); event.stopImmediatePropagation()
         input.dispatchEvent(new window.Event('commit-edit'))
         app.importYaml(text, [...app.state.view, ...path]); return
@@ -913,7 +913,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
     for (const entry of app.banks()) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
   }
   select.onchange = update; update()
-  const error = div('error', ''), submit = button('primary', replace && row?.kind !== 'requirement' && row?.id !== HOME_ID ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
+  const error = div('error', ''), submit = button('primary', replace && row?.kind !== 'requirement' && row?.kind !== 'home' ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
   const field = (text: string, input: HTMLElement) => { const label = document.createElement('label'); label.append(span('', text), input); return label }
   form.append(h4(CONSTRUCTORS.find(c => c.id === kind)!.label), title, field(resource ? 'Resource' : 'Handler', select))
   if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(field('Source bank', bank), pickTime, start, end) }
@@ -1175,7 +1175,7 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
         const config = document.createElement('textarea'); config.className = 'mcp-config'; config.readOnly = true; config.rows = 7; config.value = mcpConfig(connection.url, connection.token); config.setAttribute('aria-label', 'MCP configuration')
         panel.push(div('muted', 'A credential for this node on your Fos server, limited to the grants above:'), config, button('secondary small', 'Revoke credential', () => void connection.stop().then(() => app.refresh())))
       } else {
-        const create = button('secondary small', 'Create credential', () => void connectNodeAgent(app, 'server', 'Fos MCP server', { peerId: 'mcp:server', capabilities: app.peerCapabilities('mcp:server').filter((c): c is 'read' | 'edit' | 'approve' | 'execute' => ['read', 'edit', 'approve', 'execute'].includes(c)) }).then(() => app.refresh()).catch(error => app.notify('error', String(error))))
+        const create = button('secondary small', 'Create credential', () => void connectNodeAgent(app, 'server', 'Fos MCP server', { peerId: 'mcp:server', capabilities: app.peerCapabilities('mcp:server').filter((c): c is 'read' | 'edit' | 'execute' => ['read', 'edit', 'execute'].includes(c)) }).then(() => app.refresh()).catch(error => app.notify('error', String(error))))
         create.disabled = !app.isOnline('fos') || state.session?.kind !== 'user'
         panel.push(div('muted', 'A scoped credential lets an agent reach this node through your Fos server with the grants above.'), create)
       }
@@ -1339,7 +1339,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   let cached = details.get(el)
   if (!cached || cached.key !== key || cached.store !== state.replica.store) {
     const input = document.createElement('textarea'); input.className = 'node-text'; input.rows = 4
-    input.setAttribute('aria-label', 'Current node text'); input.value = row?.id === HOME_ID ? '' : title; input.hidden = row?.id === HOME_ID || (!row && !preview); input.readOnly = !!preview || row?.id === HOME_ID || !!row?.refPeer
+    input.setAttribute('aria-label', 'Current node text'); input.value = row?.kind === 'home' ? '' : title; input.hidden = row?.kind === 'home' || (!row && !preview); input.readOnly = !!preview || row?.id === HOME_ID || !!row?.refPeer
     const controls = div('node-actions', '')
     const entry = { key, store: state.replica.store, input, baseline: title, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls }
     const save = () => {
@@ -1349,6 +1349,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
     }
     if (row?.construction || row?.template) { input.readOnly = true; input.title = 'Use Change template → Edit template to edit the constructor.' }
+    if (row?.missingTemplate) { input.readOnly = true; input.title = "This row's template has not arrived from its peer yet; it can be edited once it does." }
     input.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) event.preventDefault() })
     input.addEventListener('drop', event => { if (event.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) { save(); dropTrigger(event, app, [...state.view], true) } })
     input.addEventListener('commit-edit', save)
@@ -1399,9 +1400,9 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const prefs = workspace(app)
   const header = el.querySelector<HTMLElement>('.node-header')!, toolbar = header.querySelector<HTMLElement>('.node-toolbar')!
   const heading = header.querySelector<HTMLElement>('.node-title')!
-  if (row && row.id !== HOME_ID) heading.replaceChildren(alternativePicker(app, state.view, row, true))
+  if (row && row.kind !== 'home') heading.replaceChildren(alternativePicker(app, state.view, row, true))
   else heading.textContent = title
-  header.classList.toggle('home', row?.id === HOME_ID)
+  header.classList.toggle('home', row?.kind === 'home')
   header.querySelector('.shared-grants')?.remove()
   const shared = app.sharedNodeAt(state.view)
   if (shared) {
@@ -1421,7 +1422,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const accordionEl = el.querySelector<HTMLDetailsElement>('[data-accordion="context"]')!
   renderConstructorPanel(el.querySelector<HTMLElement>('.constructor-head')!, el.querySelector<HTMLElement>('.constructor-grid')!, el.querySelector<HTMLElement>('.constructor-suggestions')!, el.querySelector<HTMLElement>('.node-context')!, state, app)
   const inputOptions = el.querySelector<HTMLElement>('.node-input-options')!
-  inputOptions.replaceChildren(...(row && row.id !== HOME_ID ? [alternativePicker(app, state.view, row)] : []))
+  inputOptions.replaceChildren(...(row && row.kind !== 'home' ? [alternativePicker(app, state.view, row)] : []))
   el.classList.toggle('peer-held', app.isPeerNode(state.view))
   el.setAttribute('aria-busy', String(!!row?.refPeer))
   const controls = cached.controls
@@ -1450,9 +1451,14 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (name && app.copyProposalToBranch(preview.proposal.id, name)) { clearProposal(app); app.refresh() }
     }))
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
-    if (preview.proposal.peerId === state.replica.meta.peerId && preview.proposal.status === 'rejected') controls.append(button('secondary small', 'Discard rejected changes', () => app.discardProposal(preview.proposal.id)))
   }
-  if (!preview && row?.kind === 'template') controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
+  if (!preview && row?.kind === 'template' && !row.id.startsWith('lib:type:')) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
+  // the library this device ships with: people who want to propose changes and vote link the shared one into Home
+  if (!preview && row?.id === LIBRARY_ID && state.view.length === 1 && !libraryLink(state.replica)) {
+    const contribute = button('secondary small', 'Contribute to the standard library', () => void app.contributeToLibrary())
+    contribute.title = 'Adds the shared standard library to Home, with the fos server as its peer: propose changes and vote on them. Under Home it is used instead of this one.'
+    controls.append(contribute)
+  }
   const git = !preview && localGitControls(app); if (git) controls.append(git)
   if (row?.construction) controls.append(constructorBody(row, state, app))
   // the account form is its own block under the peer's row, never a column beside it
@@ -1554,7 +1560,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const preview = proposalPreview(app)
   if (!preview && prefs.layout === 'tree') { const files = filesystemRows(app, prefs.search); if (files) rows.push(files) }
   // a node with nothing of the user's own yet (the seeded standard library does not count) shows the first-run help
-  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => row.id === LIBRARY_ID || row.id === LIBRARY_BUNDLE_ID)) {
+  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => row.id === LIBRARY_ID)) {
     const hint = document.createElement('li'); hint.className = 'first-run'
     const keys = div('first-run-keys', '')
     if (window.matchMedia?.('(pointer: coarse)').matches) keys.append('Tap ', Object.assign(document.createElement('kbd'), { textContent: '?' }), ' for row syntax and tips')
@@ -1771,7 +1777,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
     const groupOf = (task: TaskView): string => {
       const key = settingKeyFromName(task.construction?.name)
       if (task.construction?.peerId || key === 'sessions') return 'Account'
-      if (!key) return task.id === HOME_ID ? '' : 'Other'
+      if (!key) return task.kind === 'home' ? '' : 'Other'
       if (['name', 'theme', 'microphone', 'camera', 'geolocation', 'history'].includes(key)) return 'Device'
       if (['server', 'direct', 'peer', 'invite', 'virtual', 'phone', 'share'].includes(key)) return 'Connections'
       return 'Data'
@@ -1814,7 +1820,10 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const path: Scope = [...at, task.id]
   const selected = !!state.selected && state.selected.length === path.length && state.selected.every((p, i) => path[i] === p)
   const li = document.createElement('li')
-  li.className = 'task kind-' + task.kind + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
+  li.className = 'task kind-' + task.kind + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '') + (task.typeError?.length ? ' type-error' : '') + (task.rejected ? ' type-rejected' : '')
+  // a type error: the row holds rows its type does not accept (they are marked too); everything else reads as before
+  if (task.typeError?.length) li.title = `${task.title || ROW_KIND_LABEL[task.kind]} does not accept ${task.typeError.length === 1 ? 'one of its rows' : `${task.typeError.length} of its rows`} (marked in red)`
+  else if (task.rejected) li.title = 'This row cannot be here: its parent’s type does not accept it. Move or remove it to fix the parent.'
   li.style.setProperty('--depth', String(depth))
   if (task.construction) li.classList.add('has-constructor')
   li.draggable = true
@@ -1918,7 +1927,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (task.id === HOME_ID) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
+  if (task.kind === 'home') { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
@@ -1931,7 +1940,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body.addEventListener('click', (event) => { if ((event.target as HTMLElement).closest('a,button,.destructure-trigger,.destructure-panel')) return; event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
   } else {
     body = span('title', '')
-    if (task.kind === 'template' && task.id !== HOME_ID) { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
+    if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
     body.append(renderInlineText(task.title))
     if (task.kind === 'comment') {
       const who = span('author', task.author?.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'comment')
@@ -1956,6 +1965,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
   meta.append(opRef, opCopy)
+  if (task.missingTemplate) { const b = span('kind-badge unmet', 'reference error'); b.title = 'Made from a template this device has not received yet. It was requested from the peer; the row updates when it arrives.'; meta.append(b) }
   if (task.template) { const b = span('kind-badge tpl' + (task.blockedBy?.length ? ' unmet' : ''), `\`${task.template.name}`); b.title = `Executes the template “${task.template.name}”: its nested rows were copied underneath${task.blockedBy?.length ? ` (${task.blockedBy.length} still unmet)` : ''}`; meta.append(b) }
   // allocations under a row show as little tags on it (money, time, things, people)
   if (task.childCount > 0 && task.kind !== 'resource') {
@@ -2197,7 +2207,7 @@ function expandNoteText(ctx: ReturnType<typeof noteContext>, resolve: (name: str
 }
 
 function insideTemplate(state: AppState, fullPath: Scope): boolean {
-  return fullPath.some((id, i) => id !== HOME_ID && viewAt(state.replica, fullPath.slice(0, i))?.tasks.some(row => row.id === id && row.kind === 'template'))
+  return fullPath.some((id, i) => viewAt(state.replica, fullPath.slice(0, i))?.tasks.some(row => row.id === id && row.kind === 'template'))
 }
 
 /** Requirement, supply, query, resource-bank and allocation rows: a kind badge, the text, and a status/balance. */
@@ -2258,7 +2268,8 @@ function manualControls(app: App, state: AppState, at: Scope, task: TaskView, ab
   const req = task.requirement
   if (!req || req.satisfied) return []
   const controls: HTMLElement[] = []
-  for (const handler of manualHandlersFor(state.replica, req)) {
+  // the library this requirement sees: Home's linked one under Home, the root's shipped one elsewhere
+  for (const handler of manualHandlersFor(state.replica, req, absolute ? at : [...state.view, ...at])) {
     if (handler.capability === 'allocation' && handler.resource === 'location' && !handler.device) {
       const place = document.createElement('input'); place.className = 'small manual-place'; place.placeholder = req.place ?? 'Where?'; place.setAttribute('aria-label', 'Place')
       const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, place.value || undefined, absolute)); record.dataset.handler = handler.id
@@ -2789,7 +2800,7 @@ function renderVirtual(body: HTMLElement, state: AppState, app: App): void {
   const form = document.createElement('form')
   const name = document.createElement('input'); name.required = true; name.placeholder = 'Role name'; name.setAttribute('aria-label', 'Virtual peer name')
   const role = document.createElement('select'); role.setAttribute('aria-label', 'Virtual peer role')
-  role.append(new Option('Editor — changes sync automatically', 'editor'), new Option('Proposer — changes need approval', 'proposer'), new Option('Reviewer — can approve proposals', 'reviewer'), new Option('Viewer — reads only', 'viewer'))
+  role.append(new Option('Editor — changes sync automatically', 'editor'), new Option('Proposer — changes need approval', 'proposer'), new Option('Viewer — reads only', 'viewer'))
   const label = document.createElement('label')
   const account = document.createElement('input'); account.type = 'checkbox'; account.checked = !!state.session; account.disabled = !state.session
   account.id = 'virtual-use-account'; account.setAttribute('aria-label', 'Use current sign-in'); label.htmlFor = account.id
@@ -2797,7 +2808,7 @@ function renderVirtual(body: HTMLElement, state: AppState, app: App): void {
   const submit = button('primary', 'Spawn peer', () => undefined); submit.type = 'submit'
   form.append(name, role, label, submit)
   form.className = 'virtual-peer-form'
-  form.addEventListener('submit', (event) => { event.preventDefault(); app.spawnVirtualPeer(name.value, role.value as 'editor' | 'proposer' | 'reviewer' | 'viewer', account.checked) })
+  form.addEventListener('submit', (event) => { event.preventDefault(); app.spawnVirtualPeer(name.value, role.value as 'editor' | 'proposer' | 'viewer', account.checked) })
   body.append(form)
   queueMicrotask(() => name.focus())
 }
@@ -3167,11 +3178,9 @@ function requestRow(r: { id: number; peerName: string | null; peerId: string | n
   const row = div('request-row', '')
   row.append(div('request-text', `${r.peerName || 'A device'} (${(r.peerId ?? '').slice(0, 8)}) wants to attach to ${r.scopeNames.length ? pathLabel(r.scopeNames) : 'your whole account'}`))
   const actions = div('row', '')
-  const propose = button('primary small', 'Approve: may propose', () => void app.answerRequest(r.id, 'approve', ['edit']))
-  propose.title = 'The device attaches here; its changes arrive as proposals for members to approve'
-  const approve = button('secondary small', 'Approve: may propose and approve', () => void app.answerRequest(r.id, 'approve', ['edit', 'approve']))
-  approve.title = 'The device may also merge other members’ proposals'
-  actions.append(propose, approve, button('danger small', 'Deny', () => void app.answerRequest(r.id, 'deny')))
+  const approve = button('primary small', 'Approve', () => void app.answerRequest(r.id, 'approve', ['edit']))
+  approve.title = 'The device attaches here and may edit: its changes, and its decisions on others’ proposals, go through the node like any member’s'
+  actions.append(approve, button('danger small', 'Deny', () => void app.answerRequest(r.id, 'deny')))
   row.append(actions)
   return row
 }

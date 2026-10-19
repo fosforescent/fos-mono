@@ -65,7 +65,7 @@ test('revocation, audience permissions, stale versions, and unexpected fields re
   const s = setup(), visit = await s.call('visit', at)
   expect((await s.call('submit', input(visit.body, { fields: { arbitrary: { value: 'no' } } }))).status).toBe(400)
   expect((await s.call('submit', input(visit.body, { revision: 'stale' }))).status).toBe(409)
-  s.replicas.host = setMemberCapabilitiesAt(s.replicas.host, ['poll'], 'audience:public', ['read', 'approve', 'rank'], ['approve'], 11)
+  s.replicas.host = setMemberCapabilitiesAt(s.replicas.host, ['poll'], 'audience:public', ['read', 'edit', 'rank'], ['edit'], 11)
   expect((await s.call('submit', input(visit.body))).status).toBe(403)
   s.replicas.host = removeMemberAt(s.replicas.host, ['poll'], visit.body.node.mine.peer, 12)
   expect((await s.call('visit', { ...at, visitorToken: visit.body.visitorToken })).status).toBe(403)

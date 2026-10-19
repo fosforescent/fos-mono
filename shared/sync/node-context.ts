@@ -1,4 +1,4 @@
-import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowPrimitive, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
+import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowEdgeAt, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
 import { createBranch } from './branches'
 import { headCid, loadReplica, serializeReplica, type Replica } from './replica'
 import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
@@ -49,7 +49,7 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
       if (!nodeAuthorityAt(r, branch.scope, authority).includes('edit') || authority.proposeOnly) throw new NodeAccessError('Branch not available to this peer.')
       if (branch.scope.length) fork = createBranch(fork, branch.scope, branch.name, now)
       else {
-        const edge: [string, string] = [cid, rowPrimitive(fork.store, 'plain')]
+        const edge = rowEdgeAt(fork.store, 'plain', cid, [])
         const choice = putBranches(fork.store, content(fork.store, cid).data.alias?.id ?? 'fos:root-branch', edge, [{ peerId: 'main', edge }, { peerId: branch.name, edge, base: edge }])
         commitRoot(fork.store, choice, now)
       }
@@ -67,7 +67,7 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
     const cid = resolveScope(fork.store, headCid(fork), at)
     const proposal = cid && readProposals(fork.store, content(fork.store, cid)).find(p => p.cid === request.proposal!.id)
     const permissions = nodeAuthorityAt(r, at, authority)
-    if (!proposal || (!authority.owner && proposal.peerId !== authority.peerId && !permissions.includes('approve') && !permissions.includes('read-requests'))) throw new NodeAccessError('Proposal is not available to this peer.')
+    if (!proposal || (!authority.owner && proposal.peerId !== authority.peerId && !permissions.includes('edit') && !permissions.includes('read-requests'))) throw new NodeAccessError('Proposal is not available to this peer.')
     commitRoot(fork.store, updateAtScope(fork.store, headCid(fork), at, () => content(fork.store, proposal.contentCid), 'replace'), now)
   }
   const served = exchange(fork, { ...request, branches: undefined, proposal: undefined }, { ...authority, owner: request.proposal ? true : authority.owner, proposeOnly: request.proposal ? false : authority.proposeOnly }, now)

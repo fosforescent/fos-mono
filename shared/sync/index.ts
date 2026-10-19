@@ -1,6 +1,6 @@
 export * from './graph'
+export * from './patterns'
 export * from './merge'
-export * from './protocol'
 export * from './replica'
 export * from './project'
 

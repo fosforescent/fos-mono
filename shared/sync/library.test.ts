@@ -5,7 +5,8 @@ import { exchangeNode } from './node-sync'
 import { addMemberAt, addRow, createReplica, ensureHomeContext, headCid, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { nodeAuthorityAt } from './node-context'
 import { setSharing, sharedProjection, writeParticipation } from './sharing'
-import { DEFAULT_MERGE_POLICY, LIBRARY_BUNDLE_ID, LIBRARY_ID, STANDARD_LIBRARY, applyMergePolicy, ensureBundledLibrary, ensureLibraryLink, exportLibraryRows, exportProvidedLibrary, libraryBundlePath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
+import { DEFAULT_MERGE_POLICY, STANDARD_LIBRARY, applyMergePolicy, ensureLibraryLink, ensureDeviceLibrary, exportLibraryRows, exportProvidedLibrary, libraryPath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
+import { LIBRARY_ID, nestScope } from './graph'
 
 const share = 'library-share-0123456789', address = { owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], share, title: 'Standard library' }
 const revision = (value: unknown) => JSON.stringify(value).length.toString(36)
@@ -15,7 +16,7 @@ function library(): { r: Replica; path: Scope } {
   r = addRow(r, [HOME_ID], 'plain', 'Standard library', 1, { id: LIBRARY_ID })
   const path = [HOME_ID, LIBRARY_ID]
   r = setSharing(r, path, { id: share, audience: 'users', enabled: true }, 2)
-  r = setMemberCapabilitiesAt(r, path, 'audience:users', ['read', 'edit', 'approve', 'rank'], [], 2)
+  r = setMemberCapabilitiesAt(r, path, 'audience:users', ['read', 'edit', 'rank'], [], 2)
   r = setMergePolicy(r, path, DEFAULT_MERGE_POLICY, 2)
   return { r: seedStandardLibrary(r, path, 3), path }
 }
@@ -26,6 +27,7 @@ function proposeRow(r: Replica, path: Scope, peer: string, title: string, id: st
   const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
+  nestScope(draftStore, { store, root, at: path })
   const draft = addRow(createReplica(peer, draftStore), [], 'template', title, now, { id })
   importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
   const cid = put(store, proposalContent(store, peer, 'node-sync', headCid(draft), base, now))
@@ -37,8 +39,9 @@ test('seeding adds the standard templates once and records the version', () => {
   const { r, path } = library()
   const rows = view(r, path)!.tasks
   expect(rows.filter(t => t.kind === 'template').map(t => t.title)).toEqual(STANDARD_LIBRARY.filter(s => s.kind === 'template').map(s => s.text))
-  expect(view(r, [...path, 'lib:trip'])!.tasks.map(t => t.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
-  expect(libraryInfo(r, path)).toMatchObject({ version: 1 })
+  // a template's own pattern rows (what tasks made from it accept) are rows too; its requirements are the rest
+  expect(view(r, [...path, 'lib:trip'])!.tasks.filter(t => t.kind !== 'pattern').map(t => t.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
+  expect(libraryInfo(r, path)).toMatchObject({ version: 2 })
   expect(libraryInfo(r, path)!.seeded).toContain('lib:trip:budget')
   const again = seedStandardLibrary(r, path, 9)
   expect(headCid(again)).toBe(headCid(r))
@@ -47,8 +50,9 @@ test('seeding adds the standard templates once and records the version', () => {
   expect(view(trimmed, path)!.tasks.filter(t => t.kind === 'template')).toHaveLength(8)
 })
 
-test('every account gets one reference to the library in its Home, carrying the shared address', () => {
+test('people who contribute link the shared library into Home, carrying its address; nobody gets one by default', () => {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
+  expect(libraryLink(r)).toBeNull()
   const linked = ensureLibraryLink(r, address, 2)
   expect(linked.added).toBe(true)
   expect(linked.path).toEqual([HOME_ID, LIBRARY_ID])
@@ -66,10 +70,10 @@ test('the users audience is a group every account belongs to; explicit entries s
   const { r, path } = library()
   const cid = resolveScope(r.store, headCid(r), path)!, value = content(r.store, cid)
   expect(memberFor(r.store, value, 'user:bob')?.peerId).toBe('audience:users')
-  expect(hasCapability(r.store, value, 'user:bob', 'approve')).toBe(true)
+  expect(hasCapability(r.store, value, 'user:bob', 'edit')).toBe(true)
   expect(hasCapability(r.store, value, 'user:bob', 'execute')).toBe(false)
   expect(hasCapability(r.store, value, 'visitor:anon', 'read')).toBe(false)
-  expect(nodeAuthorityAt(r, path, { peerId: 'user:bob', scope: path, capabilities: [] })).toEqual(expect.arrayContaining(['read', 'edit', 'approve', 'rank']))
+  expect(nodeAuthorityAt(r, path, { peerId: 'user:bob', scope: path, capabilities: [] })).toEqual(expect.arrayContaining(['read', 'edit', 'rank']))
   expect(() => nodeAuthorityAt(r, path, { peerId: 'visitor:anon', scope: path, capabilities: [] })).toThrow()
   const restricted = addMemberAt(r, path, 'user:carol', 'carol', ['read'], 5)
   const restrictedValue = content(restricted.store, resolveScope(restricted.store, headCid(restricted), path)!)
@@ -103,33 +107,28 @@ test('a proposal merges once enough members approved it; a lone approval waits',
   expect(view(manual, fresh.path)!.proposals.filter(p => p.status === 'open')).toHaveLength(1)
 })
 
-test('the library exports as rows that seed an identical copy; a device bundles that copy until its first sync replaces it with the reference', () => {
+test('the library exports as rows that seed an identical copy: every root ships it from its build, and a library linked in Home overrides it there', () => {
   const { r: lib, path } = library()
   const rows = exportLibraryRows(lib, path)
   expect(rows.map(row => [row.id, row.kind])).toEqual(STANDARD_LIBRARY.map(row => [row.id, row.kind]))
   expect(rows.find(row => row.id === 'lib:trip')!.children!.map(c => c.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
   expect(rows.find(row => row.id === 'lib:readme')!.text).toMatch(/^# Standard library/)
-  // a device that never synced: the bundle seeds a local copy with the same rows
+  // a new root ships the library: its row is there from the start, filled from the build's bundle
   let device = ensureHomeContext(createReplica('user:device'), 1)
-  const bundled = ensureBundledLibrary(device, { address, version: 7, rows }, 2)
-  expect(bundled.added).toBe(true)
-  expect(bundled.path).toEqual([HOME_ID, LIBRARY_BUNDLE_ID])
-  device = bundled.replica
-  expect(libraryBundlePath(device)).toEqual([HOME_ID, LIBRARY_BUNDLE_ID])
+  expect(view(device, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
+  device = ensureDeviceLibrary(device, { address, version: 7, rows }, 2)
+  expect(view(device, [LIBRARY_ID])!.tasks.filter(t => t.kind === 'template').map(t => t.title)).toEqual(rows.filter(row => row.kind === 'template').map(row => row.text))
+  expect(libraryInfo(device, [LIBRARY_ID])).toMatchObject({ version: 7, source: 'bundle' })
+  expect(headCid(ensureDeviceLibrary(device, { address, version: 7, rows }, 3))).toBe(headCid(device))
   expect(libraryLink(device)).toBeNull()
-  expect(view(device, [HOME_ID, LIBRARY_BUNDLE_ID])!.tasks.filter(t => t.kind === 'template').map(t => t.title)).toEqual(rows.filter(row => row.kind === 'template').map(row => row.text))
-  expect(libraryInfo(device, [HOME_ID, LIBRARY_BUNDLE_ID])).toMatchObject({ version: 7, source: 'bundle' })
-  expect(ensureBundledLibrary(device, { address, version: 7, rows }, 3).added).toBe(false)
-  // an empty bundle (a build made without a server) falls back to the in-code seed list
-  const bare = ensureBundledLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: 0, rows: [] }, 2).replica
-  expect(view(bare, [HOME_ID, LIBRARY_BUNDLE_ID])!.tasks.filter(t => t.kind === 'template')).toHaveLength(8)
-  // the first owner sync: the copy gives way to the live reference, once
-  const linked = ensureLibraryLink(device, address, 10)
-  expect(linked.added).toBe(true)
-  expect(libraryBundlePath(linked.replica)).toBeNull()
-  expect(libraryLink(linked.replica)).toEqual([HOME_ID, LIBRARY_ID])
-  expect(view(linked.replica, [HOME_ID])!.tasks.filter(t => t.id === LIBRARY_ID || t.id === LIBRARY_BUNDLE_ID)).toHaveLength(1)
-  expect(ensureBundledLibrary(linked.replica, { address, version: 7, rows }, 11).added).toBe(false)
+  expect(libraryPath(device)).toEqual([LIBRARY_ID])
+  // a build made without a server ships the in-code seed list
+  const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: 0, rows: [] }, 2)
+  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.kind === 'template')).toHaveLength(8)
+  // contributing links the shared library into Home: under Home it is the one rows see; the shipped one stays in the root
+  const linked = ensureLibraryLink(device, address, 10).replica
+  expect(libraryLink(linked)).toEqual([HOME_ID, LIBRARY_ID])
+  expect(view(linked, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
 })
 
 test('the nodes the fos CLI pulls through the account export as the same bundle the server seeded', () => {
@@ -161,8 +160,9 @@ test('the library carries manual fallback handlers for every kind of requirement
   expect(manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).map(h => [h.id, h.device])).toEqual([['lib:manual:location', false], ['lib:device:location', true]])
   expect(manualHandlersFor(r, { capability: 'mail' }).map(h => h.label)).toEqual(['Sent it myself'])
   expect(manualHandlersFor(r, { capability: 'confirmation' })).toEqual([])
-  // a device that only has the bundled copy offers the same fallbacks
-  const device = ensureBundledLibrary(ensureHomeContext(createReplica('user:device'), 1), { address, version: 1, rows: exportLibraryRows(r, [HOME_ID, LIBRARY_ID]) }, 2).replica
+  // a device that only ships the library from its build offers the same fallbacks
+  const device = ensureDeviceLibrary(ensureHomeContext(createReplica('user:device'), 1), { address, version: 1, rows: exportLibraryRows(r, [HOME_ID, LIBRARY_ID]) }, 2)
   expect(manualHandlers(device)).toEqual(handlers)
+  // a root whose shipped library was never filled has its row types but no fallbacks
   expect(manualHandlers(createReplica('user:none'))).toEqual([])
 })

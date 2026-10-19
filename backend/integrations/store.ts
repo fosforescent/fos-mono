@@ -5,12 +5,12 @@
 
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { createReplica, addSupply, headCid, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
-import type { PeerSyncDeps, PeerSyncUser } from '../sync/peerSync'
+import type { AccountStoreDeps, AccountUser } from '../sync/accountStore'
 
-/** The account's peer id (as `serverPeerIdFor` in peerSync; repeated here so this module loads without express/prisma in tests). */
+/** The account's peer id (as `serverPeerIdFor` in accountStore; repeated here so this module loads without express/prisma in tests). */
 const serverPeerIdFor = (username: string): string => `user:${username}`
 
-export type StoreDeps = Pick<PeerSyncDeps, 'loadStore' | 'saveStore'> & {
+export type StoreDeps = Pick<AccountStoreDeps, 'loadStore' | 'saveStore'> & {
   withUserLock<T>(key: string | number, fn: () => Promise<T>): Promise<T>
   usernameOf(userId: number): Promise<string | null>
   now?: () => number
@@ -21,7 +21,7 @@ export function replicaOf(store: FosStore, username: string): Replica {
 }
 
 /** Load a user's tree, change it, save it: `fn` returns the new replica (or null to leave it). */
-export async function editTree<T>(deps: StoreDeps, userId: number, fn: (replica: Replica, user: PeerSyncUser) => Promise<{ replica: Replica | null; result: T }>): Promise<T | null> {
+export async function editTree<T>(deps: StoreDeps, userId: number, fn: (replica: Replica, user: AccountUser) => Promise<{ replica: Replica | null; result: T }>): Promise<T | null> {
   const username = await deps.usernameOf(userId)
   if (!username) return null
   return deps.withUserLock(`user:${username}`, async () => {

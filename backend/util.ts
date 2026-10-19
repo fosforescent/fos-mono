@@ -15,6 +15,7 @@ import { UserModel, FosNodeModel, PrismaClient } from "@prisma/client";
 
 import { FosStore } from "@fosforescent/shared/dag-implementation/store";
 import { verifyCid } from "@fosforescent/shared/dag-implementation/cid";
+import { asAccountStore } from "./sync/deviceRoot";
 import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
 
 import { Prisma } from '@prisma/client';
@@ -185,7 +186,8 @@ export const dbToStore = async (
   newStore.trellisData = trellisData
 
   rememberLoadedRoot(newStore, user.fosNodeId)
-  return newStore
+  // an account's store is not a device root: its rows resolve through this server's own device root
+  return asAccountStore(newStore)
 
 };
 

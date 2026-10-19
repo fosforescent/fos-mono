@@ -9,7 +9,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 dom.window.HTMLCanvasElement.prototype.getContext = () => null
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { App, mountUi, createMemoryStorage, parseRowInput, view, argumentRefs, resolveScope, headCid, serializeReplica, loadReplica } = require(path.join(dir, 'app.cjs'))
+const { App, mountUi, createMemoryStorage, parseRowInput, view, argumentRefs, resolveScope, headCid, serializeReplica, loadReplica, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const key = (input, name, mods = {}) => input.dispatchEvent(new window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...mods }))
 async function main() {
@@ -28,7 +28,7 @@ async function main() {
   assert(peer, 'autocomplete creates an ordinary typed peer ref')
   assert.equal(a.currentView().tasks.length, 1, 'completion never commits a second partial peer')
   const loaded = loadReplica(serializeReplica(a.state.replica))
-  assert(view(loaded, []).tasks.some(t => t.construction?.handler === 'invite'), 'peer constructor survives reload')
+  assert(view(loaded, []).tasks.filter(t => t.id !== LIBRARY_ID).some(t => t.construction?.handler === 'invite'), 'peer constructor survives reload')
   assert(!document.querySelector('[aria-label="Peer connection type"]'))
   a.set({ session: { kind: 'user', username: 'alice', jwt: 'test', baseUrl: 'http://localhost' } })
   globalThis.fetch = async () => ({ ok: false, status: 503, statusText: 'Unavailable', json: async () => ({ error: 'Invite service unavailable' }) })

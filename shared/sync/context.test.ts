@@ -1,4 +1,5 @@
-import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, buildSyncRequest, completeSync, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, rowKindOf, serveSync, valueContent, view } from './index'
+import { syncWith, userView } from './test-helpers'
+import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, rowKindOf, rowTemplate, valueContent, view } from './index'
 
 test('legacy rows move into Home, constructors and peers remain at root, and migration is idempotent', () => {
   let r = addTask(createReplica('device'), [], 'Existing project', 1, 'project')
@@ -7,35 +8,21 @@ test('legacy rows move into Home, constructors and peers remain at root, and mig
   const previousProject = findChild(r.store, headCid(r), 'project')
   r = ensureHomeContext(r, 4)
   expect(homePath(r)).toEqual([HOME_ID])
-  expect(view(r, [])!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('plain')
+  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('home')
   const rootMembers = content(r.store, headCid(r)).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
   const homeMembers = content(r.store, findChild(r.store, headCid(r), HOME_ID)!).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
   expect(homeMembers.some(edge => rootMembers.some(root => root[1] === edge[1]))).toBe(false)
   expect(contextMembers(r, [HOME_ID]).some(peer => peer.peerId === 'fos')).toBe(true)
-  expect(view(r, [])!.tasks.map(row => row.id)).toEqual(['workflow', HOME_ID])
+  expect(userView(r)!.tasks.map(row => row.id)).toEqual(['workflow', HOME_ID])
   expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).toEqual(['project'])
   expect(findChild(r.store, findChild(r.store, headCid(r), HOME_ID)!, 'project')).toBe(previousProject)
-  expect(view(r, [])!.members.map(peer => peer.peerId)).toEqual(expect.arrayContaining(['other', 'fos']))
+  expect(userView(r)!.members.map(peer => peer.peerId)).toEqual(expect.arrayContaining(['other', 'fos']))
   const head = headCid(r)
   expect(ensureHomeContext(r, 5)).toBe(r)
   expect(headCid(r)).toBe(head)
   r = resetHomeContent(r, 6)
   expect(view(r, [HOME_ID])!.tasks).toEqual([])
-  expect(view(r, [])!.tasks.map(row => row.id)).toEqual(['workflow', HOME_ID])
-})
-
-test('a synced legacy device migrates through the existing protocol without duplicating its rows', () => {
-  const server = addTask(createReplica('server'), [], 'Existing', 1, 'existing')
-  let client = createReplica('client')
-  const sync = () => {
-    const request = buildSyncRequest(client)
-    const result = serveSync(server.store, request, 'server', 2)
-    if ('error' in result) throw Error(result.error)
-    client = completeSync(client, request, result.response, 3).replica
-  }
-  sync(); client = ensureHomeContext(client, 4); sync(); sync()
-  expect(view(server, [])!.tasks.map(row => row.id)).toEqual([HOME_ID])
-  expect(view(server, [HOME_ID])!.tasks.map(row => row.id)).toEqual(['existing'])
+  expect(userView(r)!.tasks.map(row => row.id)).toEqual(['workflow', HOME_ID])
 })
 
 test('scoped documents are already instances and never receive an extra Home wrapper', () => {
@@ -52,28 +39,25 @@ test('resource demands and contributions use the same signed allocation represen
   expect(valueContent(r.store, demand).data.requirement).toBeUndefined()
   expect(valueContent(r.store, demand).data.allocation?.amount).toBe(-50)
   const edge = valueContent(r.store, task).children.find(e => rowKindOf(r.store, e) === 'requirement')!
-  expect(edge[1]).toBe(r.store.primitive.allocationField.getId())
+  expect(edge[0]).toBe(rowTemplate(r.store, 'allocation'))
   r = addRow(r, ['trip', 'need'], 'allocation', 'Contribution', 3, { id: 'give', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
   expect(view(r, ['trip', 'need'])!.tasks[0]!.allocation?.amount).toBe(50)
   expect(view(r, ['trip'])!.tasks[0]!.requirement?.satisfied).toBe(true)
-  expect(view(r, [])!.tasks[0]!.blockedBy).toBeUndefined()
+  expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
 })
 
 
 test('legacy scoped attachment paths still update the same node beneath Home', () => {
   let server = addTask(createReplica('server'), [], 'Project', 1, 'project')
+  server = addMemberAt(server, ['project'], 'attached', 'Attached', ['edit'], 0)
   server = ensureHomeContext(server, 0)
+  // a credential issued before Home existed still names the project at the root
   let client = createReplica('attached')
   client.meta.scope = ['project']
-  const sync = () => {
-    const packet = buildSyncRequest(client)
-    const result = serveSync(server.store, packet, 'server', 2)
-    if ('error' in result) throw Error(result.error)
-    expect(result.response.scope).toEqual(['project'])
-    client = completeSync(client, packet, result.response, 3).replica
-  }
-  sync(); client = addTask(client, [], 'Child', 4, 'child'); sync()
-  expect(view(server, [HOME_ID, 'project'])!.tasks[0]!.id).toBe('child')
+  client = syncWith(client, server, { invited: ['project'] })
+  client = addTask(client, [], 'Child', 4, 'child')
+  client = syncWith(client, server, { invited: ['project'] })
+  expect(view(server, [HOME_ID, 'project'])!.proposals[0]!.summary.added).toEqual(['Child'])
 })
 
 
@@ -108,7 +92,7 @@ test('legacy Home template becomes an ordinary container without losing children
   let r = addRow(createReplica(), [], 'template', 'Home', 1, { id: HOME_ID })
   r = addTask(r, [HOME_ID], 'Keep this', 2, 'child')
   r = ensureHomeContext(r, 3)
-  expect(view(r, [])!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('plain')
+  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('home')
   expect(view(r, [HOME_ID])!.tasks[0].id).toBe('child')
   expect(ensureHomeContext(r, 4)).toBe(r)
 })
@@ -120,7 +104,7 @@ test('Home branches survive normalization and keep their separate children', () 
   r = createBranch(r, [HOME_ID], 'alternative', 2)
   r = addTask(r, [HOME_ID], 'Alternative only', 3, 'extra')
   r = ensureHomeContext(r, 4)
-  expect(view(r, [])!.tasks.find(row => row.id === HOME_ID)!.branches!.names).toContain('alternative')
+  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.branches!.names).toContain('alternative')
   expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).toContain('extra')
   selectBranch(r.store, HOME_ID, 'main')
   expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).not.toContain('extra')

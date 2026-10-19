@@ -1,3 +1,4 @@
+import { userView } from './test-helpers'
 import { proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, capabilityTarget, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
 
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
@@ -96,7 +97,7 @@ test('disabling an offered handler removes availability without removing its con
   expect(capabilityPeers(r, [], 'repo')).toEqual(['integration:github'])
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], ['repo'], 3, ['repo'])
   expect(capabilityPeers(r, [], 'repo')).toEqual([])
-  expect(view(r, [])!.members[0]!.accepts).toContain('repo')
+  expect(userView(r)!.members[0]!.accepts).toContain('repo')
 })
 
 test('editing memberships preserves typed handlers in their original direction', async () => {

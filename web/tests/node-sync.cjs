@@ -32,7 +32,7 @@ async function main() {
   host.approveDirectPeer(true)
   await new Promise(resolve => setTimeout(resolve, 0))
   await guest.syncNodes(false)
-  assert.equal(c.view(guest.state.replica, []).tasks[0].refPeer, 'host')
+  assert.equal(c.view(guest.state.replica, []).tasks.filter(t => t.id !== c.LIBRARY_ID)[0].refPeer, 'host')
   assert(!JSON.stringify(a.sent).includes('Grandchild secret'))
   assert(!a.sent.some(m => m.t === 'sync') && !b.sent.some(m => m.t === 'sync'))
   await guest.loadPeerNode(['parent'])

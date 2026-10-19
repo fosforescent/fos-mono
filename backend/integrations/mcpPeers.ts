@@ -20,7 +20,7 @@ import {
 } from '@fosforescent/shared/sync/index'
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { editTree, walkRows, type StoreDeps } from './store'
-import type { PeerSyncUser } from '../sync/peerSync'
+import type { AccountUser } from '../sync/accountStore'
 import type { HostHandler } from '../sync/registry'
 
 export type McpServerInfo = { id: number; name: string; endpoint: string; credentials: Record<string, unknown>; tools: Array<{ name: string; description: string | null }> }
@@ -148,7 +148,7 @@ export function mcpToolHandler(deps: McpPeerDeps): HostHandler {
 }
 
 /** The listener's runner (`runOpenToolRequests`): the same binding and call, under the requirement's own evaluation journal. */
-async function runRequirement(deps: McpPeerDeps, replica: Replica, user: PeerSyncUser, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): Promise<{ replica: Replica; text: string } | { error: string }> {
+async function runRequirement(deps: McpPeerDeps, replica: Replica, user: AccountUser, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): Promise<{ replica: Replica; text: string } | { error: string }> {
   const scope = [...at, req.id]
   const prior = evaluationRecord(replica, scope)
   if (prior && !['committed', 'rolled-back'].includes(prior.status)) return { error: 'This evaluation needs recovery. Review its effects before running again.' }
@@ -207,7 +207,7 @@ export function createMcpPeerHandlers(deps: McpPeerDeps) {
 
     /** Run one tool requirement now (the "Run" button); the answer is a note inside it. */
     /** Listener: every open tool requirement under an attached node, run in turn. Returns how many ran. */
-    async runOpenToolRequests(user: PeerSyncUser, _store: FosStore): Promise<number> {
+    async runOpenToolRequests(user: AccountUser, _store: FosStore): Promise<number> {
       const servers = await deps.servers(user.id)
       if (!servers.length) return 0
       return await editTree(deps, user.id, async (replica, currentUser) => {

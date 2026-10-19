@@ -5,7 +5,7 @@
  */
 import type { Request, Response } from 'express'
 import { createReplica, dispatchEvent, ensureHomeContext, ensureInviteRequest, EventError, handleMcp, headCid, inheritedNodeGrants, parseEvent, pathOf, MCP_PROTOCOL_VERSIONS, type Capability, type EvaluateRequest, type FosEvent, type Principal, type Scope } from '@fosforescent/shared/sync/index'
-import { withUserLock, serverPeerIdFor, type PeerSyncDeps } from './peerSync'
+import { withUserLock, serverPeerIdFor, type AccountStoreDeps } from './accountStore'
 
 type Claims = { username?: string; kind?: string; peerId?: string; scope?: string[]; name?: string; exp?: number }
 export type Evaluate = (username: string, request: EvaluateRequest) => Promise<unknown>
@@ -35,7 +35,7 @@ export function principalOf(claims: Claims | undefined, ownerScope?: unknown, ow
   return { username: claims.username, peerId: serverPeerIdFor(claims.username), owner: true, scope }
 }
 
-export function createEventService(deps: PeerSyncDeps, evaluate?: Evaluate) {
+export function createEventService(deps: AccountStoreDeps, evaluate?: Evaluate) {
   /** Dispatch one event for a principal: load, dispatch, save, notify; then let the host evaluate if asked. */
   async function handle(principal: Principal & { username: string }, event: FosEvent): Promise<unknown> {
     // An invite names another account: it must exist before the owner's store records the membership.

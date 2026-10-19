@@ -1,10 +1,12 @@
+import { userView } from './test-helpers'
+import { LIBRARY_ID } from './graph'
 import { listingAt, setMarketAt } from './market'
 import { FosStore } from '../dag-implementation/store'
-import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
 import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from './project'
 import {
   acceptsFrom,
+  capabilityTarget,
   CAPABILITIES,
   SERVER_TRANSPORT_CAPABILITIES,
   INTEGRATION_PEERS,
@@ -12,7 +14,6 @@ import {
   readMembers,
   withMember,
   bookkeepingOf,
-  SYNC_FORMAT_VERSION,
   commitRoot,
   content,
   edgeKey,
@@ -24,8 +25,8 @@ import {
   isRefNode,
   linkHistory,
   normalizeRefs,
-  partitionContent,
-  partitionEdge,
+  rowEdge,
+  ensureLibraryRow,
   put,
   readChoice,
   refValueCid,
@@ -33,22 +34,22 @@ import {
   rootTargetCid,
   stripLink,
   taskContent,
-  taskEdge,
+  rowEdgeAt,
   valueContent,
   viewNode
 } from './graph'
 import { mergeNodes, resolveChoiceIn } from './merge'
-import { parseSyncRequest, serveSync, type SyncResponse } from './protocol'
+import { exchangeNode, nodeShape, nodeTreeSync, validateNodeShape } from './node-sync'
+import { formatCid, parseCid } from '../dag-implementation/cid'
+import type { NodeAuthority, NodeRequest, ProvidedNode } from './node-provider'
+import type { Scope } from './graph'
 import {
   addMemberAt,
-  addPartition,
   addRef,
   addRow,
   addSupply,
   addTask,
   applyProposalAt,
-  buildSyncRequest,
-  completeSync,
   copyNode,
   createReplica,
   deleteTask,
@@ -65,7 +66,6 @@ import {
   resolve,
   resolveRef,
   serializeReplica,
-  serveSync,
   setQueryOptionsAt,
   setRowContentAt,
   setRowKind,
@@ -78,9 +78,9 @@ const LABELS = { ours: 'A', theirs: 'B' }
 /** Build content nodes in one store for the merge tests. */
 function fixtures(store: FosStore) {
   const task = (id: string, title: string, done = false, time = 1000, updated = time) =>
-    taskEdge(store, put(store, taskContent(id, title, done, time, updated)))
+    rowEdgeAt(store, 'task', put(store, taskContent(id, title, done, time, updated)))
   const node = (...edges: FosPathElem[]) => put(store, { data: {}, children: edges })
-  const part = (id: string, name: string, ...edges: FosPathElem[]) => partitionEdge(store, put(store, partitionContent(id, name, edges)))
+  const part = (id: string, name: string, ...edges: FosPathElem[]) => rowEdgeAt(store, 'plain', put(store, { data: { alias: { id }, description: { content: name } }, children: edges }), [])
   return { task, node, part }
 }
 
@@ -89,6 +89,7 @@ describe('mergeNodes', () => {
   let f: ReturnType<typeof fixtures>
   beforeEach(() => {
     store = new FosStore()
+    ensureLibraryRow(store)
     f = fixtures(store)
   })
 
@@ -230,64 +231,42 @@ describe('mergeNodes', () => {
   })
 })
 
-describe('protocol', () => {
-  const SERVER = 'user:alice'
-
-  it('validates requests', () => {
-    expect(parseSyncRequest(null)).toHaveProperty('error')
-    expect(parseSyncRequest({ version: 2 })).toHaveProperty('error')
-    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, peerId: '', scope: [], headCid: 'x' })).toHaveProperty('error')
-    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, peerId: 'p', scope: ['a', 3], headCid: 'x' })).toHaveProperty('error')
-    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], headCid: 'x', nodes: {} })).not.toHaveProperty('error')
-  })
-
-  it('rejects a head whose nodes were not provided and an unknown scope', () => {
-    const server = new FosStore()
-    const missing = serveSync(server, { version: SYNC_FORMAT_VERSION, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], baseCid: null, headCid: 'nope', nodes: {} }, SERVER)
-    expect(missing).toMatchObject({ code: 'missing-nodes' })
-
-    const device = createReplica('p')
-    const req = buildSyncRequest({ ...device, meta: { ...device.meta, scope: ['no-such-partition'] } })
-    expect(serveSync(server, req, SERVER)).toMatchObject({ code: 'scope-not-found' })
-  })
-
-  it('rejects a peer that addresses nodes in a different cid format', () => {
-    const server = new FosStore()
-    const request = { ...buildSyncRequest(addTask(createReplica('p'), [], 'x', 1)), cidVersion: 0 }
-    expect(serveSync(server, request, SERVER)).toMatchObject({ code: 'version-mismatch' })
-    expect(parseSyncRequest({ version: SYNC_FORMAT_VERSION, peerId: 'p', scope: [], headCid: 'x' })).toMatchObject({ error: expect.stringMatching(/cidVersion/) })
-  })
-
-  it('ignores nodes whose cid does not match their content', () => {
-    const server = new FosStore()
-    const req = { version: SYNC_FORMAT_VERSION, cidVersion: CURRENT_CID_VERSION, peerId: 'p', scope: [], baseCid: null, headCid: 'deadbeef', nodes: { deadbeef: { data: { description: { content: 'x' } }, children: [] } } }
-    expect(serveSync(server, req, SERVER)).toMatchObject({ code: 'missing-nodes' })
-    expect(server.table.has('deadbeef')).toBe(false)
-  })
-})
-
-/** A user group (server store) plus helpers to play a device's round trip. */
+/**
+ * An account (the server's store) and devices syncing with it node by node (`nodeTreeSync`, as the CLI does). A device
+ * syncs as the account's owner, or as an invited peer at `invited` (its edits become a proposal there).
+ */
 class World {
-  server = new FosStore()
-  log: string[] = []
+  server = createReplica('user:alice')
 
-  sync(replica: Replica, now = 10_000): Replica {
-    const request = buildSyncRequest(replica)
-    const served = serveSync(this.server, request, 'user:alice', now)
-    if ('error' in served) throw new Error(served.error)
-    this.log.push(`${replica.meta.peerId}:${served.response.action}`)
-    return completeSync(replica, request, served.response, now).replica
+  provide(request: NodeRequest, authority: NodeAuthority, now: number): ProvidedNode {
+    const served = exchangeNode(this.server, request, authority, now)
+    this.server = served.replica
+    return served.node
+  }
+
+  /** Run one sync; `during` edits the device between the first request and its answer (an edit made in flight). */
+  sync(replica: Replica, now = 10_000, invited?: Scope, during?: (r: Replica) => Replica): Replica {
+    const scope = invited ?? [], localRoot = replica.meta.localScope ?? []
+    const authority: NodeAuthority = invited ? { peerId: replica.meta.peerId, scope, proposeOnly: true, capabilities: SERVER_TRANSPORT_CAPABILITIES } : { peerId: replica.meta.peerId, scope: [], owner: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }
+    const run = nodeTreeSync(replica, { peer: replica.meta.serverPeerId ?? (invited ? null : 'user:alice'), scope, remoteRoot: invited ? scope : localRoot, localRoot, branches: [], push: true }, () => now)
+    let step = run.next()
+    while (!step.done) {
+      const answer = this.provide(step.value.request, authority, now)
+      if (during) { during(step.value.replica); during = undefined }
+      step = run.next(answer)
+    }
+    return { ...step.value.replica, meta: { ...step.value.replica.meta, serverPeerId: step.value.peer } }
   }
 
   serverTasks(scope: string[] = []): string[] {
-    const cid = resolveScope(this.server, rootTargetCid(this.server), scope)
-    return cid ? viewNode(this.server, cid).tasks.map((t) => t.title) : []
+    return view(this.server, scope)?.tasks.filter((t) => t.id !== LIBRARY_ID).map((t) => t.title) ?? []
   }
 }
 
-const titles = (r: Replica, at: string[] = []) => view(r, at)!.tasks.map((t) => t.title)
+const titles = (r: Replica, at: string[] = []) => (at.length ? view(r, at) : userView(r))!.tasks.map((t) => t.title)
+const rows = (r: Replica, at: string[] = []) => (at.length ? view(r, at) : userView(r))!.tasks.map((t) => [t.id, t.title, t.done])
 
-describe('replica + user group end to end', () => {
+describe('replica + account end to end', () => {
   it('offline edits on two devices converge after each syncs twice', () => {
     const world = new World()
     let phone = createReplica('phone')
@@ -301,47 +280,25 @@ describe('replica + user group end to end', () => {
     laptop = world.sync(laptop)
     phone = world.sync(phone)
 
-    expect(headCid(phone)).toBe(headCid(laptop))
-    expect(headCid(phone)).toBe(rootTargetCid(world.server))
-    expect(titles(phone)).toEqual(['buy milk', 'write report'])
-    expect(world.log).toEqual(['phone:fast-forward', 'laptop:merge', 'phone:pull'])
-    // both devices are registered as peers of the user group's root node
-    expect(view(phone, [])!.peers.sort()).toEqual(['laptop', 'phone'])
+    expect(rows(phone)).toEqual(rows(laptop))
+    expect(world.serverTasks().sort()).toEqual(['buy milk', 'write report'])
+    expect(isDirty(phone)).toBe(false)
+    expect(isDirty(laptop)).toBe(false)
   })
 
-  it('serves a user store whose root is a bare content node (as the seed and registration create it)', () => {
-    const world = new World()
-    // mimic register.ts: the root is the workspace content itself, not an alias
-    const workspace = put(world.server, { data: { description: { content: 'workspace' }, alias: { id: 'ws' } }, children: [] })
-    world.server.rootNodeId = workspace
-    expect(rootTargetCid(world.server)).toBe(workspace)
-
-    let phone = createReplica('phone')
-    phone = addTask(phone, [], 'first', 1, 'a')
-    phone = world.sync(phone)
-    expect(world.serverTasks()).toEqual(['first'])
-    // the root is now an alias with history back to the bare root
-    expect(rootTargetCid(world.server)).not.toBe(world.server.rootNodeId)
-    expect(world.server.getPrevList(world.server.rootNodeId)).toContain(workspace)
-    expect(viewNode(world.server, rootTargetCid(world.server)).name).toBe('workspace')
-    phone = world.sync(addTask(phone, [], 'second', 2, 'b'))
-    expect(world.serverTasks()).toEqual(['first', 'second'])
-  })
-
-  it('keeps history: the user group root alias links PREV to its previous version', () => {
+  it('keeps history: the account root alias links PREV to its previous versions', () => {
     const world = new World()
     let phone = createReplica('phone')
     phone = addTask(phone, [], 'one', 1)
     phone = world.sync(phone)
     phone = addTask(phone, [], 'two', 2)
     phone = world.sync(phone)
-    const root = content(world.server, world.server.rootNodeId)
-    const prev = root.children.find(([i]) => i === world.server.primitive.previousVersion.getId())
-    expect(prev).toBeDefined()
-    expect(world.server.getPrevList(world.server.rootNodeId).length).toBeGreaterThanOrEqual(2)
+    const root = content(world.server.store, world.server.store.rootNodeId)
+    expect(root.children.find(([i]) => i === world.server.store.primitive.previousVersion.getId())).toBeDefined()
+    expect(world.server.store.getPrevList(world.server.store.rootNodeId).length).toBeGreaterThanOrEqual(2)
   })
 
-  it('surfaces a choice on every device and converges once it is resolved anywhere', () => {
+  it('a field changed on both devices is refused on the second device, which keeps its change', () => {
     const world = new World()
     let phone = createReplica('phone')
     let laptop = createReplica('laptop')
@@ -352,79 +309,35 @@ describe('replica + user group end to end', () => {
     phone = renameTask(phone, [], 't', 'draft v2 (phone)', 5)
     laptop = renameTask(laptop, [], 't', 'draft v2 (laptop)', 6)
     phone = world.sync(phone)
-    laptop = world.sync(laptop)
-    phone = world.sync(phone)
-
-    expect(view(phone, [])!.choices).toHaveLength(1)
-    expect(view(laptop, [])!.choices).toHaveLength(1)
-    expect(titles(phone)).toEqual([])
-
-    const choice = view(laptop, [])!.choices[0]!
-    expect(choice.id).toBe('t')
-    const laptopOption = choice.options.findIndex((o) => o.peerId === 'laptop')
-    laptop = resolve(laptop, [], choice.id, laptopOption, 7)
-    laptop = world.sync(laptop)
-    phone = world.sync(phone)
-
-    expect(view(phone, [])!.choices).toHaveLength(0)
-    expect(titles(phone)).toEqual(['draft v2 (laptop)'])
-    expect(headCid(phone)).toBe(headCid(laptop))
+    expect(() => world.sync(laptop)).toThrow(/Concurrent change to node field "description"/)
+    expect(titles(laptop)).toEqual(['draft v2 (laptop)'])
+    expect(world.serverTasks()).toEqual(['draft v2 (phone)'])
   })
 
   it('a device attached at a partition only sees and syncs that partition', () => {
     const world = new World()
     let laptop = createReplica('laptop')
     laptop = addTask(laptop, [], 'root task', 1, 'r1')
-    laptop = addPartition(laptop, [], 'work', 2, 'work')
+    laptop = addRow(laptop, [], 'plain', 'work', 2, { id: 'work' })
     laptop = addTask(laptop, ['work'], 'work task', 3, 'w1')
     laptop = world.sync(laptop)
+    laptop = reattach(laptop, ['work'])
+    expect(laptop.meta.localScope).toEqual(['work'])
 
-    let workPhone = reattach(createReplica('work-phone'), ['work'], 4)
-    workPhone = world.sync(workPhone)
-    expect(titles(workPhone)).toEqual(['work task'])
-    expect(view(workPhone, [])!.tasks.filter((t) => !t.checkable)).toEqual([])
-    expect(view(workPhone, [])!.name).toBe('work')
-
-    workPhone = addTask(workPhone, [], 'added on work phone', 5, 'w2')
-    workPhone = setTaskDone(workPhone, [], 'w1', true, 6)
-    workPhone = world.sync(workPhone)
-
-    laptop = deleteTask(laptop, [], 'r1', 7)
-    laptop = world.sync(laptop)
-    expect(titles(laptop)).toEqual(['work']) // the plain node 'work' is a row like any other
-    expect(view(laptop, ['work'])!.tasks.map((t) => [t.title, t.done])).toEqual([['work task', true], ['added on work phone', false]])
-    expect(view(laptop, ['work'])!.peers).toEqual(['work-phone'])
-
-    workPhone = world.sync(workPhone)
-    expect(titles(workPhone)).toEqual(['work task', 'added on work phone'])
-    expect(world.serverTasks()).toEqual(['work'])
-  })
-
-  it('reattaching a synced root replica into a partition keeps its agreed base; back to root pulls everything', () => {
-    const world = new World()
-    let laptop = createReplica('laptop')
-    laptop = addPartition(laptop, [], 'work', 1, 'work')
-    laptop = addTask(laptop, ['work'], 'w', 2, 'w1')
-    laptop = world.sync(laptop)
-
-    const scoped = reattach(laptop, ['work'], 3)
-    expect(scoped.meta.scope).toEqual(['work'])
-    expect(titles(scoped)).toEqual(['w'])
-    expect(scoped.meta.baseCid).toBe(headCid(scoped))
-    expect(isDirty(scoped)).toBe(false)
-
-    let back = reattach(scoped, [], 6)
-    expect(isDirty(back)).toBe(false)
-    back = world.sync(back)
-    expect(view(back, [])!.tasks.filter((t) => !t.checkable).map((t) => t.title)).toEqual(['work'])
-    expect(titles(back, ['work'])).toEqual(['w'])
+    laptop = addTask(laptop, ['work'], 'added at work', 5, 'w2')
+    laptop = renameTask(laptop, [], 'r1', 'renamed outside', 6) // outside the attachment: stays here
+    expect(isDirty(laptop)).toBe(true)
+    const synced = world.sync({ ...laptop, meta: { ...laptop.meta } })
+    expect(world.serverTasks(['work'])).toEqual(['work task', 'added at work'])
+    expect(world.serverTasks()).toEqual(['root task', 'work'])
+    expect(titles(synced)).toEqual(['renamed outside', 'work'])
   })
 
   it('refuses to change scope with unsynced changes', () => {
     const world = new World()
-    let r = world.sync(addPartition(createReplica('r'), [], 'work', 1, 'work'))
+    let r = world.sync(addRow(createReplica('r'), [], 'plain', 'work', 1, { id: 'work' }))
     r = addTask(r, [], 'x', 2)
-    expect(() => reattach(r, ['work'], 3)).toThrow(/unsynced/)
+    expect(() => reattach(r, ['work'])).toThrow(/unsynced/)
   })
 
   it('an offline-first device merges with the account on first login without losing anything', () => {
@@ -439,41 +352,22 @@ describe('replica + user group end to end', () => {
     tablet = setTaskDone(tablet, [], 'o1', true, 4)
 
     tablet = world.sync(tablet)
-    expect(view(tablet, [])!.tasks.map((t) => [t.id, t.done])).toEqual([['e1', false], ['o1', true], ['o2', false]])
+    expect(userView(tablet)!.tasks.map((t) => [t.id, t.done]).sort()).toEqual([['e1', false], ['o1', true], ['o2', false]])
     laptop = world.sync(laptop)
-    expect(headCid(laptop)).toBe(headCid(tablet))
+    expect(rows(laptop).sort()).toEqual(rows(tablet).sort())
   })
 
   it('edits made during an in-flight request survive', () => {
     const world = new World()
     let phone = createReplica('phone')
     phone = addTask(phone, [], 'one', 1, 'a')
-
-    const request = buildSyncRequest(phone)
-    const served = serveSync(world.server, request, 'user:alice', 5)
-    if ('error' in served) throw new Error(served.error)
-    phone = addTask(phone, [], 'two', 2, 'b')
-    const done = completeSync(phone, request, served.response, 5)
-    expect(done.reMerged).toBe(true)
-    expect(titles(done.replica)).toEqual(['one', 'two'])
-    expect(isDirty(done.replica)).toBe(true)
-
-    phone = world.sync(done.replica)
+    phone = world.sync(phone, 5, undefined, (r) => addTask(r, [], 'two', 2, 'b'))
+    expect(titles(phone)).toEqual(['one', 'two'])
+    expect(world.serverTasks()).toEqual(['one'])
+    expect(isDirty(phone)).toBe(true)
+    phone = world.sync(phone)
     expect(isDirty(phone)).toBe(false)
     expect(world.serverTasks()).toEqual(['one', 'two'])
-  })
-
-  it('responses only carry nodes the device is missing', () => {
-    const world = new World()
-    let phone = createReplica('phone')
-    phone = addTask(phone, [], 'one', 1, 'a')
-    phone = world.sync(phone)
-    const request = buildSyncRequest(phone)
-    const served = serveSync(world.server, request, 'user:alice', 5)
-    if ('error' in served) throw new Error(served.error)
-    expect(served.response.action).toBe('noop')
-    expect(Object.keys(served.response.nodes)).toHaveLength(0)
-    expect(Object.keys(request.nodes)).toHaveLength(0)
   })
 
   it('serializes to JSON and back, and tolerates garbage', () => {
@@ -487,7 +381,7 @@ describe('replica + user group end to end', () => {
     expect(titles(loadReplica({ meta: { peerId: 'q' }, context: { rootNodeId: 'missing', nodes: {} } }))).toEqual([])
   })
 
-  it('the serialized replica stays bounded to what is reachable from head and base', () => {
+  it('the serialized replica stays bounded to what is reachable from the root', () => {
     let r = createReplica('p')
     for (let i = 0; i < 20; i++) r = addTask(r, [], `task ${i}`, i, `t${i}`)
     const all = r.store.table.size
@@ -510,7 +404,7 @@ import {
 } from './replica'
 import { hasCapability, linkHistory, readProposals, stripLink, content as nodeContent } from './graph'
 
-const ids = (r: Replica, at: string[] = []) => view(r, at)!.tasks.map((t) => t.id)
+const ids = (r: Replica, at: string[] = []) => (at.length ? view(r, at) : userView(r))!.tasks.map((t) => t.id)
 
 describe('tree: subtasks, zoom and moves', () => {
   it('nests tasks, zooms into them and reports subtree counts', () => {
@@ -520,7 +414,7 @@ describe('tree: subtasks, zoom and moves', () => {
     r = addTask(r, ['P'], 'child two', 3, 'c2')
     r = setTaskDone(r, ['P'], 'c1', true, 4)
     r = addTask(r, ['P', 'c2'], 'grandchild', 5, 'g')
-    const root = view(r, [])!
+    const root = userView(r)!
     expect(root.tasks[0]).toMatchObject({ id: 'P', childCount: 2, subtreeTasks: 3, subtreeDone: 1 })
     expect(ids(r, ['P'])).toEqual(['c1', 'c2'])
     expect(view(r, ['P', 'c2'])!.name).toBe('child two')
@@ -564,19 +458,14 @@ describe('link nodes: history, members and proposals', () => {
     owner = addTask(owner, [], 'project', 1, 'proj')
     owner = addTask(owner, ['proj'], 'first', 2, 'f')
     owner = makeLinkAt(owner, ['proj'], 3)
-    owner = addMemberAt(owner, ['proj'], 'guest', 'Guest phone', ['edit'], 3)
     owner = world.sync(owner)
+    // grants are the account's bookkeeping (an invite records them there); node exchange does not carry them
+    world.server = addMemberAt(makeLinkAt(world.server, ['proj'], 3), ['proj'], 'guest', 'Guest phone', ['edit'], 3)
+    owner = addMemberAt(owner, ['proj'], 'guest', 'Guest phone', ['edit'], 3)
     return { world, owner }
   }
-
-  /** Round trip for a peer credential: the server runs in branch mode. */
-  function peerSync(world: World, replica: Replica, now: number): Replica {
-    const request = buildSyncRequest(replica)
-    const served = serveSync(world.server, request, 'user:alice', now, { proposeOnly: true, peerName: 'Guest phone' })
-    if ('error' in served) throw new Error(served.error)
-    world.log.push(`${replica.meta.peerId}:${served.response.action}`)
-    return completeSync(replica, request, served.response, now).replica
-  }
+  /** A guest's replica holds the node it was invited to as its root. */
+  const guestAt = (world: World, now: number) => world.sync(createReplica('guest'), now, ['proj'])
 
   it('edits inside a link node record its previous versions', () => {
     const { owner } = setup()
@@ -590,192 +479,75 @@ describe('link nodes: history, members and proposals', () => {
     expect(view(withMore, ['proj'])!.versions).toBeGreaterThan(view(owner, ['proj'])!.versions - 1)
   })
 
-  it('a peer attached to a link proposes instead of changing; the owner approves and history is kept', () => {
+  // proposals are the account's: owners decide them there (a `decide` event), and their devices pull the result
+  it('a peer attached to a link proposes instead of changing; once approved, everyone has it', () => {
     const { world, owner: owner0 } = setup()
     let owner = owner0
-    let guest = reattach(createReplica('guest'), ['proj'], 4)
-    guest = peerSync(world, guest, 5)                       // pulls the link node content
+    let guest = guestAt(world, 5)
     expect(ids(guest)).toEqual(['f'])
-    expect(view(guest, [])!.members.map((m) => m.peerId)).toEqual(['guest'])
 
     guest = addTask(guest, [], 'from guest', 6, 'g1')
-    guest = peerSync(world, guest, 7)
-    expect(world.log.at(-1)).toBe('guest:propose')
-    expect(ids(guest)).toEqual(['f', 'g1'])                 // the guest keeps working on its branch
-    expect(isDirty(guest)).toBe(false)
+    guest = world.sync(guest, 7, ['proj'])
+    expect(ids(guest)).toEqual(['f', 'g1'])                 // the guest keeps its edit
     expect(world.serverTasks(['proj'])).toEqual(['first']) // main is untouched
+    const proposals = view(world.server, ['proj'])!.proposals
+    expect(proposals).toHaveLength(1)
+    expect(proposals[0]).toMatchObject({ peerId: 'guest', summary: { added: ['from guest'], changed: [], removed: [] } })
 
-    owner = world.sync(owner)
-    const node = view(owner, ['proj'])!
-    expect(node.proposals).toHaveLength(1)
-    expect(node.proposals[0]).toMatchObject({ peerId: 'guest', name: 'Guest phone', summary: { added: ['from guest'], changed: [], removed: [] } })
-    expect(ids(guest)).toContain('g1')
-    expect(view(guest, [])!.proposals.map((p) => p.peerId)).toEqual(['guest'])  // the guest sees its own proposal listed
+    // a second sync of the guest's unchanged edit keeps one proposal
+    guest = world.sync(guest, 8, ['proj'])
+    expect(view(world.server, ['proj'])!.proposals).toHaveLength(1)
 
-    const versionsBefore = node.versions
-    owner = applyProposalAt(owner, ['proj'], node.proposals[0]!.id, 'owner-laptop', 8)
+    world.server = applyProposalAt(world.server, ['proj'], proposals[0]!.id, 'user:alice', 9)
+    expect(world.serverTasks(['proj'])).toEqual(['first', 'from guest'])
+    expect(view(world.server, ['proj'])!.proposals).toHaveLength(0)
     owner = world.sync(owner)
     expect(ids(owner, ['proj'])).toEqual(['f', 'g1'])
-    expect(view(owner, ['proj'])!.proposals).toHaveLength(0)
-    expect(view(owner, ['proj'])!.versions).toBeGreaterThan(versionsBefore)
-
-    guest = peerSync(world, guest, 9)
-    expect(world.log.at(-1)).toBe('guest:pull')
+    guest = world.sync(guest, 10, ['proj'])
     expect(ids(guest)).toEqual(['f', 'g1'])
-    expect(view(guest, [])!.proposals).toHaveLength(0)
   })
 
-  it('rebases a proposal when main moves, and a rejection drops it', () => {
-    const { world, owner: owner0 } = setup()
-    let owner = owner0
-    let guest = peerSync(world, reattach(createReplica('guest'), ['proj'], 4), 5)
+  it('a rejected proposal stays rejected; main keeps its content', () => {
+    const { world } = setup()
+    let guest = guestAt(world, 5)
     guest = renameTask(guest, [], 'f', 'first (guest)', 6)
-    guest = peerSync(world, guest, 7)
-
-    owner = addTask(owner, ['proj'], 'owner added', 8, 'o1')
-    owner = world.sync(owner)
-    guest = peerSync(world, guest, 9)                       // branch rebased onto the new main
-    expect(ids(guest)).toEqual(['f', 'o1'])
-    expect(view(guest, [])!.tasks.find((t) => t.id === 'f')?.title).toBe('first (guest)')
-
-    owner = world.sync(owner)
-    const proposal = view(owner, ['proj'])!.proposals[0]!
+    guest = world.sync(guest, 7, ['proj'])
+    const proposal = view(world.server, ['proj'])!.proposals[0]!
     expect(proposal.summary).toEqual({ added: [], changed: ['first (guest)'], removed: [] })
-    owner = rejectProposalAt(owner, ['proj'], proposal.id, 10)
-    owner = world.sync(owner)
-    expect(view(owner, ['proj'])!.proposals.map((p) => p.status)).toEqual(['rejected'])
-    expect(view(owner, ['proj'])!.tasks.find((t) => t.id === 'f')?.title).toBe('first')
-    // the main content did not change, so rejecting adds no version
-    const linkValue = nodeContent(owner.store, resolveScope(owner.store, headCid(owner), ['proj'])!)
-    expect(readProposals(owner.store, linkValue)[0]?.status).toBe('rejected')
-    expect(view(owner, ['proj'])!.tasks).toHaveLength(2)
-    expect(stripLink(owner.store, linkValue).data.link).toBeUndefined()
-
-    // the peer learns of the rejection and, without further edits, nothing reopens
-    guest = peerSync(world, guest, 11)
-    expect(view(guest, [])!.proposals.map((p) => [p.peerId, p.status])).toEqual([['guest', 'rejected']])
-    expect(world.log.at(-1)).toBe('guest:pull')   // the rejection is bookkeeping the guest pulls; syncing again is a no-op
-    guest = peerSync(world, guest, 11)
-    expect(world.log.at(-1)).toBe('guest:noop')
-    // a further edit reopens the proposal
-    guest = addTask(guest, [], 'try again', 12, 'g2')
-    guest = peerSync(world, guest, 13)
-    expect(world.log.at(-1)).toBe('guest:propose')
-    owner = world.sync(owner)
-    expect(view(owner, ['proj'])!.proposals.map((p) => p.status)).toEqual(['open'])
+    world.server = rejectProposalAt(world.server, ['proj'], proposal.id, 10)
+    expect(view(world.server, ['proj'])!.proposals.map((p) => p.status)).toEqual(['rejected'])
+    expect(view(world.server, ['proj'])!.tasks.find((t) => t.id === 'f')?.title).toBe('first')
+    const linkValue = nodeContent(world.server.store, resolveScope(world.server.store, headCid(world.server), ['proj'])!)
+    expect(readProposals(world.server.store, linkValue)[0]?.status).toBe('rejected')
+    expect(stripLink(world.server.store, linkValue).data.link).toBeUndefined()
   })
 
-  it('a rejected proposal survives a rebase, and a second owner device does not resurrect replaced proposals', () => {
-    const { world, owner: ownerA0 } = setup()
-    let ownerA = ownerA0
-    let ownerB = world.sync(createReplica('owner-phone'))          // synced before any proposal exists
-    let guest = peerSync(world, reattach(createReplica('guest'), ['proj'], 4), 5)
-    guest = renameTask(guest, [], 'f', 'first (guest)', 6)
-    guest = peerSync(world, guest, 7)                                // proposal R (open)
-
-    ownerA = world.sync(ownerA)
-    const R = view(ownerA, ['proj'])!.proposals[0]!
-    ownerA = rejectProposalAt(ownerA, ['proj'], R.id, 8)
-    ownerA = world.sync(ownerA)
-
-    // main moves (owner adds a task) → the guest's next sync rebases its branch: still rejected
-    ownerA = addTask(ownerA, ['proj'], 'owner task', 9, 'o1')
-    ownerA = world.sync(ownerA)
-    guest = peerSync(world, guest, 10)
-    expect(view(guest, [])!.proposals.map((p) => p.status)).toEqual(['rejected'])
-    expect(ids(guest)).toEqual(['f', 'o1'])
-
-    // the other owner device (which still holds nothing or an older proposal edge) merges: exactly one proposal
-    ownerB = world.sync(ownerB)
-    expect(view(ownerB, ['proj'])!.proposals.map((p) => p.status)).toEqual(['rejected'])
-    ownerA = world.sync(ownerA)
-    expect(view(ownerA, ['proj'])!.proposals).toHaveLength(1)
-
-    // the guest edits → reopened, and still exactly one proposal everywhere
-    guest = addTask(guest, [], 'retry', 11, 'g2')
-    guest = peerSync(world, guest, 12)
-    ownerA = world.sync(ownerA)
-    ownerB = world.sync(ownerB)
-    expect(view(ownerA, ['proj'])!.proposals.map((p) => p.status)).toEqual(['open'])
-    expect(view(ownerB, ['proj'])!.proposals.map((p) => p.status)).toEqual(['open'])
-    expect(view(ownerB, ['proj'])!.proposals[0]!.summary.added).toEqual(['retry'])
-  })
-
-  it('attaching another peer does not count as a content change of the link', () => {
-    const { world, owner } = setup()
-    let guest = peerSync(world, reattach(createReplica('guest'), ['proj'], 4), 5)
-    guest = addTask(guest, [], 'g', 6, 'g1')
-    guest = peerSync(world, guest, 7)
-    const before = view(world.sync(owner), ['proj'])!.versions
-    peerSync(world, reattach(createReplica('another-peer'), ['proj'], 8), 9)   // registers a PEER edge
-    guest = peerSync(world, guest, 10)
-    expect(world.log.at(-1)).toBe('guest:pull')                                  // bookkeeping changed (a new peer): the guest pulls it, no content moved
-    expect(view(guest, [])!.peers.sort()).toEqual(['another-peer', 'guest'])
-    guest = peerSync(world, guest, 11)
-    expect(world.log.at(-1)).toBe('guest:noop')
-    expect(view(world.sync(owner), ['proj'])!.versions).toBe(before)
-  })
-
-  it('member capabilities are [CAPABILITY, PROPOSE|APPROVE] edges on the member reference, not data', () => {
+  it('member capabilities are [CAPABILITY, constructor] edges on the member reference, not data', () => {
     const { owner } = setup()
-    const withApprover = addMemberAt(owner, ['proj'], 'reviewer', 'Reviewer', ['edit', 'approve'], 5)
+    const withApprover = addMemberAt(owner, ['proj'], 'reviewer', 'Reviewer', ['read', 'edit'], 5)
     const node = view(withApprover, ['proj'])!
-    expect(node.members.map((m) => [m.peerId, m.capabilities])).toEqual([['guest', ['edit']], ['reviewer', ['edit', 'approve']]])
+    expect(node.members.map((m) => [m.peerId, m.capabilities])).toEqual([['guest', ['edit']], ['reviewer', ['read', 'edit']]])
     const store = withApprover.store
     const linkValue = nodeContent(store, resolveScope(store, headCid(withApprover), ['proj'])!)
     const refs = linkValue.children.filter((e) => e[0] === store.primitive.memberField.getId()).map((e) => nodeContent(store, e[1]))
     const reviewer = refs.find((r) => r.data.peerId?.content === 'reviewer')!
     expect(reviewer.data).not.toHaveProperty('actor')
     expect(reviewer.children).toEqual([
-      [store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()],
-      [store.primitive.capabilityNode.getId(), store.primitive.approveAction.getId()]
+      [store.primitive.capabilityNode.getId(), capabilityTarget(store, 'read')],
+      [store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()]
     ])
-    expect(hasCapability(store, linkValue, 'reviewer', 'approve')).toBe(true)
-    expect(hasCapability(store, linkValue, 'guest', 'approve')).toBe(false)
+    // deciding proposals is how edit is exercised on a node with several peers: no grant of its own
+    expect(hasCapability(store, linkValue, 'reviewer', 'edit')).toBe(true)
+    expect(hasCapability(store, linkValue, 'guest', 'read')).toBe(false)
   })
 
-  it('attachments persist across sessions; the owner can detach a device deliberately', () => {
-    const { world, owner } = setup()
-    let guest = peerSync(world, reattach(createReplica('guest'), ['proj'], 4), 5)
-    let o = world.sync(owner)
-    expect(view(o, ['proj'])!.peers).toEqual(['guest'])
-    expect(view(o, ['proj'])!.members.map((m) => m.peerId)).toEqual(['guest'])
-    const request = buildSyncRequest(guest)
-    const served = serveSync(world.server, request, 'user:alice', 6, { proposeOnly: true, onlinePeers: ['guest'] })
-    if ('error' in served) throw new Error(served.error)
-    expect(served.response.presence).toEqual(['guest'])
-    guest = completeSync(guest, request, served.response, 6).replica
-    o = removePeerAt(o, ['proj'], 'guest', 7)
-    o = world.sync(o)
-    expect(view(o, ['proj'])!.peers).toEqual([])
-    expect(view(o, ['proj'])!.members).toEqual([])
-  })
-
-  it('one peer can hold several branches, each its own proposal (git branches of a checkout)', () => {
-    const { world, owner } = setup()
-    const peerSyncOn = (replica: Replica, branch: string, now: number) => {
-      const request = buildSyncRequest(replica, branch)
-      const served = serveSync(world.server, request, 'user:alice', now, { proposeOnly: true, peerName: 'Repo' })
-      if ('error' in served) throw new Error(served.error)
-      return completeSync(replica, request, served.response, now).replica
-    }
-    let main = peerSyncOn(reattach(createReplica('repo'), ['proj'], 4), 'main', 5)
-    let feature = peerSyncOn(reattach(createReplica('repo'), ['proj'], 4), 'feature', 6)
-    main = setTaskDone(main, [], 'f', true, 7)                 // done on main …
-    feature = addTask(feature, [], 'feature work', 8, 'fw')   // … something else on the feature branch
-    main = peerSyncOn(main, 'main', 9)
-    feature = peerSyncOn(feature, 'feature', 10)
-    const o = world.sync(owner)
-    const proposals = view(o, ['proj'])!.proposals
-    expect(proposals.map((p) => [p.peerId, p.name, p.summary.changed, p.summary.added])).toEqual([
-      ['repo', 'main', ['first'], []],
-      ['repo', 'feature', [], ['feature work']]
-    ])
-    expect(view(main, [])!.tasks.find((t) => t.id === 'f')?.done).toBe(true)
-    expect(view(feature, [])!.tasks.find((t) => t.id === 'f')?.done).toBe(false)
-    main = addTask(main, [], 'more on main', 11, 'mm')
-    main = peerSyncOn(main, 'main', 12)
-    expect(view(world.sync(o), ['proj'])!.proposals.map((p) => p.name).sort()).toEqual(['feature', 'main'])
+  it('removing a member on the account ends its access', () => {
+    const { world } = setup()
+    guestAt(world, 5)
+    expect(view(world.server, ['proj'])!.members.map((m) => m.peerId)).toEqual(['guest'])
+    world.server = removeMemberAt(world.server, ['proj'], 'guest', 7)
+    expect(view(world.server, ['proj'])!.members).toEqual([])
+    expect(() => guestAt(world, 8)).toThrow(/denied|access/i)
   })
 
   it('the owner’s own devices still merge directly at a link node', () => {
@@ -798,24 +570,24 @@ describe('row kinds', () => {
     r = addRow(r, ['n'], 'plain', 'who: Ada', 4, { id: 'kv' })
     r = addRow(r, [], 'comment', 'nice', 5, { id: 'c', author: { id: 'peer-1', name: 'Ada' } })
     r = addRow(r, ['c'], 'comment', 'reply', 6, { id: 'c2' })
-    const v = view(r, [])!
+    const v = userView(r)!
     expect(v.tasks.map((t) => [t.id, t.kind, t.checkable])).toEqual([['p', 'plain', false], ['t', 'task', true], ['n', 'note', false], ['c', 'comment', false]])
     expect(v.tasks.find((t) => t.id === 'n')!.title).toBe('# Title\n\nbody with {{who}}')
     expect(v.tasks.find((t) => t.id === 'c')!.author).toMatchObject({ name: 'Ada' })
     expect(view(r, ['c'])!.tasks.map((t) => t.kind)).toEqual(['comment'])
     // a plain row cannot be completed; converting it to a task makes it checkable
-    expect(view(setTaskDone(r, [], 'p', true, 7), [])!.tasks[0]).toMatchObject({ id: 'p', done: false, checkable: false })
+    expect(userView(setTaskDone(r, [], 'p', true, 7))!.tasks[0]).toMatchObject({ id: 'p', done: false, checkable: false })
     r = setRowKind(r, [], 'p', 'task', 8)
     r = setTaskDone(r, [], 'p', true, 9)
-    expect(view(r, [])!.tasks[0]).toMatchObject({ id: 'p', kind: 'task', done: true })
+    expect(userView(r)!.tasks[0]).toMatchObject({ id: 'p', kind: 'task', done: true })
     // and back to plain drops the completion
     r = setRowKind(r, [], 'p', 'plain', 10)
-    expect(view(r, [])!.tasks[0]).toMatchObject({ id: 'p', kind: 'plain', done: false, checkable: false })
+    expect(userView(r)!.tasks[0]).toMatchObject({ id: 'p', kind: 'plain', done: false, checkable: false })
     // rename/delete work on any kind
     r = renameTask(r, [], 'c', 'nicer', 11)
-    expect(view(r, [])!.tasks.find((t) => t.id === 'c')!.title).toBe('nicer')
+    expect(userView(r)!.tasks.find((t) => t.id === 'c')!.title).toBe('nicer')
     r = deleteTask(r, [], 'n', 12)
-    expect(view(r, [])!.tasks.map((t) => t.id)).toEqual(['p', 't', 'c'])
+    expect(userView(r)!.tasks.map((t) => t.id)).toEqual(['p', 't', 'c'])
   })
 
   it('references point at rows anywhere in the tree and resolve to their path; copies get fresh ids', () => {
@@ -832,10 +604,10 @@ describe('row kinds', () => {
     expect(resolveRef(r, 'nope')).toBeNull()
     // a ref placed above a sibling
     r = addRef(r, [], 'des', 6, { relativeTo: 'today', position: 'above' })
-    expect(view(r, [])!.tasks.map((t) => t.kind)).toEqual(['task', 'ref', 'task'])
+    expect(userView(r)!.tasks.map((t) => t.kind)).toEqual(['task', 'ref', 'task'])
     // copying the project subtree next to it: same titles, new ids, independent afterwards
     r = copyNode(r, [], 'proj', [], { relativeTo: 'proj', position: 'below' }, 7)
-    const top = view(r, [])!.tasks
+    const top = userView(r)!.tasks
     expect(top.map((t) => t.title)).toEqual(['project', 'project', '', 'today'])
     const copyId = top[1]!.id
     expect(copyId).not.toBe('proj')
@@ -859,46 +631,33 @@ describe('row kinds', () => {
     b = addRow(b, [], 'plain', 'from B', 3, { id: 'pb' })
     b = setRowKind(b, [], 'n', 'task', 4) // B turns the note into a task
     a = world.sync(a); b = world.sync(b); a = world.sync(a)
-    const kinds = (r: Replica) => view(r, [])!.tasks.map((t) => [t.id, t.kind])
+    const kinds = (r: Replica) => userView(r)!.tasks.map((t) => [t.id, t.kind])
     expect(kinds(a)).toEqual(kinds(b))
-    expect(kinds(a)).toEqual([['n', 'task'], ['ca', 'comment'], ['pb', 'plain']])
-    expect(view(a, [])!.choices).toEqual([])
+    expect(kinds(a)[0]).toEqual(['n', 'task'])
+    expect(kinds(a).slice(1).sort()).toEqual([['ca', 'comment'], ['pb', 'plain']])
+    expect(userView(a)!.choices).toEqual([])
   })
 })
 
 describe('approval convergence', () => {
-  it('after the owner approves a proposal (server side), the owner device pulls once and then syncs as noop', () => {
+  it('after the account applies a proposal (a `decide` event), the owner device pulls it and is clean', () => {
     const world = new World()
     let owner = createReplica('owner')
     owner = addTask(owner, [], 'project', 1, 'proj')
-    owner = makeLinkAt(owner, ['proj'], 2)
-    owner = addMemberAt(owner, ['proj'], 'guest', 'Guest', ['edit'], 2)
     owner = world.sync(owner)
-    let guest = reattach(createReplica('guest'), ['proj'], 3)
-    const peerSync = (r: Replica, now: number) => {
-      const request = buildSyncRequest(r)
-      const served = serveSync(world.server, request, 'user:alice', now, { proposeOnly: true, peerName: 'Guest' })
-      if ('error' in served) throw new Error(served.error)
-      return completeSync(r, request, served.response, now).replica
-    }
-    guest = peerSync(guest, 4)
+    world.server = addMemberAt(makeLinkAt(world.server, ['proj'], 2), ['proj'], 'guest', 'Guest', ['edit'], 2)
+    let guest = world.sync(createReplica('guest'), 4, ['proj'])
     guest = addRow(guest, [], 'task', 'from guest', 5, { id: 'g1' })
-    guest = peerSync(guest, 6)
-    owner = world.sync(owner, 7)
-    const proposals = view(owner, ['proj'])!.proposals
+    guest = world.sync(guest, 6, ['proj'])
+    const proposals = view(world.server, ['proj'])!.proposals
     expect(proposals).toHaveLength(1)
-    // the server applies the proposal (what a `decide` event does), then the owner syncs
-    const serverReplica: Replica = { store: world.server, meta: { version: SYNC_FORMAT_VERSION, peerId: 'user:alice', scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null } }
-    applyProposalAt(serverReplica, ['proj'], proposals[0]!.id, 'user:alice', 8)
+    world.server = applyProposalAt(world.server, ['proj'], proposals[0]!.id, 'user:alice', 8)
     owner = world.sync(owner, 9)
-    expect(world.log.at(-1)).toBe('owner:pull')
     expect(view(owner, ['proj'])!.tasks.map((t) => t.title)).toEqual(['from guest'])
     expect(view(owner, ['proj'])!.proposals).toEqual([])
-    owner = world.sync(owner, 10)
-    expect(world.log.at(-1)).toBe('owner:noop')
-    expect(() => buildSyncRequest(owner)).not.toThrow()
-    guest = peerSync(guest, 11)
-    expect(view(guest, [])!.tasks.map((t) => t.title)).toEqual(['from guest'])
+    expect(isDirty(owner)).toBe(false)
+    guest = world.sync(guest, 11, ['proj'])
+    expect(userView(guest)!.tasks.map((t) => t.title)).toEqual(['from guest'])
   })
 })
 
@@ -920,7 +679,7 @@ describe('mutable references: root, link rows and reference rows are one node sh
     expect(proj.data.description).toBeUndefined()
     expect(valueContent(store, projCid).data.description?.content).toBe('project')
     expect(view(r, ['proj'])!.tasks.map((t) => t.title)).toEqual(['design'])
-    expect(view(r, [])!.tasks[0]).toMatchObject({ id: 'proj', kind: 'task', title: 'project', isLink: true })
+    expect(userView(r)!.tasks[0]).toMatchObject({ id: 'proj', kind: 'task', title: 'project', isLink: true })
     // editing inside the link advances the ref: new ref node, PREV → the old one, same value shape
     const before = projCid
     r = addTask(r, ['proj'], 'build', 4, 'b')
@@ -965,7 +724,7 @@ describe('mutable references: root, link rows and reference rows are one node sh
     })
     const rootValue = content(store, headCid(r))
     const edge = rootValue.children.find((e) => edgeKey(store, e) === 'a:sh')!
-    const legacyRoot = put(store, { ...rootValue, children: rootValue.children.map((e) => (e === edge ? [legacy, e[1]] as FosPathElem : e)) })
+    const legacyRoot = put(store, { ...rootValue, children: rootValue.children.map((e) => (e === edge ? [e[0], legacy] as FosPathElem : e)) })
     commitRoot(store, legacyRoot, 3)
     expect(isLegacyInlineLink(store, content(store, resolveScope(store, headCid(r), ['sh'])!))).toBe(true)
     // reading still works before normalization
@@ -994,24 +753,24 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addTask(r, [], 'ship it', 1, 't')
     r = addRow(r, ['t'], 'requirement', 'confirmation', 2, { id: 'rq1', requirement: { capability: 'confirmation' } })
     r = addRow(r, ['t'], 'requirement', 'choice', 3, { id: 'rq2', requirement: { capability: 'choice', options: ['fast', 'cheap'] } })
-    let task = view(r, [])!.tasks[0]!
+    let task = userView(r)!.tasks[0]!
     expect(task.blockedBy).toEqual(['confirmation', 'choice (fast | cheap)'])
     expect(view(r, ['t'])!.tasks.map((x) => [x.kind, x.requirement?.satisfied])).toEqual([['requirement', false], ['requirement', false]])
     // completion is refused while blocked
     r = setTaskDone(r, [], 't', true, 4)
-    expect(view(r, [])!.tasks[0]!.done).toBe(false)
+    expect(userView(r)!.tasks[0]!.done).toBe(false)
     r = addSupply(r, ['t'], 'rq1', { capability: 'confirmation', by: 'ada@x' }, 5)
     r = addSupply(r, ['t'], 'rq2', { capability: 'choice', by: 'ada@x', choice: 1 }, 6)
-    task = view(r, [])!.tasks[0]!
+    task = userView(r)!.tasks[0]!
     expect(task.blockedBy).toBeUndefined()
     expect(view(r, ['t', 'rq1'])!.tasks[0]).toMatchObject({ kind: 'supply', supply: { capability: 'confirmation', by: 'ada@x' } })
     r = setTaskDone(r, [], 't', true, 7)
-    expect(view(r, [])!.tasks[0]!.done).toBe(true)
+    expect(userView(r)!.tasks[0]!.done).toBe(true)
     // a supply of the wrong capability does not count
     let r2 = addRow(createReplica('e'), [], 'task', 'x', 1, { id: 'x' })
     r2 = addRow(r2, ['x'], 'requirement', 'confirmation', 2, { id: 'q', requirement: { capability: 'confirmation' } })
     r2 = addSupply(r2, ['x'], 'q', { capability: 'choice', by: 'bob', choice: 0 }, 3)
-    expect(view(r2, [])!.tasks[0]!.blockedBy).toEqual(['confirmation'])
+    expect(userView(r2)!.tasks[0]!.blockedBy).toEqual(['confirmation'])
   })
 
   it('resource banks track allocations (sub-banks included); an allocation reference satisfies an allocation requirement', () => {
@@ -1020,21 +779,21 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addRow(r, ['cal'], 'allocation', 'planning', 2, { id: 'a1', allocation: { resource: 'cal', type: 'calendar', amount: 1, unit: 'h', start: 1760000000000 } })
     r = addRow(r, ['cal'], 'resource', 'Mornings', 3, { id: 'sub', resource: { type: 'calendar', unit: 'h' } })
     r = addRow(r, ['cal', 'sub'], 'allocation', 'standups', 4, { id: 'a2', allocation: { resource: 'sub', type: 'calendar', amount: 2.5, unit: 'h' } })
-    const bank = view(r, [])!.tasks[0]!
+    const bank = userView(r)!.tasks[0]!
     expect(bank.resource).toMatchObject({ type: 'calendar', capacity: 40, allocated: 3.5, available: 36.5 })
     expect(view(r, ['cal'])!.tasks.find((t) => t.id === 'sub')!.resource).toMatchObject({ allocated: 2.5, available: null })
     // a task requiring 1h of calendar; supplied with a reference to the allocation
     r = addTask(r, [], 'interview', 5, 't')
     r = addRow(r, ['t'], 'requirement', 'calendar 1 h', 6, { id: 'rq', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } })
-    expect(view(r, [])!.tasks[1]!.blockedBy).toEqual(['calendar 1 h'])
+    expect(userView(r)!.tasks[1]!.blockedBy).toEqual(['calendar 1 h'])
     r = addSupply(r, ['t'], 'rq', { capability: 'allocation', by: 'ada', ref: 'a1' }, 7)
-    expect(view(r, [])!.tasks[1]!.blockedBy).toBeUndefined()
+    expect(userView(r)!.tasks[1]!.blockedBy).toBeUndefined()
     // too small an allocation does not satisfy a larger requirement
     r = addRow(r, ['t'], 'requirement', 'calendar 2 h', 8, { id: 'rq2', requirement: { capability: 'allocation', resource: 'calendar', amount: 2, unit: 'h' } })
     r = addSupply(r, ['t'], 'rq2', { capability: 'allocation', by: 'ada', ref: 'a1' }, 9)
-    expect(view(r, [])!.tasks[1]!.blockedBy).toEqual(['calendar 2 h'])
+    expect(userView(r)!.tasks[1]!.blockedBy).toEqual(['calendar 2 h'])
     r = addSupply(r, ['t'], 'rq2', { capability: 'allocation', by: 'ada', ref: 'a2' }, 10)
-    expect(view(r, [])!.tasks[1]!.blockedBy).toBeUndefined()
+    expect(userView(r)!.tasks[1]!.blockedBy).toBeUndefined()
   })
 
   it('listing on the market is a named value on the node that survives edits and round trips; queries carry their options', () => {
@@ -1042,19 +801,19 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addTask(r, [], 'offer', 1, 'o')
     r = makeLinkAt(r, ['o'], 2)
     r = setMarketAt(r, ['o'], true, 3, 'ada@x')
-    expect(view(r, [])!.tasks[0]!.market).toBe(true)
+    expect(userView(r)!.tasks[0]!.market).toBe(true)
     expect(listingAt(r, ['o'])).toEqual({ listedAt: 3, by: 'ada@x' })
-    expect(view(setTaskDone(r, [], 'o', true, 3), [])!.tasks[0]!.market).toBe(true)
-    expect(view(loadReplica(serializeReplica(r)), [])!.tasks[0]!.market).toBe(true)
+    expect(userView(setTaskDone(r, [], 'o', true, 3))!.tasks[0]!.market).toBe(true)
+    expect(userView(loadReplica(serializeReplica(r)))!.tasks[0]!.market).toBe(true)
     r = setMarketAt(r, ['o'], false, 4)
-    expect(view(r, [])!.tasks[0]!.market).toBeUndefined()
+    expect(userView(r)!.tasks[0]!.market).toBeUndefined()
     // listing a plain row makes it a link first
     r = addTask(r, [], 'plain offer', 5, 'p')
     r = setMarketAt(r, ['p'], true, 6)
-    expect(view(r, [])!.tasks[1]).toMatchObject({ isLink: true, market: true })
+    expect(userView(r)!.tasks[1]).toMatchObject({ isLink: true, market: true })
     r = addRow(r, [], 'query', 'designers near me', 7, { id: 'q', query: {} })
     r = setQueryOptionsAt(r, [], 'q', { market: true, executedAt: 8, count: 3 }, 8)
-    expect(view(r, [])!.tasks[2]!.query).toEqual({ market: true, executedAt: 8, count: 3 })
+    expect(userView(r)!.tasks[2]!.query).toEqual({ market: true, executedAt: 8, count: 3 })
   })
 
   it('a requirement is filled by a child row of the kind it names: a done task, an allocation, a run query', () => {
@@ -1063,24 +822,24 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addRow(r, ['t'], 'requirement', 'book a table', 2, { id: 'rt', requirement: { capability: 'task' } })
     r = addRow(r, ['t'], 'requirement', 'groceries', 3, { id: 'ra', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
     r = addRow(r, ['t'], 'requirement', 'recipes', 4, { id: 'rs', requirement: { capability: 'search' } })
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
     // "-[ ]": a task inside, checked off
     r = addTask(r, ['t', 'rt'], 'call the restaurant', 5, 'sub')
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
     r = setTaskDone(r, ['t', 'rt'], 'sub', true, 6)
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
     // "-$ 50": a "$" allocation inside; too small does not count, enough does
     r = addRow(r, ['t', 'ra'], 'allocation', 'deposit', 7, { id: 'a1', allocation: { resource: 'bank', type: 'account', amount: 20, unit: 'USD' } })
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
     r = addRow(r, ['t', 'ra'], 'allocation', 'the rest', 8, { id: 'a2', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['search'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['search'])
     // "-?": a query inside that has been run
     r = addRow(r, ['t', 'rs'], 'query', 'easy dinner recipes', 9, { id: 'q', query: {} })
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['search'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['search'])
     r = setQueryOptionsAt(r, ['t', 'rs'], 'q', { executedAt: 10, count: 2 }, 10)
-    expect(view(r, [])!.tasks[0]!.blockedBy).toBeUndefined()
+    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
     r = setTaskDone(r, [], 't', true, 11)
-    expect(view(r, [])!.tasks[0]!.done).toBe(true)
+    expect(userView(r)!.tasks[0]!.done).toBe(true)
   })
 
   it('peer, market and mail requirements are filled by a supply of that capability; "-@name" waits for that peer', () => {
@@ -1088,13 +847,13 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addTask(r, [], 'review the deck', 1, 't')
     r = addRow(r, ['t'], 'requirement', 'give feedback', 2, { id: 'rp', requirement: { capability: 'peer', peer: 'bob' } })
     r = addRow(r, ['t'], 'requirement', 'find a printer', 3, { id: 'rm', requirement: { capability: 'market' } })
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['@bob', 'market'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob', 'market'])
     r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'ada' }, 4)
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['@bob', 'market']) // someone else confirming does not count
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob', 'market']) // someone else confirming does not count
     r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'bob' }, 5)
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['market'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
     r = addSupply(r, ['t'], 'rm', { capability: 'market', by: 'fos', ref: 't' }, 6)
-    expect(view(r, [])!.tasks[0]!.blockedBy).toBeUndefined()
+    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
     expect(view(r, ['t', 'rm'])!.tasks[0]).toMatchObject({ kind: 'supply', title: 'listed on the market by fos' })
   })
 
@@ -1104,7 +863,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addRow(r, ['tpl'], 'requirement', 'budget', 2, { id: 'r1', requirement: { capability: 'allocation', resource: 'account', amount: 300, unit: 'USD' } })
     r = addRow(r, ['tpl'], 'requirement', 'book transport', 3, { id: 'r2', requirement: { capability: 'task' } })
     r = addRow(r, ['tpl'], 'plain', 'packing notes', 4, { id: 'p' })
-    expect(view(r, [])!.tasks[0]).toMatchObject({ kind: 'template', title: 'Trip', checkable: false })
+    expect(userView(r)!.tasks[0]).toMatchObject({ kind: 'template', title: 'Trip', checkable: false })
     expect(findTemplateByName(r, 'trip')?.row.id).toBe('tpl')
     expect(findTemplateByName(r, 'nope')).toBeNull()
     // two executions, each with its own copies
@@ -1112,7 +871,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = instantiateTemplate(r, [], 'e1', 'tpl', 6)
     r = addTask(r, [], 'Trip to Rome', 7, 'e2')
     r = instantiateTemplate(r, [], 'e2', 'tpl', 8)
-    const oslo = view(r, [])!.tasks.find((t) => t.id === 'e1')!
+    const oslo = userView(r)!.tasks.find((t) => t.id === 'e1')!
     expect(oslo.template).toEqual({ id: 'tpl', name: 'Trip' })
     expect(oslo.blockedBy).toEqual(['account 300 USD', 'task'])
     const copies = view(r, ['e1'])!.tasks
@@ -1121,9 +880,9 @@ describe('requirements, supplies, resource banks and market listings', () => {
     expect(view(r, ['e2'])!.tasks.map((c) => c.id)).not.toEqual(copies.map((c) => c.id))
     // filling one execution leaves the other and the template untouched
     r = addRow(r, ['e1', copies[0]!.id], 'allocation', 'fund', 9, { allocation: { resource: 'b', type: 'account', amount: 300, unit: 'USD' } })
-    expect(view(r, [])!.tasks.find((t) => t.id === 'e1')!.blockedBy).toEqual(['task'])
-    expect(view(r, [])!.tasks.find((t) => t.id === 'e2')!.blockedBy).toEqual(['account 300 USD', 'task'])
-    expect(view(r, ['tpl'])!.tasks.map((c) => c.requirement?.satisfied)).toEqual([false, false, undefined])
+    expect(userView(r)!.tasks.find((t) => t.id === 'e1')!.blockedBy).toEqual(['task'])
+    expect(userView(r)!.tasks.find((t) => t.id === 'e2')!.blockedBy).toEqual(['account 300 USD', 'task'])
+    expect(view(r, ['tpl'])!.tasks.filter((c) => c.kind !== 'pattern').map((c) => c.requirement?.satisfied)).toEqual([false, false, undefined])
     // a template name that is not a template, or a non-task, changes nothing
     expect(instantiateTemplate(r, [], 'e1', 'p', 10)).toBe(r)
     expect(instantiateTemplate(r, [], 'p', 'tpl', 11)).toBe(r)
@@ -1146,7 +905,7 @@ describe('allocations: amounts add up, people allocate themselves, rows are rewr
     expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: false, have: 30 })
     r = addRow(r, ['t', 'rq'], 'allocation', 'the rest', 7, { id: 'a3', allocation: { resource: 'bank', type: 'account', amount: 20, unit: 'USD', start: 1760000000000 } })
     expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: true, have: 50, need: 50 })
-    expect(view(r, [])!.tasks[1]!.blockedBy).toBeUndefined()
+    expect(userView(r)!.tasks[1]!.blockedBy).toBeUndefined()
   })
 
   it('"-@bob" is filled when bob allocates himself inside it ("@bob 2h"), not by someone else', () => {
@@ -1154,9 +913,9 @@ describe('allocations: amounts add up, people allocate themselves, rows are rewr
     r = addTask(r, [], 'review', 1, 't')
     r = addRow(r, ['t'], 'requirement', 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer', peer: 'bob' } })
     r = addRow(r, ['t', 'rq'], 'allocation', '', 3, { id: 'a1', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', person: 'ada' } })
-    expect(view(r, [])!.tasks[0]!.blockedBy).toEqual(['@bob'])
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob'])
     r = addRow(r, ['t', 'rq'], 'allocation', '', 4, { id: 'a2', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', person: 'bob', start: 1760000000000, end: 1760007200000 } })
-    expect(view(r, [])!.tasks[0]!.blockedBy).toBeUndefined()
+    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
     expect(view(r, ['t', 'rq'])!.tasks[1]!.allocation).toMatchObject({ type: 'person', person: 'bob', start: 1760000000000 })
   })
 
@@ -1216,31 +975,26 @@ describe('peer capabilities', () => {
     expect(view(r, ['i'])!.members[0]).toEqual({ peerId: 'user:bob', name: 'bob', capabilities: ['read', 'http'], disabled: ['http'], accepts: ['edit', 'relay'] })
   })
 
-  it('a receive-only policy: the sync request carries no local content, the pull still merges in, local edits stay local', () => {
-    const SERVER = 'user:ada'
-    let server = addTask(createReplica(SERVER), [], 'assigned to the work machine', 1, 'w')
+  it('a receive-only policy: nothing local is sent, the pull still merges in, local edits stay local', () => {
+    const world = new World()
+    world.server = addTask(world.server, [], 'assigned to the work machine', 1, 'w')
     let device = addTask(createReplica('work'), [], 'private note', 2, 'p')
-    // push: false → the head sent is an empty node (no base yet) and the private row is not in the request
-    const req = buildSyncRequest(device, undefined, { push: false })
-    expect(req.headCid).not.toBe(headCid(device))
-    expect(Object.values(req.nodes).some((n) => JSON.stringify(n).includes('private note'))).toBe(false)
-    const served = serveSync(server.store, req, SERVER, 3)
-    expect('error' in served).toBe(false)
-    if ('error' in served) return
-    const done = completeSync(device, req, served.response, 4)
-    device = done.replica
-    // the device now holds the assigned task and still its private row; the server never saw the private row
-    expect(view(device, [])!.tasks.map((t) => t.title).sort()).toEqual(['assigned to the work machine', 'private note'])
-    expect(view(server, [])!.tasks.map((t) => t.title)).toEqual(['assigned to the work machine'])
-    // a second round with the same policy: still nothing leaves (head = base), and a new server row arrives
-    server = addTask(server, [], 'another task', 5, 'a')
-    const req2 = buildSyncRequest(device, undefined, { push: false })
-    expect(req2.headCid).toBe(device.meta.baseCid)
-    const served2 = serveSync(server.store, req2, SERVER, 6)
-    if ('error' in served2) throw new Error(served2.error)
-    device = completeSync(device, req2, served2.response, 7).replica
-    expect(view(device, [])!.tasks.map((t) => t.title).sort()).toEqual(['another task', 'assigned to the work machine', 'private note'])
-    expect(view(server, [])!.tasks.map((t) => t.title)).toEqual(['assigned to the work machine', 'another task'])
+    const sent: NodeRequest[] = []
+    const pull = (r: Replica, now: number) => {
+      const run = nodeTreeSync(r, { peer: r.meta.serverPeerId ?? 'user:alice', scope: [], remoteRoot: [], localRoot: [], branches: [], push: false }, () => now)
+      let step = run.next()
+      while (!step.done) { sent.push(step.value.request); step = run.next(world.provide(step.value.request, { peerId: 'work', scope: [], owner: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }, now)) }
+      return { ...step.value.replica, meta: { ...step.value.replica.meta, serverPeerId: step.value.peer } }
+    }
+    device = pull(device, 3)
+    expect(JSON.stringify(sent)).not.toContain('private note')
+    expect(userView(device)!.tasks.map((t) => t.title).sort()).toEqual(['assigned to the work machine', 'private note'])
+    expect(world.serverTasks()).toEqual(['assigned to the work machine'])
+    world.server = addTask(world.server, [], 'another task', 5, 'a')
+    device = pull(device, 6)
+    expect(JSON.stringify(sent)).not.toContain('private note')
+    expect(userView(device)!.tasks.map((t) => t.title).sort()).toEqual(['another task', 'assigned to the work machine', 'private note'])
+    expect(world.serverTasks()).toEqual(['assigned to the work machine', 'another task'])
   })
 
   it('policies come from fos.config.toml tables and keep only known capabilities', () => {
@@ -1253,12 +1007,18 @@ describe('peer capabilities', () => {
     expect(parsePolicy({ from: ['read'] })).toEqual({ to: [], from: ['read'] })
   })
 
+  it('a node shape pinned to another cid format is refused: that peer has to update', () => {
+    const r = addTask(createReplica('dev'), [], 'x', 1, 'x')
+    const shape = nodeShape(r, [])
+    const older = { ...shape, children: shape.children.map((c) => ({ ...c, template: formatCid(2, parseCid(c.template)!.digest) })) }
+    expect(() => validateNodeShape(shape)).not.toThrow()
+    expect(() => validateNodeShape(older)).toThrow(/Update the app/)
+  })
+
   it('the serving side reports the capabilities it registers with the peer', () => {
-    const device = addTask(createReplica('dev'), [], 'x', 1, 'x')
-    const server = createReplica('user:ada')
-    const served = serveSync(server.store, buildSyncRequest(device), 'user:ada', 2, { capabilities: ['http', 'ws', 'relay', 'search'] })
-    expect('error' in served).toBe(false)
-    if (!('error' in served)) expect(served.response.capabilities).toEqual(['http', 'ws', 'relay', 'search'])
+    const server = createReplica('user:ada', new FosStore())
+    const served = exchangeNode(server, { peerId: 'dev', scope: [], path: [], linkId: 'dev-root' }, { peerId: 'dev', scope: [], owner: true, capabilities: ['provideNode', 'http', 'ws', 'relay', 'search'] }, 2)
+    expect(served.node.capabilities).toEqual(['provideNode', 'http', 'ws', 'relay', 'search'])
   })
 })
 
@@ -1266,7 +1026,7 @@ describe('peer capabilities', () => {
 describe('service capability registration', () => {
   it('round-trips every advertised capability through member graph edges in both directions', () => {
     const store = new FosStore()
-    const root = partitionContent('home', 'Home')
+    const root = { data: { alias: { id: 'home' }, description: { content: 'Home' } }, children: [] }
     const member = withMember(store, root, 'user:services', 'Services', CAPABILITIES, [], CAPABILITIES)
     expect(readMembers(store, member)[0]).toEqual({ peerId: 'user:services', name: 'Services', capabilities: CAPABILITIES, accepts: CAPABILITIES })
   })
@@ -1276,14 +1036,14 @@ describe('service capability registration', () => {
     expect(INTEGRATION_PEERS.find((p) => p.id === 'phone')).toMatchObject({ kind: 'channel', consumes: [] })
     expect(INTEGRATION_PEERS.some((p) => p.id === 'discord')).toBe(false)
     const seeded = ensureHomeContext(createReplica('dev'), 1)
-    expect(view(seeded, [])!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(SERVER_TRANSPORT_CAPABILITIES))
-    expect(view(seeded, [])!.members.find(m => m.peerId === 'fos')!.accepts).not.toContain('llm')
+    expect(userView(seeded)!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(SERVER_TRANSPORT_CAPABILITIES))
+    expect(userView(seeded)!.members.find(m => m.peerId === 'fos')!.accepts).not.toContain('llm')
     const advertised = ensureHomeContext(seeded, 2, { server: ['llm', 'search'], integrations: { github: ['repo'] } })
-    expect(view(advertised, [])!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(['llm', 'search', 'http']))
+    expect(userView(advertised)!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(['llm', 'search', 'http']))
     expect(view(advertised, [HOME_ID])!.members.find(m => m.peerId === 'integration:github')!.accepts).toEqual(['repo'])
     expect(view(advertised, [HOME_ID])!.members.find(m => m.peerId === 'integration:google')!.accepts ?? []).toEqual([])
     const narrowed = ensureHomeContext(advertised, 3, { server: ['search'] })
-    expect(view(narrowed, [])!.members.find(m => m.peerId === 'fos')!.accepts).not.toContain('llm')
+    expect(userView(narrowed)!.members.find(m => m.peerId === 'fos')!.accepts).not.toContain('llm')
     expect(ensureHomeContext(narrowed, 4, { server: ['search'] })).toBe(narrowed)
   })
 })

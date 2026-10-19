@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { addMemberAt, setMemberCapabilitiesAt, addRow, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view } from '@fosforescent/shared/sync/index'
+import { LIBRARY_ID, addMemberAt, setMemberCapabilitiesAt, addRow, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -39,7 +39,7 @@ test('serializes simultaneous requests, persists before dispatch, and rejects st
   const results = await Promise.all([s.call(), s.call()])
   expect(results.map(r => r.status)).toEqual([200, 400])
   expect(s.calls()).toBe(1)
-  expect(view(s.get(), [])!.tasks[0]!.done).toBe(true)
+  expect(view(s.get(), [])!.tasks.find(t => t.id !== LIBRARY_ID)!.done).toBe(true)
 })
 test('strangers cannot execute an account integration and stale content cannot run', async () => {
   const s = setup()

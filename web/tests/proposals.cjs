@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-proposal-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { App, mountUi, createMemoryStorage, addTask, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, view } = require(path.join(dir, 'app.cjs'))
+const { App, mountUi, createMemoryStorage, addTask, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, view, rowEdgeAt, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
 async function main() {
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage(), scopedDocument: true })
   a.scheduleSync = () => {}
@@ -17,7 +17,7 @@ async function main() {
   r = addTask(r, ['project'], 'Main child', 2, 'main-child')
   const s = r.store, cid = resolveScope(s, headCid(r), ['project']), base = putStripped(s, content(s, cid))
   const leaf = put(s, { data: { alias: { id: 'other-child' }, description: { content: 'Peer child' } }, children: [] })
-  const branch = put(s, { data: { description: { content: 'Peer project' } }, children: [[leaf, s.primitive.descriptionField.getId()]] })
+  const branch = put(s, { data: { description: { content: 'Peer project' } }, children: [rowEdgeAt(s, 'plain', leaf, [])] })
   const proposal = put(s, proposalContent(s, 'other-peer', 'Other proposal', branch, base, 3))
   commitRoot(s, updateAtScope(s, headCid(r), ['project'], node => withProposal(s, makeLink(s, node, 3), 'other-peer', proposal, 'Other proposal'), 'node'), 4)
   a.set({ replica: { ...r } }); a.goTo(['project'])
@@ -74,7 +74,7 @@ async function main() {
   trigger.dispatchEvent(new window.MouseEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
   await new Promise(resolve => setTimeout(resolve, 0))
   assert(document.querySelector('.task[data-id="project"] .combo-panel:not([hidden])'), 'committing a draft does not detach the opening popup')
-  assert.equal(view(a.state.replica, []).tasks.find(t => t.id === 'project').title, 'Edited before opening')
+  assert.equal(view(a.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).find(t => t.id === 'project').title, 'Edited before opening')
   assert(document.activeElement.matches('.combo-panel input'), 'search retains focus after draft commit')
   console.log('PASS: branch merge-request constructors, unified picker, read-only preview, copy isolation, no link panel, child-only layouts')
 }
