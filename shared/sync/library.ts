@@ -6,26 +6,26 @@
  * all signed-in accounts (`memberFor` in graph.ts), with read, edit (proposals), approve and rank; a merge policy on
  * the node lets the server merge a proposal once enough members approved it (`applyMergePolicy`).
  *
- * Clients also carry a copy in their build: `fos library export` pulls the shared node through the account (the
- * node-provider protocol) and `exportProvidedLibrary` turns it into `web/src/library.json`, so a device that never
- * goes online seeds a local library from it (`ensureBundledLibrary`); the first owner sync replaces that copy with
- * the live reference (`ensureLibraryLink`).
+ * The library is a row in two places. Every device root ships one (`[device root, fos:library]`): a client carries the library in
+ * its build (`fos library export` pulls the shared node through the account and `exportProvidedLibrary` turns it into
+ * `web/src/library.json`) and seeds its device root's library from it (`ensureDeviceLibrary`), so templates and row types work
+ * offline from the first run; it stays on the device. People who contribute and vote add the shared node to their
+ * Home (`ensureLibraryLink`), with the fos server as its peer. Like every mutable ref the library resolves by nearest
+ * ancestor, so under Home the linked library overrides the shipped one (`libraryPath`, `rowTemplate` in graph.ts).
  */
-import { addRow, applyProposalAt, createReplica, deleteTask, homePath, resolveRef, view, type Replica } from './replica'
+import { addRow, applyProposalAt, createReplica, homePath, view, type Replica } from './replica'
 import { readNodeValue, writeNodeValue } from './evaluation'
 import { sharedProjection, type SharedAddress } from './sharing'
 import { acceptProvidedNode, type NodeRequest, type ProvidedNode } from './node-provider'
-import type { Scope, TaskView } from './graph'
+import { LIBRARY_ID, ROW_TYPES_ID, commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, seedTypes, findChild, findNearestRow, isHandle, isPeerReference, put, resolveScope, rowEdgeAt, rowTypeContents, rowTypesContent, updateAtScope, valueContent, type Scope, type TaskView } from './graph'
+import type { FosNodeContent, FosNodesData, FosPathElem } from '../types'
+import { headCid } from './replica'
 
-/** The library row's alias in its owner's Home, and the id of the reference row in every other Home. */
-export const LIBRARY_ID = 'fos:library'
-/** A device's own copy of the library, seeded from its build before the account ever synced. */
-export const LIBRARY_BUNDLE_ID = 'fos:library-bundle'
 /** The library row holding the manual fallback handlers (`manualHandlers`). */
 export const MANUAL_HANDLERS_ID = 'lib:manual'
 /** Node value on the library: which seed version it carries, so later versions add what is missing. */
 export const LIBRARY_ARGUMENT = 'fos:library'
-export const LIBRARY_VERSION = 1
+export const LIBRARY_VERSION = 2
 export const MERGE_POLICY_ARGUMENT = 'fos:merge-policy'
 
 export type LibraryAddress = SharedAddress & { title: string }
@@ -38,13 +38,20 @@ type Requirement = NonNullable<import('../types').FosDataContent['requirement']>
 type Allocation = NonNullable<import('../types').FosDataContent['allocation']>
 type Resource = NonNullable<import('../types').FosDataContent['resource']>
 /** A row of the library as data: what the seed list, the server's export and the client's bundle all share. */
-export type SeedRow = { id: string; kind: 'template' | 'note' | 'plain' | 'requirement' | 'task' | 'allocation' | 'resource' | 'comment'; text: string; done?: boolean; requirement?: Requirement; allocation?: Allocation; resource?: Resource; children?: SeedRow[] }
+export type SeedRow = { id: string; kind: 'template' | 'note' | 'plain' | 'requirement' | 'task' | 'allocation' | 'resource' | 'comment' | 'types'; text: string; done?: boolean; requirement?: Requirement; allocation?: Allocation; resource?: Resource; children?: SeedRow[]
+  /** The Row types group (`kind: 'types'`): the exact contents of its types, which rows pin by cid (none: the seed's). */
+  types?: FosNodeContent[]
+  /** The nodes the types point at (their patterns), so a build's copy makes the same nodes. */
+  nodes?: FosNodesData }
 /** What a client build carries: the library's address on the server (null when built without one) and its rows. */
 export type LibraryBundle = { address: LibraryAddress | null; version: number; rows: SeedRow[] }
 
 /** The templates every account starts with. Ids are stable so reseeding adds only what is missing. */
 export const STANDARD_LIBRARY: SeedRow[] = [
   { id: 'lib:readme', kind: 'note', text: '# Standard library\n\nTemplates every Fos account can use, offline: write `` [ ] `Plan a trip` `` in any node to start one. Edit them here to propose a change; members vote on proposals and the library merges what enough of them approve.' },
+  // What every row is made from: a row is [row type, row], made from the nearest library's version of this group.
+  // A changed type is a new version; existing rows keep the version they were made from.
+  { id: ROW_TYPES_ID, kind: 'types', text: 'Row types' },
   { id: 'lib:trip', kind: 'template', text: 'Plan a trip', children: [
     { id: 'lib:trip:where', kind: 'requirement', text: 'Destination agreed', requirement: { capability: 'confirmation' } },
     { id: 'lib:trip:when', kind: 'requirement', text: 'Travel dates', requirement: { capability: 'allocation', resource: 'calendar', amount: 2, unit: 'd' } },
@@ -102,15 +109,18 @@ export const STANDARD_LIBRARY: SeedRow[] = [
 /** A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it fills. */
 export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean }
 
-/** The library's node in this replica: the owner's own row or the live reference's projection, else the bundled copy. */
-export function libraryPath(r: Replica): Scope | null {
-  const found = resolveRef(r, LIBRARY_ID)
-  return found ? [...found.path, found.row.id] : libraryBundlePath(r)
+/**
+ * The library a row at `at` sees, by nearest ancestor: the one linked in Home (once its content is here) under Home,
+ * the root's shipped library elsewhere.
+ */
+export function libraryPath(r: Replica, at: Scope = homePath(r)): Scope | null {
+  const found = findNearestRow(r.store, headCid(r), at, row => row.id === LIBRARY_ID && !isHandle(content(r.store, row.cid)) && !isPeerReference(content(r.store, row.cid)))
+  return found ? [...found.path, found.id] : null
 }
 
-/** The manual (and device) fallback handlers the library carries, from its "Manual handlers" group. */
-export function manualHandlers(r: Replica): ManualHandler[] {
-  const path = libraryPath(r)
+/** The manual (and device) fallback handlers the library at `at` carries, from its "Manual handlers" group. */
+export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
+  const path = libraryPath(r, at)
   if (!path) return []
   return (view(r, [...path, MANUAL_HANDLERS_ID])?.tasks ?? []).flatMap(row => {
     const req = row.requirement
@@ -120,8 +130,8 @@ export function manualHandlers(r: Replica): ManualHandler[] {
 }
 
 /** The library's fallbacks that fit one requirement: same capability and, for allocations, the same resource. */
-export function manualHandlersFor(r: Replica, requirement: { capability: Requirement['capability']; resource?: Requirement['resource'] }): ManualHandler[] {
-  return manualHandlers(r).filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
+export function manualHandlersFor(r: Replica, requirement: { capability: Requirement['capability']; resource?: Requirement['resource'] }, at?: Scope): ManualHandler[] {
+  return manualHandlers(r, at).filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
 }
 
 export function libraryInfo(r: Replica, path: Scope): LibraryInfo | null {
@@ -136,7 +146,8 @@ export function seedLibraryRows(r: Replica, path: Scope, rows: SeedRow[], now: n
   const add = (at: Scope, list: SeedRow[]) => {
     for (const row of list) {
       if (!view(r, at)?.tasks.some(t => t.id === row.id) && !seeded.has(row.id)) {
-        r = addRow(r, at, row.kind, row.text, now, { id: row.id, ...(row.requirement ? { requirement: row.requirement } : {}), ...(row.allocation ? { allocation: row.allocation } : {}), ...(row.resource ? { resource: row.resource } : {}) })
+        r = row.kind === 'types' ? addRowTypesRow(r, at, row, now)
+          : addRow(r, at, row.kind, row.text, now, { id: row.id, ...(row.requirement ? { requirement: row.requirement } : {}), ...(row.allocation ? { allocation: row.allocation } : {}), ...(row.resource ? { resource: row.resource } : {}) })
         seeded.add(row.id)
       }
       if (row.children?.length && view(r, at)?.tasks.some(t => t.id === row.id)) add([...at, row.id], row.children)
@@ -147,18 +158,33 @@ export function seedLibraryRows(r: Replica, path: Scope, rows: SeedRow[], now: n
   return writeNodeValue(r, path, LIBRARY_ARGUMENT, { version, seeded: [...seeded], ...(source ? { source } : info?.source ? { source: info.source } : {}) }, now)
 }
 
+/** The Row types group as a library row, built from the exact contents of its types (which rows pin by cid). */
+function addRowTypesRow(r: Replica, at: Scope, row: SeedRow, now: number): Replica {
+  if (row.nodes) importNodes(r.store, row.nodes)
+  const group = put(r.store, rowTypesContent(r.store, row.types ?? seedTypes(r.store)))
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, node => ({ ...node, children: [...node.children, rowEdgeAt(r.store, 'plain', group, at)] })), now)
+  return { ...r }
+}
+
 /** Add the rows of the standard library that `path` does not have yet; a no-op when it is complete. */
 export function seedStandardLibrary(r: Replica, path: Scope, now: number): Replica {
   return seedLibraryRows(r, path, STANDARD_LIBRARY, now, LIBRARY_VERSION, 'server')
 }
 
-/** The library's rows as data (the server's `GET /library`, which client builds pull): titles, kinds and typed fields, no bookkeeping. */
+/** The library's rows as data (what `fos library export` writes for client builds): titles, kinds and typed fields, no bookkeeping. */
 export function exportLibraryRows(r: Replica, path: Scope, depth = 0): SeedRow[] {
   if (depth > 16) return []
   const rows: SeedRow[] = []
   for (const row of view(r, path)?.tasks ?? []) {
     if (!['template', 'note', 'plain', 'requirement', 'task', 'allocation', 'resource', 'comment'].includes(row.kind) || row.id.startsWith('fos:')) continue
     const data = row as TaskView
+    if (row.id === ROW_TYPES_ID) {
+      // the exact contents: rows pin row types by cid, so a build's copy must make the same nodes
+      const types = rowTypeContents(r.store, resolveScope(r.store, headCid(r), [...path, row.id])!)
+      const nodes = reachableNodes(r.store, types.flatMap(type => type.children.map(([, t]) => t)))
+      rows.push({ id: row.id, kind: 'types', text: row.title, types: types.map(type => ({ data: type.data, children: type.children })), ...(Object.keys(nodes).length ? { nodes } : {}) })
+      continue
+    }
     const seed: SeedRow = { id: row.id, kind: row.kind as SeedRow['kind'], text: row.title }
     if (row.kind === 'task' && row.done) seed.done = true
     if (data.requirement) { const { satisfied, summary, have, need, ...requirement } = data.requirement; void satisfied; void summary; void have; void need; seed.requirement = requirement }
@@ -171,46 +197,43 @@ export function exportLibraryRows(r: Replica, path: Scope, depth = 0): SeedRow[]
   return rows
 }
 
-/** Where this account's Home references the library, if it does. */
+/** Where this account's Home links the shared library (people who contribute and vote add it), if it does. */
 export function libraryLink(r: Replica): Scope | null {
-  const found = resolveRef(r, LIBRARY_ID)
-  return found?.row.refOwner ? [...found.path, found.row.id] : null
-}
-/** Where this device keeps its bundled copy of the library, if it still has one. */
-export function libraryBundlePath(r: Replica): Scope | null {
-  const home = homePath(r)
-  return view(r, home)?.tasks.some(t => t.id === LIBRARY_BUNDLE_ID) ? [...home, LIBRARY_BUNDLE_ID] : null
+  const home = homePath(r), cid = resolveScope(r.store, headCid(r), home)
+  const link = cid && findChild(r.store, cid, LIBRARY_ID)
+  return link && (content(r.store, link).data.ref?.owner || r.meta.sharedNodes?.[JSON.stringify([...home, LIBRARY_ID])]) ? [...home, LIBRARY_ID] : null
 }
 
 /**
- * A device that has never synced seeds the library from its build, so the templates are there offline from the
- * first run. The copy is an ordinary row (not a reference); the first owner sync replaces it with the live
- * reference (`ensureLibraryLink`). Rows the bundle lacks fall back to the in-code seed list.
+ * The library a device root ships: its library row (`ensureLibraryRow`; a device root loaded from older data gets
+ * it here) filled with the build's bundle, or the in-code seed when the build carries none. Seeds what is missing,
+ * once. Only device roots ship it; other roots are nested in a device root (`nestScope`).
  */
-export function ensureBundledLibrary(r: Replica, bundle: LibraryBundle, now: number): { replica: Replica; path: Scope | null; added: boolean } {
-  if (libraryLink(r)) return { replica: r, path: libraryLink(r), added: false }
-  const existing = libraryBundlePath(r)
-  if (existing) return { replica: r, path: existing, added: false }
-  const home = homePath(r)
-  if (!view(r, home)) return { replica: r, path: null, added: false }
-  r = addRow(r, home, 'plain', bundle.address?.title ?? 'Standard library', now, { id: LIBRARY_BUNDLE_ID })
-  const path = [...home, LIBRARY_BUNDLE_ID]
-  r = seedLibraryRows(r, path, bundle.rows.length ? bundle.rows : STANDARD_LIBRARY, now, bundle.rows.length ? bundle.version : LIBRARY_VERSION, 'bundle')
-  if (bundle.address) r = writeNodeValue(r, path, 'fos:shared-link', { owner: bundle.address.owner, path: bundle.address.path, share: bundle.address.share }, now)
-  return { replica: r, path, added: true }
+export function ensureDeviceLibrary(r: Replica, bundle: LibraryBundle, now: number): Replica {
+  const path = [LIBRARY_ID]
+  if (!resolveScope(r.store, headCid(r), path)) { ensureLibraryRow(r.store); r = { ...r } }
+  if (libraryInfo(r, path)) return r
+  const rows = bundle.rows.length ? bundle.rows : STANDARD_LIBRARY
+  // the build's Row types are the ones this root ships (the root started with the seed's)
+  const typesRow = rows.find(row => row.kind === 'types'), types = typesRow?.types
+  if (types?.length) {
+    if (typesRow?.nodes) importNodes(r.store, typesRow.nodes)
+    const group = put(r.store, rowTypesContent(r.store, types))
+    commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === ROW_TYPES_ID ? [edge[0], group] as [string, string] : edge) })), now)
+    r = { ...r }
+  }
+  return seedLibraryRows(r, path, rows, now, bundle.rows.length ? bundle.version : LIBRARY_VERSION, 'bundle')
 }
 
 /**
- * Put the library's reference into this account's Home (once); the shared address lets the app open its vote view.
- * A bundled copy the device seeded before its first sync gives way to the reference: the copy was the build's
- * snapshot of the same node.
+ * Add the shared library to this account's Home, to contribute and vote on it: a reference with the fos server as its
+ * peer (the app keeps it current). Under Home it overrides the root's shipped library.
  */
 export function ensureLibraryLink(r: Replica, address: LibraryAddress, now: number): { replica: Replica; path: Scope; added: boolean } {
   const existing = libraryLink(r)
   if (existing) return { replica: r, path: existing, added: false }
   const home = homePath(r)
   if (!view(r, home)) return { replica: r, path: home, added: false }
-  if (libraryBundlePath(r)) r = deleteTask(r, home, LIBRARY_BUNDLE_ID, now)
   r = addRow(r, home, 'ref', address.title, now, { id: LIBRARY_ID, refOwner: address.owner, refId: address.path.at(-1) ?? LIBRARY_ID })
   const path = [...home, LIBRARY_ID]
   r = writeNodeValue(r, path, 'fos:shared-link', { owner: address.owner, path: address.path, share: address.share }, now)
@@ -228,9 +251,36 @@ export type PulledLibrary = { address: LibraryAddress; nodes: Array<{ request: N
 export function exportProvidedLibrary(pulled: PulledLibrary, now: number): LibraryBundle {
   const root = pulled.nodes[0]
   if (!root) return { address: pulled.address, version: 0, rows: [] }
-  let r = addRow(createReplica('fos:cli'), [], 'ref', pulled.address.title, now, { id: LIBRARY_ID, refOwner: pulled.address.owner, refId: pulled.address.path.at(-1) ?? LIBRARY_ID })
-  for (const { request, node } of pulled.nodes) r = acceptProvidedNode(r, [LIBRARY_ID, ...request.path.slice(root.request.path.length)], request, node, now)
-  return { address: pulled.address, version: libraryInfo(r, [LIBRARY_ID])?.version ?? LIBRARY_VERSION, rows: exportLibraryRows(r, [LIBRARY_ID]) }
+  // a scratch row beside the scratch root's own shipped library
+  const PULLED = 'fos:pulled-library'
+  let r = addRow(createReplica('fos:cli'), [], 'ref', pulled.address.title, now, { id: PULLED, refOwner: pulled.address.owner, refId: pulled.address.path.at(-1) ?? LIBRARY_ID })
+  for (const { request, node } of pulled.nodes) r = acceptProvidedNode(r, [PULLED, ...request.path.slice(root.request.path.length)], request, node, now)
+  const rows = exportLibraryRows(r, [PULLED]), types = exactPulledTypes(r, pulled)
+  return { address: pulled.address, version: libraryInfo(r, [PULLED])?.version ?? LIBRARY_VERSION, rows: types ? rows.map(row => row.kind === 'types' ? { ...row, ...types } : row) : rows }
+}
+
+/**
+ * The Row types as they were served: rows pin types by cid, so the bundle needs their exact content, which a pulled
+ * projection does not keep (it holds received rows as links of the peer). A type is its data and its pattern rows,
+ * which are plain rows; both come straight from the pulled shapes.
+ */
+function exactPulledTypes(r: Replica, pulled: PulledLibrary): Pick<SeedRow, 'types' | 'nodes'> | null {
+  const base = pulled.nodes[0]!.request.path.length
+  const shapes = new Map(pulled.nodes.map(({ request, node }) => [JSON.stringify(request.path.slice(base)), node]))
+  const group = shapes.get(JSON.stringify([ROW_TYPES_ID]))
+  if (!group) return null
+  const types: FosNodeContent[] = []
+  for (const row of group.children) {
+    const type = shapes.get(JSON.stringify([ROW_TYPES_ID, row.id]))
+    if (!type) return null
+    const children = type.children.map((pattern): FosPathElem => {
+      const shape = shapes.get(JSON.stringify([ROW_TYPES_ID, row.id, pattern.id]))
+      if (!shape) throw new Error(`The pulled library lacks pattern ${pattern.id} of ${row.id}.`)
+      return [pattern.template, put(r.store, { data: { alias: { id: pattern.id }, ...shape.data }, children: [] })]
+    })
+    types.push({ data: type.data, children })
+  }
+  return { types, nodes: reachableNodes(r.store, types.flatMap(type => type.children.map(([, t]) => t))) }
 }
 
 export function mergePolicy(r: Replica, path: Scope): MergePolicy | null {

@@ -80,7 +80,7 @@ export function configuredTriggers(r: Replica): Array<{ path: Scope; trigger: No
       if (seen.has(row.id) || row.kind === 'ref') continue
       seen.add(row.id)
       // Only the template itself can trigger; its internal declarations are inactive until applied.
-      if (row.kind === 'template' && row.id !== 'fos:home') {
+      if (row.kind === 'template') {
         const nested = nodeTrigger(r, [...path, row.id]); if (nested) result.push({ path: [...path, row.id], trigger: nested })
       } else walk([...path, row.id])
     }
@@ -103,7 +103,7 @@ export async function runNodeTriggers(driver: {
     if (!event || prior?.occurrence === event || prior?.status === 'running' || prior?.status === 'failed') continue
     let r = driver.get(), target = path
     const row = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
-    if (row?.kind === 'template' && row.id !== 'fos:home') {
+    if (row?.kind === 'template') {
       const id = newId(), parent = path.slice(0, -1)
       r = addTask(r, parent, row.title, driver.now(), id)
       r = instantiateTemplate(r, parent, id, row.id, driver.now()); target = [...parent, id]

@@ -108,6 +108,16 @@ impl Project {
         Ok(Project { dir, config_dir, config, state_dir, is_home })
     }
 
+    /// The store whose state lives in `state_dir` (`<dir>/.fos`), as `locate` would resolve its directory; `home_state`
+    /// is Home's store.
+    pub fn at_state(state_dir: &Path, home_state: &Path) -> Project {
+        let dir = state_dir.parent().map(Path::to_path_buf).unwrap_or_else(|| state_dir.to_path_buf());
+        let is_home = state_dir == home_state;
+        let config_dir = if is_home { None } else { Some(dir.clone()) };
+        let config = config_dir.as_ref().and_then(|d| read_config(&d.join(CONFIG_FILE)).ok()).unwrap_or_default();
+        Project { dir, config_dir, config, state_dir: state_dir.to_path_buf(), is_home }
+    }
+
     pub fn server(&self) -> String {
         std::env::var("FOS_API_URL")
             .ok()

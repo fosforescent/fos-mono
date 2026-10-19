@@ -27,6 +27,7 @@ import {
   branchSelection, commitRoot, content, contextScope, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
   proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, resolveScope, rootTargetCid,
   selectedBranchValue, updateAtScope, valueContent, viewNode, withBranches, withProposal, type Scope,
+  nestScope,
 } from './graph'
 import { addMemberAt, addRow, applyProposalAt, createReplica, headCid, rejectProposalAt, renameTask, setTaskDone, type Replica } from './replica'
 import { createBranch } from './branches'
@@ -172,7 +173,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
   const canonical = contextScope(store, root, principal.scope)
   let attached = resolveScope(store, root, canonical)
   if (!attached) throw new EventError('Attachment no longer exists.')
-  const permission = (cid: string, capability: 'read' | 'edit' | 'approve' | 'execute') => {
+  const permission = (cid: string, capability: 'read' | 'edit' | 'execute') => {
     if (owner) return true
     const identity = content(store, selectedIdentity(store, cid))
     return hasCapability(store, identity, principal.peerId, capability) || (capability === 'read' && hasCapability(store, identity, principal.peerId, 'edit'))
@@ -257,6 +258,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
       importNodes(draftStore, reachableNodes(store, [base]))
       commitRoot(draftStore, base, now)
+      nestScope(draftStore, { store, root, at: canonical })
       const draft = writeNodeValue(createReplica(principal.peerId, draftStore), path, EVALUATION_REQUEST, { peer: principal.peerId, expected: event.expected, time: now }, now)
       importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
       const proposal = put(store, proposalContent(store, principal.peerId, requestName, headCid(draft), base, now))
@@ -265,7 +267,8 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       return { replica: { ...r }, changed: true, result: { status: 'requested', proposalId: proposal, request: requestName, node: absolute(path) } }
     }
     if (event.kind === 'decide') {
-      if (!permission(cid, 'approve')) throw new EventError('The approve capability is required on this node.')
+      // deciding a submission is how edit is exercised on a node with several peers
+      if (!permission(cid, 'edit')) throw new EventError('The edit capability is required on this node.')
       const next = event.decision === 'approve' ? applyProposalAt(r, absolute(path), event.proposalId, principal.peerId, now) : rejectProposalAt(r, absolute(path), event.proposalId, now)
       return { replica: next, changed: headCid(next) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } }
     }
@@ -334,6 +337,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
     const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
     importNodes(draftStore, reachableNodes(store, [base]))
     commitRoot(draftStore, base, now)
+    nestScope(draftStore, { store, root, at: canonical })
     let draft = createReplica(principal.peerId, draftStore)
     withBranches(draftStore, branches, () => { draft = apply(draft, draftStore, []) })
     if (headCid(draft) === base) throw new EventError('No changes to propose.')

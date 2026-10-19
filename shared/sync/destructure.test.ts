@@ -1,3 +1,4 @@
+import { userView } from './test-helpers'
 import { addRow, addSupply, addTask, argumentRefs, commitRoot, updateAtScope, content, createReplica, deleteTask, destructureRequirement, headCid, instantiateTemplate, linkRequirementOutput, loadReplica, requirementOutputs, resolveBinding, resolveRequirementOutput, resolveScope, serializeReplica, valueContent, view } from './index'
 
 test('planned slices stay unavailable until fulfillment, reject over-splitting and remain linked after reload', () => {
@@ -10,7 +11,7 @@ test('planned slices stay unavailable until fulfillment, reject over-splitting a
   expect(outputs()).toHaveLength(2)
   const first = outputs()[0]!
   expect(resolveBinding(r.store, first.type, first.cid).status).toBe('missing')
-  expect(view(r, [])!.tasks[0]!.requirement?.have).toBe(0)
+  expect(userView(r)!.tasks[0]!.requirement?.have).toBe(0)
   r = addRow(r, ['budget'], 'allocation', 'Funding', 5, { id: 'funding', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
   r = loadReplica(serializeReplica(r))
   for (const output of outputs()) {
@@ -56,7 +57,8 @@ test('a record instance retains requirements and bound properties with instance-
   expect(result.status).toBe('ready')
   expect(valueContent(r.store, result.cid!).data.description?.content).toBe('Red')
   expect(view(r, ['rental'])!.tasks.find(t => t.id === 'dress')!.requirement?.satisfied).toBe(false)
-  expect(view(r, [])!.tasks.find(t => t.id === 'instance')!.kind).toBe('plain')
+  // instances of a template row are tasks: the template is the row's instruction
+  expect(userView(r)!.tasks.find(t => t.id === 'instance')!.kind).toBe('task')
 })
 
 test('amount outputs bind allocation arguments and enforce the fulfilled source capacity', async () => {

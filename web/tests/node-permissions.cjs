@@ -23,7 +23,6 @@ async function main() {
   assert.deepEqual(result.node.children.map(n => n.id), ['child'])
   assert.throws(() => c.exchangeNode(host, { ...req, path: ['hidden'], linkId: 'hidden' }, auth, 10), /mask|denied/)
   assert.throws(() => c.exchangeNode(host, { ...req, update: { base: result.node, value: { ...result.node, data: { ...result.node.data, todo: { done: true } } } } }, auth, 11), /masked/)
-  assert(c.hasNodeLinkMasks(host.store, 'another-peer', ['parent']), 'node-wide defaults also block legacy transfers')
   host = c.loadReplica(c.serializeReplica(host))
   assert.deepEqual(c.exchangeNode(host, req, auth, 12).node.children.map(n => n.id), ['child'])
   const childReq = { ...req, path: ['child'], linkId: 'guest-child' }

@@ -2,7 +2,7 @@
  * Native capability markers are read adapters; new advertisements are typed refs.
  */
 import type { FosStore } from '../dag-implementation/store'
-import { branchEdge, isBranchChoice, readMembers, CAPABILITIES, capabilityTarget, content, identityCid, isMemberEdge, put, refNodeContent, refTypeCid, resolveScope, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
+import { branchEdge, isBranchChoice, readMembers, CAPABILITIES, capabilityTarget, content, identityCid, isMemberEdge, put, refNodeContent, refTypeCid, resolveScope, rowKindOf, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
 import { addMemberAt, setHandlerOffersAt, headCid, view, type Replica } from './replica'
 
 export type HandlerEnvironment = { isPeerActive?: (peerId: string) => boolean }
@@ -60,7 +60,7 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   const cid = resolveScope(r.store, headCid(r), templatePath)
   if (!cid || !templatePath.length) throw new Error('Select a template to publish.')
   const parent = resolveScope(r.store, headCid(r), templatePath.slice(0, -1))
-  if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && e[1] === r.store.primitive.templateField.getId())) throw new Error('Only template rows can be published.')
+  if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && rowKindOf(r.store, e) === 'template')) throw new Error('Only template rows can be published.')
   const type = r.store.primitive.templateField.getId(), peerId = r.meta.peerId
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
   const id = `fos:published:${templatePath.at(-1)}`

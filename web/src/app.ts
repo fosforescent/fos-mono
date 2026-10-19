@@ -5,7 +5,7 @@ import { executionInput, executionSnapshot } from '../../shared/sync/execution-a
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { CAPABILITY_LABEL } from '../../shared/sync/graph'
-import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
+import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
@@ -13,7 +13,7 @@ import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
-import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid } from '../../shared/sync/index'
+import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
@@ -35,7 +35,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, LIBRARY_ID, libraryLink, ensureBundledLibrary, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, LIBRARY_ID, libraryLink, ensureLibraryLink, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -68,8 +68,6 @@ import {
   setRowKind,
   applyProposalAt,
   shareHome,
-  buildSyncRequest,
-  completeSync,
   deleteTask,
   resetHomeContent,
   ensureHomeContext,
@@ -83,13 +81,11 @@ import {
   moveNode,
   reattach,
   rejectProposalAt,
-  discardOwnProposalAt,
   removePeerAt,
   renameTask,
   resolve,
   scopeNames,
   serializeReplica,
-  serveSync,
   setTaskDone,
   view,
   type Capability,
@@ -100,7 +96,6 @@ import {
   type RowExtras,
   type RowKind,
   type Scope,
-  type SyncRequest,
   type TaskView
 } from '../../shared/sync/index'
 import {
@@ -114,7 +109,6 @@ import {
   getAttachment,
   listInviteRequests,
   login, register,
-  peerSync,
   pollConnect,
   type InviteRequest,
   type Session,
@@ -290,6 +284,16 @@ export type AppConfig = {
   now?: () => number
   /** Project mode (desktop shell in a directory with fos.config.toml). `policy` is the config's `[server]` table, when present. */
   project?: { dir: string; branch: () => string | null; deviceName?: string; policy?: PeerPolicy | null }
+  /**
+   * Set when this window's replica is a virtual peer's document, not the browser's device root: that device root
+   * (read only; null when this browser has none yet), which its rows resolve through.
+   */
+  deviceRoot?: { serialized: unknown }
+  /**
+   * Desktop: the other `.fos` stores' replicas as they are on disk (project.ts), to exchange nodes with them on their
+   * files: read, and write back after an exchange changed one (one fos process runs at a time).
+   */
+  localStores?: { read(peerId: string): Promise<unknown | null>; write(peerId: string, serialized: unknown): Promise<void> }
 }
 
 type Timer = ReturnType<typeof setTimeout>
@@ -315,13 +319,7 @@ function loadSession(raw: unknown, baseUrl: string): Session | null {
   return { baseUrl, jwt: s.jwt, username: s.username, kind: s.kind === 'peer' ? 'peer' : 'user' }
 }
 
-/** A device's local copy of the standard library from its build (web/src/library.json), seeded into Home before the
- * account ever syncs so the templates work offline from the first run; the first owner sync swaps it for the live
- * reference. Project and document replicas have no Home and get none. */
-function withBundledLibrary(r: Replica): Replica {
-  if (homePath(r)[0] !== HOME_ID) return r
-  return ensureBundledLibrary(r, LIBRARY_BUNDLE as LibraryBundle, Date.now()).replica
-}
+
 
 export class App {
   state: AppState
@@ -358,12 +356,15 @@ export class App {
   private approvedNodePeer: string | null = null
   private nodeLoads = new Map<string, Promise<void>>()
   private hostBranches: Record<string, string> = {}
-  private manualRequest: SyncRequest | null = null
+  private manualPlans: import('../../shared/sync/index').NodeSyncPlan[] = []
+  /** The device synced with by hand (its node links are keyed by it). */
+  private manualPeer: string | null = null
 
   constructor(config: AppConfig) {
     this.config = config
     this.autoCredentials = config.autoLogin
-    const replica = config.scopedDocument || config.project ? loadReplica(config.storage.loadReplica()) : withBundledLibrary(ensureHomeContext(loadReplica(config.storage.loadReplica()), 0))
+    const loaded = this.withRootContext(loadReplica(config.storage.loadReplica()))
+    const replica = config.scopedDocument || config.project ? loaded : ensureHomeContext(loaded, 0)
     const prefs = (config.storage.loadPrefs() ?? {}) as { repositories?: Array<[string, RepositorySnapshot]>; branches?: Record<string, string>; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
     if (Array.isArray(prefs.repositories)) this.repositories = new Map(prefs.repositories.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && Array.isArray(entry[1]?.pulls)))
     this.branchSelections = prefs.branches && typeof prefs.branches === 'object' ? Object.fromEntries(Object.entries(prefs.branches).filter(([, name]) => typeof name === 'string')) : {}
@@ -428,7 +429,11 @@ export class App {
     const previous = this.state
     const contentChanged = patch.replica && headCid(patch.replica) !== this.observedHead
     if (patch.replica) {
-      if (patch.replica.store !== previous.replica.store) { this.autoNodeAttempts.clear(); this.autoNodeQueue = [] }
+      if (patch.replica.store !== previous.replica.store) {
+        this.autoNodeAttempts.clear(); this.autoNodeQueue = []
+        // a virtual peer's document stays nested in the browser's device root whatever store its replica moves to
+        if (this.deviceRoot) nestScope(patch.replica.store, { store: this.deviceRoot.store, root: headCid(this.deviceRoot), at: [] })
+      }
       if (patch.replica.store !== previous.replica.store || JSON.stringify(patch.replica.meta.scope) !== JSON.stringify(previous.replica.meta.scope)) this.history.clear()
       this.observedHead = headCid(patch.replica)
     }
@@ -490,8 +495,84 @@ export class App {
   }
 
   /** Project mode: the directory switched git branch; show that branch's replica. */
+  /**
+   * This window's replica in its root context. A device root ships the standard library, filled from this build
+   * (web/src/library.json) so templates and row types work offline from the first run: the browser's replica, and on
+   * the desktop every window's store (Home's and each project's, `.fos`). A virtual peer's document is not a device
+   * root; it is nested in the browser's and resolves its rows through it.
+   */
+  private withRootContext(replica: Replica): Replica {
+    if (!this.config.deviceRoot && !this.config.scopedDocument) return ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now())
+    if (!this.deviceRoot) {
+      const stored = this.config.deviceRoot?.serialized
+      this.deviceRoot = ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now())
+    }
+    nestScope(replica.store, { store: this.deviceRoot.store, root: headCid(this.deviceRoot), at: [] })
+    return replica
+  }
+  /** The device root a virtual peer's document is nested in (read only). */
+  private deviceRoot: Replica | null = null
+
+  /**
+   * Desktop: link the other `.fos` stores on this machine with this store, both sides (`linkLocalStore`; one fos
+   * process runs at a time, so the other store's file is written directly). What Home's store shares is its Home,
+   * another project store its root; `home` says whether this store is Home's.
+   */
+  async linkLocalStores(stores: Array<{ peerId: string; name: string; home?: boolean }>, home = false): Promise<void> {
+    const me = { peerId: this.state.replica.meta.peerId, name: this.state.deviceName || this.config.project?.deviceName || 'this store' }
+    let replica = this.state.replica
+    for (const store of stores) {
+      if (store.peerId === me.peerId) continue
+      replica = linkLocalStore(replica, store.peerId, store.name, this.now(), store.home ? [HOME_ID] : [])
+      const stored = await this.config.localStores?.read(store.peerId).catch(() => null)
+      if (!stored) continue
+      const other = loadReplica(stored), linked = linkLocalStore(other, me.peerId, me.name, this.now(), home ? [HOME_ID] : [])
+      if (linked !== other) await this.config.localStores!.write(store.peerId, serializeReplica(linked))
+    }
+    if (replica !== this.state.replica) this.set({ replica })
+  }
+
+  /** Node exchange with another `.fos` store on this machine, on its files, as this store (its member). */
+  private localStoreProvider(peerId: string): NodeProvider {
+    const io = this.config.localStores!
+    return { id: peerId, capabilities: CLIENT_CAPABILITIES, request: async request => {
+      const stored = await io.read(peerId)
+      if (!stored) throw new Error('That store is not on this machine (or where it is is not known here yet).')
+      const peer = loadReplica(stored), before = peer.store.rootNodeId
+      const served = exchangeNode(peer, request, { peerId: this.state.replica.meta.peerId, scope: [], capabilities: CLIENT_CAPABILITIES }, this.now())
+      if (served.replica.store.rootNodeId !== before) await io.write(peerId, serializeReplica(served.replica))
+      return served.node
+    } }
+  }
+
+  private localSyncing = false
+  private hasHeldNodes(): boolean { return !!this.config.localStores && Object.keys(this.state.replica.meta.heldNodes ?? {}).length > 0 }
+
+  /**
+   * Edits to nodes opened from another store on this machine go back to it node by node (`planNodeSync` ->
+   * `nodeSyncPush` -> `finishNodeSync` through `localStoreProvider`), and what changed there comes in: every loaded
+   * node below each one opened (`meta.heldNodes`).
+   */
+  private async syncLocalStores(pullOnly: boolean): Promise<void> {
+    for (const [alias, held] of Object.entries(this.state.replica.meta.heldNodes ?? {})) {
+      const found = findRowByAlias(this.state.replica.store, headCid(this.state.replica), alias)
+      if (!found) continue
+      const root = [...found.path, alias], provider = this.localStoreProvider(held.peer), store = this.state.replica.store
+      for (const path of materializedNodePaths(this.state.replica, root)) {
+        if (this.state.replica.store !== store) return
+        const plan = planNodeSync(this.state.replica, path, { peer: held.peer, scope: [], remoteRoot: held.scope, localRoot: root, branches: [], push: !pullOnly })
+        try {
+          const remote = await provider.request(plan.first)
+          const step = nodeSyncPush(this.state.replica, plan, remote, this.now())
+          this.set({ replica: step.replica })
+          const accepted = step.update ? await provider.request(step.update) : remote
+          this.set({ replica: finishNodeSync(this.state.replica, plan, accepted, this.now()) })
+        } catch (error) { this.notify('error', `${found.row.title || 'A linked store'}: ${error instanceof Error ? error.message : String(error)}`); return }
+      }
+    }
+  }
   reloadReplica(): void {
-    const replica = withBundledLibrary(this.documentReplica(loadReplica(this.config.storage.loadReplica())))
+    const replica = this.documentReplica(this.withRootContext(loadReplica(this.config.storage.loadReplica())))
     this.set({ replica, view: homePath(replica), selected: null, contextMenu: null })
     this.notify('info', `Now on branch ${this.currentBranch() ?? 'local'}.`)
     if (this.transport()) void this.syncNow('branch switch')
@@ -536,8 +617,7 @@ export class App {
     let r = this.state.replica
     if (!contextMemberRefs(r, path).has(peerId)) r = addMemberAt(r, path, peerId, provider?.name ?? peerId, [], this.now())
     const capabilities = new Set<Capability>(member?.capabilities ?? [])
-    // "write" is edit and approve together: a peer that may change the node may also accept changes to it
-    const caps: Capability[] = grant === 'edit' ? ['edit', 'approve'] : [grant]
+    const caps: Capability[] = [grant]
     for (const cap of caps) { if (on) capabilities.add(cap); else capabilities.delete(cap) }
     const disabled = (member?.disabled ?? []).filter(c => !caps.includes(c))
     this.edit(setMemberCapabilitiesAt(r, path, peerId, [...capabilities], disabled, this.now(), member?.accepts ?? provider?.integration?.provides ?? provider?.accepts ?? []))
@@ -760,7 +840,7 @@ export class App {
     const same = replica.meta.scope.length === attachment.scope.length && replica.meta.scope.every((s, i) => attachment.scope[i] === s)
     if (!same && (!hasSynced(replica) || session.kind === 'peer')) {
       // A fresh link at the assigned node: local work merges into it on the first sync.
-      replica = { store: replica.store, meta: { ...replica.meta, scope: attachment.scope, scopeNames: attachment.scopeNames, baseCid: null } }
+      replica = { store: replica.store, meta: { ...replica.meta, scope: attachment.scope, scopeNames: attachment.scopeNames } }
     } else if (same && replica.meta.scopeNames.length !== attachment.scopeNames.length) {
       replica = { store: replica.store, meta: { ...replica.meta, scopeNames: attachment.scopeNames } }
     }
@@ -807,7 +887,7 @@ export class App {
     this.cancelDirect()
     this.history.clear()
     this.virtualPeers?.close(); this.virtualPeers = null
-    const replica = withBundledLibrary(this.documentReplica(loadReplica(this.config.storage.loadReplica())))
+    const replica = this.documentReplica(this.withRootContext(loadReplica(this.config.storage.loadReplica())))
     const prefs = (this.config.storage.loadPrefs() ?? {}) as { branches?: Record<string, string>; collapsed?: string[]; policy?: unknown; deviceName?: string }
     this.branchSelections = prefs.branches ?? {}
     this.repositories.clear()
@@ -905,7 +985,7 @@ export class App {
   // Sync
 
   private scheduleSync(): void {
-    if (!this.transport()) return
+    if (!this.transport() && !this.hasHeldNodes()) return
     this.clearTimer('debounce')
     this.debounceTimer = setTimeout(() => void this.syncNow('edit'), 600)
   }
@@ -922,6 +1002,11 @@ export class App {
   }
   async syncNow(_reason: string, pullOnly = false): Promise<void> {
     if (this.projectSwitching) { this.syncRequested = true; return }
+    // nodes opened from other stores on this machine sync with them, signed in or not
+    if (this.hasHeldNodes() && !this.localSyncing) {
+      this.localSyncing = true
+      try { await this.syncLocalStores(pullOnly) } finally { this.localSyncing = false }
+    }
     const transport = this.transport()
     if (!transport) return
     if (this.syncInFlight) { this.syncRequested = true; return }
@@ -950,9 +1035,6 @@ export class App {
         this.closeEvents = null
         this.clearTimer('poll')
         this.set({ session: null, connection: 'offline', loginError: 'Your session expired. Sign in again to sync.', notice: { kind: 'error', text: 'Your session expired. Click Offline to sign in again. Local changes are safe.', at: this.now() }, modal: null })
-      } else if (error instanceof ApiError && error.status === 409) {
-        this.clearTimer('poll')
-        this.set({ connection: 'offline', loginError: `This app cannot sync with the server: ${error.message}. Please update the app.` })
       } else if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
         this.set({ connection: 'online' })
         this.notify('error', `The account refused this device's node: ${error.message}`)
@@ -988,10 +1070,8 @@ export class App {
     const paths = materializedNodePaths(initial, localRoot)
     for (const path of paths) {
       if (!valid()) return
-      let r = this.state.replica
+      const r = this.state.replica
       if (!resolveScope(r.store, headCid(r), path)) continue
-      if (transport === 'account' && !nodePersistenceAllowed(r, path)) continue
-      const local = nodeShape(r, path)
       const branches: import('../../shared/sync/index').NodeBranch[] = []
       if (branch) branches.push({ scope: remoteRoot, name: branch })
       const selected = scopeBranches(r.store, headCid(r), path)
@@ -1000,47 +1080,31 @@ export class App {
         const at = [...remoteRoot, ...path.slice(localRoot.length, i)]
         if (name && !branches.some(b => JSON.stringify(b.scope) === JSON.stringify(at))) branches.push({ scope: at, name })
       }
-      const state = peer ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches)] : undefined
-      const legacyBase = r.meta.baseCid ? nodeShape(r, path.slice(localRoot.length), r.meta.baseCid) : { data: {}, children: [] }
-      const mainState = peer && branches.length ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches.map(b => ({ ...b, name: 'main' })))] ?? r.meta.nodeSync?.[nodeSyncKey(peer, path)] : undefined
-      const baseline = state?.local ?? nodeBranchBase(r, path) ?? mainState?.local ?? legacyBase
-      const dirty = !sameNodeShape(local, baseline)
+      if (transport === 'account' && !nodePersistenceAllowed(r, path)) {
+        // Fos storage switched off here: the node is sent blank; the account keeps its history and holds it as ours
+        const blank = push ? blankNodeRequest(r, path, { peer, scope, remoteRoot, localRoot, branches, push }) : null
+        if (blank) { const answer = await send(blank); if (!valid()) return; this.set({ replica: finishBlankNode(this.state.replica, path, answer) }) }
+        continue
+      }
+      const plan = planNodeSync(r, path, { peer, scope, remoteRoot, localRoot, branches, push })
       const visible = path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
-      if (!visible && !(push && dirty)) continue
-      const remotePath = [...remoteRoot.slice(scope.length), ...path.slice(localRoot.length)]
-      const request = { ...nodeSyncRequest(r, path, peer ?? 'virtual-host', scope, remotePath), ...(branches.length ? { branches } : {}) }
-      const remote = await send(push && dirty ? { ...request, update: { base: { data: {}, children: [] }, value: { data: {}, children: [] } } } : request)
+      if (!visible && !(push && plan.dirty)) continue
+      const remote = await send(plan.first)
       if (!valid()) return
-      if (peer && remote.peerId !== peer) throw new Error('Node provider identity changed.')
-      validateNodeShape(remote)
-      peer = remote.peerId
-      if (remote.remoteLinkId !== request.linkId || JSON.stringify(remote.address.scope) !== JSON.stringify([...scope, ...remotePath])) throw new Error('Node response does not match its attachment.')
-      r = establishNodeSync(this.state.replica, path, request, remote, this.now())
-      if (transport === 'account' && remote.capabilities) r = this.withServerOffers(r, remote.capabilities)
-      this.set({ replica: r, ...(transport === 'account' && remote.capabilities ? { serverCapabilities: [...remote.capabilities] } : {}) })
-      const filterRemote = (shape: import('../../shared/sync/index').NodeShape) => ({
-        data: Object.fromEntries(Object.entries(shape.data).filter(([key]) => !remote.mask?.fields || remote.mask.fields.includes(key))),
-        children: shape.children.filter(child => !remote.mask?.children || remote.mask.children.includes(child.id))
-      })
-      const outgoingBase = filterRemote(outgoingNodeShape(r, path, peer, baseline))
-      const outgoing = filterRemote(outgoingNodeShape(r, path, peer, local))
-      const finalRemote = push && !sameNodeShape(outgoingBase, outgoing)
-        ? await send({ ...request, update: { base: remote, value: mergeNodeShape(outgoingBase, outgoing, remote) } }) : remote
+      const step = nodeSyncPush(this.state.replica, plan, remote, this.now())
+      peer = step.peer
+      const offered = transport === 'account' && remote.capabilities ? this.withServerOffers(step.replica, remote.capabilities) : step.replica
+      this.set({ replica: offered, ...(transport === 'account' && remote.capabilities ? { serverCapabilities: [...remote.capabilities] } : {}), ...(transport === 'account' && remote.presence ? { onlinePeers: [...remote.presence] } : {}) })
+      const finalRemote = step.update ? await send(step.update) : remote
       if (!valid()) return
-      validateNodeShape(finalRemote)
-      r = this.state.replica
-      const current = nodeShape(r, path)
-      const normalized = { ...finalRemote, children: finalRemote.children.map(child => {
-        const existing = local.children.find(c => c.id === child.id)
-        return child.address.peerId === r.meta.peerId && existing ? { ...child, kind: existing.kind } : child
-      }) }
-      const filtered = outgoingNodeShape(r, path, peer, normalized)
-      const previousRemote = outgoingNodeShape(r, path, peer, state?.remote ?? nodeBranchBase(r, path) ?? mainState?.remote ?? legacyBase)
-      const accepted = mergeNodeShape(previousRemote, filtered, local)
-      const merged = mergeNodeShape(local, accepted, current)
-      if (!sameNodeShape(current, merged)) r = installNodeShape(r, path, merged, this.now())
-      r = rememberNodeSync(r, path, normalized, accepted)
-      this.set({ replica: { ...r, meta: { ...r.meta, lastSyncAt: this.now() } } })
+      this.set({ replica: finishNodeSync(this.state.replica, plan, finalRemote, this.now()) })
+      const templates = nodeTemplateRequests(this.state.replica, plan, finalRemote)
+      if (templates.ask) {
+        const reply = await send(templates.ask)
+        if (!valid()) return
+        if (reply.templates) this.set({ replica: acceptTemplateNodes(this.state.replica, path, reply.templates, this.now()) })
+      }
+      if (templates.answer) await send(templates.answer)
     }
   }
 
@@ -1265,7 +1329,7 @@ export class App {
   /** Make the task `taskId` an execution of the template called `name`: its requirement rows are copied underneath, unfilled. */
   applyTemplate(at: Scope, taskId: string, name: string, branch?: Replica): void {
     const replica = branch ?? this.state.replica
-    const template = findTemplateByName(replica, name)
+    const template = findTemplateByName(replica, name, [...this.state.view, ...at])
     if (!template) { this.notify('error', `No template called “${name}”. Make one with a \`${name} row and put its requirements (- …) inside.`); return }
     const next = instantiateTemplate(replica, [...this.state.view, ...at], taskId, template.row.id, this.now())
     if (!branch) this.edit(next)
@@ -2064,9 +2128,9 @@ export class App {
   handlerOffers(path = this.constructorContext()) {
     return discoverHandlers(this.state.replica, path, { isPeerActive: id => id === this.state.replica.meta.peerId || this.isOnline(id) })
   }
-  /** Read the current library projection (or the bundled copy on an offline device), never a UI catalog. */
+  /** Read the nearest library (Home's linked one, else the device root's shipped one), never a UI catalog. */
   libraryConstructors() {
-    const path = libraryPath(this.state.replica)
+    const path = libraryPath(this.state.replica, this.constructorContext())
     if (!path) return []
     return (view(this.state.replica, path)?.tasks ?? [])
       .filter(row => row.kind === 'template' && row.id !== MANUAL_HANDLERS_ID && row.title.trim())
@@ -2084,8 +2148,23 @@ export class App {
       for (const row of view(this.state.replica, at)?.tasks ?? []) queue.push([...at, row.id])
     }
     const current = replace && path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
-    const title = current && current.kind !== 'requirement' && current.id !== HOME_ID ? current.title || template.label : template.label
+    const title = current && current.kind !== 'requirement' && current.kind !== 'home' ? current.title || template.label : template.label
     return this.applyConstructor(path, { kind: 'task', text: title, done: false }, replace, undefined, undefined, id)
+  }
+  /**
+   * Link the shared standard library into Home, to propose changes and vote on them (the fos server is its peer).
+   * Under Home it then overrides the library this device ships with.
+   */
+  async contributeToLibrary(): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to contribute to the standard library.'); return }
+    try {
+      // the build carries the library's address (`fos library export`)
+      const address = (LIBRARY_BUNDLE as LibraryBundle).address
+      if (!address) throw new Error('This build carries no standard library address. Build it after `fos library export`.')
+      this.edit(ensureLibraryLink(this.state.replica, address, this.now()).replica)
+      void this.syncNow('library')
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   publishCurrentTemplate(market = false): void {
     if (!this.canApprove() || this.currentRow()?.kind !== 'template') return
@@ -2148,7 +2227,7 @@ export class App {
     const templateCid = template?.row.kind === 'template' ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
     if (templateId && !templateCid) throw new Error('This template is unavailable.')
     const current = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
-    replace = replace && !!current && current.id !== HOME_ID && current.kind !== 'requirement'
+    replace = replace && !!current && current.kind !== 'home' && current.kind !== 'requirement'
     const parent = replace ? path.slice(0, -1) : path, id = replace ? path.at(-1)! : newId(), target = [...parent, id]
     if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Use owner/repository.')
     if (localDirectory) {
@@ -2259,7 +2338,7 @@ export class App {
   }
   async startExecution(path: Scope): Promise<void> {
     const row = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
-    if (row?.kind === 'template' && row.id !== HOME_ID) {
+    if (row?.kind === 'template') {
       const id = newId(), parent = path.slice(0, -1)
       let r = addTask(this.state.replica, parent, row.title, this.now(), id)
       r = instantiateTemplate(r, parent, id, row.id, this.now())
@@ -2972,10 +3051,11 @@ export class App {
 
   /** Where a reference points, relative to the replica root (null when the target is gone). */
   refTarget(refId: string): { path: Scope; row: TaskView } | null {
-    return resolveRef(this.state.replica, refId)
+    return resolveRef(this.state.replica, refId, this.state.view)
   }
-  sharedLink(id: string): SharedAddress | null {
-    const found = resolveRef(this.state.replica, id)
+  /** The shared address of the row `id` as seen from `at` (refs resolve by nearest ancestor; default: the current view). */
+  sharedLink(id: string, at: Scope = this.state.view): SharedAddress | null {
+    const found = resolveRef(this.state.replica, id, at)
     return found ? readNodeValue(this.state.replica, [...found.path, found.row.id], 'fos:shared-link') : null
   }
   receiveSharedLink(address: SharedAddress, title: string): Scope {
@@ -2986,8 +3066,8 @@ export class App {
   rememberSharedSources(path: Scope, sources: Record<string, string>): void {
     this.edit(writeLinkedNodeValue(this.state.replica, path, 'fos:input-links', sources, this.now(), Object.fromEntries(Object.entries(sources).map(([key, id]) => [key, { id }]))))
   }
-  openSharedLink(id: string): void {
-    const address = this.sharedLink(id), found = resolveRef(this.state.replica, id)
+  openSharedLink(id: string, at: Scope = this.state.view): void {
+    const address = this.sharedLink(id, at), found = resolveRef(this.state.replica, id, at)
     if (!address || !found) return
     location.hash = `share=${encodeURIComponent(JSON.stringify(address))}`
     this.goTo([...found.path, found.row.id])
@@ -3071,16 +3151,11 @@ export class App {
   /** Can the current identity approve proposals on the node being viewed? */
   canApprove(node: NodeView | null = this.currentView()): boolean {
     const session = this.state.session
-    if (this.virtualIdentity) return this.virtualCapabilities.includes('approve')
+    if (this.virtualIdentity) return this.virtualCapabilities.includes('edit')
     if (!session) return true
     if (session.kind === 'user') return true
     const remote = this.state.replica.meta.serverPeerId && this.state.replica.meta.nodeSync?.[nodeSyncKey(this.state.replica.meta.serverPeerId, this.state.view, nodeBranches(this.state.replica, this.state.view))]?.remote
-    return remote ? !!remote.grants?.includes('approve') : !!node?.members.some((m) => m.peerId === this.state.replica.meta.peerId && m.capabilities.includes('approve'))
-  }
-
-  discardProposal(id: string): void {
-    this.edit(discardOwnProposalAt(this.state.replica, this.state.view, id, this.now()))
-    this.set({ selected: null, notice: null })
+    return remote ? !!remote.grants?.includes('edit') : !!node?.members.some((m) => m.peerId === this.state.replica.meta.peerId && m.capabilities.includes('edit'))
   }
 
   async decideProposal(proposalId: string, decision: 'approve' | 'reject'): Promise<void> {
@@ -3183,6 +3258,10 @@ export class App {
     } else if (session && (ref.peer === 'fos' || ref.peer === replica.meta.serverPeerId) && this.serverOffers().includes('provideNode') && this.state.policy.from.includes('read')) {
       scope = session.kind === 'peer' ? replica.meta.scope : []
       provider = { id: replica.meta.serverPeerId ?? `user:${session.username}`, capabilities: this.serverOffers(), request: request => requestPeerNode(session, request) }
+    } else if (this.config.localStores && ref.peer && localStores(replica).some(s => s.peerId === ref.peer)) {
+      // another .fos store on this machine: node exchange on its files, as this store (its member)
+      scope = []
+      provider = this.localStoreProvider(ref.peer)
     } else if (session?.kind === 'user' && ref.peer?.startsWith('user:') && ref.peer !== replica.meta.serverPeerId && ref.peer !== `user:${session.username}` && this.serverOffers().includes('provideNode')) {
       // a node of another account shared with this one: the account server provides it as that account's peer `user:<me>`
       const owner = ref.peer.slice('user:'.length)
@@ -3199,7 +3278,12 @@ export class App {
     try {
       const node = await pullNode(request, [provider])
       if (generation !== this.authGeneration || session !== this.state.session || this.state.replica.store !== replica.store || dataSession !== this.activeDataSession()?.id || branch !== this.currentBranch() || selection !== JSON.stringify(this.branchSelections) || this.state.replica.meta.peerId !== replica.meta.peerId || resolveScope(this.state.replica.store, headCid(this.state.replica), path) !== cid) return
-      this.set({ replica: rememberNodeSync(acceptProvidedNode(this.state.replica, path, request, node, this.now()), path, node) })
+      let next = rememberNodeSync(acceptProvidedNode(this.state.replica, path, request, node, this.now()), path, node)
+      // a node opened from another store on this machine: edits below it go back there (`syncLocalStores`)
+      const holder = provider.id
+      if (this.config.localStores && localStores(next).some(s => s.peerId === holder) && !path.some(id => next.meta.heldNodes?.[id]))
+        next = { ...next, meta: { ...next.meta, heldNodes: { ...next.meta.heldNodes, [path.at(-1)!]: { peer: holder, scope: address } } } }
+      this.set({ replica: next })
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   goTo(path: Scope): void {
@@ -3411,7 +3495,7 @@ export class App {
   exportYaml(): string { return exportNodeYaml(this.state.replica, this.state.view) }
   importText(text: string, format: string, at: Scope): void {
     if (!view(this.state.replica, at)) throw new Error('The import destination was removed.')
-    if (format === 'yaml' && /^\s*["']?v2-[a-f0-9]+["']?:/i.test(text)) { this.importYaml(text, at); return }
+    if (format === 'yaml' && /^\s*["']?v\d+-[a-f0-9]+["']?:/i.test(text)) { this.importYaml(text, at); return }
     const rows = parsePastedRows(format === 'yaml' ? '```yaml\n' + text + '\n```' : text)
     this.together(() => {
       const append = (parent: Scope, rows: import('./rows').ParsedInput[]) => {
@@ -3429,7 +3513,7 @@ export class App {
     importNodes(r.store, parsed.nodes)
     const imported = content(r.store, parsed.root), id = newId()
     const node = put(r.store, { ...imported, data: { ...imported.data, alias: { id } } })
-    commitRoot(r.store, updateAtScope(r.store, headCid(r), destination, value => ({ ...value, children: [...value.children, [node, r.store.primitive.descriptionField.getId()]] })), this.now())
+    commitRoot(r.store, updateAtScope(r.store, headCid(r), destination, value => ({ ...value, children: [...value.children, rowEdgeAt(r.store, 'plain', node, destination)] })), this.now())
     this.edit({ ...r })
   }
   setDeviceName(name: string): void {
@@ -3446,7 +3530,7 @@ export class App {
     const attached = [...replica.meta.scope, ...(replica.meta.localScope ?? [])]
     const target = replica.meta.localScope?.length && !scope.length ? [HOME_ID] : scope
     const same = attached.length === target.length && attached.every((s, i) => target[i] === s)
-    return (connection === 'online' || connection === 'syncing') && !isDirty(replica) && replica.meta.baseCid !== null && !same
+    return (connection === 'online' || connection === 'syncing') && !isDirty(replica) && hasSynced(replica) && !same
   }
 
   attachAt(scope: Scope): void {
@@ -3455,7 +3539,7 @@ export class App {
       return
     }
     try {
-      const next = reattach(this.state.replica, scope, this.now(), scope.length === 0 ? [] : undefined)
+      const next = reattach(this.state.replica, scope)
       this.set({ replica: next, view: next.meta.localScope ?? [], menuOpen: false })
       this.notify('info', scope.length === 0 ? 'This device now syncs Home.' : 'This device now syncs only this node.')
       void this.syncNow('reattach')
@@ -3501,7 +3585,7 @@ export class App {
     if (!session) return
     try {
       await answerInviteRequest(session, id, decision, capabilities)
-      this.notify('info', decision === 'approve' ? `Device approved (${capabilities.includes('approve') ? 'may propose and approve' : 'may propose changes'}). It will attach on its next check.` : 'Request denied.')
+      this.notify('info', decision === 'approve' ? 'Device approved. It will attach on its next check.' : 'Request denied.')
       await this.refreshRequests()
     } catch (error) {
       this.notify('error', error instanceof Error ? error.message : String(error))
@@ -3551,7 +3635,7 @@ export class App {
     }, 2000)
   }
 
-  // Virtual browser peers use the same replica/proposal protocol as normal peers.
+  // Virtual browser peers sync by node exchange, as normal peers do.
   enableVirtualPeers(guest: VirtualPeer | null): void {
     this.virtualIdentity = guest
     if (!('BroadcastChannel' in window)) return
@@ -3566,26 +3650,13 @@ export class App {
         presence: () => this.set({}),
         dataSessionId: () => this.activeDataSession()?.id,
         decide: async (peer, scope, proposalId, decision) => {
-          if (!this.virtualGrants(peer)?.includes('approve') || !Array.isArray(scope) || scope.some((id) => typeof id !== 'string') || !['approve', 'reject'].includes(decision)) throw new Error('This role cannot decide this proposal.')
+          if (!this.virtualGrants(peer)?.includes('edit') || !Array.isArray(scope) || scope.some((id) => typeof id !== 'string') || !['approve', 'reject'].includes(decision)) throw new Error('This role cannot decide this proposal.')
           const at = [...peer.scope, ...scope]
           if (!withBranches(this.state.replica.store, peer.branches ?? {}, () => view(this.state.replica, at)?.proposals.some((p) => p.id === proposalId && p.status === 'open'))) throw new Error('Proposal no longer available.')
           if (this.virtualPeers?.guest) { await this.virtualPeers.decide(at, proposalId, decision); await this.syncNow('nested virtual decision'); return }
           this.edit(withBranches(this.state.replica.store, peer.branches ?? {}, () => decision === 'approve' ? applyProposalAt(this.state.replica, at, proposalId, peer.id, this.now()) : rejectProposalAt(this.state.replica, at, proposalId, this.now())))
         },
         grants: (peer) => this.virtualGrants(peer),
-        serve: (peer, request) => {
-          const served = withBranches<import('../../shared/sync/protocol').ServeResult>(this.state.replica.store, peer.branches ?? {}, () => {
-          const capabilities = this.virtualGrants(peer)
-          if (!capabilities || !capabilities.includes('read')) return { error: 'This virtual peer no longer has access to the node.', code: 'scope-not-found' }
-          if (request.peerId !== peer.id || request.scope.length) return { error: 'Virtual peer scope mismatch', code: 'bad-request' }
-          if (!capabilities.includes('edit') && request.headCid !== request.baseCid && !(request.baseCid === null && request.nodes[request.headCid]?.children.length === 0 && Object.keys(request.nodes[request.headCid]?.data ?? {}).length === 0)) return { error: 'This role is read-only.', code: 'bad-request' }
-          const served = serveSync(this.state.replica.store, { ...request, branches: undefined, branch: peer.branches?.[peer.scope.at(-1)!] ?? request.branch, scope: peer.scope }, this.state.replica.meta.peerId, this.now(),
-            { proposeOnly: capabilities.includes('edit') && !capabilities.includes('autopush'), peerName: peer.name, capabilities })
-          return 'error' in served ? served : { ...served, response: { ...served.response, scope: request.scope } }
-          })
-          if (!('error' in served) && served.changed) { this.set({ replica: { ...this.state.replica } }); this.scheduleSync() }
-          return served
-        },
         welcome: (capabilities, hostName, session) => {
           if (!capabilities.length && this.state.virtual) {
             this.virtualCapabilities = []
@@ -3617,11 +3688,11 @@ export class App {
     return member ? member.capabilities.filter((c) => !member.disabled?.includes(c)) : null
   }
   canSpawnVirtualPeer(): boolean { return !this.config.project && !!this.virtualPeers && this.canApprove() }
-  spawnVirtualPeer(name: string, role: 'editor' | 'proposer' | 'reviewer' | 'viewer', shareAccount: boolean): void {
+  spawnVirtualPeer(name: string, role: 'editor' | 'proposer' | 'viewer', shareAccount: boolean): void {
     if (!this.canSpawnVirtualPeer() || !name.trim()) return
     const token = crypto.randomUUID()
     const peer: VirtualPeer = { id: crypto.randomUUID(), token, hostTab: this.virtualPeers!.hostTab, scope: [...this.peerContextPath()], branches: scopeBranches(this.state.replica.store, headCid(this.state.replica), this.peerContextPath()), dataSessionId: this.activeDataSession()?.id, name: name.trim().slice(0, 80), shareAccount }
-    const capabilities: Capability[] = role === 'viewer' ? ['read'] : role === 'proposer' ? ['read', 'edit'] : role === 'reviewer' ? ['read', 'edit', 'approve'] : ['read', 'edit', 'autopush']
+    const capabilities: Capability[] = role === 'viewer' ? ['read'] : role === 'proposer' ? ['read', 'edit'] : ['read', 'edit', 'autopush']
     this.virtualPeers!.register(peer)
     const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('virtual', token)
     const tab = window.open(url.href, '_blank')
@@ -3703,12 +3774,6 @@ export class App {
     if (role === 'host') {
       if (message.t === 'hello') {
         this.set({ direct: { role: 'host', phase: 'connected', remoteName: message.name, pendingPeer: { peerId: message.peerId, name: message.name } } })
-      } else if (message.t === 'sync') {
-        if (!this.approvedNodePeer || message.request.peerId !== this.approvedNodePeer || this.link?.remotePeerId !== this.approvedNodePeer) {
-          this.link?.send({ t: 'sync-result', id: message.id, error: { error: 'Peer connection has not been approved.', code: 'bad-request' } })
-          return
-        }
-        this.serveDirect(message.id, message.request)
       }
       return
     }
@@ -3719,7 +3784,7 @@ export class App {
       const replica = addMemberAt(this.state.replica, [], message.peerId, message.name, ['read'], this.now())
       this.set({
         direct: { role: 'guest', phase: 'connected', remoteName: message.name },
-        replica: { store: replica.store, meta: { ...replica.meta, scope: [], localScope: undefined, scopeNames: [`${message.name}`], baseCid: null, serverPeerId: message.peerId } },
+        replica: { store: replica.store, meta: { ...replica.meta, scope: [], localScope: undefined, scopeNames: [`${message.name}`], serverPeerId: message.peerId } },
         connection: 'online',
         view: [],
         modal: null
@@ -3749,28 +3814,6 @@ export class App {
     }
   }
 
-  /** Host side: answer a guest's sync request against this replica's node. */
-  private serveDirect(id: number, request: SyncRequest): void {
-    if (!this.link) return
-    const served = this.serveRequest(request)
-    try {
-      this.link.send('error' in served ? { t: 'sync-result', id, error: served } : { t: 'sync-result', id, response: served.response })
-    } catch { /* link closed */ }
-  }
-
-  private serveRequest(request: SyncRequest): import('../../shared/sync/protocol').ServeResult {
-    const branch = this.currentBranch()
-    if (branch && request.branch && request.branch !== branch) return { error: 'This checkout is serving another branch', code: 'scope-not-found' }
-    const scoped: SyncRequest = { ...request, branches: undefined, branch: this.hostBranches[this.hostScope.at(-1)!] ?? request.branch, scope: [...this.hostScope, ...request.scope] }
-    const served = withBranches(this.state.replica.store, this.hostBranches, () => serveSync(this.state.replica.store, scoped, this.state.replica.meta.peerId, this.now()))
-    if (!('error' in served) && branch) served.response.branch = branch
-    if (!('error' in served) && served.changed) {
-      this.set({ replica: { ...this.state.replica } })
-      this.scheduleSync() // pass the guest's changes on to the account if we have one
-    }
-    return served
-  }
-
   cancelDirect(): void {
     this.approvedNodePeer = null
     this.host?.cancel()
@@ -3782,30 +3825,51 @@ export class App {
   // -------------------------------------------------------------------------
   // Manual relay (fallback when no channel could be opened)
 
+  /**
+   * Guest side: one node request per node this device syncs with the other one, local edits included as updates
+   * (based on what the other device last accepted), so a single round trip by hand carries both directions.
+   */
   manualMakeRequest(): void {
-    this.manualRequest = buildSyncRequest(this.state.replica, undefined, { recipient: 'device' })
-    this.set({ manual: { requestCode: ManualRelay.encodeRequest(this.manualRequest) } })
+    const r = this.state.replica, localRoot = r.meta.localScope ?? []
+    this.manualPlans = materializedNodePaths(r, localRoot).map(path => planNodeSync(r, path, { peer: this.manualPeer, scope: [], remoteRoot: [], localRoot, branches: [], push: true }))
+    const requests = this.manualPlans.map(plan => plan.dirty ? { ...plan.request, update: { base: plan.previousRemote ?? { data: {}, children: [] }, value: plan.local } } : plan.request)
+    this.set({ manual: { requestCode: ManualRelay.encodeRequest(requests) } })
   }
 
+  /** Host side: answer each node request as this device provides its nodes (the other device is trusted, as when paired). */
   manualServe(code: string): void {
     try {
-      const request = ManualRelay.decodeRequest(code)
-      const served = this.serveRequest(request)
-      this.set({ manual: { resultCode: ManualRelay.encodeResult('error' in served ? served : served.response) } })
+      const requests = ManualRelay.decodeRequest(code)
+      let replica = this.state.replica
+      const results = requests.map(request => {
+        try {
+          const served = exchangeNode(replica, request, { peerId: request.peerId, scope: this.hostScope, owner: true, capabilities: CLIENT_CAPABILITIES }, this.now())
+          replica = served.replica
+          return { node: served.node }
+        } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
+      })
+      if (replica !== this.state.replica) { this.edit(replica); this.scheduleSync() }
+      this.set({ manual: { resultCode: ManualRelay.encodeResult(results) } })
     } catch (error) {
       this.set({ manual: { error: error instanceof Error ? error.message : String(error) } })
     }
   }
 
+  /** Guest side: install what the other device answered, node by node. */
   manualApplyResult(code: string): void {
-    if (!this.manualRequest) { this.set({ manual: { error: 'Create a request code first.' } }); return }
+    if (!this.manualPlans.length) { this.set({ manual: { error: 'Create a request code first.' } }); return }
     try {
-      const response = ManualRelay.decodeResult(code)
-      const done = completeSync(this.state.replica, this.manualRequest, response, this.now())
-      const replica = { store: done.replica.store, meta: { ...done.replica.meta, scope: [], serverPeerId: response.peerId } }
-      this.manualRequest = null
+      const results = ManualRelay.decodeResult(code)
+      let replica = this.state.replica
+      this.manualPlans.forEach((plan, i) => {
+        const node = results[i]?.node
+        if (!node) throw new Error(results[i]?.error ?? 'The other device did not answer every node.')
+        replica = finishNodeSync(nodeSyncPush(replica, plan, node, this.now()).replica, plan, node, this.now())
+        this.manualPeer = node.peerId
+      })
+      this.manualPlans = []
       this.set({ replica, manual: {}, modal: null })
-      this.notify('info', `Merged with the other device (${response.action}).`)
+      this.notify('info', 'Synced with the other device.')
     } catch (error) {
       this.set({ manual: { ...this.state.manual, error: error instanceof Error ? error.message : String(error) } })
     }

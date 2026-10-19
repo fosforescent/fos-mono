@@ -74,7 +74,7 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
   const walk = (at: Scope, depth: number) => {
     if (depth > 64 || steps.length >= 1000) throw new Error('Narrow the evaluation to fewer than 1,000 rows and 64 levels.')
     const row = at.length ? view(r, at.slice(0, -1))?.tasks.find(t => t.id === at.at(-1)) ?? null : null
-    if (row?.kind === 'template' && row.id !== 'fos:home') return
+    if (row?.kind === 'template') return
     if (row && ['ref', 'supply'].includes(row.kind)) return
     const cid = resolveScope(r.store, headCid(r), at)
     // A handler's attempt records (pinned prompts, return slots) are bookkeeping, never steps.
@@ -125,7 +125,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   const steps = evaluationSteps(driver.get(), path)
   if (!steps.length) throw new Error('Apply the template before evaluating it.')
   const initial = driver.get()
-  if (path.some((id, i) => id !== 'fos:home' && view(initial, path.slice(0, i))?.tasks.some(t => t.id === id && t.kind === 'template'))) throw new Error('Apply the template before evaluating it.')
+  if (path.some((id, i) => view(initial, path.slice(0, i))?.tasks.some(t => t.id === id && t.kind === 'template'))) throw new Error('Apply the template before evaluating it.')
   const issues = [...allocationProblems(initial, steps), ...steps.flatMap(step => problems(driver.get(), step, driver))]
   if (issues.length) throw new Error([...new Set(issues)].join('\n'))
   const versions = new Map(steps.map(step => [JSON.stringify(step.path), instruction(driver.get(), step.path, driver.outputs?.(step))]))
@@ -235,7 +235,7 @@ export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[
     for (const row of view(r, path)?.tasks ?? []) {
       if (seen.has(row.id)) continue
       seen.add(row.id)
-      if (row.kind === 'template' && row.id !== 'fos:home') continue
+      if (row.kind === 'template') continue
       if (row.resource) banks.set(row.id, row)
       if (row.requirement?.capability === 'allocation' && row.requirement.satisfied && row.requirement.amount !== undefined) banks.set(row.id, { ...row, resource: { type: row.requirement.resource ?? 'account', unit: row.requirement.unit ?? 'USD', capacity: row.requirement.amount, allocated: 0, available: row.requirement.amount } })
       if (row.allocation && required.has(row.allocation.resource)) allocations.push(row)

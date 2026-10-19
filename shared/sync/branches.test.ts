@@ -1,10 +1,12 @@
+import { syncWith, userView } from './test-helpers'
+import { FosStore } from '../dag-implementation/store'
 import { addRow, addTask, createBranch, createReplica, headCid, importNodes, loadReplica, mergeNodes, commitRoot, reachableNodes, renameTask, selectBranch, serializeReplica, setTaskDone, view } from './index'
 
 test('branch choices preserve the entire subtree and selection does not edit shared state', () => {
   let r = addTask(createReplica('a'), [], 'Project', 1, 'project')
   r = addTask(r, ['project'], 'Original child', 2, 'child')
   r = createBranch(r, ['project'], 'test1', 3)
-  expect(view(r, [])!.tasks[0]!.branches?.selected).toBe('test1')
+  expect(userView(r)!.tasks[0]!.branches?.selected).toBe('test1')
   r = renameTask(r, [], 'project', 'Alternative project', 4)
   r = renameTask(r, ['project'], 'child', 'Alternative child', 5)
   r = setTaskDone(r, ['project'], 'child', true, 6)
@@ -12,12 +14,12 @@ test('branch choices preserve the entire subtree and selection does not edit sha
   const head = headCid(r)
   selectBranch(r.store, 'project', 'main')
   expect(headCid(r)).toBe(head)
-  expect(view(r, [])!.tasks[0]!.title).toBe('Project')
+  expect(userView(r)!.tasks[0]!.title).toBe('Project')
   expect(view(r, ['project'])!.tasks[0]!.title).toBe('Original child')
   expect(view(r, ['project'])!.tasks[0]!.done).toBe(false)
   expect(view(r, ['project','child'])!.tasks).toHaveLength(0)
   selectBranch(r.store, 'project', 'test1')
-  expect(view(r, [])!.tasks[0]!.title).toBe('Alternative project')
+  expect(userView(r)!.tasks[0]!.title).toBe('Alternative project')
   expect(view(r, ['project','child'])!.tasks[0]!.title).toBe('Only in test1')
 })
 
@@ -39,19 +41,13 @@ test('devices editing different alternatives merge without changing either branc
   expect(view(a, ['p'])!.tasks.map(t => t.title)).toEqual(['Main task'])
 })
 
-test('scoped desktop sync targets its named branch and refuses an unknown checkout', async () => {
-  const { buildSyncRequest, completeSync, serveSync } = await import('./index')
+test('scoped desktop sync targets its named branch and refuses an unknown checkout', () => {
   let host = addTask(createReplica('host'), [], 'Project', 1, 'p')
   host = addTask(host, ['p'], 'Main task', 2, 'task')
   host = createBranch(host, ['p'], 'test1', 3)
-  let desktop = createReplica('desktop')
+  let desktop = createReplica('desktop', new FosStore())
   desktop.meta.scope = ['p']
-  const sync = (branch: string) => {
-    const request = buildSyncRequest(desktop, branch)
-    const result = serveSync(host.store, request, 'host', 4)
-    if ('error' in result) throw new Error(result.error)
-    desktop = completeSync(desktop, request, result.response, 5).replica
-  }
+  const sync = (branch: string) => { desktop = syncWith(desktop, host, { at: ['p'], branches: [{ scope: ['p'], name: branch }] }) }
   sync('test1')
   desktop = renameTask(desktop, [], 'task', 'Desktop feature', 6)
   sync('test1')
@@ -59,7 +55,7 @@ test('scoped desktop sync targets its named branch and refuses an unknown checko
   expect(view(host, ['p'])!.tasks[0]!.title).toBe('Main task')
   selectBranch(host.store, 'p', 'test1')
   expect(view(host, ['p'])!.tasks[0]!.title).toBe('Desktop feature')
-  expect(serveSync(host.store, buildSyncRequest(desktop, 'missing'), 'host', 7)).toMatchObject({ code: 'scope-not-found' })
+  expect(() => sync('missing')).toThrow()
 })
 
 test('copy preserves every alternative and repeated merges keep later target edits', async () => {
@@ -73,7 +69,7 @@ test('copy preserves every alternative and repeated merges keep later target edi
   r = mergeBranch(r, ['p'], 'feature', 'main', 7)
   expect(view(r, ['p'])!.tasks[0]!.title).toBe('Later on main')
   r = copyNode(r, [], 'p', [], { relativeTo: 'p', position: 'below' }, 8)
-  const copy = view(r, [])!.tasks.find(t => t.id !== 'p')!
+  const copy = userView(r)!.tasks.find(t => t.id !== 'p')!
   expect(copy.branches?.names.sort()).toEqual(['feature', 'main'])
   selectBranch(r.store, copy.id, 'feature')
   expect(view(r, [copy.id])!.tasks[0]!.title).toBe('Feature')
@@ -94,25 +90,21 @@ test('repository constructors use typed refs and branch files do not collide', a
   expect(branchFileName(names[0]!)).toBe('feature%2Fx')
 })
 
-test('default branch survives serialization and a scoped attachment pins ancestor alternatives', async () => {
-  const { reattach, buildSyncRequest, completeSync, serveSync } = await import('./index')
+test('default branch survives serialization and a scoped attachment pins ancestor alternatives', () => {
   let host = addTask(createReplica('host'), [], 'Project', 1, 'p')
   host = addTask(host, ['p'], 'Child', 2, 'child')
   host = createBranch(host, ['p'], 'feature', 3, 'trunk')
   host = addTask(host, ['p', 'child'], 'Feature grandchild', 4, 'grandchild')
   const restored = loadReplica(serializeReplica(host))
-  expect(view(restored, [])!.tasks[0]!.branches?.selected).toBe('trunk')
-  let client = loadReplica(serializeReplica(host))
-  client.meta.peerId = 'client'; client.meta.baseCid = headCid(client)
-  selectBranch(client.store, 'p', 'feature')
-  client = reattach(client, ['p', 'child'], 5)
-  const request = buildSyncRequest(client)
-  expect(request.branches).toMatchObject({ p: 'feature' })
+  expect(userView(restored)!.tasks[0]!.branches?.selected).toBe('trunk')
+  // a device synced with the host, its view on the feature alternative, then attached to the child
+  const feature = [{ scope: ['p'], name: 'feature' }]
+  let client = syncWith(createReplica('client'), host, { branches: feature })
+  // (the alternative is selected per request, not in this graph, so `isDirty`/`reattach` cannot see it: attach directly)
+  client = { ...client, meta: { ...client.meta, localScope: ['p', 'child'] } }
   selectBranch(host.store, 'p', 'trunk')
-  const response = serveSync(host.store, request, 'host', 6)
-  if ('error' in response) throw new Error(response.error)
-  client = completeSync(client, request, response.response, 7).replica
-  expect(view(client, [])!.tasks[0]!.title).toBe('Feature grandchild')
+  client = syncWith(client, host, { branches: feature })
+  expect(view(client, ['p', 'child'])!.tasks.map(t => t.title)).toEqual(['Feature grandchild'])
   expect(view(host, ['p', 'child'])!.tasks).toHaveLength(0)
 })
 
@@ -126,16 +118,16 @@ test('merge requests are typed children of branch constructors and survive edits
   expect(record.options.filter(o => o.requestMerge).map(o => o.peerId)).toEqual(['feature'])
   const pointers = content(r.store, choice).children.map(e => content(r.store, e[1]))
   const request = pointers.flatMap(p => p.children.map(e => content(r.store, e[1]))).find(c => c.data.name?.content === 'request merge')!
-  expect(refTypeCid(r.store, request)).toBe(capabilityTarget(r.store, 'approve'))
+  expect(refTypeCid(r.store, request)).toBe(r.store.primitive.approveAction.getId())
   r = renameTask(r, [], 'p', 'Changed on feature', 4)
   r = loadReplica(serializeReplica(r))
-  expect(view(r, [])!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
+  expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
   selectBranch(r.store, 'p', 'main')
-  expect(view(r, [])!.tasks[0]!.title).toBe('Project')
+  expect(userView(r)!.tasks[0]!.title).toBe('Project')
   r = setBranchMergeRequest(r, ['p'], 'feature', false, 5)
-  expect(view(r, [])!.tasks[0]!.branches?.mergeRequests).toEqual([])
+  expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual([])
   selectBranch(r.store, 'p', 'feature')
-  expect(view(r, [])!.tasks[0]!.title).toBe('Changed on feature')
+  expect(userView(r)!.tasks[0]!.title).toBe('Changed on feature')
 })
 
 test('a merge request and a concurrent branch edit are both retained', async () => {
@@ -152,7 +144,7 @@ test('a merge request and a concurrent branch edit are both retained', async () 
     const result = mergeNodes(a.store, base, ours, theirs, { ours: 'a', theirs: 'b' })
     const r = { ...a }
     commitRoot(r.store, result.cid, 5)
-    expect(view(r, [])!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
+    expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
     expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Concurrent task'])
   }
 })

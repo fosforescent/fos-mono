@@ -5,7 +5,7 @@ const path = require('node:path')
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-node-api-'))
 async function main() {
   await build({ stdin: { contents: `export {createNodeProvider} from './backend/sync/provideNode'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'injected-persistence', setup(b) {
-    b.onResolve({ filter: /^\.\/peerSync$/ }, () => ({ path: 'peerSync', namespace: 'test' }))
+    b.onResolve({ filter: /^\.\/accountStore$/ }, () => ({ path: 'accountStore', namespace: 'test' }))
     b.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `export const withUserLock = async (_, f) => f(); export const serverPeerIdFor = name => 'user:' + name` }))
     b.onResolve({ filter: /^@fosforescent\/shared\/sync\/index$/ }, () => ({ path: path.resolve(__dirname, '../../shared/sync/index.ts') }))
   } }] })
@@ -42,12 +42,12 @@ async function main() {
   r = c.setMemberCapabilitiesAt(r, ['allowed'], 'guest', ['read', 'edit'], [], 6)
   const edit = await call({ ...request, update: { base: first.body, value: proposed } }, claims)
   assert.equal(edit.status, 200)
-  assert(!edit.body.grants.includes('approve'), 'a pending value cannot escalate its author to reviewer')
+  assert(edit.body.grants.includes('edit'), 'its grants are what it was granted')
   assert.equal(c.view(r, ['allowed']).name, 'Allowed', 'invited edits cannot change main')
   assert.equal((await call(request, claims)).body.data.description.content, 'Proposed title', 'peer reads its pending value')
   const proposal = c.view(r, ['allowed']).proposals.find(p => p.peerId === 'guest')
   assert(proposal, 'the existing approval UI can find the node proposal')
-  r = c.addMemberAt(r, ['allowed'], 'reviewer', null, ['read', 'approve'], 7)
+  r = c.addMemberAt(r, ['allowed'], 'reviewer', null, ['read', 'edit'], 7)
   const reviewRequest = { peerId: 'reviewer', scope: ['allowed'], path: [], linkId: 'review-link', proposal: { scope: ['allowed'], id: proposal.id } }
   const reviewClaims = { ...claims, peerId: 'reviewer' }
   const preview = await call(reviewRequest, reviewClaims)

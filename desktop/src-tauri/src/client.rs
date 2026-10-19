@@ -107,20 +107,17 @@ pub fn attachment(session: &Session, peer_id: &str) -> Result<Value, String> {
     get(&session.base_url, &format!("/user/data/peer-sync/attachment?peerId={}", peer_id), Some(&session.jwt))
 }
 
-pub fn peer_sync(session: &Session, request: &Value) -> Result<Value, String> {
-    post(&session.base_url, "/user/data/peer-sync", request, Some(&session.jwt))
-}
-
 /// Approve or reject a submission: a `decide` event of the shared grammar at the node (`scope`).
 /// Where a node another account shared with this user lives there (`GET /user/data/peer-sync/locate`).
 pub fn locate_shared(session: &Session, owner: &str, alias_id: &str) -> Result<Value, String> {
     get(&session.base_url, &format!("/user/data/peer-sync/locate?owner={}&id={}", urlencoding(owner), urlencoding(alias_id)), Some(&session.jwt))
 }
 
-/// One node of another account's shared tree, served by the account server as this user (node-provider protocol).
-pub fn provide_node(session: &Session, request: &Value, owner: &str) -> Result<Value, String> {
+/// One node exchange with the account server (node-provider protocol): this account's node, or with `owner` one of
+/// another account's shared tree, served as this user.
+pub fn provide_node(session: &Session, request: &Value, owner: Option<&str>) -> Result<Value, String> {
     let mut body = request.clone();
-    body["owner"] = Value::String(owner.to_string());
+    if let Some(owner) = owner { body["owner"] = Value::String(owner.to_string()); }
     post(&session.base_url, "/user/data/peer-sync/provide-node", &body, Some(&session.jwt))
 }
 

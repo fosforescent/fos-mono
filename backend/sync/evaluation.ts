@@ -1,11 +1,11 @@
 /** Owner-initiated and scheduled evaluation share the same graph evaluator, user-store lock and handler registry. */
 import { INTEGRATION_PEERS, evaluationRecord, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, evaluationSteps, headCid, put, resolveScope, runNodeTriggers, selectBranch, valueContent, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
-import { withUserLock, type PeerSyncDeps } from './peerSync'
+import { withUserLock, type AccountStoreDeps } from './accountStore'
 import type { HandlerRegistry, HostHandler } from './registry'
 
 const peerLabel = (peerId: string) => peerId === 'fos' ? 'Fos' : INTEGRATION_PEERS.find(p => `integration:${p.id}` === peerId)?.name ?? (peerId.startsWith('mcp:') ? 'An attached MCP server' : peerId)
 
-export function createEvaluationService(deps: PeerSyncDeps, registry: HandlerRegistry) {
+export function createEvaluationService(deps: AccountStoreDeps, registry: HandlerRegistry) {
   async function run(username: string, request?: { path: Scope; branches: Record<string, string>; expected: string; action?: 'recover' | 'continue' }) {
     return withUserLock(`user:${username}`, async () => {
       const loaded = await deps.loadStore(username)

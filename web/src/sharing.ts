@@ -135,7 +135,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
     const approved = new Set(node.mine?.revision === revision ? node.mine.approvals : [])
     const choices = [...(node.poll?.mode === 'approval' ? node.options : []), ...node.proposals]
     for (const option of choices) {
-      const check = element('input'); check.type = 'checkbox'; check.checked = approved.has(option.id); check.disabled = !node.capabilities?.includes('approve')
+      const check = element('input'); check.type = 'checkbox'; check.checked = approved.has(option.id); check.disabled = !node.capabilities?.includes('edit')
       check.onchange = () => { if (check.checked) approved.add(option.id); else approved.delete(option.id) }
       form.append(label(`${option.label} · ${node.counts[option.id] ?? 0} approval${node.counts[option.id] === 1 ? '' : 's'} `, check))
     }

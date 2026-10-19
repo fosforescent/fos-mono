@@ -4,7 +4,7 @@ import { contextBindings, resolveBinding, resolveText, type BindingEnvironment }
 import {
   demandOf, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope, rowContent,
-  rowEdge, rowKindOf, updateAtScope, valueContent, type Scope
+  rowEdgeAt, rowKindOf, updateAtScope, valueContent, type Scope
 } from './graph'
 import {
   addRefAt, addRow, addTask, addSupply, applyProposalAt, headCid, instantiateTemplate,
@@ -175,7 +175,7 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (refValueCid(r.store, content(r.store, nodeAt(r, resultPath).cid)) !== proposal.contentCid) throw new Error('The return ref changed. Review the current proposal again.')
   const result = content(r.store, proposal.contentCid)
   if (!result.data.alias?.id) throw new Error('Result has no identity.')
-  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdge(r.store, 'note', proposal.contentCid)] }))
+  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, 'note', proposal.contentCid, requestPath)] }))
   commitRoot(r.store, next, now)
   for (const title of subtasks) r = addTask(r, requestPath.slice(0, -1), title, now)
   return addSupply(r, requestPath.slice(0, -1), requestPath.at(-1)!, { capability: 'llm', by: 'fos:llm', ref: result.data.alias.id }, now)

@@ -64,7 +64,6 @@ async function main() {
   // write and execute widen what is exposed; all off stops the endpoint
   toggle('write').checked = true; toggle('write').dispatchEvent(new window.Event('change')); await tick()
   assert(c.contextMembers(app.state.replica, [id]).find(m => m.peerId === 'mcp:local').capabilities.includes('edit'))
-  assert(c.contextMembers(app.state.replica, [id]).find(m => m.peerId === 'mcp:local').capabilities.includes('approve'), 'write includes approve')
   replies = []
   pending.push({ id: 'list2', message: { jsonrpc: '2.0', id: 4, method: 'tools/list' } })
   for (let i = 0; i < 30 && !replies.length; i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -76,7 +75,7 @@ async function main() {
 
   // the hosted MCP server: a scoped credential whose capabilities are the grants
   app.set({ session: { kind: 'user', username: 'alice', jwt: 'owner-token', baseUrl: 'http://localhost' }, connection: 'online' })
-  app.syncNow = async () => { app.state.replica.meta.baseCid = c.headCid(app.state.replica) }
+  app.syncNow = async () => { app.state.replica = (r => { const peer = r.meta.serverPeerId ?? 'user:test', nodeSync = {}; for (const p of c.materializedNodePaths(r, r.meta.localScope ?? [])) nodeSync[c.nodeSyncKey(peer, p, c.nodeBranches(r, p))] = { local: c.nodeShape(r, p), remote: c.nodeShape(r, p) }; return { ...r, meta: { ...r.meta, serverPeerId: peer, nodeSync, lastSyncAt: 1 } } })(app.state.replica) }
   const calls = []
   globalThis.fetch = async (url, init) => {
     calls.push({ url, init })

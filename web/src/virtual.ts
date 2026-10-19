@@ -1,7 +1,7 @@
-import { createReplica, serializeReplica, type Capability, type Scope, type SyncRequest, type SyncResponse, type ServeResult } from '../../shared/sync/index'
+import { createReplica, serializeReplica, type Capability, type Scope } from '../../shared/sync/index'
+import { FosStore } from '../../shared/dag-implementation/store'
 import type { NodeRequest, ProvidedNode } from '../../shared/sync/index'
 import type { Session } from './api'
-import { ApiError } from './api'
 import { createLocalStorageAdapter, type ReplicaStorage } from './storage'
 
 export type VirtualPeer = { id: string; token: string; hostTab: string; name: string; scope: Scope; branches?: Record<string, string>; dataSessionId?: string; shareAccount: boolean }
@@ -43,7 +43,6 @@ type Hooks = {
   dataSessionId: () => string | undefined
   decide: (peer: VirtualPeer, scope: Scope, proposalId: string, decision: 'approve' | 'reject') => Promise<void>
   grants: (peer: VirtualPeer) => Capability[] | null
-  serve: (peer: VirtualPeer, request: SyncRequest) => ServeResult
   welcome: (capabilities: Capability[], hostName: string, session?: Session) => void
   changed: () => void
   revision: () => string
@@ -51,7 +50,7 @@ type Hooks = {
   name: () => string
 }
 
-/** Each invitation has one same-origin channel; the existing graph protocol does the merging. */
+/** Each invitation has one same-origin channel; node exchange (`requestNode`) does the syncing. */
 export class VirtualPeers {
   private nodePending = new Map<number, { resolve: (node: ProvidedNode) => void; reject: (error: Error) => void }>()
   private closed = false
@@ -62,7 +61,6 @@ export class VirtualPeers {
   private seen = 0
   private serial = 0
   private decisions = new Map<number, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
-  private pending = new Map<number, { resolve: (response: SyncResponse) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private heartbeat: ReturnType<typeof setInterval> | null = null
   constructor(readonly guest: VirtualPeer | null, private hooks: Hooks) {
     // A window opened by window.open initially inherits its opener's sessionStorage.
@@ -103,12 +101,6 @@ export class VirtualPeers {
           if (!pending) return
           clearTimeout(pending.timer); this.decisions.delete(data.id)
           if (data.error) pending.reject(new Error(data.error)); else pending.resolve()
-        } else if (data.t === 'result') {
-          const pending = this.pending.get(data.id)
-          if (!pending) return
-          clearTimeout(pending.timer); this.pending.delete(data.id)
-          if (data.error) pending.reject(new ApiError(400, data.error.error, data.error.code))
-          else pending.resolve(data.response)
         }
       }
     }
@@ -121,7 +113,7 @@ export class VirtualPeers {
   register(peer: VirtualPeer): void {
     localStorage.setItem(PREFIX + peer.token + '.connection', JSON.stringify(peer))
     const storage = virtualStorage(peer)
-    storage.saveReplica(serializeReplica(createReplica(peer.id)))
+    storage.saveReplica(serializeReplica(createReplica(peer.id, new FosStore())))
     storage.savePrefs({ deviceName: peer.name })
     this.host(peer)
   }
@@ -155,24 +147,10 @@ export class VirtualPeers {
           () => { if (!this.closed) channel.postMessage({ t: 'decision-result', id: data.id }) },
           (error) => { if (!this.closed) channel.postMessage({ t: 'decision-result', id: data.id, error: error instanceof Error ? error.message : String(error) }) }
         )
-      } else if (data.t === 'sync') {
-        let result: ServeResult
-        try { result = this.hooks.serve(peer, data.request) }
-        catch (error) { result = { error: error instanceof Error ? error.message : String(error), code: 'bad-request' } }
-        channel.postMessage('error' in result ? { t: 'result', id: data.id, error: result } : { t: 'result', id: data.id, response: result.response })
       }
     }
   }
   changed(): void { if (this.closed) return; for (const room of this.rooms.values()) room.channel.postMessage({ t: 'changed' }) }
-  sync(request: SyncRequest): Promise<SyncResponse> {
-    if (!this.channel || !this.connected) return Promise.reject(new Error('The parent tab is unavailable. Reopen it to reconnect.'))
-    return new Promise((resolve, reject) => {
-      const id = ++this.serial
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('The parent tab did not answer. Changes remain saved in this virtual peer.')) }, 8000)
-      this.pending.set(id, { resolve, reject, timer })
-      this.channel!.postMessage({ t: 'sync', id, peerId: this.guest!.id, request })
-    })
-  }
   requestNode(request: NodeRequest): Promise<ProvidedNode> {
     if (!this.channel || !this.connected) return Promise.reject(new Error('The parent tab is unavailable.'))
     return new Promise((resolve, reject) => {
@@ -202,9 +180,7 @@ export class VirtualPeers {
     if (this.heartbeat) clearInterval(this.heartbeat); this.channel?.close(); this.channel = null
     for (const room of this.rooms.values()) room.channel.close()
     this.rooms.clear()
-    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('Virtual connection closed')) }
     for (const p of this.decisions.values()) { clearTimeout(p.timer); p.reject(new Error('Virtual connection closed')) }
     this.decisions.clear()
-    this.pending.clear()
   }
 }

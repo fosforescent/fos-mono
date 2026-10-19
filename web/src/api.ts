@@ -1,4 +1,4 @@
-import type { Capability, NodeView, SyncRequest, SyncResponse } from '../../shared/sync/index'
+import type { Capability, NodeView } from '../../shared/sync/index'
 
 export type Session = {
   baseUrl: string
@@ -141,19 +141,6 @@ export async function pollConnect(baseUrl: string, requestId: string, peerId: st
   const response = await fetch(`${baseUrl}/peer/connect/${encodeURIComponent(requestId)}?peerId=${encodeURIComponent(peerId)}`)
   if (!response.ok) throw await responseError(response)
   return (await response.json()) as ConnectPoll
-}
-
-export async function peerSync(session: Session, request: SyncRequest): Promise<SyncResponse> {
-  const response = await fetch(`${session.baseUrl}/user/data/peer-sync`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.jwt}`
-    },
-    body: JSON.stringify(request)
-  })
-  if (!response.ok) throw await responseError(response)
-  return (await response.json()) as SyncResponse
 }
 
 /** A node from the account server; with `owner`, a node of that other account shared with this user (acting as `user:<me>` there). */

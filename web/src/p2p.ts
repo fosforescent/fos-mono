@@ -1,8 +1,8 @@
 /**
  * Direct (peer-to-peer) connection between two devices.
  *
- * The inviting device is the *host*: it serves the same sync protocol the
- * backend does (`serveSync`) for the node it is showing, so the guest's
+ * The inviting device is the *host*: it provides the node it is showing through
+ * node exchange (`exchangeNode`), as the account server does, so the guest's
  * replica attaches to that node exactly as it would to an account. If the host
  * is itself signed in, the guest's changes reach the account through it.
  *
@@ -17,7 +17,6 @@
  * but needs nothing else.
  */
 
-import type { SyncError, SyncRequest, SyncResponse } from '../../shared/sync/index'
 import type { NodeRequest, ProvidedNode, Capability, Scope } from '../../shared/sync/index'
 
 export type Signal = { v: 1; role: 'offer' | 'answer'; sdp: string; peerId: string; name: string }
@@ -28,8 +27,8 @@ export type ChannelMessage =
   | { t: 'node'; id: number; request: NodeRequest }
   | { t: 'node-result'; id: number; node?: ProvidedNode; error?: string }
   | { t: 'denied' }
-  | { t: 'sync'; id: number; request: SyncRequest }
-  | { t: 'sync-result'; id: number; response?: SyncResponse; error?: SyncError }
+  | { t: 'nodes'; requests: NodeRequest[] }
+  | { t: 'nodes-result'; results: Array<{ node?: ProvidedNode; error?: string }> }
   | { t: 'changed' }
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -86,8 +85,6 @@ async function gatherLocalDescription(pc: RTCPeerConnection, make: () => Promise
 
 // --- a connection, once open ----------------------------------------------
 
-type Pending = { resolve: (r: SyncResponse) => void; reject: (e: Error) => void }
-
 export class DirectLink {
   readonly pc: RTCPeerConnection
   readonly channel: RTCDataChannel
@@ -96,7 +93,6 @@ export class DirectLink {
   remoteScope: Scope = []
   remoteCapabilities: Capability[] = []
   private nextId = 1
-  private pending = new Map<number, Pending>()
   private nodePending = new Map<number, { resolve: (node: ProvidedNode) => void; reject: (error: Error) => void }>()
   onMessage: ((message: ChannelMessage) => void) | null = null
   onClose: (() => void) | null = null
@@ -113,20 +109,9 @@ export class DirectLink {
         if (pending) { this.nodePending.delete(message.id); if (message.node) pending.resolve(message.node); else pending.reject(new Error(message.error ?? 'Node request failed.')) }
         return
       }
-      if (message.t === 'sync-result') {
-        const waiter = this.pending.get(message.id)
-        if (waiter) {
-          this.pending.delete(message.id)
-          if (message.response) waiter.resolve(message.response)
-          else waiter.reject(new Error(message.error?.error ?? 'sync failed'))
-        }
-        return
-      }
       this.onMessage?.(message)
     })
     channel.addEventListener('close', () => {
-      for (const waiter of this.pending.values()) waiter.reject(new Error('connection closed'))
-      this.pending.clear()
       for (const waiter of this.nodePending.values()) waiter.reject(new Error('connection closed'))
       this.nodePending.clear()
       this.onClose?.()
@@ -142,7 +127,7 @@ export class DirectLink {
     this.channel.send(JSON.stringify(message))
   }
 
-  /** Guest side: run one sync round trip over the channel. */
+  /** Guest side: one node request over the channel. */
   requestNode(request: NodeRequest, timeoutMs = 20000): Promise<ProvidedNode> {
     const id = this.nextId++
     return new Promise((resolve, reject) => {
@@ -150,18 +135,6 @@ export class DirectLink {
       this.nodePending.set(id, { resolve: node => { clearTimeout(timer); resolve(node) }, reject: error => { clearTimeout(timer); reject(error) } })
       try { this.send({ t: 'node', id, request }) }
       catch (error) { clearTimeout(timer); this.nodePending.delete(id); reject(error) }
-    })
-  }
-
-  sync(request: SyncRequest, timeoutMs = 20000): Promise<SyncResponse> {
-    const id = this.nextId++
-    return new Promise<SyncResponse>((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('sync timed out')) }, timeoutMs)
-      this.pending.set(id, {
-        resolve: (r) => { clearTimeout(timer); resolve(r) },
-        reject: (e) => { clearTimeout(timer); reject(e) }
-      })
-      this.send({ t: 'sync', id, request })
     })
   }
 
@@ -262,23 +235,22 @@ export class DirectGuest {
 // --- manual relay fallback ---------------------------------------------------
 
 /**
- * When no data channel can be established, sync messages are carried by hand:
- * the guest copies a request code to the host, the host pastes it and copies
- * the result code back. Slow, but it works over any channel that moves text.
+ * When no data channel can be established, node requests are carried by hand:
+ * the guest copies a request code (one node request per node it syncs, local
+ * edits included) to the host, the host pastes it and copies the result code
+ * (the provided nodes) back. Slow, but it works over any channel that moves text.
  */
 export const ManualRelay = {
-  encodeRequest: (request: SyncRequest) => encodeMessage({ t: 'sync', id: 0, request }),
-  decodeRequest: (code: string): SyncRequest => {
+  encodeRequest: (requests: NodeRequest[]) => encodeMessage({ t: 'nodes', requests }),
+  decodeRequest: (code: string): NodeRequest[] => {
     const m = decodeMessage<ChannelMessage>(code)
-    if (m.t !== 'sync') throw new Error('that is not a sync request code')
-    return m.request
+    if (m.t !== 'nodes') throw new Error('that is not a sync request code')
+    return m.requests
   },
-  encodeResult: (response: SyncResponse | SyncError) =>
-    encodeMessage('error' in response ? { t: 'sync-result', id: 0, error: response } : { t: 'sync-result', id: 0, response }),
-  decodeResult: (code: string): SyncResponse => {
+  encodeResult: (results: Array<{ node?: ProvidedNode; error?: string }>) => encodeMessage({ t: 'nodes-result', results }),
+  decodeResult: (code: string): Array<{ node?: ProvidedNode; error?: string }> => {
     const m = decodeMessage<ChannelMessage>(code)
-    if (m.t !== 'sync-result') throw new Error('that is not a sync result code')
-    if (!m.response) throw new Error(m.error?.error ?? 'sync failed')
-    return m.response
+    if (m.t !== 'nodes-result') throw new Error('that is not a sync result code')
+    return m.results
   }
 }

@@ -9,6 +9,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/sharing'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { App, mountUi, mountSharedNode, shareUrl, sharedAddress, createMemoryStorage, view, readNodeValue, headCid } = require(path.join(dir, 'app.cjs'))
+const c = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 let a
 async function main() {
@@ -30,7 +31,7 @@ async function main() {
   const grid = document.querySelector('.constructor-grid'); assert(!grid.hidden)
   const savedSession = a.state.session, savedConnection = a.state.connection, savedSync = a.syncNow, savedFetch = global.fetch
   a.state.session = { kind: 'user', username: 'publisher', jwt: 'test', baseUrl: 'http://localhost' }; a.state.connection = 'online'
-  a.syncNow = async () => { a.state.replica.meta.baseCid = headCid(a.state.replica) }
+  a.syncNow = async () => { a.state.replica = (r => { const peer = r.meta.serverPeerId ?? 'user:test', nodeSync = {}; for (const p of c.materializedNodePaths(r, r.meta.localScope ?? [])) nodeSync[c.nodeSyncKey(peer, p, c.nodeBranches(r, p))] = { local: c.nodeShape(r, p), remote: c.nodeShape(r, p) }; return { ...r, meta: { ...r.meta, serverPeerId: peer, nodeSync, lastSyncAt: 1 } } })(a.state.replica) }
   for (const [caption, audience] of [['Publish publicly', 'public'], ['Publish to Fos users', 'users']]) {
     const action = document.querySelector(`.constructor-grid [aria-label="${caption}"]`)
     assert(action?.querySelector('svg')); assert(action.draggable)
@@ -48,7 +49,7 @@ async function main() {
   a.state.session = savedSession; a.state.connection = savedConnection; a.syncNow = savedSync; global.fetch = savedFetch
 
   const requests = []
-  const node = { title: 'Lunch?', rows: [], inputs: [{ key: 'text', name: 'Comment', kind: 'text' }], options: [{ id: 'option:0', label: 'Soup' }, { id: 'option:1', label: 'Salad' }], poll: { mode: 'approval' }, proposals: [], revision: 'v1', audience: 'public', counts: {}, rankings: {}, participants: 0, capabilities: ['read', 'approve', 'rank'] }
+  const node = { title: 'Lunch?', rows: [], inputs: [{ key: 'text', name: 'Comment', kind: 'text' }], options: [{ id: 'option:0', label: 'Soup' }, { id: 'option:1', label: 'Salad' }], poll: { mode: 'approval' }, proposals: [], revision: 'v1', audience: 'public', counts: {}, rankings: {}, participants: 0, capabilities: ['read', 'edit', 'rank'] }
   global.fetch = async (url, init) => {
     const body = JSON.parse(init.body); requests.push({ url, body, headers: init.headers })
     return { ok: true, json: async () => url.endsWith('/input') ? { node: { ...node, mine: { peer: 'visitor:1', revision: 'v1', name: body.name, approvals: body.approvals, ranking: body.ranking, fields: { text: body.fields.text.value } }, participants: 1, counts: { 'option:0': 1 } } } : { node, visitorToken: 'guest-only-token' } }

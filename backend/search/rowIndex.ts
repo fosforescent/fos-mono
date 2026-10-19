@@ -12,7 +12,7 @@
 
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { LISTING_ARGUMENT, createReplica, marketplaceOffers, namedValueOf, withMainBranchPolicy, content, identityCid, isRowEdge, rootTargetCid, rowKindOf, valueContent, type Scope } from '@fosforescent/shared/sync/index'
+import { LISTING_ARGUMENT, createReplica, marketplaceOffers, namedValueOf, withMainBranchPolicy, content, identityCid, isRowEdge, rootTargetCid, rowKindOf, valueContent, isShippedLibrary, type Scope } from '@fosforescent/shared/sync/index'
 
 export type Embed = (texts: string[]) => Promise<number[][]>
 
@@ -29,7 +29,8 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
     for (const edge of valueContent(store, cid).children) {
       if (out.length >= limit) return
       const kind = rowKindOf(store, edge)
-      if (!kind) continue
+      // a device root's shipped library is not the account's content
+      if (!kind || isShippedLibrary(store, path, edge)) continue
       const id = identityCid(store, edge)
       const identity = content(store, id)
       const value = valueContent(store, id)

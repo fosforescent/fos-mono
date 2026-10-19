@@ -2,19 +2,18 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
 /**
  * Device replica: a FosStore whose root alias points at the node this device is
  * attached to (the whole user-group document for scope [], or one node),
- * plus the link metadata needed to sync it.
+ * plus what node sync agreed on with its peer, per synced node (`nodeSync`).
  *
  * Every edit creates new content nodes (path copy) and advances the root alias
  * with a PREV link, so the local history is a proper chain in the graph.
  */
 
 import { FosStore } from '../dag-implementation/store'
-import { hasNodeLinkMasks, hasNodeReadBoundary } from './node-provider'
-import { CURRENT_CID_VERSION } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent } from '../types'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
+  CAPABILITIES,
   homeContextCid,
   canonicalRowData,
   type Capability,
@@ -23,17 +22,19 @@ import {
   type NodeView,
   type RowExtras,
   type RowKind,
-  SYNC_FORMAT_VERSION,
   type Scope,
   type TaskView,
   commitRoot,
   content,
   convertRowContent,
+  convertRow,
   copyRowContent,
   exportReachableContext,
   findChild,
   findEdge,
   findRowByAlias,
+  findNearestRow,
+  rowView,
   findTemplate,
   refNodeContent,
   refTypeCid,
@@ -48,15 +49,13 @@ import {
   isChoiceEdge,
   capabilityOf,
   identityCid,
-  isPartitionEdge,
   isRowEdge,
+  keptRowTemplate,
   makeLink,
   markProposalRejected,
   moveChild,
   newId,
   normalizeRefs,
-  partitionContent,
-  partitionEdge,
   put,
   putStripped,
   reachableNodes,
@@ -69,37 +68,41 @@ import {
   rootTargetCid,
   rowContent,
   rowEdge,
+  rowEdgeAt,
   rowKindOf,
   scopeNames,
   taskBlockers,
   taskContent,
-  taskEdge,
   updateAtScope,
+  valueCidOf,
   valueContent,
   viewNode,
   withChildValue,
   withIdentity,
+  withRowTemplate,
   readMembers,
   withMember,
   withPeer,
   withoutMember,
-  withoutPeer, type HostOffers } from './graph'
-import { replicationView } from './replication'
+  withoutPeer, ensureLibraryRow, isShippedLibrary, rootStoredTarget, type HostOffers } from './graph'
 import { mergeNodes, resolveChoiceIn } from './merge'
-import { applySyncResponse, type SyncRequest, type SyncResponse } from './protocol'
+import { assertNoNewTypeErrors, rootTypeError, typeErrorOf } from './patterns'
 
 export type ReplicaMeta = {
   nodeSync?: Record<string, import('./node-sync').NodeSyncState>
   /** Projections of nodes other accounts shared with this one, by local path (JSON): whose, and where in their account. */
   sharedNodes?: Record<string, { owner: string; scope: Scope }>
-  version: typeof SYNC_FORMAT_VERSION
+  /**
+   * Nodes opened from another store on this machine (desktop), by the alias id of the row they were opened at (so a
+   * move keeps them): the store (peer) and the node's address there. Edits below them go back to it (`App.syncLocalStores`).
+   */
+  heldNodes?: Record<string, { peer: string; scope: Scope }>
   peerId: string
   scope: Scope
   /** Display names of the nodes along `scope` (a scoped replica cannot resolve them itself). */
   scopeNames: string[]
   /** Local subtree shared by this attachment; its parent remains private to this peer. */
   localScope?: Scope
-  baseCid: string | null
   lastSyncAt: number | null
   serverPeerId: string | null
   branch?: string
@@ -110,10 +113,17 @@ export type Replica = { store: FosStore; meta: ReplicaMeta }
 
 export type SerializedReplica = { meta: ReplicaMeta; context: FosContextData }
 
-export function createReplica(peerId: string = newId(), store: FosStore = new FosStore()): Replica {
+/**
+ * A replica over `store`, or a new device root: a store with nothing above it is a device's own root, which ships the
+ * standard library (its rows are made from its Row types). Other roots (a project, a document) are nested in a device
+ * root (`nestScope`) and resolve their rows through it.
+ */
+export function createReplica(peerId: string = newId(), existing?: FosStore): Replica {
+  const store = existing ?? new FosStore()
+  if (!existing) ensureLibraryRow(store)
   return {
     store,
-    meta: { version: SYNC_FORMAT_VERSION, peerId, scope: [], scopeNames: [], baseCid: null, lastSyncAt: null, serverPeerId: null }
+    meta: { peerId, scope: [], scopeNames: [], lastSyncAt: null, serverPeerId: null }
   }
 }
 
@@ -127,12 +137,13 @@ export function normalizeReplicaRefs(store: FosStore): boolean {
 }
 
 export function serializeReplica(replica: Replica): SerializedReplica {
-  return { meta: replica.meta, context: exportReachableContext(replica.store, [replica.meta.baseCid]) }
+  return { meta: replica.meta, context: exportReachableContext(replica.store, []) }
 }
 
 /** Rebuild a replica from untrusted JSON. Falls back to a fresh replica on any problem. */
 export function loadReplica(input: unknown): Replica {
-  const fresh = createReplica()
+  // a bare root: whether a loaded replica is a device root is the caller's to say (`ensureDeviceLibrary`)
+  const fresh = createReplica(undefined, new FosStore())
   if (!input || typeof input !== 'object') return fresh
   const raw = input as Partial<SerializedReplica>
   const meta = raw.meta
@@ -146,23 +157,21 @@ export function loadReplica(input: unknown): Replica {
     store = new FosStore({ fosCtxData: { fosData: { nodes: ctx.nodes ?? {}, route: [], rootNodeId: ctx.rootNodeId }, trellisData: fresh.store.trellisData } })
     rootTargetCid(store) // validates the root alias shape
     normalizeReplicaRefs(store)
+    // rows a type does not accept (an older replica, or one written elsewhere) become type errors
+    commitRoot(store, rootTargetCid(store), 0)
   } catch (error) {
     console.warn('stored replica unreadable, starting fresh', error)
     store = fresh.store
   }
-  // A context stored in an older cid format was migrated by the store; follow the base along.
-  const remappedBase = typeof meta.baseCid === 'string' ? store.remapCid(meta.baseCid) : null
-  const baseCid = remappedBase && store.table.has(remappedBase) ? remappedBase : null
   return {
     store,
     meta: {
-      version: SYNC_FORMAT_VERSION,
       peerId,
       scope,
       scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
-      baseCid,
-      ...(meta.nodeSync && typeof meta.nodeSync === 'object' ? { nodeSync: meta.nodeSync } : {}),
+      ...(meta.nodeSync && typeof meta.nodeSync === 'object' ? { nodeSync: remapNodeSync(store, meta.nodeSync) } : {}),
       ...(meta.sharedNodes && typeof meta.sharedNodes === 'object' ? { sharedNodes: meta.sharedNodes } : {}),
+      ...(meta.heldNodes && typeof meta.heldNodes === 'object' ? { heldNodes: meta.heldNodes } : {}),
       ...(Array.isArray(meta.localScope) && meta.localScope.length <= 64 && meta.localScope.every(id => typeof id === 'string') ? { localScope: [...meta.localScope] } : {}),
       lastSyncAt: typeof meta.lastSyncAt === 'number' ? meta.lastSyncAt : null,
       serverPeerId: typeof meta.serverPeerId === 'string' ? meta.serverPeerId : null,
@@ -170,6 +179,13 @@ export function loadReplica(input: unknown): Replica {
       ...(meta.branches && typeof meta.branches === 'object' ? { branches: Object.fromEntries(Object.entries(meta.branches).filter(([, name]) => typeof name === 'string')) } : {})
     }
   }
+}
+
+/** A context stored in an older cid format was migrated by the store: the template cids node sync recorded follow along. */
+function remapNodeSync(store: FosStore, records: NonNullable<ReplicaMeta['nodeSync']>): NonNullable<ReplicaMeta['nodeSync']> {
+  if (!store.migration) return records
+  const shape = <T extends { children?: Array<{ template: string }> }>(value: T): T => Array.isArray(value?.children) ? { ...value, children: value.children.map(child => ({ ...child, template: store.remapCid(child.template) })) } : value
+  return Object.fromEntries(Object.entries(records).map(([key, state]) => [key, { ...state, local: shape(state.local), remote: shape(state.remote) }]))
 }
 
 /** Home is an ordinary constructor child of the account root, with a stable identity. */
@@ -187,38 +203,58 @@ export function ensureHomeContext(replica: Replica, now: number, offers?: HostOf
   return { ...replica }
 }
 
-/** Attach a device's Home to the corresponding shared node, retaining its private root.
- * Old whole-root merge bases are narrowed once; content IDs themselves do not change.
- */
+/** Attach a device's Home to the corresponding shared node, retaining its private root. */
 export function shareHome(replica: Replica): Replica {
   if (replica.meta.scope.length || replica.meta.localScope?.length || !homePath(replica).length) return replica
-  const baseCid = replica.meta.baseCid ? findChild(replica.store, replica.meta.baseCid, HOME_ID) : null
-  return { ...replica, meta: { ...replica.meta, localScope: [HOME_ID], baseCid } }
+  return { ...replica, meta: { ...replica.meta, localScope: [HOME_ID] } }
 }
 
 export function headCid(replica: Replica): string {
   return rootTargetCid(replica.store)
 }
 
+/**
+ * Whether this device holds changes its peer (`serverPeerId`) has not accepted: a synced node whose shape differs from
+ * what node sync last agreed on, or one never synced. Before there is a peer, any content counts (the shipped library
+ * does not: it is never exchanged).
+ */
 export function isDirty(replica: Replica): boolean {
-  if (replica.meta.nodeSync && replica.meta.serverPeerId) return materializedNodePaths(replica, replica.meta.localScope ?? []).some(path => {
+  const peer = replica.meta.serverPeerId, local = replica.meta.localScope ?? []
+  if (!peer) {
+    const head = resolveScope(replica.store, headCid(replica), local)
+    return !head || valueContent(replica.store, head).children.some(edge => !isShippedLibrary(replica.store, local, edge))
+  }
+  return materializedNodePaths(replica, local).some(path => {
     if (!nodePersistenceAllowed(replica, path)) return false
-    const state = replica.meta.nodeSync![nodeSyncKey(replica.meta.serverPeerId!, path, nodeBranches(replica, path))]
+    const state = replica.meta.nodeSync?.[nodeSyncKey(peer, path, nodeBranches(replica, path))]
     return !state || !sameNodeShape(nodeShape(replica, path), state.local)
   })
-  const head = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? [])
-  if (!head) return true
-  if (replica.meta.baseCid) return head !== replica.meta.baseCid && replicationView(replica.store, [head, replica.meta.baseCid], replica.meta.peerId).project(head) !== replica.meta.baseCid
-  return valueContent(replica.store, head).children.length > 0 // a scoped replica's head may be a ref node
 }
 
 export function hasSynced(replica: Replica): boolean {
-  return replica.meta.lastSyncAt !== null || replica.meta.baseCid !== null
+  return replica.meta.lastSyncAt !== null
 }
 
 export function view(replica: Replica, at: Scope, constructors = false): NodeView | null {
   const cid = resolveScope(replica.store, headCid(replica), at)
-  return cid ? viewNode(replica.store, cid, constructors) : null
+  if (!cid) return null
+  const node = viewNode(replica.store, cid, constructors)
+  // a node in type error: which of its rows its type does not accept (the error is on its edge, or on the root)
+  const rejected = typeErrorAt(replica, at)
+  if (rejected?.length) {
+    node.typeError = rejected
+    for (const row of node.tasks) if (rejected.includes(row.id)) row.rejected = true
+  }
+  return node
+}
+
+/** The rows the node at `at` holds that its type does not accept, or null when it is not a type error. */
+export function typeErrorAt(replica: Replica, at: Scope): string[] | null {
+  const store = replica.store
+  if (!at.length) return rootTypeError(store, rootStoredTarget(store))
+  const parent = resolveScope(store, headCid(replica), at.slice(0, -1))
+  const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
+  return edge ? typeErrorOf(store, edge) : null
 }
 
 /** Names along the attached scope plus a path below it, for labels. */
@@ -236,15 +272,22 @@ export function scopeLabel(replica: Replica, at: Scope = []): string {
 // the root advanced); callers treat the returned value as the new state.
 
 function edit(replica: Replica, at: Scope, now: number, fn: (value: FosNodeContent) => FosNodeContent): Replica {
-  const next = updateAtScope(replica.store, headCid(replica), at, fn)
-  commitRoot(replica.store, next, now)
-  return { ...replica }
+  return commitEdit(replica, updateAtScope(replica.store, headCid(replica), at, fn), now)
 }
 
 /** Like `edit`, but `fn` sees the identity node at `at` (the ref node of a link row): for bookkeeping. */
 function editNode(replica: Replica, at: Scope, now: number, fn: (node: FosNodeContent) => FosNodeContent): Replica {
-  const next = updateAtScope(replica.store, headCid(replica), at, fn, 'node')
-  commitRoot(replica.store, next, now)
+  return commitEdit(replica, updateAtScope(replica.store, headCid(replica), at, fn, 'node'), now)
+}
+
+/**
+ * Commit a local edit. One that would put a row where its parent's type does not accept it is refused (received
+ * changes become type errors instead, sync/patterns.ts); the store stays as it was.
+ */
+function commitEdit(replica: Replica, next: string, now: number): Replica {
+  const store = replica.store, rootBefore = store.rootNodeId, before = rootStoredTarget(store)
+  commitRoot(store, next, now)
+  try { assertNoNewTypeErrors(store, before, rootStoredTarget(store)) } catch (error) { store.rootNodeId = rootBefore; throw error }
   return { ...replica }
 }
 
@@ -255,12 +298,7 @@ function editPolicy(replica: Replica, at: Scope, now: number, fn: (node: FosNode
   })
 }
 
-function findTaskEdge(replica: Replica, value: FosNodeContent, taskId: string) {
-  const edge = findEdge(replica.store, value, `a:${taskId}`)
-  return edge && edge[1] === replica.store.primitive.completeField.getId() ? edge : undefined
-}
-
-/** A child row carrying `aliasId` (any row kind, including legacy plain rows). */
+/** A child row carrying `aliasId` (any row kind). */
 function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string) {
   const edge = findEdge(replica.store, value, `a:${aliasId}`)
   return edge && (isRowEdge(replica.store, edge) || content(replica.store, identityCid(replica.store, edge)).data.name?.content.startsWith('fos:setting:')) ? edge : undefined
@@ -288,7 +326,7 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
   if (!trimmed) return replica
   return edit(replica, at, now, (value) => {
     const cid = put(replica.store, withTextParameters(replica.store, taskContent(id, trimmed, false, now, now)))
-    return { ...value, children: [...value.children, taskEdge(replica.store, cid)] }
+    return { ...value, children: [...value.children, rowEdgeAt(replica.store, 'task', cid, at)] }
   })
 }
 
@@ -303,7 +341,7 @@ export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string,
   return edit(replica, at, now, (value) => {
     const { position: _p, id: _i, ...extras } = options
     const cid = put(replica.store, withTextParameters(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store })))
-    const edge = rowEdge(replica.store, kind, cid)
+    const edge = rowEdgeAt(replica.store, kind, cid, at)
     const children = [...value.children]
     const pos = options.position
     if (pos && 'relativeTo' in pos) {
@@ -326,7 +364,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
     const edge = findChildEdge(replica, value, aliasId)
     if (!edge) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
-    const converted = convertRowContent(node, kind, now)
+    const converted = convertRow(replica.store, node, kind, now)
     const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
     const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
     if (kind === 'task') data.todo = { completed: !!extras.done, time: node.data.todo?.time ?? now }
@@ -340,7 +378,8 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
     if (kind === 'query' && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
     if (kind === 'comment' && node.data.comment) data.comment = { ...node.data.comment, content: body }
     const next = withChildValue(replica.store, edge, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), now)
-    return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, next)))
+    const changed = identityCid(replica.store, next), kept = keptRowTemplate(replica.store, edge, kind)
+    return replaceEdge(replica.store, value, `a:${aliasId}`, kept ? rowEdge(replica.store, kind, changed, kept) : rowEdgeAt(replica.store, kind, changed, at))
   })
 }
 
@@ -348,10 +387,10 @@ export function setRowKind(replica: Replica, at: Scope, aliasId: string, kind: R
   return edit(replica, at, now, (value) => {
     const edge = findChildEdge(replica, value, aliasId)
     if (!edge) return value
-    if (rowKindOf(replica.store, edge) === kind && !isPartitionEdge(replica.store, edge)) return value
+    if (rowKindOf(replica.store, edge) === kind) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
-    const converted = withChildValue(replica.store, edge, convertRowContent(node, kind, now), now)
-    return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, converted)))
+    const converted = withChildValue(replica.store, edge, convertRow(replica.store, node, kind, now), now)
+    return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdgeAt(replica.store, kind, identityCid(replica.store, converted), at))
   })
 }
 
@@ -386,10 +425,10 @@ export function addSupply(replica: Replica, at: Scope, requirementId: string, su
   return addRow(replica, [...at, requirementId], 'supply', labels[supply.capability], now, { supply: { ...supply, at: now }, id })
 }
 
-/** The template row called `name` anywhere in the replica (first match, depth-first), or null. */
-export function findTemplateByName(replica: Replica, name: string): { path: Scope; row: TaskView; cid: string } | null {
+/** The template row called `name` that a row at `at` sees (nearest ancestor first), or null. */
+export function findTemplateByName(replica: Replica, name: string, at: Scope = []): { path: Scope; row: TaskView; cid: string } | null {
   const root = headCid(replica)
-  return root ? findTemplate(replica.store, root, name) : null
+  return root ? findTemplate(replica.store, root, name, at) : null
 }
 
 /**
@@ -397,7 +436,7 @@ export function findTemplateByName(replica: Replica, name: string): { path: Scop
  * Copy and instantiation share the same traversal and internal-reference remapping.
  */
 export function instantiateTemplate(replica: Replica, at: Scope, taskId: string, templateId: string, now: number): Replica {
-  const template = resolveRef(replica, templateId)
+  const template = resolveRef(replica, templateId, at)
   if (!template || template.row.kind !== 'template') return replica
   const templateCid = resolveScope(replica.store, headCid(replica), [...template.path, templateId])
   if (!templateCid || taskId === templateId || !resolveScope(replica.store, headCid(replica), [...at, taskId])) return replica
@@ -409,13 +448,16 @@ export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: st
   if (!replica.store.table.has(templateCid)) throw new Error('Template content is unavailable.')
   const taskCid = resolveScope(replica.store, headCid(replica), [...at, taskId])
   if (!taskCid) throw new Error('Template destination is unavailable.')
-  const source = valueContent(replica.store, templateCid)
+  if (valueContent(replica.store, templateCid).data.instanceKind?.kind !== 'task') throw new Error('Only template rows can be instantiated.')
   const copied = content(replica.store, copyRowContent(replica.store, templateCid, now, newId, { instantiate: true, rootId: taskId }))
-  return updateTask(replica, at, taskId, now, task => ({
-    ...task,
-    data: { ...task.data, template: { id: source.data.alias?.id ?? templateCid, name: source.data.description?.content ?? 'Template' } },
-    children: [...task.children, ...copied.children]
-  }))
+  // The task is made from the template: the template becomes its row edge's instruction (pinned to this version).
+  return edit(replica, at, now, (value) => {
+    const edge = findChildEdge(replica, value, taskId)
+    if (!edge) return value
+    const task = valueContent(replica.store, identityCid(replica.store, edge))
+    const next = withChildValue(replica.store, edge, { ...task, data: { ...task.data, updated: { time: now } }, children: [...task.children, ...copied.children] }, now)
+    return replaceEdge(replica.store, value, `a:${taskId}`, withRowTemplate(replica.store, next, valueCidOf(replica.store, templateCid)))
+  })
 }
 
 /** Change a query row's options (market flag, executed stamp). */
@@ -432,8 +474,9 @@ export function copyNode(replica: Replica, fromPath: Scope, aliasId: string, toP
   const kind = rowKindOf(replica.store, found)
   if (!kind) return replica
   const copied = copyRowContent(replica.store, identityCid(replica.store, found), now, newId)
-  const edge = rowEdge(replica.store, kind, copied)
   const target = 'into' in position ? [...toPath, position.into] : toPath
+  const kept = keptRowTemplate(replica.store, found, kind)
+  const edge = kept ? rowEdge(replica.store, kind, copied, kept) : rowEdgeAt(replica.store, kind, copied, target)
   return edit(replica, target, now, (value) => {
     const children = [...value.children]
     if ('relativeTo' in position) {
@@ -447,9 +490,11 @@ export function copyNode(replica: Replica, fromPath: Scope, aliasId: string, toP
 }
 
 /** Resolve a reference row's target: path (relative to the replica) and view, or null when it no longer exists. */
-export function resolveRef(replica: Replica, targetAliasId: string): { path: Scope; row: TaskView } | null {
+/** The row with alias `targetAliasId` that a row at `at` refers to: by nearest ancestor (`findNearestRow`). */
+export function resolveRef(replica: Replica, targetAliasId: string, at: Scope = []): { path: Scope; row: TaskView } | null {
   const root = headCid(replica)
-  return root ? findRowByAlias(replica.store, root, targetAliasId) : null
+  const found = root ? findNearestRow(replica.store, root, at, row => row.id === targetAliasId) : null
+  return found ? { path: found.path, row: rowView(replica.store, found.cid, found.kind, found.edge) } : null
 }
 
 function updateTask(replica: Replica, at: Scope, taskId: string, now: number, change: (task: FosNodeContent) => FosNodeContent | null): Replica {
@@ -509,22 +554,11 @@ export function resolve(replica: Replica, at: Scope, choiceId: string, pick: num
   return edit(replica, at, now, (value) => resolveChoiceIn(replica.store, value, choiceId, pick, now))
 }
 
-/** @deprecated Legacy plain nodes are no longer created by the apps; kept for tests over older data. */
-export function addPartition(replica: Replica, at: Scope, name: string, now: number, id: string = newId()): Replica {
-  const clean = name.trim()
-  if (!clean) return replica
-  return edit(replica, at, now, (value) => {
-    const cid = put(replica.store, partitionContent(id, clean))
-    return { ...value, children: [...value.children, partitionEdge(replica.store, cid)] }
-  })
-}
-
 /** Move a node within the tree. `fromPath`/`toPath` are relative to the replica. */
 export function moveNode(replica: Replica, fromPath: Scope, aliasId: string, toPath: Scope, position: MovePosition, now: number): Replica {
   const next = moveChild(replica.store, headCid(replica), fromPath, aliasId, toPath, position)
   if (!next || next === headCid(replica)) return replica
-  commitRoot(replica.store, next, now)
-  return { ...replica }
+  return commitEdit(replica, next, now)
 }
 
 /** Make the node at `at` a link node (keeps history, can have members and proposals). */
@@ -534,6 +568,32 @@ export function makeLinkAt(replica: Replica, at: Scope, now: number): Replica {
 
 export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: string | null, capabilities: Capability[], now: number): Replica {
   return editPolicy(replica, at, now, (node) => withMember(replica.store, makeLink(replica.store, node, now), peerId, name, capabilities))
+}
+
+/**
+ * Link another `.fos` store on this machine (desktop: Home's store, a store in an ancestor directory, or one that links
+ * this one): a member of this store's root, the peer that store is (its own device id), reached through its files
+ * (`local`). Both are this person's own stores, so it is granted everything; what reaches it is still that grant,
+ * like any peer's. On the first link the store also appears like any other peer: under its entry in Settings, a row
+ * held by it standing for what it shares (`shares`: Home in Home's store, else its root); it can be moved or linked
+ * anywhere from there, and so can its nodes. Idempotent.
+ */
+export function linkLocalStore(replica: Replica, peerId: string, name: string, now: number, shares: Scope = []): Replica {
+  const member = readMembers(replica.store, content(replica.store, headCid(replica))).find(m => m.peerId === peerId)
+  if (member && member.name === name && CAPABILITIES.every(c => member.capabilities.includes(c))) return replica
+  let next = editNode(replica, [], now, (node) => withMember(replica.store, node, peerId, name, CAPABILITIES))
+  if (!member) {
+    const id = `store:${peerId}`, store = next.store
+    const held = put(store, { data: { alias: { id }, description: { content: name }, ref: { id, peer: peerId, version: 'unloaded', kind: 'plain', scope: [...shares] } }, children: [] })
+    const entry = [`fos:peer:${peerId}`]
+    next = edit(next, entry, now, (value) => findChildEdge(next, value, id) ? value : { ...value, children: [...value.children, rowEdgeAt(store, 'plain', held, entry)] })
+  }
+  return next
+}
+
+/** The stores this one is linked with on this machine (members reached through files). */
+export function localStores(replica: Replica): Array<{ peerId: string; name: string }> {
+  return readMembers(replica.store, content(replica.store, headCid(replica))).filter(m => m.capabilities.includes('local') && !m.disabled?.includes('local')).map(m => ({ peerId: m.peerId, name: m.name ?? m.peerId }))
 }
 
 /**
@@ -677,111 +737,18 @@ export function removePeerAt(replica: Replica, at: Scope, peerId: string, now: n
   return editNode(replica, at, now, (node) => withoutPeer(replica.store, node, peerId))
 }
 
-/** Discard a rejected local branch and return to its accepted base; the next sync clears its proposal. */
-export function discardOwnProposalAt(replica: Replica, at: Scope, proposalCid: string, now: number): Replica {
-  return editNode(replica, at, now, (node) => {
-    const proposal = readProposals(replica.store, node).find((p) => p.cid === proposalCid && p.peerId === replica.meta.peerId && p.status === 'rejected')
-    if (!proposal) return node
-    return refNodeContent(replica.store, { ...node.data, updated: { time: now } }, proposal.baseCid, bookkeepingOf(replica.store, node), refTypeCid(replica.store, node))
-  })
-}
-
 export function rejectProposalAt(replica: Replica, at: Scope, proposalCid: string, now: number): Replica {
   return editNode(replica, at, now, (node) => markProposalRejected(replica.store, node, proposalCid))
 }
 
-// ---------------------------------------------------------------------------
-// Sync round trip
-
 /**
- * The request for one sync round. With `push: false` (the device's policy towards the peer has no `autopush`) the
- * request carries no local content: the head sent is the agreed base (an empty node before the first sync), so the
- * peer only serves what it has and nothing but the connection leaves the device; local edits stay local, re-merged
- * over whatever comes back (`completeSync` merges sent head → local head → result).
+ * Sync a different node of this device root with its peer. Requires a fully synced replica so nothing local is lost;
+ * what node sync agreed on per node stays, so moving back onto a node synced before resumes it.
  */
-/** Exclusion of the attachment itself still prevents server sync; nested exclusions become references. */
-export function assertServerReplicationAllowed(replica: Replica): void {
-  const local = replica.meta.localScope ?? []
-  const excluded = withMainBranchPolicy(replica.store, () => Array.from({ length: local.length + 1 }, (_, i) => view(replica, local.slice(0, i))).some(node => node?.members.some(m => m.peerId === 'fos' && m.disabled?.includes('persist'))))
-  if (excluded) throw new Error('Fos storage is excluded by this shared node or its local parent context.')
-
-}
-
-export function buildSyncRequest(replica: Replica, branch?: string, options: { push?: boolean; full?: boolean; recipient?: 'server' | 'device' } = {}): SyncRequest {
-  if (hasNodeLinkMasks(replica.store, replica.meta.serverPeerId, replica.meta.localScope ?? [])) throw new Error('This attachment has node masks; use provideNode for permission-filtered traversal.')
-  if (replica.meta.serverPeerId && hasNodeReadBoundary(replica, replica.meta.localScope ?? [], replica.meta.serverPeerId)) throw new Error('This attachment has a read boundary; use provideNode for permission-filtered traversal.')
-  if (options.recipient !== 'device') assertServerReplicationAllowed(replica)
-  branch ??= replica.meta.branch
-  let base = replica.meta.baseCid
-  const localHead = resolveScope(replica.store, headCid(replica), replica.meta.localScope ?? [])
-  if (!localHead) throw new Error('The shared node no longer exists locally.')
-  const selective = options.recipient !== 'device'
-  const projection = selective ? replicationView(replica.store, [localHead, base], replica.meta.peerId) : null
-  if (base && projection) base = projection.project(base)
-  const head = options.push === false ? (base ?? put(replica.store, { data: {}, children: [] })) : projection ? projection.project(localHead) : localHead
-  if (Object.values(reachableNodes(replica.store, [head])).some(node => node.data.ref?.version === 'unloaded')) throw new Error('Unloaded peer nodes require node-by-node sync; a partial subtree cannot be pushed through legacy sync.')
-  // The server already holds everything reachable from the agreed base.
-  const known = replica.meta.baseCid && !options.full ? reachableSet(replica.store, [replica.meta.baseCid]) : new Set<string>()
-  return {
-    version: SYNC_FORMAT_VERSION,
-    cidVersion: CURRENT_CID_VERSION,
-    peerId: replica.meta.peerId,
-    ...(selective ? { selective: true } : {}),
-    scope: [...replica.meta.scope, ...(replica.meta.localScope ?? [])],
-    ...(replica.meta.localScope?.length ? { wholeNode: true } : {}),
-    baseCid: base,
-    headCid: head,
-    nodes: reachableNodes(replica.store, [head, base], known),
-    ...(branch ? { branch } : {}),
-    ...(replica.meta.branches ? { branches: replica.meta.branches } : {})
-  }
-}
-
-export type CompleteSyncResult = { replica: Replica; reMerged: boolean; newChoiceIds: string[] }
-
-export function completeSync(replica: Replica, request: SyncRequest, response: SyncResponse, now: number = Date.now()): CompleteSyncResult {
-  if (response.scope.length !== request.scope.length || response.scope.some((s, i) => s !== request.scope[i])) {
-    throw new Error('sync response scope does not match request scope')
-  }
-  const applied = applySyncResponse(replica.store, request, response, replica.meta.peerId, now, replica.meta.localScope)
-  return {
-    replica: {
-      store: replica.store,
-      meta: { ...replica.meta, baseCid: response.resultCid, lastSyncAt: now, serverPeerId: response.peerId, branch: response.branch ?? request.branch }
-    },
-    reMerged: applied.reMerged,
-    newChoiceIds: applied.newChoiceIds
-  }
-}
-
-/**
- * Attach this device at a different scope. Requires a fully synced replica so
- * nothing local is lost. Moving deeper keeps the matching subtree and base;
- * anywhere else starts an empty link that pulls on the next sync.
- */
-export function reattach(replica: Replica, newScope: Scope, now: number, names?: string[]): Replica {
+export function reattach(replica: Replica, newScope: Scope): Replica {
   if (isDirty(replica)) throw new Error('cannot change scope with unsynced local changes')
   const { store, meta } = replica
-  if (meta.localScope?.length) {
-    const local = newScope.length ? newScope.slice(meta.scope.length) : [HOME_ID]
-    if (!meta.scope.every((id, i) => newScope[i] === id) || !resolveScope(store, headCid(replica), local)) throw new Error('The requested shared node is not available below this device root.')
-    const descends = meta.localScope.every((id, i) => local[i] === id)
-    const baseCid = descends && meta.baseCid ? resolveScope(store, meta.baseCid, local.slice(meta.localScope.length)) : null
-    return { store, meta: { ...meta, localScope: local, baseCid, branch: undefined, branches: undefined } }
-  }
-  const isPrefix = meta.scope.length <= newScope.length && meta.scope.every((s, i) => newScope[i] === s)
-  const relative = newScope.slice(meta.scope.length)
-  const target = isPrefix ? resolveScope(store, headCid(replica), relative) : null
-  if (target) {
-    const scopeNamesNext = names ?? pathNames(replica, relative)
-    const branches = { ...meta.branches, ...scopeBranches(store, headCid(replica), relative) }
-    const selected = isBranchChoice(store, content(store, target)) ? branchEdge(store, target) : null
-    const branch = selected ? branchSelection(store, target) : undefined
-    const base = resolveScope(store, meta.baseCid, relative)
-    const baseEdge = branch && base && isBranchChoice(store, content(store, base)) ? readChoice(store, base).options.find(o => o.peerId === branch)?.edge : null
-    commitRoot(store, selected ? identityCid(store, selected) : target, now)
-    return { store, meta: { ...meta, scope: [...newScope], branch, branches, scopeNames: scopeNamesNext, baseCid: baseEdge ? identityCid(store, baseEdge) : base } }
-  }
-  commitRoot(store, put(store, { data: {}, children: [] }), now)
-  return { store, meta: { ...meta, scope: [...newScope], branch: undefined, branches: undefined, scopeNames: names ?? [...newScope], baseCid: null } }
+  const local = newScope.length ? newScope.slice(meta.scope.length) : homePath(replica)
+  if (!meta.scope.every((id, i) => newScope[i] === id) || !resolveScope(store, headCid(replica), local)) throw new Error('The requested shared node is not available below this device root.')
+  return { store, meta: { ...meta, localScope: local, branch: undefined, branches: undefined } }
 }

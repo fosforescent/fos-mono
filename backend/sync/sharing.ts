@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { applyMergePolicy, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, configurePoll, content, createReplica, capabilityPeers, readNodeValue, writeLinkedNodeValue, hasCapability, headCid, participation, put, resolveRef, resolveScope, setSharing, sharedProjection, sharing, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharePolicy, type SharedAddress } from '@fosforescent/shared/sync/index'
-import { withUserLock, type PeerSyncDeps } from './peerSync'
+import { withUserLock, type AccountStoreDeps } from './accountStore'
 const sign = jsonwebtoken.sign ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.sign
 const verify = jsonwebtoken.verify ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.verify
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -21,7 +21,7 @@ async function locks<T>(names: string[], work: () => Promise<T>): Promise<T> {
   return next(0)
 }
 /** `evaluate` is the host's evaluation service (its handler registry runs the effects of a finished execution). */
-export function createSharingHandlers(deps: PeerSyncDeps, secret: string, evaluate?: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string }) => Promise<unknown>) {
+export function createSharingHandlers(deps: AccountStoreDeps, secret: string, evaluate?: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string }) => Promise<unknown>) {
   if (!secret) throw new Error('Sharing requires a signing secret.')
   // A guest receipt cannot be used as an account or peer-sync JWT, even if presented to another endpoint.
   const guestSecret = createHmac('sha256', secret).update('fos:public-participation:v1').digest('hex')
@@ -54,7 +54,7 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string, evalua
     res.setHeader?.('Cache-Control', 'no-store')
     try { if (Buffer.byteLength(JSON.stringify(req.body ?? {})) > 65536) throw new Failure(413, 'Input is too large.'); return await handler(req, res) } catch (error) { return res.status(error instanceof Failure ? error.status : 409).json({ error: error instanceof Failure ? error.message : 'The node changed or could not be saved. Refresh and try again.' }) }
   }
-  const participantAccess = (r: Replica, path: Scope, peer: string, cap: 'read' | 'approve' | 'rank') => {
+  const participantAccess = (r: Replica, path: Scope, peer: string, cap: 'read' | 'edit' | 'rank') => {
     const cid = resolveScope(r.store, headCid(r), path)
     const policy = sharing(r, path)
     return !!cid && !!policy && hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), cap) && hasCapability(r.store, content(r.store, cid), peer, cap)
@@ -127,7 +127,7 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string, evalua
         if (!member) {
           if (view(r, at.path)!.members.length >= 1000) throw new Failure(409, 'This node has reached its guest limit.')
           if ((policy.execution && !createdExecution) || req.body.visitorToken && !executionAddress) throw new Failure(403, 'The host removed this guest. Request a new invitation.')
-          r = addMemberAt(r, at.path, guest.peer, account ?? 'Anonymous guest', ['read', 'approve', 'rank'], now())
+          r = addMemberAt(r, at.path, guest.peer, account ?? 'Anonymous guest', ['read', 'edit', 'rank'], now())
         }
         if (!participantAccess(r, at.path, guest.peer, 'read')) throw new Failure(403, 'The host disabled this guest.')
         if (!participation(r, at.path, guest.peer)) {
@@ -157,7 +157,7 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string, evalua
         }
         if (account === at.owner) node = sharedProjection(r, at.path, digest, guest.peer, req.body.interaction === true)
         const sources = own ? readNodeValue<{ links?: Record<string, string> }>(createReplica(`user:${account}`, own.store), [], `fos:participation:${digest(at)}`)?.links : undefined
-        return res.json({ node: { ...node, sources, mine: participation(r, at.path, guest.peer), capabilities: ['read', 'approve', 'rank'].filter(c => participantAccess(r, at.path, guest.peer, c as 'read' | 'approve' | 'rank')) }, ...(token ? { visitorToken: token } : {}), ...(executionAddress ? { address: executionAddress } : {}), ...(entryToken ? { entryToken } : {}) })
+        return res.json({ node: { ...node, sources, mine: participation(r, at.path, guest.peer), capabilities: ['read', 'edit', 'rank'].filter(c => participantAccess(r, at.path, guest.peer, c as 'read' | 'edit' | 'rank')) }, ...(token ? { visitorToken: token } : {}), ...(executionAddress ? { address: executionAddress } : {}), ...(entryToken ? { entryToken } : {}) })
       })
     }),
     submit: run(async (req, res) => {
@@ -185,7 +185,7 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string, evalua
         if (!account && node.poll && !name) throw new Failure(400, 'Please enter a display name for this poll.')
         const approvals = strings(body.approvals, [...node.proposals.map(p => p.id), ...(node.poll?.mode === 'approval' ? node.options.map(o => o.id) : [])])
         const ranking = strings(body.ranking, (node.poll?.mode === 'rank' ? node.options : node.proposals).map(o => o.id))
-        if (approvals.length && !participantAccess(host, at.path, peer, 'approve')) throw new Failure(403, 'Approval input is disabled for this guest.')
+        if (approvals.length && !participantAccess(host, at.path, peer, 'edit')) throw new Failure(403, 'Approval input is disabled for this guest.')
         if (ranking.length && !participantAccess(host, at.path, peer, 'rank')) throw new Failure(403, 'Ranking input is disabled for this guest.')
         if (node.poll?.mode === 'rank' && ranking.length && ranking.length !== node.options.length) throw new Failure(400, 'Rank each option exactly once.')
         if (!body.fields || typeof body.fields !== 'object' || Array.isArray(body.fields) || Object.keys(body.fields).some(key => !node.inputs.some(f => f.key === key))) throw new Failure(400, 'Only the inputs declared on this node may be submitted.')
@@ -253,7 +253,7 @@ export function createSharingHandlers(deps: PeerSyncDeps, secret: string, evalua
         }
       }
       const r = createReplica(`user:${at.owner}`, (await deps.loadStore(at.owner))!.store), { peer, links, record } = outcome
-      return res.json({ node: { ...sharedProjection(r, at.path, digest, peer, req.body.interaction === true), sources: account ? links : undefined, mine: record, capabilities: ['read', 'approve', 'rank'].filter(c => participantAccess(r, at.path, peer, c as 'read' | 'approve' | 'rank')) } })
+      return res.json({ node: { ...sharedProjection(r, at.path, digest, peer, req.body.interaction === true), sources: account ? links : undefined, mine: record, capabilities: ['read', 'edit', 'rank'].filter(c => participantAccess(r, at.path, peer, c as 'read' | 'edit' | 'rank')) } })
     })
   }
 }

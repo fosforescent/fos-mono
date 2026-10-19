@@ -14,7 +14,7 @@
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { LISTING_ARGUMENT, namedValueOf, createReplica, marketplaceOffers, commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdge, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
+import { LISTING_ARGUMENT, namedValueOf, createReplica, marketplaceOffers, commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdgeAt, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
 import { indexStore, searchRows, type Embed } from './rowIndex'
 
 export type SearchDeps = {
@@ -137,7 +137,7 @@ export function createSearchHandlers(deps: SearchDeps) {
           if (under.length && !resolveScope(store, branchCid, under)) continue // an `under` that does not exist in this node: skip
           const id = typeof row.id === 'string' && /^[A-Za-z0-9_-]{4,64}$/.test(row.id) && !findRowByAlias(store, branchCid, row.id) ? row.id : newId()
           const rowCid = put(store, rowContent(kind, id, text, t, extras))
-          branchCid = updateAtScope(store, branchCid, under, (value) => ({ ...value, children: [...value.children, rowEdge(store, kind, rowCid)], data: { ...value.data, updated: { time: t } } }))
+          branchCid = updateAtScope(store, branchCid, under, (value) => ({ ...value, children: [...value.children, rowEdgeAt(store, kind, rowCid, [...path, ...under])], data: { ...value.data, updated: { time: t } } }))
         }
         if (branchCid === mainValueCid) return { status: 400, body: { error: 'no valid rows in the proposal' } } as const
         // the proposal is named after the bidder: that is what the owner sees in the proposals list

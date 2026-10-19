@@ -83,9 +83,9 @@ describe('peer invites', () => {
     const attached: unknown[] = []
     deps.attachMember = async (...args) => { attached.push(args); return true }
     const approve = fakeRes()
-    await h.approveRequest(req({ capabilities: ['approve'] }, { username: 'alice' }, { id: String(inviteId) }), approve.res)
+    await h.approveRequest(req({ capabilities: ['edit'] }, { username: 'alice' }, { id: String(inviteId) }), approve.res)
     expect(approve.sent().status).toBe(200)
-    expect(attached).toEqual([['alice', ['work'], 'phone-1', 'My phone', ['edit', 'approve']]])
+    expect(attached).toEqual([['alice', ['work'], 'phone-1', 'My phone', ['edit']]])
 
     const granted = fakeRes()
     await h.pollRequest(req({}, undefined, { requestId }, { peerId: 'phone-1' }), granted.res)

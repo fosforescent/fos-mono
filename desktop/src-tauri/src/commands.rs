@@ -3,6 +3,7 @@
 use crate::client;
 use crate::local_server::{self, Shared};
 use crate::project::{Project, Session, NO_BRANCH};
+use crate::stores;
 use crate::workspace::Workspace;
 use colored::Colorize;
 use rustyline::error::ReadlineError;
@@ -106,6 +107,28 @@ pub fn cmd_ls(ws: &Workspace) -> Result<(), String> {
     Ok(())
 }
 
+/// `fos peers`: the linked stores; `fos peers ls <name or id prefix>`: one's tree, read through node exchange.
+pub fn cmd_peers(ws: &Workspace, action: Option<&str>, name: Option<&str>) -> Result<(), String> {
+    let stores = ws.local_stores();
+    match action {
+        None => {
+            if stores.is_empty() { out("(no linked stores)"); }
+            for (id, name, at) in &stores {
+                out(&format!("{}  {}  {}", &id[..8.min(id.len())], name, at.as_ref().map(|s| stores::display(&s.state_dir)).unwrap_or_else(|| "(place not known yet)".to_string())));
+            }
+            Ok(())
+        }
+        Some("ls") => {
+            let wanted = name.ok_or("fos peers ls <name or id prefix>")?;
+            let (_, _, at) = stores.iter().find(|(id, n, _)| n == wanted || id.starts_with(wanted)).ok_or_else(|| format!("no linked store {}", wanted))?;
+            let store = at.as_ref().ok_or("where that store is is not known yet: open it once from its own directory")?;
+            for line in ws.browse_store(store)? { out(&line); }
+            Ok(())
+        }
+        Some(other) => Err(format!("unknown peers action {} (use: fos peers [ls <name>])", other)),
+    }
+}
+
 pub fn cmd_status(ws: &Workspace) -> Result<(), String> {
     out(&serde_json::to_string_pretty(&ws.status()).unwrap_or_default());
     Ok(())
@@ -189,7 +212,7 @@ pub fn cmd_repl(ws: Workspace) -> Result<(), String> {
     out("commands: ls · add <title> · done <id> · open <id> · mv <id> under <id> · cd <id> | cd .. · sync · status · attach <token> · login · branches · quit");
     let mut rl = DefaultEditor::new().map_err(|e| e.to_string())?;
     loop {
-        let prompt = format!("fos{}{}> ", if ws.branch == NO_BRANCH { String::new() } else { format!(" ⎇{}", ws.branch) }, if ws.cwd.is_empty() { String::new() } else { format!(" /{}", ws.cwd.iter().map(|s| s.chars().take(8).collect::<String>()).collect::<Vec<_>>().join("/")) });
+        let prompt = format!("fos{}{}> ", if ws.branch == NO_BRANCH { String::new() } else { format!(" ⎇{}", ws.branch) }, { let home = ws.home_path(); let below = if ws.cwd.starts_with(&home) { &ws.cwd[home.len()..] } else { &ws.cwd[..] }; if below.is_empty() { String::new() } else { format!(" /{}", below.iter().map(|s| s.chars().take(8).collect::<String>()).collect::<Vec<_>>().join("/")) } });
         let line = match rl.readline(&prompt) {
             Ok(l) => l,
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
@@ -224,12 +247,13 @@ pub fn cmd_repl(ws: Workspace) -> Result<(), String> {
                 }
             }
             "cd" => {
-                if rest == ".." { ws.cwd.pop(); Ok(()) } else if rest.is_empty() || rest == "/" { ws.cwd.clear(); Ok(()) } else {
+                if rest == ".." { ws.cwd.pop(); Ok(()) } else if rest.is_empty() || rest == "/" { ws.cwd = ws.home_path(); Ok(()) } else {
                     match ws.find_task(rest) { Some((id, mut at)) => { at.push(id); ws.cwd = at; Ok(()) } None => Err("task not found".into()) }
                 }
             }
             "sync" | "s" => ws.sync().map(|s| out(&s)),
             "status" => { out(&serde_json::to_string_pretty(&ws.status()).unwrap_or_default()); Ok(()) }
+            "peers" => { let mut words = rest.split_whitespace(); cmd_peers(&ws, words.next(), words.next()) }
             "attach" => cmd_attach(&mut ws, if rest.is_empty() { None } else { Some(rest) }),
             "login" => cmd_login(&mut ws, None, rest == "--password"),
             "branches" => { out(&ws.project.branches().join(", ")); Ok(()) }
@@ -266,9 +290,9 @@ pub fn cmd_decide(ws: &mut Workspace, prefix: &str, decision: &str) -> Result<()
     Ok(())
 }
 
-/// `fos library export [--out file]`: the standard library as the bundle the web build carries (web/src/library.json).
-pub fn cmd_library_export(ws: &mut Workspace, out_path: Option<&Path>) -> Result<(), String> {
-    let bundle = ws.library_export()?;
+/// `fos library export [--out file] [--owner account]`: the standard library as the bundle the web build carries (web/src/library.json).
+pub fn cmd_library_export(ws: &mut Workspace, out_path: Option<&Path>, owner: &str) -> Result<(), String> {
+    let bundle = ws.library_export(owner)?;
     let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())? + "\n";
     match out_path {
         Some(path) => {

@@ -4,9 +4,12 @@
 use crate::client;
 use crate::core::{now_ms, Core};
 use crate::project::{Project, Session, NO_BRANCH};
+use crate::stores;
 use serde_json::{json, Value};
 
 pub const HANDLE: &str = "main";
+/// A linked store loaded to read it (`fos peers ls`).
+const PEER_HANDLE: &str = "peer";
 
 pub struct Workspace {
     pub core: Core,
@@ -26,8 +29,61 @@ impl Workspace {
         let session = project.session();
         let branch = project.branch();
         let serialized = project.replica_json(&branch);
-        core.call("open", &[json!(HANDLE), serialized.map(Value::String).unwrap_or(Value::Null), json!(device.peer_id)]).map_err(|e| e.to_string())?;
-        Ok(Workspace { core, project, device, session, branch, cwd: Vec::new() })
+        // every store is a device root (it ships the standard library); only Home's store has Home
+        core.call("open", &[json!(HANDLE), serialized.map(Value::String).unwrap_or(Value::Null), json!(device.peer_id), json!(project.is_home)]).map_err(|e| e.to_string())?;
+        let mut ws = Workspace { core, project, device, session, branch, cwd: Vec::new() };
+        ws.cwd = ws.home_path();
+        if let Err(e) = ws.link_local_stores() { eprintln!("could not link the stores on this machine: {}", e); }
+        Ok(ws)
+    }
+
+    /// Link this store with Home's and the project stores above it, both ways: each a member of the other's root,
+    /// granted everything (stores.rs), written to both stores (one fos process runs at a time); the other remembers
+    /// where this one is.
+    pub fn link_local_stores(&mut self) -> Result<(), String> {
+        let me = stores::Store { state_dir: self.project.state_dir.clone(), peer_id: self.device.peer_id.clone(), name: self.device.name.clone(), home: self.project.is_home };
+        let mut changed = false;
+        for store in stores::linked_stores(&self.project.state_dir) {
+            changed |= self.core.call_json("linkStore", &[json!(HANDLE), json!(store.peer_id), json!(store.name), json!(store.home), json!(now_ms())]).map_err(|e| e.to_string())?.as_bool().unwrap_or(false);
+            let other = Project::at_state(&store.state_dir, &stores::home_state_dir());
+            let branch = other.branch();
+            self.core.call("open", &[json!(PEER_HANDLE), other.replica_json(&branch).map(Value::String).unwrap_or(Value::Null), json!(store.peer_id), json!(other.is_home)]).map_err(|e| e.to_string())?;
+            let linked = self.core.call_json("linkStore", &[json!(PEER_HANDLE), json!(me.peer_id), json!(me.name), json!(me.home), json!(now_ms())]).map_err(|e| e.to_string())?.as_bool().unwrap_or(false);
+            if linked { other.save_replica_json(&branch, &self.core.call_string("serialize", &[json!(PEER_HANDLE)]).map_err(|e| e.to_string())?)?; }
+            let _ = self.core.call("close", &[json!(PEER_HANDLE)]);
+            stores::remember(&store.state_dir, &me)?;
+        }
+        if changed { self.save()?; }
+        Ok(())
+    }
+
+    /// The stores this one is linked with, with where each is on this machine (when known: the ones it links itself,
+    /// and the ones that linked it and said where they are).
+    pub fn local_stores(&self) -> Vec<(String, String, Option<stores::Store>)> {
+        let known = stores::known_stores(&self.project.state_dir);
+        let linked = self.core.call_json("localStores", &[json!(HANDLE)]).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        linked.iter().filter_map(|m| {
+            let id = m["peerId"].as_str()?.to_string();
+            let name = m["name"].as_str().unwrap_or(&id).to_string();
+            let at = known.iter().find(|s| s.peer_id == id).cloned();
+            Some((id, name, at))
+        }).collect()
+    }
+
+    /// The tree of a linked store, as this store may see it: loaded from its files and pulled node by node through
+    /// node exchange (what its grants allow). Read only: nothing is written to that store.
+    pub fn browse_store(&self, store: &stores::Store) -> Result<Vec<String>, String> {
+        let peer = Project::at_state(&store.state_dir, &stores::home_state_dir());
+        let serialized = peer.replica_json(&peer.branch());
+        self.core.call("open", &[json!(PEER_HANDLE), serialized.map(Value::String).unwrap_or(Value::Null), json!(store.peer_id), json!(peer.is_home)]).map_err(|e| e.to_string())?;
+        let lines = self.core.call_json("browseStore", &[json!(PEER_HANDLE), json!(self.device.peer_id), json!(now_ms())]).map_err(|e| e.to_string());
+        let _ = self.core.call("close", &[json!(PEER_HANDLE)]);
+        Ok(lines?.as_array().map(|a| a.iter().filter_map(|l| l.as_str().map(String::from)).collect()).unwrap_or_default())
+    }
+
+    /// Where the replica's own rows are (Home in the home context): where the CLI starts.
+    pub fn home_path(&self) -> Vec<String> {
+        self.core.call_json("homePath", &[json!(HANDLE)]).ok().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -52,8 +108,8 @@ impl Workspace {
         self.save()?;
         self.branch = now.clone();
         let serialized = self.project.replica_json(&now);
-        self.core.call("open", &[json!(HANDLE), serialized.map(Value::String).unwrap_or(Value::Null), json!(self.device.peer_id)]).map_err(|e| e.to_string())?;
-        self.cwd.clear();
+        self.core.call("open", &[json!(HANDLE), serialized.map(Value::String).unwrap_or(Value::Null), json!(self.device.peer_id), json!(self.project.is_home)]).map_err(|e| e.to_string())?;
+        self.cwd = self.home_path();
         Ok(Some(now))
     }
 
@@ -109,7 +165,7 @@ impl Workspace {
         Ok((out.get("response").filter(|r| !r.is_null()).cloned(), changed))
     }
 
-    /// One sync round trip for the current branch. Returns a one-line summary.
+    /// Sync the current branch with the account, node by node. Returns a one-line summary.
     pub fn sync(&mut self) -> Result<String, String> {
         self.sync_round_trip(true, false)
     }
@@ -129,7 +185,7 @@ impl Workspace {
             None => return Err(if self.project.is_home { "not signed in: run `fos login`".to_string() } else { "not attached: run `fos attach <token>` (or `fos login` for your own account)".to_string() }),
         };
         let meta = self.meta();
-        if meta.get("baseCid").map(|b| b.is_null()).unwrap_or(true) {
+        if meta.get("lastSyncAt").map(|b| b.is_null()).unwrap_or(true) {
             // first contact: take the scope the account assigns to this device
             let att = client::attachment(&session, &self.device.peer_id)?;
             let scope = att.get("scope").cloned().unwrap_or(json!([]));
@@ -137,37 +193,47 @@ impl Workspace {
             self.core.call("setScope", &[json!(HANDLE), json!(scope.to_string()), json!(names.to_string())]).map_err(|e| e.to_string())?;
         }
         let branch = if self.branch == NO_BRANCH { Value::Null } else { json!(self.branch) };
-        let request = self.core.call_json("buildSyncRequest", &[json!(HANDLE), branch, json!(push)]).map_err(|e| e.to_string())?;
-        let response = match client::peer_sync(&session, &request) {
-            Ok(r) => r,
-            Err(e) if e.contains("(401)") => {
-                self.session = None;
-                self.project.save_session(None)?;
-                return Err("credential expired or revoked: attach or sign in again".to_string());
-            }
-            Err(e) => return Err(format!("sync failed: {}", e)),
+        self.core.call("nodeSyncBegin", &[json!(HANDLE), json!(session.kind), json!(session.username), json!(push), branch]).map_err(|e| e.to_string())?;
+        // the core says which node request to send next; each answer goes back to it until it is done
+        let mut answer = Value::Null;
+        let synced = loop {
+            let step = self.core.call_json("nodeSyncStep", &[json!(HANDLE), if answer.is_null() { Value::Null } else { json!(answer.to_string()) }, json!(now_ms())]).map_err(|e| e.to_string());
+            let step = match step { Ok(step) => step, Err(e) => { let _ = self.core.call("nodeSyncAbort", &[json!(HANDLE)]); self.save()?; return Err(format!("sync failed: {}", e)); } };
+            if step.get("done").is_some() { break step.get("synced").and_then(|n| n.as_u64()).unwrap_or(0); }
+            answer = match client::provide_node(&session, &step["request"], None) {
+                Ok(node) => node,
+                Err(e) => {
+                    let _ = self.core.call("nodeSyncAbort", &[json!(HANDLE)]);
+                    self.save()?;
+                    if e.contains("(401)") {
+                        self.session = None;
+                        self.project.save_session(None)?;
+                        return Err("credential expired or revoked: attach or sign in again".to_string());
+                    }
+                    return Err(format!("sync failed: {}", e));
+                }
+            };
         };
-        let done = self.core.call_json("completeSync", &[json!(HANDLE), json!(request.to_string()), json!(response.to_string()), json!(now_ms())]).map_err(|e| e.to_string())?;
         self.save()?;
-        let action = response.get("action").and_then(|a| a.as_str()).unwrap_or("?");
-        let conflicts = done.get("newChoiceIds").and_then(|c| c.as_array()).map(|a| a.len()).unwrap_or(0);
-        Ok(format!("synced ({}) on {}{}", action, self.branch, if conflicts > 0 { format!(", {} conflict(s) to resolve", conflicts) } else { String::new() }))
+        let conflicts = self.core.call_json("view", &[json!(HANDLE), json!("[]")]).ok().and_then(|v| v.get("choices").and_then(|c| c.as_array()).map(|a| a.len())).unwrap_or(0);
+        Ok(format!("synced {} node(s) on {}{}", synced, self.branch, if conflicts > 0 { format!(", {} conflict(s) to resolve", conflicts) } else { String::new() }))
     }
 
     /// The standard library as the bundle a client build carries (`fos library export`): pull the account's view
     /// of Home so its library reference is current, then fetch the shared tree through the account server node by
     /// node and let the core assemble and export it.
-    pub fn library_export(&mut self) -> Result<Value, String> {
+    /// The shared standard library as the bundle a client build carries: the one linked in Home when there is one, else
+    /// the library account `owner`'s, located through the account (`peer-sync/locate`, which also gives its share id).
+    pub fn library_export(&mut self, owner: &str) -> Result<Value, String> {
         if let Err(e) = self.sync_with(false) { eprintln!("sync before export failed ({}); using the local replica", e); }
         let session = self.session.clone().ok_or_else(|| "not signed in: run `fos login`".to_string())?;
         let link = self.core.call_json("libraryLink", &[json!(HANDLE)]).map_err(|e| e.to_string())?;
-        if link.is_null() { return Err("this account has no standard library reference yet: sync once from the app, then try again".into()); }
-        let owner = link["owner"].as_str().ok_or("the library reference names no owner")?.to_string();
+        let owner = link["owner"].as_str().unwrap_or(owner).to_string();
         let alias = link["refId"].as_str().unwrap_or("fos:library").to_string();
-        let title = link["title"].as_str().unwrap_or("Standard library").to_string();
         let located = client::locate_shared(&session, &owner, &alias)?;
         let scope = located["path"].clone();
-        let share = link["address"]["share"].as_str().unwrap_or("").to_string();
+        let share = located["share"].as_str().or_else(|| link["address"]["share"].as_str()).unwrap_or("").to_string();
+        let title = link["title"].as_str().or_else(|| located["title"].as_str()).unwrap_or("Standard library").to_string();
         let address = json!({ "owner": owner, "path": scope, "share": share, "title": title });
         // breadth first, like the app's whole-tree pull; references to other nodes are not followed
         let mut queue: Vec<Vec<String>> = vec![vec![]];
@@ -177,7 +243,7 @@ impl Workspace {
             if nodes.len() >= 1000 { return Err("the library has more than 1000 nodes; refusing to export".into()); }
             // a cross-account pull identifies as the account (`user:<me>`), the peer the owner granted the audience to
             let request = json!({ "peerId": format!("user:{}", session.username), "scope": scope, "path": path, "linkId": format!("fos-cli:{}", path.join("/")) });
-            let node = client::provide_node(&session, &request, &owner)?;
+            let node = client::provide_node(&session, &request, Some(&owner))?;
             if let Some(children) = node["children"].as_array() {
                 for child in children {
                     if child["kind"].as_str() == Some("ref") { continue; }
@@ -235,6 +301,8 @@ mod row_tests {
         use std::fs;
         let dir = std::env::temp_dir().join(format!("fos-branches-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(dir.join(".git")).unwrap();
+        // a home of its own: opening a project links it with Home's store, which must not be this machine's
+        std::env::set_var("FOS_STATE_HOME", dir.join("home"));
         Project::write_default_config(&dir, "http://localhost:4000", None, 4777).unwrap();
         fs::write(dir.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         let mut ws = Workspace::open(Project::locate(Some(&dir)).unwrap()).unwrap();

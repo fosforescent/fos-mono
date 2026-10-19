@@ -19,6 +19,9 @@ mod node_agent {
     pub fn node_agent_stop(_id: String, _state: State<NodeAgents>) -> Result<(), String> { Err(UNAVAILABLE.into()) }
 }
 mod agents;
+// shared with the CLI binary, which uses all of it
+#[allow(dead_code)]
+mod stores;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -144,6 +147,54 @@ fn project_state_path(dir: &str, name: &str) -> Result<PathBuf, String> {
     Ok(Path::new(dir).join(".fos").join(name))
 }
 
+#[derive(Serialize)]
+struct LinkedStore {
+    #[serde(flatten)]
+    store: stores::Store,
+    dir: String,
+    branch: Option<String>,
+}
+
+#[derive(Serialize)]
+struct LocalStoreLinks {
+    /// This window's store is Home's (what it shares with the others is its Home).
+    home: bool,
+    linked: Vec<LinkedStore>,
+}
+
+/// The other `.fos` stores on this machine the store of the window opened on `dir` links with (Home's and the project
+/// stores above it, with where each is and its checked-out branch), each told to remember where this one is. The
+/// webview links both sides (one fos process runs at a time).
+#[tauri::command]
+fn link_local_stores(dir: String) -> Result<LocalStoreLinks, String> {
+    let state = Path::new(&dir).join(".fos");
+    let own = stores::store_at(&state).ok_or("this store has no device yet")?;
+    let own = stores::Store { home: state == stores::home_state_dir(), ..own };
+    let mut out = Vec::new();
+    for store in stores::linked_stores(&state) {
+        stores::remember(&store.state_dir, &own)?;
+        let at = store.state_dir.parent().map(Path::to_path_buf).unwrap_or_else(|| store.state_dir.clone());
+        let branch = if store.home { None } else { git_branch_for(&at) };
+        out.push(LinkedStore { store, dir: at.to_string_lossy().to_string(), branch });
+    }
+    Ok(LocalStoreLinks { home: own.home, linked: out })
+}
+
+#[derive(Serialize)]
+struct LocalStorePlace {
+    dir: String,
+    branch: Option<String>,
+}
+
+/// Where a store this one is linked with is (its directory and checked-out branch, whose replica holds its nodes),
+/// for node exchange on its files; None when that place is not known here.
+#[tauri::command]
+fn local_store(dir: String, peer_id: String) -> Option<LocalStorePlace> {
+    let store = stores::known_stores(&Path::new(&dir).join(".fos")).into_iter().find(|s| s.peer_id == peer_id)?;
+    let at = store.state_dir.parent()?.to_path_buf();
+    Some(LocalStorePlace { dir: at.to_string_lossy().to_string(), branch: if store.home { None } else { git_branch_for(&at) } })
+}
+
 /// Read <dir>/.fos/<name>, or None when it does not exist.
 #[tauri::command]
 fn read_project_file(dir: String, name: String) -> Result<Option<String>, String> {
@@ -264,6 +315,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             find_project,
+            link_local_stores,
+            local_store,
             read_project_file,
             write_project_file,
             link_node_directory, list_node_directory, read_node_file,

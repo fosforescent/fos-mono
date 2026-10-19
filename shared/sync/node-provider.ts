@@ -1,6 +1,6 @@
-import type { FosDataContent } from '../types'
-import { hashContent } from '../dag-implementation/cid'
-import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, rowPrimitive, bookkeepingOf, rootTargetCid, withPeer,
+import type { FosDataContent, FosNodesData } from '../types'
+import { hashContent, isCid } from '../dag-implementation/cid'
+import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   valueContent, readMembers, memberFor, isHandle, isPeerReference, isBookkeepingEdge, rowKindOf, identityCid, withMainBranchPolicy,
   readProposals, CAPABILITIES, type ProposalView, ROW_KINDS, type Capability, type Scope, type RowKind } from './graph'
 import { headCid, type Replica } from './replica'
@@ -9,14 +9,27 @@ import { headCid, type Replica } from './replica'
 export type NodeMask = { fields?: string[]; children?: string[] }
 export type NodeBranch = { scope: Scope; name: string }
 export type NodeAddress = { peerId: string; scope: Scope; branches?: NodeBranch[] }
-export type NodeRequest = { peerId: string; scope: Scope; path: Scope; linkId: string; branches?: NodeBranch[]; proposal?: { scope: Scope; id: string }; update?: { base: NodeShape; value: NodeShape } }
+export type NodeRequest = {
+  peerId: string; scope: Scope; path: Scope; linkId: string; branches?: NodeBranch[]; proposal?: { scope: Scope; id: string }; update?: { base: NodeShape; value: NodeShape }
+  /** Templates the requester's rows here are pinned to and it has not received (its reference errors): send their content. */
+  templates?: string[]
+  /** Content of templates the provider asked for (`ProvidedNode.wanted`); accepted only for those. */
+  templateNodes?: FosNodesData
+}
 export type NodeShape = { data: FosDataContent; children: NodeChild[] }
-export type NodeChild = { id: string; kind: RowKind; address: NodeAddress }
+/** `template`: what the child row is made from (its row edge's instruction): a row type or a template row, pinned by cid. */
+export type NodeChild = { id: string; kind: RowKind; address: NodeAddress; template: string }
 export type ProvidedNode = {
   peerId: string; linkId: string; remoteLinkId: string; address: NodeAddress
   data: FosDataContent; children: NodeChild[]; mask?: NodeMask; proposals?: ProposalView[]; grants?: Capability[]
   /** What the serving peer offers (its transport facts plus the services its handler registry has), for the requester to record. */
   capabilities?: Capability[]
+  /** The account's peers online now (the account server adds it), for the requester's online dots. */
+  presence?: string[]
+  /** The requested templates' content (nodes reachable from each). */
+  templates?: FosNodesData
+  /** Templates this node's children are pinned to that the provider has not received; the requester answers with `templateNodes`. */
+  wanted?: string[]
 }
 export type NodeAuthority = {
   /** Supplied by the authenticated transport, never by the request body. */
@@ -39,7 +52,10 @@ export function parseNodeRequest(value: unknown): NodeRequest {
     !validPath(r.scope) || !validPath(r.path) || typeof r.linkId !== 'string' || !r.linkId || r.linkId.length > 256) throw new NodeAccessError('Invalid node request.')
   if (r.branches !== undefined && (!Array.isArray(r.branches) || r.branches.length > 64 || r.branches.some(b => !b || !validPath(b.scope) || typeof b.name !== 'string' || !b.name.trim() || b.name.length > 200) || new Set(r.branches.map(b => JSON.stringify(b.scope))).size !== r.branches.length)) throw new NodeAccessError('Invalid branch context.')
   if (r.proposal !== undefined && (!r.proposal || !validPath(r.proposal.scope) || typeof r.proposal.id !== 'string' || !r.proposal.id || r.proposal.id.length > 256 || r.update)) throw new NodeAccessError('Proposal previews are read-only.')
-  return { peerId: r.peerId, scope: [...r.scope], path: [...r.path], linkId: r.linkId, ...(r.branches?.length ? { branches: r.branches.map(b => ({ scope: [...b.scope], name: b.name })) } : {}), ...(r.proposal ? { proposal: { ...r.proposal, scope: [...r.proposal.scope] } } : {}), ...(r.update !== undefined ? { update: r.update } : {}) }
+  if (r.templates !== undefined && (!Array.isArray(r.templates) || r.templates.length > 256 || r.templates.some(cid => !isCid(cid)))) throw new NodeAccessError('Invalid template request.')
+  if (r.templateNodes !== undefined && (!r.templateNodes || typeof r.templateNodes !== 'object' || Array.isArray(r.templateNodes) || JSON.stringify(r.templateNodes).length > 4 * 1024 * 1024)) throw new NodeAccessError('Invalid template content.')
+  return { peerId: r.peerId, scope: [...r.scope], path: [...r.path], linkId: r.linkId, ...(r.branches?.length ? { branches: r.branches.map(b => ({ scope: [...b.scope], name: b.name })) } : {}), ...(r.proposal ? { proposal: { ...r.proposal, scope: [...r.proposal.scope] } } : {}), ...(r.update !== undefined ? { update: r.update } : {}),
+    ...(r.templates?.length ? { templates: [...new Set(r.templates)] } : {}), ...(r.templateNodes ? { templateNodes: r.templateNodes } : {}) }
 }
 function maskOf(value: unknown): NodeMask {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new NodeAccessError('Invalid node mask.')
@@ -189,24 +205,33 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const value = heldByRequester ? { data: {}, children: [] } : valueContent(r.store, cid)
     const data = Object.fromEntries(Object.entries(value.data).filter(([key]) => !forbiddenFields.has(key) && (!fields || fields.has(key)))) as FosDataContent
     const children: NodeChild[] = []
+    const pinned = new Set<string>(), wanted = new Set<string>()
     for (const edge of value.children) {
       if (isBookkeepingEdge(r.store, edge)) continue
       const kind = rowKindOf(r.store, edge)
       if (!kind) continue
       const childCid = identityCid(r.store, edge), child = content(r.store, childCid), id = child.data.alias?.id
-      if (!id || (mask.children && !mask.children.includes(id)) || !permitted(r, childCid, authority.peerId, access)) continue
+      if (!id || isShippedLibrary(r.store, path, edge) || (mask.children && !mask.children.includes(id)) || !permitted(r, childCid, authority.peerId, access)) continue
       const remote = isPeerReference(child) ? child.data.ref : undefined
-      children.push({ id, kind: remote ? 'ref' : kind, address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) } })
+      // a reference error is reported as the row it stands for; the provider asks for the template it lacks.
+      // The template belongs to the edge, so rows held by another peer carry it too.
+      const missing = missingTemplateOf(r.store, edge), template = pinnedTemplateOf(r.store, edge)!
+      ;(missing ? wanted : pinned).add(template)
+      children.push({ id, kind: remote ? 'ref' : missing ? missing.kind : kind, address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
     }
+    // Only templates this node's visible rows are pinned to are served, never an arbitrary cid.
+    const served = (request.templates ?? []).filter(cid => pinned.has(cid))
+    const templates = served.length ? reachableNodes(r.store, served) : null
     const proposals: ProposalView[] = readProposals(r.store, content(r.store, cid))
-      .filter(p => authority.owner || grants.includes('approve') || p.peerId === authority.peerId)
+      .filter(p => authority.owner || grants.includes('edit') || p.peerId === authority.peerId)
       .map(p => ({ id: p.cid, peerId: p.peerId, name: 'Proposed node changes', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] } }))
     const existing = linkAt(r, path, authority.peerId, request.linkId)
     if (existing && content(r.store, existing.cid).data.ref?.id && content(r.store, existing.cid).data.ref?.id !== request.linkId) throw new NodeAccessError('Node link endpoint mismatch.')
     const id = existing ? content(r.store, existing.cid).data.alias!.id : localLinkId(r.meta.peerId, authority.peerId, request.linkId + JSON.stringify(path))
     if (!existing || !content(r.store, existing.cid).data.ref?.id) r = setNodeLinkMask(r, path, authority.peerId, request.linkId, readMask(r, path, authority.peerId, ''), now, id)
     return { replica: r, node: { peerId: r.meta.peerId, linkId: id, remoteLinkId: request.linkId, capabilities: [...authority.capabilities],
-      address: { peerId: r.meta.peerId, scope: path }, data, children, proposals, grants, mask: { ...(fields ? { fields: [...fields] } : {}), ...(mask.children ? { children: mask.children } : {}) } } }
+      address: { peerId: r.meta.peerId, scope: path }, data, children, proposals, grants, mask: { ...(fields ? { fields: [...fields] } : {}), ...(mask.children ? { children: mask.children } : {}) },
+      ...(templates ? { templates } : {}), ...(wanted.size ? { wanted: [...wanted] } : {}) } }
   })
 }
 
@@ -221,10 +246,11 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
   const children = node.children.filter(child => !local.children || local.children.includes(child.id)).map(child => {
     const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', kind: child.kind, scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
-    return [stub, rowPrimitive(r.store, child.kind)] as [string, string]
+    return pinnedRowEdge(r.store, child.kind, stub, child.template)
   })
-  // Preserve local grants and masks; the provider cannot replace them with its own.
-  const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId } }, put(r.store, { data, children }), bookkeepingOf(r.store, before)), node.peerId)
+  // Preserve local grants and masks; the provider cannot replace them with its own. A root keeps its shipped library.
+  const shipped = valueContent(r.store, cid).children.filter(edge => isShippedLibrary(r.store, at, edge))
+  const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId } }, put(r.store, { data, children: [...shipped, ...children] }), bookkeepingOf(r.store, before)), node.peerId)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), at, () => identity, 'replace'), now)
   r = setNodeLinkMask({ ...r }, at, node.peerId, node.linkId, ownMask, now, request.linkId)
   const endpoint = linkAt(r, at, node.peerId, node.linkId)!, ref = content(r.store, endpoint.cid)
@@ -232,59 +258,6 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   const root = content(r.store, r.store.rootNodeId)
   r.store.rootNodeId = put(r.store, { ...root, children: root.children.map(edge => edge[1] === endpoint.cid ? [edge[0], marked] : edge) })
   return { ...r }
-}
-
-/** The legacy whole-graph protocol cannot express field masks. Refuse it before
- * any import/export when this attachment has a masked endpoint; use node pulls.
- */
-export function hasNodeLinkMasks(store: Replica['store'], peer: string | null, scope: Scope): boolean {
-  const sourceIds = new Set<string>([content(store, store.rootNodeId).data.alias?.id ?? store.rootNodeId])
-  for (let i = 1; i <= scope.length; i++) {
-    const cid = resolveScope(store, rootTargetCid(store), scope.slice(0, i))
-    if (cid) sourceIds.add(content(store, cid).data.alias?.id ?? cid)
-  }
-  const scoped = resolveScope(store, rootTargetCid(store), scope)
-  const pending = scoped ? [scoped] : [], visited = new Set<string>()
-  while (pending.length) {
-    const cid = pending.pop()!
-    if (visited.has(cid)) continue
-    visited.add(cid)
-    const node = content(store, cid)
-    sourceIds.add(node.data.alias?.id ?? cid)
-    if (isHandle(node)) continue
-    for (const edge of valueContent(store, cid).children) if (rowKindOf(store, edge)) pending.push(identityCid(store, edge))
-  }
-  return content(store, store.rootNodeId).children.some(edge => {
-    if (edge[0] !== capabilityTarget(store, 'provideNode')) return false
-    const ref = content(store, edge[1]), name = ref.data.name?.content
-    if (!name?.startsWith(LINK_NAME) || (peer && ref.data.ref?.peer !== peer && ref.data.ref?.peer !== NODE_PERMISSION_DEFAULT)) return false
-    try {
-      const [, id] = JSON.parse(name.slice(LINK_NAME.length)) as [string, string]
-      if (!sourceIds.has(id)) return false
-      if (ref.data.description?.content === 'fos:node-projection') return true
-      const target = refValueCid(store, ref)
-      const mask = maskOf(JSON.parse(target ? content(store, target).data.description?.content ?? 'null' : 'null'))
-      return mask.fields !== undefined || mask.children !== undefined
-    } catch { return true }
-  })
-}
-
-/** A whole-graph transfer cannot safely represent a nested read boundary. */
-export function hasNodeReadBoundary(r: Replica, scope: Scope, peer: string): boolean {
-  return withMainBranchPolicy(r.store, () => {
-    const root = resolveScope(r.store, headCid(r), scope)
-    if (!root) return false
-    const pending = [root], seen = new Set<string>()
-    while (pending.length) {
-      const cid = pending.pop()!
-      if (seen.has(cid)) continue
-      seen.add(cid)
-      if (!permitted(r, cid, peer, true)) return true
-      if (isHandle(content(r.store, cid))) continue
-      for (const edge of valueContent(r.store, cid).children) if (rowKindOf(r.store, edge)) pending.push(identityCid(r.store, edge))
-    }
-    return false
-  })
 }
 
 export type NodeProvider = { id: string; capabilities: Capability[]; request(input: NodeRequest): Promise<ProvidedNode> }

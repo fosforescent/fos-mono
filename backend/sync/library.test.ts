@@ -1,12 +1,13 @@
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { HOME_ID, LIBRARY_ID, addRow, commitRoot, createReplica, ensureHomeContext, headCid, importNodes, libraryLink, makeLink, mergePolicy, proposalContent, put, reachableNodes, resolveScope, sharing, updateAtScope, valueContent, view, withProposal, type Replica, type Scope } from '@fosforescent/shared/sync/index'
+import { HOME_ID, LIBRARY_ID, addRow, commitRoot, createReplica, ensureLibraryLink, nestScope, ensureHomeContext, headCid, importNodes, libraryLink, makeLink, mergePolicy, proposalContent, put, reachableNodes, resolveScope, sharing, updateAtScope, valueContent, view, withProposal, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createHandlerRegistry } from './registry'
 import { createSharingHandlers } from './sharing'
-import { ensureAccountContext, ensureStandardLibrary, LIBRARY_GRANTS } from './library'
+import { ensureStandardLibrary, LIBRARY_GRANTS } from './library'
+import { ensureAccountContext } from './provideNode'
 
 /** A host with any number of accounts; `createAccount` makes a fresh one like registration does. */
 function host() {
@@ -27,6 +28,7 @@ function proposeRow(r: Replica, path: Scope, peer: string, title: string, id: st
   const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
+  nestScope(draftStore, { store, root, at: path })
   const draft = addRow(createReplica(peer, draftStore), [], 'template', title, now, { id })
   importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
   const cid = put(store, proposalContent(store, peer, 'node-sync', headCid(draft), base, now))
@@ -48,10 +50,12 @@ test('the library account, node, sharing, policy and templates come to exist onc
   const saved = h.saves.length
   expect(await ensureStandardLibrary(h.deps, 'fos-library', registry)).toEqual(address)
   expect(h.saves.length).toBe(saved)
-  // the registry carries the address; owners' syncs put the reference into their Home, the library's own Home excluded
+  // the registry carries the address; an account's Home links the library only when its owner contributes
   registry.library = address
   h.add('alice')
-  const alice = ensureAccountContext(h.get('alice'), 5, registry)
+  let alice = ensureAccountContext(h.get('alice'), 5, registry)
+  expect(libraryLink(alice)).toBeNull()
+  alice = ensureLibraryLink(alice, address, 6).replica
   expect(libraryLink(alice)).toEqual([HOME_ID, LIBRARY_ID])
   expect(view(alice, [HOME_ID])!.tasks.find(t => t.id === LIBRARY_ID)).toMatchObject({ kind: 'ref', refOwner: 'fos-library', refId: LIBRARY_ID })
   expect(headCid(ensureAccountContext(alice, 6, registry))).toBe(headCid(alice))
@@ -75,7 +79,7 @@ test('members vote on a proposed change through the shared view and the library 
   const bob = await call('visit', at, 'bob')
   expect(bob.status).toBe(200)
   expect(bob.body.node.proposals.map((p: { id: string }) => p.id)).toEqual([`proposal:${cid}`])
-  expect(bob.body.node.capabilities).toEqual(expect.arrayContaining(['read', 'approve', 'rank']))
+  expect(bob.body.node.capabilities).toEqual(expect.arrayContaining(['read', 'edit', 'rank']))
   const bobVote = await call('submit', { ...at, revision: bob.body.node.revision, approvals: [`proposal:${cid}`], ranking: [], fields: {} }, 'bob')
   expect(bobVote.status).toBe(200)
   expect(bobVote.body.node.counts[`proposal:${cid}`]).toBe(1)

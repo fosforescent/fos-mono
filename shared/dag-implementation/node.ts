@@ -486,25 +486,6 @@ export class FosNode {
   // }
 
 
-  addTodo(description: string): [FosNode, FosNode] {
-    const newTodoData: FosNodeContent = {
-      data: {
-        ...this.value.data,
-        updated: {
-          time: Date.now()
-        },
-        description: {
-          content: description
-        },
-      },
-      children: []
-    }
-    // Use store.create() instead of direct constructor to ensure cache is checked
-    const newNode = this.store.create(newTodoData)
-    const thisNewNode = this.addEdge(newNode.getId(), this.store.primitive.completeField.getId())
-    return [thisNewNode, newNode]
-  }
-
   // getComments(): FosNode[] {
   //   const comments = this.getEdges().filter(([edgeType, target]) => edgeType === this.store.primitive.commentConstructor.getId())
   //   return comments.map(([edgeType, target]) => {

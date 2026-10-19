@@ -149,10 +149,32 @@ export type FosDataContent = {
   disabledCapabilities?: {
     content: string[]
   },
-  /** On a task that executes a template row ("[ ] `name`"): the template's alias id and name; its requirements were copied under the task. */
-  template?: {
-    id: string
-    name: string
+  /**
+   * On a template node: the kind of row its instances are. Every row is the edge [template, rowNode], so this is
+   * what makes a node usable on the left of a row edge (the standard library's row types, seeded from dag-implementation/row-templates.ts,
+   * user templates such as "Plan a trip", whose instances are tasks).
+   */
+  instanceKind?: {
+    kind: string
+  },
+  /** On a row type: the behavior its instances get from code (`builtin:<kind>`) until it is expressed as rows. */
+  behavior?: {
+    content: string
+  },
+  /** A pattern row (one of a type's rows, sync/patterns.ts): the wildcard, or the row type it names and the versions that match (none = any). */
+  pattern?: {
+    any?: boolean
+    type?: string
+    versions?: string[]
+  },
+  /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
+  typeError?: {
+    rejected: string[]
+  },
+  /** On a reference-error template: the template a row is pinned to that this peer has not received yet. */
+  missingTemplate?: {
+    cid: string
+    kind: string
   },
   /** A query row: its description is the search text; results appear as reference rows under it. */
   query?: {

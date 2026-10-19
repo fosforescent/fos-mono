@@ -12,11 +12,12 @@ import {
   setRowKind,
   applyProposalAt,
   shareHome,
+  ensureHomeContext,
   homePath,
   HOME_ID,
-  buildSyncRequest,
-  completeSync,
   createReplica,
+  linkLocalStore,
+  localStores,
   deleteTask,
   headCid,
   isDirty,
@@ -32,16 +33,19 @@ import {
   type MovePosition,
   type Replica,
   type RowKind,
-  type Scope,
-  type SyncRequest,
-  type SyncResponse
+  type Scope
 } from './index'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
-import { exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
+import { ensureDeviceLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
+import { CLIENT_CAPABILITIES, LIBRARY_ID } from './graph'
+import { exchangeNode, nodeTreeSync } from './node-sync'
+import type { ProvidedNode } from './node-provider'
 import { handleMcp } from './mcp-adapter'
 
 const replicas = new Map<string, Replica>()
+/** Handles opened as the home store (`~/.fos`): only those keep their rows in Home. */
+const homes = new Set<string>()
 
 function get(handle: string): Replica {
   const r = replicas.get(handle)
@@ -55,13 +59,54 @@ function set(handle: string, r: Replica): void {
 
 const parse = <T>(json: string | null | undefined, fallback: T): T => (json ? (JSON.parse(json) as T) : fallback)
 
+/** A node sync in progress under a handle (`nodeSyncBegin`/`nodeSyncStep`), and the clock its steps run at. */
+const runs = new Map<string, { run: ReturnType<typeof nodeTreeSync>; now: number }>()
+
 export const api = {
-  /** Load a serialized replica (or start a fresh one) under `handle`, forcing the device id. */
-  open(handle: string, serialized: string | null, peerId: string): void {
-    const loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
+  /**
+   * Load a `.fos` store's replica (or start a fresh one) under `handle`, forcing the device id. Every store is a device
+   * root: it ships the standard library. Only the home store (`~/.fos`) has Home, the node it syncs with the account;
+   * a project store (`<dir>/.fos`) keeps its rows at its root.
+   */
+  open(handle: string, serialized: string | null, peerId: string, home = true): void {
+    let loaded = ensureDeviceLibrary(serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId), { address: null, version: 0, rows: [] }, Date.now())
+    if (home) loaded = ensureHomeContext(loaded, Date.now())
     set(handle, { store: loaded.store, meta: { ...loaded.meta, peerId } })
+    if (home) homes.add(handle); else homes.delete(handle)
   },
-  close(handle: string): void { replicas.delete(handle) },
+  /** Where this replica's own rows are: Home in the home store, else its root. */
+  homePath(handle: string): string { return JSON.stringify(homePath(get(handle))) },
+  /**
+   * Link the store `peerId` (named `name`) on this machine as a peer of `handle`'s root (`home`: it is Home's store, so
+   * what it shares is its Home); returns whether it changed.
+   */
+  linkStore(handle: string, peerId: string, name: string, home: boolean, now: number): boolean {
+    const before = get(handle), after = linkLocalStore(before, peerId, name, now, home ? [HOME_ID] : [])
+    set(handle, after)
+    return after !== before
+  },
+  /** The stores `handle` is linked with on this machine: [{ peerId, name }]. */
+  localStores(handle: string): string { return JSON.stringify(localStores(get(handle))) },
+  /**
+   * The tree of the linked store loaded under `peerHandle`, as `peerId` (this store) may see it: pulled node by node
+   * through node exchange (what its grants allow), never by reading its graph directly. Text lines like `tree`.
+   */
+  browseStore(peerHandle: string, peerId: string, now: number): string {
+    let peer = get(peerHandle)
+    const view = createReplica(peerId)
+    const run = nodeTreeSync(view, { peer: peer.meta.peerId, scope: [], remoteRoot: [], localRoot: [], branches: [], push: false }, () => now)
+    let step = run.next()
+    while (!step.done) {
+      const served = exchangeNode(peer, step.value.request, { peerId, scope: [], capabilities: CLIENT_CAPABILITIES }, now)
+      peer = served.replica
+      step = run.next(served.node)
+    }
+    set('browse', step.value.replica)
+    const lines = JSON.parse(api.tree('browse', '[]')) as string[]
+    replicas.delete('browse')
+    return JSON.stringify(lines)
+  },
+  close(handle: string): void { replicas.delete(handle); homes.delete(handle) },
   serialize(handle: string): string { return JSON.stringify(serializeReplica(get(handle))) },
   meta(handle: string): string {
     const r = get(handle)
@@ -71,7 +116,7 @@ export const api = {
     const r = get(handle)
     const requested = parse<Scope>(scopeJson, [])
     const home = requested.length === 1 && requested[0] === HOME_ID && homePath(r).length
-    set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []), baseCid: null } }))
+    set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []) } }))
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },
   /** Add a row of `kind` ('task' | 'plain' | 'note' | 'comment' | 'ref') under `at`; returns its view. */
@@ -97,7 +142,8 @@ export const api = {
       const node = view(r, at)
       if (!node) return
       for (const t of node.tasks) {
-        lines.push(`${'  '.repeat(depth)}${t.kind === 'task' ? (t.done ? '[x]' : '[ ]') : t.kind === 'note' ? ' ≡ ' : t.kind === 'comment' ? ' " ' : t.kind === 'ref' ? ' → ' : ' · '} ${t.id.slice(0, 8)} ${t.kind === 'ref' ? `ref ${t.refId?.slice(0, 8) ?? ''}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
+        if (!at.length && t.id === LIBRARY_ID) continue // the library the store ships (not its own rows)
+        lines.push(`${'  '.repeat(depth)}${t.kind === 'task' ? (t.done ? '[x]' : '[ ]') : t.kind === 'note' ? ' ≡ ' : t.kind === 'comment' ? ' " ' : t.kind === 'ref' ? ' → ' : ' · '} ${t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.kind === 'ref' ? `ref ${t.refId?.slice(0, 8) ?? ''}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
       for (const c of node.choices) lines.push(`${'  '.repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`)
@@ -135,16 +181,45 @@ export const api = {
   resolveChoice(handle: string, atJson: string, choiceId: string, pick: number, now: number): void { set(handle, resolve(get(handle), parse<Scope>(atJson, []), choiceId, pick < 0 ? null : pick, now)) },
   applyProposal(handle: string, atJson: string, proposalId: string, approver: string, now: number): void { set(handle, applyProposalAt(get(handle), parse<Scope>(atJson, []), proposalId, approver, now)) },
   rejectProposal(handle: string, atJson: string, proposalId: string, now: number): void { set(handle, rejectProposalAt(get(handle), parse<Scope>(atJson, []), proposalId, now)) },
-  reattach(handle: string, scopeJson: string, now: number, namesJson: string | null): void {
-    set(handle, reattach(get(handle), parse<Scope>(scopeJson, []), now, namesJson ? parse<string[]>(namesJson, []) : undefined))
+  reattach(handle: string, scopeJson: string): void {
+    set(handle, reattach(get(handle), parse<Scope>(scopeJson, [])))
   },
 
-  buildSyncRequest(handle: string, branch: string | null, push: boolean = true): string { set(handle, shareHome(get(handle))); return JSON.stringify(buildSyncRequest(get(handle), branch ?? undefined, { push })) },
-  completeSync(handle: string, requestJson: string, responseJson: string, now: number): string {
-    const done = completeSync(get(handle), JSON.parse(requestJson) as SyncRequest, JSON.parse(responseJson) as SyncResponse, now)
-    set(handle, done.replica)
-    return JSON.stringify({ reMerged: done.reMerged, newChoiceIds: done.newChoiceIds })
+  /**
+   * Start syncing `handle` with its account server node by node. `kind` is the session's: a `user` syncs this device
+   * root's Home with the account, a `peer` credential the node it was invited to (`meta.scope`). `push: false` only
+   * pulls. `branch` (a project's git branch) syncs that branch of the attached node.
+   */
+  nodeSyncBegin(handle: string, kind: string, username: string, push: boolean, branch: string | null): void {
+    // the device root syncs its Home with the account (rows of an older replica move there first); a project syncs
+    // what it is attached to, from its own directory
+    const r = homes.has(handle) && kind === 'user' && !get(handle).meta.scope.length ? shareHome(ensureHomeContext(get(handle), Date.now())) : get(handle)
+    set(handle, r)
+    const localRoot = r.meta.localScope ?? []
+    const scope = kind === 'peer' ? r.meta.scope : []
+    const remoteRoot = kind === 'peer' ? scope : [...r.meta.scope, ...localRoot]
+    const peer = r.meta.serverPeerId ?? (kind === 'peer' ? null : `user:${username}`)
+    const state = { run: undefined as unknown as ReturnType<typeof nodeTreeSync>, now: Date.now() }
+    state.run = nodeTreeSync(r, { peer, scope, remoteRoot, localRoot, branches: branch ? [{ scope: remoteRoot, name: branch }] : [], push }, () => state.now)
+    runs.set(handle, state)
   },
+  /**
+   * The host (Rust) sends each request this returns to the account server and passes the answer back (null on the
+   * first call), until it returns `{ done, synced }`. Returns `{ request }` otherwise.
+   */
+  nodeSyncStep(handle: string, answerJson: string | null, now: number): string {
+    const state = runs.get(handle)
+    if (!state) throw new Error('no node sync in progress')
+    state.now = now
+    const step = answerJson ? state.run.next(JSON.parse(answerJson) as ProvidedNode) : state.run.next()
+    if (!step.done) { set(handle, step.value.replica); return JSON.stringify({ request: step.value.request }) }
+    runs.delete(handle)
+    const r = step.value.replica
+    set(handle, { ...r, meta: { ...r.meta, serverPeerId: step.value.peer ?? r.meta.serverPeerId } })
+    return JSON.stringify({ done: true, synced: step.value.synced })
+  },
+  /** Drop a node sync that failed in transport (what it installed so far stays). */
+  nodeSyncAbort(handle: string): void { runs.delete(handle) },
   /** Where this account references the standard library, with its shared address, or null (`fos library export`). */
   libraryLink(handle: string): string {
     const r = get(handle), path = libraryLink(r)

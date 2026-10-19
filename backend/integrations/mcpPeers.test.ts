@@ -7,7 +7,7 @@ import { createMcpPeerHandlers, mcpMembersAbove, mcpToolHandler, type McpPeerDep
 import { createEventService } from '../sync/events'
 import { createEvaluationService } from '../sync/evaluation'
 import { createHandlerRegistry } from '../sync/registry'
-import { withUserLock } from '../sync/peerSync'
+import { withUserLock } from '../sync/accountStore'
 
 function setup(servers: McpServerInfo[]) {
   let r: Replica = createReplica('server')

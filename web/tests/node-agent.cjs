@@ -5,7 +5,7 @@ const path = require('node:path')
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-node-agent-'))
 async function main() {
   await build({ stdin: { contents: `export {createEventService} from './backend/sync/events'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'injected-persistence', setup(b) {
-    b.onResolve({ filter: /(?:\.\/|\.\.\/sync\/)peerSync$/ }, () => ({ path: 'peerSync', namespace: 'test' }))
+    b.onResolve({ filter: /(?:\.\/|\.\.\/sync\/)accountStore$/ }, () => ({ path: 'accountStore', namespace: 'test' }))
     b.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `export const withUserLock = async (_, f) => f(); export const serverPeerIdFor = name => 'user:' + name` }))
     b.onResolve({ filter: /^@fosforescent\/shared\/sync\// }, args => ({ path: path.resolve(__dirname, '../../shared/sync', args.path.split('/').at(-1) + '.ts') }))
   } }] })
@@ -25,7 +25,7 @@ async function main() {
   const tool = async (name, args) => (await call('tools/call', { name, arguments: args })).body.result
   const data = result => JSON.parse(result.content[0].text)
   assert.equal((await call('initialize')).body.result.serverInfo.name, 'Fos project tree')
-  assert.deepEqual((await call('tools/list')).body.result.tools.map(t => t.name), ['fos_read', 'fos_search', 'fos_propose', 'fos_input', 'fos_evaluate'], 'peers see the shared vocabulary without owner tools')
+  assert.deepEqual((await call('tools/list')).body.result.tools.map(t => t.name), ['fos_read', 'fos_search', 'fos_propose', 'fos_input', 'fos_evaluate', 'fos_decide'], 'peers see the shared vocabulary without owner tools (an editor decides submissions too)')
   assert.equal((await call('tools/list', {}, { claims: { username: 'alice' } })).status, 400, 'owner tokens must name a scope')
   assert.equal((await call('tools/list', {}, { headers: { origin: 'https://untrusted.test' } })).status, 403)
   assert.equal((await call('tools/list', {}, { method: 'GET' })).status, 405)

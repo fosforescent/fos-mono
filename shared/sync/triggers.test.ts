@@ -1,3 +1,4 @@
+import { userView } from './test-helpers'
 import { addTask, addRow, createReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
 
 test('UTC cron validates fields and handles ranges, steps and day OR semantics', () => {
@@ -41,7 +42,7 @@ test('template triggers create an independent instance and failed runs do not sp
   await runNodeTriggers(driver); await runNodeTriggers(driver)
   expect(runs).toBe(1)
   expect(triggerState(r, ['template'])?.error).toBe('Needs confirmation')
-  expect(view(r, [])!.tasks).toHaveLength(2)
+  expect(userView(r)!.tasks).toHaveLength(2)
 })
 
 test('an incoming proposal fires the request trigger and its saved occurrence is not replayed', async () => {
@@ -111,7 +112,7 @@ test('a response trigger continues the requester when the asked peer commits or 
   b = setMemberCapabilitiesAt(addMemberAt(b, [], 'device-b', 'B', [], 6), [], 'device-b', [], [], 6, ['request'])
   const asked = dispatchEvent(b, { kind: 'complete', path: ['flights'], expected: put(b.store, valueContent(b.store, resolveScope(b.store, headCid(b), ['flights'])!)) }, { peerId: 'device-a', owner: false, scope: [] }, 6)
   const proposalId = (asked.result as { proposalId: string }).proposalId
-  expect(view(asked.replica, [])!.proposals.some(p => p.id === proposalId && p.name === 'evaluate flights')).toBe(true)
+  expect(userView(asked.replica)!.proposals.some(p => p.id === proposalId && p.name === 'evaluate flights')).toBe(true)
   const refused = rejectProposalAt(asked.replica, [], proposalId, 7)
   const waiting = requestContinuation(refused, ['trip'], { request: 'evaluate flights', node: ['flights'], requestedAt: 5 }, 8)
   expect(triggerOccurrence(waiting, ['trip'], nodeTrigger(waiting, ['trip'])!, 9)).toBe('response:evaluate flights:rejected')

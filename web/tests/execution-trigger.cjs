@@ -5,7 +5,7 @@ const path = require('node:path')
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-execution-trigger-'))
 async function main() {
   await build({ nodePaths: [path.resolve(__dirname, '../node_modules'), ...(process.env.NODE_PATH ?? '').split(path.delimiter).filter(Boolean)], stdin: { contents: `export {createSharingHandlers} from './backend/sync/sharing'; export {createEventService} from './backend/sync/events'; export * from './shared/sync/execution-access'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'persistence', setup(b) {
-    b.onResolve({ filter: /\/peerSync$/ }, () => ({ path: 'locks', namespace: 'test' }))
+    b.onResolve({ filter: /\/accountStore$/ }, () => ({ path: 'locks', namespace: 'test' }))
     b.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `export const serverPeerIdFor = name => 'user:' + name; const locks = new Map(); export async function withUserLock(key, f) { const previous = locks.get(key) ?? Promise.resolve(); let release; const next = new Promise(r => release = r); locks.set(key, previous.then(() => next)); await previous; try { return await f() } finally { release() } }` }))
     b.onResolve({ filter: /^@fosforescent\/shared\/sync\// }, args => ({ path: path.resolve(__dirname, '../../shared/sync', args.path.split('/').at(-1) + '.ts') }))
   } }] })
@@ -45,7 +45,7 @@ async function main() {
   const read = await interact({ username: 'host' }, ['api-task'], { kind: 'read', path: [] })
   const mcp = await c.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'fos_evaluate', arguments: { path: [], expected: read.valueRevision } } }, { owner: true, dispatch: event => events.handle(owner, event) })
   assert(!mcp.result.isError, JSON.stringify(mcp))
-  assert.equal(c.view(replicas.host, []).tasks.find(t => t.id === 'private').done, false)
+  assert.equal(c.view(replicas.host, []).tasks.filter(t => t.id !== c.LIBRARY_ID).find(t => t.id === 'private').done, false)
   assert.equal(c.evaluationRecord(replicas.host, ['api-task']).status, 'committed')
   replicas.host = c.addTask(replicas.host, [], 'Peer accessible task', 3, 'peer-task')
   replicas.host = c.addMemberAt(replicas.host, ['peer-task'], 'peer:reader', 'Reader', ['read'], 3)

@@ -5,7 +5,7 @@ const path = require('node:path')
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-node-api-'))
 async function main() {
   await build({ stdin: { contents: `export {createNodeProvider} from './backend/sync/provideNode'; export {NodeRelay} from './backend/sync/nodeRelay'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'injected-persistence', setup(b) {
-    b.onResolve({ filter: /^\.\/peerSync$/ }, () => ({ path: 'peerSync', namespace: 'test' }))
+    b.onResolve({ filter: /^\.\/accountStore$/ }, () => ({ path: 'accountStore', namespace: 'test' }))
     b.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: `export const withUserLock = async (_, f) => f(); export const serverPeerIdFor = name => 'user:' + name` }))
     b.onResolve({ filter: /^@fosforescent\/shared\/sync\/index$/ }, () => ({ path: path.resolve(__dirname, '../../shared/sync/index.ts') }))
   } }] })

@@ -1,30 +1,25 @@
 /**
- * POST /user/data/peer-sync — the user group's side of the peer-link protocol
- * (shared/sync/protocol.ts). The user's FosStore *is* the user group: a device
- * attaches to its root content (scope []) or to a partition inside it, and the
- * merged result is committed as a new root alias with PREV history, then saved
- * with the existing storeToDb path. Divergences become CHOICE edges in the
- * graph, so every device sees and can resolve them.
+ * The account server's side of syncing with devices and peers: loading and saving an account's store (one request
+ * at a time per account, `withUserLock`), where a device attaches (`/user/data/peer-sync/attachment`), detaching, and
+ * re-indexing rows after a save. Node exchange itself is `provideNode.ts` (shared/sync/node-provider.ts protocol).
  *
- * Persistence is injected so the handler can be unit-tested without Postgres.
+ * Persistence is injected so the handlers can be unit-tested without Postgres.
  */
-
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { readNodeValue, writeNodeValue, HOME_ID, createReplica, ensureHomeContext, SERVER_TRANSPORT_CAPABILITIES, applyProposalAt, content, findPeerScope, hasCapability, headCid, normalizeReplicaRefs, parseSyncRequest, rejectProposalAt, resolveScope, rootTargetCid, scopeNames, serveSync, viewNode, type Replica } from '@fosforescent/shared/sync/index'
+import { createReplica, content, findPeerScope, headCid, normalizeReplicaRefs, rootTargetCid, scopeNames, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
-import { ensureAccountContext } from './accountContext'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
 import { indexStore, vertexEmbed } from '../search/rowIndex'
 import type { HandlerRegistry } from './registry'
 
-export type PeerSyncUser = { id: number; username: string }
+export type AccountUser = { id: number; username: string }
 
-export type PeerSyncDeps = {
+export type AccountStoreDeps = {
   /** Load the user's store (the user group). Null when the user is unknown. */
-  loadStore(username: string): Promise<{ user: PeerSyncUser; store: FosStore } | null>
-  saveStore(user: PeerSyncUser, store: FosStore): Promise<void>
+  loadStore(username: string): Promise<{ user: AccountUser; store: FosStore } | null>
+  saveStore(user: AccountUser, store: FosStore): Promise<void>
   /** Nudge the user's other connected devices to pull. */
   notify?(userId: number, message: Record<string, unknown>): void
   /** Peer ids of the user's devices currently connected over the WebSocket. */
@@ -40,7 +35,7 @@ export function serverPeerIdFor(username: string): string {
 }
 
 /** Called after every save of a user's tree (indexing is built in; MCP peer listeners register here). Failures are logged. */
-export const afterSaveHooks: Array<(user: PeerSyncUser, store: FosStore) => void> = []
+export const afterSaveHooks: Array<(user: AccountUser, store: FosStore) => void> = []
 
 /**
  * Serialize every load-modify-save of one user's store (syncs, proposal
@@ -79,113 +74,12 @@ function peerCredentialError(claims: RequestClaims, peerId: string, scope: strin
   return within ? null : 'credential is limited to another node'
 }
 
-const STATUS_FOR_CODE = { 'bad-request': 400, 'scope-not-found': 404, 'missing-nodes': 400, 'version-mismatch': 409 } as const
-
-export function createPeerSyncHandler(deps: PeerSyncDeps) {
-  return async (req: Request, res: Response): Promise<Response> => {
-    try {
-      const username = claimsUsername(req)
-      if (!username) return res.status(401).json({ error: 'Unauthorized' })
-
-      const parsed = parseSyncRequest(req.body)
-      if ('error' in parsed) return res.status(STATUS_FOR_CODE[parsed.code]).json(parsed)
-      const denied = peerCredentialError(claimsOf(req), parsed.peerId, parsed.scope)
-      if (denied) return res.status(403).json({ error: denied })
-
-      const outcome = await withUserLock(`user:${username}`, async () => {
-        const loaded = await deps.loadStore(username)
-        if (!loaded) return { status: 401, body: { error: 'User not found' } } as const
-        const { user, store } = loaded
-        const serverReplica = createReplica(serverPeerIdFor(user.username), store)
-        const independentRoot = readNodeValue<string>(serverReplica, [], 'fos:peer-root') === 'fos'
-        if (independentRoot && !parsed.scope.length) return { status: 409, body: { error: 'This account shares Home, not its server root. Update this client to use a Home attachment.', code: 'version-mismatch' } } as const
-        // Upgrade the account root only when a constructor-aware owner connects.
-        // Older scoped peer credentials continue to resolve through Home.
-        const beforeContext = rootTargetCid(store)
-        if (claimsOf(req).kind !== 'peer' && ((!parsed.scope.length && Object.values(parsed.nodes).some(node => node?.data?.alias?.id === HOME_ID)) || parsed.scope[0] === HOME_ID)) {
-          ensureAccountContext(serverReplica, 0, deps.registry)
-          if (parsed.scope[0] === HOME_ID && !independentRoot) writeNodeValue(serverReplica, [], 'fos:peer-root', 'fos', deps.now?.() ?? Date.now())
-        }
-        const contextChanged = rootTargetCid(store) !== beforeContext
-        {
-          const claims = claimsOf(req)
-          if (claims.kind === 'peer') {
-            const attachment = resolveScope(store, rootTargetCid(store), claims.scope ?? [])
-            if (!attachment || (!hasCapability(store, content(store, attachment), parsed.peerId, 'read') && !hasCapability(store, content(store, attachment), parsed.peerId, 'edit'))) {
-              return { status: 403, body: { error: 'Peer no longer has access to this attachment.' } } as const
-            }
-          }
-          // Invited peers propose at link nodes (branches members approve); the owner's own devices merge.
-          const options = {
-            recipient: 'server' as const,
-            ...(claims.kind === 'peer' ? { proposeOnly: true, peerName: claims.name } : {}),
-            onlinePeers: deps.onlinePeers ? deps.onlinePeers(user.id) : undefined,
-            // what this server registers with the peer: its transport facts plus the services its handler registry has
-            capabilities: deps.registry?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES
-          }
-          const served = serveSync(store, parsed, serverPeerIdFor(user.username), deps.now ? deps.now() : Date.now(), options)
-          if ('error' in served) return { status: STATUS_FOR_CODE[served.code], body: { error: served.error, code: served.code, ...(served.missingNodeIds ? { missingNodeIds: served.missingNodeIds } : {}) } } as const
-          if (served.changed || contextChanged) await deps.saveStore(user, store)
-          return { status: 200, body: served.response, changed: served.changed || contextChanged, userId: user.id } as const
-        }
-      })
-
-      if (outcome.status === 200 && outcome.changed) {
-        deps.notify?.(outcome.userId, {
-          type: 'sync_changed',
-          scope: parsed.scope,
-          resultCid: outcome.body.resultCid,
-          byPeerId: parsed.peerId
-        })
-      }
-      return res.status(outcome.status).json(outcome.body)
-    } catch (error) {
-      console.error('peer-sync failed:', error)
-      return res.status(500).json({ error: 'Internal Server Error' })
-    }
-  }
-}
-
-/** GET /user/data/peer-sync?scope=id,id — inspect the node a device would attach to. */
-export function createPeerSyncInspector(deps: Pick<PeerSyncDeps, 'loadStore'>) {
-  return async (req: Request, res: Response): Promise<Response> => {
-    try {
-      const username = claimsUsername(req)
-      if (!username) return res.status(401).json({ error: 'Unauthorized' })
-      const loaded = await deps.loadStore(username)
-      if (!loaded) return res.status(401).json({ error: 'User not found' })
-      const scopeParam = typeof req.query.scope === 'string' ? req.query.scope : ''
-      const scope = scopeParam ? scopeParam.split(',').filter(Boolean) : []
-      const claims = claimsOf(req)
-      if (claims.kind === 'peer') {
-        const denied = peerCredentialError(claims, claims.peerId ?? '', scope)
-        if (denied) return res.status(403).json({ error: denied })
-        // The raw inspector includes membership and proposal summaries. Scoped agents use
-        // the MCP projection instead; it filters both and rechecks live permissions.
-        return res.status(403).json({ error: 'Use the scoped MCP or peer-sync protocol to read a peer attachment.' })
-      }
-      const root = rootTargetCid(loaded.store)
-      const cid = resolveScope(loaded.store, root, scope)
-      if (!cid) return res.status(404).json({ error: 'scope not found' })
-      return res.json({
-        peerId: serverPeerIdFor(loaded.user.username),
-        rootAliasCid: loaded.store.rootNodeId,
-        cid,
-        view: viewNode(loaded.store, cid)
-      })
-    } catch (error) {
-      console.error('peer-sync inspect failed:', error)
-      return res.status(500).json({ error: 'Internal Server Error' })
-    }
-  }
-}
-
 /**
  * GET /user/data/peer-sync/attachment?peerId= — where this device should attach.
  * A peer credential answers from its claims; a user session looks the device up
  * in the graph ([PEER, ref] edges) and defaults to the root.
  */
-export function createPeerAttachmentHandler(deps: Pick<PeerSyncDeps, 'loadStore'>) {
+export function createPeerAttachmentHandler(deps: Pick<AccountStoreDeps, 'loadStore'>) {
   return async (req: Request, res: Response): Promise<Response> => {
     try {
       const claims = claimsOf(req)
@@ -216,7 +110,7 @@ export function createPeerAttachmentHandler(deps: Pick<PeerSyncDeps, 'loadStore'
 }
 
 /** Mark the node at `scope` as a link and add `peerId` as a member with `capabilities` (used when an invite is approved). */
-export async function attachMemberToNode(deps: PeerSyncDeps, username: string, scope: string[], peerId: string, name: string | null, capabilities: Array<'edit' | 'approve'>): Promise<boolean> {
+export async function attachMemberToNode(deps: AccountStoreDeps, username: string, scope: string[], peerId: string, name: string | null, capabilities: Array<'read' | 'edit' | 'execute'>): Promise<boolean> {
   return withUserLock(`user:${username}`, async () => {
     const loaded = await deps.loadStore(username)
     if (!loaded) return false
@@ -242,7 +136,7 @@ export async function attachMemberToNode(deps: PeerSyncDeps, username: string, s
  * DELETE /user/data/peer-sync/attachment — a device deliberately detaches itself
  * from the node it is attached to (its PEER and MEMBER edges are removed).
  */
-export function createDetachHandler(deps: PeerSyncDeps) {
+export function createDetachHandler(deps: AccountStoreDeps) {
   return async (req: Request, res: Response): Promise<Response> => {
     try {
       const claims = claimsOf(req)
@@ -282,7 +176,7 @@ export function createDetachHandler(deps: PeerSyncDeps) {
 const indexTimers = new Map<number, ReturnType<typeof setTimeout>>()
 const indexEmbed = vertexEmbed()
 const INDEX_DELAY_MS = Number(process.env.ROW_INDEX_DELAY_MS ?? 3000)
-function scheduleIndex(user: PeerSyncUser, store: FosStore): void {
+function scheduleIndex(user: AccountUser, store: FosStore): void {
   if (process.env.ROW_INDEX_DISABLED === 'true') return
   const pending = indexTimers.get(user.id)
   if (pending) clearTimeout(pending)
@@ -303,7 +197,7 @@ export async function indexNow(user: { id: number; username: string }, store: Fo
   await indexStore(prisma, user, store, indexEmbed)
 }
 
-export const prismaPeerSyncDeps: PeerSyncDeps = {
+export const prismaAccountStoreDeps: AccountStoreDeps = {
   async loadStore(username) {
     const user = await prisma.userModel.findUnique({ where: { user_name: username }, include: { fosNode: true } })
     if (!user) return null
@@ -330,7 +224,5 @@ export const prismaPeerSyncDeps: PeerSyncDeps = {
   }
 }
 
-export const postPeerSync = createPeerSyncHandler(prismaPeerSyncDeps)
-export const getPeerSyncDoc = createPeerSyncInspector(prismaPeerSyncDeps)
-export const getPeerAttachment = createPeerAttachmentHandler(prismaPeerSyncDeps)
-export const deleteAttachment = createDetachHandler(prismaPeerSyncDeps)
+export const getPeerAttachment = createPeerAttachmentHandler(prismaAccountStoreDeps)
+export const deleteAttachment = createDetachHandler(prismaAccountStoreDeps)

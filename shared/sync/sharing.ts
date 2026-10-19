@@ -5,7 +5,7 @@ import { argumentRefs, capabilityPeers } from './bindings'
 import { readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
 import { addMemberAt, createReplica, homePath, addRow, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { FosStore } from '../dag-implementation/store'
-import { capabilityTarget, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
+import { capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
 
 export const SHARE_ARGUMENT = 'fos:sharing'
 export const POLL_ARGUMENT = 'fos:poll'
@@ -37,8 +37,8 @@ export function setSharing(r: Replica, path: Scope, policy: SharePolicy, now: nu
   if (previous && previous.audience !== policy.audience) r = removeMemberAt(r, path, audiencePeer(previous.audience), now)
   const peer = audiencePeer(policy.audience)
   if (policy.enabled && !view(r, path)?.members.some(m => m.peerId === peer)) {
-    r = addMemberAt(r, path, peer, policy.audience === 'public' ? '👤 Anyone with the link' : '🌐 Fos users', ['read', 'approve', 'rank'], now)
-    r = setMemberCapabilitiesAt(r, path, peer, ['read', 'approve', 'rank'], [], now)
+    r = addMemberAt(r, path, peer, policy.audience === 'public' ? '👤 Anyone with the link' : '🌐 Fos users', ['read', 'edit', 'rank'], now)
+    r = setMemberCapabilitiesAt(r, path, peer, ['read', 'edit', 'rank'], [], now)
   } else if (!policy.enabled) r = removeMemberAt(r, path, peer, now)
   return writeNodeValue(r, path, SHARE_ARGUMENT, policy, now)
 }
@@ -121,7 +121,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   const cid = resolveScope(r.store, headCid(r), path)!
   const active = participants(r, path).filter(p => p.audience === policy.id && p.revision === key && hasCapability(r.store, content(r.store, cid), p.peer, 'read'))
   for (const p of active) {
-    if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'approve') && hasCapability(r.store, content(r.store, cid), p.peer, 'approve')) for (const id of p.approvals) counts[id] = (counts[id] ?? 0) + 1
+    if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'edit') && hasCapability(r.store, content(r.store, cid), p.peer, 'edit')) for (const id of p.approvals) counts[id] = (counts[id] ?? 0) + 1
     if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'rank') && hasCapability(r.store, content(r.store, cid), p.peer, 'rank')) p.ranking.forEach((id, i) => { rankings[id] = (rankings[id] ?? 0) + p.ranking.length - i })
   }
   return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), title: textVisible(path) ? (current?.title ?? node.name ?? 'Shared node').slice(0, 8000) : 'Shared node', rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
@@ -164,6 +164,7 @@ export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, 
   const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
+  nestScope(draftStore, { store, root, at: hostPath })
   const draft = addRow(createReplica(peer, draftStore), [], 'ref', title, now, { id: linkId, refOwner: owner, refId: aliasId })
   importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
   const proposalCid = put(store, proposalContent(store, peer, name, headCid(draft), base, now))

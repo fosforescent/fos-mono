@@ -10,7 +10,8 @@ const root = path.resolve(__dirname, '..')
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export * from './src/yaml'; export {createProjectStorage} from './src/project'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
-const { exchangeNode, SERVER_TRANSPORT_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, buildSyncRequest, completeSync, createReplica, ensureHomeContext, serveSync, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID } = require(path.join(dir, 'app.cjs'))
+const sync = require(path.join(dir, 'app.cjs'))
+const { exchangeNode, SERVER_TRANSPORT_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, nodeTreeSync, createReplica, ensureHomeContext, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm', 'poll']
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -74,7 +75,7 @@ async function main() {
   await b.syncNow('repair test')
   assert(pushes > 0, 'reset peer receives independent node exchanges')
   assert.equal(b.state.connection, 'online', b.state.notice?.text)
-  assert(view(b.state.replica, []).tasks.some(t => t.id === 'pending'))
+  assert(view(b.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).some(t => t.id === 'pending'))
   pushes = 0
   globalThis.fetch = async () => { pushes++; return reply({ code: 'missing-nodes', error: 'head node not provided' }, 400) }
   await b.syncNow('unrecoverable test')
@@ -135,19 +136,19 @@ async function main() {
   // A received change is not a local undo entry and must survive reversing a local edit.
   h.set({ replica: addTask(h.state.replica, [], 'Received from another device', 123, 'remote') })
   h.undo()
-  assert(view(h.state.replica, []).tasks.some((row) => row.id === 'remote'))
+  assert(view(h.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).some((row) => row.id === 'remote'))
   assert.equal(view(h.state.replica, [parent]).tasks[0].title, 'Edited')
   h.redo()
-  assert(view(h.state.replica, []).tasks.some((row) => row.id === 'remote'))
+  assert(view(h.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).some((row) => row.id === 'remote'))
   assert.equal(view(h.state.replica, [parent]).tasks[0].title, 'New branch')
   h.set({ replica: addMemberAt(h.state.replica, [], 'user:friend', 'friend', ['edit'], 124) })
   h.goToRoot(); h.resetHome()
-  assert.equal(view(h.state.replica, []).tasks.length, 0)
+  assert.equal(view(h.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).length, 0)
   assert.equal(view(h.state.replica, []).members.length, 1, 'reset preserves peer grants')
   h.undo()
-  assert.equal(view(h.state.replica, []).tasks.length, 2, 'reset is one undoable edit')
+  assert.equal(view(h.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).length, 2, 'reset is one undoable edit')
   h.redo()
-  assert.equal(view(h.state.replica, []).tasks.length, 0)
+  assert.equal(view(h.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).length, 0)
   h.logout(); assert.equal(h.canUndo, false, 'logout clears local history')
   const moved = app()
   const from = moved.addRowAt([], 'task', 'From')
@@ -168,16 +169,21 @@ async function main() {
   const resetSync = app()
   resetSync.addRowAt([], 'task', 'Synced content')
   const resetServer = createReplica('reset-server')
+  // node by node, as a device syncs with the account
   const syncReset = () => {
-    const request = buildSyncRequest(resetSync.state.replica)
-    const served = serveSync(resetServer.store, request, 'reset-server')
-    assert(!('error' in served))
-    resetSync.set({ replica: completeSync(resetSync.state.replica, request, served.response).replica })
+    const r = resetSync.state.replica, localRoot = r.meta.localScope ?? []
+    const run = nodeTreeSync(r, { peer: r.meta.serverPeerId ?? 'reset-server', scope: [], remoteRoot: localRoot, localRoot, branches: [], push: true }, () => 5)
+    let step = run.next()
+    while (!step.done) step = run.next(exchangeNode(resetServer, step.value.request, { peerId: r.meta.peerId, scope: [], owner: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }, 5).node)
+    resetSync.set({ replica: { ...step.value.replica, meta: { ...step.value.replica.meta, serverPeerId: step.value.peer } } })
   }
-  syncReset(); resetSync.resetHome(); syncReset()
-  assert.equal(view(resetServer, []).tasks.length, 0, 'reset is propagated through normal sync')
+  const serverRows = () => view(resetServer, []).tasks.filter(t => t.id !== LIBRARY_ID).length
+  syncReset()
+  assert.equal(serverRows(), 1)
+  resetSync.resetHome(); syncReset()
+  assert.equal(serverRows(), 0, 'reset is propagated through normal sync')
   resetSync.undo(); syncReset()
-  assert.equal(view(resetServer, []).tasks.length, 1, 'undo after sync restores server content')
+  assert.equal(serverRows(), 1, 'undo after sync restores server content')
 
   // Settings offers connection types and nests connected provider details under a peer.
   a.set({ session: { baseUrl: 'http://localhost', username: 'test', jwt: 'test', kind: 'user' },
@@ -192,10 +198,10 @@ async function main() {
   a.select([keyboardRow]); await tick()
   document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))
   await tick()
-  assert(!view(a.state.replica, []).tasks.some((row) => row.id === keyboardRow))
+  assert(!view(a.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).some((row) => row.id === keyboardRow))
   document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true, bubbles: true }))
   await tick()
-  assert(view(a.state.replica, []).tasks.some((row) => row.id === keyboardRow))
+  assert(view(a.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).some((row) => row.id === keyboardRow))
   assert.equal(document.activeElement.value.includes('Keyboard undo'), true, 'redo focuses restored row')
   a.goTo([]); a.select(null); await tick()
   const ghostInput = document.querySelector('.ghost textarea.edit')
@@ -290,8 +296,7 @@ async function main() {
     const packet = JSON.parse(init.body)
     if (packet.scope[0] === HOME_ID) accountStores[username] = ensureHomeContext(accountStores[username], 0)
     if (url.endsWith('/provide-node')) return nodeReply(accountStores[username], packet)
-    const result = serveSync(accountStores[username].store, packet, `user:${username}`)
-    return 'error' in result ? reply(result, 400) : reply(result.response)
+    return reply({ error: 'not found' }, 404)
   }
   const isolated = app()
   isolated.addRowAt([], 'task', 'Unclaimed offline data', { id: 'unclaimed' })
@@ -299,15 +304,15 @@ async function main() {
   await isolated.login('alice', 'test')
   const aliceId = isolated.activeDataSession().id
   assert.notEqual(aliceId, offlineId)
-  assert(!view(accountStores.alice, []).tasks.some(row => row.id === 'unclaimed'))
+  assert(!view(accountStores.alice, []).tasks.filter(t => t.id !== LIBRARY_ID).some(row => row.id === 'unclaimed'))
   isolated.addRowAt([], 'task', 'Alice local data', { id: 'alice-local' }); await isolated.syncNow('test')
   isolated.logout()
-  assert.equal(isolated.currentView().tasks.length, 0, 'sign-out starts fresh offline content')
+  assert.deepEqual(isolated.currentView().tasks.map(t => t.id), [], 'sign-out starts fresh offline content')
   assert.notEqual(isolated.activeDataSession().id, aliceId)
   isolated.addRowAt([], 'task', 'Fresh scratch data', { id: 'scratch' })
   await isolated.login('bob', 'test')
   assert(!isolated.currentView().tasks.some(row => ['alice-root', 'alice-local', 'scratch'].includes(row.id)))
-  assert(!view(accountStores.bob, []).tasks.some(row => row.id === 'alice-local'))
+  assert(!view(accountStores.bob, []).tasks.filter(t => t.id !== LIBRARY_ID).some(row => row.id === 'alice-local'))
   const bobId = isolated.activeDataSession().id
   isolated.logout(); await isolated.login('alice', 'test')
   assert.equal(isolated.activeDataSession().id, aliceId, 'returning to Alice restores her data session')
@@ -320,15 +325,15 @@ async function main() {
   assert.equal(isolated.canMergeOffline(), false, 'owned data cannot be imported into another account')
   await isolated.login('bob', 'test', false, true)
   assert.equal(isolated.activeDataSession().id, bobId)
-  assert(!view(accountStores.bob, []).tasks.some(row => row.id === 'alice-offline'))
+  assert(!view(accountStores.bob, []).tasks.filter(t => t.id !== LIBRARY_ID).some(row => row.id === 'alice-offline'))
   isolated.switchDataSession(aliceId)
   assert(isolated.currentView().tasks.some(row => row.id === 'alice-offline'))
   await isolated.login('alice', 'test')
-  assert(view(accountStores.alice, []).tasks.some(row => row.id === 'alice-offline'))
+  assert(view(accountStores.alice, []).tasks.filter(t => t.id !== LIBRARY_ID).some(row => row.id === 'alice-offline'))
   isolated.logout()
   isolated.addRowAt([], 'task', 'Deliberate offline import', { id: 'explicit-import' })
   await isolated.login('bob', 'test', false, true)
-  assert(view(accountStores.bob, []).tasks.some(row => row.id === 'explicit-import'))
+  assert(view(accountStores.bob, []).tasks.filter(t => t.id !== LIBRARY_ID).some(row => row.id === 'explicit-import'))
   isolated.set({ replica: { ...isolated.state.replica, meta: { ...isolated.state.replica.meta, scope: ['attached-subtree'], scopeNames: ['Attached subtree'] } } })
   assert(isolated.canResetHome(), 'scoped user replicas expose a reset')
   await isolated.resetAccount()
@@ -371,9 +376,9 @@ async function main() {
   bobStorage.saveReplica(serializeReplica(addTask(createReplica(), [], 'Bob persisted', 1, 'stored-bob')))
   aliceStorage.savePrefs({ view: ['alice-view'] })
   const reloaded = createLocalStorageAdapter(persistedStorage)
-  assert.equal(view(loadReplica(reloaded.loadReplica()), []).tasks[0].id, 'stored-bob')
+  assert.equal(view(loadReplica(reloaded.loadReplica()), []).tasks.filter(t => t.id !== LIBRARY_ID)[0].id, 'stored-bob')
   reloaded.selectAccount({ baseUrl: 'http://localhost', username: 'alice', kind: 'user' })
-  assert.equal(view(loadReplica(reloaded.loadReplica()), []).tasks[0].id, 'stored-alice')
+  assert.equal(view(loadReplica(reloaded.loadReplica()), []).tasks.filter(t => t.id !== LIBRARY_ID)[0].id, 'stored-alice')
   assert.deepEqual(reloaded.loadPrefs().view, ['alice-view'], 'another tab changing active session does not redirect writes')
   persistedDom.window.close()
 
@@ -451,7 +456,8 @@ async function main() {
   contextApp.enableVirtualPeers(null)
   document.querySelector('#app').replaceChildren(); mountUi(document.querySelector('#app'), contextApp)
   assert.deepEqual(contextApp.state.view, [HOME_ID])
-  assert.deepEqual(contextApp.currentView().tasks.map(t => t.id), ['fos:library-bundle'], 'a fresh Home holds only the bundled standard library')
+  assert.deepEqual(contextApp.currentView().tasks.map(t => t.id), [], 'a fresh Home is empty')
+  assert.deepEqual(view(contextApp.state.replica, []).tasks.map(t => t.id), [LIBRARY_ID, HOME_ID], 'the device root ships the standard library beside Home')
   const project = contextApp.addRowAtTop(parseRowInput('[ ] Project\n  @money Budget 100\n    -$ 50 Travel\n      $ 20 First contribution\n      $ 30 Second contribution'))
   const projectView = view(contextApp.state.replica, [HOME_ID, project])
   const bank = projectView.tasks[0]
@@ -460,7 +466,7 @@ async function main() {
   assert.equal(need.requirement.have, 50)
   assert.equal(view(contextApp.state.replica, [HOME_ID,project]).tasks[0].resource.allocated,50,'contributions below demands count in the bank')
   contextApp.undo()
-  assert.equal(view(contextApp.state.replica, [HOME_ID]).tasks.length, 1, 'a parsed tree is one undoable edit (the bundled library stays)')
+  assert.equal(view(contextApp.state.replica, [HOME_ID]).tasks.length, 0, 'a parsed tree is one undoable edit')
   contextApp.redo()
   assert.equal(view(contextApp.state.replica, [HOME_ID, project, bank.id, need.id]).tasks.length, 2)
   const treeDraft = { store: contextApp.state.replica.store, head: require(path.join(dir, 'app.cjs')).headCid(contextApp.state.replica), parent: [HOME_ID] }
@@ -685,7 +691,7 @@ async function main() {
   detailApp.configureTrigger('timer', new Date(timerTime).toISOString())
   detailApp.config.now = () => timerTime + 1
   await detailApp.runTriggers()
-  assert.equal(view(detailApp.state.replica, []).tasks.filter(row => row.kind === 'task' && row.title === 'Timer task').length, 1)
+  assert.equal(view(detailApp.state.replica, []).tasks.filter(t => t.id !== LIBRARY_ID).filter(row => row.kind === 'task' && row.title === 'Timer task').length, 1)
   const occurrence = detailApp.currentTriggerState().occurrence
   await detailApp.runTriggers()
   assert.equal(detailApp.currentTriggerState().occurrence, occurrence)
@@ -854,5 +860,42 @@ async function main() {
   delete window.__TAURI__
   console.log('PASS: native storage flushes the old branch before atomically switching replicas')
 
+  // desktop: the other .fos stores on this machine are peers of this store's root, granted everything, linked once
+  const linking = app()
+  linking.linkLocalStores([{ peerId: 'home-store', name: 'laptop' }, { peerId: linking.state.replica.meta.peerId, name: 'itself' }])
+  const linkedRoot = view(linking.state.replica, [], true).tasks.find(t => t.construction?.peerId === 'home-store')
+  assert(linkedRoot, 'the linked store is a member of the root')
+  const before = linking.state.replica
+  linking.linkLocalStores([{ peerId: 'home-store', name: 'laptop' }])
+  assert.equal(linking.state.replica, before, 'linking again changes nothing')
+  assert(!view(linking.state.replica, [], true).tasks.some(t => t.construction?.peerId === linking.state.replica.meta.peerId), 'a store is not its own peer')
+  console.log('PASS: local .fos stores link as peers of the store root')
+
+  // it appears like any other peer: under its entry in Settings, a row held by that store, read and edited by node exchange
+  // on its files; linking writes both stores (one fos process at a time)
+  let homeStore = addTask(ensureHomeContext(createReplica('home-store'), 0), [HOME_ID], 'From the home store', 1, 'from-home')
+  const disk = { 'home-store': serializeReplica(homeStore) }
+  const reader = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage(), localStores: { read: async id => disk[id] ?? null, write: async (id, value) => { disk[id] = JSON.parse(JSON.stringify(value)) } } })
+  reader.startPolling = () => {}; reader.openEvents = () => {}; apps.push(reader)
+  await reader.linkLocalStores([{ peerId: 'home-store', name: 'laptop', home: true }])
+  const entry = 'fos:peer:home-store', held = [entry, 'store:home-store']
+  const storeRow = view(reader.state.replica, [entry]).tasks.find(t => t.id === 'store:home-store')
+  assert.equal(storeRow.refPeer, 'home-store'); assert.equal(storeRow.title, 'laptop')
+  assert(sync.localStores(loadReplica(disk['home-store'])).some(s => s.peerId === reader.state.replica.meta.peerId), 'the other store links this one back at once')
+  await reader.loadPeerNode(held)
+  // shallow, like any peer's nodes: its rows arrive held by it, each loaded when wanted
+  assert.deepEqual(view(reader.state.replica, held).tasks.map(t => [t.id, t.refPeer]), [['from-home', 'home-store']], 'its Home, through node exchange')
+  await reader.loadPeerNode([...held, 'from-home'])
+  assert.equal(view(reader.state.replica, held).tasks[0].title, 'From the home store')
+  // edits go back to that store's file, like edits to any peer's node
+  reader.set({ replica: renameTask(reader.state.replica, held, 'from-home', 'Renamed here', 5) })
+  reader.set({ replica: addTask(reader.state.replica, held, 'Added here', 6, 'added-here') })
+  await reader.syncNow('test')
+  assert.deepEqual(view(loadReplica(disk['home-store']), [HOME_ID]).tasks.map(t => t.title), ['Renamed here', 'Added here'], 'the home store has the edits')
+  // and what changes there comes in
+  disk['home-store'] = serializeReplica(addTask(loadReplica(disk['home-store']), [HOME_ID], 'Added there', 7, 'added-there'))
+  await reader.syncNow('test')
+  assert(view(reader.state.replica, held).tasks.some(t => t.id === 'added-there'))
+  console.log('PASS: a linked store appears as a peer-held row and is read through node exchange on its files')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(async () => { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); await tick(); for (const a of apps) a.logout(); dom.window.close(); rmSync(dir, { recursive: true, force: true }) })

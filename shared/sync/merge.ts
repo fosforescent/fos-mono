@@ -39,6 +39,8 @@ import {
   type ChoiceOption
 } from './graph'
 
+import { withoutTypeErrors } from './patterns'
+
 export type MergeLabels = { ours: string; theirs: string }
 
 export type MergeResult = { cid: string; newChoiceCids: string[] }
@@ -55,7 +57,9 @@ export function mergeNodes(
   labels: MergeLabels
 ): MergeResult {
   const newChoiceCids: string[] = []
-  const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true)
+  // type errors are derived (sync/patterns.ts): merge the rows themselves, the commit derives them again
+  const plain = (cid: string) => withoutTypeErrors(store, cid)
+  const outcome = mergeNode(store, baseCid && plain(baseCid), plain(oursCid), plain(theirsCid), labels, newChoiceCids, true)
   if (outcome.kind !== 'node') throw new Error('conflicting typed refs must be merged through their owning node to resolve the choice')
   return { cid: outcome.cid, newChoiceCids }
 }
