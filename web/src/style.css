@@ -93,6 +93,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.45; }
 #app { min-height: 100dvh; display: flex; flex-direction: column; }
+/* The native iOS view has no browser toolbar. Size against its containing block instead of
+   WKWebView's dynamic viewport units, which can leave the footer above the bottom of the view. */
+html.ios-shell, .ios-shell body { height: 100%; }
+.ios-shell #app { min-height: 100%; }
 #app > section, #app > nav.crumbs, #app > .voice-controls { width: 100%; max-width: 900px; margin: 0 auto; padding: 0 20px; }
 [hidden] { display: none !important; }
 a { color: var(--accent); }
@@ -133,7 +137,7 @@ select { padding-right: 24px; }
 kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); background: var(--raised); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; }
 
 /* --- header ----------------------------------------------------------------- */
-.topbar { position: sticky; top: 0; z-index: 25; min-height: 56px; padding: calc(8px + env(safe-area-inset-top, 0px)) 20px 8px; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.topbar { --header-gutter: 20px; position: sticky; top: 0; z-index: 25; min-height: 56px; padding: 8px var(--header-gutter); background: var(--bg); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .brand-row { display: flex; align-items: center; gap: 8px; position: relative; min-width: 0; max-width: 100%; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; white-space: nowrap; }
 .brand img { object-fit: contain; width: 24px; height: 24px; }
@@ -224,7 +228,7 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--fg); background: v
 .deleted { font-style: italic; color: var(--danger); }
 .choice-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
 
-.footer { margin-top: auto; padding: 8px 20px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--muted-2); max-width: none; }
+.footer { margin-top: auto; padding: 8px 20px; border-top: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--muted-2); max-width: none; }
 .footer .meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .footer .notice { flex: 1 1 100%; padding: 8px 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); color: var(--fg-2); }
 .footer .notice.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
@@ -689,7 +693,7 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 /* --- phones ------------------------------------------------------------------- */
 @media (max-width: 640px) {
   #app > section, #app > nav.crumbs, #app > .voice-controls { padding: 0 12px; }
-  .topbar { padding: 8px 12px; gap: 8px; }
+  .topbar { --header-gutter: 12px; gap: 8px; }
   .topbar .crumbs { order: 10; flex-basis: 100%; }
   .crumb.crumb-glyph { width: 44px; }
   .status { padding: 0 10px; font-size: 12px; }
@@ -801,7 +805,14 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 /* an MCP client configuration shown by a server sub-peer: full width, monospace, copyable */
 .node-context .mcp-config { width: 100%; box-sizing: border-box; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; margin: 4px 0 8px; }
 
-/* The mobile shells draw the web view under the status bar: iOS reports the inset through env(); Android's web view
-   does not always, so the Android shell (main.ts) falls back to the status bar's usual height. */
+/* Only Tauri mobile shells draw app controls under native system bars. main.ts adds these
+   classes only when inTauri() is true; browsers keep the ordinary header/footer padding. */
+.ios-shell .topbar, .android-shell .topbar {
+  padding-left: max(var(--header-gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--header-gutter), env(safe-area-inset-right, 0px));
+}
+.ios-shell .topbar { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+.ios-shell .footer { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+/* Android WebViews do not always report system bar insets. */
 .android-shell .topbar { padding-top: calc(8px + max(env(safe-area-inset-top, 0px), 24px)); }
 .android-shell .footer { padding-bottom: calc(8px + max(env(safe-area-inset-bottom, 0px), 16px)); }
