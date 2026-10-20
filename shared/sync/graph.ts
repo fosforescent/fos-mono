@@ -281,7 +281,7 @@ export function rowsOfType(store: FosStore, cid: string, type: RowTypeKind): Arr
  */
 export function rowTemplate(store: FosStore, kind: RowKind, at: Scope = [], root: string = rootTargetCid(store)): string {
   const type = rowTypeOf(kind)
-  const found = libraryTypeAt(store, rowTypeId(type), at, root)
+  const found = nearestLibraryType(store, rowTypeId(type), at, root)
   if (found) return found
   throw new Error(`No standard library above this row has a ${type} row type.`)
 }
@@ -290,17 +290,23 @@ export function rowTemplate(store: FosStore, kind: RowKind, at: Scope = [], root
  * The row type `typeId` (a row of the library's Row types group, e.g. `lib:type:note`) of the standard library nearest
  * to `at`, or null when no library above has it. New rows of that type are edges `[this cid, row]`.
  */
-export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
+function nearestLibraryType(store: FosStore, typeId: string, at: Scope, root: string): string | null {
   const library = findNearestRow(store, root, at, (row) => row.id === LIBRARY_ID && !!libraryRowType(store, row.cid, typeId))
   if (library) return libraryRowType(store, library.cid, typeId)!
   // a draft of a node stands where that node is: its ancestors continue in the host
   const outer = outerScopes.get(store)
   if (outer) {
-    const value = libraryTypeAt(outer.store, typeId, outer.at, outer.root)
+    const value = nearestLibraryType(outer.store, typeId, outer.at, outer.root)
     if (value) importNodes(store, reachableNodes(outer.store, [value]))
     return value
   }
-  // a library seeded before the type existed falls back to the build's definition
+  return null
+}
+
+/** `nearestLibraryType`, except that a library seeded before the type existed falls back to the build's definition. */
+export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
+  const found = nearestLibraryType(store, typeId, at, root)
+  if (found) return found
   const seeded = seedTypes(store).find(type => definitionId(type) === typeId)
   return seeded ? put(store, seeded) : null
 }
