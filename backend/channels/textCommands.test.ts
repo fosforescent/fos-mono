@@ -1,6 +1,7 @@
 import { addRow, addTask, createReplica, dispatchEvent, ensureHomeContext, HOME_ID, view, type FosEvent, type Principal } from '@fosforescent/shared/sync/index'
 import { createTextCommandInbound } from './textCommands'
 import type { InboundMessage } from './types'
+import { TASK_TYPE, PLAIN_TYPE } from '@fosforescent/shared/sync/library-types'
 
 function setup() {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
@@ -20,9 +21,9 @@ test('texted commands are translated into grammar events for the account owner',
   const s = setup()
   await s.inbound(s.msg('[ ] water the plants'))
   expect(s.replies.at(-1)).toBe('fos: added “water the plants”')
-  expect(view(s.get(), [HOME_ID])!.tasks.map(t => [t.kind, t.title])).toContainEqual(['task', 'water the plants'])
+  expect(view(s.get(), [HOME_ID])!.tasks.map(t => [t.type, t.title])).toContainEqual([TASK_TYPE, 'water the plants'])
   await s.inbound(s.msg('remember the receipt'))
-  expect(view(s.get(), [HOME_ID])!.tasks.find(t => t.title === 'remember the receipt')!.kind).toBe('plain')
+  expect(view(s.get(), [HOME_ID])!.tasks.find(t => t.title === 'remember the receipt')!.type).toBe(PLAIN_TYPE)
   await s.inbound(s.msg('list'))
   expect(s.replies.at(-1)).toBe('1. buy milk\n2. call bob\n3. water the plants')
   await s.inbound(s.msg('done milk'))

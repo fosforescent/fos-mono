@@ -5,6 +5,7 @@ jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
 import { createHandlerRegistry } from './registry'
+import { REF_TYPE } from '@fosforescent/shared/sync/library-types'
 
 function setup(relay = true) {
   const replicas: Record<string, Replica> = {
@@ -53,7 +54,7 @@ test('inviting a Fos user records the member grant and delivers the node into th
   const decided = await s.send([HOME_ID, host.id], { kind: 'decide', path: [], proposalId: hostView.proposals[0]!.id, decision: 'approve' }, { username: 'bob' })
   expect(decided.status).toBe(200)
   const link = view(s.replicas.bob!, [HOME_ID, host.id])!.tasks[0]!
-  expect([link.kind, link.title, link.refOwner, link.refId]).toEqual(['ref', 'Plan the group trip', 'alice', first.body.id])
+  expect([link.type, link.title, link.refOwner, link.refId]).toEqual([REF_TYPE, 'Plan the group trip', 'alice', first.body.id])
   expect(view(s.replicas.bob!, [HOME_ID, host.id])!.proposals).toHaveLength(0)
 })
 

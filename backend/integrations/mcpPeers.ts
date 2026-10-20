@@ -22,6 +22,7 @@ import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { editTree, walkRows, type StoreDeps } from './store'
 import type { AccountUser } from '../sync/accountStore'
 import type { HostHandler } from '../sync/registry'
+import { NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
 
 export type McpServerInfo = { id: number; name: string; endpoint: string; credentials: Record<string, unknown>; tools: Array<{ name: string; description: string | null }> }
 
@@ -59,7 +60,7 @@ function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServer
   const scope = [...at, req.id]
   const requestView = view(replica, scope)
   if (requestView?.choices.length) return { error: 'tool requirement has unresolved choices' }
-  if (requestView?.tasks.some((row) => row.kind === 'requirement' && !row.requirement?.satisfied)) return { error: 'tool requirement has unresolved dependencies' }
+  if (requestView?.tasks.some((row) => !!row.requirement && !row.requirement?.satisfied)) return { error: 'tool requirement has unresolved dependencies' }
   const request = valueContent(store, resolveScope(store, headCid(replica), scope)!)
   const argumentsOfType = refArguments(store, request, capabilityTarget(store, 'tool'))
   if (argumentsOfType.length > 1) return { error: 'tool requirement has ambiguous handler arguments' }
@@ -114,7 +115,7 @@ async function executeTool(deps: McpPeerDeps, replica: Replica, bound: BoundTool
   if (!liveServer) throw new Error('The bound MCP server disconnected.')
   const text = await deps.callTool(liveServer, bound.tool, req.title)
   const store = replica.store, scope = [...at, req.id], resultId = newId()
-  replica = addRow(replica, scope, 'note', text.slice(0, 20_000) || '(empty result)', now, { id: resultId })
+  replica = addRow(replica, scope, NOTE_TYPE, text.slice(0, 20_000) || '(empty result)', now, { id: resultId })
   const resultCid = resolveScope(store, headCid(replica), [...scope, resultId])!
   const returned = proposeRefAt(replica, [...scope, bound.returnId], resultCid, bound.peerId, now)
   replica = applyProposalAt(returned.replica, [...scope, bound.returnId], returned.proposalCid, replica.meta.peerId, now)
@@ -213,7 +214,7 @@ export function createMcpPeerHandlers(deps: McpPeerDeps) {
       return await editTree(deps, user.id, async (replica, currentUser) => {
         let ran = 0
         for (const { at, row } of walkRows(replica)) {
-          if (row.kind !== 'requirement' || row.requirement?.capability !== 'tool' || row.requirement.satisfied) continue
+          if (!row.requirement || row.requirement?.capability !== 'tool' || row.requirement.satisfied) continue
           if (!mcpMembersAbove(replica, [...at, row.id]).length) continue
           const result = await runRequirement(deps, replica, currentUser, at, row, servers, now())
           if ('error' in result) { console.warn(`[mcp] ${user.username}: ${result.error}`); continue }

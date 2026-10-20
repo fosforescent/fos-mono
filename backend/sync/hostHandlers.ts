@@ -9,6 +9,8 @@ import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveR
 import type { EffectContext, HostHandler } from './registry'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 import type { VerifyHandler } from './verify'
+import { PLAIN_TYPE, REF_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
+import { MONEY_TYPE } from '@fosforescent/shared/sync/library-types'
 
 export type GitHubIssueDeps = {
   connected(userId: number): Promise<boolean>
@@ -27,7 +29,7 @@ export function githubRepoHandler(deps: GitHubIssueDeps): HostHandler {
       const task = ctx.step.path.length > 1 ? ctx.step.path.at(-2) : null
       const issue = await deps.createIssue(ctx.userId, { repo: requirement.repo, title: ctx.step.row!.title || 'from fos', ...(task ? { body: 'From a fos task.' } : {}) })
       let r = ctx.replica()
-      r = addRow(r, ctx.step.path, 'plain', `${requirement.repo}#${issue.number} ${issue.url}`, ctx.now())
+      r = addRow(r, ctx.step.path, PLAIN_TYPE, `${requirement.repo}#${issue.number} ${issue.url}`, ctx.now())
       r = addSupply(r, ctx.step.path.slice(0, -1), ctx.step.path.at(-1)!, { capability: 'repo', by: 'integration:github', ref: String(issue.number) }, ctx.now())
       await ctx.update(r)
     }
@@ -56,7 +58,7 @@ export function calendarHandler(deps: CalendarDeps): HostHandler {
       const event = await deps.createEvent(ctx.userId, { summary: req.title || 'fos', description: req.title, start, end })
       const allocation = { resource: '', type: r.resource as ResourceType, amount: r.amount ?? (end - start) / 3_600_000, unit: 'h', start, end, ...(r.peer ? { person: r.peer } : {}) }
       void task
-      await ctx.update(addRow(ctx.replica(), ctx.step.path, 'allocation', event.url ? `on Google Calendar ${event.url}` : 'on Google Calendar', ctx.now(), { allocation }))
+      await ctx.update(addRow(ctx.replica(), ctx.step.path, ALLOCATION_TYPE, event.url ? `on Google Calendar ${event.url}` : 'on Google Calendar', ctx.now(), { allocation }))
     }
   }
 }
@@ -136,7 +138,7 @@ export function searchHandler(deps: SearchDeps): HostHandler {
       for (const hit of hits) {
         if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
         if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
-        else next = addRow(next, path, 'ref', hit.title, ctx.now(), { refId: hit.aliasId, refOwner: hit.owner })
+        else next = addRow(next, path, REF_TYPE, hit.title, ctx.now(), { refId: hit.aliasId, refOwner: hit.owner })
       }
       next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'search', by: 'fos', ref: query?.id ?? path.at(-1)! }, ctx.now())
       await ctx.update(next)
@@ -199,7 +201,7 @@ async function payeeOf(ctx: EffectContext, unit: string, identity: VerifyHandler
     recipient = named
   } else {
     const suppliers = new Set<string>()
-    for (const row of view(r, taskPath)?.tasks ?? []) if (row.kind === 'requirement' && row.id !== path.at(-1)) for (const supply of view(r, [...taskPath, row.id])?.tasks ?? []) if (supply.supply?.by) suppliers.add(supply.supply.by)
+    for (const row of view(r, taskPath)?.tasks ?? []) if (!!row.requirement && row.id !== path.at(-1)) for (const supply of view(r, [...taskPath, row.id])?.tasks ?? []) if (supply.supply?.by) suppliers.add(supply.supply.by)
     const people = [...suppliers].filter(p => p !== self && p !== 'fos')
     if (people.some(p => p.startsWith('visitor:'))) throw new Error(`${unit[0]!.toUpperCase()}${unit.slice(1)} go to signed-in Fos users; this respondent is anonymous.`)
     const users = people.filter(p => p.startsWith('user:')).map(p => p.slice('user:'.length))
@@ -229,7 +231,7 @@ export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHa
       const memo = `${ctx.step.row!.title || 'fos points'} (${taskPath.join('/')})`
       await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient.username, amount, memo, `points:${ctx.username}:${path.join('/')}`)
       const id = `points:${ctx.now().toString(36)}`
-      let next = addRow(ctx.replica(), path, 'allocation', `${amount} fos points to ${recipient.name}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos' }, user: recipient })
+      let next = addRow(ctx.replica(), path, ALLOCATION_TYPE, `${amount} fos points to ${recipient.name}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos' }, user: recipient })
       next = addSupply(next, taskPath, path.at(-1)!, { capability: 'allocation', by: 'fos', ref: id }, ctx.now())
       await ctx.update(next)
     }
@@ -246,7 +248,7 @@ export type PaymentDeps = {
 }
 
 /**
- * A money requirement (`-$ 20 reward`) under a task is a payment: when the task runs, the server opens one with the
+ * A request for money (`-$ 20 reward`: a negative row of the money type, `lib:type:allocation:money`) under a task is a payment: when the task runs, the server opens one with the
  * payment provider from the owner to the respondent and leaves the evaluation awaiting review. The provider's
  * confirmation (its webhook, `sync/payments.ts`) settles the requirement and continues the evaluation, whether or
  * not the owner's devices are online. Running again while the payment is open does not open a second one.
@@ -254,7 +256,8 @@ export type PaymentDeps = {
 export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): HostHandler {
   return {
     peerId: 'fos', capability: 'send-payment',
-    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'account' },
+    // the row's type decides: a money row with a negative amount is a request for payment
+    handles: step => step.row?.type === MONEY_TYPE && !!step.row.requirement,
     async effect(ctx) {
       const path = ctx.step.path, req = ctx.step.row!.requirement!
       const amount = req.amount ?? 0, unit = (req.unit || 'usd').toLowerCase()
@@ -297,11 +300,11 @@ export function mailHandler(deps: MailDeps): HostHandler {
     async effect(ctx) {
       const r = ctx.replica(), path = ctx.step.path, taskPath = path.slice(0, -1)
       const task = taskPath.length ? view(r, taskPath.slice(0, -1))?.tasks.find(t => t.id === taskPath.at(-1)) : null
-      const rows = (view(r, taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1) && t.kind !== 'supply').map(t => t.title)
+      const rows = (view(r, taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1) && !t.supply).map(t => t.title)
       const request = mailRequest(ctx.step.row!.title, task?.title ?? '', rows)
       if (!request) throw new Error('Name the recipient: "-mail someone@example.com Subject".')
       await deps.send(request.to, request.subject, request.text, ctx.username)
-      let next = addRow(ctx.replica(), path, 'plain', `Sent to ${request.to}: ${request.subject}`, ctx.now())
+      let next = addRow(ctx.replica(), path, PLAIN_TYPE, `Sent to ${request.to}: ${request.subject}`, ctx.now())
       next = addSupply(next, taskPath, path.at(-1)!, { capability: 'mail', by: 'fos' }, ctx.now())
       await ctx.update(next)
     }

@@ -5,9 +5,10 @@ jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createSharingHandlers } from './sharing'
+import { NOTE_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
 const share = 'public-link-0123456789', at = { owner: 'host', path: ['poll'], share }
 function setup(audience: 'public' | 'users' = 'public', mode: 'approval' | 'rank' = 'approval') {
-  let host = addRow(createReplica('user:host'), [], 'requirement', 'Lunch?', 1, { id: 'poll', requirement: { capability: 'choice', options: ['Soup', 'Salad'] } })
+  let host = addRow(createReplica('user:host'), [], ALLOCATION_TYPE, 'Lunch?', 1, { id: 'poll', requirement: { capability: 'choice', options: ['Soup', 'Salad'] } })
   host = setSharing(host, ['poll'], { id: share, audience, enabled: true }, 2)
   host = addMemberAt(host, [], 'fos', 'Fos', ['poll'], 2)
   host = configurePoll(host, ['poll'], mode, 3)
@@ -128,8 +129,8 @@ test('approving a proposed edit is input the owner decides with (the tally never
 })
 test('allocation links expose only requested fields and reject mismatching sources', async () => {
   const s = setup('users')
-  s.replicas.host = addRow(s.replicas.host, ['poll'], 'requirement', 'Bring one dress', 5, { id: 'need', requirement: { capability: 'allocation', resource: 'inventory', unit: 'dress', amount: 1 } })
-  s.replicas.guest = addRow(s.replicas.guest, [], 'allocation', 'private inventory label', 5, { id: 'dress', allocation: { resource: 'private-bank', type: 'inventory', unit: 'dress', amount: 1, start: 123, end: 456 } })
+  s.replicas.host = addRow(s.replicas.host, ['poll'], ALLOCATION_TYPE, 'Bring one dress', 5, { id: 'need', requirement: { capability: 'allocation', resource: 'inventory', unit: 'dress', amount: 1 } })
+  s.replicas.guest = addRow(s.replicas.guest, [], ALLOCATION_TYPE, 'private inventory label', 5, { id: 'dress', allocation: { resource: 'private-bank', type: 'inventory', unit: 'dress', amount: 1, start: 123, end: 456 } })
   const visit = await s.call('visit', at, 'guest')
   const saved = await s.call('submit', input(visit.body, { fields: { need: { source: 'dress' } } }), 'guest')
   expect(saved.status).toBe(200)
@@ -139,8 +140,8 @@ test('allocation links expose only requested fields and reject mismatching sourc
   expect(view(s.replicas.guest, ['fos:home'])!.tasks.some(t => view(s.replicas.guest, ['fos:home', t.id])?.members.some(m => m.peerId === 'user:host'))).toBe(true)
 })
 test('the public read endpoint serves the projection for embeds without recording a visitor', async () => {
-  let host = addRow(createReplica('user:host'), [], 'note', '# A post\n\nWith a **body**.', 1, { id: 'post' })
-  host = addRow(host, ['post'], 'note', '## Part\n\nMore.', 2, { id: 'part' })
+  let host = addRow(createReplica('user:host'), [], NOTE_TYPE, '# A post\n\nWith a **body**.', 1, { id: 'post' })
+  host = addRow(host, ['post'], NOTE_TYPE, '## Part\n\nMore.', 2, { id: 'part' })
   host = writeNodeValue(host, [], 'secret', 'host-only-secret', 3)
   host = setSharing(host, ['post'], { id: share, audience: 'public', enabled: true }, 4)
   const replicas: Record<string, Replica> = { host }

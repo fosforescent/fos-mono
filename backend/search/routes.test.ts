@@ -2,6 +2,8 @@ import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { MARKET_PEER, addMemberAt, addRow, addTask, content, copyBidRow, createReplica, draftBid, readProposals, removeMemberAt, setMarketAt, setMemberCapabilitiesAt, viewNode, resolveScope, rootTargetCid, type Replica } from '@fosforescent/shared/sync/index'
 import { createMarketHandlers } from './routes'
+import { COMMENT_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from '@fosforescent/shared/sync/library-types'
+import { TASK_TYPE } from '@fosforescent/shared/sync/library-types'
 
 type Saved = { user: { id: number; username: string }; store: FosStore }
 
@@ -35,7 +37,7 @@ function call(handler: (req: Request, res: Response) => Promise<Response>, me: s
 function aliceWithListedTask(): Replica {
   let a = createReplica('alice-device')
   a = addTask(a, [], 'design a logo for the bakery', 1, 'job')
-  a = addRow(a, ['job'], 'requirement', '1h of design time', 2, { id: 'req', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } })
+  a = addRow(a, ['job'], ALLOCATION_TYPE, '1h of design time', 2, { id: 'req', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } })
   a = addTask(a, ['job'], 'brief', 3, 'brief')
   a = setMarketAt(a, ['job'], true, 4)
   a = addTask(a, [], 'private: dentist', 5, 'dentist')
@@ -44,7 +46,7 @@ function aliceWithListedTask(): Replica {
 
 /** A bid as the web client builds it: rows in a draft of the bidder's own tree, sent as JSON. */
 const wire = (bid: unknown) => JSON.parse(JSON.stringify(bid))
-const comment = (bidder: string, text: string, now = 10) => wire(draftBid(createReplica(bidder), [], now, d => addRow(d, [], 'comment', text, now)))
+const comment = (bidder: string, text: string, now = 10) => wire(draftBid(createReplica(bidder), [], now, d => addRow(d, [], COMMENT_TYPE, text, now)))
 
 test('a bidder proposes on a node the market lists; bidders see only their own proposal, the owner sees all', async () => {
   const alice = aliceWithListedTask()
@@ -56,8 +58,8 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
 
   // bob proposes: a comment plus a supply under the requirement (a bid of rows he built, of whatever kind)
   const bid = draftBid(createReplica('bob'), [], 10, r => {
-    r = addRow(r, [], 'comment', 'I can do this Tuesday', 10)
-    return addRow(r, [], 'supply', '', 10, { id: 'bob-supply', supply: { capability: 'allocation', by: 'bob', at: 10, ref: 'bob-alloc' } })
+    r = addRow(r, [], COMMENT_TYPE, 'I can do this Tuesday', 10)
+    return addRow(r, [], ALLOCATION_TYPE, '', 10, { id: 'bob-supply', supply: { capability: 'allocation', by: 'bob', at: 10, ref: 'bob-alloc' } })
   }, id => id === 'bob-supply' ? ['req'] : [])
   const bob = await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job', bid: wire(bid) } })
   expect(bob.status).toBe(200)
@@ -89,7 +91,7 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
   // the bidder's branch holds the comment and the supply under the requirement
   const bobProposal = readProposals(alice.store, content(alice.store, jobCid)).find((p) => p.peerId === 'user:bob')!
   const branch = viewNode(alice.store, bobProposal.contentCid)
-  expect(branch.tasks.map((t) => [t.kind, t.title])).toEqual([['requirement', '1h of design time'], ['task', 'brief'], ['plain', 'I can do this Tuesday']])
+  expect(branch.tasks.map((t) => [t.type, t.title])).toEqual([[ALLOCATION_TYPE, '1h of design time'], [TASK_TYPE, 'brief'], [COMMENT_TYPE, 'I can do this Tuesday']])
   const reqInBranch = resolveScope(alice.store, bobProposal.contentCid, ['req'])!
   expect(viewNode(alice.store, reqInBranch).tasks.map((t) => t.supply?.ref)).toEqual(['bob-alloc'])
 
@@ -101,7 +103,7 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
   // bad input: no bid, one's own node, a supply in someone else's name
   expect((await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job' } })).status).toBe(400)
   expect((await call(d.handlers.marketProposal, 'alice', { body: { owner: 'alice', aliasId: 'job', bid: comment('alice', 'x') } })).status).toBe(400)
-  const forged = draftBid(createReplica('bob'), [], 12, r => addRow(r, [], 'supply', '', 12, { supply: { capability: 'allocation', by: 'fos', at: 12 } }))
+  const forged = draftBid(createReplica('bob'), [], 12, r => addRow(r, [], ALLOCATION_TYPE, '', 12, { supply: { capability: 'allocation', by: 'fos', at: 12 } }))
   expect((await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job', bid: wire(forged) } })).status).toBe(400)
 })
 
@@ -120,21 +122,21 @@ test('an account the owner made a member (edit) sends its own row as an allocati
   let alice = addTask(createReplica('alice-device'), [], 'inbox', 1, 'inbox')
   alice = addMemberAt(alice, ['inbox'], 'user:bob', 'bob', ['edit'], 2)
   let bob = addTask(createReplica('bob'), [], 'Deliver the logo', 3, 'bin')
-  bob = addRow(bob, ['bin'], 'requirement', 'pay 5', 4, { requirement: { capability: 'allocation', resource: 'account', amount: 5, unit: 'USD' } })
+  bob = addRow(bob, ['bin'], ALLOCATION_TYPE, 'pay 5', 4, { requirement: { capability: 'allocation', resource: 'account', amount: 5, unit: 'USD' } })
   const d = deps({ alice, bob })
   const sent = await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'inbox', bid: wire(copyBidRow(bob, ['bin'], 5, 'bin-bob')) } })
   expect(sent.status).toBe(200)
   const inbox = content(alice.store, resolveScope(alice.store, rootTargetCid(alice.store), ['inbox'])!)
   const proposal = readProposals(alice.store, inbox).find(p => p.peerId === 'user:bob')!
   const bin = resolveScope(alice.store, proposal.contentCid, ['bin-bob'])!
-  expect(viewNode(alice.store, bin).tasks.map(t => [t.kind, t.title])).toEqual([['requirement', 'pay 5']])
+  expect(viewNode(alice.store, bin).tasks.map(t => [t.type, !!t.requirement, t.title])).toEqual([[ALLOCATION_TYPE, true, 'pay 5']])
   // without the grant (and unlisted) the node takes nothing
   expect((await call(d.handlers.marketProposal, 'carol', { body: { owner: 'alice', aliasId: 'inbox', bid: comment('carol', 'x') } })).status).toBe(403)
 })
 
 test('published handler snapshots are readable globally, and switching off the market offer revokes access', async () => {
   const { publishTemplate, setHandlerEnabledAt } = await import('@fosforescent/shared/sync/index')
-  let alice = addRow(createReplica('alice-device'), [], 'template', 'Design', 1, { id: 'template' })
+  let alice = addRow(createReplica('alice-device'), [], TEMPLATE_TYPE, 'Design', 1, { id: 'template' })
   alice = addTask(alice, ['template'], 'Draw logo', 2, 'draw')
   alice = addTask(alice, [], 'Private calendar', 3, 'private')
   alice = publishTemplate(alice, [], ['template'], 'Design service', 4, true)
@@ -144,7 +146,7 @@ test('published handler snapshots are readable globally, and switching off the m
   expect(opened.status).toBe(200)
   expect(opened.json.capability).toBe(true)
   // the template's rows, besides its pattern rows (what tasks made from it accept)
-  expect(opened.json.view.tasks.filter((t: { kind: string }) => t.kind !== 'pattern').map((t: { title: string }) => t.title)).toEqual(['Draw logo'])
+  expect(opened.json.view.tasks.filter((t: { type: string }) => t.type !== PATTERN_TYPE).map((t: { title: string }) => t.title)).toEqual(['Draw logo'])
   expect(JSON.stringify(opened.json)).not.toContain('Private calendar')
   // publishing a capability does not list the context it is published in
   expect((await call(d.handlers.marketNode, 'bob', { query: { owner: 'alice', id: 'private' } })).status).toBe(403)

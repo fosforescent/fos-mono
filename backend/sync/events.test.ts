@@ -4,6 +4,7 @@ jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
+import { PLAIN_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Private sibling', 1, 'private')
   r = addTask(r, [], 'Project specification', 1, 'project')
@@ -152,7 +153,7 @@ test('a peer granted execute lists the open work in its scope, its own first, an
   r = addTask(r, ['project'], 'Already shipped', 4, 'shipped')
   r = setTaskDone(r, ['project'], 'shipped', true, 5)
   r = addTask(r, ['project', 'shipped'], 'Hidden under done work', 5, 'under-done')
-  r = addRow(r, ['project', 'ui'], 'requirement', 'Sign-off', 5, { id: 'signoff', requirement: { capability: 'confirmation' } })
+  r = addRow(r, ['project', 'ui'], ALLOCATION_TYPE, 'Sign-off', 5, { id: 'signoff', requirement: { capability: 'confirmation' } })
   r = addMemberAt(r, ['project', 'tests'], 'agent', 'Coding agent', ['execute'], 6)
   s.set(r)
   const tools = (await s.rpc('tools/list')).body.result.tools.map((t: any) => t.name)
@@ -171,8 +172,8 @@ test('a peer granted execute lists the open work in its scope, its own first, an
   expect(again.items.map((i: any) => i.title)).toContain('Added from the phone')
   expect(again.items.map((i: any) => i.title)).not.toContain('Private sibling')
   // the row's type decides: a plain row and a template are not work, a task made from the template is
-  let t = addRow(s.get(), ['project'], 'plain', 'Background reading', 8, { id: 'context' })
-  t = addRow(t, ['project'], 'template', 'Release checklist', 8, { id: 'tpl' })
+  let t = addRow(s.get(), ['project'], PLAIN_TYPE, 'Background reading', 8, { id: 'context' })
+  t = addRow(t, ['project'], TEMPLATE_TYPE, 'Release checklist', 8, { id: 'tpl' })
   t = addTask(t, ['project', 'tpl'], 'Tag the release', 8, 'tag')
   t = addTask(t, ['project'], 'Release 1.0', 9, 'release')
   s.set(instantiateTemplate(t, ['project'], 'release', 'tpl', 9))

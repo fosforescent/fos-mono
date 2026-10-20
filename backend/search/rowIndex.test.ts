@@ -1,5 +1,6 @@
 import { MARKET_PEER, addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
 import { collectRows, indexStore, searchRows, type Embed } from './rowIndex'
+import { COMMENT_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 
 // a deterministic "embedding": bag of letters, so related texts land close together
 const embed: Embed = async (texts) => texts.map((t) => { const v = new Array(26).fill(0); for (const c of t.toLowerCase()) { const i = c.charCodeAt(0) - 97; if (i >= 0 && i < 26) v[i]++ } const n = Math.hypot(...v) || 1; return v.map((x) => x / n) })
@@ -36,14 +37,14 @@ test('rows are collected with paths and market inheritance; supplies and referen
   r = makeLinkAt(r, ['o'], 3)
   r = setMarketAt(r, ['o'], true, 4)
   r = addTask(r, [], 'private groceries', 5, 'g')
-  r = addRow(r, ['g'], 'requirement', 'confirmation', 6, { id: 'q', requirement: { capability: 'confirmation' } })
+  r = addRow(r, ['g'], ALLOCATION_TYPE, 'confirmation', 6, { id: 'q', requirement: { capability: 'confirmation' } })
   const rows = collectRows(r.store)
   expect(rows.map((x) => [x.aliasId, x.market, x.path.join('/')])).toEqual([['o', true, ''], ['s', true, 'o'], ['g', false, ''], ['q', false, 'g']])
 })
 
 test('constructed comment titles are indexed from their graph fields', () => {
-  const r = addRow(createReplica('a'), [], 'comment', 'A searchable comment', 1, { id: 'message' })
-  expect(collectRows(r.store).find(row => row.aliasId === 'message')).toMatchObject({ kind: 'plain', title: 'A searchable comment', text: 'A searchable comment' })
+  const r = addRow(createReplica('a'), [], COMMENT_TYPE, 'A searchable comment', 1, { id: 'message' })
+  expect(collectRows(r.store).find(row => row.aliasId === 'message')).toMatchObject({ type: COMMENT_TYPE, title: 'A searchable comment', text: 'A searchable comment' })
 })
 
 test('indexing embeds changed rows only, removes vanished rows; search ranks own rows and market rows', async () => {
@@ -76,14 +77,14 @@ test('indexing embeds changed rows only, removes vanished rows; search ranks own
 test('global search aggregates only handlers offered to the market peer; switching the offer off removes them', async () => {
   const { publishTemplate, discoverHandlers, setHandlerEnabledAt } = await import('@fosforescent/shared/sync/index')
   const prisma = fakePrisma()
-  let r = addRow(createReplica('alice-device'), [], 'template', 'Design a logo', 1, { id: 'design' })
+  let r = addRow(createReplica('alice-device'), [], TEMPLATE_TYPE, 'Design a logo', 1, { id: 'design' })
   r = addTask(r, [], 'Private notes', 2, 'private')
   r = publishTemplate(r, [], ['design'], 'Logo capability', 3)
-  expect(collectRows(r.store).filter(row => row.kind === 'capability')).toEqual([])
+  expect(collectRows(r.store).filter(row => row.type === 'capability')).toEqual([])
   r = publishTemplate(r, [], ['design'], 'Logo capability', 4, true)
   await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)
   const hits = await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)
-  expect(hits.map(h => [h.aliasId, h.kind, h.owner])).toEqual([['fos:published:design', 'capability', 'alice']])
+  expect(hits.map(h => [h.aliasId, h.type, h.owner])).toEqual([['fos:published:design', 'capability', 'alice']])
   const offer = discoverHandlers(r, []).find(o => o.id === 'fos:published:design')!
   r = setHandlerEnabledAt(r, [], MARKET_PEER, offer.id, false, 5) // the market member's offer, switched off
   await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)

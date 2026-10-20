@@ -13,6 +13,7 @@ import { createNodeProvider } from './provideNode'
 import { createHandlerRegistry } from './registry'
 import type { AccountStoreDeps } from './accountStore'
 import { identityKeyFromEnv, identityKeyFromSeed, verifyEd25519, verifyHandler } from './verify'
+import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
 
 const accounts: Record<string, { id: number; username: string; name?: string | null; publicKey?: string | null }> = { bob: { id: 42, username: 'bob', name: 'Bob Builder' }, ada: { id: 7, username: 'ada', publicKey: 'cHVibGljLWtleQ==' } }
 const verify = verifyHandler({ findUser: async username => accounts[username] ?? null, now: () => 1234 }, identityKeyFromSeed(Buffer.alloc(32, 5)))
@@ -101,7 +102,7 @@ test('the server\'s key is graph data: published in Home and carried to devices 
   const h = host(registry)
   let device = ensureHomeContext(createReplica('user:alice'), 1)
   device = addTask(device, [HOME_ID], 'review the draft', 2, 'review')
-  device = addRow(device, [HOME_ID, 'review'], 'requirement', 'read it', 3, { id: 'rq', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
+  device = addRow(device, [HOME_ID, 'review'], ALLOCATION_TYPE, 'read it', 3, { id: 'rq', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
   expect(publishedKey(device, 'fos')).toBeNull()
   device = await h.sync(device)
   // the account context the server ensured on exchange holds the key row, and so does the device now
