@@ -25,6 +25,12 @@ const devCredentials =
 const root = document.getElementById('app')
 if (!root) throw new Error('missing #app root')
 
+// Set native layout before async startup. iPadOS can use a desktop-style user agent.
+if (inTauri()) {
+  if (/Android/i.test(navigator.userAgent)) document.documentElement.classList.add('android-shell')
+  else if (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) document.documentElement.classList.add('ios-shell')
+}
+
 // Project mode: inside the desktop shell, a directory with fos.config.toml
 // decides the server, the device name and where state lives (.fos/).
 const virtualRequested = !!virtualPeerToken()
@@ -54,8 +60,6 @@ if (virtual) {
   const url = new URL(location.href); url.searchParams.set('virtual', virtual.token); history.replaceState(null, '', url)
 }
 mountUi(root, app)
-// The Android shell's web view sits under the status bar without reporting an inset; style.css pads for it.
-if (inTauri() && /Android/i.test(navigator.userAgent)) document.documentElement.classList.add('android-shell')
 if (virtualRequested && !virtual) app.notify('error', 'This virtual peer connection is unavailable. Spawn a new peer from the original tab.')
 else app.start()
 mountSharedNode(root, app, baseUrl)
