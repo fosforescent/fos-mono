@@ -1625,6 +1625,9 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const filtered = prefs.search ? { ...node, tasks: node.tasks.filter(matches) } : node
   let rows = renderRows(filtered, [], 0, state, app)
   const preview = proposalPreview(app)
+  // Home shows what relays delivered to this device
+  const inbox = !preview && state.view.length === 1 && state.view[0] === HOME_ID && !state.atRoot ? renderRelayInbox(app) : null
+  if (inbox) rows = [inbox, ...rows]
   if (!preview && prefs.layout === 'tree') { const files = filesystemRows(app, prefs.search); if (files) rows.push(files) }
   // a node with nothing of the user's own yet (the seeded standard library does not count) shows the first-run help
   if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => row.id === LIBRARY_ID)) {
@@ -2544,8 +2547,27 @@ function taskActions(at: Scope, task: TaskView, app: App): Action[] {
   return [
     { label: 'Change template', run: () => app.openTemplatePicker(path) },
     { label: 'Add choice', keys: 'Shift+Enter', run: () => app.newBranchAt(path) },
-    { label: 'Link', run: () => void app.copyNodeLink(path) }
+    { label: 'Link', run: () => void app.copyNodeLink(path) },
+    // through a relay offered here: the row is left as a message to that peer (shared/sync/relay.ts)
+    ...app.relayRecipients(path).map(peer => ({ label: `Send to ${peer.name}`, run: () => app.sendToPeer(path, peer.peerId) }))
   ]
+}
+
+/** What relays delivered to this device (its queues' unacknowledged messages), with an Acknowledge button each. */
+function renderRelayInbox(app: App): HTMLElement | null {
+  const inbox = app.relayInbox()
+  if (!inbox.length) return null
+  const li = document.createElement('li')
+  li.className = 'relay-inbox'
+  li.append(span('relay-inbox-title', `Inbox · ${inbox.length}`))
+  for (const message of inbox) {
+    const item = div('relay-message', '')
+    item.dataset.message = message.id
+    item.append(span('relay-message-rows', message.rows.map(row => firstLine(row.title) || row.typeName || 'row').join(' · ') || 'Empty message'))
+    item.append(button('secondary small relay-ack', 'Acknowledge', () => app.acknowledgeRelay(message.queue, message.id)))
+    li.append(item)
+  }
+  return li
 }
 
 function renderContextMenu(el: HTMLElement, state: AppState, app: App): void {

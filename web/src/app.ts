@@ -4,7 +4,7 @@ import { addSpecification, specificationRows, importSpecifications, queueSpecifi
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
-import { CAPABILITY_LABEL } from '../../shared/sync/graph'
+import { CAPABILITY_LABEL, MARKET_PEER } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
@@ -1850,6 +1850,42 @@ export class App {
     }
     walk([])
     return out
+  }
+  /**
+   * Who a row at `path` can be sent to through a relay (shared/sync/relay.ts): when a peer offers `relay` where the
+   * row is, the peers that are members there or above (devices, agent peers, other accounts), but not this device, the
+   * fos server, the market, audiences or integrations.
+   */
+  relayRecipients(path: Scope): Array<{ peerId: string; name: string }> {
+    const r = this.state.replica, at = path.slice(0, -1)
+    if (!path.length || !resolveScope(r.store, headCid(r), path) || !discoverHandlers(r, at).some(offer => offer.capability === 'relay' && offer.enabled)) return []
+    const skip = (peer: string) => peer === r.meta.peerId || peer === 'fos' || peer === MARKET_PEER || /^(audience|integration|mcp):/.test(peer)
+    return contextMembers(r, at).filter(m => !skip(m.peerId)).map(m => ({ peerId: m.peerId, name: m.name || m.peerId }))
+  }
+  /**
+   * "Send to peer": the row moves into a relay message addressed to `peerId` (a row of the library's relay message
+   * type) left where it was; the relay delivers it to that peer's queue under its member entry, which reaches the
+   * peer by ordinary sync.
+   */
+  sendToPeer(path: Scope, peerId: string): void {
+    const at = path.slice(0, -1), id = path.at(-1)!, now = this.now()
+    const message = `relay:${id}:${now.toString(36)}`
+    try {
+      let r = addRelayMessage(this.state.replica, at, peerId, now, message)
+      r = moveNode(r, at, id, at, { into: message }, now)
+      this.edit(r)
+      this.notify('info', `Left for ${this.relayRecipients([...at, message]).find(p => p.peerId === peerId)?.name ?? peerId} at the relay; it is delivered when they sync.`)
+    } catch (error) { this.notify('error', `Could not send: ${error instanceof Error ? error.message : String(error)}`) }
+  }
+  /** What was delivered to this device: the unacknowledged messages in its queues here (its member entries' `relay:queue`). */
+  relayInbox(): Array<RelayDelivery & { queue: Scope }> {
+    const r = this.state.replica
+    return relayQueues(r, r.meta.peerId).flatMap(queue => relayInbox(r, queue).map(delivery => ({ ...delivery, queue })))
+  }
+  /** Acknowledge a delivered message: an ack row in the queue; the relay takes both out after the next sync. */
+  acknowledgeRelay(queue: Scope, messageId: string): void {
+    try { this.edit(addRelayAck(this.state.replica, queue, messageId, this.now())) }
+    catch (error) { this.notify('error', `Could not acknowledge: ${error instanceof Error ? error.message : String(error)}`) }
   }
   /**
    * Send a row to another account as a proposed transaction: a copy of the row with everything inside it goes as one

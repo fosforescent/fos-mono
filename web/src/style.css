@@ -773,6 +773,10 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 .filesystem-row .file-reference-add { margin-left: auto; }
 
 .first-run { padding: 28px 16px 24px; display: flex; justify-content: center; color: var(--fg-2); }
+.relay-inbox { list-style: none; margin: 4px 0 8px; padding: 8px 12px; border: 1px solid var(--line, #ddd); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; }
+.relay-inbox-title { font-weight: 600; color: var(--fg-2); }
+.relay-message { display: flex; align-items: center; gap: 8px; justify-content: space-between; min-width: 0; }
+.relay-message-rows { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .first-run-keys { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .first-run-keys .sep { color: var(--muted-2); }
 
