@@ -356,7 +356,7 @@ export class App {
   private resolvingUsers = new Set<string>()
   /**
    * The device's verify handlers, by the peer that attested: a user object the fos server attested is checked
-   * against the key that server publishes in Home (`fos:key:fos`, graph data that node exchange brought here).
+   * against the key that server publishes on its member entry (`fos:key:fos` under `fos:peer:fos` on the root, graph data that node exchange brought here).
    */
   private readonly verifiers: Record<string, (user: UserRecord) => Promise<boolean | null>> = {
     fos: user => checkUserAttestation({ peer: 'fos', publicKey: publishedKey(this.state.replica, 'fos') }, user)
@@ -1908,7 +1908,7 @@ export class App {
    * `@name` binds an unverified user object (the username only) until the account server attests it. The device
    * asks through the graph: a `verify` requirement for that name (`requestVerification`, under `fos:users`) run on
    * the account server (`runOnServer`), whose `verify` handler binds the attested object as its user field. The
-   * device's own verify handler (`verifiers`) checks the attestation against the key the server publishes in Home;
+   * device's own verify handler (`verifiers`) checks the attestation against the key the server publishes on its member entry;
    * then the object is kept in the graph (`fos:users`), every row that named that username is rebound and the
    * request removed. Offline, rows keep the unverified object; the next edit retries.
    */

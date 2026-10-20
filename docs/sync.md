@@ -31,6 +31,46 @@ the first handshake preserves them and fixes the opposite endpoint identity.
 Connected endpoint rows also expose field and child-reference switches under
 Connection and capabilities. These edit only this device's endpoint.
 
+**Member edges travel like other children** (`exchangedChildren`,
+`memberEntryVisible` in node-provider.ts). A node's member entries
+(`[MEMBER, entry]` on its identity, `entry.data.alias.id = fos:peer:<peer>`)
+are children of that node in its shape, with the MEMBER primitive as their
+`template`, and each entry syncs in its own round like any node: its data
+(`name`, `peerId`, which must match its id, and `disabledCapabilities`), its
+rows (a relay queue, a published key, a linked store's row) and its grants and
+offers. A grant or offer (`[CAPABILITY, x]` = the `to` side, `[ACCEPTS, x]` =
+the `from` side, `x` a capability constructor or a typed handler ref) is
+immutable, so it is a child `pinned` to the cid of `x` (id `to:<what>` or
+`from:<what>`: the handler's alias, the capability's name or the cid), and its
+content travels with the shape: `ProvidedNode.templates` towards the
+requester, `NodeRequest.templateNodes` with an update, both verified by cid and
+limited to what the pinned grants reach. Who receives what is the masked
+projection the grants already define:
+
+* the owner's devices receive and push every entry (listing on the market,
+  publishing an offer, inviting, switching a capability off), merged and
+  conflicting like other children. For the owner's devices the deciding member
+  is their own entry when it is a grant decision (`decidingMember`): audiences
+  say what others may do, and a device entry that only carries that device's
+  offers (`publishTemplate`, `offerRelay`), or is not loaded yet, decides nothing;
+* any other peer (an invited peer, a proposer, `user:<name>` on a shared node)
+  receives only its own entry (its grants, and the rows left there for it),
+  and of the node only the children it may read: everything else looks like a
+  different node with a subset of children. It cannot step into another entry,
+  never writes an entry (a change there is refused, an empty probe reads), and
+  member children in its updates of a node are left out;
+* a member granted `local` (a store reached through this machine's files,
+  `linkLocalStore`) is never listed: that link stays on the machine;
+* link masks (`setNodeLinkMask`) list entries by their ids like any child.
+
+A member entry listed but not loaded here is an unloaded stub that names its
+peer and grants nothing (`unloadedMemberEdge`), so a peer is never granted
+more than the entry says while it is in flight. Only the entries a peer listed
+are exchanged with it (`materializedNodePaths(r, at, peer)`,
+`memberEntryListed`), so an entry only this side keeps is never pushed and never
+makes the replica dirty. Entries never become projections of their own
+(`acceptProvidedNode` refuses them; they load with their node's sync).
+
 Visible peer-held rows request their content automatically, with at most four
 viewport requests active at a time. Offscreen rows wait until visible. Opening a
 peer-held row also requests it immediately; descendants stay unloaded until needed.
@@ -191,7 +231,21 @@ reference or a node a third peer holds) and what the peer last provided.
 ```
 device → peer   NodeRequest  { peerId, scope, path, linkId, branches?, update?: { base, value }, templates?, templateNodes? }
 peer → device   ProvidedNode { data, children, mask?, proposals?, grants?, capabilities?, wanted?, templates? }
+NodeChild       { id, address, template, held?, pinned? }
 ```
+
+`NodeChild` is a row (`template` = its type), a member entry (`template` = the
+MEMBER primitive, `id` = `fos:peer:<peer>`) or, in a member entry's shape, a
+grant or offer pinned to its node's cid (`pinned`; `template` = the CAPABILITY
+or ACCEPTS primitive). The wire change for member sync is that one optional
+field plus the content of pinned grants in the existing `templates` /
+`templateNodes` fields, and member entry shapes carrying `peerId` and
+`disabledCapabilities` in their data (`validateNodeShape(shape, at)` allows
+them at a `fos:peer:` path only, `peerId` matching the id). A peer that does not
+know member children sees MEMBER-typed children it cannot load and ignores
+them; one that predates `pinned` would treat grants as rows of an unknown type,
+so both sides should run this version (the node-exchange format already changed
+in this branch).
 
 One node's round (`planNodeSync` → `nodeSyncPush` → `finishNodeSync`):
 
@@ -219,7 +273,13 @@ A receive-only round (`push: false`) sends no update: what the peer has
 becomes the agreed shape, and local changes stay unsent (`isDirty`).
 
 The web app syncs the attachment, the path on screen and every node edited
-here (`App.syncNodes`). The `fos` CLI syncs the whole tree (`nodeTreeSync`, a
+here (`App.syncNodes`), plus the member entries of the nodes it syncs that
+way (policy, small) and everything in this device's own entries (its relay
+queues); other rows below stay unloaded until they are opened. An owner's
+device attached at Home also pulls, receive-only, the server's own member
+entry on the account root above it (`NodeSyncContext.above`,
+`accountContextAbove`: the server's offers and its published key); nothing
+else above Home is exchanged. The `fos` CLI syncs the whole tree (`nodeTreeSync`, a
 generator the binary drives through `nodeSyncBegin` / `nodeSyncStep` in
 `embed.ts`): the attachment first, then every child the peer's answer lists that
 is here or held by that peer. A child the peer holds only as a reference to this
@@ -1000,12 +1060,28 @@ member entry would not survive its proposal), take the message and themselves
 out of the queue. The same function runs on every peer; tests run it as the
 server and as a device (`relay.test.ts`).
 
-**Delivery.** A peer may step into its own member entry in node exchange (the
-owner into any): `provideNode` serves `[…, fos:peer:<me>, relay:queue]`, so the
-recipient syncs its queue like any node when it connects (`relayQueueSync`
-gives the `nodeTreeSync` context into a local row; `relayInbox` lists what is
-unacknowledged there) and adds an ack row (`addRelayAck`) that goes back on the
-same sync. Other peers cannot step into someone else's entry.
+**Delivery.** There is no delivery path of its own: member entries travel by
+node exchange (see "On-demand node providers"), so the queue is ordinary rows of
+the recipient's entry. The owner's devices receive every entry of the relay
+node; an invited recipient receives its own entry as its masked view of the
+node's members. Either way the queued messages arrive with the relay node's
+sync, `relayQueues(r, peerId)` finds the queues for a peer in what is loaded and
+`relayInbox` lists what is unacknowledged in one. An owner's device
+acknowledges with an ack row in the queue (`addRelayAck`), which goes back on
+its next sync; an invited one leaves the ack at the relay node as its
+submission (it never writes member entries). Other peers never see someone
+else's entry.
+
+**On devices.** The web app (browser and the desktop/mobile shell) syncs this
+device's own entries with everything in them, so its queues are just there:
+Home shows an **Inbox** listing the delivered messages with **Acknowledge**
+(`App.relayInbox`, `App.acknowledgeRelay`). A row's menu offers **Send to
+<peer>** where some peer offers `relay` (`App.relayRecipients`: the members at
+or above, not this device, the fos server, the market, audiences or
+integrations); it moves the row into a relay message addressed to that peer
+(`App.sendToPeer`), which the relay delivers after the sync. The `fos` REPL has
+`inbox` and `ack <id>` over the same functions (`relayInbox`/`relayAck` in
+`embed.ts`).
 
 **On the server** the registry's `relayHandler` (`backend/sync/hostHandlers.ts`)
 reacts to submissions: after every node exchange that wrote, `provideNode.ts`
@@ -1046,12 +1122,16 @@ derived from `JWT_SECRET`.
 **The verifier's key is graph data.** A handler with a `publicKey` (the
 verify handler) puts it in the registry's `hostOffers().keys`, and
 `ensureHomeContext(…, { keys })` (run whenever the server ensures the account
-context, e.g. on every node exchange) writes it into Home as a row of the
-user type among the people: `fos:key:fos` with account and username `fos`
-and `publicKey` the raw key (`publishPeerKey`; unchanged keys write
-nothing). Node exchange brings it to every device with Home
-(`publishedKey`, `publishedKeys`); `cachedUser` never returns it, so no
-`@fos` binds it. The device's own verify handler checks an attestation
+context, e.g. on every node exchange) writes it onto the fos member entry of
+the account root (`fos:peer:fos`, the server's own place there, beside its
+offers) as a row of the user type: `fos:key:fos` with account and username
+`fos` and `publicKey` the raw key (`publishPeerKey`; unchanged keys write
+nothing, and a key row an older server left in Home's `fos:users` is removed).
+Member entries travel by node exchange, and an owner's device attached at Home
+pulls that entry above its attachment (`accountContextAbove`), so the key
+arrives on the device's own root fos entry (`publishedKey`, `publishedKeys`
+read the root's member entries: a user-type row named `fos:key:<peer>` under
+`fos:peer:<peer>`); no `@fos` binds it. The device's own verify handler checks an attestation
 whose `by` is a peer with a published key against that key:
 `verifyPublished(replica, user, check)` with the crypto injected (node:crypto
 in tests), and in the app the `fos` entry of `App.verifiers`
@@ -1089,12 +1169,18 @@ Offline rows keep the unverified object until the next edit online.
   template prefixes are parsed in `web/src/rows.ts` only.
 * Assignments (`-@name`) only show in the assigner's own context panel; the
   assignee's replica does not receive them yet (needs the proposal path).
-* Relay queues (see "Relay"): the web app and the desktop do not yet pull
-  their own queue on connect, offer a "send to peer" action, or run the relay
-  after exchanges they serve themselves (the shared functions exist; the
-  server runs it). Messages are not signed and carry no route beyond the
-  addressee; a device whose shipped library predates the relay types falls
-  back to the types in its build.
+* Relay queues (see "Relay"): devices receive their queues and send messages,
+  but do not run the relay after exchanges they serve themselves (the shared
+  functions exist; the server runs it). The web inbox lists this device's own
+  queues only (not those of agent peers it hosts). Messages are not signed and
+  carry no route beyond the addressee; a device whose shipped library predates
+  the relay types falls back to the types in its build.
+* Member sync: a pinned grant's content is sent with every round of its entry
+  (small for built-in capabilities; a published handler carries its template's
+  reachable nodes, history included). The web app loads member entries only for
+  nodes it syncs (on screen, edited, or its own entries), so a listing made
+  elsewhere shows once its node is opened. Branch contexts and proposals carry
+  no member changes (members live on the identity, a proposal is a value).
 * Browser node relay requires a live authenticated WebSocket; offline devices
   cannot answer requests. Relay does not traverse foreign reference targets.
 * Discord provides `mail`/`relay` on paper; its OAuth sign-in only identifies
