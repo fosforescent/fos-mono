@@ -14,21 +14,21 @@
  * and move a row (`moveChild`, or out of a submission). An addressee the relay node does not know is left alone, which
  * is all the central fos server needs. Who runs it: the peer offering `relay` in the context (`discoverHandlers`): the
  * fos server through its registry, any device through a typed offer of the library's Relay template (`offerRelay`).
- * Node exchange carries the queue: a peer may step into its own member entry (node-provider.ts), so the recipient
- * syncs its queue when it connects (`relayQueueSync`, `relayInbox`) and acknowledges with an ack row (`addRelayAck`).
+ * Node exchange carries the queue: member entries are children of their node, and a peer receives its own (a masked
+ * projection of the node, node-provider.ts), so the queue rows reach the recipient by ordinary sync (`relayQueues`,
+ * `relayInbox`); it acknowledges with an ack row (`addRelayAck`).
  */
 import type { FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import {
   commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, memberEntryId, MEMBER_ENTRY_PREFIX, moveChild, aliasIdOf,
   capabilityTarget, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
-  LIBRARY_ID, importNodes, findNearestRow, type ProposalRecord, type Scope, type TaskView,
+  LIBRARY_ID, importNodes, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
 import { constructForm } from './forms'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
 import { STANDARD_LIBRARY } from './library'
-import type { NodeSyncContext } from './node-sync'
 import type { FosNodesData } from '../types'
 import * as COMPILED_LIBRARY from './library.generated.json'
 
@@ -249,12 +249,24 @@ export function addRelayAck(r: Replica, at: Scope, messageId: string, now: numbe
 }
 
 /**
- * How a recipient syncs its own queue at a relay (`scope`: its attachment there, `at`: the relay node below it) into
- * the local row `localRoot`: ordinary node sync (`nodeTreeSync`/`syncNodeTree`), so the queued messages arrive whole
- * and an ack row added under `localRoot` goes back as this peer's submission.
+ * Where `peerId`'s queues are in this replica: the `relay:queue` row of every member entry for it on a node here
+ * (member entries travel by node exchange, so a recipient's own queue arrives with the relay node it syncs, its own
+ * entry being what it receives of the node's members). Only what is loaded is visited; bounded.
  */
-export function relayQueueSync(peerId: string, providerId: string, scope: Scope, localRoot: Scope, at: Scope = []): NodeSyncContext {
-  return { peer: providerId, scope, remoteRoot: [...scope, ...at, memberEntryId(peerId), RELAY_QUEUE_ID], localRoot, branches: [], push: true }
+export function relayQueues(r: Replica, peerId: string, at: Scope = [], limit = 2000): Scope[] {
+  const s = r.store, out: Scope[] = [], stack: Scope[] = [at], entry = memberEntryId(peerId)
+  let seen = 0
+  while (stack.length && seen++ < limit) {
+    const path = stack.pop()!, cid = resolveScope(s, headCid(r), path)
+    if (!cid || isPeerReference(content(s, cid))) continue
+    const member = memberEdgesOf(s, cid).find(e => content(s, e[1]).data.alias?.id === entry)
+    if (member && findChild(s, member[1], RELAY_QUEUE_ID)) out.push([...path, entry, RELAY_QUEUE_ID])
+    for (const edge of valueContent(s, cid).children) {
+      const id = isRowEdge(s, edge) ? aliasIdOf(content(s, identityCid(s, edge))) : null
+      if (id) stack.push([...path, id])
+    }
+  }
+  return out.sort((a, b) => a.length - b.length)
 }
 
 /** A queued message as the recipient holds it: its id, its addressee and the rows that were sent. */

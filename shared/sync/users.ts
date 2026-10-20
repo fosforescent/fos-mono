@@ -7,9 +7,10 @@
  * Verification is an ed25519 signature over `userAttestationPayload`. Today the fos server signs (`method`
  * `ed25519-server`, `by` = the server's peer id). Resolving `@name` is the effect of the server's `verify` handler:
  * a `verify` requirement (`requestVerification`) evaluated there comes back with the attested object bound as its
- * `user` field. The server's public key is graph data too: a `fos:key:fos` row in Home (`publishPeerKey`, written
- * when the server ensures the account context) that node exchange brings to devices, whose own verify handler
- * (`verifyPublished`) checks attestations against it; the server re-checks on use (payments, fos points).
+ * `user` field. The server's public key is graph data too: a `fos:key:fos` row on the fos member entry of the store
+ * root (`publishPeerKey`, written when the server ensures the account context) that node exchange brings to the
+ * owner's devices with that entry, whose own verify handler (`verifyPublished`) checks attestations against it; the
+ * server re-checks on use (payments, fos points).
  * `ed25519-self` is the seam for key pairs: the same payload signed by the key in the object's own `publicKey`. A
  * self signature proves possession of the key only; the binding of that key to an account is the server
  * attestation, which covers `publicKey` too. The crypto is injected (`UserTrust.verify`, `SignatureCheck`) so this
@@ -20,7 +21,7 @@
  */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
-import { content, identityCid, isLibraryType, libraryTypeAt, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
+import { content, identityCid, isLibraryType, libraryTypeAt, memberEdgesOf, memberEntryId, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
 import { constructForm, formRecord, type FormInput } from './forms'
 import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
@@ -194,43 +195,45 @@ export function rebindUsers(r: Replica, user: UserRecord, now: number): Replica 
 // ---------------------------------------------------------------------------
 // Verifiers' keys as graph data
 
-/** The row holding the key a peer (the fos server: `fos`) publishes, among the people in Home: `fos:key:<peer id>`. */
+/** The row holding the key a peer (the fos server: `fos`) publishes, under its member entry: `fos:key:<peer id>`. */
 export const PEER_KEY_PREFIX = 'fos:key:'
 export const peerKeyId = (peerId: string): string => `${PEER_KEY_PREFIX}${peerId}`
 
 /**
- * Publish `peerId`'s public key in Home's users row (`fos:users`): a row of the user type for that peer (account and
- * username = its peer id, `publicKey` = its raw ed25519 key, base64). The account server writes it whenever it
- * ensures the account context (`ensureHomeContext(…, { keys })`), so node exchange brings it to every device with
- * Home. No-op when unchanged.
+ * Publish `peerId`'s public key on its member entry on the store root (`fos:peer:<peer id>`): a row of the user type
+ * for that peer (account and username = its peer id, `publicKey` = its raw ed25519 key, base64). The account server
+ * writes it whenever it ensures the account context (`ensureHomeContext(…, { keys })`); member entries travel by node
+ * exchange, and an owner's device takes the server's entry above its Home (`accountContextAbove`). No-op when
+ * unchanged or when `peerId` is no member of the root. A key an older server left in Home (`fos:users`) is removed.
  */
 export function publishPeerKey(r: Replica, peerId: string, publicKey: string, now: number): Replica {
-  if (!homePath(r).length || publishedKey(r, peerId) === publicKey) return r
-  const users = usersPath(r), id = peerKeyId(peerId)
-  if (!resolveScope(r.store, headCid(r), users)) r = addRow(r, users.slice(0, -1), PLAIN_TYPE, 'People', now, { id: USERS_ID })
-  if (resolveScope(r.store, headCid(r), [...users, id])) r = deleteTask(r, users, id, now)
-  const type = userType(r.store, users)
+  const users = usersPath(r), id = peerKeyId(peerId), entry = [memberEntryId(peerId)]
+  if (homePath(r).length && resolveScope(r.store, headCid(r), [...users, id])) r = deleteTask(r, users, id, now)
+  if (!resolveScope(r.store, headCid(r), entry) || publishedKey(r, peerId) === publicKey) return r
+  if (resolveScope(r.store, headCid(r), [...entry, id])) r = deleteTask(r, entry, id, now)
+  const type = userType(r.store, entry)
   const peer: UserRecord = { account: peerId, username: peerId, name: peerId === 'fos' ? 'Fos' : peerId, publicKey, verification: null }
-  return writeGraphNode(r, users, userObjectContent(r.store, type, peer, id), now, type)
+  return writeGraphNode(r, entry, userObjectContent(r.store, type, peer, id), now, type)
 }
 
-/** Every verifier key published in this graph's Home (peer id → key): the trust a device's verify handler uses. */
+/** Every verifier key the members of this graph's root publish on their entries (peer id → key): the trust a device's verify handler uses. */
 export function publishedKeys(r: Replica): Record<string, string> {
-  const parent = homePath(r).length ? resolveScope(r.store, headCid(r), usersPath(r)) : null
   const out: Record<string, string> = {}
-  // a key row is a row of the user type (the edge's left node) with a `fos:key:` identity; nothing else is read
-  for (const edge of parent ? valueContent(r.store, parent).children : []) {
-    const plain = plainEdge(r.store, edge)
-    if (!isUserType(r.store, plain[0])) continue
-    const id = content(r.store, identityCid(r.store, plain)).data.alias?.id ?? ''
-    if (!id.startsWith(PEER_KEY_PREFIX)) continue
-    const peerId = id.slice(PEER_KEY_PREFIX.length), peer = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
-    if (peer?.username === peerId && peer.publicKey) out[peerId] = peer.publicKey
+  for (const member of memberEdgesOf(r.store, headCid(r))) {
+    const peerId = content(r.store, member[1]).data.peerId?.content
+    if (!peerId) continue
+    // a key row is a row of the user type (the edge's left node) named for the entry's own peer; nothing else is read
+    for (const edge of content(r.store, member[1]).children) {
+      const plain = plainEdge(r.store, edge)
+      if (!isUserType(r.store, plain[0]) || content(r.store, identityCid(r.store, plain)).data.alias?.id !== peerKeyId(peerId)) continue
+      const peer = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
+      if (peer?.username === peerId && peer.publicKey) out[peerId] = peer.publicKey
+    }
   }
   return out
 }
 
-/** The key `peerId` published in this graph's Home, or null. */
+/** The key `peerId` published on its member entry on this graph's root, or null. */
 export function publishedKey(r: Replica, peerId: string): string | null {
   return publishedKeys(r)[peerId] ?? null
 }

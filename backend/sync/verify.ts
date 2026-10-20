@@ -7,9 +7,10 @@
  * identity key, and records the supply. There is no route:
  *
  * - the public key is graph data: the handler's `publicKey` is in the registry's `hostOffers().keys`, which
- *   `ensureHomeContext` writes into every account's Home as the `fos:key:fos` row (`publishPeerKey`); node exchange
- *   carries it to devices, whose own verify handler checks `verification.attestation` over `userAttestationPayload`
- *   against it (`verifyPublished`; WebCrypto Ed25519 in the app);
+ *   `ensureHomeContext` writes onto the fos member entry of every account's root as the `fos:key:fos` row
+ *   (`publishPeerKey`); member entries travel by node exchange, and the owner's devices take that entry above their
+ *   Home (`accountContextAbove`), so their own verify handler checks `verification.attestation` over
+ *   `userAttestationPayload` against it (`verifyPublished`; WebCrypto Ed25519 in the app);
  * - the server re-checks the attestation whenever it acts on a user object it reads from a graph (`verify`, used by
  *   the payment and fos-points payees), so a tampered or foreign object is refused there regardless of the client.
  *

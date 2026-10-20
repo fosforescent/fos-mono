@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { HOME_ID, addRow, addTask, cacheUser, cachedUser, createReplica, ensureHomeContext, evaluationRecord, loadReplica, peerKeyId, publishedKey, rebindUsers, requestVerification, serializeReplica, shareHome, syncNodeTree, unverifiedUser, verifyPublished, verifyUser, view, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, accountContextAbove, memberEntryId, addRow, addTask, cacheUser, cachedUser, createReplica, ensureHomeContext, evaluationRecord, loadReplica, peerKeyId, publishedKey, rebindUsers, requestVerification, serializeReplica, shareHome, syncNodeTree, unverifiedUser, verifyPublished, verifyUser, view, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -37,7 +37,7 @@ function host(registry = createHandlerRegistry([verify])) {
   /** A device syncs its Home with the account node by node, as the app and the CLI do. */
   const sync = async (device: Replica): Promise<Replica> => {
     const r = shareHome(device), local = r.meta.localScope ?? []
-    const done = await syncNodeTree(r, { peer: r.meta.serverPeerId ?? 'user:alice', scope: [], remoteRoot: local, localRoot: local, branches: [], push: true }, async (request: NodeRequest) => {
+    const done = await syncNodeTree(r, { peer: r.meta.serverPeerId ?? 'user:alice', scope: [], remoteRoot: local, localRoot: local, branches: [], push: true, above: accountContextAbove(r) }, async (request: NodeRequest) => {
       let status = 200, body: unknown
       const res = { setHeader() { return res }, status(n: number) { status = n; return res }, json(b: unknown) { body = b; return res } } as unknown as Response
       await provider({ body: request, claims: { username: 'alice' } } as unknown as Request, res)
@@ -95,7 +95,7 @@ test('a verify requirement is filled through the evaluation: the attested object
   expect(evaluationRecord(h.get(), unknown.path)).toBeNull()
 })
 
-test('the server\'s key is graph data: published in Home and carried to devices by node exchange, where they check attestations', async () => {
+test('the server\'s key is graph data: published on its member entry and carried to devices by node exchange, where they check attestations', async () => {
   const registry = createHandlerRegistry([verify])
   expect(registry.hostOffers().keys).toEqual({ fos: verify.publicKey })
   expect(registry.serverCapabilities()).toContain('verify')
@@ -108,7 +108,9 @@ test('the server\'s key is graph data: published in Home and carried to devices 
   // the account context the server ensured on exchange holds the key row, and so does the device now
   expect(publishedKey(h.get(), 'fos')).toBe(verify.publicKey)
   expect(publishedKey(device, 'fos')).toBe(verify.publicKey)
-  expect(view(device, [HOME_ID, 'fos:users'])!.tasks.map(t => t.id)).toContain(peerKeyId('fos')) // among the people in Home
+  // on the fos member entry of the root, above Home: not among the people
+  expect(view(device, [memberEntryId('fos')])!.tasks.map(t => t.id)).toContain(peerKeyId('fos'))
+  expect(view(device, [HOME_ID, 'fos:users'])?.tasks.map(t => t.id) ?? []).not.toContain(peerKeyId('fos'))
   // the device asks for @bob through a verify requirement, the server fills it, the device pulls the answer
   const asked = requestVerification(device, '@bob', 4)
   device = await h.sync(asked.replica)
@@ -116,7 +118,7 @@ test('the server\'s key is graph data: published in Home and carried to devices 
   expect((await h.send([], { kind: 'complete', path: asked.path, expected: read.body.valueRevision })).body.evaluation.status).toBe('committed')
   device = await h.sync(device)
   const attested = view(device, asked.path.slice(0, -1))!.tasks.find(t => t.id === asked.path.at(-1))!.user!
-  // the device's verify handler: the signature against the key Home publishes
+  // the device's verify handler: the signature against the key the fos member publishes
   expect(verifyPublished(device, attested, verifyEd25519)).toEqual({ ok: true, by: 'fos' })
   expect(verifyPublished(device, { ...attested, name: 'Mallory' }, verifyEd25519).ok).toBe(false)
   device = rebindUsers(cacheUser(device, attested, 5), attested, 5)

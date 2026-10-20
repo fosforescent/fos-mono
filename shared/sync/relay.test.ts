@@ -1,10 +1,9 @@
 import {
-  SERVER_TRANSPORT_CAPABILITIES, addMemberAt, addTask, commitRoot, content, createReplica, exchangeNode, headCid, nodeTreeSync, put, readProposals,
-  resolveScope, rowTypeAt, setMemberCapabilitiesAt, updateAtScope, view, type NodeAuthority, type NodeSyncContext, type Replica, type Scope,
+  SERVER_TRANSPORT_CAPABILITIES, addMemberAt, addTask, content, createReplica, exchangeNode, headCid, readProposals,
+  resolveScope, setMemberCapabilitiesAt, view, type NodeAuthority, type Replica, type Scope,
 } from './index'
-import { RELAY_QUEUE_ID, addRelayAck, addRelayMessage, offerRelay, relayAfterSubmission, relayAt, relayInbox, relayQueueSync, rowsLeftAt } from './relay'
+import { RELAY_QUEUE_ID, addRelayAck, addRelayMessage, offerRelay, relayAfterSubmission, relayAt, relayInbox, relayQueues, rowsLeftAt } from './relay'
 import { syncWith } from './test-helpers'
-import { PLAIN_TYPE } from './library-types'
 
 const HUB: Scope = ['hub']
 const queueOf = (peer: string): Scope => [...HUB, `fos:peer:${peer}`, RELAY_QUEUE_ID]
@@ -23,22 +22,6 @@ function relayNode(peerId: string, handler: 'fos' | 'self'): Replica {
 function leaveInMain(r: Replica, to: string, id: string): Replica {
   r = addRelayMessage(r, HUB, to, 6, id)
   return addTask(r, [...HUB, id], 'Summarize the repository', 7, `${id}:task`)
-}
-
-/** Drive node sync for `client` with `context` against `server`, as `authority`. */
-function sync(client: Replica, server: Replica, context: NodeSyncContext, authority: NodeAuthority, now = 50): Replica {
-  const run = nodeTreeSync(client, context, () => now)
-  let step = run.next()
-  while (!step.done) step = run.next(exchangeNode(server, step.value.request, authority, now).node)
-  return step.value.replica
-}
-
-/** The desktop's local inbox: a bare row its queue is synced into. */
-function inbox(peerId: string): Replica {
-  const r = createReplica(peerId)
-  const row = put(r.store, { data: { alias: { id: 'inbox' } }, children: [] })
-  commitRoot(r.store, updateAtScope(r.store, headCid(r), [], value => ({ ...value, children: [...value.children, [rowTypeAt(r.store, PLAIN_TYPE), row]] })), 1)
-  return { ...r }
 }
 
 test('a message from a peer moves into the queue of the recipient the relay knows', () => {
@@ -72,25 +55,37 @@ test('a message to a peer the relay does not know stays where it was left', () =
   expect(headCid(relayAt(plain, HUB, 'fos', 20))).toBe(headCid(plain))
 })
 
-test('the recipient pulls its queue when it connects and acknowledges what it took', () => {
+test('the queue rows reach the recipient by ordinary sync, and its ack clears them', () => {
   let server = relayAt(leaveInMain(relayNode('user:alice', 'fos'), 'desktop', 'm4'), HUB, 'fos', 20)
-  // the desktop is one of the account's devices: it syncs its own queue into a local row
-  const owner: NodeAuthority = { peerId: 'desktop', scope: [], owner: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }
-  const context = relayQueueSync('desktop', server.meta.peerId, [], ['inbox'], HUB)
-  let desktop = sync(inbox('desktop'), server, context, owner)
-  const delivered = relayInbox(desktop, ['inbox'])
+  // the desktop is one of the account's devices: an ordinary sync brings the hub, its member entries and the queue
+  let desktop = syncWith(createReplica('desktop'), server)
+  expect(relayQueues(desktop, 'desktop')).toEqual([queueOf('desktop')])
+  const delivered = relayInbox(desktop, queueOf('desktop'))
   expect(delivered).toHaveLength(1)
   expect(delivered[0]).toMatchObject({ id: 'm4', to: 'desktop' })
   expect(delivered[0]!.rows.map(row => row.title)).toEqual(['Summarize the repository'])
+  // nobody else's queue is here, and the phone's entry is just its grants
+  expect(relayQueues(desktop, 'phone')).toEqual([])
 
-  // consume: an ack row in its copy of the queue goes back as its submission; the relay takes both out
-  desktop = addRelayAck(desktop, ['inbox'], 'm4', 60)
-  expect(relayInbox(desktop, ['inbox'])).toEqual([])
-  desktop = sync(desktop, server, context, owner, 61)
+  // consume: an ack row in its queue goes back on the next sync; the relay takes both out
+  desktop = addRelayAck(desktop, queueOf('desktop'), 'm4', 60)
+  expect(relayInbox(desktop, queueOf('desktop'))).toEqual([])
+  desktop = syncWith(desktop, server, { now: 61 })
+  expect(view(server, queueOf('desktop'))!.tasks.map(t => t.id)).toEqual(['m4', 'relay:ack:m4'])
   server = relayAfterSubmission(server, [...queueOf('desktop'), 'relay:ack:m4'], 'fos', 62)
   expect(view(server, queueOf('desktop'))!.tasks).toEqual([])
-  desktop = sync(desktop, server, context, owner, 63)
-  expect(view(desktop, ['inbox'])!.tasks).toEqual([])
+  desktop = syncWith(desktop, server, { now: 63 })
+  expect(view(desktop, queueOf('desktop'))!.tasks).toEqual([])
+})
+
+test('an invited recipient receives its own queue through its masked view of the relay node', () => {
+  const server = relayAt(leaveInMain(relayNode('user:alice', 'fos'), 'desktop', 'm7'), HUB, 'fos', 20)
+  const wire: unknown[] = []
+  const desktop = syncWith(createReplica('desktop'), server, { invited: HUB, wire })
+  // the hub as the desktop sees it: its rows and its own member entry, not the phone's or the fos server's
+  expect(view(desktop, [])!.members.map(m => m.peerId)).toEqual(['desktop'])
+  expect(relayInbox(desktop, ['fos:peer:desktop', RELAY_QUEUE_ID]).map(m => m.id)).toEqual(['m7'])
+  expect(JSON.stringify(wire)).not.toContain('fos:peer:phone')
 })
 
 test('an invited recipient acknowledges with its submission at the relay node', () => {

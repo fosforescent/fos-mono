@@ -1,6 +1,6 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
-import { addRow, addSupply, addTask, bindUserAt, createReplica, ensureHomeContext, headCid, loadReplica, serializeReplica, setRowContentAt, view, type Replica } from './replica'
-import { content, identityCid, isRefNode, resolveScope, typeIdOf, valueContent, HOME_ID } from './graph'
+import { addRow, addSupply, addTask, bindUserAt, createReplica, ensureHomeContext, headCid, loadReplica, serializeReplica, setRowContentAt, shareHome, view, type Replica } from './replica'
+import { content, identityCid, isRefNode, memberEntryId, resolveScope, typeIdOf, valueContent, HOME_ID } from './graph'
 import { syncWith } from './test-helpers'
 import {
   USER_FIELD, USER_SELF_ATTESTATION, USER_SERVER_ATTESTATION, cacheUser, cachedUser, isUserType, rebindUsers, unverifiedUser, userAttestationPayload,
@@ -115,18 +115,23 @@ test('verification accepts the server attestation and rejects tampered, unsigned
   expect(verifyUser({ ...self, publicKey: stranger.publicKey }, trust)).toMatchObject({ ok: false })
 })
 
-test('the server publishes its key in Home; a device\'s verify handler checks attestations against it and rejects tampered objects', () => {
+test('the server publishes its key on its member entry; a device\'s verify handler reads it there and rejects tampered objects', () => {
   let account = ensureHomeContext(createReplica('user:alice'), 1, { server: ['verify'], keys: { fos: server.publicKey } })
   expect(publishedKey(account, 'fos')).toBe(server.publicKey)
   expect(publishedKeys(account)).toEqual({ fos: server.publicKey })
   // unchanged on the next ensure; a new key replaces the row
   expect(ensureHomeContext(account, 2, { keys: { fos: server.publicKey } })).toBe(account)
   expect(publishedKey(ensureHomeContext(loadReplica(serializeReplica(account)), 2, { keys: { fos: stranger.publicKey } }), 'fos')).toBe(stranger.publicKey)
-  // the key row is a row of the user type among the people, and no one `@fos` binds
-  const keyRow = rowNode(account, [HOME_ID, 'fos:users', peerKeyId('fos')])
+  // the key row is a row of the user type on the fos member entry of the root, not in Home, and no one `@fos` binds
+  const keyRow = rowNode(account, [memberEntryId('fos'), peerKeyId('fos')])
   expect(keyRow.data.alias?.id).toBe('fos:key:fos')
+  expect(resolveScope(account.store, headCid(account), [HOME_ID, 'fos:users', peerKeyId('fos')])).toBeNull()
   expect(cachedUser(account, 'fos')).toBeNull()
-  // a device receives Home through node sync, key row included
+  // an owner's device attached at Home takes the server's entry above it, key row included
+  const home = syncWith(shareHome(ensureHomeContext(createReplica('phone'), 1)), account)
+  expect(publishedKey(home, 'fos')).toBe(server.publicKey)
+  expect(verifyPublished(home, bob, ed25519)).toEqual({ ok: true, by: 'fos' })
+  // and a device synced at the root receives it with the root's members
   let device = syncWith(ensureHomeContext(createReplica('user:alice'), 1), account)
   expect(publishedKey(device, 'fos')).toBe(server.publicKey)
   expect(verifyPublished(device, bob, ed25519)).toEqual({ ok: true, by: 'fos' })
