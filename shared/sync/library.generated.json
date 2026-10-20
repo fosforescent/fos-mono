@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "rootNodeId": "v4-3993f04f659ee033fa9b07b95211e724749ea244ed197c08448acd13dd67d7b8",
+  "rootNodeId": "v4-54c16a36074ad3eb10c29a27033c35a6c24f4bb3460b274e754ff262c560ecf4",
   "nodes": {
     "v4-04c7ef36ba0f36c23c572ccf15564ff7b0316e67ec0ba2adf48c4c0767177d73": {
       "children": [],
@@ -311,6 +311,20 @@
         }
       }
     },
+    "v4-1e692bc63444a85a5ae73eb441d628b696c227de3b78dce595d307ed08092511": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:attestation:attestation"
+        },
+        "description": {
+          "content": "Attestation"
+        },
+        "parameter": {
+          "name": "attestation"
+        }
+      }
+    },
     "v4-1edd1f6645322952103c802883c7e97df67d235daf64af0d50d0c5d96b9f4dd9": {
       "children": [],
       "data": {
@@ -357,6 +371,20 @@
         },
         "updated": {
           "time": 1792453618404
+        }
+      }
+    },
+    "v4-21ebbb5d90f4d549448c848a0a9fd580d3008af65f1604142896c2b75016f15c": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:attestation:by"
+        },
+        "description": {
+          "content": "Verified by"
+        },
+        "parameter": {
+          "name": "by"
         }
       }
     },
@@ -686,66 +714,6 @@
         }
       }
     },
-    "v4-3993f04f659ee033fa9b07b95211e724749ea244ed197c08448acd13dd67d7b8": {
-      "children": [
-        [
-          "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88",
-          "v4-84a88d22b9ef0b3415460daead54e984569a23aa73abf2d9389c8d4b6e367bb7"
-        ],
-        [
-          "v4-2be7d2c8640b75c78d61cf65f312c3d580f6481619667d53e8191c0552199efe",
-          "v4-1db586bcb8d4143f77b4ae3aa7c4864718169ae23e6820f78e365ef71014720b"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-dd3d7c6d1b0f9f97358161815af342fc56972646b82ea5b98baa34fee0137f8a"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-cea75d5bede6ec2ecf5eb39aa7857dddea0784a75d5ae0a76dd0e778c3d3eb0e"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-d0d07f06d8d97fe3e6a24cc7329f5cbb404289335e58ff7e9acbf037c2ea11c5"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-511cadee32796138dc5d5dff795028d76ad2a5d4fad4a498edbff98b585372a0"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-4c55eee114460f0005a80e98aa06d9e2d419f8c497350f7ac58b54b057020a5d"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-7b52c505c08e3ed43d81c9f9c19b3fe8020160c03168316a68a3151081c19c63"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-dbe3e1d241416db94550aae1981e4da6d2f6f26674a5f8c914de805db2360ff8"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-067fd00fcf3f4cf049eed452c1b13f0535cf98869e21ec625570419d1693e61d"
-        ],
-        [
-          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
-          "v4-117ed8a26370be0471b36a3982ddd96a5c99ad428a7b45f87b5a427d8d573817"
-        ],
-        [
-          "v4-56c13f1226c79075118d1d354616783cc5f219dbde7b9892fab5c037d2128d3a",
-          "v4-2bac01a88e2ac54ca042703074eebd1766e5df9debf4ed00ce85e6f7c002dc6f"
-        ]
-      ],
-      "data": {
-        "alias": {
-          "id": "fos:library"
-        },
-        "description": {
-          "content": "Standard library"
-        }
-      }
-    },
     "v4-3a0dc70375ba3c235633e7eac9dd3935a330ac8324942b4d96e52ba5b253363a": {
       "children": [],
       "data": {
@@ -1063,6 +1031,20 @@
       },
       "children": []
     },
+    "v4-49a15ecaaa086bd00fc8683c74ecf6141904701afb6edf9e9e896776a5ae7e09": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:user:username"
+        },
+        "description": {
+          "content": "Username"
+        },
+        "parameter": {
+          "name": "username"
+        }
+      }
+    },
     "v4-4a473f5b49618cfb841811f2102daf16e234c97536d0b006f007402dafa2c3dd": {
       "children": [],
       "data": {
@@ -1235,6 +1217,20 @@
         }
       }
     },
+    "v4-51dd87c03769b85c34875f1ca7784b62e636784fd616da87807314cf0495a2f3": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:user:account"
+        },
+        "description": {
+          "content": "Account"
+        },
+        "parameter": {
+          "name": "account"
+        }
+      }
+    },
     "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547": {
       "children": [
         [
@@ -1277,6 +1273,66 @@
         },
         "pattern": {
           "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-54c16a36074ad3eb10c29a27033c35a6c24f4bb3460b274e754ff262c560ecf4": {
+      "children": [
+        [
+          "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88",
+          "v4-821a3c8b5ca4eb543d7a00cfa504280770106a8bb25dc5d9fb07a5bf4b6153c4"
+        ],
+        [
+          "v4-2be7d2c8640b75c78d61cf65f312c3d580f6481619667d53e8191c0552199efe",
+          "v4-1db586bcb8d4143f77b4ae3aa7c4864718169ae23e6820f78e365ef71014720b"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-dd3d7c6d1b0f9f97358161815af342fc56972646b82ea5b98baa34fee0137f8a"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-cea75d5bede6ec2ecf5eb39aa7857dddea0784a75d5ae0a76dd0e778c3d3eb0e"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-d0d07f06d8d97fe3e6a24cc7329f5cbb404289335e58ff7e9acbf037c2ea11c5"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-511cadee32796138dc5d5dff795028d76ad2a5d4fad4a498edbff98b585372a0"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-4c55eee114460f0005a80e98aa06d9e2d419f8c497350f7ac58b54b057020a5d"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-7b52c505c08e3ed43d81c9f9c19b3fe8020160c03168316a68a3151081c19c63"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-dbe3e1d241416db94550aae1981e4da6d2f6f26674a5f8c914de805db2360ff8"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-067fd00fcf3f4cf049eed452c1b13f0535cf98869e21ec625570419d1693e61d"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-117ed8a26370be0471b36a3982ddd96a5c99ad428a7b45f87b5a427d8d573817"
+        ],
+        [
+          "v4-56c13f1226c79075118d1d354616783cc5f219dbde7b9892fab5c037d2128d3a",
+          "v4-2bac01a88e2ac54ca042703074eebd1766e5df9debf4ed00ce85e6f7c002dc6f"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:library"
+        },
+        "description": {
+          "content": "Standard library"
         }
       }
     },
@@ -1467,6 +1523,39 @@
         },
         "pattern": {
           "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-69764e80235374c0b8eefe0bfd915505a9e13f441468ed0f2974fd9ea16ff666": {
+      "children": [
+        [
+          "v4-bed1e6b8b85addfbcde7b3b5cb02a729f4b0535ef01dbdf3f63a480797f466c6",
+          "v4-21ebbb5d90f4d549448c848a0a9fd580d3008af65f1604142896c2b75016f15c"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-cb8bd16af9d4106a9622322965387e70655c2b3b129d04c37774d383e8b96407"
+        ],
+        [
+          "v4-db948cb4da6e0cb3aa832b9172a64bdfe18396bb162a3cf981a5eac8ef1e313a",
+          "v4-d93549a9590a12ff585850a79c6bb3f416c3f4a5207ae03f041ffa12431c2152"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-1e692bc63444a85a5ae73eb441d628b696c227de3b78dce595d307ed08092511"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:attestation"
+        },
+        "description": {
+          "content": "Attestation"
+        },
+        "form": {
+          "title": [
+            "by"
+          ]
         }
       }
     },
@@ -1813,6 +1902,20 @@
         }
       }
     },
+    "v4-78589814d3bfaea8ad73728efbc6b2651e3a2faa58440020dc6bae5573785011": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:user:name"
+        },
+        "description": {
+          "content": "Display name"
+        },
+        "parameter": {
+          "name": "name"
+        }
+      }
+    },
     "v4-787ef1dc5698b95d90a512663dac994410fd8c2259951d2cf894c6c6a45e7eef": {
       "children": [],
       "data": {
@@ -1961,21 +2064,7 @@
         }
       }
     },
-    "v4-8460270e7c5182247f7a0a706ea08b3eb0342bfa939e00b70a4bef1c7f96bb72": {
-      "children": [],
-      "data": {
-        "alias": {
-          "id": "lib:type:home:accepts:lib:type:home"
-        },
-        "description": {
-          "content": "lib:type:home"
-        },
-        "pattern": {
-          "type": "lib:type:home"
-        }
-      }
-    },
-    "v4-84a88d22b9ef0b3415460daead54e984569a23aa73abf2d9389c8d4b6e367bb7": {
+    "v4-821a3c8b5ca4eb543d7a00cfa504280770106a8bb25dc5d9fb07a5bf4b6153c4": {
       "children": [
         [
           "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
@@ -2068,6 +2157,14 @@
         [
           "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
           "v4-576b3051805df0d26fa68acd21089e1c3f6ed06d50ecc7290bc6ed8e9482659e"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-69764e80235374c0b8eefe0bfd915505a9e13f441468ed0f2974fd9ea16ff666"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-bcd658b42f9569c2eb7d7d5dee571a96c24054210dd40c9ef022639860c3758c"
         ]
       ],
       "data": {
@@ -2076,6 +2173,20 @@
         },
         "description": {
           "content": "Row types"
+        }
+      }
+    },
+    "v4-8460270e7c5182247f7a0a706ea08b3eb0342bfa939e00b70a4bef1c7f96bb72": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:home:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
         }
       }
     },
@@ -2681,6 +2792,20 @@
         }
       }
     },
+    "v4-b2c1ca6a5f4f97120d9d506288fb9cc2103770aaa00231142bf6adce96d1e692": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:user:publicKey"
+        },
+        "description": {
+          "content": "Public key"
+        },
+        "parameter": {
+          "name": "publicKey"
+        }
+      }
+    },
     "v4-b2cc29e63931fcbe52083cc2156d4dfdbc8069b0d9c3f9d591783a0a3fc07785": {
       "children": [],
       "data": {
@@ -2833,6 +2958,43 @@
         }
       }
     },
+    "v4-bcd658b42f9569c2eb7d7d5dee571a96c24054210dd40c9ef022639860c3758c": {
+      "children": [
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-51dd87c03769b85c34875f1ca7784b62e636784fd616da87807314cf0495a2f3"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-49a15ecaaa086bd00fc8683c74ecf6141904701afb6edf9e9e896776a5ae7e09"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-78589814d3bfaea8ad73728efbc6b2651e3a2faa58440020dc6bae5573785011"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-b2c1ca6a5f4f97120d9d506288fb9cc2103770aaa00231142bf6adce96d1e692"
+        ],
+        [
+          "v4-69764e80235374c0b8eefe0bfd915505a9e13f441468ed0f2974fd9ea16ff666",
+          "v4-d89659c570938a2a5c00ce8cee0d8148d819943ddf812c7a3e24415741057f62"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:user"
+        },
+        "description": {
+          "content": "User"
+        },
+        "form": {
+          "title": [
+            "name"
+          ]
+        }
+      }
+    },
     "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e": {
       "children": [],
       "data": {
@@ -2947,6 +3109,20 @@
       "data": {
         "alias": {
           "id": "lib:type:template"
+        }
+      }
+    },
+    "v4-cb8bd16af9d4106a9622322965387e70655c2b3b129d04c37774d383e8b96407": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:attestation:method"
+        },
+        "description": {
+          "content": "Method"
+        },
+        "parameter": {
+          "name": "method"
         }
       }
     },
@@ -3176,6 +3352,34 @@
         },
         "updated": {
           "time": 1792453618404
+        }
+      }
+    },
+    "v4-d89659c570938a2a5c00ce8cee0d8148d819943ddf812c7a3e24415741057f62": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:user:verification"
+        },
+        "description": {
+          "content": "Verification"
+        },
+        "parameter": {
+          "name": "verification"
+        }
+      }
+    },
+    "v4-d93549a9590a12ff585850a79c6bb3f416c3f4a5207ae03f041ffa12431c2152": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:attestation:issuedAt"
+        },
+        "description": {
+          "content": "Issued at"
+        },
+        "parameter": {
+          "name": "issuedAt"
         }
       }
     },
@@ -4296,6 +4500,76 @@
           "v4-9e0fbec6526f5851f6c69c896d960705a88557c1505231b804edecb79f56a7b2"
         ]
       ]
+    },
+    {
+      "children": [
+        [
+          "v4-bed1e6b8b85addfbcde7b3b5cb02a729f4b0535ef01dbdf3f63a480797f466c6",
+          "v4-21ebbb5d90f4d549448c848a0a9fd580d3008af65f1604142896c2b75016f15c"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-cb8bd16af9d4106a9622322965387e70655c2b3b129d04c37774d383e8b96407"
+        ],
+        [
+          "v4-db948cb4da6e0cb3aa832b9172a64bdfe18396bb162a3cf981a5eac8ef1e313a",
+          "v4-d93549a9590a12ff585850a79c6bb3f416c3f4a5207ae03f041ffa12431c2152"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-1e692bc63444a85a5ae73eb441d628b696c227de3b78dce595d307ed08092511"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:attestation"
+        },
+        "description": {
+          "content": "Attestation"
+        },
+        "form": {
+          "title": [
+            "by"
+          ]
+        }
+      }
+    },
+    {
+      "children": [
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-51dd87c03769b85c34875f1ca7784b62e636784fd616da87807314cf0495a2f3"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-49a15ecaaa086bd00fc8683c74ecf6141904701afb6edf9e9e896776a5ae7e09"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-78589814d3bfaea8ad73728efbc6b2651e3a2faa58440020dc6bae5573785011"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-b2c1ca6a5f4f97120d9d506288fb9cc2103770aaa00231142bf6adce96d1e692"
+        ],
+        [
+          "v4-69764e80235374c0b8eefe0bfd915505a9e13f441468ed0f2974fd9ea16ff666",
+          "v4-d89659c570938a2a5c00ce8cee0d8148d819943ddf812c7a3e24415741057f62"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:user"
+        },
+        "description": {
+          "content": "User"
+        },
+        "form": {
+          "title": [
+            "name"
+          ]
+        }
+      }
     }
   ],
   "rows": [
@@ -4305,7 +4579,7 @@
       "text": "Row types",
       "graph": {
         "template": "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88",
-        "cid": "v4-84a88d22b9ef0b3415460daead54e984569a23aa73abf2d9389c8d4b6e367bb7"
+        "cid": "v4-821a3c8b5ca4eb543d7a00cfa504280770106a8bb25dc5d9fb07a5bf4b6153c4"
       },
       "children": [
         {
@@ -4611,6 +4885,109 @@
               "graph": {
                 "template": "v4-b1acf73917ee7f29466519afc9b51c53a53ad1ee24896b838142b2ce1a137b69",
                 "cid": "v4-9e0fbec6526f5851f6c69c896d960705a88557c1505231b804edecb79f56a7b2"
+              }
+            }
+          ]
+        },
+        {
+          "id": "lib:type:attestation",
+          "kind": "template",
+          "text": "Attestation",
+          "graph": {
+            "template": "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+            "cid": "v4-69764e80235374c0b8eefe0bfd915505a9e13f441468ed0f2974fd9ea16ff666"
+          },
+          "children": [
+            {
+              "id": "lib:parameter:attestation:by",
+              "kind": "plain",
+              "text": "Verified by",
+              "graph": {
+                "template": "v4-bed1e6b8b85addfbcde7b3b5cb02a729f4b0535ef01dbdf3f63a480797f466c6",
+                "cid": "v4-21ebbb5d90f4d549448c848a0a9fd580d3008af65f1604142896c2b75016f15c"
+              }
+            },
+            {
+              "id": "lib:parameter:attestation:method",
+              "kind": "plain",
+              "text": "Method",
+              "graph": {
+                "template": "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+                "cid": "v4-cb8bd16af9d4106a9622322965387e70655c2b3b129d04c37774d383e8b96407"
+              }
+            },
+            {
+              "id": "lib:parameter:attestation:issuedAt",
+              "kind": "plain",
+              "text": "Issued at",
+              "graph": {
+                "template": "v4-db948cb4da6e0cb3aa832b9172a64bdfe18396bb162a3cf981a5eac8ef1e313a",
+                "cid": "v4-d93549a9590a12ff585850a79c6bb3f416c3f4a5207ae03f041ffa12431c2152"
+              }
+            },
+            {
+              "id": "lib:parameter:attestation:attestation",
+              "kind": "plain",
+              "text": "Attestation",
+              "graph": {
+                "template": "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+                "cid": "v4-1e692bc63444a85a5ae73eb441d628b696c227de3b78dce595d307ed08092511"
+              }
+            }
+          ]
+        },
+        {
+          "id": "lib:type:user",
+          "kind": "template",
+          "text": "User",
+          "graph": {
+            "template": "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+            "cid": "v4-bcd658b42f9569c2eb7d7d5dee571a96c24054210dd40c9ef022639860c3758c"
+          },
+          "children": [
+            {
+              "id": "lib:parameter:user:account",
+              "kind": "plain",
+              "text": "Account",
+              "graph": {
+                "template": "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+                "cid": "v4-51dd87c03769b85c34875f1ca7784b62e636784fd616da87807314cf0495a2f3"
+              }
+            },
+            {
+              "id": "lib:parameter:user:username",
+              "kind": "plain",
+              "text": "Username",
+              "graph": {
+                "template": "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+                "cid": "v4-49a15ecaaa086bd00fc8683c74ecf6141904701afb6edf9e9e896776a5ae7e09"
+              }
+            },
+            {
+              "id": "lib:parameter:user:name",
+              "kind": "plain",
+              "text": "Display name",
+              "graph": {
+                "template": "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+                "cid": "v4-78589814d3bfaea8ad73728efbc6b2651e3a2faa58440020dc6bae5573785011"
+              }
+            },
+            {
+              "id": "lib:parameter:user:publicKey",
+              "kind": "plain",
+              "text": "Public key",
+              "graph": {
+                "template": "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+                "cid": "v4-b2c1ca6a5f4f97120d9d506288fb9cc2103770aaa00231142bf6adce96d1e692"
+              }
+            },
+            {
+              "id": "lib:parameter:user:verification",
+              "kind": "plain",
+              "text": "Verification",
+              "graph": {
+                "template": "v4-69764e80235374c0b8eefe0bfd915505a9e13f441468ed0f2974fd9ea16ff666",
+                "cid": "v4-d89659c570938a2a5c00ce8cee0d8148d819943ddf812c7a3e24415741057f62"
               }
             }
           ]

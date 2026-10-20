@@ -9,6 +9,7 @@
 import { addRow, addSupply, view, type Replica } from './replica'
 import { readNodeValue, writeNodeValue } from './evaluation'
 import type { Scope } from './graph'
+import type { UserRecord } from './users'
 
 export const PAYMENT_ARGUMENT = 'fos:payment'
 
@@ -22,6 +23,8 @@ export type PaymentRecord = {
   unit: string
   payer: string
   payee: string
+  /** The payee's user object as the server verified it when opening the payment; settlement binds it on the allocation. */
+  payeeUser?: UserRecord
   created: number
   paid?: number
   /** The provider's settled charge (a PaymentIntent). */
@@ -51,7 +54,7 @@ export function settlePaymentRecord(r: Replica, path: Scope, confirmation: { int
   if (!req || req.capability !== 'allocation') return { replica: r, settled: false }
   const id = `payment:${now.toString(36)}`
   let next = addRow(r, path, 'allocation', `${record.amount} ${record.unit.toUpperCase()} to @${record.payee}`, now, {
-    id, allocation: { resource: requirement, type: 'account', amount: record.amount, unit: record.unit, by: 'fos', person: record.payee }
+    id, allocation: { resource: requirement, type: 'account', amount: record.amount, unit: record.unit, by: 'fos' }, ...(record.payeeUser ? { user: record.payeeUser } : {})
   })
   next = addSupply(next, taskPath, requirement, { capability: 'allocation', by: 'fos', ref: id }, now)
   next = writePaymentRecord(next, path, { ...record, status: 'paid', url: null, paid: now, ...(confirmation.intent ? { intent: confirmation.intent } : {}) }, now)

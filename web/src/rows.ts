@@ -17,12 +17,14 @@
  *   ?           query (semantic search)
  *   @calendar | @money | @inventory | @person <name> … [capacity]   resource bank
  *   `name       template: its requirement rows are copied under every task that executes it
+ *   @name       anywhere in an allocation (or allocation requirement) names a user: shorthand for their user
+ *               object (shared/sync/users.ts), bound as the row's `user` field, never stored as text
  *
  * `rawRowText` rebuilds the marker form of a row so editing shows exactly what was typed.
  * Links in plain rows and comments are rendered as anchors; image and YouTube links as embeds.
  */
 
-import type { ResourceType, RowExtras, RowKind, TaskView } from '../../shared/sync/index'
+import { unverifiedUser, type ResourceType, type RowExtras, type RowKind, type TaskView, type UserRecord } from '../../shared/sync/index'
 
 export type ParsedInput = {
   kind: RowKind
@@ -108,12 +110,23 @@ export function formatWindow(a: { start?: number; end?: number }): string {
 }
 
 /** "<amount> [window] text" for a resource type → allocation data (the bank is resolved by App.addRowAt) and the remaining text. */
-function parseAllocation(type: ResourceType, body: string, person?: string): { allocation: NonNullable<RowExtras['allocation']>; text: string } {
+function parseAllocation(type: ResourceType, body: string): { allocation: NonNullable<RowExtras['allocation']>; text: string } {
   const amt = parseAmount(body, type)
   const win = parseWindow(amt ? amt.rest : body.trim())
-  const allocation: NonNullable<RowExtras['allocation']> = { resource: '', type, amount: amt?.amount ?? (type === 'person' || type === 'location' ? 1 : 0), unit: amt?.unit ?? DEFAULT_UNIT[type], ...(win.start !== undefined ? { start: win.start } : {}), ...(win.end !== undefined ? { end: win.end } : {}), ...(person ? { person } : {}) }
+  const allocation: NonNullable<RowExtras['allocation']> = { resource: '', type, amount: amt?.amount ?? (type === 'person' || type === 'location' ? 1 : 0), unit: amt?.unit ?? DEFAULT_UNIT[type], ...(win.start !== undefined ? { start: win.start } : {}), ...(win.end !== undefined ? { end: win.end } : {}) }
   if (type === 'location' && win.rest) allocation.location = { name: win.rest }
   return { allocation, text: win.rest }
+}
+
+/**
+ * "@name" in the text of an allocation or an allocation requirement ("-ff 5 reward @bob", "$ 20 @bob lunch"): the
+ * user it names, taken out of the text. `@name` is shorthand for that user's object (shared/sync/users.ts): the row
+ * binds an unverified one here, and the app swaps in the verified object the server attests.
+ */
+function namedUser(text: string): { user: UserRecord | null; text: string } {
+  const m = text.match(/(^|\s)@([^\s@{}]+)(?=\s|$)/)
+  if (!m || BANK_WORDS[(m[2] as string).toLowerCase()]) return { user: null, text }
+  return { user: unverifiedUser(m[2] as string), text: `${text.slice(0, m.index)}${m[1]}${text.slice((m.index ?? 0) + m[0].length)}`.replace(/\s{2,}/g, ' ').trim() }
 }
 
 /** "`name` rest" or "`name rest" → the template name and the remaining text. */
@@ -154,13 +167,14 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
   // "-$ 50 lunch": money, 50 of it; "-$ lunch": money, any amount (one allocation of the type fills it)
   const allocationRequirement = (resource: ResourceType, body: string) => {
     const hasAmount = parseAmount(body, resource) !== null
-    const { allocation, text: label } = parseAllocation(resource, body)
-    return { requirement: { capability: 'allocation' as const, resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}), ...(resource === 'location' && label ? { place: label } : {}) }, label }
+    const { allocation, text: rest } = parseAllocation(resource, body)
+    const { user, text: label } = namedUser(rest)
+    return { user, requirement: { capability: 'allocation' as const, resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}), ...(resource === 'location' && label ? { place: label } : {}) }, label }
   }
   const typed = markerType(t)
   if (typed) return allocationRequirement(typed.type, t.slice(typed.length))
   if ((m = t.match(/^@(calendar|account|money|inventory|points|ff)\b\s*:?\s*(.*)$/is))) return allocationRequirement(BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType, m[2] ?? '')
-  if ((m = t.match(/^@(?:person\s+)?([^\s@]+)\s*:?\s*(.*)$/s))) return { requirement: { capability: 'peer', peer: m[1] as string }, label: (m[2] ?? '').trim() }
+  if ((m = t.match(/^@(?:person\s+)?([^\s@]+)\s*:?\s*(.*)$/s))) return { requirement: { capability: 'peer' }, user: unverifiedUser(m[1] as string), label: (m[2] ?? '').trim() }
   if ((m = t.match(/^(?:\?|search\s*:?)\s*(.*)$/is))) return { requirement: { capability: 'search' }, label: (m[1] ?? '').trim() }
   if ((m = t.match(/^market\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'market' }, label: (m[1] ?? '').trim() }
   if ((m = t.match(/^mail\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'mail' }, label: (m[1] ?? '').trim() }
@@ -205,7 +219,7 @@ export function parseRowInput(raw: string): ParsedInput {
   }
   if ((m = text.match(/^>\s?(.*)$/s))) return { kind: 'note', text: m[1] ?? '', done: false }
   if ((m = text.match(/^\/\/\s*(.*)$/s))) return { kind: 'comment', text: m[1] ?? '', done: false }
-  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? ''); return { kind: 'requirement', text: label, done: false, extras, ...(templateName ? { templateName } : {}) } }
+  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? ''); return { kind: 'requirement', text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
   if ((m = text.match(/^\?\s*(.*)$/s))) return { kind: 'query', text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
   if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff)\b\s*:?\s*(.*)$/is))) {
     const type = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
@@ -217,9 +231,9 @@ export function parseRowInput(raw: string): ParsedInput {
     return { kind: 'resource', text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, ...(amt ? { capacity: amt.amount } : {}) } } }
   }
   const typed = markerType(text)
-  if (typed) { const { allocation, text: label } = parseAllocation(typed.type, text.slice(typed.length)); return { kind: 'allocation', text: label, done: false, extras: { allocation } } }
+  if (typed) { const { allocation, text: rest } = parseAllocation(typed.type, text.slice(typed.length)); const { user, text: label } = typed.type === 'location' ? { user: null, text: rest } : namedUser(rest); return { kind: 'allocation', text: label, done: false, extras: { allocation, user } } }
   if ((m = text.match(/^@\{([^}]*)\}?\s*$/))) return { kind: 'plain', text, done: false, peer: (m[1] ?? '').trim() }
-  if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? '', m[1] as string); return { kind: 'allocation', text: label, done: false, extras: { allocation } } }
+  if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? ''); return { kind: 'allocation', text: label, done: false, extras: { allocation, user: unverifiedUser(m[1] as string) } } }
   if ((m = text.match(/^`\s*([^`]*)`?\s*$/s))) return { kind: 'template', text: (m[1] ?? '').trim(), done: false }
   return { kind: 'plain', text: text.trim(), done: false }
 }
@@ -251,16 +265,16 @@ export function rawRowText(task: TaskView): string {
     case 'allocation': {
       const a = task.allocation
       if (!a) return `$ ${task.title}`
-      const marker = a.type === 'person' ? `@${a.person ?? 'someone'}` : RESOURCE_MARKER[a.type]
-      return join(marker, amountAndWindow(a.amount, a.unit, a), task.title)
+      const marker = a.type === 'person' ? `@${task.user?.username ?? 'someone'}` : RESOURCE_MARKER[a.type]
+      return join(marker, amountAndWindow(a.amount, a.unit, a), a.type !== 'person' && task.user ? `@${task.user.username}` : '', task.title)
     }
     case 'requirement': {
       const r = task.requirement
       if (!r) return `- ${task.title}`
       switch (r.capability) {
         case 'task': return join('-[ ]', task.title)
-        case 'allocation': return join(`-${RESOURCE_MARKER[r.resource ?? 'inventory']}`, amountAndWindow(r.amount, r.unit, r), task.title)
-        case 'peer': return join(`-@${r.peer ?? ''}`, task.title)
+        case 'allocation': return join(`-${RESOURCE_MARKER[r.resource ?? 'inventory']}`, amountAndWindow(r.amount, r.unit, r), task.user ? `@${task.user.username}` : '', task.title)
+        case 'peer': return join(`-@${task.user?.username ?? r.peer ?? ''}`, task.title)
         case 'search': return join('-?', task.title)
         case 'market': return join('-market', task.title)
         case 'mail': return join('-mail', task.title)
@@ -277,9 +291,9 @@ export function rawRowText(task: TaskView): string {
 }
 
 /** The little tag an allocation shows on the row it sits under: icon, amount, window and who. */
-export function allocationTag(a: NonNullable<TaskView['allocation']>): string {
+export function allocationTag(a: NonNullable<TaskView['allocation']>, user?: UserRecord): string {
   const w = formatWindow(a)
-  return `${RESOURCE_ICON[a.type]} ${a.type === 'person' ? `${a.person ?? ''} ` : ''}${formatAmount(a.amount, a.unit)}${w ? ' ' + w : ''}`.replace(/\s+/g, ' ').trim()
+  return `${RESOURCE_ICON[a.type]} ${user ? `${user.name} ` : ''}${formatAmount(a.amount, a.unit)}${w ? ' ' + w : ''}`.replace(/\s+/g, ' ').trim()
 }
 
 /**
@@ -296,14 +310,14 @@ export function describeParsed(p: ParsedInput): string {
     case 'query': return 'query'
     case 'template': return 'template'
     case 'resource': return `bank · ${RESOURCE_NAME[p.extras?.resource?.type ?? 'inventory']}${p.extras?.resource?.capacity !== undefined ? ' · ' + formatAmount(p.extras.resource.capacity, p.extras.resource.unit) : ''}`
-    case 'allocation': { const a = p.extras?.allocation; return `allocation · ${a ? RESOURCE_NAME[a.type] : ''}${a?.person ? ' @' + a.person : ''}${amt(a)}${a && formatWindow(a) ? ' · ' + formatWindow(a) : ''}` }
+    case 'allocation': { const a = p.extras?.allocation; return `allocation · ${a ? RESOURCE_NAME[a.type] : ''}${p.extras?.user ? ' @' + p.extras.user.username : ''}${amt(a)}${a && formatWindow(a) ? ' · ' + formatWindow(a) : ''}` }
     case 'requirement': {
       const r = p.extras?.requirement
       if (!r) return 'requirement'
       switch (r.capability) {
         case 'allocation': return `requirement · ${RESOURCE_NAME[r.resource ?? 'inventory']}${r.amount !== undefined ? amt(r) : ' (any amount)'}`
         case 'task': return `requirement · a task${p.templateName ? ` executing \`${p.templateName}\`` : ''}`
-        case 'peer': return `requirement · @${r.peer ?? 'someone'}`
+        case 'peer': return `requirement · @${p.extras?.user?.username ?? r.peer ?? 'someone'}`
         case 'choice': return `requirement · choice (${(r.options ?? []).join(' | ')})`
         default: return `requirement · ${r.capability}`
       }
@@ -325,7 +339,8 @@ export const SYNTAX_HELP: Array<[string, string]> = [
   ['- text', 'a requirement: a confirmation by a signed-in person'],
   ['-[ ] text', 'a requirement for a task: done when a task row inside it is checked'],
   ['-$ 50 text', 'a requirement for money; -: 1h for time; -# 2 widgets for things. Filled by allocations inside it, several may add up'],
-  ['-@bob text', 'a requirement for the person bob: filled when bob allocates themself ("@bob 2h") or confirms'],
+  ['-@bob text', 'a requirement for the user bob: @bob stands for their user object, verified by the fos server; filled when bob allocates themself ("@bob 2h") or confirms'],
+  ['-ff 5 reward @bob', 'names who an allocation or payment is for: the same verified user object (otherwise the respondent is paid)'],
   ['-? text', 'a requirement for a search: filled when a query inside it has run (fos can run it)'],
   ['@{invite} / @{virtual} / @{github}', 'a peer constructor; type @{ to choose its handler'],
   ['-market text', 'a requirement handled by a peer with the market capability (list it, collect proposals)'],

@@ -43,6 +43,7 @@ import { allocationValue } from './destructure'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { definitionId, definitionRowKind, legacyRowKind, legacyTextPresentation, withoutLegacyInstanceKind } from './legacy-row-types'
 import { formAttribution, formElements, formTitle, positionFormRows, type FormElement } from './forms'
+import { sameUser, userOf, userPeerId, type UserRecord } from './users'
 import { FosStore } from '../dag-implementation/store'
 import { rowTypeId, type RowTypeKind } from '../dag-implementation/row-templates'
 import { canonicalTypeErrors, isTypeErrorEdge, plainEdge, typeErrorOf, unwrapRootTarget } from './patterns'
@@ -337,6 +338,24 @@ export function isRowOfType(store: FosStore, edge: FosPathElem, typeId: string):
 }
 
 /**
+ * The library definition with graph identity `id` (e.g. `lib:type:user`) that a row at `at` sees: from the nearest
+ * library row's Row types group, like `rowTemplate`; a library that predates the definition falls back to the one
+ * this build ships. Null when neither has it.
+ */
+export function libraryDefinition(store: FosStore, id: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
+  const loaded = (cid: string | null): cid is string => !!cid && !isPeerReference(content(store, cid))
+  const lookup = (library: string): string | null => {
+    const group = loaded(library) ? findChild(store, library, ROW_TYPES_ID) : null
+    const row = loaded(group) ? findChild(store, group, id) : null
+    return loaded(row) ? put(store, valueContent(store, valueCidOf(store, row))) : null
+  }
+  const library = findNearestRow(store, root, at, (row) => row.id === LIBRARY_ID && !!lookup(row.cid))
+  if (library) return lookup(library.cid)
+  const shipped = seedTypes(store).find(type => definitionId(type) === id)
+  return shipped ? put(store, shipped) : null
+}
+
+/**
  * A Row types group from the contents of its types: one template row per type (an identity ref around the content,
  * so the content, which is what rows pin, is the same node wherever the group is). Its rows are made from its own
  * Template type.
@@ -585,6 +604,8 @@ export type RowExtras = {
   query?: NonNullable<FosNodeContent['data']['query']>
   resource?: NonNullable<FosNodeContent['data']['resource']>
   allocation?: NonNullable<FosNodeContent['data']['allocation']>
+  /** The user `@name` names: bound as the row's `user` field (a user object); null removes it. */
+  user?: UserRecord | null
 }
 
 export function rowContent(kind: RowKind, id: string, text: string, now: number, extra: RowExtras = {}): FosNodeContent {
@@ -1120,6 +1141,8 @@ export type TaskView = {
   refPeer?: string
   /** For comments: who wrote it. */
   author?: { id: string; name: string; time: number }
+  /** The user object the row names (its `user` field, typed as `@name`; sync/users.ts). */
+  user?: UserRecord
   /** Tasks: unsatisfied requirements (summaries) that block completion. */
   blockedBy?: string[]
   /** Tasks made from a template row (the row edge's instruction): which one. */
@@ -1262,10 +1285,12 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind, edge?: 
   if (missing) view.missingTemplate = { kind: missing.kind }
   if (kind === 'task') { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers }
   if (isBranchChoice(store, identity)) view.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map(o => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter(o => o.requestMerge).map(o => o.peerId) }
+  const user = userOf(store, value)
+  if (user) view.user = user
   const demand = demandOf(value)
   if (kind === 'requirement' && demand) {
     const progress = requirementProgress(store, nodeCid)
-    view.requirement = { ...demand, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(demand), ...(progress ? progress : {}) }
+    view.requirement = { ...demand, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(demand, user), ...(progress ? progress : {}) }
   }
   if (kind === 'supply') view.supply = supplyOf(value)
   if (kind === 'query') view.query = value.data.query ?? {}
@@ -1294,16 +1319,17 @@ export function demandOf(value: FosNodeContent): FosDataContent['requirement'] {
 }
 
 
-export function requirementSummary(req: NonNullable<FosDataContent['requirement']>): string {
+export function requirementSummary(req: NonNullable<FosDataContent['requirement']>, user?: UserRecord | null): string {
+  const named = user ? ` @${user.username}` : ''
   switch (req.capability) {
     case 'confirmation': return 'confirmation'
     case 'choice': return `choice${req.options?.length ? ` (${req.options.join(' | ')})` : ''}`
     case 'search': return 'search'
-    case 'allocation': return `${req.resource ?? 'resource'}${req.amount !== undefined ? ` ${req.amount} ${req.unit ?? ''}`.trimEnd() : ''}`
+    case 'allocation': return `${req.resource ?? 'resource'}${req.amount !== undefined ? ` ${req.amount} ${req.unit ?? ''}`.trimEnd() : ''}${named}`
     case 'task': return 'task'
     case 'market': return 'market'
     case 'mail': return 'mail'
-    case 'peer': return req.peer ? `@${req.peer}` : 'peer'
+    case 'peer': return user ? `@${user.username}` : req.peer ? `@${req.peer}` : 'peer'
     case 'llm': return 'llm'
     case 'repo': return req.repo ? `repo ${req.repo}` : 'repo'
     case 'tool': return req.tool ? `tool ${req.tool}` : 'tool'
@@ -1323,16 +1349,25 @@ export function childRows(store: FosStore, cid: string, kind?: RowKind): Array<{
 }
 
 /** Does an allocation fill an allocation requirement (resource type and amount)? */
-function allocationFills(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined): boolean {
-  return allocationMatches(req, a) && (req.amount === undefined || a!.amount >= req.amount)
+function allocationFills(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
+  return allocationMatches(req, a, users) && (req.amount === undefined || a!.amount >= req.amount)
 }
 
-/** Does an allocation count towards an allocation requirement at all (resource type matches), whatever its amount? */
-export function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined): boolean {
+/** The user a requirement names (its `user` field) and the one an allocation is for, when the requirement names one. */
+export type RequiredUser = { required: UserRecord | null; given: UserRecord | null | undefined }
+function requiredUser(store: FosStore, requirementCid: string, allocationCid: string): RequiredUser {
+  return { required: userOf(store, valueContent(store, requirementCid)), given: userOf(store, valueContent(store, allocationCid)) }
+}
+
+/**
+ * Does an allocation count towards an allocation requirement at all (resource type matches), whatever its amount?
+ * A requirement that names a user (`-@bob`, `-ff 5 @bob`) counts only allocations for that same user object.
+ */
+export function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
   return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit === req.unit) &&
     (req.start === undefined || (a.start !== undefined && a.start <= req.start)) &&
     (req.end === undefined || a.end === undefined || a.end >= req.end) &&
-    (!req.peer || a.person === req.peer) &&
+    (!users?.required || (!!users.given && sameUser(users.required, users.given))) &&
     // a named place is met by an allocation at that place by name, or by a position (a device's location) with no name
     (!req.place || !a.location?.name || a.location.name.trim().toLowerCase() === req.place.trim().toLowerCase())
 }
@@ -1347,12 +1382,12 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
   if (!req || req.capability !== 'allocation' || req.amount === undefined) return null
   let have = 0
   for (const { kind, value, cid } of childRows(store, requirementCid)) {
-    if (kind === 'allocation') { const allocation = allocationValue(store, cid); if (allocationMatches(req, allocation)) have += allocation?.amount ?? 0 }
+    if (kind === 'allocation') { const allocation = allocationValue(store, cid); if (allocationMatches(req, allocation, requiredUser(store, requirementCid, cid))) have += allocation?.amount ?? 0 }
     const supply = supplyOf(value)
     if (kind === 'supply' && supply?.capability === 'allocation' && supply.ref) {
       const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref)
       if (!found) have += req.amount // supplied from outside this replica: trusted in full
-      else if (allocationMatches(req, found.row.allocation)) have += found.row.allocation?.amount ?? 0
+      else if (allocationMatches(req, found.row.allocation, { required: userOf(store, valueContent(store, requirementCid)), given: found.row.user })) have += found.row.allocation?.amount ?? 0
     }
   }
   return { have, need: req.amount }
@@ -1367,13 +1402,18 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
   const req = demandOf(valueContent(store, requirementCid))
   if (!req) return true
   const rows = childRows(store, requirementCid)
+  const named = userOf(store, valueContent(store, requirementCid))
   const filledByChild = rows.some(({ kind, value, cid }) => {
     switch (req.capability) {
       case 'task': return kind === 'task' && !!value.data.todo?.completed
-      case 'allocation': return kind === 'allocation' && allocationFills(req, allocationValue(store, cid))
+      case 'allocation': return kind === 'allocation' && allocationFills(req, allocationValue(store, cid), requiredUser(store, requirementCid, cid))
       case 'search': return kind === 'query' && !!value.data.query?.executedAt
-      // "-@name": the named person allocates themself ("@name 2h") inside it
-      case 'peer': return kind === 'allocation' && value.data.allocation?.type === 'person' && (!req.peer || value.data.allocation.person === req.peer)
+      // "-@name": the named user allocates themself ("@name 2h") inside it: the same user object on both rows
+      case 'peer': {
+        if (kind !== 'allocation' || value.data.allocation?.type !== 'person') return false
+        const given = userOf(store, value)
+        return (!named || (!!given && sameUser(named, given))) && (!req.peer || (!!given && userPeerId(given) === req.peer))
+      }
       default: return false
     }
   })
@@ -1396,12 +1436,12 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
       case 'llm': return !!s.by
       case 'repo': return !!s.by
       case 'tool': return !!s.by
-      case 'peer': return !!s.by && (!req.peer || s.by === req.peer)
+      case 'peer': return !!s.by && (!req.peer || s.by === req.peer) && (!named || s.by === userPeerId(named) || s.by === named.username)
       case 'allocation': {
         if (!s.ref) return false
         const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref)
         if (!found) return true // supplied by reference to an allocation outside this replica's scope: trusted
-        return allocationFills(req, found.row.allocation)
+        return allocationFills(req, found.row.allocation, { required: named, given: found.row.user })
       }
     }
   })
@@ -1447,7 +1487,7 @@ export function findNearestRow(store: FosStore, root: string, at: Scope, match: 
 export function taskBlockers(store: FosStore, taskCid: string): string[] {
   return childRows(store, taskCid, 'requirement')
     .filter(({ cid }) => !requirementSatisfied(store, cid))
-    .map(({ value }) => (demandOf(value) ? requirementSummary(demandOf(value)!) : 'requirement'))
+    .map(({ value }) => (demandOf(value) ? requirementSummary(demandOf(value)!, userOf(store, value)) : 'requirement'))
 }
 
 /** Sum of allocation amounts anywhere under a resource bank (sub-banks included). */
@@ -1603,8 +1643,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'identity'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'identity']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1640,7 +1680,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'edit (propose and decide proposals)', execute: 'run evaluations', autopush: 'autopush',
   direct: 'direct connect', local: 'this machine (files)', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
   calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response'
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response', identity: 'verify users'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1779,7 +1819,7 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'notify': return p.notifyCapability.getId()
     case 'rank': case 'local':
     case 'poll': case 'peer': case 'persist': case 'provideNode': case 'sync':
-    case 'timer': case 'cron': case 'task-completion': case 'request': case 'response': case 'points': case 'execute':
+    case 'timer': case 'cron': case 'task-completion': case 'request': case 'response': case 'points': case 'execute': case 'identity':
       return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
   }
 }

@@ -13,6 +13,7 @@ import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
 import { constructForm, formFields, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
 import { definitionRowKind } from './legacy-row-types'
 import { legacyCommentMetadata } from './legacy-comment'
+import { knownUser, userType, withUserField, type UserRecord } from './users'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
@@ -408,7 +409,8 @@ export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string,
     const numeric = constructed?.primitive === 'number' || constructed?.primitive === 'time'
     const node = repeated ? constructForm(replica.store, template, id, numeric ? Number(body) : body, now) : constructed ? constructRowValue(replica, template, id, body, extras, now) : withTextParameters(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store }))
     if (repeated) { node.data.name = { content: id }; node.data.position = { value: value.children.length } }
-    const cid = repeated ? put(replica.store, refNodeContent(replica.store, { alias: { id }, name: { content: id } }, put(replica.store, node))) : put(replica.store, node)
+    const bound = userBound(replica, at, node, extras)
+    const cid = repeated ? put(replica.store, refNodeContent(replica.store, { alias: { id }, name: { content: id } }, put(replica.store, bound))) : put(replica.store, bound)
     const edge = repeated ? rowEdge(replica.store, kind, cid, template) : rowEdgeAt(replica.store, kind, cid, at)
     const children = [...value.children]
     const pos = options.position
@@ -439,7 +441,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
       const constructed = node.data.presentation || node.data.scalar
         ? withTextParameters(replica.store, setFormTitle(replica.store, node, body, now))
         : constructRowValue(replica, template, aliasId, body, extras, now, node)
-      const next = withChildValue(replica.store, edge, constructed, now)
+      const next = withChildValue(replica.store, edge, userBound(replica, at, constructed, extras), now)
       return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, next), template))
     }
     const converted = convertRow(replica.store, node, kind, now)
@@ -453,10 +455,23 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
     if (kind === 'allocation' && extras.allocation) data.allocation = extras.allocation
     if (kind === 'resource' && extras.resource) data.resource = extras.resource
     if (kind === 'query' && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
-    const next = withChildValue(replica.store, edge, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), now)
+    const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), extras), now)
     const changed = identityCid(replica.store, next)
     return replaceEdge(replica.store, value, `a:${aliasId}`, kept ? rowEdge(replica.store, kind, changed, kept) : rowEdgeAt(replica.store, kind, changed, at))
   })
+}
+
+/** The row with its `user` field as `extras.user` says: bound (null removes it); left alone when absent. */
+function userBound(replica: Replica, at: Scope, node: FosNodeContent, extras: Omit<RowExtras, 'store'>): FosNodeContent {
+  if (extras.user === undefined) return node
+  return withUserField(replica.store, node, extras.user && knownUser(replica, extras.user), userType(replica.store, at))
+}
+
+/** Bind (or, with null, remove) the `user` field of the row at `at`: the user object `@name` stands for (sync/users.ts). */
+export function bindUserAt(replica: Replica, at: Scope, user: UserRecord | null, now: number): Replica {
+  if (!at.length || !resolveScope(replica.store, headCid(replica), at)) throw new Error('Row not found.')
+  const type = userType(replica.store, at)
+  return edit(replica, at, now, value => withUserField(replica.store, value, user, type))
 }
 
 export function setRowKind(replica: Replica, at: Scope, aliasId: string, kind: RowKind, now: number): Replica {

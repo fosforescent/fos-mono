@@ -2023,7 +2023,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   // allocations under a row show as little tags on it (money, time, things, people)
   if (task.childCount > 0 && task.kind !== 'resource') {
     for (const child of viewAt(state.replica, [...state.view, ...path])?.tasks ?? []) {
-      if (child.kind === 'allocation' && child.allocation) { const t = span('alloc-tag', allocationTag(child.allocation)); t.title = `${child.title || 'allocation'}${child.allocation.by ? ` · ${child.allocation.by}` : ''}`; meta.append(t) }
+      if (child.kind === 'allocation' && child.allocation) { const t = span('alloc-tag', allocationTag(child.allocation, child.user)); t.title = `${child.title || 'allocation'}${child.allocation.by ? ` · ${child.allocation.by}` : ''}`; meta.append(t) }
     }
   }
   if (!insideTemplate(state, [...state.view, ...path]) && task.kind === 'requirement' && task.requirement && !task.requirement.satisfied) li.classList.add('unmet')
@@ -2389,7 +2389,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
     const r = task.requirement
     const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
     // A legible chip ("Needs money", "Decided", "Filled") with the amount beside it in monospace, instead of the raw marker.
-    const what = r.capability === 'peer' ? (r.peer ? `@${r.peer}` : 'person') : r.capability === 'allocation' ? (RESOURCE_NAME[r.resource ?? 'inventory'] ?? r.resource ?? 'allocation') : r.capability === 'task' ? 'task' : r.capability === 'choice' ? 'decision' : r.capability === 'llm' ? 'answer' : r.capability
+    const what = r.capability === 'peer' ? (task.user ? `@${task.user.username}` : r.peer ? `@${r.peer}` : 'person') : r.capability === 'allocation' ? (RESOURCE_NAME[r.resource ?? 'inventory'] ?? r.resource ?? 'allocation') : r.capability === 'task' ? 'task' : r.capability === 'choice' ? 'decision' : r.capability === 'llm' ? 'answer' : r.capability
     const chip = r.satisfied ? (r.capability === 'choice' ? 'Decided' : r.capability === 'confirmation' ? 'Confirmed' : 'Filled') : `Needs ${what}`
     badge(chip, r.satisfied ? 'ok' : insideTemplate(state, [...state.view, ...at, task.id]) ? 'tpl' : 'needs')
     if (r.capability === 'allocation' && r.amount !== undefined) { const amt = span('req-amount', `${marker[r.resource ?? ''] ?? '$'} ${formatAmount(r.amount, r.unit ?? '')}`); amt.title = `${formatAmount(r.amount, r.unit ?? '')} of ${what}`; body.append(amt) }
@@ -2464,8 +2464,9 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         if (google?.connected && app.capabilityAvailable('calendar', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', 'Add to Google Calendar', () => void app.askPeerAt(at, task))))
       }
       if (r.capability === 'peer') {
-        if (r.peer && r.peer === app.actorName()) body.append(stop(button('secondary small', 'Done (confirm)', () => app.supplyRequirementAt(at, task.id, { capability: 'peer' }))))
-        else hint(`waiting for ${r.peer ? '@' + r.peer : 'a peer'}`)
+        const assignee = task.user?.username ?? r.peer
+        if (assignee && assignee === app.actorName()) body.append(stop(button('secondary small', 'Done (confirm)', () => app.supplyRequirementAt(at, task.id, { capability: 'peer' }))))
+        else hint(`waiting for ${assignee ? '@' + assignee : 'a peer'}`)
       }
       if (r.capability === 'allocation') {
         const options = app.allocations().filter(({ row }) => !r.resource || row.allocation?.type === r.resource)
@@ -2500,7 +2501,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
   } else if (task.kind === 'allocation' && task.allocation) {
     const a = task.allocation
     const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
-    badge(`${a.type === 'person' ? '@' + (a.person ?? '') : marker[a.type] ?? '+'} ${formatAmount(a.amount, a.unit)}`, 'alloc')
+    badge(`${a.type === 'person' ? '@' + (task.user?.username ?? '') : marker[a.type] ?? '+'} ${formatAmount(a.amount, a.unit)}${a.type !== 'person' && task.user ? ` @${task.user.username}` : ''}`, 'alloc')
     const when = a.start ? ` ${new Date(a.start).toLocaleDateString()}${a.end ? '–' + new Date(a.end).toLocaleDateString() : ''}` : ''
     body.append(document.createTextNode(` ${task.title}${when}${a.by ? ` · ${a.by}` : ''}`))
   }

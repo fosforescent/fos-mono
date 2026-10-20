@@ -9,6 +9,7 @@ import { createSystemAccount, libraryOwner } from './library'
 import { sendPlainEmail } from './email/email'
 import { createHandlerRegistry } from './sync/registry'
 import { createHostHandlers } from './sync/hostHandlers'
+import { createIdentityRoutes, identityHandler, identityKeyFromEnv } from './sync/identity'
 import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
 import http from 'http'
@@ -514,7 +515,22 @@ const mcpPeerDeps = prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (serve
 // What this host can do, derived from the handlers below; every capability advertised to devices comes from here.
 // Effects are reached through `complete` events (sync/events.ts → sync/evaluation.ts), never through routes of their own.
 const searchEmbed = vertexEmbed()
+// `@name` is shorthand for a user object this server attests (sync/identity.ts): resolved by a signed-in account,
+// checked by anyone against the public key
+const identity = identityHandler({
+  async findUser(username) {
+    const user = await prisma.userModel.findUnique({ where: { user_name: username }, select: { id: true, user_name: true, user_profile: true } })
+    if (!user) return null
+    const profile = (user.user_profile ?? {}) as { displayName?: unknown; name?: unknown; publicKey?: unknown }
+    const text = (value: unknown) => typeof value === 'string' ? value : null
+    return { id: user.id, username: user.user_name, name: text(profile.displayName) ?? text(profile.name), publicKey: text(profile.publicKey) }
+  }
+}, identityKeyFromEnv())
+const identityRoutes = createIdentityRoutes(identity)
+app.get('/identity/key', identityRoutes.key)
+dataRoutes.get('/users/:username', (req, res) => void identityRoutes.user(req, res))
 const registry = createHandlerRegistry(createHostHandlers({
+  identity,
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
   google: { connected: async id => !!await integrationDeps.connections.get(id, 'google'), createEvent: (userId, event) => integrations.createCalendarEvent(userId, event) },
   llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },

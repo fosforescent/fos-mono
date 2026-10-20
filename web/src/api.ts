@@ -1,4 +1,4 @@
-import type { Capability, MarketBid, NodeView } from '../../shared/sync/index'
+import { USER_SERVER_ATTESTATION, userAttestationPayload, type Capability, type MarketBid, type NodeView, type UserRecord } from '../../shared/sync/index'
 
 export type Session = {
   baseUrl: string
@@ -350,4 +350,31 @@ export async function sharedRequest(baseUrl: string, session: Session | null, ac
 export async function searchFosUsers(session: Session, query: string): Promise<string[]> {
   const result = await authed<{ users: Array<{ user_name: string }> }>(session, 'GET', `/groups/search/name?name=${encodeURIComponent(query.trim())}`)
   return [...new Set(result.users.map(user => user.user_name).filter(name => typeof name === 'string' && name !== session.username))]
+}
+
+/** The user object `@name` stands for, attested by the account server (backend/sync/identity.ts); null when no account has that name. */
+export async function fetchUser(session: Session, username: string): Promise<UserRecord | null> {
+  try { return (await authed<{ user: UserRecord }>(session, 'GET', `/user/data/users/${encodeURIComponent(username)}`)).user }
+  catch (error) { if (error instanceof ApiError && error.status === 404) return null; throw error }
+}
+
+/** The key the account server attests users with: `{ peer, alg: 'ed25519', publicKey }` (raw key, base64). */
+export async function fetchIdentityKey(baseUrl: string): Promise<{ peer: string; alg: string; publicKey: string }> {
+  const response = await fetch(`${baseUrl}/identity/key`)
+  if (!response.ok) throw await responseError(response)
+  return response.json() as Promise<{ peer: string; alg: string; publicKey: string }>
+}
+
+const bytes = (base64: string): ArrayBuffer => Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer as ArrayBuffer
+/**
+ * Check a server attestation with WebCrypto Ed25519 against the server's published key. Where the platform has no
+ * Ed25519 (older webviews) the answer is null: the object came over the authenticated connection to that same server,
+ * and the server re-checks the attestation whenever it acts on it (payments, fos points).
+ */
+export async function checkUserAttestation(key: { peer: string; publicKey: string }, user: UserRecord): Promise<boolean | null> {
+  const v = user.verification
+  if (!v || v.method !== USER_SERVER_ATTESTATION || v.by !== key.peer) return false
+  let publicKey: CryptoKey
+  try { publicKey = await crypto.subtle.importKey('raw', bytes(key.publicKey), { name: 'Ed25519' }, false, ['verify']) } catch { return null }
+  return crypto.subtle.verify({ name: 'Ed25519' }, publicKey, bytes(v.attestation), new TextEncoder().encode(userAttestationPayload(user, v.by, v.method, v.issuedAt)))
 }
