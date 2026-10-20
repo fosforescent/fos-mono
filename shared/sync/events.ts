@@ -8,6 +8,10 @@
  *
  *   read      one node: its text, children, branches, pending submissions and declared inputs
  *   search    text search below a node, bounded
+ *   outstanding  open work below a node: rows made from the Task type (or a template) that are not done and rows
+ *             made from the Allocation type whose requirement is not satisfied yet (the row's type decides, then its
+ *             state), those assigned to the acting peer first. A peer granted `execute` asks for it to find work,
+ *             then reads, proposes results or completes.
  *   submit    a submission: changes against a node. The owner applies them; anyone else leaves a proposal
  *             (a submission flagged for review) that the owner decides on. An added row may name its id, so later
  *             changes of the same submission add rows inside it (a nested group in one submission).
@@ -24,9 +28,12 @@
  * Capabilities as session types over this grammar come later; for now events are independent requests.
  */
 import { FosStore } from '../dag-implementation/store'
+import { rowTypeId } from '../dag-implementation/row-templates'
+import type { FosPathElem } from '../types'
 import {
-  branchSelection, commitRoot, content, contextScope, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
-  proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, resolveScope, rootTargetCid,
+  branchSelection, commitRoot, content, contextScope, demandOf, findAliasEdge, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
+  proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, requirementSatisfied,
+  requirementSummary, resolveScope, rootTargetCid, rowTemplateOf, userTemplateOf,
   selectedBranchValue, updateAtScope, valueContent, viewNode, withBranches, withProposal, type Scope,
   nestScope, libraryTypeAt,
 } from './graph'
@@ -61,6 +68,7 @@ const ADDS: Array<Change['operation']> = ['add_row', 'add_task', 'add_note', 'ad
 export type FosEvent =
   | { kind: 'read'; path?: Scope; branches?: EventBranch[]; offset?: number }
   | { kind: 'search'; path?: Scope; query: string; offset?: number; branches?: EventBranch[] }
+  | { kind: 'outstanding'; path?: Scope; offset?: number; branches?: EventBranch[] }
   | { kind: 'submit'; path?: Scope; expected: string; name?: string; changes: Change[]; branches?: EventBranch[] }
   | { kind: 'branch'; path: Scope; expected: string; name: string; branches?: EventBranch[] }
   | { kind: 'input'; path?: Scope; expected: string; key: string; value: unknown; branches?: EventBranch[] }
@@ -68,7 +76,7 @@ export type FosEvent =
   | { kind: 'decide'; path?: Scope; proposalId: string; decision: 'approve' | 'reject' }
   | { kind: 'invite'; path?: Scope; user: string }
 export type EventKind = FosEvent['kind']
-export const EVENT_KINDS: EventKind[] = ['read', 'search', 'submit', 'branch', 'input', 'complete', 'decide', 'invite']
+export const EVENT_KINDS: EventKind[] = ['read', 'search', 'outstanding', 'submit', 'branch', 'input', 'complete', 'decide', 'invite']
 
 /** What the host must still do after a dispatch: run its evaluator for `complete` (effects are host-side). */
 export type EvaluateRequest = { path: Scope; branches: Record<string, string>; expected: string; recover?: boolean }
@@ -116,6 +124,7 @@ export function parseEvent(input: unknown): FosEvent {
   switch (kind) {
     case 'read': return { kind, path, branches, offset: offsetOf(raw.offset) }
     case 'search': return { kind, path, branches, query: textOf(raw.query, 200), offset: offsetOf(raw.offset, 5000) }
+    case 'outstanding': return { kind, path, branches, offset: offsetOf(raw.offset, 1000) }
     case 'submit': {
       if (!Array.isArray(raw.changes) || !raw.changes.length || raw.changes.length > 50) throw new EventError('Supply 1–50 changes.')
       const changes: Change[] = raw.changes.map((change: any) => {
@@ -185,7 +194,8 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
   const permission = (cid: string, capability: 'read' | 'edit' | 'execute') => {
     if (owner) return true
     const identity = content(store, selectedIdentity(store, cid))
-    return hasCapability(store, identity, principal.peerId, capability) || (capability === 'read' && hasCapability(store, identity, principal.peerId, 'edit'))
+    // edit and execute both include reading what they change or run
+    return hasCapability(store, identity, principal.peerId, capability) || (capability === 'read' && (hasCapability(store, identity, principal.peerId, 'edit') || hasCapability(store, identity, principal.peerId, 'execute')))
   }
   if (!permission(attached, 'read')) throw new EventError('Peer no longer has read access to this attachment.')
   const path = event.path ?? []
@@ -253,6 +263,47 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
         if (at.length < 32) for (const row of [...v.tasks].reverse()) stack.push([...at, row.id])
       }
       return unchanged({ matches, nextOffset: stack.length && visited < 5000 ? visited : null, truncated: stack.length > 0, scanned: visited })
+    }
+    if (event.kind === 'outstanding') {
+      // A row is [type, row]: its type (the left node) says whether it is work. Tasks are rows made from the library's
+      // Task type (any pinned version, all of which share its id) or from a template row; requirements are rows made
+      // from its Allocation type that ask for something (a supply or a plain allocation is always satisfied); a template's
+      // rows are a definition and are skipped. Then
+      // their state decides: a task not done, a requirement not satisfied. A done task's subtree is skipped; masks hide
+      // children and text exactly as they do for read.
+      const offset = event.offset ?? 0
+      const madeFrom = (type: string | null, id: string) => !!type && content(store, type).data.alias?.id === id
+      const work = (edge: FosPathElem | undefined): 'task' | 'requirement' | 'template' | null => {
+        if (!edge) return null
+        const type = rowTemplateOf(store, edge)
+        return madeFrom(type, rowTypeId('task')) || userTemplateOf(store, edge) ? 'task' : madeFrom(type, rowTypeId('allocation')) ? 'requirement' : madeFrom(type, rowTypeId('template')) ? 'template' : null
+      }
+      const stack: Array<{ at: Scope; type: ReturnType<typeof work>; blockedBy?: string[] }> = [{ at: path, type: null }], seen = new Set<string>()
+      const open: Array<Record<string, unknown> & { assigned: boolean }> = []
+      let visited = 0
+      while (stack.length && visited < 5000 && open.length < 1100) {
+        const { at, type, blockedBy } = stack.pop()!
+        let current: string
+        try { current = resolve(at) } catch { continue }
+        if (seen.has(current)) continue
+        seen.add(current); visited++
+        const value = valueContent(store, current)
+        // a done task's subtree is finished; a template's is a definition, not work
+        if ((type === 'task' && value.data.todo?.completed) || type === 'template') continue
+        const mask = owner ? null : nodeLinkMaskAt(r, absolute(at), principal.peerId)
+        if (at.length && (type === 'task' || (type === 'requirement' && !requirementSatisfied(store, current)))) {
+          const demand = type === 'requirement' ? demandOf(value) : undefined
+          // assigned to this peer: bound as a member on the row itself, or named by the requirement
+          const assigned = readMembers(store, content(store, selectedIdentity(store, current))).some(m => m.peerId === principal.peerId) || (!!demand?.peer && [principal.peerId, principal.name].includes(demand.peer))
+          open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: requirementSummary(demand) } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
+        }
+        if (at.length < 32) {
+          const rows = viewNode(store, current).tasks.filter(row => !mask?.children || mask.children.includes(row.id))
+          for (const row of [...rows].reverse()) stack.push({ at: [...at, row.id], type: work(findAliasEdge(store, value, row.id)?.edge), blockedBy: row.blockedBy })
+        }
+      }
+      const ordered = [...open.filter(item => item.assigned), ...open.filter(item => !item.assigned)]
+      return unchanged({ revision: attached, items: ordered.slice(offset, offset + 100), nextOffset: offset + 100 < ordered.length ? offset + 100 : null, truncated: stack.length > 0, scanned: visited })
     }
     if (event.kind === 'complete') {
       if (event.expected !== put(store, valueContent(store, cid))) throw new EventError('The node changed. Read and review it before evaluating.')

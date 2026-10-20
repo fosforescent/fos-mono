@@ -188,7 +188,9 @@ export type ContextPeer = {
   repository?: { repo: string }
   mcp?: { serverId: number; tools: string[] }
   /** An agent CLI found on this computer's PATH (desktop): a read-only local peer, never a graph row. */
-  agentCli?: { provider: 'claude' | 'codex'; path: string }
+  agentCli?: { provider: 'claude' | 'codex'; path: string; vscode?: boolean }
+  /** An agent app on this computer (Claude Desktop): a local peer, launched with a prompt and connected through its config. */
+  agentApp?: 'claude-desktop'
   /** An MCP server peer: the device's loopback endpoint for this node, or the account server's hosted one. */
   mcpServer?: { transport: 'desktop' | 'server' }
   /** A sub-peer: shown as an icon inside its parent's constructor grid rather than as a top-level tab. */
@@ -198,7 +200,8 @@ export type ContextPeer = {
 export const GRANTS = ['read', 'edit', 'execute'] as const
 export type Grant = typeof GRANTS[number]
 export type PeerStatus = 'online' | 'offline' | 'disabled'
-export type LocalAgent = { provider: 'claude' | 'codex'; name: string; path: string }
+/** An agent CLI on this computer; `vscode` when VS Code has its extension (Claude Code's opens a tab with a prompt). */
+export type LocalAgent = { provider: 'claude' | 'codex'; name: string; path: string; vscode?: boolean }
 
 /** The account form's step: sign in, create, confirm the code, or reset a password. */
 export type AuthFlow =
@@ -270,6 +273,8 @@ export type AppState = {
   mcpPeers: McpPeerInfo[]
   /** Agent CLIs on this computer (`agent_clis`), discovered at startup; the constructor panel shows each as a local peer. */
   localAgents: LocalAgent[]
+  /** Claude Desktop is set up on this computer (desktop): a local peer whose panel opens a chat and connects its MCP. */
+  claudeDesktop: boolean
   /** The phone-linking modal: waiting for a number, then for the code texted to it. */
   phone: { phase: 'number' | 'code' | 'busy'; number?: string; error?: string } | null
   /** Open context menu, if any. */
@@ -410,6 +415,7 @@ export class App {
       integrations: [],
       mcpPeers: [],
       localAgents: [],
+      claudeDesktop: false,
       phone: null,
       contextMenu: null,
       device: null,
@@ -650,10 +656,11 @@ export class App {
   async probeLocalAgents(): Promise<void> {
     if (!inTauri()) return
     try {
-      const found = await tauriInvoke<{ claude: string | null; codex: string | null }>('agent_clis')
+      const found = await tauriInvoke<{ claude: string | null; codex: string | null; vscode?: { claude?: boolean }; claudeDesktop?: boolean }>('agent_clis')
       const names = { claude: 'Claude Code', codex: 'Codex' } as const
-      const agents: LocalAgent[] = (['claude', 'codex'] as const).flatMap(provider => found?.[provider] ? [{ provider, name: names[provider], path: found[provider]! }] : [])
-      if (JSON.stringify(agents) !== JSON.stringify(this.state.localAgents)) this.set({ localAgents: agents })
+      const agents: LocalAgent[] = (['claude', 'codex'] as const).flatMap(provider => found?.[provider] ? [{ provider, name: names[provider], path: found[provider]!, ...(provider === 'claude' && found.vscode?.claude ? { vscode: true } : {}) }] : [])
+      const claudeDesktop = !!found?.claudeDesktop
+      if (JSON.stringify(agents) !== JSON.stringify(this.state.localAgents) || claudeDesktop !== this.state.claudeDesktop) this.set({ localAgents: agents, claudeDesktop })
     } catch { /* no desktop shell, or the command is unavailable: no local agents */ }
   }
   start(): void {
@@ -1529,7 +1536,8 @@ export class App {
     // agent CLIs on this computer and the MCP servers are sub-peers that exist whether or not the node lists them as
     // members (a grant adds them as one); they come before the members so the member entry never shadows them
     // agent CLIs on this computer: local sub-peers of the device, read-only (masks apply to them like any peer)
-    if (!this.virtualIdentity) for (const agent of this.state.localAgents) peers.push({ id: `agent-cli:${agent.provider}`, name: agent.name, online: true, capabilities: ['tool'], disabled: [], accepts: ['read'], isAccount: false, member: false, agentCli: { provider: agent.provider, path: agent.path }, parent: 'device' })
+    if (!this.virtualIdentity) for (const agent of this.state.localAgents) peers.push({ id: `agent-cli:${agent.provider}`, name: agent.name, online: true, capabilities: ['tool'], disabled: [], accepts: ['read'], isAccount: false, member: false, agentCli: { provider: agent.provider, path: agent.path, ...(agent.vscode ? { vscode: true } : {}) }, parent: 'device' })
+    if (!this.virtualIdentity && this.state.claudeDesktop) peers.push({ id: 'agent-app:claude-desktop', name: 'Claude Desktop', online: true, capabilities: ['tool'], disabled: [], accepts: ['read'], isAccount: false, member: false, agentApp: 'claude-desktop', parent: 'device' })
     // MCP servers: the device's loopback endpoint for this node (desktop) and the account server's hosted one; what each exposes follows its grants here
     if (!this.virtualIdentity && !this.state.atRoot) {
       if (inTauri()) peers.push({ id: 'mcp:local', name: 'Local MCP server', online: true, capabilities: [], disabled: [], accepts: [], isAccount: false, member: false, mcpServer: { transport: 'desktop' }, parent: 'device' })
