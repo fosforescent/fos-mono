@@ -42,7 +42,8 @@ import { ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, library
 import { CLIENT_CAPABILITIES, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
 import { writeGraphNode } from './replica'
 import type { FosNodeContent, FosNodesData } from '../types'
-import { exchangeNode, nodeTreeSync } from './node-sync'
+import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
+import { addRelayAck, relayInbox, relayQueues } from './relay'
 import type { ProvidedNode } from './node-provider'
 import { handleMcp } from './mcp-adapter'
 
@@ -179,6 +180,13 @@ export const api = {
   setTaskDone(handle: string, atJson: string, id: string, done: boolean, now: number): void { set(handle, setTaskDone(get(handle), parse<Scope>(atJson, []), id, done, now)) },
   renameTask(handle: string, atJson: string, id: string, title: string, now: number): void { set(handle, renameTask(get(handle), parse<Scope>(atJson, []), id, title, now)) },
   deleteTask(handle: string, atJson: string, id: string, now: number): void { set(handle, deleteTask(get(handle), parse<Scope>(atJson, []), id, now)) },
+  /** What relays delivered to this store's peer: the unacknowledged messages in its queues (`relayQueues`), with the titles of their rows. */
+  relayInbox(handle: string): string {
+    const r = get(handle)
+    return JSON.stringify(relayQueues(r, r.meta.peerId).flatMap(queue => relayInbox(r, queue).map(m => ({ id: m.id, to: m.to, queue, rows: m.rows.map(row => row.title) }))))
+  },
+  /** Acknowledge a delivered message: an ack row in its queue, which the relay clears after the next sync. */
+  relayAck(handle: string, queueJson: string, messageId: string, now: number): void { set(handle, addRelayAck(get(handle), parse<Scope>(queueJson, []), messageId, now)) },
   moveNode(handle: string, fromJson: string, id: string, toJson: string, positionJson: string, now: number): void {
     set(handle, moveNode(get(handle), parse<Scope>(fromJson, []), id, parse<Scope>(toJson, []), JSON.parse(positionJson), now))
   },
@@ -204,7 +212,8 @@ export const api = {
     const remoteRoot = kind === 'peer' ? scope : [...r.meta.scope, ...localRoot]
     const peer = r.meta.serverPeerId ?? (kind === 'peer' ? null : `user:${username}`)
     const state = { run: undefined as unknown as ReturnType<typeof nodeTreeSync>, now: Date.now() }
-    state.run = nodeTreeSync(r, { peer, scope, remoteRoot, localRoot, branches: branch ? [{ scope: remoteRoot, name: branch }] : [], push }, () => state.now)
+    // a user's device also takes its server's own member entry above Home (its offers, its published key)
+    state.run = nodeTreeSync(r, { peer, scope, remoteRoot, localRoot, branches: branch ? [{ scope: remoteRoot, name: branch }] : [], push, above: kind === 'user' ? accountContextAbove(r) : [] }, () => state.now)
     runs.set(handle, state)
   },
   /**
