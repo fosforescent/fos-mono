@@ -1,5 +1,6 @@
-import { CAPABILITIES, SERVER_TRANSPORT_CAPABILITIES, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
+import { CAPABILITIES, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
 import { createHandlerRegistry } from './registry'
+import { relayHandler } from './hostHandlers'
 
 test('advertised capabilities are exactly transport facts plus registered handlers', () => {
   const registry = createHandlerRegistry([
@@ -36,4 +37,17 @@ test('the registry is what Home advertises for fos and the integration peers', (
   const home = view(r, [HOME_ID])!.members
   expect(home.find(m => m.peerId === 'integration:google')!.accepts).toEqual(['calendar'])
   expect(home.find(m => m.peerId === 'integration:github')!.accepts ?? []).toEqual([])
+})
+
+test('the server runs the relay on submissions: a message to a peer the account knows lands in its queue', () => {
+  const registry = createHandlerRegistry([relayHandler()])
+  expect(registry.serverCapabilities()).toContain('relay')
+  let r = ensureHomeContext(createReplica('user:alice'), 1, registry.hostOffers())
+  r = addTask(r, [HOME_ID], 'Hub', 2, 'hub')
+  r = addMemberAt(r, [HOME_ID, 'hub'], 'desktop', 'Desktop', ['read'], 3)
+  r = addRelayMessage(r, [HOME_ID, 'hub'], 'desktop', 4, 'm1')
+  r = addRelayMessage(r, [HOME_ID, 'hub'], 'stranger', 4, 'm2')
+  r = registry.afterSubmission(r, [HOME_ID, 'hub', 'm1'], 5)
+  expect(view(r, [HOME_ID, 'hub', 'fos:peer:desktop', RELAY_QUEUE_ID])!.tasks.map(t => t.id)).toEqual(['m1'])
+  expect(view(r, [HOME_ID, 'hub'])!.tasks.map(t => t.id)).toEqual(['m2'])
 })

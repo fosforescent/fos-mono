@@ -873,6 +873,56 @@ Combinations of capabilities are never new primitives: product = several rows
 in a node, coproduct = submissions on a mutable ref decided by a choice
 handler, exponential = composition through templates.
 
+## Relay: queues for offline peers (`shared/sync/relay.ts`)
+
+The durable queue for a device that is offline is a standard-library handler,
+not a server feature: any peer can run it, and the fos server is one peer that
+does. It is three library row types (`.fos/library.json`, Row types) and a
+template, recognised only by the row edge's left node (any pinned version of
+the type, by its identity `lib:type:…`; no flags or row kinds):
+
+* **Message** (`lib:type:relay-message`, a `peer` scalar form, open): a row a
+  peer leaves at a relay node. Its value is the addressee (a peer id), its child
+  rows are what it carries (a task for the desktop's agent, a note, …).
+* **Queue** (`lib:type:relay-queue`): the row `relay:queue` under a recipient's
+  member entry (`fos:peer:<id>`) on the node where that peer is a member. That
+  subtree is the recipient's queue.
+* **Acknowledgement** (`lib:type:relay-ack`, a `text` scalar): the id of a
+  message the recipient took.
+* **Relay** (`lib:relay`, a template): what a relay node accepts (pattern rows
+  for messages and acknowledgements). A device that relays publishes it as its
+  typed `relay` offer (`offerRelay`); the server's `fos` member accepts `relay`
+  as a transport fact (`SERVER_TRANSPORT_CAPABILITIES`).
+
+`relayAt(replica, at, handlerPeer, now)` runs where `handlerPeer` offers relay
+(`discoverHandlers`). It reads the rows peers left at the node (`rowsLeftAt`:
+rows of main, which the owner's devices write, and the rows each open
+submission adds), resolves the addressee (`memberEntryPath`: a member at or
+above the node), and moves the row (`moveChild` from main, or out of the
+submission, which is dropped when nothing else is left in it). A message to a
+peer the node does not know stays where it was left, which is all the central
+server needs; a message whose rows have not all arrived yet (a node still held
+by its sender) waits until they have. Acknowledgements in a queue, or left at
+the relay node as the recipient's submission (an invited peer's writes inside a
+member entry would not survive its proposal), take the message and themselves
+out of the queue. The same function runs on every peer; tests run it as the
+server and as a device (`relay.test.ts`).
+
+**Delivery.** A peer may step into its own member entry in node exchange (the
+owner into any): `provideNode` serves `[…, fos:peer:<me>, relay:queue]`, so the
+recipient syncs its queue like any node when it connects (`relayQueueSync`
+gives the `nodeTreeSync` context into a local row; `relayInbox` lists what is
+unacknowledged there) and adds an ack row (`addRelayAck`) that goes back on the
+same sync. Other peers cannot step into someone else's entry.
+
+**On the server** the registry's `relayHandler` (`backend/sync/hostHandlers.ts`)
+reacts to submissions: after every node exchange that wrote, `provideNode.ts`
+calls `registry.afterSubmission`, which runs the relay on that node and its
+ancestors (`relayAfterSubmission`) under the account's lock, and the usual
+`sync_changed` nudge tells connected devices to sync. So a task the phone sends
+to the desktop's agent peer (a member of the node) waits under that peer's
+entry until the desktop connects.
+
 ## Limitations / next steps
 
 * Task order is `todo.time` then id; no user-controlled ordering yet.
@@ -887,6 +937,12 @@ handler, exponential = composition through templates.
   template prefixes are parsed in `web/src/rows.ts` only.
 * Assignments (`-@name`) only show in the assigner's own context panel; the
   assignee's replica does not receive them yet (needs the proposal path).
+* Relay queues (see "Relay"): the web app and the desktop do not yet pull
+  their own queue on connect, offer a "send to peer" action, or run the relay
+  after exchanges they serve themselves (the shared functions exist; the
+  server runs it). Messages are not signed and carry no route beyond the
+  addressee; a device whose shipped library predates the relay types falls
+  back to the types in its build.
 * Browser node relay requires a live authenticated WebSocket; offline devices
   cannot answer requests. Relay does not traverse foreign reference targets.
 * Discord provides `mail`/`relay` on paper; its OAuth sign-in only identifies

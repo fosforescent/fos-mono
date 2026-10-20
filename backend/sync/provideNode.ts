@@ -66,6 +66,12 @@ export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user
           r = request.branches?.length ? exchangeNodeContext(r, request, authority, now, (target, input) => hydrate(target, input)).replica : hydrate(r, request).replica
         }
         const served = exchangeNode(r, request, authority, now)
+        // a submission came in: the handlers that react to one run on that node (the relay moves messages into queues).
+        // The answer stays what was exchanged; the writer sees their effect on its next sync.
+        if (request.update && deps.registry) {
+          try { deps.registry.afterSubmission(served.replica, [...request.scope, ...request.path], now) }
+          catch (error) { console.error('submission handlers failed:', error) }
+        }
         if (loaded.store.rootNodeId !== before) {
           await deps.saveStore(loaded.user, loaded.store)
           if (request.update) deps.notify?.(loaded.user.id, { type: 'sync_changed', peerId: request.peerId })

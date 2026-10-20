@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addRow, addSupply, beginTaskWork, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
+import { addRow, addSupply, beginTaskWork, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './registry'
 
 export type GitHubIssueDeps = {
@@ -283,11 +283,21 @@ export type HostHandlerDeps = {
   cron: boolean
 }
 
+/**
+ * The relay (shared/sync/relay.ts, the standard library's Relay): a message a peer leaves on a node is moved into the
+ * queue of its addressee when the account knows that peer there (a member), and left alone otherwise. The same
+ * handler any device can run; here it runs as `fos` after every submission a node exchange brings in.
+ */
+export function relayHandler(): HostHandler {
+  return { peerId: 'fos', capability: 'relay', submission: (replica, path, now) => relayAfterSubmission(replica, path, 'fos', now) }
+}
+
 export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
   return [
     // the server's own services: the row search index (search/routes.ts) is a route; market listing, polls and
     // fos points run as effects
     { peerId: 'fos', capability: 'search' },
+    relayHandler(),
     marketHandler(deps.market),
     pollHandler(),
     pointsHandler(deps.points),

@@ -1,7 +1,7 @@
 import type { FosDataContent, FosNodesData } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
-  valueContent, readMembers, memberFor, isHandle, isPeerReference, isBookkeepingEdge, rowKindOf, identityCid, withMainBranchPolicy,
+  valueContent, readMembers, memberFor, isMemberEdge, memberEntryId, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, rowKindOf, identityCid, withMainBranchPolicy,
   readProposals, CAPABILITIES, type ProposalView, ROW_KINDS, type Capability, type Scope, type RowKind } from './graph'
 import { headCid, type Replica } from './replica'
 
@@ -164,6 +164,13 @@ function permitted(r: Replica, cid: string, peer: string, inherited: boolean): b
   return member.capabilities.some(cap => (cap === 'read' || cap === 'edit') && !member.disabled?.includes(cap))
 }
 
+/** The member entry `id` names on the node `cid`, when the requester may step into it: its own (the owner: any). */
+function memberEntryStep(r: Replica, cid: string, id: string, authority: NodeAuthority): string | null {
+  if (id !== memberEntryId(authority.peerId) && !(authority.owner && id.startsWith(MEMBER_ENTRY_PREFIX))) return null
+  const edge = content(r.store, cid).children.find(e => isMemberEdge(r.store, e) && content(r.store, e[1]).data.alias?.id === id)
+  return edge ? edge[1] : null
+}
+
 /** One logical node only. No PREV, proposals, reference targets, or descendant values.
  * Scopes are walked through visible row edges, so hashes and aliases are not authority.
  */
@@ -184,6 +191,9 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     }
     // A mask on the attachment also constrains requests made directly to descendants.
     for (const id of request.path) {
+      // A peer's own member entry is its place on the node (what is left there for it, e.g. its relay queue).
+      const entry = memberEntryStep(r, cid, id, authority)
+      if (entry) { cid = entry; path.push(id); continue }
       const mask = nodeLinkMaskAt(r, path, authority.peerId)
       restrictFields(mask)
       if (mask.children && !mask.children.includes(id)) throw new NodeAccessError('Node access denied.')

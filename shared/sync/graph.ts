@@ -300,6 +300,33 @@ function libraryRowType(store: FosStore, library: string, type: RowTypeKind): st
 }
 
 /**
+ * The library type `typeId` (e.g. `lib:type:relay-message`) new rows at `at` are made from: the version in the
+ * nearest library above `at` whose Row types have it, else the version this build ships. Rows made from any version
+ * are recognised by the type's identity (`isRowOfType`), so either is a row of that type.
+ */
+export function libraryType(store: FosStore, typeId: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
+  const loaded = (cid: string | null): cid is string => !!cid && !isPeerReference(content(store, cid))
+  const typeIn = (library: string) => {
+    const group = loaded(library) ? findChild(store, library, ROW_TYPES_ID) : null
+    const row = loaded(group) ? findChild(store, group, typeId) : null
+    return loaded(row) ? valueCidOf(store, row) : null
+  }
+  const library = findNearestRow(store, root, at, (row) => row.id === LIBRARY_ID && !!typeIn(row.cid))
+  if (library) return typeIn(library.cid)
+  const shipped = seedTypes(store).find((type) => definitionId(type) === typeId)
+  return shipped ? put(store, shipped) : null
+}
+
+/** Is `edge` a row made from the library type `typeId`? Its type is the edge's left node; any version of it counts. */
+export function isRowOfType(store: FosStore, edge: FosPathElem, typeId: string): boolean {
+  edge = plainEdge(store, edge)
+  if (isChoiceEdge(store, edge) || !store.table.has(edge[0]) || !store.table.has(edge[1])) return false
+  if (definitionId(content(store, edge[0])) !== typeId) return false
+  // a typed argument ([type, ref] whose ref is of that type) is a slot, not a row
+  return refTypeCid(store, content(store, edge[1])) !== edge[0]
+}
+
+/**
  * A Row types group from the contents of its types: one template row per type (an identity ref around the content,
  * so the content, which is what rows pin, is the same node wherever the group is). Its rows are made from its own
  * Template type.
@@ -1746,13 +1773,17 @@ export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null
   return capabilityOfTarget(store, edge[1])
 }
 
+/** A member entry's identity on its node: `fos:peer:<peer id>` (also the path step to it, and to the rows it holds). */
+export const MEMBER_ENTRY_PREFIX = 'fos:peer:'
+export const memberEntryId = (peerId: string): string => `${MEMBER_ENTRY_PREFIX}${peerId}`
+
 export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
   const unique = [...new Set(capabilities)]
   const from = [...new Set(accepts)]
   const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c))
   return {
     data: {
-      alias: { id: `fos:peer:${peerId}` },
+      alias: { id: memberEntryId(peerId) },
       peerId: { content: peerId },
       ...(name ? { name: { content: name } } : {}),
       ...(off.length ? { disabledCapabilities: { content: off } } : {})
