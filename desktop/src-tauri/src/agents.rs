@@ -260,7 +260,8 @@ mod tests {
         let nested = dir.join("nested");
         std::fs::create_dir(&nested).unwrap();
         assert_eq!(
-            PathBuf::from(repository(nested.to_str().unwrap()).await.unwrap()),
+            // git prints `C:/…`, canonicalize gives `\?\C:\…` on Windows: compare canonical forms
+            std::fs::canonicalize(repository(nested.to_str().unwrap()).await.unwrap()).unwrap(),
             std::fs::canonicalize(&dir).unwrap()
         );
         std::fs::remove_dir_all(dir).unwrap();
