@@ -6,14 +6,18 @@
  *
  *   1. builds the outline of the target's subtree from the account's own store (`captureOutline`),
  *   2. asks the model for a plan (retried once when the answer is not JSON), validated against that outline,
- *   3. applies the plan under the target with the raw capture kept there as a note (`applyOrganizePlan`), and
- *   4. records the supply, with what it placed as the requirement's `fos:organized` value.
+ *   3. submits the plan, with the raw capture kept as a note, as ONE submission by `fos` on the target
+ *      (`proposeOrganizePlan`: a proposal on the target's mutable ref; no row is written into main), and
+ *   4. records the supply, with what it submitted as the requirement's `fos:organized` value.
+ *
+ * The owner accepts the submission on a device as one local edit (web: `App.acceptSubmission`) or rejects it; until
+ * then nothing of the capture is on main.
  *
  * The same model plumbing and free budget as voice notes (voiceNotes.ts): spend is metered and recorded as voice
  * usage; a non-paying account over the budget is refused before the evaluation opens. Texted messages use the same
- * handler (`createAccountOrganizer`, for channels/textCommands.ts).
+ * handler (`createAccountOrganizer`, for channels/textCommands.ts); their submission waits in Home.
  */
-import { ORGANIZED_VALUE, applyOrganizePlan, captureOutline, deleteTask, headCid, HOME_ID, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
+import { ORGANIZED_VALUE, proposeOrganizePlan, captureOutline, deleteTask, headCid, HOME_ID, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/registry'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
@@ -63,11 +67,13 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
         const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
         if (usage && user) await recordSafely(usage, user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: request.text.length, clusters: 0 })
       }
-      const applied = await applyOrganizePlan(ctx.replica(), target, plan, { label: request.label, stamp: utcStamp(ctx.now()), text: request.text }, ctx.now())
+      // one submission by fos on the target: main gets the proposal (bookkeeping), never the rows
+      const submitted = await proposeOrganizePlan(ctx.replica(), target, plan, { label: request.label, stamp: utcStamp(ctx.now()), text: request.text }, ctx.now())
       const titles = new Map(outline.map(entry => [entry.id, entry.title]))
-      const result: OrganizedResult = { rows: applied.rows.length, captureId: applied.captureId, title: plan.title, under: [...new Set(plan.items.flatMap(item => item.parent && titles.has(item.parent) ? [titles.get(item.parent)!] : []))] }
-      let next = writeNodeValue(applied.replica, path, ORGANIZED_VALUE, result, ctx.now())
-      next = addSupply(next, target, path.at(-1)!, { capability: 'organize', by: 'fos', ref: applied.captureId }, ctx.now())
+      const result: OrganizedResult = { rows: submitted.rows.length, captureId: submitted.captureId, title: plan.title, under: [...new Set(plan.items.flatMap(item => item.parent && titles.has(item.parent) ? [titles.get(item.parent)!] : []))],
+        proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
+      let next = writeNodeValue(submitted.replica, path, ORGANIZED_VALUE, result, ctx.now())
+      next = addSupply(next, target, path.at(-1)!, { capability: 'organize', by: 'fos', ref: submitted.captureId }, ctx.now())
       await ctx.update(next)
     }
   }
@@ -78,7 +84,8 @@ type RunNode = (username: string, request: { path: Scope; branches: Record<strin
 /**
  * Organizing on an account's behalf without a device (texted messages): the organize requirement is placed in Home
  * under the account's lock, evaluated like a device's (`runNode`, the same handler and budget), and removed once
- * filled; the plan's rows and the kept capture stay. Null when it could not be organized (no handler, over budget,
+ * filled; the submission (the plan's rows and the kept capture) waits on Home for the owner to accept it on a device.
+ * Null when it could not be organized (no handler, over budget,
  * the model failed): the requirement is removed again and the caller files the text unorganized.
  */
 export function createAccountOrganizer(deps: AccountStoreDeps, runNode: RunNode) {

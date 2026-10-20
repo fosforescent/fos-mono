@@ -1,8 +1,11 @@
-import { addRow, addTask, createReplica, ensureHomeContext, headCid, moveNode, view, type Replica } from './replica'
-import { findEdge, HOME_ID, libraryTypeAt, resolveScope, valueContent } from './graph'
+import { addRow, addTask, applyProposalAt, createReplica, ensureHomeContext, headCid, loadReplica, moveNode, rejectProposalAt, serializeReplica, view, type Replica } from './replica'
+import { findEdge, HOME_ID, libraryTypeAt, readProposal, resolveScope, SERVER_TRANSPORT_CAPABILITIES, valueContent } from './graph'
+import { acceptProvidedNode, nodeRequestLinkId } from './node-provider'
+import { acceptSubmissionRows, exchangeNode, nodeSyncKey } from './node-sync'
+import { syncWith } from './test-helpers'
 import { dispatchEvent, parseEvent } from './events'
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
-import { ORGANIZE_REQUEST_PREFIX, applyOrganizePlan, captureOutline, organizePlanChanges, organizeRequestAt, outlineText, parseOrganizePlan, parseOutline, requestOrganize, type OrganizePlan } from './organize'
+import { ORGANIZE_PEER, ORGANIZE_REQUEST_PREFIX, applyOrganizePlan, proposeOrganizePlan, captureOutline, organizePlanChanges, organizeRequestAt, outlineText, parseOrganizePlan, parseOutline, requestOrganize, type OrganizePlan } from './organize'
 
 function project(): Replica {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
@@ -155,4 +158,103 @@ test('an organize request is a requirement in the target holding the capture as 
   expect((await captureOutline(asked.replica, [HOME_ID, 'garden'])).map(e => e.id)).toEqual(['tomatoes', 'stake'])
   expect(() => requestOrganize(r, [HOME_ID, 'garden'], '   ', 'x', 9)).toThrow(/Nothing to organize/)
   expect(() => requestOrganize(r, [HOME_ID, 'gone'], 'text', 'x', 9)).toThrow(/removed/)
+})
+
+/** The account (`server`) and a device that built the tree and synced it there, as an owner's device does. */
+function deviceAndAccount() {
+  let device = ensureHomeContext(createReplica('device'), 1)
+  device = addRow(device, [HOME_ID], 'plain', 'Garden', 2, { id: 'garden' })
+  device = addRow(device, [HOME_ID, 'garden'], 'plain', 'Tomatoes', 3, { id: 'tomatoes' })
+  const server = createReplica('user:alice')
+  device = syncWith(device, server)
+  return { device, server }
+}
+const capturePlan = () => parseOrganizePlan({ title: 'Garden plans', items: [
+  { ref: 'n1', parent: 'tomatoes', text: 'water daily' },
+  { ref: 'n2', parent: '', text: 'Compost' },
+  { ref: 'n3', parent: 'n2', text: 'buy a bin' },
+] }, ['tomatoes'])
+const owner = { peerId: 'device', scope: [] as string[], owner: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }
+const nodeRequest = (server: Replica, path: string[]) => ({ peerId: 'device', scope: [] as string[], path, linkId: nodeRequestLinkId('device', { peerId: server.meta.peerId, scope: path }) })
+/** One node of a submission, as a device's proposal preview asks the account for it (`relative` to the node it is on). */
+const previewNode = (server: Replica, at: string[], proposal: string, relative: string[] = []) =>
+  exchangeNode(server, { ...nodeRequest(server, [...at, ...relative]), proposal: { scope: at, id: proposal } }, owner, 20).node
+
+test('organizing is one submission by fos on the target: main is unchanged, accepting it is one edit with every row, rejecting adds nothing', async () => {
+  const at = [HOME_ID, 'garden']
+  const r = project(), before = headCid(r)
+  const submitted = await proposeOrganizePlan(r, at, capturePlan(), { label: 'Voice note', stamp: 'now', text: 'tomatoes, compost' }, 10, ids)
+  expect(titles(submitted.replica, at)).toEqual(['Tomatoes'])
+  expect(titles(submitted.replica, [...at, 'tomatoes'])).toEqual(['Stake them'])
+  expect(view(submitted.replica, at)!.proposals).toMatchObject([{ id: submitted.proposalCid, peerId: ORGANIZE_PEER, name: 'Voice note: Garden plans', status: 'open' }])
+  expect(headCid(submitted.replica)).not.toBe(before) // only bookkeeping: the target became a mutable ref holding the proposal
+  const compost = submitted.rows.find(row => row.text === 'Compost')!.id
+  expect(submitted.additions).toEqual([{ path: [], ids: [compost, submitted.captureId] }, { path: ['tomatoes'], ids: [submitted.rows[0]!.id] }])
+  // a second capture with the same title never replaces the pending one
+  const again = await proposeOrganizePlan(submitted.replica, at, capturePlan(), { label: 'Voice note', stamp: 'later', text: 'again' }, 11, ids)
+  expect(view(again.replica, at)!.proposals.map(p => p.name)).toEqual(['Voice note: Garden plans', 'Voice note: Garden plans (2)'])
+  const copy = loadReplica(serializeReplica(again.replica)) // replicas share their store: decide on separate copies
+  const accepted = applyProposalAt(again.replica, at, submitted.proposalCid, 'user:alice', 12)
+  expect(titles(accepted, at)).toEqual(['Tomatoes', 'Compost', '## Voice note: Garden plans'])
+  expect(titles(accepted, [...at, compost])).toEqual(['buy a bin'])
+  expect(titles(accepted, [...at, 'tomatoes'])).toEqual(['Stake them', 'water daily'])
+  expect(view(accepted, at)!.proposals.map(p => p.name)).toEqual(['Voice note: Garden plans (2)'])
+  const rejected = rejectProposalAt(copy, at, again.proposalCid, 12)
+  expect(titles(rejected, at)).toEqual(['Tomatoes'])
+  expect(view(rejected, at)!.proposals.map(p => p.status)).toEqual(['open', 'rejected'])
+})
+
+test('a device gets only the submission\'s top: rows load when opened, accepting references them unloaded and the account fills them on sync', async () => {
+  const at = [HOME_ID, 'garden']
+  let { device, server } = deviceAndAccount()
+  const submitted = await proposeOrganizePlan(server, at, capturePlan(), { label: 'Voice note', stamp: 'now', text: 'tomatoes, compost' }, 10, ids)
+  server = submitted.replica
+  device = syncWith(device, server, { now: 11 })
+  // after sync: the pending submission (id, name, what it adds by id) and nothing of its content
+  const remote = device.meta.nodeSync![nodeSyncKey(device.meta.serverPeerId!, at)]!.remote
+  const pending = remote.proposals!.find(p => p.id === submitted.proposalCid)!
+  expect(pending).toMatchObject({ peerId: ORGANIZE_PEER, name: 'Voice note: Garden plans', additions: submitted.additions })
+  expect(titles(device, at)).toEqual(['Tomatoes'])
+  const compost = submitted.rows.find(row => row.text === 'Compost')!.id
+  const compostCid = resolveScope(server.store, readProposal(server.store, submitted.proposalCid)!.contentCid, [compost])!
+  expect(compostCid).toBeTruthy()
+  expect(device.store.table.has(compostCid)).toBe(false)
+  expect(device.store.table.has(submitted.proposalCid)).toBe(false)
+  // the preview is node by node: the top shows the new rows as addresses, opening one fetches it
+  const top = previewNode(server, at, submitted.proposalCid)
+  expect(top.children.map(c => c.id)).toEqual(['tomatoes', compost, submitted.captureId])
+  const opened = previewNode(server, at, submitted.proposalCid, [compost])
+  expect(opened.children).toHaveLength(1)
+  // accepting without opening: one local edit; the rows are unloaded references to where the account holds them
+  const nodes = pending.additions!.map(a => ({ path: a.path, children: previewNode(server, at, submitted.proposalCid, a.path).children }))
+  const beforeAccept = headCid(device)
+  device = acceptSubmissionRows(device, at, pending.additions!, nodes, 12)
+  expect(headCid(device)).not.toBe(beforeAccept)
+  const garden = view(device, at)!.tasks
+  expect(garden.map(t => t.id)).toEqual(['tomatoes', compost, submitted.captureId])
+  expect(garden.find(t => t.id === compost)!.refPeer).toBe(server.meta.peerId)
+  expect(view(device, [...at, 'tomatoes'])!.tasks.map(t => t.id)).toContain(submitted.rows[0]!.id)
+  expect(device.store.table.has(compostCid)).toBe(false)
+  // the device's sync pushes the edited nodes; the account fills the rows from the submission and closes it
+  device = syncWith(device, server, { now: 13 })
+  expect(titles(server, at)).toEqual(['Tomatoes', 'Compost', '## Voice note: Garden plans'])
+  expect(titles(server, [...at, compost])).toEqual(['buy a bin'])
+  expect(titles(server, [...at, 'tomatoes'])).toEqual(['water daily'])
+  expect(view(server, at)!.proposals).toEqual([])
+  // the rows resolve later, when the device opens one
+  const request = nodeRequest(server, [...at, compost])
+  device = acceptProvidedNode(device, [...at, compost], request, exchangeNode(server, request, owner, 14).node, 14)
+  expect(view(device, at)!.tasks.find(t => t.id === compost)!.title).toBe('Compost')
+  expect(view(device, [...at, compost])!.tasks).toHaveLength(1)
+})
+
+test('rejecting a submission on the account leaves the device\'s tree as it was', async () => {
+  const at = [HOME_ID, 'garden']
+  let { device, server } = deviceAndAccount()
+  const submitted = await proposeOrganizePlan(server, at, capturePlan(), { label: 'Pasted text', stamp: 'now', text: 'x' }, 10, ids)
+  server = rejectProposalAt(submitted.replica, at, submitted.proposalCid, 11)
+  device = syncWith(device, server, { now: 12 })
+  expect(titles(device, at)).toEqual(['Tomatoes'])
+  expect(titles(server, at)).toEqual(['Tomatoes'])
+  expect(device.meta.nodeSync![nodeSyncKey(device.meta.serverPeerId!, at)]!.remote.proposals!.map(p => p.status)).toEqual(['rejected'])
 })

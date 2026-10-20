@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { ORGANIZED_VALUE, addRow, createReplica, ensureHomeContext, evaluationRecord, HOME_ID, readNodeValue, requestOrganize, view, type Replica } from '@fosforescent/shared/sync/index'
+import { ORGANIZED_VALUE, addRow, applyProposalAt, createReplica, ensureHomeContext, evaluationRecord, HOME_ID, loadReplica, readNodeValue, serializeReplica, rejectProposalAt, requestOrganize, view, type OrganizedResult, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -84,7 +84,7 @@ test('an answer that is not JSON is asked for once more, then fails', async () =
   await expect(organizeCapture(model('nope', 'still nope'), { text: 'x', title: '', outline: [] })).rejects.toThrow(/invalid JSON/)
 })
 
-test('the organize handler fills a requirement in the target: outline from the account store, plan applied there, capture kept, supply recorded', async () => {
+test('the organize handler fills a requirement in the target with ONE fos submission there: main unchanged until it is accepted, supply recorded', async () => {
   const fake = model(JSON.stringify({ title: 'Kickoff', items: [
     { ref: 'n1', parent: 'budget', text: 'cap at $5k' },
     { ref: 'n2', parent: '', text: 'Hiring' },
@@ -101,17 +101,36 @@ test('the organize handler fills a requirement in the target: outline from the a
   // the server built the outline itself: the target's subtree only, without the requirement
   expect(fake.asked[0]!.user).toBe('Target: Project\n\nSubtree:\n- [budget] Budget\n\nCapture:\nkickoff transcript')
   const r = h.get()
-  expect(rows(r, [HOME_ID, 'project', 'budget'])).toEqual(['cap at $5k'])
-  const hiring = view(r, target)!.tasks.find(t => t.title === 'Hiring')!
-  expect(rows(r, [...target, hiring.id])).toEqual(['one designer'])
+  // main is unchanged: the result is ONE submission by fos on the target, not rows
+  expect(rows(r, [HOME_ID, 'project', 'budget'])).toEqual([])
+  expect(rows(r, target)).toEqual(['Budget', 'Voice note'])
   expect(rows(r, [HOME_ID, 'unrelated'])).toEqual([])
-  expect(rows(r, target)).toContain('must stay inside')
-  expect(rows(r, target)).toContain('## Voice note: Kickoff\n\n_2026-10-20 09:30 UTC_\n\nkickoff transcript')
+  const submissions = view(r, target)!.proposals
+  expect(submissions).toHaveLength(1)
+  expect(submissions[0]).toMatchObject({ peerId: 'fos', name: 'Voice note: Kickoff', status: 'open' })
   const request = view(r, target)!.tasks.find(t => t.id === asked.path.at(-1))!
   expect(request.requirement).toMatchObject({ capability: 'organize', satisfied: true })
   expect(view(r, asked.path)!.tasks.find(t => t.supply)!.supply).toMatchObject({ capability: 'organize', by: 'fos' })
-  expect(readNodeValue(r, asked.path, ORGANIZED_VALUE)).toMatchObject({ rows: 4, title: 'Kickoff', under: ['Budget'] })
+  const result = readNodeValue<OrganizedResult>(r, asked.path, ORGANIZED_VALUE)!
+  expect(result).toMatchObject({ rows: 4, title: 'Kickoff', under: ['Budget'], proposal: submissions[0]!.id, name: 'Voice note: Kickoff' })
+  // what it adds, by node: three rows and the capture under the target, one under Budget (the Hiring group's row is inside it)
+  expect(result.additions.map(a => [a.path, a.ids.length])).toEqual([[[], 3], [['budget'], 1]])
   expect(meter.records).toEqual([0.01])
+
+  // accepting it is one edit that brings everything; rejecting leaves main as it was
+  const copy = loadReplica(serializeReplica(r)) // replicas share their store: decide on separate copies
+  const accepted = applyProposalAt(r, target, submissions[0]!.id, 'user:alice', 99)
+  expect(rows(accepted, [HOME_ID, 'project', 'budget'])).toEqual(['cap at $5k'])
+  const hiring = view(accepted, target)!.tasks.find(t => t.title === 'Hiring')!
+  expect(rows(accepted, [...target, hiring.id])).toEqual(['one designer'])
+  expect(rows(accepted, target)).toContain('must stay inside')
+  expect(rows(accepted, target)).toContain('## Voice note: Kickoff\n\n_2026-10-20 09:30 UTC_\n\nkickoff transcript')
+  expect(rows(accepted, [HOME_ID, 'unrelated'])).toEqual([])
+  expect(view(accepted, target)!.proposals).toEqual([])
+  const rejected = rejectProposalAt(copy, target, submissions[0]!.id, 99)
+  expect(rows(rejected, target)).toEqual(['Budget', 'Voice note'])
+  expect(rows(rejected, [HOME_ID, 'project', 'budget'])).toEqual([])
+  expect(view(rejected, target)!.proposals[0]!.status).toBe('rejected')
 })
 
 test('over the free budget the requirement is refused before anything runs; a failing model leaves it unfilled', async () => {
@@ -127,7 +146,7 @@ test('over the free budget the requirement is refused before anything runs; a fa
   expect(view(failing.get(), [HOME_ID])!.tasks.find(t => t.id === path)!.requirement!.satisfied).toBe(false)
 })
 
-test('texted messages go through the same handler: organized into Home, the requirement removed, the text kept', async () => {
+test('texted messages go through the same handler: a pending fos submission in Home, the requirement removed, Home unchanged until accepted', async () => {
   let r = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 1, { server: ['organize'] })
   r = addRow(r, [HOME_ID], 'plain', 'Groceries', 2, { id: 'groceries' })
   r = addRow(r, [HOME_ID, 'groceries'], 'plain', 'milk', 3, { id: 'milk' })
@@ -143,12 +162,18 @@ test('texted messages go through the same handler: organized into Home, the requ
   await inbound({ source: 'sms', id: 'm', from: '+1', replyTo: '+1', text: 'need eggs, and hinges from the hardware store', timestamp: 't' })
   expect(fake.asked[0]!.user).toMatch(/^Target: Home\n\nSubtree:\n- \[groceries\] Groceries\n  - \[milk\] milk\n/)
   const after = h.get()
-  expect(rows(after, [HOME_ID, 'groceries'])).toEqual(['milk', 'eggs'])
-  const hardware = view(after, [HOME_ID])!.tasks.find(t => t.title === 'Hardware store')!
-  expect(rows(after, [HOME_ID, hardware.id])).toEqual(['hinges'])
-  expect(rows(after, [HOME_ID]).at(-1)).toBe('## Text message (sms): Errands\n\n_2026-10-20 09:30 UTC_\n\nneed eggs, and hinges from the hardware store')
+  // Home is unchanged: the message waits there as one pending submission by fos
+  expect(rows(after, [HOME_ID, 'groceries'])).toEqual(['milk'])
+  expect(rows(after, [HOME_ID]).some(t => t.includes('need eggs'))).toBe(false)
   expect(view(after, [HOME_ID])!.tasks.some(t => t.requirement?.capability === 'organize')).toBe(false)
-  expect(replies.at(-1)).toBe('fos: organized into Home: 3 rows (under “Groceries”), and kept the message as a note')
+  const [pending] = view(after, [HOME_ID])!.proposals
+  expect(pending).toMatchObject({ peerId: 'fos', name: 'Text message (sms): Errands', status: 'open' })
+  expect(replies.at(-1)).toBe('fos: organized for Home, waiting for you to accept it there: 3 rows (under “Groceries”), and the message kept as a note')
+  const accepted = applyProposalAt(after, [HOME_ID], pending!.id, 'user:alice', 99)
+  expect(rows(accepted, [HOME_ID, 'groceries'])).toEqual(['milk', 'eggs'])
+  const hardware = view(accepted, [HOME_ID])!.tasks.find(t => t.title === 'Hardware store')!
+  expect(rows(accepted, [HOME_ID, hardware.id])).toEqual(['hinges'])
+  expect(rows(accepted, [HOME_ID]).at(-1)).toBe('## Text message (sms): Errands\n\n_2026-10-20 09:30 UTC_\n\nneed eggs, and hinges from the hardware store')
   // the model failing: the requirement goes again and the text lands in Home as a plain row
   await inbound({ source: 'sms', id: 'm2', from: '+1', replyTo: '+1', text: 'fail please', timestamp: 't' })
   expect(rows(h.get(), [HOME_ID])).toContain('fail please')

@@ -1344,7 +1344,7 @@ const OUTPUT_DRAG_TYPE = 'application/x-fos-output'
 const destructuring = new WeakMap<App, Set<string>>()
 const NODE_DRAG_TYPE = 'application/x-fos-node'
 const details = new WeakMap<HTMLElement, { key: string; store: AppState['replica']['store']; input: HTMLTextAreaElement; baseline: string; draft: { store: AppState['replica']['store']; head: string; path: Scope }; controls: HTMLElement }>()
-const ORGANIZE_TITLE = 'The account\'s model files each point under the row it belongs to here (or new rows grouped here), and keeps the text as a note'
+const ORGANIZE_TITLE = 'The account\'s model files each point under the row it belongs to here (or new rows grouped here), keeping the text as a note: one submission from fos you accept or reject here'
 /** A long prose paste goes to the node's capture box to be organized, instead of one row per line. */
 function offerOrganize(app: App, text: string): void {
   const prefs = workspace(app)
@@ -1426,7 +1426,13 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       event.stopPropagation()
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !organize.disabled) { event.preventDefault(); organize.click() }
     })
-    capture.append(captureText, organize)
+    // what the account organizes is a submission by fos; accepting it right away is still one local, undoable edit
+    const autoAccept = document.createElement('label'); autoAccept.className = 'muted small auto-accept-captures'
+    const autoAcceptBox = document.createElement('input'); autoAcceptBox.type = 'checkbox'
+    autoAcceptBox.addEventListener('change', () => app.setAutoAcceptCaptures(autoAcceptBox.checked))
+    autoAccept.title = 'Otherwise each organized capture waits as a submission from fos in this node\'s Branches until you accept it'
+    autoAccept.append(autoAcceptBox, ' Accept right away')
+    capture.append(captureText, organize, autoAccept)
     const edit = div('node-input', ''); edit.append(div('input-controls', ''), div('node-input-options', ''), input, voice, capture)
     const head = div('constructor-head', ''); head.append(search)
     const grid = div('constructor-palette constructor-grid', ''); grid.setAttribute('role', 'tabpanel')
@@ -1562,6 +1568,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview
   const capture = el.querySelector<HTMLElement>('.capture-input')!
   capture.hidden = !!preview || !!row?.refPeer
+  capture.querySelector<HTMLInputElement>('.auto-accept-captures input')!.checked = app.autoAcceptCaptures
   const organize = capture.querySelector<HTMLButtonElement>('.organize-capture')!
   organize.disabled = !capture.querySelector<HTMLTextAreaElement>('.capture-text')!.value.trim() || !!state.voice || !app.canOrganize()
   organize.title = app.canOrganize() ? ORGANIZE_TITLE : state.session?.kind === 'user' ? 'Organizing needs a Fos peer with a language model' : 'Connect to your account to organize text'

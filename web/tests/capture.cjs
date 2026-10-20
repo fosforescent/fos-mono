@@ -1,6 +1,8 @@
 /* Captures organized into a node: typed/pasted text and voice notes become an `organize` requirement in the node they
-   were captured at, run on the account server (a `complete` event; its organize handler applies the plan there and
-   keeps the raw capture as a note), and the filled request is removed. No organize route. */
+   were captured at, run on the account server (a `complete` event; its organize handler submits the plan, with the raw
+   capture as a note, as ONE submission by fos on that node), and the filled request is removed. No organize route.
+   Nothing lands in the tree until the device accepts the submission: one local edit (one undo takes it all back) that
+   references the submitted rows without loading them. */
 const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync } = require('node:fs')
@@ -9,7 +11,7 @@ const { JSDOM } = require('jsdom')
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-capture-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
-buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/recording'; export {isLongProse} from './src/paste'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
+buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/recording'; export {isLongProse} from './src/paste'; export * from '../shared/sync/index'; export {syncWith} from '../shared/sync/test-helpers'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
@@ -28,7 +30,8 @@ async function main() {
   assert(c.isLongProse('word '.repeat(300)) && !c.isLongProse('word '.repeat(10)) && !c.isLongProse('- a\n'.repeat(400)) && !c.isLongProse('# Title\n' + 'word '.repeat(300)))
 
   const requests = []
-  let failOrganize = false, app = null
+  let failOrganize = false, app = null, server = null
+  const owner = peerId => ({ peerId, scope: [], owner: true, capabilities: c.SERVER_TRANSPORT_CAPABILITIES })
   globalThis.fetch = async (url, init) => {
     const u = new URL(url)
     const json = (status, value) => ({ ok: status < 400, status, statusText: 'x', json: async () => value })
@@ -37,11 +40,12 @@ async function main() {
       return json(200, { transcript: 'the tomatoes need stakes and we should start a compost bin' })
     }
     if (u.pathname === '/user/data/events') {
-      // the account server: a `complete` on the organize requirement runs its organize handler (syncs are no-ops here,
-      // so the result is applied to the device's replica as a sync would bring it)
-      const body = JSON.parse(init.body), path = body.scope, r = app.state.replica, target = path.slice(0, -1)
-      const request = c.organizeRequestAt(r, path)
-      requests.push({ path: u.pathname, event: body.event.kind, at: path, request, outline: request && await c.captureOutline(r, target) })
+      // the account server (`user:me`, holding what the device synced): a `complete` on the organize requirement runs
+      // its organize handler, which submits the plan as fos on the target; the device's next sync brings the filled
+      // requirement and the target's pending submissions, not their content
+      const body = JSON.parse(init.body), path = body.scope, target = path.slice(0, -1)
+      const request = c.organizeRequestAt(server, path)
+      requests.push({ path: u.pathname, event: body.event.kind, at: path, request, outline: request && await c.captureOutline(server, target) })
       if (!request) return json(400, { error: 'not an organize requirement' })
       if (failOrganize) return json(400, { error: 'organizing failed: model down' })
       const plan = c.parseOrganizePlan({ title: 'Garden plans', items: [
@@ -50,23 +54,35 @@ async function main() {
         { ref: 'n3', parent: 'n2', text: 'start a bin' },
         { ref: 'n4', parent: 'not-here', text: 'stays inside' },
       ] }, requests.at(-1).outline.map(e => e.id))
-      const applied = await c.applyOrganizePlan(r, target, plan, { label: request.label, stamp: 'now', text: request.text }, 10)
-      let next = c.writeNodeValue(applied.replica, path, c.ORGANIZED_VALUE, { rows: applied.rows.length, under: [], captureId: applied.captureId, title: plan.title }, 10)
-      next = c.addSupply(next, target, path.at(-1), { capability: 'organize', by: 'fos', ref: applied.captureId }, 10)
-      app.set({ replica: next })
+      const submitted = await c.proposeOrganizePlan(server, target, plan, { label: request.label, stamp: 'now', text: request.text }, 10)
+      const result = { rows: submitted.rows.length, under: [], captureId: submitted.captureId, title: plan.title, proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
+      server = c.writeNodeValue(submitted.replica, path, c.ORGANIZED_VALUE, result, 10)
+      server = c.addSupply(server, target, path.at(-1), { capability: 'organize', by: 'fos', ref: submitted.captureId }, 10)
       return json(200, { evaluation: { status: 'committed' } })
+    }
+    if (u.pathname === '/user/data/peer-sync/provide-node') {
+      // node by node, as the account serves it (a proposal preview here: one node of the submission)
+      const body = JSON.parse(init.body)
+      requests.push({ path: u.pathname, request: body })
+      const served = c.exchangeNode(server, body, owner(body.peerId), 11)
+      server = served.replica
+      return json(200, served.node)
     }
     return json(404, { error: `unexpected ${u.pathname}` })
   }
 
   app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
-  app.scheduleSync = () => {}; app.syncNow = async () => {}
+  // the device's sync with its account: node by node, as the real one (pushes its edited nodes, pulls the rest)
+  let syncs = 0, holdSync = false
+  app.scheduleSync = () => {}; app.syncNow = async () => { if (holdSync) return; syncs++; app.set({ replica: c.syncWith(app.state.replica, server, { now: 50 + syncs }) }) }
   c.mountUi(document.getElementById('app'), app)
-  let me = c.ensureHomeContext(c.createReplica('user:me'), 1)
-  me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
+  let me = c.ensureHomeContext(c.createReplica('device:me'), 1)
+  me = { ...me, meta: { ...me.meta, peerId: 'device:me', serverPeerId: 'user:me' } }
   me = c.addRow(me, [HOME], 'plain', 'Garden', 2, { id: 'garden' })
   me = c.addRow(me, [HOME, 'garden'], 'plain', 'Tomatoes', 3, { id: 'tomatoes' })
   me = c.addRow(me, [HOME], 'plain', 'Work', 4, { id: 'work' })
+  server = c.createReplica('user:me')
+  me = c.syncWith(me, server, { now: 5 })
   app.set({ replica: me, session: { kind: 'user', username: 'me', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
   app.recordServerOffers([...c.SERVER_TRANSPORT_CAPABILITIES, 'llm'])
   app.goTo([HOME, 'garden']); await tick()
@@ -92,26 +108,67 @@ async function main() {
   assert.deepEqual(sent.request, { label: 'Pasted text', text: 'tomatoes need stakes; start a compost bin' })
   assert.deepEqual(sent.outline.map(e => e.id), ['tomatoes'], 'the outline is the target\'s subtree, without the request')
   assert(!c.view(app.state.replica, [HOME, 'garden']).tasks.some(t => t.id === sent.at.at(-1)), 'the filled request is removed')
-  assert.deepEqual(rows([HOME, 'garden', 'tomatoes']), ['buy stakes'])
-  const compost = c.view(app.state.replica, [HOME, 'garden']).tasks.find(t => t.title === 'Compost')
-  assert(compost, 'a new group under the node')
-  assert.deepEqual(rows([HOME, 'garden', compost.id]), ['start a bin'])
-  assert(rows([HOME, 'garden']).includes('stays inside'), 'an unknown parent is the node itself')
-  assert.deepEqual(rows([HOME, 'work']), [], 'nothing lands outside the node')
-  assert(rows([HOME, 'garden']).some(t => t.startsWith('## Pasted text: Garden plans') && t.endsWith('tomatoes need stakes; start a compost bin')), 'the raw text is kept as a note')
+  // nothing is in the tree yet: the result is one pending submission from fos on the node, its content not here
+  const ids = at => c.view(app.state.replica, at).tasks.filter(t => !t.scalar).map(t => t.id)
+  assert.deepEqual(ids([HOME, 'garden']), ['tomatoes'])
+  assert.deepEqual(rows([HOME, 'garden', 'tomatoes']), [])
+  const pending = app.currentView().proposals
+  assert.equal(pending.length, 1)
+  assert.equal(pending[0].peerId, 'fos')
+  assert.equal(pending[0].name, 'Pasted text: Garden plans')
+  const content = c.readProposal(server.store, pending[0].id).contentCid
+  assert(!app.state.replica.store.table.has(content), 'the submission\'s content stays with the account until it is asked for')
   assert.equal(box.value, '', 'the box clears once filed')
   assert.equal(app.state.voice, null)
-  assert.match(app.state.notice.text, /Pasted text organized: 4 rows added here/)
+  assert.match(app.state.notice.text, /Pasted text organized: 3 rows and the original as a note, waiting for you in Branches/)
 
-  // a voice note: transcribed (iOS MP4 accepted as is), then organized into the node it was recorded at
+  // accepting: one local edit, the submitted rows referenced where the account holds them (not loaded), one undo takes it all back
   requests.length = 0
+  holdSync = true // the device is offline for a moment: what accepting does on its own
+  await app.decideProposal(pending[0].id, 'approve')
+  assert(requests.every(r => r.path === '/user/data/peer-sync/provide-node' && r.request.proposal?.id === pending[0].id), 'only the submission\'s nodes are asked for, not a decision on the server')
+  assert.deepEqual(requests.map(r => r.request.path), [[HOME, 'garden'], [HOME, 'garden', 'tomatoes']], 'one shallow node per node it adds rows to')
+  assert.equal(ids([HOME, 'garden']).length, 4, 'the node, a new group, the row of an unknown parent and the capture note')
+  const garden = c.view(app.state.replica, [HOME, 'garden']).tasks
+  assert(garden.filter(t => t.id !== 'tomatoes').every(t => t.refPeer === 'user:me'), 'the rows are the account\'s, loaded when opened')
+  assert.equal(ids([HOME, 'garden', 'tomatoes']).length, 1, 'a row filed under an existing row')
+  assert.deepEqual(rows([HOME, 'work']), [], 'nothing lands outside the node')
+  assert.match(app.state.notice.text, /one edit/)
+  assert(!c.view(server, [HOME, 'garden']).tasks.some(t => t.title === 'Compost'), 'the account has nothing on main yet')
+  // one undo removes the whole capture; redo brings it back
+  app.undo()
+  assert.deepEqual(ids([HOME, 'garden']), ['tomatoes'], 'one undo removes the whole capture')
+  assert.deepEqual(ids([HOME, 'garden', 'tomatoes']), [])
+  app.redo()
+  assert.equal(ids([HOME, 'garden']).length, 4)
+  // syncing pushes the edited nodes: the account fills the rows from its submission and closes it; the rows load when shown
+  holdSync = false
+  await app.syncNow('test')
+  assert(c.view(server, [HOME, 'garden']).tasks.some(t => t.title === 'Compost'), 'on the account\'s main now')
+  assert.deepEqual(c.view(server, [HOME, 'garden']).proposals, [], 'the submission is closed')
+  await app.syncNow('poll') // the node that held the submission is pulled again (it was pushed before the last node that closed it)
+  assert.deepEqual(app.currentView().proposals, [])
+  app.refresh()
+  for (let i = 0; i < 40 && !rows([HOME, 'garden']).includes('Compost'); i++) await tick()
+  assert(rows([HOME, 'garden']).includes('Compost'), 'a row loads when it is shown')
+
+  // a voice note, with "accept right away" on: transcribed (iOS MP4 accepted as is), organized, accepted as one edit
+  const toggle = document.querySelector('.node-input .auto-accept-captures input')
+  assert(toggle && !toggle.checked)
+  toggle.checked = true; toggle.dispatchEvent(new window.Event('change'))
+  assert.equal(app.autoAcceptCaptures, true)
+  requests.length = 0
+  const beforeVoice = ids([HOME, 'garden']).length
   await app.submitVoice(new Blob([new Uint8Array(4000)], { type: 'audio/mp4' }), [HOME, 'garden'])
   assert.deepEqual(requests[0], { path: '/user/data/voice-notes', query: '?transcript=only', type: 'audio/mp4' })
   assert.deepEqual(requests[1].request, { label: 'Voice note', text: 'the tomatoes need stakes and we should start a compost bin' })
-  assert(requests[1].outline.some(e => e.id === compost.id && e.title === 'Compost'), 'the outline includes rows organized earlier')
-  assert(rows([HOME, 'garden']).some(t => t.startsWith('## Voice note: Garden plans') && t.includes('compost bin')), 'the transcript is kept as a note')
-  assert.deepEqual(rows([HOME, 'garden', 'tomatoes']), ['buy stakes', 'buy stakes'])
+  assert.equal(ids([HOME, 'garden']).length, beforeVoice + 3, 'accepted on the device: the group, the row and the transcript note')
+  assert.equal(ids([HOME, 'garden', 'tomatoes']).length, 2)
+  assert.match(app.state.notice.text, /Voice note organized: 3 rows added here/)
   assert.equal(app.state.voice, null)
+  app.undo()
+  assert.equal(ids([HOME, 'garden']).length, beforeVoice, 'still one undo for the whole capture')
+  toggle.checked = false; toggle.dispatchEvent(new window.Event('change'))
 
   // the model unreachable: the capture is still kept, unorganized, and the person is told
   failOrganize = true

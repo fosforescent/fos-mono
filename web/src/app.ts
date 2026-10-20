@@ -5,10 +5,10 @@ import { executionInput, executionSnapshot } from '../../shared/sync/execution-a
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { CAPABILITY_LABEL } from '../../shared/sync/graph'
-import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
+import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
-import { ORGANIZED_VALUE, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
+import { ORGANIZED_VALUE, ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
@@ -434,10 +434,14 @@ export class App {
     this.observedHead = headCid(replica)
     this.pendingSession = session
     this.connectDismissed = prefs.connectDismissed === true
+    this.autoAcceptCaptures = (prefs as { autoAcceptCaptures?: unknown }).autoAcceptCaptures === true
   }
 
   private pendingSession: Session | null
   private connectDismissed: boolean
+  /** Accept the account's organized captures on this device as soon as they arrive (still one local, undoable edit). */
+  autoAcceptCaptures = false
+  setAutoAcceptCaptures(on: boolean): void { this.autoAcceptCaptures = on; this.savePrefs(); this.set({}) }
 
   private now(): number {
     return this.config.now ? this.config.now() : Date.now()
@@ -480,7 +484,7 @@ export class App {
   }
 
   private savePrefs(): void {
-    this.config.storage.savePrefs({ repositories: [...this.repositories], branches: this.branchSelections, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
+    this.config.storage.savePrefs({ repositories: [...this.repositories], branches: this.branchSelections, connectDismissed: this.connectDismissed, autoAcceptCaptures: this.autoAcceptCaptures, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
   notify(kind: Notice['kind'], text: string): void {
@@ -3115,29 +3119,40 @@ export class App {
   /**
    * Organize a capture into the subtree of `at` (shared/sync/organize.ts): an `organize` requirement placed there
    * holding the capture (`requestOrganize`), run on the account server (`runOnServer`), whose `organize` handler
-   * builds the outline, asks its model, applies the plan and keeps the capture as a note. The filled request is then
-   * removed. When the server cannot organize it the capture is still kept here, unorganized, so nothing is lost.
+   * builds the outline, asks its model and submits the plan, with the capture kept as a note, as ONE submission by
+   * `fos` on `at`: nothing lands in the tree until it is accepted (`acceptSubmission`: one local edit, so one undo
+   * takes the whole capture back), right away when `autoAcceptCaptures` is on, else from the node's Branches. The
+   * filled request is removed. When the server cannot organize it the capture is still kept here, unorganized.
    */
   private async organizeInto(text: string, at: Scope, label: string): Promise<boolean> {
     const session = this.state.session, generation = this.authGeneration, store = this.state.replica.store
     if (!session) throw new Error('Connect to your account to organize captures.')
     if (!view(this.state.replica, at)) throw new Error('The capture location was removed.')
     this.set({ voice: { phase: 'organizing' } })
+    const earlier = new Set(this.remoteProposalsAt(at).map(p => p.id))
     const asked = requestOrganize(this.state.replica, at, text, label, this.now())
     this.edit(asked.replica)
     let failure: string | null = null
     try { await this.runOnServer(asked.path) } catch (error) { failure = error instanceof Error ? error.message : String(error) }
     if (generation !== this.authGeneration || this.state.session !== session || this.state.replica.store !== store) return false
-    const result = failure ? null : readNodeValue<OrganizedResult>(this.state.replica, asked.path, ORGANIZED_VALUE)
+    // the result is the fos peer's submission on `at`: it arrives with the node's pending submissions (the
+    // requirement's `fos:organized` value names it, where named values travel; node sync does not carry them)
+    const value = failure ? null : readNodeValue<OrganizedResult>(this.state.replica, asked.path, ORGANIZED_VALUE)
+    const pending = this.remoteProposalsAt(at).filter(p => p.peerId === ORGANIZE_PEER && p.status === 'open')
+    const submission = failure ? null : pending.find(p => p.id === value?.proposal) ?? pending.find(p => !earlier.has(p.id)) ?? null
     let next = this.state.replica
     if (resolveScope(next.store, headCid(next), asked.path)) next = deleteTask(next, at, asked.path.at(-1)!, this.now())
-    if (!result) {
+    if (!submission) {
       if (!view(next, at)) throw new Error('The capture location was removed while organizing.')
       next = addTypedRow(next, at, typeAt(next, NOTE_TYPE, at), captureNoteText(label, new Date(this.now()).toLocaleString(), text), this.now())
     }
     this.edit(next)
-    if (!result) this.notify('error', `Kept the ${label.toLowerCase()} unorganized: ${failure ?? 'the server did not organize it'}`)
-    else this.notify('info', `${label} organized: ${result.rows} row${result.rows === 1 ? '' : 's'} added here, the original kept as a note.`)
+    if (!submission) { this.notify('error', `Kept the ${label.toLowerCase()} unorganized: ${failure ?? 'the server did not organize it'}`); return true }
+    // rows the plan placed (without the kept capture note)
+    const count = value?.rows ?? (submission.additions ?? []).reduce((n, a) => n + a.ids.length, 0) - 1
+    const rows = `${count} row${count === 1 ? '' : 's'}`
+    if (this.autoAcceptCaptures && submission.additions?.length && await this.acceptSubmission(at, submission.id, submission.additions)) this.notify('info', `${label} organized: ${rows} added here, the original kept as a note (undo takes it back).`)
+    else this.notify('info', `${label} organized: ${rows} and the original as a note, waiting for you in Branches (“${submission.name}” from fos).`)
     return true
   }
 
@@ -3265,27 +3280,64 @@ export class App {
     if (!cached || cached.store !== this.state.replica.store || cached.generation !== this.authGeneration) return null
     return { node: view(cached.replica, [])!, cid: headCid(cached.replica), store: cached.replica.store, remote: true }
   }
-  async loadProposalPreview(path: Scope, id: string, relative: Scope = []): Promise<void> {
-    const store = this.state.replica.store, generation = this.authGeneration, session = this.state.session
-    const transport = this.transport()
-    if (!transport || !this.readsRequests()) return
-    const cached = this.proposalPreviews.get(id)
-    if (relative.length && (!cached || cached.store !== store || cached.generation !== generation)) return
+  /** One node of a pending submission on the node at `path` (`relative` to it), as its peer serves it: shallow, its rows as addresses. */
+  private async fetchProposalNode(path: Scope, id: string, relative: Scope = []): Promise<{ request: NodeRequest; node: ProvidedNode }> {
+    const session = this.state.session, transport = this.transport()
+    if (!transport) throw new Error('Connect to the peer that holds this submission.')
     const scope = transport === 'account' ? (session?.kind === 'peer' ? this.state.replica.meta.scope : []) : transport === 'virtual' ? this.virtualIdentity!.scope : this.link!.remoteScope
     const address = transport === 'account' ? [...this.state.replica.meta.scope, ...path] : [...scope, ...path]
     const peer = this.state.replica.meta.serverPeerId ?? (session ? `user:${session.username}` : this.link?.remotePeerId ?? 'virtual-host')
     const request: NodeRequest = { ...nodeSyncRequest(this.state.replica, path, peer, scope, [...address.slice(scope.length), ...relative]), proposal: { scope: address, id } }
     if (relative.length) request.linkId = nodeRequestLinkId(this.state.replica.meta.peerId, { peerId: peer, scope: [...address, ...relative] })
+    const node = transport === 'account' ? await requestPeerNode(session!, request) : transport === 'virtual' ? await this.virtualPeers!.requestNode(request) : await this.link!.requestNode(request)
+    validateNodeShape(node)
+    return { request, node }
+  }
+  async loadProposalPreview(path: Scope, id: string, relative: Scope = []): Promise<void> {
+    const store = this.state.replica.store, generation = this.authGeneration, session = this.state.session
+    if (!this.transport() || !this.readsRequests()) return
+    const cached = this.proposalPreviews.get(id)
+    if (relative.length && (!cached || cached.store !== store || cached.generation !== generation)) return
     try {
-      const node = transport === 'account' ? await requestPeerNode(session!, request) : transport === 'virtual' ? await this.virtualPeers!.requestNode(request) : await this.link!.requestNode(request)
+      const { request, node } = await this.fetchProposalNode(path, id, relative)
       if (store !== this.state.replica.store || generation !== this.authGeneration || session !== this.state.session) return
-      validateNodeShape(node)
       let replica = relative.length ? cached!.replica : createReplica(this.state.replica.meta.peerId)
       replica = acceptProvidedNode(replica, relative, request, node, this.now())
       this.proposalPreviews.set(id, { replica, path, request, store, generation })
       this.refresh()
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
+
+  /** The submissions pending on the node at `path`, as its peer last served them. */
+  private remoteProposalsAt(path: Scope): ProposalView[] {
+    const peer = this.state.replica.meta.serverPeerId
+    return (peer && this.state.replica.meta.nodeSync?.[nodeSyncKey(peer, path, nodeBranches(this.state.replica, path))]?.remote.proposals) || []
+  }
+  /** A submission this device accepts itself: by the account's own fos peer (an organized capture), only adding rows. */
+  private locallyAcceptable(path: Scope, proposalId: string): ProposalView | null {
+    const p = this.remoteProposalsAt(path).find(p => p.id === proposalId)
+    return p && p.peerId === ORGANIZE_PEER && p.status === 'open' && p.additions?.length && this.state.session?.kind === 'user' ? p : null
+  }
+  /**
+   * Accept a submission of the account's fos peer here, as ONE local edit (one undo takes the whole capture back):
+   * the submission's shallow node at each node it adds rows to is fetched (never the rows themselves), the added rows
+   * go in as unloaded rows addressed to the account (node-sync.ts `acceptSubmissionRows`) and the sync pushes those
+   * nodes; the account fills the rows from the submission and closes it. The rows load when they are opened.
+   */
+  async acceptSubmission(path: Scope, proposalId: string, additions: Array<{ path: Scope; ids: string[] }>): Promise<boolean> {
+    const store = this.state.replica.store, session = this.state.session
+    try {
+      const nodes = await Promise.all(additions.map(async a => ({ path: a.path, children: (await this.fetchProposalNode(path, proposalId, a.path)).node.children })))
+      if (store !== this.state.replica.store || session !== this.state.session) return false
+      // the rows reach the account's main with the next sync; until then they are not requested from it
+      for (const a of additions) for (const id of a.ids) this.acceptedRows.set(JSON.stringify([...path, ...a.path, id]), { at: [...path], id: proposalId })
+      this.edit(acceptSubmissionRows(this.state.replica, path, additions, nodes, this.now()))
+      await this.syncNow('submission accepted')
+      return true
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)); return false }
+  }
+  /** Rows this device accepted from a submission its account still lists (not synced yet), by path. */
+  private acceptedRows = new Map<string, { at: Scope; id: string }>()
 
   /** Can the current identity approve proposals on the node being viewed? */
   canApprove(node: NodeView | null = this.currentView()): boolean {
@@ -3305,6 +3357,12 @@ export class App {
       return
     }
     const session = this.state.session
+    // the account's own organizer submitted it: accepting is this device's edit, not the server's
+    const own = decision === 'approve' ? this.locallyAcceptable(this.state.view, proposalId) : null
+    if (own) {
+      if (await this.acceptSubmission([...this.state.view], proposalId, own.additions!)) { this.notify('info', 'Accepted: added here as one edit (undo takes it back).') }
+      return
+    }
     if (session) {
       try {
         await decideProposal(session, this.currentScope(), proposalId, decision)
@@ -3351,6 +3409,10 @@ export class App {
   private autoNodeQueue: Array<{ path: Scope; store: Replica['store']; generation: number; view: string; load?: () => Promise<void> }> = []
   private autoNodeActive = 0
   autoLoadPeerNode(path: Scope): void {
+    // a row accepted from a submission is on the account's main once a sync carried the accept (the submission closed)
+    const accepted = this.acceptedRows.get(JSON.stringify(path))
+    if (accepted && this.remoteProposalsAt(accepted.at).some(p => p.id === accepted.id)) return
+    if (accepted) this.acceptedRows.delete(JSON.stringify(path))
     const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
     if (!cid || !isPeerReference(content(this.state.replica.store, cid))) return
     const key = JSON.stringify([this.authGeneration, this.branchSelections, path, cid])

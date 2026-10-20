@@ -1183,6 +1183,8 @@ export type ProposalView = {
   timestamp: number
   /** Changes the proposal would make to this node's tasks, relative to its base. */
   summary: { added: string[]; changed: string[]; removed: string[] }
+  /** The rows it adds, by node (`submissionAdditions`), when the provider sent them: enough to accept them without their content. */
+  additions?: SubmissionAddition[]
 }
 
 export type NodeView = {
@@ -2288,4 +2290,38 @@ export function proposalView(store: FosStore, nodeValue: FosNodeContent, proposa
   }
   for (const [key, entry] of a) if (!b.has(key)) summary.removed.push(entry.title)
   return { id: proposal.cid, peerId: proposal.peerId, name: proposal.name, status: proposal.status, timestamp: proposal.timestamp, summary }
+}
+
+/** One node a submission adds rows to: its path relative to the node the submission is on, and the added rows' ids. */
+export type SubmissionAddition = { path: Scope; ids: string[] }
+
+/**
+ * The rows a submission adds, by identity: walking its proposed value against the value it was based on, only into
+ * rows whose content differs, never into an added row (that row is one content-addressed subtree). Bounded.
+ */
+export function submissionAdditions(store: FosStore, baseCid: string, contentCid: string, limits = { nodes: 256, depth: 32 }): SubmissionAddition[] {
+  const out: SubmissionAddition[] = []
+  let visited = 0
+  const rows = (cid: string) => {
+    const map = new Map<string, string>()
+    if (!store.table.has(cid)) return map
+    for (const edge of valueContent(store, cid).children) {
+      if (!isRowEdge(store, edge)) continue
+      const identity = identityCid(store, edge), id = content(store, identity).data.alias?.id
+      if (id && !map.has(id)) map.set(id, identity)
+    }
+    return map
+  }
+  const walk = (base: string, next: string, path: Scope) => {
+    if (base === next || path.length > limits.depth || ++visited > limits.nodes) return
+    const before = rows(base), ids: string[] = []
+    for (const [id, cid] of rows(next)) {
+      const was = before.get(id)
+      if (!was) ids.push(id)
+      else if (was !== cid && put(store, valueContent(store, was)) !== put(store, valueContent(store, cid))) walk(was, cid, [...path, id])
+    }
+    if (ids.length) out.unshift({ path, ids })
+  }
+  walk(baseCid, contentCid, [])
+  return out.sort((a, b) => a.path.length - b.path.length)
 }

@@ -49,7 +49,10 @@ replacing either value. In-flight local edits are rebased before installation.
 
 Invited account peers and virtual proposers write into their own pending values;
 main stays unchanged until the existing approval operation applies the proposal.
-Reviewers receive proposal identifiers/status, without descendant contents.
+Reviewers receive proposal identifiers/status, without descendant contents
+(the owner also gets each open submission's name and the ids of the rows it
+adds, `ProposalView.additions`, so it can accept one by reference; see
+"Organizing captures").
 Current main grants are checked even when serving a pending value. The
 proposer is served its submission rebased onto main as it is now, so it sees
 main's changes and keeps its own rows. A rejected submission stays in the list,
@@ -568,8 +571,8 @@ texts about proposals from other accounts, and texts sent to the platform's
 number (`backend/channels/sms.ts`, Twilio: `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`; webhook `POST /channels/sms/webhook`,
 signature verified) become rows: "done <words>" checks a task off, "list"
-answers with open tasks, anything else is organized into Home by the fos
-`organize` handler (below) or, when it cannot, added there as a row. Language
+answers with open tasks, anything else is organized for Home by the fos
+`organize` handler (below; a pending fos submission there) or, when it cannot, added there as a row. Language
 models are the fos server's own capability (`llm` in its handler registry,
 the voice notes' `complete` on `OPENAI_API_KEY`/Vertex), not a user key.
 
@@ -586,8 +589,8 @@ the supply are added. A time or person requirement with a window
 (`-: 1h 2026-10-13T09:00..` or `-@bob …`) → Google Calendar creates the
 event and the allocation row that fills the requirement. A `verify`
 requirement (`@name`) → the fos verifier binds the attested user object
-("Users" below). An `organize` requirement → the fos organizer files a
-capture into the node the requirement sits in:
+("Users" below). An `organize` requirement → the fos organizer submits a
+capture for the node the requirement sits in, as one submission:
 
 **Organizing captures (`shared/sync/organize.ts`, `backend/voice/organize.ts`).**
 A voice transcript, a long paste or a texted message is organized into one
@@ -599,14 +602,36 @@ sends `complete` on it. The server's `organize` handler refuses a non-paying
 account over the voice budget before the evaluation opens, builds the
 outline from the account's own store (`captureOutline`: the target's
 subtree, bounded, breadth first), asks its model for a plan (validated
-against that outline), applies it under the target with the capture kept as
-a note (`applyOrganizePlan`; each new row is `[library type, row]` for the
-type the plan names), leaves `{rows, under, captureId, title}` as the
-requirement's `fos:organized` value and records the supply. The client
-syncs the result back and removes the filled request; when the server could
-not organize it, the client keeps the capture as a note itself. Texted
-messages run the same handler on the server (`createAccountOrganizer`: the
-requirement in Home, `runNode`, then removed).
+against that outline) and submits it, with the capture kept as a note, as
+ONE submission by the `fos` peer on the target (`proposeOrganizePlan`: the
+plan applied by `applyOrganizePlan` to a draft of the target's value, each
+new row `[library type, row]` for the type the plan names, recorded as a
+proposal on the target, which becomes a mutable ref if it was not one). Main
+is not changed: the result is content-addressed (one subtree per added row)
+and linked to the target by that ref, the way any peer's submission is. It
+leaves `{rows, under, captureId, title, proposal, name, additions}` as the
+requirement's `fos:organized` value and records the supply. The client syncs
+and removes the filled request; when the server could not organize it, the
+client keeps the capture as a note itself. Texted messages run the same
+handler on the server (`createAccountOrganizer`: the requirement in Home,
+`runNode`, then removed); their submission waits in Home.
+
+*Accepting without loading.* A device receives the submission like any
+other: its id, name and, for the owner, `additions` (the rows it adds, by
+node path and alias id, `submissionAdditions`), never its content. The
+preview loads it node by node (`request.proposal`). Accepting is the
+device's own edit, not the server's `decide`: the submission's shallow node
+at each node it adds rows to is fetched, and the added rows go in as
+unloaded rows addressed to the account (`acceptSubmissionRows`), ONE local
+edit, so one undo takes the whole capture back. When the device syncs those
+nodes, `exchangeNode` on the account takes each new address as the row an
+open submission on that node or an ancestor adds at that exact path
+(`submittedChild`, next to the undo case `historicalChild`; never an
+arbitrary cid) and removes the submission once every row it adds is on main
+(`closeAcceptedSubmission`). The rows load when the UI opens them, from main.
+Rejecting is the ordinary decision and leaves the tree unchanged. A device
+may accept organized captures right away (web: "Accept right away", a device
+preference); that is still the same single local edit.
 
 **MCP peers (`backend/integrations/mcpPeers.ts`).** The account's MCP
 servers (`MCPServerModel`, their tools) are peers too. "Attach here" (or

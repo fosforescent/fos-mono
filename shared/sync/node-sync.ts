@@ -4,7 +4,7 @@ import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
 import { isCid, isCurrentCid } from '../dag-implementation/cid'
 import { content, valueContent, identityCid, rowKindOf, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTemplateOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
-  scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
+  scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, isRowEdge, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
 import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError,
@@ -89,8 +89,7 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
       return same ? edge : pinnedRowEdge(r.store, child.kind, identityCid(r.store, edge), child.template)
     }
     if (restored.has(child.id)) return pinnedRowEdge(r.store, child.kind, restored.get(child.id)!, child.template)
-    const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', kind: child.kind, scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
-    return pinnedRowEdge(r.store, child.kind, stub, child.template)
+    return unloadedRowEdge(r.store, child)
   })
   const next = { data: { ...Object.fromEntries(Object.entries(value.data).filter(([key]) => forbidden.has(key))), ...shape.data }, children: [...value.children.filter(e => !rowKindOf(r.store, e) || isShippedLibrary(r.store, path, e)), ...children] }
   const root = held
@@ -98,6 +97,37 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
     ? updateAtScope(r.store, headCid(r), path, () => refNodeContent(r.store, { alias: before.data.alias }, put(r.store, next), heldHistory(r.store, before, cid)), 'replace')
     : updateAtScope(r.store, headCid(r), path, () => next)
   if (root !== headCid(r)) commitRoot(r.store, root, now)
+  return { ...r }
+}
+
+/** A row its peer holds and this side has not loaded: a reference to its address, loaded when the UI opens it. */
+export function unloadedRowEdge(store: Replica['store'], child: NodeChild): FosNodeContent['children'][number] {
+  const stub = put(store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', kind: child.kind, scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
+  return pinnedRowEdge(store, child.kind, stub, child.template)
+}
+
+/**
+ * Accept the rows a submission adds (`ProposalView.additions`) as one local edit, without their content: each added
+ * row becomes an unloaded row addressed where its peer serves it (`nodes`: the submission's shallow node at each
+ * changed path, from proposal preview requests), appended to that node here. Rows already here are kept. When this
+ * side syncs the changed nodes, the owner's peer fills those rows from the submission (`exchangeNode`) and closes it
+ * once every row it adds is on main. Paths are relative to `at`.
+ */
+export function acceptSubmissionRows(r: Replica, at: Scope, additions: Array<{ path: Scope; ids: string[] }>, nodes: Array<{ path: Scope; children: NodeChild[] }>, now: number): Replica {
+  const store = r.store
+  let root = headCid(r)
+  for (const addition of additions) {
+    const node = nodes.find(n => equal(n.path, addition.path))
+    const path = [...at, ...addition.path]
+    if (!node || !resolveScope(store, root, path)) throw new NodeAccessError('A node the submission adds rows to is not here.')
+    const wanted = new Set(addition.ids)
+    root = updateAtScope(store, root, path, value => {
+      const present = new Set(value.children.filter(e => isRowEdge(store, e)).map(e => content(store, identityCid(store, e)).data.alias?.id))
+      const added = node.children.filter(child => wanted.has(child.id) && !present.has(child.id)).map(child => unloadedRowEdge(store, child))
+      return added.length ? { ...value, children: [...value.children, ...added] } : value
+    })
+  }
+  if (root !== headCid(r)) commitRoot(store, root, now)
   return { ...r }
 }
 
@@ -155,17 +185,23 @@ function exchangeNodeOnMain(r: Replica, input: NodeRequest, authority: NodeAutho
   const full = nodeShape(r, path)
   // Apply the visible delta to the complete local node, retaining hidden children.
   const final = mergeNodeShape(served.node, merged, full)
-  const restored = new Map<string, string>()
+  const restored = new Map<string, string>(), accepted: Array<{ at: Scope; proposal: string }> = []
   for (const child of final.children) {
     if (full.children.some(c => c.id === child.id)) continue
     // Newly introduced addresses must belong to the authenticated writer.
     if (child.address.peerId !== request.peerId) {
-      const cid = authority.owner && child.address.peerId === r.meta.peerId && equal(child.address.scope, [...path, child.id]) ? historicalChild(r, [...path, child.id]) : null
+      const own = authority.owner && child.address.peerId === r.meta.peerId && equal(child.address.scope, [...path, child.id])
+      // an earlier version of this node (undo), or a row of an open submission the owner accepted on a device
+      const historical = own ? historicalChild(r, [...path, child.id]) : null
+      const submitted = own && !historical ? submittedChild(r, [...path, child.id]) : null
+      const cid = historical ?? submitted?.cid
       if (!cid) throw new NodeAccessError('New child must be provided by the writing peer.')
+      if (submitted) accepted.push(submitted)
       restored.set(child.id, cid)
     }
   }
   if (!sameNodeShape(full, final)) r = installNodeShape(r, path, final, now, restored)
+  for (const { at, proposal } of accepted) r = closeAcceptedSubmission(r, at, proposal, now)
   return provideNode(r, { ...request, update: undefined }, authority, now)
 }
 
@@ -352,6 +388,39 @@ function keepAsHeld(r: Replica, request: NodeRequest, authority: NodeAuthority, 
     r = { ...r }
   }
   return provideNode(r, { ...request, update: { base: empty(), value: empty() } }, authority, now)
+}
+
+/**
+ * A row an open submission on this node or an ancestor adds at `path`: what an owner's device references when it
+ * accepted the submission without loading its rows (`acceptSubmissionRows`). Never an arbitrary hash: only the
+ * submission's own content at that exact path.
+ */
+function submittedChild(r: Replica, path: Scope): { cid: string; at: Scope; proposal: string } | null {
+  for (let i = path.length - 1; i >= 0; i--) {
+    const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
+    if (!cid) continue
+    const rest = path.slice(i)
+    for (const proposal of readProposals(r.store, content(r.store, cid))) {
+      if (proposal.status !== 'open') continue
+      if (!submissionAdditions(r.store, proposal.baseCid, proposal.contentCid).some(a => equal(a.path, rest.slice(0, -1)) && a.ids.includes(rest.at(-1)!))) continue
+      const row = resolveScope(r.store, proposal.contentCid, rest)
+      if (row) return { cid: row, at, proposal: proposal.cid }
+    }
+  }
+  return null
+}
+
+/** A submission whose every added row is on main now (its owner accepted it on a device) is done: it is removed. */
+function closeAcceptedSubmission(r: Replica, at: Scope, proposalCid: string, now: number): Replica {
+  const cid = resolveScope(r.store, headCid(r), at), proposal = cid && readProposals(r.store, content(r.store, cid)).find(p => p.cid === proposalCid)
+  if (!proposal) return r
+  const rowsAt = (path: Scope) => {
+    const value = resolveScope(r.store, headCid(r), [...at, ...path])
+    return new Set(value ? valueContent(r.store, value).children.filter(e => isRowEdge(r.store, e)).map(e => content(r.store, identityCid(r.store, e)).data.alias?.id) : [])
+  }
+  if (!submissionAdditions(r.store, proposal.baseCid, proposal.contentCid).every(a => { const here = rowsAt(a.path); return a.ids.every(id => here.has(id)) })) return r
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, node => removeProposalByCid(r.store, node, proposalCid), 'node'), now)
+  return { ...r }
 }
 
 /** Account-owner undo may restore a prior child from this exact attachment,

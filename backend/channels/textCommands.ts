@@ -6,9 +6,10 @@
  *   "done <words>"         search, then submit the first matching open task as completed
  *   "list" | "ls" | "todo" read Home and reply with its open tasks
  *   "[ ] text"             submit a new task in Home
- *   anything else          organized into Home's subtree when the host can organize: an `organize` requirement in
- *                          Home run through the same `organize` handler devices use (voice/organize.ts), the
- *                          message itself kept as a note in Home; otherwise (or when organizing fails) a plain row
+ *   anything else          organized for Home's subtree when the host can organize: an `organize` requirement in
+ *                          Home run through the same `organize` handler devices use (voice/organize.ts), whose
+ *                          result is one pending submission by `fos` on Home (the rows plus the message as a note),
+ *                          accepted or rejected on a device; otherwise (or when organizing fails) a plain row
  */
 import { HOME_ID, type FosEvent, type OrganizedResult, type Principal } from '@fosforescent/shared/sync/index'
 import type { InboundMessage } from './types'
@@ -61,7 +62,7 @@ export function createTextCommandInbound(deps: TextCommandDeps) {
         const done = await deps.organize(account.username, text, `Text message (${message.source})`)
         if (done) {
           const { rows: added, under } = done
-          await reply(`fos: organized into Home: ${added} row${added === 1 ? '' : 's'}${under.length ? ` (under ${under.slice(0, 3).map(t => `“${t}”`).join(', ')}${under.length > 3 ? ', …' : ''})` : ''}, and kept the message as a note`)
+          await reply(`fos: organized for Home, waiting for you to accept it there: ${added} row${added === 1 ? '' : 's'}${under.length ? ` (under ${under.slice(0, 3).map(t => `“${t}”`).join(', ')}${under.length > 3 ? ', …' : ''})` : ''}, and the message kept as a note`)
           return
         }
       } catch (error) {

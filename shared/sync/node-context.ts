@@ -68,7 +68,12 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
     const proposal = cid && readProposals(fork.store, content(fork.store, cid)).find(p => p.cid === request.proposal!.id)
     const permissions = nodeAuthorityAt(r, at, authority)
     if (!proposal || (!authority.owner && proposal.peerId !== authority.peerId && !permissions.includes('edit') && !permissions.includes('read-requests'))) throw new NodeAccessError('Proposal is not available to this peer.')
-    commitRoot(fork.store, updateAtScope(fork.store, headCid(fork), at, () => content(fork.store, proposal.contentCid), 'replace'), now)
+    // the proposed value stands in for the node; a node that is a mutable ref keeps its identity (alias) on the ref,
+    // not in the value, so the preview carries it over or the node could not be addressed
+    commitRoot(fork.store, updateAtScope(fork.store, headCid(fork), at, current => {
+      const proposed = content(fork.store, proposal.contentCid)
+      return current.data.alias && !proposed.data.alias ? { ...proposed, data: { ...proposed.data, alias: current.data.alias } } : proposed
+    }, 'replace'), now)
   }
   const served = exchange(fork, { ...request, branches: undefined, proposal: undefined }, { ...authority, owner: request.proposal ? true : authority.owner, proposeOnly: request.proposal ? false : authority.proposeOnly }, now)
   fork = served.replica

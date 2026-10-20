@@ -2,7 +2,7 @@ import type { FosDataContent, FosNodesData } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   valueContent, readMembers, memberFor, isMemberEdge, memberEntryId, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, rowKindOf, identityCid, withMainBranchPolicy,
-  readProposals, CAPABILITIES, type ProposalView, ROW_KINDS, type Capability, type Scope, type RowKind } from './graph'
+  readProposals, submissionAdditions, CAPABILITIES, type ProposalView, ROW_KINDS, type Capability, type Scope, type RowKind } from './graph'
 import { headCid, type Replica } from './replica'
 
 /** Each endpoint owns its mask. Omitting an allowlist allows all; [] allows none. */
@@ -236,7 +236,9 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const templates = served.length ? reachableNodes(r.store, served) : null
     const proposals: ProposalView[] = readProposals(r.store, content(r.store, cid))
       .filter(p => authority.owner || grants.includes('edit') || p.peerId === authority.peerId)
-      .map(p => ({ id: p.cid, peerId: p.peerId, name: 'Proposed node changes', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] } }))
+      // the owner sees what each submission is called and which rows it adds (ids only: the rows load when opened)
+      .map(p => ({ id: p.cid, peerId: p.peerId, name: authority.owner ? p.name || 'Proposed node changes' : 'Proposed node changes', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] },
+        ...(authority.owner && p.status === 'open' ? { additions: submissionAdditions(r.store, p.baseCid, p.contentCid) } : {}) }))
     const existing = linkAt(r, path, authority.peerId, request.linkId)
     if (existing && content(r.store, existing.cid).data.ref?.id && content(r.store, existing.cid).data.ref?.id !== request.linkId) throw new NodeAccessError('Node link endpoint mismatch.')
     const id = existing ? content(r.store, existing.cid).data.alias!.id : localLinkId(r.meta.peerId, authority.peerId, request.linkId + JSON.stringify(path))

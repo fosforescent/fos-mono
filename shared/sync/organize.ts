@@ -13,13 +13,18 @@
  *
  * Organizing is an effect of the host: a client (or the texting channel) places an `organize` requirement in the
  * target holding the capture (`requestOrganize`) and evaluates it; the account server's `organize` handler
- * (backend/voice/organize.ts) builds the outline from the account's own store, asks its model, applies the plan with
- * `applyOrganizePlan` (ordinary graph edits, `addTypedRow`) and records the supply. `organizePlanChanges` expresses
- * the same edits as `submit` changes (`add_row`) of the event grammar (events.ts).
+ * (backend/voice/organize.ts) builds the outline from the account's own store, asks its model and submits the plan
+ * as ONE submission by the `fos` peer on the target (`proposeOrganizePlan`: `applyOrganizePlan`'s ordinary graph
+ * edits, `addTypedRow`, in a draft of the target's value, recorded as a proposal), and records the supply. Main is
+ * unchanged until the owner accepts it: on a device, as one local edit that references the added rows without loading
+ * them (node-sync.ts `acceptSubmissionRows`; the server fills them from the submission when the device syncs, then
+ * closes it), or wherever the submission's content is held, `applyProposalAt`. Rejecting leaves main as it was.
+ * `organizePlanChanges` expresses the same edits as `submit` changes (`add_row`) of the event grammar (events.ts).
  */
-import { libraryTypeAt, newId, resolveScope, rootTargetCid, rowsOfType, valueContent, type Scope, type TaskView } from './graph'
+import { FosStore } from '../dag-implementation/store'
+import { commitRoot, content, importNodes, libraryTypeAt, makeLink, nestScope, newId, proposalContent, put, reachableNodes, readProposals, resolveScope, rootTargetCid, rowsOfType, submissionAdditions, updateAtScope, valueContent, withProposal, type Scope, type SubmissionAddition, type TaskView } from './graph'
 import { formTitle } from './forms'
-import { addRow, addTypedRow, headCid, view, type Replica } from './replica'
+import { addRow, addTypedRow, createReplica, headCid, view, type Replica } from './replica'
 import type { Change } from './events'
 
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
@@ -64,11 +69,11 @@ export const ORGANIZE_LIMITS = {
   captureChars: 100_000,
 }
 
-type Rows = Pick<TaskView, 'id' | 'title' | 'childCount'> & Partial<Pick<TaskView, 'isLink' | 'refOwner' | 'refPeer' | 'missingTemplate' | 'rejected' | 'scalar'>>
+type Rows = Pick<TaskView, 'id' | 'title' | 'childCount'> & Partial<Pick<TaskView, 'refId' | 'refOwner' | 'refPeer' | 'missingTemplate' | 'rejected' | 'scalar'>>
 
-/** Rows a capture may be placed into: content the owner edits here, not system rows, a row's own fields (scalar leaves), links to other nodes or rows not received yet. */
+/** Rows a capture may be placed into: content the owner edits here, not system rows, a row's own fields (scalar leaves), reference rows standing for other nodes or rows not received yet. A row that is a mutable ref of its own (every row node sync brought to the account is one) is content like any other. */
 export function organizableRow(row: Rows): boolean {
-  return !row.id.startsWith('fos:') && !row.scalar && !row.isLink && !row.refOwner && !row.refPeer && !row.missingTemplate && !row.rejected
+  return !row.id.startsWith('fos:') && !row.scalar && !row.refId && !row.refOwner && !row.refPeer && !row.missingTemplate && !row.rejected
 }
 
 /** A row's title as one short line (notes project their whole Markdown body). */
@@ -210,6 +215,34 @@ export async function applyOrganizePlan(replica: Replica, at: Scope, plan: Organ
   return { replica: r, rows, captureId }
 }
 
+/** The peer whose submissions organized captures are: the account server's organizer. */
+export const ORGANIZE_PEER = 'fos'
+
+/**
+ * Organize a capture as ONE submission by `peer` on the node at `at`, never an edit of main: the plan applied (with the
+ * raw capture as a note, `applyOrganizePlan`) to a draft of that node's value, recorded as a proposal on the node
+ * (which becomes a mutable ref if it was not one). Main is unchanged until the owner accepts the submission; its
+ * rows are one content-addressed subtree per added row. The name is the capture's label and title, made unique among
+ * this peer's submissions there so a later capture never replaces a pending one.
+ */
+export async function proposeOrganizePlan(replica: Replica, at: Scope, plan: OrganizePlan, capture: { label: string; stamp: string; text: string }, now: number, makeId: () => string = newId, peer = ORGANIZE_PEER): Promise<{ replica: Replica; proposalCid: string; name: string; rows: PlacedRow[]; captureId: string; additions: SubmissionAddition[] }> {
+  const store = replica.store, root = headCid(replica), cid = resolveScope(store, root, at)
+  if (!cid || !view(replica, at)) throw new Error('The capture location was removed.')
+  const base = put(store, valueContent(store, cid)), draftStore = new FosStore()
+  importNodes(draftStore, reachableNodes(store, [base]))
+  commitRoot(draftStore, base, now)
+  nestScope(draftStore, { store, root, at }) // row types resolve by the library above the target
+  const applied = await applyOrganizePlan(createReplica(peer, draftStore), [], plan, capture, now, makeId)
+  importNodes(store, reachableNodes(draftStore, [headCid(applied.replica)]))
+  const taken = new Set(readProposals(store, content(store, cid)).filter(p => p.peerId === peer).map(p => p.name))
+  const title = `${capture.label}${plan.title ? `: ${plan.title}` : ''}`
+  let name = title
+  for (let n = 2; taken.has(name); n++) name = `${title} (${n})`
+  const proposalCid = put(store, proposalContent(store, peer, name, headCid(applied.replica), base, now))
+  commitRoot(store, updateAtScope(store, root, at, current => withProposal(store, makeLink(store, current, now), peer, proposalCid, name), 'node'), now)
+  return { replica: { ...replica }, proposalCid, name, rows: applied.rows, captureId: applied.captureId, additions: submissionAdditions(store, base, headCid(applied.replica)) }
+}
+
 // ---------------------------------------------------------------------------
 // Organize requirements: how a capture reaches the host's organizer
 
@@ -217,13 +250,19 @@ export async function applyOrganizePlan(replica: Replica, at: Scope, plan: Organ
 export const ORGANIZE_REQUEST_PREFIX = 'fos:organize:'
 /** The named value the organizer leaves on the requirement it filled: what it placed and where the capture went. */
 export const ORGANIZED_VALUE = 'fos:organized'
-export type OrganizedResult = { rows: number; under: string[]; captureId: string; title: string }
+/**
+ * What the organizer submitted: `rows` added (titles of existing rows they went `under`), the kept capture's id, the
+ * plan's title, and the submission itself: its proposal cid on the target, its name and the rows it adds by node
+ * (`additions`, relative to the target), so a device can accept it without loading the rows.
+ */
+export type OrganizedResult = { rows: number; under: string[]; captureId: string; title: string; proposal: string; name: string; additions: SubmissionAddition[] }
 
 /**
  * Ask the host to organize a capture into the node at `at`: an `organize` requirement placed in that node (its text
  * says what the capture is, e.g. "Voice note"), holding the captured text as a child note. Evaluating it (a
- * `complete` event, the account server's `organize` handler) applies the plan under `at`, keeps the capture as a note
- * there, records the supply and leaves an `OrganizedResult` on the requirement. Answers the requirement's path.
+ * `complete` event, the account server's `organize` handler) submits the plan, with the capture kept as a note, as one
+ * submission by `fos` on `at` (`proposeOrganizePlan`), records the supply and leaves an `OrganizedResult` on the
+ * requirement. Answers the requirement's path.
  */
 export function requestOrganize(replica: Replica, at: Scope, text: string, label: string, now: number, makeId: () => string = newId): { replica: Replica; path: Scope } {
   if (!view(replica, at)) throw new Error('The capture location was removed.')
