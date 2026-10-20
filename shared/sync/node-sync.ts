@@ -1,3 +1,4 @@
+import { definitionRowKind } from './legacy-row-types'
 import { exchangeNodeContext } from './node-context'
 import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
@@ -200,7 +201,7 @@ export function acceptTemplateNodes(r: Replica, path: Scope, nodes: FosNodesData
 export function resolveReferenceErrors(r: Replica, path: Scope, now: number): Replica {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid || isHandle(content(r.store, cid))) return r
-  const ready = (edge: [string, string]) => { const missing = missingTemplateOf(r.store, edge); return !!missing && r.store.table.has(missing.cid) && valueContent(r.store, missing.cid).data.instanceKind?.kind === missing.kind }
+  const ready = (edge: [string, string]) => { const missing = missingTemplateOf(r.store, edge); return !!missing && r.store.table.has(missing.cid) && definitionRowKind(valueContent(r.store, missing.cid)) === missing.kind }
   if (!valueContent(r.store, cid).children.some(ready)) return r
   const root = updateAtScope(r.store, headCid(r), path, value => ({ ...value, children: value.children.map(edge => ready(edge) ? [missingTemplateOf(r.store, edge)!.cid, edge[1]] as [string, string] : edge) }))
   commitRoot(r.store, root, now)

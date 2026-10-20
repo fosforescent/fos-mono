@@ -20,7 +20,8 @@ fos [dir] run       sync, print the tree, serve local agents (MCP), the WebRTC r
 fos [dir] repl      interactive shell
 fos [dir] ls | add "…" | done <id> | open <id> | status | sync | approve <id> | reject <id> | attach <token> | detach | init | reset
 fos login           home context: browser sign-in (SSO-capable device flow) | --token <connect token> | --password
-fos library export  the standard library as the bundle the web build carries (stdout, or --out web/src/library.json)
+fos . library export --local --out .fos/library.json  export the editable local library for builds
+fos . ls fos:library | node <id> --out node.json | node <id> --write node.json  navigate and edit graph rows
 fos [dir] peers     the .fos stores on this machine this one is linked with; `peers ls <name>` reads one's tree
 ```
 
@@ -166,3 +167,5 @@ The web app signs in with the account directly; OAuth integration sign-ins open 
 - [ ] Add auto-update functionality
 - [ ] Implement window state persistence
 - [ ] Add tray icon support
+
+The Windows NSIS installer automatically adds its actual install directory (default `%LOCALAPPDATA%\Fosforescent`) to the user PATH and removes it during uninstall (`windows/installer-hooks.nsh`, `scripts/desktop-cli-path.ps1`). `node scripts/desktop-install.cjs --path-only` repairs PATH for an existing installation; new terminals inherit the change.

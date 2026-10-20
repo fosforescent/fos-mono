@@ -14,7 +14,26 @@ export interface TrellisSerializedData {
 
 
 
+/** Client text capabilities selected by graph definitions, independent of domain types. */
+export type TextPresentation = { mediaType: 'text/plain' | 'text/markdown'; interpolate?: boolean }
+
 export type FosDataContent = {
+  /** Graph constructor declarations. Products are rows; repetition expands a row template. */
+  form?: {
+    primitive?: 'text' | 'number' | 'peer' | 'time';
+    repeat?: boolean;
+    open?: boolean;
+    title?: string[];
+    text?: TextPresentation;
+    attribution?: { id: string[]; name: string[] };
+  };
+  /** A constructor row's parameter, optionally bound from the caller's environment. */
+  parameter?: { name: string; from?: string[] };
+  scalar?: { type: 'text' | 'number' | 'peer' | 'time'; value: string | number };
+  /** Presentation is a projection of fields, not a second copy of their values. */
+  presentation?: { title?: string[]; text?: TextPresentation; attribution?: { id: string[]; name: string[] }; sequence?: boolean };
+  created?: { time: number };
+  position?: { value: number };
   versionControl?: {
     delta: Delta,
     branches: string[],
@@ -149,11 +168,7 @@ export type FosDataContent = {
   disabledCapabilities?: {
     content: string[]
   },
-  /**
-   * On a template node: the kind of row its instances are. Every row is the edge [template, rowNode], so this is
-   * what makes a node usable on the left of a row edge (the standard library's row types, seeded from dag-implementation/row-templates.ts,
-   * user templates such as "Plan a trip", whose instances are tasks).
-   */
+  /** Historical serialized data only. New definitions use graph rows; retained for old-store migration. */
   instanceKind?: {
     kind: string
   },
@@ -411,11 +426,11 @@ export type FosDataContent = {
 
 
 /**
- * Serialized node content (stored on disk, CID-based children)
+ * Canonical node content in FosStore.table and on disk. Rows point to nodes by CID.
  */
 export type FosNodeContent = {
   data: FosDataContent,
-  children: FosPathElem[];  // CID strings for persistence
+  children: FosPathElem[];  // Ordered today: row order still contributes to CID v4.
 }
 
 /**
@@ -454,12 +469,12 @@ export type FosNodeId = ContentId
 
 
 
-/** CID-based path element for serialization */
+/** A row: [instruction node CID, target node CID], used in memory and in serialization. */
 export type FosPathElem = [FosNodeId, FosNodeId]
 export type FosPath = FosPathElem[]
 export type FosRoute = [FosPathElem, ...FosPath]
 
-/** UUID-based path element for runtime (after refactor) */
+/** Serialized form of the in-memory Map<CID, FosNodeContent>. */
 export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
 
 export type FosContextData = {

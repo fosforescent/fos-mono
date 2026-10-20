@@ -10,6 +10,9 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
 
 import { FosStore } from '../dag-implementation/store'
 import type { FosContextData, FosNodeContent } from '../types'
+import { constructForm, formFields, formTitle, positionFormRows, setFormTitle, type FormInput } from './forms'
+import { definitionRowKind } from './legacy-row-types'
+import { legacyCommentMetadata } from './legacy-comment'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
@@ -70,6 +73,9 @@ import {
   rowEdge,
   rowEdgeAt,
   rowKindOf,
+  rowTemplate,
+  currentRowDefinition,
+  rowTemplateOf,
   scopeNames,
   taskBlockers,
   taskContent,
@@ -309,11 +315,12 @@ function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string)
  * Double-brace legacy substitutions remain references to the surrounding context.
  */
 function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeContent {
-  const names = [...new Set(Array.from((node.data.description?.content ?? '').matchAll(/(?<![\\{@])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
+  const text = node.data.presentation?.text?.interpolate ? formTitle(store, node) : node.data.description?.content ?? ''
+  const names = [...new Set(Array.from(text.matchAll(/(?<![\\{@])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
   const type = store.primitive.documentField.getId(), children = [...node.children]
   for (const name of names) {
     if (name === undefined) continue
-    if (children.some(edge => content(store, identityCid(store, edge)).data.name?.content === name)) continue
+    if (children.some(edge => { const child = content(store, identityCid(store, edge)); return child.data.name?.content === name && refTypeCid(store, child) === type })) continue
     const id = `${node.data.alias?.id ?? newId()}:param:${name}`
     const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, null, [], type))
     children.push([type, ref])
@@ -332,6 +339,41 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
 
 export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition; id?: string }
 
+/** Instantiate any graph-defined constructor, including definitions unknown to this client. */
+export function addConstructedRow(replica: Replica, at: Scope, template: string, input: FormInput, now: number, id = newId()): Replica {
+  return edit(replica, at, now, value => {
+    const node = withTextParameters(replica.store, constructForm(replica.store, template, id, input, now))
+    return { ...value, children: [...value.children, [template, put(replica.store, node)]] }
+  })
+}
+
+/** Local graph authoring for the CLI: edit a node or add a row with an explicit instruction. */
+export function writeGraphNode(replica: Replica, at: Scope, node: FosNodeContent, now: number, instruction?: string): Replica {
+  if (!node || !node.data || typeof node.data !== 'object' || Array.isArray(node.data) || !Array.isArray(node.children) || node.children.some(edge => !Array.isArray(edge) || edge.length !== 2 || edge.some(cid => typeof cid !== 'string' || !replica.store.table.has(cid)))) throw new Error('A node needs data and rows whose instruction and target CIDs exist in this store.')
+  if ('instanceKind' in node.data) throw new Error('Define this type with graph rows, not instanceKind.')
+  if (instruction) {
+    if (!replica.store.table.has(instruction) || !node.data.alias?.id) throw new Error('A new row needs an existing instruction and an alias id.')
+    return edit(replica, at, now, parent => {
+      if (findChildEdge(replica, parent, node.data.alias!.id)) throw new Error('This parent already has that row id.')
+      return { ...parent, children: [...parent.children, [instruction, put(replica.store, node)]] }
+    })
+  }
+  if (!resolveScope(replica.store, headCid(replica), at)) throw new Error('Node not found.')
+  return edit(replica, at, now, previous => ({ ...node, data: { ...node.data, ...(previous.data.alias ? { alias: previous.data.alias } : {}) } }))
+}
+
+/** Upgrade legacy row payloads only at the write boundary. Existing children remain ordinary rows. */
+function constructRowValue(replica: Replica, template: string, id: string, text: string, extras: Omit<RowExtras, 'store'>, now: number, previous?: FosNodeContent): FosNodeContent {
+  const legacy = previous?.data.comment
+  const node = constructForm(replica.store, template, id, { text, author: extras.author ?? (legacy ? { id: legacy.authorID, name: legacy.authorName } : { id: replica.meta.peerId, name: replica.meta.peerId }) }, now)
+  if (previous) {
+    const { description: _description, comment: _comment, todo: _todo, presentation: _presentation, scalar: _scalar, ...data } = previous.data
+    node.data = { ...data, ...node.data, created: { time: legacy?.time ?? previous.data.created?.time ?? now } }
+    node.children.push(...previous.children, ...legacyCommentMetadata(replica.store, previous, id, now))
+  }
+  return withTextParameters(replica.store, node)
+}
+
 /** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
 export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
   const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
@@ -340,17 +382,26 @@ export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string,
   const id = options.id ?? newId()
   return edit(replica, at, now, (value) => {
     const { position: _p, id: _i, ...extras } = options
-    const cid = put(replica.store, withTextParameters(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store })))
-    const edge = rowEdgeAt(replica.store, kind, cid, at)
+    const parent = at.length ? resolveScope(replica.store, headCid(replica), at.slice(0, -1)) : null
+    const parentEdge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${at.at(-1)}`) : null
+    const parentType = parentEdge ? rowTemplateOf(replica.store, parentEdge) : null
+    const repeated = kind === 'plain' && parentType && content(replica.store, parentType).data.form?.repeat ? formFields(replica.store, parentType)[0]?.type : null
+    const template = repeated ?? rowTemplate(replica.store, kind, at)
+    const constructed = content(replica.store, template).data.form
+    const numeric = constructed?.primitive === 'number' || constructed?.primitive === 'time'
+    const node = repeated ? constructForm(replica.store, template, id, numeric ? Number(body) : body, now) : constructed ? constructRowValue(replica, template, id, body, extras, now) : withTextParameters(replica.store, rowContent(kind, id, body, now, { ...extras, store: replica.store }))
+    if (repeated) { node.data.name = { content: id }; node.data.position = { value: value.children.length } }
+    const cid = repeated ? put(replica.store, refNodeContent(replica.store, { alias: { id }, name: { content: id } }, put(replica.store, node))) : put(replica.store, node)
+    const edge = repeated ? rowEdge(replica.store, kind, cid, template) : rowEdgeAt(replica.store, kind, cid, at)
     const children = [...value.children]
     const pos = options.position
     if (pos && 'relativeTo' in pos) {
       const sibling = findEdge(replica.store, value, `a:${pos.relativeTo}`)
       const index = sibling ? children.indexOf(sibling) : -1
-      if (index >= 0) { children.splice(pos.position === 'above' ? index : index + 1, 0, edge); return { ...value, children } }
+      if (index >= 0) { children.splice(pos.position === 'above' ? index : index + 1, 0, edge); return positionFormRows(replica.store, { ...value, children }, now) }
     }
     children.push(edge)
-    return { ...value, children }
+    return positionFormRows(replica.store, { ...value, children }, now)
   })
 }
 
@@ -364,8 +415,17 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
     const edge = findChildEdge(replica, value, aliasId)
     if (!edge) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
+    const body = node.data.scalar?.type === 'text' || node.data.presentation?.text ? text : kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
+    const kept = keptRowTemplate(replica.store, edge, kind)
+    const template = kept ? put(replica.store, currentRowDefinition(replica.store, content(replica.store, kept))) : rowTemplate(replica.store, kind, at)
+    if (content(replica.store, template).data.form) {
+      const constructed = node.data.presentation || node.data.scalar
+        ? withTextParameters(replica.store, setFormTitle(replica.store, node, body, now))
+        : constructRowValue(replica, template, aliasId, body, extras, now, node)
+      const next = withChildValue(replica.store, edge, constructed, now)
+      return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, kind, identityCid(replica.store, next), template))
+    }
     const converted = convertRow(replica.store, node, kind, now)
-    const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()
     const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
     if (kind === 'task') data.todo = { completed: !!extras.done, time: node.data.todo?.time ?? now }
     if (kind === 'requirement' && extras.requirement) {
@@ -376,9 +436,8 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ki
     if (kind === 'allocation' && extras.allocation) data.allocation = extras.allocation
     if (kind === 'resource' && extras.resource) data.resource = extras.resource
     if (kind === 'query' && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
-    if (kind === 'comment' && node.data.comment) data.comment = { ...node.data.comment, content: body }
     const next = withChildValue(replica.store, edge, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), now)
-    const changed = identityCid(replica.store, next), kept = keptRowTemplate(replica.store, edge, kind)
+    const changed = identityCid(replica.store, next)
     return replaceEdge(replica.store, value, `a:${aliasId}`, kept ? rowEdge(replica.store, kind, changed, kept) : rowEdgeAt(replica.store, kind, changed, at))
   })
 }
@@ -389,7 +448,9 @@ export function setRowKind(replica: Replica, at: Scope, aliasId: string, kind: R
     if (!edge) return value
     if (rowKindOf(replica.store, edge) === kind) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
-    const converted = withChildValue(replica.store, edge, convertRow(replica.store, node, kind, now), now)
+    const template = rowTemplate(replica.store, kind, at)
+    const next = content(replica.store, template).data.form ? constructRowValue(replica, template, aliasId, formTitle(replica.store, node), {}, now, node) : convertRow(replica.store, node, kind, now)
+    const converted = withChildValue(replica.store, edge, next, now)
     return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdgeAt(replica.store, kind, identityCid(replica.store, converted), at))
   })
 }
@@ -448,7 +509,7 @@ export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: st
   if (!replica.store.table.has(templateCid)) throw new Error('Template content is unavailable.')
   const taskCid = resolveScope(replica.store, headCid(replica), [...at, taskId])
   if (!taskCid) throw new Error('Template destination is unavailable.')
-  if (valueContent(replica.store, templateCid).data.instanceKind?.kind !== 'task') throw new Error('Only template rows can be instantiated.')
+  if (definitionRowKind(valueContent(replica.store, templateCid)) !== 'task') throw new Error('Only template rows can be instantiated.')
   const copied = content(replica.store, copyRowContent(replica.store, templateCid, now, newId, { instantiate: true, rootId: taskId }))
   // The task is made from the template: the template becomes its row edge's instruction (pinned to this version).
   return edit(replica, at, now, (value) => {
@@ -527,7 +588,11 @@ export function setTaskDone(replica: Replica, at: Scope, taskId: string, done: b
 export function renameTask(replica: Replica, at: Scope, taskId: string, title: string, now: number): Replica {
   const trimmed = title.trim()
   if (!trimmed) return replica
+  const parent = resolveScope(replica.store, headCid(replica), at)
+  const edge = parent && findChildEdge(replica, valueContent(replica.store, parent), taskId)
+    if (edge && (valueContent(replica.store, identityCid(replica.store, edge)).data.comment || rowKindOf(replica.store, edge) === 'note')) return setRowContentAt(replica, at, taskId, rowKindOf(replica.store, edge)!, title, {}, now)
   return updateTask(replica, at, taskId, now, (task) => {
+      if (task.data.presentation || task.data.scalar) return withTextParameters(replica.store, setFormTitle(replica.store, task, task.data.presentation?.text ? title : trimmed, now))
     if (task.data.description?.content === trimmed) return null
     return withTextParameters(replica.store, { ...task, data: { ...task.data, description: { content: trimmed } } })
   })

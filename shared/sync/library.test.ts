@@ -1,4 +1,4 @@
-/** The standard library: seeding, the reference in every Home, audience membership as a group, and voted merges. */
+/** The standard library: seeding, opt-in Home references, audience membership as a group, and voted merges. */
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, SERVER_TRANSPORT_CAPABILITIES, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, resolveScope, updateAtScope, valueContent, withProposal, type Scope } from './graph'
 import { exchangeNode } from './node-sync'
@@ -121,8 +121,9 @@ test('the library exports as rows that seed an identical copy: every root ships 
   expect(libraryInfo(device, [LIBRARY_ID])).toMatchObject({ version: 7, source: 'bundle' })
   expect(headCid(ensureDeviceLibrary(device, { address, version: 7, rows }, 3))).toBe(headCid(device))
   expect(libraryLink(device)).toBeNull()
+  expect(view(device, [HOME_ID])!.tasks.some(row => row.id === LIBRARY_ID)).toBe(false)
   expect(libraryPath(device)).toEqual([LIBRARY_ID])
-  // a build made without a server ships the in-code seed list
+  // a build made without a server ships the compiled .fos graph
   const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: 0, rows: [] }, 2)
   expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.kind === 'template')).toHaveLength(8)
   // contributing links the shared library into Home: under Home it is the one rows see; the shipped one stays in the root

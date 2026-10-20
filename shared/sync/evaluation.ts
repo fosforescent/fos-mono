@@ -2,6 +2,7 @@
 import { mergeNodes } from './merge'
 import { isAttempt } from './work'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
+import { formTitle } from './forms'
 import { childRows, supplyOf, findRowByAlias, commitRoot, content, refValueCid, refTypeCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
@@ -99,7 +100,7 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   for (const arg of argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
     issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, driver).problems)
   }
-  issues.push(...resolveText(r, step.path, valueContent(r.store, cid).data.description?.content ?? '').bindings.flatMap(b => b.problems))
+  issues.push(...resolveText(r, step.path, formTitle(r.store, valueContent(r.store, cid))).bindings.flatMap(b => b.problems))
   const req = step.row?.requirement
   if (req?.capability === 'allocation') for (const child of childRows(r.store, cid, 'supply')) {
     const supplied = supplyOf(child.value)

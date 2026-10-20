@@ -45,7 +45,14 @@
       "minSdkVersion": 24
     },
     "resources": {
-      "../agent-runtime/": "agent-runtime/"
+      "../agent-runtime/": "agent-runtime/",
+      "../../scripts/desktop-cli-path.ps1": "desktop-cli-path.ps1"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
     }
   }
 }

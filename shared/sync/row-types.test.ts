@@ -1,6 +1,6 @@
 /** Rows are made from the row types of the nearest standard library above them: shipped in every root, linked in Home. */
 import { FosStore } from '../dag-implementation/store'
-import { ROW_TYPE_SEED } from '../dag-implementation/row-templates'
+import * as COMPILED_LIBRARY from './library.generated.json'
 import { HOME_ID, LIBRARY_ID, ROW_TYPES_ID, seedTypes, content, resolveScope, rowTemplate, rowTypeContents, rowTypeId, put, valueCidOf, valueContent } from './graph'
 import { exchangeNode, nodeShape, templateNodesAt } from './node-sync'
 import { acceptProvidedNode, type NodeAuthority, type NodeRequest } from './node-provider'
@@ -12,14 +12,14 @@ const edgeOf = (r: Replica, at: string[], id: string) => valueContent(r.store, r
 /** A library row at `at` whose Task type is named `name` (what a library looks like after members changed it). */
 function withLibrary(r: Replica, at: string[], name: string): Replica {
   r = addRow(r, at, 'plain', 'Standard library', 1, { id: LIBRARY_ID })
-  const types = seedTypes(r.store).map(t => t.data.instanceKind?.kind === 'task' ? { ...t, data: { ...t.data, description: { content: name } } } : t)
+  const types = seedTypes(r.store).map(t => t.data.alias?.id === 'lib:type:task' ? { ...t, data: { ...t.data, description: { content: name } } } : t)
   return seedLibraryRows(r, [...at, LIBRARY_ID], [{ id: ROW_TYPES_ID, kind: 'types', text: 'Row types', types }], 2)
 }
 
 test('every root ships the standard library, and its rows are made from the Row types there', () => {
   const r = addTask(ensureHomeContext(createReplica('p'), 1), [], 'Write', 2, 'write')
   expect(view(r, [])!.tasks[0]).toMatchObject({ id: LIBRARY_ID, kind: 'plain', title: 'Standard library' })
-  expect(view(r, [LIBRARY_ID, ROW_TYPES_ID])!.tasks.map(t => [t.id, t.kind])).toEqual(ROW_TYPE_SEED.map(t => [rowTypeId(t.kind), 'template']))
+  expect(view(r, [LIBRARY_ID, ROW_TYPES_ID])!.tasks.map(t => [t.id, t.kind])).toEqual(COMPILED_LIBRARY.types.map(t => [t.data.alias.id, 'template']))
   expect(edgeOf(r, [], 'write')[0]).toBe(typeAt(r, [LIBRARY_ID], 'task'))
   // the seed is the library's first version: the same nodes in every root
   expect(typeAt(createReplica('other'), [LIBRARY_ID], 'task')).toBe(typeAt(r, [LIBRARY_ID], 'task'))
@@ -56,7 +56,7 @@ test('a changed row type makes the new rows; rows made before keep the version t
   r = addTask(r, [HOME_ID], 'After', 5, 'after')
   const after = edgeOf(r, [HOME_ID], 'after')[0]
   expect(after).not.toBe(before)
-  expect(valueContent(r.store, after).data).toMatchObject({ description: { content: 'To-do' }, instanceKind: { kind: 'task' }, behavior: { content: 'builtin:task' } })
+  expect(valueContent(r.store, after).data).toMatchObject({ description: { content: 'To-do' }, alias: { id: 'lib:type:task' }, behavior: { content: 'builtin:task' } })
   expect(edgeOf(r, [HOME_ID], 'before')[0]).toBe(before)
   expect(view(r, [HOME_ID])!.tasks.filter(t => ['before', 'after'].includes(t.id)).map(t => t.kind)).toEqual(['task', 'task'])
 })

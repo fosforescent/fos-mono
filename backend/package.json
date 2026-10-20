@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon --config nodemon.json",
-    "prebuild": "npm run db:generate",
+    "prebuild": "node ../scripts/compile-library.cjs && npm run db:generate",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest",
@@ -13,7 +13,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "db:seed": "tsx ../infra/prisma/seed.ts"
+    "db:seed": "tsx ../infra/prisma/seed.ts",
+    "predev": "node ../scripts/compile-library.cjs"
   },
   "dependencies": {
     "@fosforescent/fosforescent-js": "^1.0.6",

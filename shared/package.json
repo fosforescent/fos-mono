@@ -7,7 +7,8 @@
     "test": "jest --config jest.config.js",
     "build": "tsc --project tsconfig.json",
     "lint": "eslint . --ext .ts,.tsx --fix",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "prebuild": "node ../scripts/compile-library.cjs"
   },
   "dependencies": {
     "@n1ru4l/json-patch-plus": "^0.2.0",

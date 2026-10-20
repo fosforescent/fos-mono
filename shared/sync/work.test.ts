@@ -48,7 +48,7 @@ test('model completion remains a persisted proposal; rejection and acceptance dr
   r = decideTaskResult(r, path, again.resultPath, next.cid, true, 12)
   expect(req().requirement!.satisfied).toBe(true)
   expect(view(r, ['home', 'project'])!.tasks.find((t) => t.id === 'task')!.done).toBe(false)
-  expect(view(r, path)!.tasks.some((t) => t.kind === 'note' && t.title.startsWith('Revised plan'))).toBe(true)
+  expect(view(r, path)!.tasks.some((t) => t.text?.mediaType === 'text/markdown' && t.title.startsWith('Revised plan'))).toBe(true)
   expect(() => decideTaskResult(r, path, again.resultPath, next.cid, true, 13)).toThrow()
   r = setTaskDone(r, ['home', 'project'], 'task', true, 14)
   expect(view(r, ['home', 'project'])!.tasks.find((t) => t.id === 'task')!.done).toBe(true)
@@ -83,7 +83,7 @@ test('the reusable work template requires readiness and uses the existing instan
   r = addTask(r, [], 'Build availability', 1, 'task')
   r = addPlanningTemplate(r, ['task'], 2)
   const rows = view(r, ['task'])!.tasks
-  expect(rows.filter((t) => t.kind === 'note')).toHaveLength(2)
+  expect(rows.filter((t) => t.text?.mediaType === 'text/markdown')).toHaveLength(2)
   const req = rows.find((t) => t.kind === 'requirement')!
   const path = ['task', req.id]
   expect(taskWorkContext(r, path).blockers.join()).toMatch(/ready/)
@@ -100,7 +100,7 @@ test('the sent context stays pinned even if someone edits the visible snapshot n
   const preview = taskWorkContext(r, path)
   const run = beginTaskWork(r, path, preview, 7)
   r = run.replica
-  const note = view(r, run.path)!.tasks.find((t) => t.kind === 'note')!
+  const note = view(r, run.path)!.tasks.find((t) => t.text?.mediaType === 'text/markdown')!
   r = renameTask(r, run.path, note.id, 'An edited visible note', 8)
   r = loadReplica(JSON.parse(JSON.stringify(serializeReplica(r))))
   expect(workAttempts(r, path)[0]!.context).toBe(preview.prompt)

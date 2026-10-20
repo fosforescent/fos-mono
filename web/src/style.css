@@ -816,3 +816,11 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 /* Android WebViews do not always report system bar insets. */
 .android-shell .topbar { padding-top: calc(8px + max(env(safe-area-inset-top, 0px), 24px)); }
 .android-shell .footer { padding-bottom: calc(8px + max(env(safe-area-inset-bottom, 0px), 16px)); }
+
+/* A graph product renders its parameter rows as nested primitive controls. */
+.node-form { flex: 1; min-width: 0; }
+.node-form-group { min-width: 0; margin: 4px 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.node-form > .node-form-group { border: 0; padding: 0; }
+.node-form-field { display: flex; flex-direction: column; gap: 3px; margin: 5px 0; }
+.node-form-field input, .node-form-field textarea { width: 100%; min-width: 0; font: inherit; }
+.node-form-field textarea { resize: vertical; }

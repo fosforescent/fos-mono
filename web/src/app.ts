@@ -1,4 +1,4 @@
-import LIBRARY_BUNDLE from './library.json'
+import { BUNDLED_LIBRARY as LIBRARY_BUNDLE } from '../../shared/sync/library'
 import { libraryPath, MANUAL_HANDLERS_ID } from '../../shared/sync/library'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
@@ -497,7 +497,7 @@ export class App {
   /** Project mode: the directory switched git branch; show that branch's replica. */
   /**
    * This window's replica in its root context. A device root ships the standard library, filled from this build
-   * (web/src/library.json) so templates and row types work offline from the first run: the browser's replica, and on
+   * (compiled from .fos/library.json) so templates and row types work offline from the first run: the browser's replica, and on
    * the desktop every window's store (Home's and each project's, `.fos`). A virtual peer's document is not a device
    * root; it is nested in the browser's and resolves its rows through it.
    */
@@ -1306,7 +1306,7 @@ export class App {
    * underneath); a task requirement naming a template gets that execution as its child right away.
    */
   addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string; replica?: Replica; preserveUnbound?: boolean } = {}): string {
-    const author = kind === 'comment' ? { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName } : undefined
+    const author = { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName }
     const id = options.id ?? crypto.randomUUID()
     const { extras, templateName, replica: branch, preserveUnbound, ...rest } = options
     const replica = branch ?? this.state.replica
@@ -1802,12 +1802,13 @@ export class App {
     if (!this.mayPropose()) { this.notify('error', 'This device does not submit proposals (policy towards fos: add "submit proposals" under "to").'); return }
     const binId = `${row.id}-${session.username}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)
     const rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }> = [
-      { kind: row.kind === 'task' ? 'task' : row.kind === 'note' ? 'note' : 'plain', text: row.title || 'allocation bin', id: binId }
+      { kind: row.kind === 'task' ? 'task' : row.text?.mediaType === 'text/markdown' ? 'note' : 'plain', text: row.title || 'allocation bin', id: binId }
     ]
     for (const child of view(this.state.replica, [...this.state.view, ...at, row.id])?.tasks ?? []) {
+      if (row.form?.fields.some(field => field.path[0] === child.id)) continue
       if (child.kind === 'requirement' && child.requirement) { const { satisfied: _s, summary: _m, ...requirement } = child.requirement; rows.push({ kind: 'requirement', text: child.title, data: { requirement }, under: binId }) }
       else if (child.kind === 'allocation' && child.allocation) rows.push({ kind: 'allocation', text: child.title, data: { allocation: child.allocation }, under: binId })
-      else if (child.kind === 'task' || child.kind === 'plain' || child.kind === 'comment' || child.kind === 'note') rows.push({ kind: child.kind, text: child.title, under: binId })
+      else if (child.kind === 'task' || child.kind === 'plain' || child.kind === 'comment' || child.kind === 'note') rows.push({ kind: child.text?.mediaType === 'text/markdown' ? 'note' : child.kind, text: child.title, under: binId })
     }
     try {
       await submitMarketProposal(session, owner, aliasId, rows)

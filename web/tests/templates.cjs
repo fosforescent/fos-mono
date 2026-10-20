@@ -25,7 +25,7 @@ async function main() {
   ;[...document.querySelectorAll('.context-menu button')].find(b => b.textContent === 'Change template').click()
   assert.equal(a.state.modal, 'template')
   document.querySelector('.modal [aria-label="Note"]').click()
-  assert.equal(a.rowAt([id]).kind, 'note'); assert.equal(view(a.state.replica, [HOME_ID, id]).tasks[0].id, child)
+  assert.equal(a.rowAt([id]).text.mediaType, 'text/markdown'); assert(view(a.state.replica, [HOME_ID, id]).tasks.some(row => row.id === child))
   a.openTemplatePicker([HOME_ID, id])
   document.querySelector('[aria-label="New template name"]').value = 'Rental record'
   document.querySelector('[aria-label="New template icon"]').value = '👗'

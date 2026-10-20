@@ -7,8 +7,8 @@
  * the node lets the server merge a proposal once enough members approved it (`applyMergePolicy`).
  *
  * The library is a row in two places. Every device root ships one (`[device root, fos:library]`): a client carries the library in
- * its build (`fos library export` pulls the shared node through the account and `exportProvidedLibrary` turns it into
- * `web/src/library.json`) and seeds its device root's library from it (`ensureDeviceLibrary`), so templates and row types work
+ * its build from `.fos/library.json`, compiled by scripts/compile-library.cjs. `fos . library export --local`
+ * writes that portable graph from the editable local tree; `ensureDeviceLibrary` installs its exact rows
  * offline from the first run; it stays on the device. People who contribute and vote add the shared node to their
  * Home (`ensureLibraryLink`), with the fos server as its peer. Like every mutable ref the library resolves by nearest
  * ancestor, so under Home the linked library overrides the shipped one (`libraryPath`, `rowTemplate` in graph.ts).
@@ -20,12 +20,16 @@ import { acceptProvidedNode, type NodeRequest, type ProvidedNode } from './node-
 import { LIBRARY_ID, ROW_TYPES_ID, commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, seedTypes, findChild, findNearestRow, isHandle, isPeerReference, put, resolveScope, rowEdgeAt, rowTypeContents, rowTypesContent, updateAtScope, valueContent, type Scope, type TaskView } from './graph'
 import type { FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { headCid } from './replica'
+import * as COMPILED_LIBRARY from './library.generated.json'
+import { compileLibrary, type LibrarySource } from '../library-compiler'
+import { isBookkeepingEdge, valueCidOf } from './graph'
+import { legacyRowKind, withoutLegacyInstanceKind } from './legacy-row-types'
 
 /** The library row holding the manual fallback handlers (`manualHandlers`). */
 export const MANUAL_HANDLERS_ID = 'lib:manual'
 /** Node value on the library: which seed version it carries, so later versions add what is missing. */
 export const LIBRARY_ARGUMENT = 'fos:library'
-export const LIBRARY_VERSION = 2
+export const LIBRARY_VERSION = COMPILED_LIBRARY.version
 export const MERGE_POLICY_ARGUMENT = 'fos:merge-policy'
 
 export type LibraryAddress = SharedAddress & { title: string }
@@ -39,7 +43,9 @@ type Allocation = NonNullable<import('../types').FosDataContent['allocation']>
 type Resource = NonNullable<import('../types').FosDataContent['resource']>
 /** A row of the library as data: what the seed list, the server's export and the client's bundle all share. */
 export type SeedRow = { id: string; kind: 'template' | 'note' | 'plain' | 'requirement' | 'task' | 'allocation' | 'resource' | 'comment' | 'types'; text: string; done?: boolean; requirement?: Requirement; allocation?: Allocation; resource?: Resource; children?: SeedRow[]
-  /** The Row types group (`kind: 'types'`): the exact contents of its types, which rows pin by cid (none: the seed's). */
+  /** Exact compiled row edge (local builds); imported without reconstructing domain payloads. */
+  graph?: { template: string; cid: string }
+  /** Legacy server bundle: exact row type contents and dependencies. */
   types?: FosNodeContent[]
   /** The nodes the types point at (their patterns), so a build's copy makes the same nodes. */
   nodes?: FosNodesData }
@@ -47,64 +53,36 @@ export type SeedRow = { id: string; kind: 'template' | 'note' | 'plain' | 'requi
 export type LibraryBundle = { address: LibraryAddress | null; version: number; rows: SeedRow[] }
 
 /** The templates every account starts with. Ids are stable so reseeding adds only what is missing. */
-export const STANDARD_LIBRARY: SeedRow[] = [
-  { id: 'lib:readme', kind: 'note', text: '# Standard library\n\nTemplates every Fos account can use, offline: write `` [ ] `Plan a trip` `` in any node to start one. Edit them here to propose a change; members vote on proposals and the library merges what enough of them approve.' },
-  // What every row is made from: a row is [row type, row], made from the nearest library's version of this group.
-  // A changed type is a new version; existing rows keep the version they were made from.
-  { id: ROW_TYPES_ID, kind: 'types', text: 'Row types' },
-  { id: 'lib:trip', kind: 'template', text: 'Plan a trip', children: [
-    { id: 'lib:trip:where', kind: 'requirement', text: 'Destination agreed', requirement: { capability: 'confirmation' } },
-    { id: 'lib:trip:when', kind: 'requirement', text: 'Travel dates', requirement: { capability: 'allocation', resource: 'calendar', amount: 2, unit: 'd' } },
-    { id: 'lib:trip:budget', kind: 'requirement', text: 'Budget per person', requirement: { capability: 'allocation', resource: 'account', amount: 200, unit: 'usd' } },
-    { id: 'lib:trip:transport', kind: 'requirement', text: 'Book transport', requirement: { capability: 'task' } },
-    { id: 'lib:trip:lodging', kind: 'requirement', text: 'Book lodging', requirement: { capability: 'task' } }
-  ] },
-  { id: 'lib:invoice', kind: 'template', text: 'Invoice', children: [
-    { id: 'lib:invoice:contact', kind: 'plain', text: 'Billing contact: name <email>' },
-    { id: 'lib:invoice:entries', kind: 'requirement', text: 'Time entries reviewed', requirement: { capability: 'confirmation' } },
-    { id: 'lib:invoice:amount', kind: 'requirement', text: 'Amount due', requirement: { capability: 'allocation', resource: 'account', amount: 100, unit: 'usd' } },
-    { id: 'lib:invoice:send', kind: 'requirement', text: 'Send the invoice', requirement: { capability: 'task' } }
-  ] },
-  { id: 'lib:poll', kind: 'template', text: 'Group decision', children: [
-    { id: 'lib:poll:choice', kind: 'requirement', text: 'Which option?', requirement: { capability: 'choice', options: ['Option A', 'Option B', 'Option C'] } }
-  ] },
-  { id: 'lib:paid-task', kind: 'template', text: 'Paid task', children: [
-    { id: 'lib:paid-task:delivered', kind: 'requirement', text: 'Work delivered', requirement: { capability: 'confirmation' } },
-    { id: 'lib:paid-task:reward', kind: 'requirement', text: 'Reward', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } }
-  ] },
-  { id: 'lib:contact', kind: 'template', text: 'Contact form', children: [
-    { id: 'lib:contact:message', kind: 'plain', text: 'Message: …' },
-    { id: 'lib:contact:received', kind: 'requirement', text: 'Message received', requirement: { capability: 'confirmation' } }
-  ] },
-  { id: 'lib:research', kind: 'template', text: 'Research note', children: [
-    { id: 'lib:research:question', kind: 'plain', text: 'Question: …' },
-    { id: 'lib:research:sources', kind: 'requirement', text: 'Sources collected', requirement: { capability: 'task' } },
-    { id: 'lib:research:summary', kind: 'requirement', text: 'Summary written', requirement: { capability: 'confirmation' } }
-  ] },
-  // A place at a time is not a primitive: it is the product of two rows (location × time) in one node. Alternatives
-  // are coproducts (submissions on a ref, decided by a choice handler) and composition is a template of templates.
-  { id: 'lib:meet', kind: 'template', text: 'Meet up', children: [
-    { id: 'lib:meet:where', kind: 'requirement', text: 'Be at the meeting place', requirement: { capability: 'allocation', resource: 'location' } },
-    { id: 'lib:meet:when', kind: 'requirement', text: 'Meeting time', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } }
-  ] },
-  // Manual fallbacks: one row per requirement kind, each a handler the app offers on any unsatisfied requirement of
-  // that kind. Clicking one records the supply (and a receipt for money or a place) by the person, no peer needed.
-  { id: MANUAL_HANDLERS_ID, kind: 'template', text: 'Manual handlers', children: [
-    { id: 'lib:manual:readme', kind: 'note', text: 'Fallbacks that work with no peer: the person who did it by hand records it here. Edit the labels to propose better ones; add a row to offer a fallback for another kind of requirement.' },
-    { id: 'lib:manual:payment', kind: 'requirement', text: 'Paid outside Fos', requirement: { capability: 'allocation', resource: 'account' } },
-    { id: 'lib:manual:points', kind: 'requirement', text: 'Settled the points by hand', requirement: { capability: 'allocation', resource: 'points' } },
-    { id: 'lib:manual:time', kind: 'requirement', text: 'Booked the time by hand', requirement: { capability: 'allocation', resource: 'calendar' } },
-    { id: 'lib:manual:things', kind: 'requirement', text: 'Set the items aside by hand', requirement: { capability: 'allocation', resource: 'inventory' } },
-    { id: 'lib:manual:location', kind: 'requirement', text: 'Enter the location', requirement: { capability: 'allocation', resource: 'location' } },
-    { id: 'lib:device:location', kind: 'requirement', text: "Use this device's location", requirement: { capability: 'allocation', resource: 'location' } },
-    { id: 'lib:manual:mail', kind: 'requirement', text: 'Sent it myself', requirement: { capability: 'mail' } },
-    { id: 'lib:manual:repo', kind: 'requirement', text: 'Opened the issue by hand', requirement: { capability: 'repo' } },
-    { id: 'lib:manual:llm', kind: 'requirement', text: 'Answered it myself', requirement: { capability: 'llm' } },
-    { id: 'lib:manual:search', kind: 'requirement', text: 'Searched by hand', requirement: { capability: 'search' } },
-    { id: 'lib:manual:tool', kind: 'requirement', text: 'Ran it by hand', requirement: { capability: 'tool' } },
-    { id: 'lib:manual:market', kind: 'requirement', text: 'Arranged it outside the market', requirement: { capability: 'market' } }
-  ] }
-]
+export const STANDARD_LIBRARY = COMPILED_LIBRARY.rows as SeedRow[]
+export const BUNDLED_LIBRARY: LibraryBundle = { address: null, version: COMPILED_LIBRARY.version, rows: STANDARD_LIBRARY }
+
+/** Export the editable local library as a build source, excluding history and access bookkeeping. */
+export function exportLocalLibrary(r: Replica, at: Scope = [LIBRARY_ID]): LibrarySource {
+  const cid = resolveScope(r.store, headCid(r), at)
+  if (!cid) throw new Error('Local library not found.')
+  const aliases = new Map<string, string>()
+  const group = resolveScope(r.store, headCid(r), [...at, ROW_TYPES_ID])
+  if (group) for (const [, target] of valueContent(r.store, group).children) {
+    const id = content(r.store, target).data.alias?.id
+    if (id) aliases.set(valueCidOf(r.store, target), id)
+  }
+  const memo = new Map<string, string>()
+  const copy = (cid: string): string => {
+    if (memo.has(cid)) return memo.get(cid)!
+    const node = content(r.store, cid)
+    // Old local libraries carry the retired discriminator. Preserve their native
+    // adapter while exporting the same graph without that historical metadata.
+    const kind = legacyRowKind(node), alias = aliases.get(cid)
+    const data = { ...withoutLegacyInstanceKind(node.data), ...(alias ? { alias: { id: alias } } : {}), ...(kind && !node.data.behavior ? { behavior: { content: `builtin:${kind}` } } : {}) }
+    const clean = put(r.store, { data, children: node.children.filter(edge => !isBookkeepingEdge(r.store, edge)).map(([i, t]) => [copy(i), copy(t)]) })
+    memo.set(cid, clean); return clean
+  }
+  const rootNodeId = copy(put(r.store, valueContent(r.store, cid)))
+  const source = { version: LIBRARY_VERSION, rootNodeId, nodes: reachableNodes(r.store, [rootNodeId]) }
+  const checked = compileLibrary(source)
+  return { ...source, nodes: checked.nodes }
+}
+
 
 /** A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it fills. */
 export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean }
@@ -146,9 +124,12 @@ export function seedLibraryRows(r: Replica, path: Scope, rows: SeedRow[], now: n
   const add = (at: Scope, list: SeedRow[]) => {
     for (const row of list) {
       if (!view(r, at)?.tasks.some(t => t.id === row.id) && !seeded.has(row.id)) {
-        r = row.kind === 'types' ? addRowTypesRow(r, at, row, now)
+        r = row.graph ? addGraphRow(r, at, row, now) : row.kind === 'types' ? addRowTypesRow(r, at, row, now)
           : addRow(r, at, row.kind, row.text, now, { id: row.id, ...(row.requirement ? { requirement: row.requirement } : {}), ...(row.allocation ? { allocation: row.allocation } : {}), ...(row.resource ? { resource: row.resource } : {}) })
         seeded.add(row.id)
+      }
+      if (row.graph && row.children) {
+        const mark = (rows: SeedRow[]) => { for (const child of rows) { seeded.add(child.id); if (child.children) mark(child.children) } }; mark(row.children)
       }
       if (row.children?.length && view(r, at)?.tasks.some(t => t.id === row.id)) add([...at, row.id], row.children)
     }
@@ -156,6 +137,14 @@ export function seedLibraryRows(r: Replica, path: Scope, rows: SeedRow[], now: n
   add(path, rows)
   if (r === before && info?.version === version && seeded.size === (info?.seeded.length ?? -1) && (source === undefined || info?.source === source)) return before
   return writeNodeValue(r, path, LIBRARY_ARGUMENT, { version, seeded: [...seeded], ...(source ? { source } : info?.source ? { source: info.source } : {}) }, now)
+}
+
+/** Copy the compiled graph verbatim: constructors and their fields stay graph data. */
+function addGraphRow(r: Replica, at: Scope, row: SeedRow, now: number): Replica {
+  importNodes(r.store, row.nodes ?? COMPILED_LIBRARY.nodes as unknown as FosNodesData)
+  const edge: FosPathElem = [row.graph!.template, row.graph!.cid]
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, node => ({ ...node, children: [...node.children, edge] })), now)
+  return { ...r }
 }
 
 /** The Row types group as a library row, built from the exact contents of its types (which rows pin by cid). */
@@ -181,7 +170,7 @@ export function exportLibraryRows(r: Replica, path: Scope, depth = 0): SeedRow[]
     if (row.id === ROW_TYPES_ID) {
       // the exact contents: rows pin row types by cid, so a build's copy must make the same nodes
       const types = rowTypeContents(r.store, resolveScope(r.store, headCid(r), [...path, row.id])!)
-      const nodes = reachableNodes(r.store, types.flatMap(type => type.children.map(([, t]) => t)))
+      const nodes = reachableNodes(r.store, types.flatMap(type => type.children.flatMap(([instruction, target]) => [instruction, target])))
       rows.push({ id: row.id, kind: 'types', text: row.title, types: types.map(type => ({ data: type.data, children: type.children })), ...(Object.keys(nodes).length ? { nodes } : {}) })
       continue
     }
@@ -206,7 +195,7 @@ export function libraryLink(r: Replica): Scope | null {
 
 /**
  * The library a device root ships: its library row (`ensureLibraryRow`; a device root loaded from older data gets
- * it here) filled with the build's bundle, or the in-code seed when the build carries none. Seeds what is missing,
+ * it here) filled with the build's bundle, or the compiled local graph when the caller carries none. Seeds what is missing,
  * once. Only device roots ship it; other roots are nested in a device root (`nestScope`).
  */
 export function ensureDeviceLibrary(r: Replica, bundle: LibraryBundle, now: number): Replica {
@@ -278,9 +267,9 @@ function exactPulledTypes(r: Replica, pulled: PulledLibrary): Pick<SeedRow, 'typ
       if (!shape) throw new Error(`The pulled library lacks pattern ${pattern.id} of ${row.id}.`)
       return [pattern.template, put(r.store, { data: { alias: { id: pattern.id }, ...shape.data }, children: [] })]
     })
-    types.push({ data: type.data, children })
+    types.push({ data: { alias: { id: row.id }, ...type.data }, children })
   }
-  return { types, nodes: reachableNodes(r.store, types.flatMap(type => type.children.map(([, t]) => t))) }
+  return { types, nodes: reachableNodes(r.store, types.flatMap(type => type.children.flatMap(([instruction, target]) => [instruction, target]))) }
 }
 
 export function mergePolicy(r: Replica, path: Scope): MergePolicy | null {

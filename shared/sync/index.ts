@@ -1,4 +1,5 @@
 export * from './graph'
+export * from './forms'
 export * from './patterns'
 export * from './merge'
 export * from './replica'

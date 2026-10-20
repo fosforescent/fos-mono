@@ -37,8 +37,10 @@ import {
 } from './index'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
-import { ensureDeviceLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
-import { CLIENT_CAPABILITIES, LIBRARY_ID } from './graph'
+import { ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
+import { CLIENT_CAPABILITIES, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
+import { writeGraphNode } from './replica'
+import type { FosNodeContent, FosNodesData } from '../types'
 import { exchangeNode, nodeTreeSync } from './node-sync'
 import type { ProvidedNode } from './node-provider'
 import { handleMcp } from './mcp-adapter'
@@ -65,11 +67,12 @@ const runs = new Map<string, { run: ReturnType<typeof nodeTreeSync>; now: number
 export const api = {
   /**
    * Load a `.fos` store's replica (or start a fresh one) under `handle`, forcing the device id. Every store is a device
-   * root: it ships the standard library. Only the home store (`~/.fos`) has Home, the node it syncs with the account;
-   * a project store (`<dir>/.fos`) keeps its rows at its root.
+   * root with a bundled library outside Home. A library appears inside Home only when explicitly linked.
+   * Only the home store (`~/.fos`) has Home, the node it syncs with the account.
    */
   open(handle: string, serialized: string | null, peerId: string, home = true): void {
-    let loaded = ensureDeviceLibrary(serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId), { address: null, version: 0, rows: [] }, Date.now())
+    let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
+    loaded = ensureDeviceLibrary(loaded, { address: null, version: 0, rows: [] }, Date.now())
     if (home) loaded = ensureHomeContext(loaded, Date.now())
     set(handle, { store: loaded.store, meta: { ...loaded.meta, peerId } })
     if (home) homes.add(handle); else homes.delete(handle)
@@ -143,7 +146,7 @@ export const api = {
       if (!node) return
       for (const t of node.tasks) {
         if (!at.length && t.id === LIBRARY_ID) continue // the library the store ships (not its own rows)
-        lines.push(`${'  '.repeat(depth)}${t.kind === 'task' ? (t.done ? '[x]' : '[ ]') : t.kind === 'note' ? ' ≡ ' : t.kind === 'comment' ? ' " ' : t.kind === 'ref' ? ' → ' : ' · '} ${t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.kind === 'ref' ? `ref ${t.refId?.slice(0, 8) ?? ''}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
+        lines.push(`${'  '.repeat(depth)}${t.kind === 'task' ? (t.done ? '[x]' : '[ ]') : t.kind === 'note' ? ' ≡ ' : t.kind === 'comment' ? ' " ' : t.kind === 'ref' ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.kind === 'ref' ? `ref ${t.refId?.slice(0, 8) ?? ''}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
       for (const c of node.choices) lines.push(`${'  '.repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`)
@@ -231,6 +234,22 @@ export const api = {
   /** The nodes `fos library export` pulled, as the bundle a client build carries (web/src/library.json). */
   libraryExport(pulledJson: string, now: number): string {
     return JSON.stringify(exportProvidedLibrary(JSON.parse(pulledJson) as PulledLibrary, now))
+  },
+  libraryExportLocal(handle: string): string { return JSON.stringify(exportLocalLibrary(get(handle))) },
+  graphNode(handle: string, atJson: string): string {
+    const r = get(handle), cid = resolveScope(r.store, headCid(r), JSON.parse(atJson))
+    if (!cid) throw new Error('Node not found.')
+    return JSON.stringify({ cid: valueCidOf(r.store, cid), ...valueContent(r.store, cid) })
+  },
+  writeGraphNode(handle: string, atJson: string, inputJson: string, instructionPathJson: string | null, now: number): void {
+    const r = get(handle), input = JSON.parse(inputJson) as FosNodeContent & { nodes?: FosNodesData }
+    if (input.nodes) {
+      importNodes(r.store, input.nodes)
+      if (Object.keys(input.nodes).some(cid => !r.store.table.has(cid))) throw new Error('Invalid graph dependencies.')
+    }
+    const cid = instructionPathJson ? resolveScope(r.store, headCid(r), JSON.parse(instructionPathJson)) : null
+    if (instructionPathJson && !cid) throw new Error('Instruction node not found.')
+    set(handle, writeGraphNode(r, JSON.parse(atJson), { data: input.data, children: input.children }, now, cid ? valueCidOf(r.store, cid) : undefined))
   },
   /** One MCP message (JSON-RPC) through the event grammar as this directory's owner. Returns {response, changed}. */
   mcp(handle: string, messageJson: string, peerId: string, now: number): string {
