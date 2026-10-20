@@ -1,5 +1,18 @@
 import { parseDocument } from 'yaml'
 import { parseRowInput, type ParsedInput } from './rows'
+/** Characters from which unstructured text is offered for organizing instead of being split into one row per line. */
+export const LONG_PASTE = 1000
+/**
+ * A long block of prose: no Markdown headings, lists or fences, not YAML. Such a paste is better organized into the
+ * node by the model (App.organizeText) than split per line; structured pastes keep their structure.
+ */
+export function isLongProse(text: string): boolean {
+  const raw = text.replace(/\r\n?/g, '\n').trim()
+  if (raw.length < LONG_PASTE) return false
+  if (/^\s*(?:[-*+] |\d+[.)] |#{1,6} |```|\[[ xX]?\] )/m.test(raw)) return false
+  return !/^[\w"'][^\n]{0,80}:\s*\n/.test(raw) // a leading `key:` line block reads as YAML
+}
+
 /** Clipboard text is data: bounded traversal, no YAML aliases or executable constructors. */
 export function parsePastedRows(text: string): ParsedInput[] {
   if (text.length > 1_000_000) throw new Error('Paste at most 1 MB at a time.')

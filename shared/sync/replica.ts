@@ -374,6 +374,21 @@ function constructRowValue(replica: Replica, template: string, id: string, text:
   return withTextParameters(replica.store, node)
 }
 
+/**
+ * Append a row of the row type `type` (a type's cid, e.g. from `libraryTypeAt`) holding `text` under the node at
+ * `at`: the edge is `[type, row]`, so the type alone says what the row is. A type with a form is constructed from it
+ * (its text field gets `text`); a type without one holds `text` as the row's description.
+ */
+export function addTypedRow(replica: Replica, at: Scope, type: string, text: string, now: number, id: string = newId()): Replica {
+  const body = text.replace(/\s+$/, '').replace(/^\s*\n/, '')
+  if (!body.trim()) return replica
+  const definition = content(replica.store, type)
+  return edit(replica, at, now, (value) => {
+    const node = definition.data.form ? constructRowValue(replica, type, id, body, {}, now) : withTextParameters(replica.store, rowContent('plain', id, body.trim(), now, { store: replica.store }))
+    return { ...value, children: [...value.children, [type, put(replica.store, node)]] }
+  })
+}
+
 /** Append (or place at `position`) a row of `kind` under the node at `at`. Refs need `refId`; notes keep `text` as their markdown body. */
 export function addRow(replica: Replica, at: Scope, kind: RowKind, text: string, now: number, options: AddRowOptions = {}): Replica {
   const body = kind === 'note' ? text.replace(/\s+$/, '') : text.trim()

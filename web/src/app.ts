@@ -8,6 +8,8 @@ import { CAPABILITY_LABEL } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
+import { applyOrganizePlan, captureOutline, parseOrganizePlan } from '../../shared/sync/organize'
+import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
@@ -115,6 +117,8 @@ import {
   describeDeviceLogin,
   decideDeviceLogin,
   transcribeVoice,
+  transcribeAudio,
+  organizeCapture,
   searchRows,
   type SearchHit,
   type VoiceNote,
@@ -269,7 +273,8 @@ export type AppState = {
   /** A `fos` CLI waiting for this browser to approve its sign-in (from ?device=CODE). */
   device: { code: string; name: string | null; status: 'loading' | 'ready' | 'approved' | 'denied' | 'error'; error?: string } | null
   /** Microphone capture: recording (with start time), uploading, or idle. */
-  voice: { phase: 'recording'; startedAt: number } | { phase: 'uploading' } | null
+  /** A capture in progress: recording, uploading the audio, or organizing text (voice or typed) into its node. */
+  voice: { phase: 'recording'; startedAt: number } | { phase: 'uploading' } | { phase: 'organizing' } | null
   /** A listed node of another account opened from a market search result (the `market` modal). */
   market: { owner: string; aliasId: string; title: string; node: MarketNode | null; error?: string; phase: 'loading' | 'ready' | 'submitting' | 'submitted' } | null
 }
@@ -2962,27 +2967,43 @@ export class App {
   private recorder: MediaRecorder | null = null
   private recorded: Blob[] = []
 
+  /** The account's model can organize captures here (a signed-in account whose fos peer offers `llm`). */
+  canOrganize(): boolean {
+    return this.capabilityAvailable('llm') && this.state.session?.kind === 'user'
+  }
   canRecordVoice(): boolean {
-    return this.capabilityAvailable('llm') && this.state.session?.kind === 'user' && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
+    return this.canOrganize() && !recordingUnsupported()
   }
 
   async toggleVoice(): Promise<void> {
     if (this.state.voice?.phase === 'recording') { this.recorder?.stop(); return }
     if (this.state.voice) return
     if (!this.state.session) { this.notify('error', 'Connect to your account to transcribe voice notes.'); this.openModal('connect'); return }
-    if (!this.canRecordVoice()) { this.notify('error', 'Recording needs an active Fos peer and a browser with audio recording support.'); return }
+    const unsupported = recordingUnsupported()
+    if (unsupported) { this.notify('error', unsupported); return }
+    if (!this.canOrganize()) { this.notify('error', 'Recording needs an active Fos peer with a language model.'); return }
     const at = [...this.state.view]
     const generation = this.authGeneration
+    let stream: MediaStream | null = null
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (generation !== this.authGeneration) { stream.getTracks().forEach((t) => t.stop()); return }
-      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported(m))
-      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      // iOS (Safari and the app's WKWebView) records MP4/AAC only; a type it refuses falls back to its own default
+      const mime = recordingMimeType()
+      let recorder: MediaRecorder
+      try { recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined) } catch { recorder = new MediaRecorder(stream) }
+      const tracks = stream
       this.recorded = []
       recorder.addEventListener('dataavailable', (e) => { if (e.data.size) this.recorded.push(e.data) })
+      recorder.addEventListener('error', (event) => {
+        tracks.getTracks().forEach((t) => t.stop())
+        this.recorder = null; this.recorded = []
+        if (generation === this.authGeneration) { this.set({ voice: null }); this.notify('error', microphoneError((event as Event & { error?: unknown }).error ?? new Error('Recording failed.'))) }
+      })
       recorder.addEventListener('stop', () => {
-        stream.getTracks().forEach((t) => t.stop())
-        const blob = new Blob(this.recorded, { type: recorder.mimeType || 'audio/webm' })
+        tracks.getTracks().forEach((t) => t.stop())
+        if (!this.recorder) return // stopped by an error
+        const blob = new Blob(this.recorded, { type: recordedType(recorder.mimeType, mime, this.recorded) })
         this.recorder = null
         if (generation === this.authGeneration) void this.submitVoice(blob, at)
       })
@@ -2990,26 +3011,74 @@ export class App {
       this.recorder = recorder
       this.set({ voice: { phase: 'recording', startedAt: this.now() } })
     } catch (error) {
-      this.notify('error', `Microphone unavailable: ${error instanceof Error ? error.message : String(error)}`)
+      stream?.getTracks().forEach((t) => t.stop())
+      this.notify('error', microphoneError(error))
     }
   }
 
+  /** A recording: transcribed by the account, then organized into the node it was recorded at (the transcript kept as a note). */
   private async submitVoice(blob: Blob, at: Scope): Promise<void> {
     const session = this.state.session
     if (!session || blob.size < 1000) { this.set({ voice: null }); if (blob.size < 1000) this.notify('error', 'The recording was empty.'); return }
-    const generation = this.authGeneration
+    const generation = this.authGeneration, store = this.state.replica.store
     this.set({ voice: { phase: 'uploading' } })
     try {
-      const note = await transcribeVoice(session, blob)
-      if (generation !== this.authGeneration || this.state.session !== session) return
-      this.insertVoiceNote(note, at)
-      this.notify('info', `Voice note added: ${note.clusters.length} cluster${note.clusters.length === 1 ? '' : 's'}.`)
+      const { transcript } = await transcribeAudio(session, blob)
+      if (generation !== this.authGeneration || this.state.session !== session || this.state.replica.store !== store) return
+      await this.organizeInto(transcript, at, 'Voice note')
     } catch (error) {
       if (generation !== this.authGeneration) return
       this.notify('error', error instanceof Error ? error.message : String(error))
     } finally {
       if (generation === this.authGeneration) this.set({ voice: null })
     }
+  }
+
+  /** Long pasted or typed text, organized into the node at `at` (default: the current node). True when it was filed. */
+  async organizeText(text: string, at: Scope = [...this.state.view]): Promise<boolean> {
+    if (this.state.voice) { this.notify('info', 'Finish the current recording or capture first.'); return false }
+    if (!text.trim()) return false
+    if (!this.state.session) { this.notify('error', 'Connect to your account to organize text.'); this.openModal('connect'); return false }
+    if (!this.canOrganize()) { this.notify('error', 'Organizing needs an active Fos peer with a language model.'); return false }
+    const generation = this.authGeneration
+    try {
+      return await this.organizeInto(text, at, 'Pasted text')
+    } catch (error) {
+      if (generation === this.authGeneration) this.notify('error', error instanceof Error ? error.message : String(error))
+      return false
+    } finally {
+      if (generation === this.authGeneration) this.set({ voice: null })
+    }
+  }
+
+  /**
+   * Ask the account's model where a capture belongs in the subtree of `at` (shared/sync/organize.ts) and apply the
+   * plan there as one undoable edit, with the raw capture kept as a note. When the model cannot be reached the
+   * capture is still kept, unorganized, so nothing is lost.
+   */
+  private async organizeInto(text: string, at: Scope, label: string): Promise<boolean> {
+    const session = this.state.session, generation = this.authGeneration, store = this.state.replica.store
+    if (!session) throw new Error('Connect to your account to organize captures.')
+    if (!view(this.state.replica, at)) throw new Error('The capture location was removed.')
+    this.set({ voice: { phase: 'organizing' } })
+    const stamp = new Date(this.now()).toLocaleString()
+    const target = at.length ? view(this.state.replica, at.slice(0, -1))?.tasks.find(t => t.id === at.at(-1))?.title ?? '' : 'Home'
+    const outline = await captureOutline(this.state.replica, at)
+    let plan: import('../../shared/sync/index').OrganizePlan = { title: '', items: [] }, failure: string | null = null
+    try {
+      // the answer is validated here too: the plan only names rows of this outline and row types a plan may name
+      plan = parseOrganizePlan((await organizeCapture(session, { text, title: target, outline: outline.map(({ id, parent, title }) => ({ id, parent, title })) })).plan, outline.map(entry => entry.id))
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error)
+    }
+    if (generation !== this.authGeneration || this.state.session !== session || this.state.replica.store !== store) return false
+    if (!view(this.state.replica, at)) throw new Error('The capture location was removed while organizing.')
+    const applied = await applyOrganizePlan(this.state.replica, at, plan, { label, stamp, text }, this.now())
+    this.together(() => this.edit(applied.replica))
+    const placed = applied.rows.length
+    if (failure) this.notify('error', `Kept the ${label.toLowerCase()} unorganized: ${failure}`)
+    else this.notify('info', `${label} organized: ${placed} row${placed === 1 ? '' : 's'} added here, the original kept as a note.`)
+    return true
   }
 
   /** Note blocks from a transcription: one parent note (summary) with a note per cluster and its points as rows, plus the transcript. */

@@ -48,6 +48,7 @@ import { getUserId } from './apiTokenAuth'
 import { afterSaveHooks } from './sync/accountStore'
 import { createNodeLocator, createNodeProvider } from './sync/provideNode'
 import { createVoiceNoteHandler, prismaVoiceUsage, voiceDepsFromEnv } from './voice/voiceNotes'
+import { accountOrganizer, createOrganizeHandler } from './voice/organize'
 import {
   getMCPServers,
   getMCPServer,
@@ -333,8 +334,12 @@ dataRoutes.delete('/peer-sync/attachment', deleteAttachment)
 dataRoutes.get('/device-login/:code', deviceLoginHandlers.describe)
 dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
 dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
-// Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
-dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), prismaVoiceUsage(prisma)))
+// Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (Gemini on Vertex, or OpenAI);
+// `?transcript=only` returns the transcript, which the client organizes into its node with `/voice-notes/organize`
+// (captured text + the node's outline in, a placement plan out; the same budget)
+const voiceUsage = prismaVoiceUsage(prisma)
+dataRoutes.post('/voice-notes/organize', createOrganizeHandler(voiceDepsFromEnv(), voiceUsage))
+dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), voiceUsage))
 // Semantic search over this account's rows (and market listings), market views and proposals (pgvector, Vertex embeddings)
 const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, notify: (userId, message) => {
   prismaAccountStoreDeps.notify?.(userId, message)
@@ -568,7 +573,9 @@ channelBus.onInbound(createTextCommandInbound({
     return username ? { username, peerId: serverPeerIdFor(username) } : null
   },
   handle: (principal, event) => eventService.handle(principal, event),
-  reply: (message, text) => channelBus.send({ destination: message.source, to: message.replyTo, text }).then(() => undefined)
+  reply: (message, text) => channelBus.send({ destination: message.source, to: message.replyTo, text }).then(() => undefined),
+  // texted notes are organized into Home's subtree, metered like voice notes (one provider instance per message)
+  organize: (username, input) => accountOrganizer(voiceDepsFromEnv(), voiceUsage)(username, input)
 }))
 
 // MCP peers: a server attached to a node runs its tools for "-tool" requirements under it

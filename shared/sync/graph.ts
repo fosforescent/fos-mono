@@ -267,16 +267,26 @@ const rowTypeOf = (kind: RowKind): RowTypeKind => {
  */
 export function rowTemplate(store: FosStore, kind: RowKind, at: Scope = [], root: string = rootTargetCid(store)): string {
   const type = rowTypeOf(kind)
-  const library = findNearestRow(store, root, at, (row) => row.id === LIBRARY_ID && !!libraryRowType(store, row.cid, type))
-  if (library) return libraryRowType(store, library.cid, type)!
+  const found = libraryTypeAt(store, rowTypeId(type), at, root)
+  if (found) return found
+  throw new Error(`No standard library above this row has a ${type} row type.`)
+}
+
+/**
+ * The row type `typeId` (a row of the library's Row types group, e.g. `lib:type:note`) of the standard library nearest
+ * to `at`, or null when no library above has it. New rows of that type are edges `[this cid, row]`.
+ */
+export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
+  const library = findNearestRow(store, root, at, (row) => row.id === LIBRARY_ID && !!libraryRowType(store, row.cid, typeId))
+  if (library) return libraryRowType(store, library.cid, typeId)!
   // a draft of a node stands where that node is: its ancestors continue in the host
   const outer = outerScopes.get(store)
   if (outer) {
-    const value = rowTemplate(outer.store, kind, outer.at, outer.root)
-    importNodes(store, reachableNodes(outer.store, [value]))
+    const value = libraryTypeAt(outer.store, typeId, outer.at, outer.root)
+    if (value) importNodes(store, reachableNodes(outer.store, [value]))
     return value
   }
-  throw new Error(`No standard library above this row has a ${type} row type.`)
+  return null
 }
 
 /**
@@ -288,11 +298,11 @@ export function nestScope(draft: FosStore, outer: { store: FosStore; root: strin
 }
 const outerScopes = new WeakMap<FosStore, { store: FosStore; root: string; at: Scope }>()
 
-/** The `type` row type of the library row `library`, when it is here (not a peer's unloaded node). */
-function libraryRowType(store: FosStore, library: string, type: RowTypeKind): string | null {
+/** The row type `typeId` of the library row `library`, when it is here (not a peer's unloaded node). */
+function libraryRowType(store: FosStore, library: string, typeId: string): string | null {
   const loaded = (cid: string | null): cid is string => !!cid && !isPeerReference(content(store, cid))
   const group = loaded(library) ? findChild(store, library, ROW_TYPES_ID) : null
-  const row = loaded(group) ? findChild(store, group, rowTypeId(type)) : null
+  const row = loaded(group) ? findChild(store, group, typeId) : null
   if (!loaded(row)) return null
   const value = valueCidOf(store, row)
   const definition = valueContent(store, value)

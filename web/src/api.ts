@@ -233,6 +233,22 @@ export async function transcribeVoice(session: Session, audio: Blob): Promise<Vo
   return (await response.json()) as VoiceNote
 }
 
+/** Send a recording; the account only transcribes it (the client organizes the transcript with `organizeCapture`). */
+export async function transcribeAudio(session: Session, audio: Blob): Promise<{ transcript: string }> {
+  const response = await fetch(`${session.baseUrl}/user/data/voice-notes?transcript=only`, {
+    method: 'POST',
+    headers: { 'Content-Type': audio.type || 'audio/webm', Authorization: `Bearer ${session.jwt}` },
+    body: audio
+  })
+  if (!response.ok) throw await responseError(response)
+  return (await response.json()) as { transcript: string }
+}
+
+/** Ask the account's model where captured text belongs in a node's subtree (shared/sync/organize.ts plan). */
+export function organizeCapture(session: Session, input: { text: string; title: string; outline: Array<{ id: string; parent: string | null; title: string }> }): Promise<{ plan: import('../../shared/sync/index').OrganizePlan }> {
+  return authed(session, 'POST', '/user/data/voice-notes/organize', input)
+}
+
 export type SearchHit = { aliasId: string; title: string; kind: string; score: number; owner: string | null; path?: string[] }
 
 /** Semantic search over this account's rows (and, with `market`, rows other accounts listed). */

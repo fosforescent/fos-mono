@@ -5,7 +5,8 @@ import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigat
 import { AGENT_CLI_NAME, evaluationAgentControl, localRepository, openCliAgent, openSdkAgent, sdkAvailable } from './agents'
 import { GRANTS, type ContextPeer as Peer, type Grant } from './app'
 import { inTauri, openExternal, tauriInvoke } from './project'
-import { parsePastedRows } from './paste'
+import { parsePastedRows, isLongProse } from './paste'
+import { recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
@@ -397,11 +398,15 @@ function renderMic(el: HTMLButtonElement, state: AppState, app: App): void {
   const v = state.voice
   el.hidden = false
   el.classList.toggle('recording', v?.phase === 'recording')
-  el.classList.toggle('busy', v?.phase === 'uploading')
-  el.disabled = v?.phase === 'uploading' || (!v && !app.canRecordVoice())
-  el.textContent = v?.phase === 'recording' ? '■' : v?.phase === 'uploading' ? '…' : '🎙'
+  const busy = !!v && v.phase !== 'recording'
+  el.classList.toggle('busy', busy)
+  el.disabled = busy || (!v && !app.canRecordVoice())
+  el.textContent = v?.phase === 'recording' ? '■' : busy ? '…' : '🎙'
   if (!v) el.innerHTML = iconSvg('🎙')!
-  el.title = v?.phase === 'recording' ? 'Stop recording' : v?.phase === 'uploading' ? 'Transcribing and organizing…' : app.canRecordVoice() ? 'Record a voice note (transcribed and organized into notes)' : 'Connect to your account to record voice notes'
+  el.title = v?.phase === 'recording' ? 'Stop recording' : v?.phase === 'uploading' ? 'Transcribing…' : v?.phase === 'organizing' ? 'Organizing into this node…'
+    : app.canRecordVoice() ? 'Record a voice note (transcribed and organized into this node)'
+    : state.session?.kind !== 'user' ? 'Connect to your account to record voice notes'
+    : recordingUnsupported() ?? 'Voice notes need a Fos peer with a language model'
 }
 
 function renderBanner(el: HTMLElement, state: AppState, app: App): void {
@@ -613,6 +618,8 @@ function installRowClipboard(list: HTMLElement, app: App): void {
         app.importYaml(text, [...app.state.view, ...path]); return
       }
       if (!text.includes('\n') && !/^\s*(?:[-*+] |\d+[.)] |#{1,6} )/.test(text)) return
+      // a long block of prose is organized into this node by the model rather than split into a row per line
+      if (isLongProse(text) && app.canOrganize()) { event.preventDefault(); event.stopImmediatePropagation(); offerOrganize(app, text); return }
       const rows = parsePastedRows(text)
       if (!rows.length) return
       event.preventDefault(); event.stopImmediatePropagation();
@@ -1333,6 +1340,18 @@ const OUTPUT_DRAG_TYPE = 'application/x-fos-output'
 const destructuring = new WeakMap<App, Set<string>>()
 const NODE_DRAG_TYPE = 'application/x-fos-node'
 const details = new WeakMap<HTMLElement, { key: string; store: AppState['replica']['store']; input: HTMLTextAreaElement; baseline: string; draft: { store: AppState['replica']['store']; head: string; path: Scope }; controls: HTMLElement }>()
+const ORGANIZE_TITLE = 'The account\'s model files each point under the row it belongs to here (or new rows grouped here), and keeps the text as a note'
+/** A long prose paste goes to the node's capture box to be organized, instead of one row per line. */
+function offerOrganize(app: App, text: string): void {
+  const prefs = workspace(app)
+  if (!prefs.input) { prefs.input = true; app.refresh() }
+  const box = document.querySelector<HTMLTextAreaElement>('.node-input .capture-text')
+  if (!box) return
+  box.value = box.value.trim() ? `${box.value.trimEnd()}\n\n${text}` : text
+  box.dispatchEvent(new window.Event('input'))
+  box.focus()
+  app.notify('info', 'Long text: choose “Organize into this node” to file it here, or edit it first.')
+}
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (!state.session && JSON.stringify(details.get(el)?.draft.path) === JSON.stringify(state.view) && el.contains(document.activeElement) && document.activeElement?.closest('.account-form')) { const error = el.querySelector('.account-form .error'); if (error) error.textContent = state.loginError ?? ''; return }
   if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row'))) return
@@ -1389,7 +1408,22 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     values.append(placeholderForm(app), dynamicValues)
     const voice = div('', ''); voice.dataset.slot = 'voice'
     const repository = div('', ''); repository.dataset.slot = 'repository'
-    const edit = div('node-input', ''); edit.append(div('input-controls', ''), div('node-input-options', ''), input, voice)
+    // Capture: long text (pasted or typed) the account's model organizes into this node's subtree, kept as a note too
+    const capture = div('capture-input', '')
+    const captureText = document.createElement('textarea'); captureText.className = 'capture-text'; captureText.rows = 3
+    captureText.placeholder = 'Paste or type notes, then organize them into this node…'; captureText.setAttribute('aria-label', 'Text to organize into this node')
+    const organize = button('secondary small organize-capture', 'Organize into this node', () => {
+      const at = [...state.view]
+      void app.organizeText(captureText.value, at).then(filed => { if (filed) captureText.value = ''; organize.disabled = !captureText.value.trim() })
+    })
+    organize.title = ORGANIZE_TITLE
+    captureText.addEventListener('input', () => { organize.disabled = !captureText.value.trim() || !!app.state.voice || !app.canOrganize() })
+    captureText.addEventListener('keydown', event => {
+      event.stopPropagation()
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !organize.disabled) { event.preventDefault(); organize.click() }
+    })
+    capture.append(captureText, organize)
+    const edit = div('node-input', ''); edit.append(div('input-controls', ''), div('node-input-options', ''), input, voice, capture)
     const head = div('constructor-head', ''); head.append(search)
     const grid = div('constructor-palette constructor-grid', ''); grid.setAttribute('role', 'tabpanel')
     const suggestions = div('constructor-suggestions', '')
@@ -1522,6 +1556,11 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   controls.append(actionBody)
   controls.hidden = !actionBody.childElementCount && availableTabs.length <= 1
   el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview
+  const capture = el.querySelector<HTMLElement>('.capture-input')!
+  capture.hidden = !!preview || !!row?.refPeer
+  const organize = capture.querySelector<HTMLButtonElement>('.organize-capture')!
+  organize.disabled = !capture.querySelector<HTMLTextAreaElement>('.capture-text')!.value.trim() || !!state.voice || !app.canOrganize()
+  organize.title = app.canOrganize() ? ORGANIZE_TITLE : state.session?.kind === 'user' ? 'Organizing needs a Fos peer with a language model' : 'Connect to your account to organize text'
   el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(prefs.actionTab)
   const childToolbar = el.parentElement?.querySelector<HTMLElement>('[data-region="children-toolbar"]')
   if (!childToolbar) return
