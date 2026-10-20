@@ -13,7 +13,7 @@ import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
 import { constructForm, formFields, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
 import { definitionRowKind } from './legacy-row-types'
 import { legacyCommentMetadata } from './legacy-comment'
-import { knownUser, userType, withUserField, type UserRecord } from './users'
+import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
@@ -207,9 +207,11 @@ export function ensureHomeContext(replica: Replica, now: number, offers?: HostOf
   if (replica.meta.scope.length) return replica
   const before = headCid(replica)
   const next = homeContextCid(replica.store, before, now, offers)
-  if (next === before) return replica
-  commitRoot(replica.store, next, now)
-  return { ...replica }
+  let r = replica
+  if (next !== before) { commitRoot(replica.store, next, now); r = { ...replica } }
+  // the host's peers publish their public keys in Home, where node exchange carries them to every device
+  for (const [peerId, publicKey] of Object.entries(offers?.keys ?? {})) r = publishPeerKey(r, peerId, publicKey, now)
+  return r
 }
 
 /** Attach a device's Home to the corresponding shared node, retaining its private root. */
@@ -513,7 +515,9 @@ export function addSupply(replica: Replica, at: Scope, requirementId: string, su
     peer: `done by ${supply.by}`,
     llm: `answered by ${supply.by}`,
     repo: `issue opened by ${supply.by}`,
-    tool: `run by ${supply.by}`
+    tool: `run by ${supply.by}`,
+    verify: `verified by ${supply.by}`,
+    organize: `organized by ${supply.by}`
   }
   return addRow(replica, [...at, requirementId], 'supply', labels[supply.capability], now, { supply: { ...supply, at: now }, id })
 }

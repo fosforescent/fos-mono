@@ -8,7 +8,8 @@ import { CAPABILITY_LABEL } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
-import { applyOrganizePlan, captureOutline, parseOrganizePlan } from '../../shared/sync/organize'
+import { ORGANIZED_VALUE, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
+import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
@@ -16,8 +17,8 @@ import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
-import { fetchUser, fetchIdentityKey, checkUserAttestation } from './api'
-import { cacheUser, cachedUser, rebindUsers, type UserRecord } from '../../shared/sync/index'
+import { checkUserAttestation } from './api'
+import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
@@ -124,7 +125,6 @@ import {
   decideDeviceLogin,
   transcribeVoice,
   transcribeAudio,
-  organizeCapture,
   type VoiceNote,
   getMarketNode,
   getTokenBalance,
@@ -354,7 +354,13 @@ export class App {
   private listeners = new Set<(state: AppState) => void>()
   /** Usernames whose user objects are being fetched from the account server (`resolveUser`). */
   private resolvingUsers = new Set<string>()
-  private identityKey: Promise<{ peer: string; publicKey: string }> | null = null
+  /**
+   * The device's verify handlers, by the peer that attested: a user object the fos server attested is checked
+   * against the key that server publishes in Home (`fos:key:fos`, graph data that node exchange brought here).
+   */
+  private readonly verifiers: Record<string, (user: UserRecord) => Promise<boolean | null>> = {
+    fos: user => checkUserAttestation({ peer: 'fos', publicKey: publishedKey(this.state.replica, 'fos') }, user)
+  }
   private syncInFlight = false
   private syncRequested = false
   private debounceTimer: Timer | null = null
@@ -1834,24 +1840,51 @@ export class App {
     }
   }
   /**
-   * `@name` binds an unverified user object (the username only) until the account server attests it: fetch the
-   * attested object once, check the attestation against the server's key, keep it in the graph (`fos:users`) and
-   * rebind every row that named that username. Offline, rows keep the unverified object; the next edit retries.
+   * `@name` binds an unverified user object (the username only) until the account server attests it. The device
+   * asks through the graph: a `verify` requirement for that name (`requestVerification`, under `fos:users`) run on
+   * the account server (`runOnServer`), whose `verify` handler binds the attested object as its user field. The
+   * device's own verify handler (`verifiers`) checks the attestation against the key the server publishes in Home;
+   * then the object is kept in the graph (`fos:users`), every row that named that username is rebound and the
+   * request removed. Offline, rows keep the unverified object; the next edit retries.
    */
   private resolveUser(user: UserRecord | null | undefined): void {
     const session = this.state.session
-    if (!user || user.verification || !session || session.kind !== 'user') return
+    // offline, or a server without a verify handler: the row keeps the unverified object until a later edit
+    if (!user || user.verification || !session || session.kind !== 'user' || this.virtualIdentity || !this.capabilityAvailable('verify', [])) return
     const key = user.username.toLowerCase()
     // a cached object is what addRow bound already (`knownUser`)
     if (cachedUser(this.state.replica, user.username) || this.resolvingUsers.has(key)) return
     this.resolvingUsers.add(key)
     void (async () => {
-      const verified = await fetchUser(session, user.username)
-      if (!verified) { this.notify('error', `No Fos user is named @${user.username}.`); return }
-      this.identityKey ??= fetchIdentityKey(session.baseUrl)
-      if (await checkUserAttestation(await this.identityKey, verified) === false) { this.notify('error', `The server's verification of @${user.username} does not check out.`); return }
-      this.edit(rebindUsers(cacheUser(this.state.replica, verified, this.now()), verified, this.now()))
-    })().catch(() => { this.identityKey = null }).finally(() => this.resolvingUsers.delete(key))
+      const store = this.state.replica.store
+      const asked = requestVerification(this.state.replica, user.username, this.now())
+      this.edit(asked.replica)
+      let failure: string | null = null
+      try { await this.runOnServer(asked.path) } catch (error) { failure = error instanceof Error ? error.message : String(error) }
+      if (this.state.replica.store !== store) return
+      const verified = failure ? null : verifiedAt(this.state.replica, asked.path)
+      let next = this.state.replica
+      if (resolveScope(next.store, headCid(next), asked.path)) next = deleteTask(next, asked.path.slice(0, -1), asked.path.at(-1)!, this.now())
+      const checked = verified ? await (this.verifiers[verified.verification!.by]?.(verified) ?? Promise.resolve(false)) : false
+      if (verified && checked !== false) next = rebindUsers(cacheUser(next, verified, this.now()), verified, this.now())
+      this.edit(next)
+      if (!verified) this.notify('error', failure ?? `No Fos user is named @${user.username}.`)
+      else if (checked === false) this.notify('error', `The server's verification of @${user.username} does not check out.`)
+    })().catch(error => this.notify('error', error instanceof Error ? error.message : String(error))).finally(() => this.resolvingUsers.delete(key))
+  }
+  /**
+   * Run the requirement at `path` on the account server: sync it there, a `complete` event on it (the server's
+   * handler registry fills it), then sync the result back. For requests this device makes of its server (verify,
+   * organize); a node with several peers goes through `evaluateAt`.
+   */
+  private async runOnServer(path: Scope): Promise<void> {
+    const session = this.state.session
+    if (!session || session.kind !== 'user' || this.virtualIdentity || !this.isOnline('fos')) throw new Error('Connect to your account to reach its server.')
+    await this.syncNow('before evaluation')
+    const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
+    if (!cid) throw new Error('The request was removed before it reached the server.')
+    try { await evaluateOnServer(session, [...r.meta.scope, ...path], put(r.store, valueContent(r.store, cid)), this.evaluationBranches(path)) }
+    finally { await this.syncNow('evaluation results') }
   }
   /** Requirements in the viewed subtree assigned to the user `name` ("-@name …"), with the task they belong to. */
   assignmentsTo(name: string): Array<{ at: Scope; row: TaskView; task: TaskView | null }> {
@@ -2460,7 +2493,7 @@ export class App {
   private serverHandles(step: import('../../shared/sync/evaluation').EvaluationStep): boolean {
     const r = step.row?.requirement
     if (!r || r.satisfied) return false
-    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search') return true
+    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize') return true
     if (r.capability === 'tool') return r.tool !== 'fos.pull'
     // a poll resolves its choice on the server (the fos poll handler tallies the responses)
     if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
@@ -2802,7 +2835,7 @@ export class App {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
       const poll = r.capability === 'choice' && !!readNodeValue(this.state.replica, [...this.state.view, ...at, req.id], 'fos:poll')
       const payment = r.capability === 'allocation' && r.resource === 'account' && capabilityPeers(this.state.replica, [...this.state.view, ...at, req.id], 'send-payment').includes('fos')
-      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || poll || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
+      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize' || poll || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
         if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
         await this.evaluateAt([...this.state.view, ...at, req.id])
@@ -2995,9 +3028,9 @@ export class App {
   private recorder: MediaRecorder | null = null
   private recorded: Blob[] = []
 
-  /** The account's model can organize captures here (a signed-in account whose fos peer offers `llm`). */
+  /** The account can organize captures here (a signed-in account whose fos peer offers `organize`). */
   canOrganize(): boolean {
-    return this.capabilityAvailable('llm') && this.state.session?.kind === 'user'
+    return this.capabilityAvailable('organize') && this.state.session?.kind === 'user'
   }
   canRecordVoice(): boolean {
     return this.canOrganize() && !recordingUnsupported()
@@ -3009,7 +3042,7 @@ export class App {
     if (!this.state.session) { this.notify('error', 'Connect to your account to transcribe voice notes.'); this.openModal('connect'); return }
     const unsupported = recordingUnsupported()
     if (unsupported) { this.notify('error', unsupported); return }
-    if (!this.canOrganize()) { this.notify('error', 'Recording needs an active Fos peer with a language model.'); return }
+    if (!this.canOrganize()) { this.notify('error', 'Recording needs an active Fos peer that organizes captures.'); return }
     const at = [...this.state.view]
     const generation = this.authGeneration
     let stream: MediaStream | null = null
@@ -3067,7 +3100,7 @@ export class App {
     if (this.state.voice) { this.notify('info', 'Finish the current recording or capture first.'); return false }
     if (!text.trim()) return false
     if (!this.state.session) { this.notify('error', 'Connect to your account to organize text.'); this.openModal('connect'); return false }
-    if (!this.canOrganize()) { this.notify('error', 'Organizing needs an active Fos peer with a language model.'); return false }
+    if (!this.canOrganize()) { this.notify('error', 'Organizing needs an active Fos peer that organizes captures.'); return false }
     const generation = this.authGeneration
     try {
       return await this.organizeInto(text, at, 'Pasted text')
@@ -3080,32 +3113,31 @@ export class App {
   }
 
   /**
-   * Ask the account's model where a capture belongs in the subtree of `at` (shared/sync/organize.ts) and apply the
-   * plan there as one undoable edit, with the raw capture kept as a note. When the model cannot be reached the
-   * capture is still kept, unorganized, so nothing is lost.
+   * Organize a capture into the subtree of `at` (shared/sync/organize.ts): an `organize` requirement placed there
+   * holding the capture (`requestOrganize`), run on the account server (`runOnServer`), whose `organize` handler
+   * builds the outline, asks its model, applies the plan and keeps the capture as a note. The filled request is then
+   * removed. When the server cannot organize it the capture is still kept here, unorganized, so nothing is lost.
    */
   private async organizeInto(text: string, at: Scope, label: string): Promise<boolean> {
     const session = this.state.session, generation = this.authGeneration, store = this.state.replica.store
     if (!session) throw new Error('Connect to your account to organize captures.')
     if (!view(this.state.replica, at)) throw new Error('The capture location was removed.')
     this.set({ voice: { phase: 'organizing' } })
-    const stamp = new Date(this.now()).toLocaleString()
-    const target = at.length ? view(this.state.replica, at.slice(0, -1))?.tasks.find(t => t.id === at.at(-1))?.title ?? '' : 'Home'
-    const outline = await captureOutline(this.state.replica, at)
-    let plan: import('../../shared/sync/index').OrganizePlan = { title: '', items: [] }, failure: string | null = null
-    try {
-      // the answer is validated here too: the plan only names rows of this outline and row types a plan may name
-      plan = parseOrganizePlan((await organizeCapture(session, { text, title: target, outline: outline.map(({ id, parent, title }) => ({ id, parent, title })) })).plan, outline.map(entry => entry.id))
-    } catch (error) {
-      failure = error instanceof Error ? error.message : String(error)
-    }
+    const asked = requestOrganize(this.state.replica, at, text, label, this.now())
+    this.edit(asked.replica)
+    let failure: string | null = null
+    try { await this.runOnServer(asked.path) } catch (error) { failure = error instanceof Error ? error.message : String(error) }
     if (generation !== this.authGeneration || this.state.session !== session || this.state.replica.store !== store) return false
-    if (!view(this.state.replica, at)) throw new Error('The capture location was removed while organizing.')
-    const applied = await applyOrganizePlan(this.state.replica, at, plan, { label, stamp, text }, this.now())
-    this.together(() => this.edit(applied.replica))
-    const placed = applied.rows.length
-    if (failure) this.notify('error', `Kept the ${label.toLowerCase()} unorganized: ${failure}`)
-    else this.notify('info', `${label} organized: ${placed} row${placed === 1 ? '' : 's'} added here, the original kept as a note.`)
+    const result = failure ? null : readNodeValue<OrganizedResult>(this.state.replica, asked.path, ORGANIZED_VALUE)
+    let next = this.state.replica
+    if (resolveScope(next.store, headCid(next), asked.path)) next = deleteTask(next, at, asked.path.at(-1)!, this.now())
+    if (!result) {
+      if (!view(next, at)) throw new Error('The capture location was removed while organizing.')
+      next = addTypedRow(next, at, typeAt(next, NOTE_TYPE, at), captureNoteText(label, new Date(this.now()).toLocaleString(), text), this.now())
+    }
+    this.edit(next)
+    if (!result) this.notify('error', `Kept the ${label.toLowerCase()} unorganized: ${failure ?? 'the server did not organize it'}`)
+    else this.notify('info', `${label} organized: ${result.rows} row${result.rows === 1 ? '' : 's'} added here, the original kept as a note.`)
     return true
   }
 

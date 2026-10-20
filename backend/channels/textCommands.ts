@@ -6,11 +6,11 @@
  *   "done <words>"         search, then submit the first matching open task as completed
  *   "list" | "ls" | "todo" read Home and reply with its open tasks
  *   "[ ] text"             submit a new task in Home
- *   anything else          organized into Home's subtree (shared/sync/organize.ts) when the host can organize:
- *                          the outline is read through events, the plan is one submission, and the message itself
- *                          is kept as a note in Home; otherwise (or when organizing fails) a plain row in Home
+ *   anything else          organized into Home's subtree when the host can organize: an `organize` requirement in
+ *                          Home run through the same `organize` handler devices use (voice/organize.ts), the
+ *                          message itself kept as a note in Home; otherwise (or when organizing fails) a plain row
  */
-import { buildOutline, HOME_ID, organizePlanChanges, type FosEvent, type OrganizePlan, type OutlineEntry, type Principal } from '@fosforescent/shared/sync/index'
+import { HOME_ID, type FosEvent, type OrganizedResult, type Principal } from '@fosforescent/shared/sync/index'
 import type { InboundMessage } from './types'
 
 export type TextCommandDeps = {
@@ -19,8 +19,11 @@ export type TextCommandDeps = {
   /** Dispatch one event for the owner of that account (backend/sync/events.ts `handle`). */
   handle(principal: Principal & { username: string }, event: FosEvent): Promise<unknown>
   reply(message: InboundMessage, text: string): Promise<void>
-  /** The host's organizer (voice/organize.ts `accountOrganizer`); null when the account may not spend on it now. */
-  organize?(username: string, input: { text: string; title: string; outline: OutlineEntry[] }): Promise<OrganizePlan | null>
+  /**
+   * Organize the text into the account's Home through the host's `organize` handler (voice/organize.ts
+   * `createAccountOrganizer`); null when it was not organized (over budget, the model failed).
+   */
+  organize?(username: string, text: string, label: string): Promise<OrganizedResult | null>
   now?(): number
 }
 
@@ -55,17 +58,9 @@ export function createTextCommandInbound(deps: TextCommandDeps) {
     const task = text.match(/^(?:\[\s?\]|todo|task)\s*:?\s+(.+)$/is)
     if (!task && deps.organize && text) {
       try {
-        const outline = await buildOutline(async path => (await send({ kind: 'read', path }) as { children: Row[] }).children)
-        const plan = await deps.organize(account.username, { text, title: 'Home', outline })
-        if (plan) {
-          const stamp = new Date(deps.now?.() ?? Date.now()).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
-          const { changes } = organizePlanChanges(plan, outline, [], { label: `Text message (${message.source})`, stamp, text })
-          // one submission holds at most 50 changes: the plan's first rows (parents come first) and the message itself
-          const bounded = changes.length > 50 ? [...changes.slice(0, 49), changes.at(-1)!] : changes
-          await send({ kind: 'submit', path: [], expected: (await home()).revision, changes: bounded })
-          const titles = new Map(outline.map(entry => [entry.id, entry.title]))
-          const under = [...new Set(plan.items.slice(0, bounded.length - 1).flatMap(item => item.parent && titles.has(item.parent) ? [titles.get(item.parent)!] : []))]
-          const added = bounded.length - 1
+        const done = await deps.organize(account.username, text, `Text message (${message.source})`)
+        if (done) {
+          const { rows: added, under } = done
           await reply(`fos: organized into Home: ${added} row${added === 1 ? '' : 's'}${under.length ? ` (under ${under.slice(0, 3).map(t => `“${t}”`).join(', ')}${under.length > 3 ? ', …' : ''})` : ''}, and kept the message as a note`)
           return
         }

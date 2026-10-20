@@ -5,14 +5,18 @@
  * version) and read through that type's form; nothing here tells types apart by flags or row kinds.
  *
  * Verification is an ed25519 signature over `userAttestationPayload`. Today the fos server signs (`method`
- * `ed25519-server`, `by` = the server's peer id); clients check it against that server's public key
- * (`GET /identity/key`) and the server re-checks it on use (payments, fos points). `ed25519-self` is the seam for
- * key pairs: the same payload signed by the key in the object's own `publicKey`. A self signature proves possession
- * of the key only; the binding of that key to an account is the server attestation, which covers `publicKey` too.
- * The crypto is injected (`UserTrust.verify`) so this module runs in the browser, QuickJS and Node alike.
+ * `ed25519-server`, `by` = the server's peer id). Resolving `@name` is the effect of the server's `verify` handler:
+ * a `verify` requirement (`requestVerification`) evaluated there comes back with the attested object bound as its
+ * `user` field. The server's public key is graph data too: a `fos:key:fos` row in Home (`publishPeerKey`, written
+ * when the server ensures the account context) that node exchange brings to devices, whose own verify handler
+ * (`verifyPublished`) checks attestations against it; the server re-checks on use (payments, fos points).
+ * `ed25519-self` is the seam for key pairs: the same payload signed by the key in the object's own `publicKey`. A
+ * self signature proves possession of the key only; the binding of that key to an account is the server
+ * attestation, which covers `publicKey` too. The crypto is injected (`UserTrust.verify`, `SignatureCheck`) so this
+ * module runs in the browser, QuickJS and Node alike.
  *
- * Verified objects fetched from the server are cached in the user's graph (`fos:users` in Home, one user row each);
- * a row typed offline binds an unverified object (username only) that the client replaces once it resolves.
+ * Verified objects are cached in the user's graph (`fos:users` in Home, one user row each); a row typed offline
+ * binds an unverified object (username only) that the client replaces once it resolves.
  */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
@@ -21,7 +25,6 @@ import { definitionId } from './legacy-row-types'
 import { constructForm, formRecord, type FormInput } from './forms'
 import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
-
 export const USER_TYPE_ID = 'lib:type:user'
 /** The field of a row that names a user (`-@bob`, `@bob 2h`, `-ff 5 reward @bob`). */
 export const USER_FIELD = 'user'
@@ -71,8 +74,8 @@ export const userObjectId = (user: Pick<UserRecord, 'username'>): string => `fos
  * The user object node: the same record makes the same node (and cid) everywhere. Like every form field's value it
  * carries its field name (`user`), which is what node exchange keeps of a field.
  */
-export function userObjectContent(store: FosStore, typeCid: string, user: UserRecord): FosNodeContent {
-  const node = constructForm(store, typeCid, userObjectId(user), userInput(user), user.verification?.issuedAt ?? 0)
+export function userObjectContent(store: FosStore, typeCid: string, user: UserRecord, id = userObjectId(user)): FosNodeContent {
+  const node = constructForm(store, typeCid, id, userInput(user), user.verification?.issuedAt ?? 0)
   return { ...node, data: { ...node.data, name: { content: USER_FIELD } } }
 }
 
@@ -145,7 +148,8 @@ export function cachedUser(r: Replica, username: string): UserRecord | null {
   const wanted = username.toLowerCase()
   for (const edge of valueContent(r.store, cid).children) {
     const e = plainEdge(r.store, edge)
-    if (!isUserType(r.store, e[0])) continue
+    // a peer's published key (`fos:key:…`) sits among the people but is no one `@name` binds
+    if (!isUserType(r.store, e[0]) || content(r.store, identityCid(r.store, e)).data.alias?.id?.startsWith(PEER_KEY_PREFIX)) continue
     const user = readUser(r.store, e[0], valueContent(r.store, identityCid(r.store, e)))
     if (user?.username.toLowerCase() === wanted) return user
   }
@@ -183,4 +187,86 @@ export function rebindUsers(r: Replica, user: UserRecord, now: number): Replica 
   walk([], 0)
   for (const path of paths) r = bindUserAt(r, path, user, now)
   return r
+}
+
+// ---------------------------------------------------------------------------
+// Verifiers' keys as graph data
+
+/** The row holding the key a peer (the fos server: `fos`) publishes, among the people in Home: `fos:key:<peer id>`. */
+export const PEER_KEY_PREFIX = 'fos:key:'
+export const peerKeyId = (peerId: string): string => `${PEER_KEY_PREFIX}${peerId}`
+
+/**
+ * Publish `peerId`'s public key in Home's users row (`fos:users`): a row of the user type for that peer (account and
+ * username = its peer id, `publicKey` = its raw ed25519 key, base64). The account server writes it whenever it
+ * ensures the account context (`ensureHomeContext(…, { keys })`), so node exchange brings it to every device with
+ * Home. No-op when unchanged.
+ */
+export function publishPeerKey(r: Replica, peerId: string, publicKey: string, now: number): Replica {
+  if (!homePath(r).length || publishedKey(r, peerId) === publicKey) return r
+  const users = usersPath(r), id = peerKeyId(peerId)
+  if (!resolveScope(r.store, headCid(r), users)) r = addRow(r, users.slice(0, -1), 'plain', 'People', now, { id: USERS_ID })
+  if (resolveScope(r.store, headCid(r), [...users, id])) r = deleteTask(r, users, id, now)
+  const type = userType(r.store, users)
+  const peer: UserRecord = { account: peerId, username: peerId, name: peerId === 'fos' ? 'Fos' : peerId, publicKey, verification: null }
+  return writeGraphNode(r, users, userObjectContent(r.store, type, peer, id), now, type)
+}
+
+/** Every verifier key published in this graph's Home (peer id → key): the trust a device's verify handler uses. */
+export function publishedKeys(r: Replica): Record<string, string> {
+  const parent = homePath(r).length ? resolveScope(r.store, headCid(r), usersPath(r)) : null
+  const out: Record<string, string> = {}
+  // a key row is a row of the user type (the edge's left node) with a `fos:key:` identity; nothing else is read
+  for (const edge of parent ? valueContent(r.store, parent).children : []) {
+    const plain = plainEdge(r.store, edge)
+    if (!isUserType(r.store, plain[0])) continue
+    const id = content(r.store, identityCid(r.store, plain)).data.alias?.id ?? ''
+    if (!id.startsWith(PEER_KEY_PREFIX)) continue
+    const peerId = id.slice(PEER_KEY_PREFIX.length), peer = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
+    if (peer?.username === peerId && peer.publicKey) out[peerId] = peer.publicKey
+  }
+  return out
+}
+
+/** The key `peerId` published in this graph's Home, or null. */
+export function publishedKey(r: Replica, peerId: string): string | null {
+  return publishedKeys(r)[peerId] ?? null
+}
+
+/**
+ * The device's verify handler for user objects a server attested: the attestation's `by` must be a peer whose key
+ * this graph publishes (`fos` for the account server), and the signature must check against that key. The crypto
+ * is injected as in `verifyUser` (WebCrypto in the app, node:crypto in tests).
+ */
+export function verifyPublished(r: Replica, user: UserRecord, check: SignatureCheck): ReturnType<typeof verifyUser> {
+  if (user.verification?.method !== USER_SERVER_ATTESTATION) return { ok: false, reason: user.verification ? `@${user.username} is not attested by a server` : `@${user.username} is not verified yet` }
+  if (!publishedKey(r, user.verification.by)) return { ok: false, reason: `${user.verification.by} has published no key here` }
+  return verifyUser(user, { servers: publishedKeys(r), verify: check })
+}
+
+// ---------------------------------------------------------------------------
+// Verify requirements: how `@name` becomes an attested user object
+
+/** The verify requirement for `username`, kept in the users row (`fos:users`) while the verifier fills it. */
+export const verifyRequestId = (username: string): string => `fos:verify:${username.toLowerCase()}`
+
+/**
+ * Ask for `@username` to be verified: a `verify` requirement under `fos:users` whose text names the user. Evaluated
+ * by the account server (its `verify` handler), it comes back with the attested object bound as its `user` field and
+ * the verifier's supply. Answers the requirement's path.
+ */
+export function requestVerification(r: Replica, username: string, now: number): { replica: Replica; path: Scope } {
+  const path = usersPath(r), name = username.trim().replace(/^@/, '')
+  if (!resolveScope(r.store, headCid(r), path)) r = addRow(r, path.slice(0, -1), 'plain', 'People', now, { id: USERS_ID })
+  const id = verifyRequestId(name)
+  if (resolveScope(r.store, headCid(r), [...path, id])) r = deleteTask(r, path, id, now)
+  r = addRow(r, path, 'requirement', `@${name}`, now, { id, requirement: { capability: 'verify' } })
+  return { replica: r, path: [...path, id] }
+}
+
+/** The attested user object a filled verify requirement at `path` holds (its `user` field), or null. */
+export function verifiedAt(r: Replica, path: Scope): UserRecord | null {
+  const cid = resolveScope(r.store, headCid(r), path)
+  const user = cid ? userOf(r.store, valueContent(r.store, cid)) : null
+  return user?.verification ? user : null
 }

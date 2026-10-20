@@ -5,7 +5,7 @@
  *   POST /user/data/voice-notes   body: raw audio (Content-Type audio/webm, audio/mp4, …), ≤ 25 MB
  *   → { transcript, title, summary, clusters: [{ title, sentiment, summary, points }] }
  *   POST /user/data/voice-notes?transcript=only   the same body → { transcript } (no summaries; the client organizes
- *   the transcript into the node it was recorded at with POST /user/data/voice-notes/organize, see organize.ts)
+ *   the transcript into the node it was recorded at through an `organize` requirement, see organize.ts)
  *
  * Long transcripts are summarized hierarchically: fixed-size chunks are each
  * summarized, then the chunk summaries are summarized together, so the final

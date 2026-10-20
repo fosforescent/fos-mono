@@ -484,7 +484,7 @@ The fos account server registers what it can actually do with every device in
 each node-provider response (`ProvidedNode.capabilities`): the transport facts
 (`SERVER_TRANSPORT_CAPABILITIES`: http, ws, relay, peer, persist, provideNode,
 sync) plus the services its handler registry has (`backend/sync/registry.ts`,
-today search, market, poll, points, llm and cron when enabled). Devices record the
+today search, market, poll, points, verify, organize, llm and cron when enabled). Devices record the
 reported list on their own fos member (`App.recordServerOffers`), so a
 capability no handler backs is never offered in the palette. The context panel under the tree lists the banks in scope
 and the peers of the viewed node: `fos` with what it registered, the node's
@@ -568,7 +568,8 @@ texts about proposals from other accounts, and texts sent to the platform's
 number (`backend/channels/sms.ts`, Twilio: `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`; webhook `POST /channels/sms/webhook`,
 signature verified) become rows: "done <words>" checks a task off, "list"
-answers with open tasks, anything else is added at the root. Language
+answers with open tasks, anything else is organized into Home by the fos
+`organize` handler (below) or, when it cannot, added there as a row. Language
 models are the fos server's own capability (`llm` in its handler registry,
 the voice notes' `complete` on `OPENAI_API_KEY`/Vertex), not a user key.
 
@@ -583,7 +584,29 @@ the answer becomes a proposal on its return ref, so the evaluation pauses as
 `-repo owner/name title` → GitHub opens the issue and a row with its URL plus
 the supply are added. A time or person requirement with a window
 (`-: 1h 2026-10-13T09:00..` or `-@bob …`) → Google Calendar creates the
-event and the allocation row that fills the requirement.
+event and the allocation row that fills the requirement. A `verify`
+requirement (`@name`) → the fos verifier binds the attested user object
+("Users" below). An `organize` requirement → the fos organizer files a
+capture into the node the requirement sits in:
+
+**Organizing captures (`shared/sync/organize.ts`, `backend/voice/organize.ts`).**
+A voice transcript, a long paste or a texted message is organized into one
+node as an effect, not through a route of its own. The client places an
+`organize` requirement in the target (`requestOrganize`: identity
+`fos:organize:…`, so it is never part of an outline; text = what the capture
+is, e.g. "Voice note"; its `lib:type:note` row = the captured text) and
+sends `complete` on it. The server's `organize` handler refuses a non-paying
+account over the voice budget before the evaluation opens, builds the
+outline from the account's own store (`captureOutline`: the target's
+subtree, bounded, breadth first), asks its model for a plan (validated
+against that outline), applies it under the target with the capture kept as
+a note (`applyOrganizePlan`; each new row is `[library type, row]` for the
+type the plan names), leaves `{rows, under, captureId, title}` as the
+requirement's `fos:organized` value and records the supply. The client
+syncs the result back and removes the filled request; when the server could
+not organize it, the client keeps the capture as a note itself. Texted
+messages run the same handler on the server (`createAccountOrganizer`: the
+requirement in Home, `runNode`, then removed).
 
 **MCP peers (`backend/integrations/mcpPeers.ts`).** The account's MCP
 servers (`MCPServerModel`, their tools) are peers too. "Attach here" (or
@@ -954,7 +977,7 @@ ancestors (`relayAfterSubmission`) under the account's lock, and the usual
 to the desktop's agent peer (a member of the node) waits under that peer's
 entry until the desktop connects.
 
-## Users (`shared/sync/users.ts`, `backend/sync/identity.ts`)
+## Users (`shared/sync/users.ts`, `backend/sync/verify.ts`)
 
 `@name` in a row is never stored as text. It is shorthand for a **user
 object**: a row of the standard library type `lib:type:user` (graph data in
@@ -970,17 +993,35 @@ node (`isUserType`, any pinned version) and the field name; the view projects
 it as `TaskView.user`. The same record makes the same node everywhere, so the
 object travels with the row through node sync like any form field.
 
-**Verification.** The account server is the verifier today. Its `identity`
-handler (registry, no effect) resolves a username to the attested object:
-`GET /user/data/users/:username` for a signed-in account; `GET /identity/key`
-publishes `{ peer: 'fos', alg: 'ed25519', publicKey }`. The attestation is an
-ed25519 signature over `userAttestationPayload` (every field but the
-signature, plus `by`, `method`, `issuedAt`). The key comes from
-`FOS_IDENTITY_SEED`, else is derived from `JWT_SECRET`. Clients check it with
-WebCrypto (`checkUserAttestation` in `web/src/api.ts`; an older webview
-without Ed25519 trusts its own authenticated connection); the server re-checks
-it whenever it acts on an object read from a graph (`payeeOf` for fos points
-and payments), so a tampered, unverified or foreign object is refused there.
+**Verification.** The account server is the verifier today, and verifying
+is an effect like any other (no user or key route). Its `verify` handler
+(`backend/sync/verify.ts`) fills a `verify` requirement: a row whose text
+names the user (`@bob`; `requestVerification` puts it under `fos:users` as
+`fos:verify:bob`) completed through a `complete` event comes back with the
+attested object bound as its `user` field (`verifiedAt`) and the supply
+`{capability: 'verify', by: 'fos'}`; an unknown name is refused before the
+evaluation opens. The attestation is an ed25519 signature over
+`userAttestationPayload` (every field but the signature, plus `by`,
+`method`, `issuedAt`). The key comes from `FOS_IDENTITY_SEED`, else is
+derived from `JWT_SECRET`.
+
+**The verifier's key is graph data.** A handler with a `publicKey` (the
+verify handler) puts it in the registry's `hostOffers().keys`, and
+`ensureHomeContext(…, { keys })` (run whenever the server ensures the account
+context, e.g. on every node exchange) writes it into Home as a row of the
+user type among the people: `fos:key:fos` with account and username `fos`
+and `publicKey` the raw key (`publishPeerKey`; unchanged keys write
+nothing). Node exchange brings it to every device with Home
+(`publishedKey`, `publishedKeys`); `cachedUser` never returns it, so no
+`@fos` binds it. The device's own verify handler checks an attestation
+whose `by` is a peer with a published key against that key:
+`verifyPublished(replica, user, check)` with the crypto injected (node:crypto
+in tests), and in the app the `fos` entry of `App.verifiers`
+(`checkUserAttestation` in `web/src/api.ts`, WebCrypto Ed25519; an older
+webview without Ed25519 answers null and trusts its own account's graph). The
+server re-checks it whenever it acts on an object read from a graph
+(`payeeOf` for fos points and payments), so a tampered, unverified or
+foreign object is refused there regardless of the client.
 `verifyUser(user, { servers, verify })` is the shared check with the crypto
 injected. Key pairs are the seam: `publicKey` is covered by the server's
 attestation (read from the account profile when it has one) and
@@ -988,11 +1029,13 @@ attestation (read from the account profile when it has one) and
 proves possession of the key, not the account.
 
 **Offline and cache.** Parsing binds an unverified object (`unverifiedUser`,
-username only). The app fetches the attested object once
-(`App.resolveUser`), keeps it in Home under `fos:users` (`cacheUser`, one user
-row each) and rebinds every row that named that username (`rebindUsers`);
-later rows bind the cached object directly (`knownUser`). Offline rows keep
-the unverified object until the next edit online.
+username only). Online with a fos peer that offers `verify`, the app runs a
+verify requirement for that name on the server (`App.resolveUser` →
+`runOnServer`: sync, `complete`, sync), checks the result with its verify
+handler, keeps it in Home under `fos:users` (`cacheUser`, one user row
+each), rebinds every row that named that username (`rebindUsers`) and removes
+the request; later rows bind the cached object directly (`knownUser`).
+Offline rows keep the unverified object until the next edit online.
 
 ## Limitations / next steps
 

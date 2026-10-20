@@ -140,7 +140,7 @@ export type FosDataContent = {
    * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
    */
   requirement?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
     resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount?: number
     unit?: string
@@ -161,7 +161,7 @@ export type FosDataContent = {
   },
   /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
   supply?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
     by: string
     at: number
     ref?: string

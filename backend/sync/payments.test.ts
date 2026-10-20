@@ -8,10 +8,10 @@ import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
 import { paymentHandler, pointsHandler } from './hostHandlers'
 import { createPaymentSettlement } from './payments'
-import { identityHandler, identityKeyFromSeed } from './identity'
+import { verifyHandler, identityKeyFromSeed } from './verify'
 
 const accounts: Record<string, { id: number; username: string; name?: string }> = { owner: { id: 1, username: 'owner' }, bob: { id: 2, username: 'bob', name: 'Bob' } }
-const identity = identityHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
+const identity = verifyHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
 import { minorUnits, paymentConfirmationOf } from '../payments/stripe'
 
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
