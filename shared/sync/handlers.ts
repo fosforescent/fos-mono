@@ -64,7 +64,7 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   const cid = resolveScope(r.store, headCid(r), templatePath)
   if (!cid || !templatePath.length) throw new Error('Select a template to publish.')
   const parent = resolveScope(r.store, headCid(r), templatePath.slice(0, -1))
-  if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, 'template'))) throw new Error('Only template rows can be published.')
+  if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, 'lib:type:template'))) throw new Error('Only template rows can be published.')
   const type = r.store.primitive.templateField.getId(), peerId = r.meta.peerId
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
   const id = `fos:published:${templatePath.at(-1)}`
@@ -98,7 +98,7 @@ export function marketplaceOffers(r: Replica): Array<HandlerOffer & { path: Scop
         const offer = content(s, h), id = offer.data.alias?.id ?? h
         if (!disabled.includes(id)) result.set(id, { id, cid: h, type: refTypeCid(s, offer)!, peerId: MARKET_PEER, legacy: false, label: offer.data.name?.content ?? valueContent(s, h).data.description?.content ?? 'Capability', enabled: true, active: true, path })
       }
-      for (const edge of valueContent(s, cid).children) if (isRowEdge(s, edge) && !isRowOfType(s, edge, 'ref')) { const id = content(s, identityCid(s, edge)).data.alias?.id; if (id) walk([...path, id]) }
+      for (const edge of valueContent(s, cid).children) if (isRowEdge(s, edge) && !isRowOfType(s, edge, 'lib:type:ref')) { const id = content(s, identityCid(s, edge)).data.alias?.id; if (id) walk([...path, id]) }
     }
     walk([])
     return [...result.values()]

@@ -1,7 +1,7 @@
 import { asAccountStore } from './deviceRoot'
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { HOME_ID, LIBRARY_ID, addMemberAt, addTask, contextBindings, createReplica, ensureHomeContext, readNodeValue, removeMemberAt, rootTargetCid, setMemberCapabilitiesAt, shareHome, syncNodeTree, view, viewNode, writeNodeValue, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, LIBRARY_ID, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, contextBindings, createReplica, ensureHomeContext, readNodeValue, removeMemberAt, rootTargetCid, setMemberCapabilitiesAt, shareHome, syncNodeTree, view, viewNode, writeNodeValue, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
 
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
@@ -9,6 +9,8 @@ jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 
 import { createNodeProvider } from './provideNode'
 import type { AccountStoreDeps } from './accountStore'
+import { createHandlerRegistry } from './registry'
+import { relayHandler } from './hostHandlers'
 
 type Sent = { status: number; body: unknown }
 type Claims = { username: string; kind?: string; peerId?: string; scope?: string[] }
@@ -178,4 +180,24 @@ test('Home sync persists public siblings, never content excluded from Fos', asyn
   expect(JSON.stringify([...stores.get(7)!.table.values()])).not.toContain('Never upload this')
   expect(homeTitles(stores.get(7)!)).toContain('Shared sibling')
   expect(view(client, [HOME_ID, 'private'])!.tasks[0]!.id).toBe('secret')
+})
+
+test('a message one device leaves for another waits in that peer\'s queue on the account', async () => {
+  const { deps, stores } = makeDeps()
+  deps.registry = createHandlerRegistry([relayHandler()])
+  // the account knows the desktop's agent peer on the hub
+  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0, deps.registry.hostOffers())
+  account = addTask(account, [HOME_ID], 'Hub', 1, 'hub')
+  account = addMemberAt(account, [HOME_ID, 'hub'], 'desktop-agent', 'Desktop agent', ['read', 'edit'], 2)
+  stores.set(7, account.store)
+  const handler = createNodeProvider(deps)
+  let phone = await sync(handler, ensureHomeContext(createReplica('phone'), 0))
+  phone = addRelayMessage(phone, [HOME_ID, 'hub'], 'desktop-agent', 3, 'job')
+  phone = addTask(phone, [HOME_ID, 'hub', 'job'], 'Review the pull request', 4, 'job:task')
+  phone = await sync(handler, phone)
+  const stored = createReplica('user:alice', stores.get(7)!)
+  expect(view(stored, [HOME_ID, 'hub', 'fos:peer:desktop-agent', RELAY_QUEUE_ID, 'job'])!.tasks.map(t => t.title)).toEqual(['Review the pull request'])
+  expect(view(stored, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
+  phone = await sync(handler, phone)
+  expect(view(phone, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
 })

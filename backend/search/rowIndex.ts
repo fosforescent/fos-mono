@@ -42,7 +42,7 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       const market = grants ? grants.includes('read') : inherited
       const title = formTitle(store, value).trim()
       // a reference (its row type) stands for a row indexed where it lives
-      if (title && !isRowOfType(store, edge, 'ref')) out.push({ aliasId, kind, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
+      if (title && !isRowOfType(store, edge, 'lib:type:ref')) out.push({ aliasId, kind, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
       walk(id, [...path, aliasId], market)
     }
   }

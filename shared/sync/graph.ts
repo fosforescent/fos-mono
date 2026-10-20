@@ -260,17 +260,9 @@ const rowTypeOf = (kind: RowKind): RowTypeKind => {
   return kind === 'requirement' || kind === 'supply' ? 'allocation' : kind
 }
 
-/**
- * Is the row `[type, row]` made from the standard library's row type `type` (`lib:type:<type>`)? The left node
- * decides; every pinned version of the library type shares its definition id, so any of them counts.
- */
-export function isRowOfType(store: FosStore, edge: FosPathElem, type: RowTypeKind): boolean {
-  const left = plainEdge(store, edge)[0]
-  return store.table.has(left) && definitionId(content(store, left)) === rowTypeId(type)
-}
-/** The child rows of `cid` made from the library row type `type`: their alias ids and identity cids. */
-export function rowsOfType(store: FosStore, cid: string, type: RowTypeKind): Array<{ id: string; cid: string }> {
-  return valueContent(store, cid).children.filter(e => isRowOfType(store, e, type)).map(e => ({ id: content(store, identityCid(store, e)).data.alias?.id ?? '', cid: identityCid(store, e) })).filter(r => r.id)
+/** The child rows of `cid` made from the library row type `typeId` (`lib:type:…`): their alias ids and identity cids. */
+export function rowsOfType(store: FosStore, cid: string, typeId: string): Array<{ id: string; cid: string }> {
+  return valueContent(store, cid).children.filter(e => isRowOfType(store, e, typeId)).map(e => ({ id: content(store, identityCid(store, e)).data.alias?.id ?? '', cid: identityCid(store, e) })).filter(r => r.id)
 }
 
 /**
@@ -333,6 +325,15 @@ function libraryRowType(store: FosStore, library: string, typeId: string): strin
 /** Whether `template` (a row edge's left node) is a version of the library type `id`: types are told apart by that node alone. */
 export function isLibraryType(store: FosStore, template: string, id: string): boolean {
   return store.table.has(template) && definitionId(valueContent(store, template)) === id
+}
+
+/** Is `edge` a row made from the library type `typeId`? Its type is the edge's left node; any version of it counts. */
+export function isRowOfType(store: FosStore, edge: FosPathElem, typeId: string): boolean {
+  edge = plainEdge(store, edge)
+  if (isChoiceEdge(store, edge) || !store.table.has(edge[0]) || !store.table.has(edge[1])) return false
+  if (definitionId(content(store, edge[0])) !== typeId) return false
+  // a typed argument ([type, ref] whose ref is of that type) is a slot, not a row
+  return refTypeCid(store, content(store, edge[1])) !== edge[0]
 }
 
 /**
@@ -1800,13 +1801,17 @@ export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null
   return capabilityOfTarget(store, edge[1])
 }
 
+/** A member entry's identity on its node: `fos:peer:<peer id>` (also the path step to it, and to the rows it holds). */
+export const MEMBER_ENTRY_PREFIX = 'fos:peer:'
+export const memberEntryId = (peerId: string): string => `${MEMBER_ENTRY_PREFIX}${peerId}`
+
 export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
   const unique = [...new Set(capabilities)]
   const from = [...new Set(accepts)]
   const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c))
   return {
     data: {
-      alias: { id: `fos:peer:${peerId}` },
+      alias: { id: memberEntryId(peerId) },
       peerId: { content: peerId },
       ...(name ? { name: { content: name } } : {}),
       ...(off.length ? { disabledCapabilities: { content: off } } : {})

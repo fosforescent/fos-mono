@@ -11,7 +11,7 @@
  * handlers without one (cron, notify) are advertised only. An effect may answer `'pending'`: its result awaits human review
  * (a proposal on a return ref) and the evaluation pauses as `awaiting-review` instead of committing.
  */
-import { SERVER_TRANSPORT_CAPABILITIES, type Capability, type EvaluationStep, type HostOffers, type LibraryAddress, type Replica } from '@fosforescent/shared/sync/index'
+import { SERVER_TRANSPORT_CAPABILITIES, type Capability, type EvaluationStep, type HostOffers, type LibraryAddress, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 
 export type EffectContext = {
   userId: number
@@ -40,6 +40,11 @@ export type HostHandler = {
   prepare?(ctx: EffectContext): Promise<{ outputs?: string[] } | void>
   /** Executes a requirement as an evaluation effect; `'pending'` when the result awaits review. Absent = advertised service without an executor. */
   effect?(ctx: EffectContext): Promise<void | 'pending'>
+  /**
+   * Runs where a peer's submission landed (a node exchange that wrote at `path`, under the account's lock) and returns
+   * the replica after it: graph-only handlers such as the relay, which moves messages into their recipients' queues.
+   */
+  submission?(replica: Replica, path: Scope, now: number): Replica
 }
 
 export type HandlerRegistry = ReturnType<typeof createHandlerRegistry>
@@ -64,6 +69,11 @@ export function createHandlerRegistry(handlers: HostHandler[]) {
     },
     /** Everything `ensureHomeContext` needs to write into an account's context. */
     hostOffers(): HostOffers { return { server: this.serverCapabilities(), integrations: this.integrationOffers() } },
+    /** Every handler that reacts to a submission, run on the node it landed at (see `HostHandler.submission`). */
+    afterSubmission(replica: Replica, path: Scope, now: number): Replica {
+      for (const h of handlers) if (h.submission) replica = h.submission(replica, path, now)
+      return replica
+    },
     /** Handlers that can execute this step as an effect. */
     executors(step: EvaluationStep, replica: Replica): HostHandler[] {
       return handlers.filter(h => !!h.effect && (h.handles ? h.handles(step, replica) : step.row?.requirement?.capability === h.capability))

@@ -2759,7 +2759,7 @@ export class App {
       const path = [...this.state.view, ...at, req.id], store = this.state.replica.store, cid = resolveScope(store, headCid(this.state.replica), path)
       let next = this.state.replica
       // supplies are flow records (the allocation row type); the server's search fill is the one by fos for search
-      for (const row of cid ? rowsOfType(store, cid, 'allocation') : []) {
+      for (const row of cid ? rowsOfType(store, cid, 'lib:type:allocation') : []) {
         const s = supplyOf(valueContent(store, row.cid))
         if (s?.capability === 'search' && s.by === 'fos') next = deleteTask(next, path, row.id, this.now())
       }

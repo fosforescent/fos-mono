@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
+import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './registry'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 
@@ -125,13 +125,13 @@ export function searchHandler(deps: SearchDeps): HostHandler {
     async effect(ctx) {
       const path = ctx.step.path, r = ctx.replica(), cid = resolveScope(r.store, headCid(r), path)!
       // which rows inside are what is decided by their row types: a query row says what to look for, refs are earlier hits
-      const queryRow = rowsOfType(r.store, cid, 'query')[0]
+      const queryRow = rowsOfType(r.store, cid, 'lib:type:query')[0]
       const query = queryRow ? { id: queryRow.id, title: formTitle(r.store, valueContent(r.store, queryRow.cid)), market: !!valueContent(r.store, queryRow.cid).data.query?.market } : null
       const text = (query?.title || ctx.step.row!.title).trim().slice(0, 1000)
       if (!text) throw new Error('Say what to search for: "-? text".')
       const hits = await deps.search({ id: ctx.userId, username: ctx.username }, text, !!query?.market)
       let next = ctx.replica()
-      for (const ref of rowsOfType(r.store, cid, 'ref')) next = deleteTask(next, path, ref.id, ctx.now())
+      for (const ref of rowsOfType(r.store, cid, 'lib:type:ref')) next = deleteTask(next, path, ref.id, ctx.now())
       for (const hit of hits) {
         if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
         if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
@@ -320,10 +320,20 @@ export type HostHandlerDeps = {
   cron: boolean
 }
 
+/**
+ * The relay (shared/sync/relay.ts, the standard library's Relay): a message a peer leaves on a node is moved into the
+ * queue of its addressee when the account knows that peer there (a member), and left alone otherwise. The same
+ * handler any device can run; here it runs as `fos` after every submission a node exchange brings in.
+ */
+export function relayHandler(): HostHandler {
+  return { peerId: 'fos', capability: 'relay', submission: (replica, path, now) => relayAfterSubmission(replica, path, 'fos', now) }
+}
+
 export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
   return [
     // the server's own services, all effects: row search, market listing, polls, fos points, …
     searchHandler(deps.search),
+    relayHandler(),
     marketHandler(deps.market),
     pollHandler(),
     pointsHandler(deps.points),

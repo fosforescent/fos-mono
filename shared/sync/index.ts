@@ -25,6 +25,7 @@ export * from './market'
 export * from './destructure'
 
 export * from './handlers'
+export * from './relay'
 export * from './node-provider'
 
 export * from './node-sync'
