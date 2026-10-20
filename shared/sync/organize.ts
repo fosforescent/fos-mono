@@ -18,10 +18,7 @@ import { libraryTypeAt, newId, rootTargetCid, type Scope, type TaskView } from '
 import { addTypedRow, view, type Replica } from './replica'
 import type { Change } from './events'
 
-/** The standard library's plain row type: a row that is its text. */
-export const PLAIN_TYPE = 'lib:type:plain'
-/** The standard library's note type: a Markdown body (and open child rows). Captures are kept as notes. */
-export const NOTE_TYPE = 'lib:type:note'
+import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
 /** The library row types a plan may name, with what the model is told each is for. */
 export const ORGANIZE_TYPES: Record<string, string> = {
   [PLAIN_TYPE]: 'a short row: one point, task, decision, question or fact (the default)',

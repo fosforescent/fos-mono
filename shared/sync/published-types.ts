@@ -3,6 +3,9 @@
  * them). A row's type is the left node of its edge; every pinned version of a library type shares its id. No imports,
  * so the standalone embed script can use it.
  */
+/** The standard library's plain row type: a row that is its text. */
+export const PLAIN_TYPE = 'lib:type:plain'
+/** The standard library's note type: a Markdown body (and open child rows). */
 export const NOTE_TYPE = 'lib:type:note'
 export const TEXT_TYPE = 'lib:type:text'
 export const NUMBER_TYPE = 'lib:type:number'

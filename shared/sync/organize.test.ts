@@ -1,7 +1,8 @@
 import { addRow, addTask, createReplica, ensureHomeContext, headCid, moveNode, view, type Replica } from './replica'
 import { findEdge, HOME_ID, libraryTypeAt, resolveScope, valueContent } from './graph'
 import { dispatchEvent, parseEvent } from './events'
-import { applyOrganizePlan, captureOutline, NOTE_TYPE, PLAIN_TYPE, organizePlanChanges, outlineText, parseOrganizePlan, parseOutline, type OrganizePlan } from './organize'
+import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
+import { applyOrganizePlan, captureOutline, organizePlanChanges, outlineText, parseOrganizePlan, parseOutline, type OrganizePlan } from './organize'
 
 function project(): Replica {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
