@@ -67,6 +67,10 @@ import {
   type PeerPolicy,
   type ResourceType,
   setQueryOptionsAt,
+  addFileReference,
+  setFileReferenceAt,
+  fileReferenceAt,
+  type FileReference,
   setRowKind,
   applyProposalAt,
   shareHome,
@@ -288,7 +292,7 @@ export type AppConfig = {
   pollIntervalMs?: number
   now?: () => number
   /** Project mode (desktop shell in a directory with fos.config.toml). `policy` is the config's `[server]` table, when present. */
-  project?: { dir: string; branch: () => string | null; deviceName?: string; policy?: PeerPolicy | null }
+  project?: { dir: string; branch: () => string | null; deviceName?: string; policy?: PeerPolicy | null; home?: boolean }
   /**
    * Set when this window's replica is a virtual peer's document, not the browser's device root: that device root
    * (read only; null when this browser has none yet), which its rows resolve through.
@@ -494,6 +498,8 @@ export class App {
 
   /** Git branch of the project directory, when running in project mode. */
   projectDirectory(): string | null { return this.config.project?.dir ?? null }
+  /** The directory a project window (`fos <dir>`) was opened on, whose files its root lists (web/src/filesystem.ts); null in the home context. */
+  projectRoot(): string | null { return this.config.project && !this.config.project.home ? this.config.project.dir : null }
 
   currentBranch(): string | null {
     return this.config.project?.branch() ?? null
@@ -3104,6 +3110,15 @@ export class App {
     r = writeNodeValue(r, [...at, id], 'fos:attachment', { name: file.name, type: file.type, data, size: file.size }, this.now())
     this.edit(r)
   }
+  /** A plain row referencing a file in a linked directory (path relative to it, checksum from the desktop; web/src/filesystem.ts). */
+  addFileReference(at: Scope, file: FileReference): string {
+    const id = newId()
+    this.edit(addFileReference(this.state.replica, at, file, this.now(), id))
+    return id
+  }
+  /** Re-pin a reference to the checksum its file has now. */
+  setFileReference(at: Scope, rowId: string, file: FileReference): void { this.edit(setFileReferenceAt(this.state.replica, at, rowId, file, this.now())) }
+  fileReference(path: Scope): FileReference | null { return fileReferenceAt(this.state.replica, path) }
   attachment(at: Scope) { return readNodeValue<{ name: string; type: string; data: string; size: number }>(this.state.replica, at, 'fos:attachment') }
   insertVoiceNote(note: VoiceNote, at: Scope = this.state.view, sourceLabel = 'Transcript'): void {
     if (!view(this.state.replica, at)) throw new Error('The recording location was removed. Voice note could not be added.')

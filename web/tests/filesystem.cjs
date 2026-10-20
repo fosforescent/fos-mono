@@ -11,7 +11,7 @@ buildSync({ stdin: { contents: `export { App } from './src/app'; export { mountU
 const { App, mountUi, createMemoryStorage, createReplica, serializeReplica, filesystemRows, linkFilesystem, filesystemTemplate, filesystemNavigation, renderFilesystemNode, filesystemBack } = require(path.join(dir, 'test.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function main() {
-  const app = { state: { replica: createReplica('local-device'), session: null, view: [] }, refresh() {}, notify(_kind, text) { throw new Error(text) } }
+  const app = { state: { replica: createReplica('local-device'), session: null, view: [] }, projectRoot: () => null, refresh() {}, notify(_kind, text) { throw new Error(text) } }
   const before = JSON.stringify(serializeReplica(app.state.replica))
   let entries = [{ name: 'research.md', path: '/work/research.md', is_directory: false }, { name: '.fos', path: '/work/.fos', is_directory: true }]
   let reads = 0, pending

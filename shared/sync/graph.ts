@@ -286,7 +286,9 @@ export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], r
     if (value) importNodes(store, reachableNodes(outer.store, [value]))
     return value
   }
-  return null
+  // a library seeded before the type existed falls back to the build's definition
+  const seeded = seedTypes(store).find(type => definitionId(type) === typeId)
+  return seeded ? put(store, seeded) : null
 }
 
 /**
@@ -307,6 +309,10 @@ function libraryRowType(store: FosStore, library: string, typeId: string): strin
   const value = valueCidOf(store, row)
   const definition = valueContent(store, value)
   return put(store, currentRowDefinition(store, definition))
+}
+/** Whether `template` (a row edge's left node) is a version of the library type `id`: types are told apart by that node alone. */
+export function isLibraryType(store: FosStore, template: string, id: string): boolean {
+  return store.table.has(template) && definitionId(valueContent(store, template)) === id
 }
 
 /**

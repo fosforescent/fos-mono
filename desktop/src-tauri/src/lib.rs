@@ -19,6 +19,7 @@ mod node_agent {
     pub fn node_agent_stop(_id: String, _state: State<NodeAgents>) -> Result<(), String> { Err(UNAVAILABLE.into()) }
 }
 mod agents;
+mod files;
 // shared with the CLI binary, which uses all of it
 #[allow(dead_code)]
 mod stores;
@@ -65,6 +66,8 @@ struct ProjectInfo {
     dir: String,
     config: String,
     branch: Option<String>,
+    /// Home context (`fos` with no directory): the home directory is not shown as a linked directory.
+    home: bool,
 }
 
 fn git_dir_for(start: &Path) -> Option<PathBuf> {
@@ -106,6 +109,7 @@ fn find_project_from(start: &Path) -> Option<ProjectInfo> {
                 dir: dir.to_string_lossy().to_string(),
                 config,
                 branch: git_branch_for(&dir),
+                home: false,
             });
         }
         if !dir.pop() {
@@ -135,6 +139,7 @@ fn find_project(state: State<AppState>) -> Option<ProjectInfo> {
             dir: state.target_directory.to_string_lossy().to_string(),
             config: format!("[attach]\nserver = {:?}\nname = {:?}\n", server, name),
             branch: None,
+            home: true,
         });
     }
     None
@@ -273,6 +278,13 @@ fn read_node_file(root: String, path: String) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| "Binary or non-UTF-8 file; text preview unavailable".into())
 }
 
+/// The SHA-256 a graph row keeps for a file it references (files.rs): `path` relative to the linked root (or absolute
+/// below it); None when the file is gone. Symbolic links, `..`, `.fos` and `.git` are refused.
+#[tauri::command]
+fn hash_node_file(root: String, path: String) -> Result<Option<files::FileChecksum>, String> {
+    files::hash_in_root(Path::new(&root), &path)
+}
+
 fn get_directory_contents_internal(path: &PathBuf) -> Result<DirectoryContents, String> {
     let entries = fs::read_dir(path)
         .map_err(|e| format!("Failed to read directory: {}", e))?
@@ -319,7 +331,7 @@ pub fn run() {
             local_store,
             read_project_file,
             write_project_file,
-            link_node_directory, list_node_directory, read_node_file,
+            link_node_directory, list_node_directory, read_node_file, hash_node_file,
             node_agent::node_agent_start, node_agent::node_agent_poll, node_agent::node_agent_reply, node_agent::node_agent_stop,
             agents::local_git, agents::validate_agent_repository, agents::agent_clis, agents::agent_start, agents::agent_poll, agents::agent_control,
         ])

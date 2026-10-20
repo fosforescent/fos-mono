@@ -33,7 +33,8 @@ fos [dir] peers     the .fos stores on this machine this one is linked with; `pe
 - `client.rs` - account HTTP (`ureq`): login, connect-token attach with approval polling, device login (`/auth/device/start|poll`), attachment, node requests (`provide_node`, the sync transport), proposal decisions, detach
 - `local_server.rs` - `tiny_http` server: `/mcp` (the shared `fos_*` MCP vocabulary through the core's `mcp` entry point, as the directory's owner), `/p2p/offer|answer` relay, `/status`, `/events?since=` long-poll
 - `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync status approve reject attach login branches`)
-- `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file` for linked directory peers (`web/src/filesystem.ts`); plus the `node_agent::*` and `agents::*` commands
+- `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file`/`hash_node_file` for linked directories (`web/src/filesystem.ts`; a project window lists its own directory at its root, and `find_project` says `home` so the home context does not list `~`); plus the `node_agent::*` and `agents::*` commands
+- `files.rs` - files addressed relative to a linked root: `resolve_in_root` (refuses `..`, paths outside the root, symbolic links, `.fos`/`.git`) and `hash_in_root` (streamed SHA-256 for the checksums file-reference rows keep); compiled into the binary too so `cargo test --bin fos` runs its tests
 - `node_agent.rs` - authenticated loopback MCP relay for "Connect to agent" (`web/src/node-agent.ts`); desktop targets only (`tiny_http` is not built for iOS/Android), the mobile apps compile a stub in `lib.rs` whose commands return an error
 - `agents.rs` - spawns `../agent-runtime` (Claude Agent SDK / Codex SDK runs, CLI launches, local git), validates repositories, and `agent_clis` reports which agent CLIs (`claude`, `codex`) are on PATH so the web app shows them as local peers. The runtime is bundled without the SDKs' optional native binaries (`prepare:agents` uses `--omit=optional`, saving ~700 MB per install); `agent-runtime/executables.mjs` hands each SDK the CLI on PATH instead
 
@@ -105,7 +106,7 @@ The Tauri app reads these environment variables on startup:
 
 ### Input Sources
 - `fos.config.toml` and `.fos/` project state
-- Linked directories (read-only listings and previews)
+- Linked directories (read-only listings, previews and SHA-256 checksums)
 - Agent runtime events (NDJSON from `agent-runtime`)
 
 ### Output Destinations

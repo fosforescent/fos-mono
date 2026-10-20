@@ -34,6 +34,9 @@ mod local_server;
 #[cfg(desktop)]
 mod project;
 mod stores;
+// the GUI's linked-directory checksums (lib.rs); compiled here too so `cargo test --bin fos` covers them
+#[allow(dead_code)]
+mod files;
 #[cfg(desktop)]
 mod workspace;
 

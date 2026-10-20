@@ -919,6 +919,32 @@ implemented.
 `.fos`, `.git`, and symbolic links are excluded. Native folder queries are confined
 to the linked root. Errors remain in the local view and stale responses are discarded.
 
+A desktop window opened on a project (`fos <dir>`, which keeps its state in
+`<dir>/.fos/`) lists that directory at the project's root node without linking it
+(`linkedDirectory` in `web/src/filesystem.ts`: a "Link with directory" binding at the
+node, else a `local-repository` argument at or above it, else the project directory
+at the root). The home context (`fos` with no directory) does not list `~`. Outside
+the desktop shell (web, and mobile, which has no project context) nothing is listed.
+
+**File references.** A file row's **Reference** action (or **Reference this file** in
+an open file's workspace) adds a row of the standard-library type
+`lib:type:file-reference` (`.fos/library.json`) to the hosting graph node: the row
+edge's left node is that type, and its form fields hold `path` (`/`-separated,
+relative to the linked directory), `sha256` and `size` as computed by the desktop
+(`hash_node_file`, `desktop/src-tauri/src/files.rs`: streamed in 64 KB blocks,
+confined to the linked root, refusing `..`, symbolic links, `.fos` and `.git`). A
+row is a reference because its type node is a version of that type
+(`isLibraryType`, any pinned version), never because of other data. The fields are
+ordinary mutable-ref rows, so node exchange (node by node, the fields included),
+merge and copies carry them. The file itself is never stored. A library seeded before
+the type existed resolves it from the build's definition (`libraryTypeAt`). On render, a device resolves the reference
+against the nearest node at or above the row's parent that has a linked directory,
+hashes the file again (results are cached for 5 s; Refresh clears them) and marks the
+reference **current** (with **Open file**), **stale** (with **Update reference**,
+which re-pins the new checksum), or **missing**. A device without that directory
+shows the path and "not available on this device". Dragging a file row onto a node
+is not implemented.
+
 Binding a CLI replica to the node and launching a terminal remain follow-up work.
 
 ### Node-scoped agent connections

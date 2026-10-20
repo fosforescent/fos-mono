@@ -9,8 +9,8 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
  */
 
 import { FosStore } from '../dag-implementation/store'
-import type { FosContextData, FosNodeContent } from '../types'
-import { constructForm, formFields, formTitle, positionFormRows, setFormTitle, type FormInput } from './forms'
+import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
+import { constructForm, formFields, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
 import { definitionRowKind } from './legacy-row-types'
 import { legacyCommentMetadata } from './legacy-comment'
 import {
@@ -35,6 +35,8 @@ import {
   exportReachableContext,
   findChild,
   findEdge,
+  isLibraryType,
+  libraryTypeAt,
   findRowByAlias,
   findNearestRow,
   rowView,
@@ -539,6 +541,51 @@ export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: st
 /** Change a query row's options (market flag, executed stamp). */
 export function setQueryOptionsAt(replica: Replica, at: Scope, queryId: string, patch: Partial<NonNullable<FosNodeContent['data']['query']>>, now: number): Replica {
   return updateTask(replica, at, queryId, now, (row) => (row.data.query ? { ...row, data: { ...row.data, query: { ...row.data.query, ...patch } } } : null))
+}
+
+/** The standard-library row type of rows that reference a file in a linked directory (web/src/filesystem.ts). */
+export const FILE_REFERENCE_TYPE = 'lib:type:file-reference'
+/** Its fields: the `/`-separated path relative to the linked directory, and the SHA-256 and size it was made against. */
+export type FileReference = { path: string; sha256: string; size: number }
+function validFileReference(file: FileReference): boolean {
+  return typeof file?.path === 'string' && !!file.path && !file.path.startsWith('/') && !/^[a-z]:/i.test(file.path) && !file.path.includes('\\') &&
+    file.path.split('/').every(name => name && name !== '.' && name !== '..') && /^[0-9a-f]{64}$/.test(file.sha256) && Number.isSafeInteger(file.size) && file.size >= 0
+}
+/**
+ * A row of the library type `lib:type:file-reference` under `at`: its edge's left node is that type, its values are the
+ * type's form fields (ordinary mutable refs, so node exchange, merge and copies carry them). The file's content never
+ * enters the graph.
+ */
+export function addFileReference(replica: Replica, at: Scope, file: FileReference, now: number, id: string = newId()): Replica {
+  if (!validFileReference(file)) throw new Error('A file reference needs a relative path and a SHA-256 checksum.')
+  const template = libraryTypeAt(replica.store, FILE_REFERENCE_TYPE, at, headCid(replica))
+  if (!template) throw new Error('No standard library above this row has a file reference type.')
+  return addConstructedRow(replica, at, template, { path: file.path, sha256: file.sha256, size: file.size }, now, id)
+}
+/** The file-reference row `rowId` under `at`, by its type (any version of it), with its field values. */
+function fileReferenceRow(replica: Replica, at: Scope, rowId: string): { edge: FosPathElem; node: FosNodeContent; file: FileReference } | null {
+  const parent = resolveScope(replica.store, headCid(replica), at)
+  const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${rowId}`) : null
+  if (!edge || !isLibraryType(replica.store, edge[0], FILE_REFERENCE_TYPE)) return null
+  const node = valueContent(replica.store, identityCid(replica.store, edge))
+  const field = (name: string) => formValueAt(replica.store, node, [name])?.data.scalar?.value
+  const path = field('path'), sha256 = field('sha256'), size = field('size')
+  return typeof path === 'string' && typeof sha256 === 'string' && typeof size === 'number' ? { edge, node, file: { path, sha256, size } } : null
+}
+/** The file the row at `path` references, when it is a file-reference row whose fields are here. */
+export function fileReferenceAt(replica: Replica, path: Scope): FileReference | null {
+  return path.length ? fileReferenceRow(replica, path.slice(0, -1), path.at(-1)!)?.file ?? null : null
+}
+/** Re-pin a file reference to the checksum (and size) its file has now: its fields are rewritten in place. */
+export function setFileReferenceAt(replica: Replica, at: Scope, rowId: string, file: FileReference, now: number): Replica {
+  if (!validFileReference(file)) throw new Error('A file reference needs a relative path and a SHA-256 checksum.')
+  if (!fileReferenceRow(replica, at, rowId)) throw new Error('This row is not a file reference.')
+  const values: Record<string, string | number> = { path: file.path, sha256: file.sha256, size: file.size }
+  return updateTask(replica, at, rowId, now, row => ({ ...row, children: row.children.map(edge => {
+    const value = valueContent(replica.store, identityCid(replica.store, edge)), name = value.data.name?.content
+    if (!name || !(name in values) || !value.data.scalar || value.data.scalar.value === values[name]) return edge
+    return withChildValue(replica.store, edge, { ...value, data: { ...value.data, scalar: { type: value.data.scalar.type, value: values[name]! }, updated: { time: now } } }, now)
+  }) }))
 }
 
 /** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
