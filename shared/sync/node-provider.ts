@@ -1,7 +1,7 @@
-import type { FosDataContent, FosNodesData } from '../types'
+import type { FosDataContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
-  valueContent, readMembers, memberFor, isMemberEdge, memberEntryId, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
+  valueContent, readMembers, memberFor, memberEntryId, isMemberEntryId, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, CAPABILITIES, type ProposalView, type Capability, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 
@@ -13,7 +13,7 @@ export type NodeRequest = {
   peerId: string; scope: Scope; path: Scope; linkId: string; branches?: NodeBranch[]; proposal?: { scope: Scope; id: string }; update?: { base: NodeShape; value: NodeShape }
   /** Templates the requester's rows here are pinned to and it has not received (its reference errors): send their content. */
   templates?: string[]
-  /** Content of templates the provider asked for (`ProvidedNode.wanted`); accepted only for those. */
+  /** Content of templates the provider asked for (`ProvidedNode.wanted`), or of the grants an update's member entry pins; accepted only for those. */
   templateNodes?: FosNodesData
 }
 export type NodeShape = { data: FosDataContent; children: NodeChild[] }
@@ -21,8 +21,13 @@ export type NodeShape = { data: FosDataContent; children: NodeChild[] }
  * One child row: `template` is what it is made from (its row edge's left node: a row type or a template row, pinned by
  * cid), so the type travels as the template and nothing else. `held`: its content is not served through this node (a
  * reference row, whose target has its own attachment, or a node another peer holds: `address` says which).
+ *
+ * Member entries are children too (`template` = the MEMBER primitive, `id` = `fos:peer:<peer>`), listed to the peers
+ * that receive them (`memberEntryVisible`) and synced in their own round like any node. In a member entry, its grants
+ * and offers (`[CAPABILITY|ACCEPTS, x]`, `template` = that primitive) are immutable children `pinned` to the cid of
+ * `x`, whose content travels with the shape (`ProvidedNode.templates`, `NodeRequest.templateNodes`).
  */
-export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true }
+export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true; pinned?: string }
 export type ProvidedNode = {
   peerId: string; linkId: string; remoteLinkId: string; address: NodeAddress
   data: FosDataContent; children: NodeChild[]; mask?: NodeMask; proposals?: ProposalView[]; grants?: Capability[]
@@ -30,7 +35,7 @@ export type ProvidedNode = {
   capabilities?: Capability[]
   /** The account's peers online now (the account server adds it), for the requester's online dots. */
   presence?: string[]
-  /** The requested templates' content (nodes reachable from each). */
+  /** The requested templates' content, and that of the grants a member entry's shape pins (nodes reachable from each). */
   templates?: FosNodesData
   /** Templates this node's children are pinned to that the provider has not received; the requester answers with `templateNodes`. */
   wanted?: string[]
@@ -156,7 +161,8 @@ export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuth
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) throw new NodeAccessError('Attachment unavailable.')
     const member = memberFor(r.store, content(r.store, cid), authority.peerId)
-    if (!member) continue
+    // the owner's devices are the owner: member entries (their own, an audience's) say what others may do
+    if (!member || authority.owner) continue
     grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
     if (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || !grants.some(cap => READING.includes(cap))) throw new NodeAccessError('Parent permissions deny node access.')
   }
@@ -170,15 +176,43 @@ function permitted(r: Replica, cid: string, peer: string, inherited: boolean): b
   return member.capabilities.some(cap => READING.includes(cap) && !member.disabled?.includes(cap))
 }
 
-/** The member entry `id` names on the node `cid`, when the requester may step into it: its own (the owner: any). */
-function memberEntryStep(r: Replica, cid: string, id: string, authority: NodeAuthority): string | null {
-  if (id !== memberEntryId(authority.peerId) && !(authority.owner && id.startsWith(MEMBER_ENTRY_PREFIX))) return null
-  const edge = content(r.store, cid).children.find(e => isMemberEdge(r.store, e) && content(r.store, e[1]).data.alias?.id === id)
-  return edge ? edge[1] : null
+/**
+ * Which member entries of a node a peer receives, as children of that node: the owner (its own devices) all of them,
+ * any other peer only its own (`fos:peer:<itself>`: its grants, its offers, the rows left there for it such as its
+ * relay queue). Everything else about who else is a member stays the owner's.
+ */
+export function memberEntryVisible(id: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>): boolean {
+  return !!authority.owner || id === memberEntryId(authority.peerId)
+}
+
+/** A member entry a peer listed and this side has not loaded: who it names, no grants yet (so it grants nothing). */
+export function unloadedMemberEdge(store: Replica['store'], child: NodeChild): FosPathElem {
+  const ref = { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) }
+  return [store.primitive.memberField.getId(), put(store, { data: { alias: { id: child.id }, peerId: { content: child.id.slice(MEMBER_ENTRY_PREFIX.length) }, ref }, children: [] })]
+}
+
+/** Fields a member entry's shape carries besides the usual ones (who it is, what is switched off). */
+export const MEMBER_ENTRY_FIELDS = new Set(['peerId', 'disabledCapabilities'])
+
+/** The children of the node `cid` (at `path`) as node exchange lists them: its rows, then its member entries (or, in a member entry, its grants). */
+export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> {
+  const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> = []
+  const entry = isMemberEntryId(path.at(-1))
+  for (const edge of value.children) {
+    if (entry && isGrantEdge(r.store, edge)) { out.push({ id: grantChildId(r.store, edge), edge, grant: true }); continue }
+    if (isBookkeepingEdge(r.store, edge) || !isRowEdge(r.store, edge)) continue
+    const id = content(r.store, identityCid(r.store, edge)).data.alias?.id
+    if (id && !isShippedLibrary(r.store, path, edge)) out.push({ id, edge })
+  }
+  if (!entry && !isHandle(content(r.store, cid))) for (const edge of memberEdgesOf(r.store, cid)) {
+    const id = content(r.store, edge[1]).data.alias?.id
+    if (isMemberEntryId(id)) out.push({ id, edge, member: true })
+  }
+  return out
 }
 
 /** One logical node only. No PREV, proposals, reference targets, or descendant values.
- * Scopes are walked through visible row edges, so hashes and aliases are not authority.
+ * Scopes are walked through visible row edges and member entries, so hashes and aliases are not authority.
  */
 export function provideNode(r: Replica, input: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
   const request = parseNodeRequest(input)
@@ -197,21 +231,19 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     }
     // A mask on the attachment also constrains requests made directly to descendants.
     for (const id of request.path) {
-      // A peer's own member entry is its place on the node (what is left there for it, e.g. its relay queue).
-      const entry = memberEntryStep(r, cid, id, authority)
-      if (entry) { cid = entry; path.push(id); continue }
       const mask = nodeLinkMaskAt(r, path, authority.peerId)
       restrictFields(mask)
       if (mask.children && !mask.children.includes(id)) throw new NodeAccessError('Node access denied.')
       const identity = content(r.store, cid)
       if (isHandle(identity)) throw new NodeAccessError('Reference targets require their own attachment.')
-      const edge = valueContent(r.store, cid).children.find(e => isRowEdge(r.store, e) && content(r.store, identityCid(r.store, e)).data.alias?.id === id)
+      // a member entry is a child like a row, for the peers that receive it (`memberEntryVisible`)
+      const edge = exchangedChildren(r, cid, path).find(child => child.id === id && !child.grant && (!child.member || memberEntryVisible(id, authority)))?.edge
       if (!edge) throw new NodeAccessError('Node unavailable.')
       cid = identityCid(r.store, edge)
       path.push(id)
-      const member = memberFor(r.store, content(r.store, cid), authority.peerId)
+      const member = !authority.owner && memberFor(r.store, content(r.store, cid), authority.peerId)
       if (member) grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
-      access = permitted(r, cid, authority.peerId, access)
+      access = authority.owner || permitted(r, cid, authority.peerId, access)
       if (!access) throw new NodeAccessError('Node access denied.')
     }
     const heldByRequester = isPeerReference(content(r.store, cid)) && content(r.store, cid).data.ref?.peer === request.peerId && !!request.update
@@ -219,24 +251,26 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const mask = nodeLinkMaskAt(r, path, authority.peerId)
     restrictFields(mask)
     const value = heldByRequester ? { data: {}, children: [] } : valueContent(r.store, cid)
-    const data = Object.fromEntries(Object.entries(value.data).filter(([key]) => !forbiddenFields.has(key) && (!fields || fields.has(key)))) as FosDataContent
+    const entry = isMemberEntryId(path.at(-1))
+    const data = Object.fromEntries(Object.entries(value.data).filter(([key]) => (!forbiddenFields.has(key) || (entry && MEMBER_ENTRY_FIELDS.has(key))) && (!fields || fields.has(key)))) as FosDataContent
     const children: NodeChild[] = []
-    const pinned = new Set<string>(), wanted = new Set<string>()
-    for (const edge of value.children) {
-      if (isBookkeepingEdge(r.store, edge)) continue
-      if (!isRowEdge(r.store, edge)) continue
-      const childCid = identityCid(r.store, edge), child = content(r.store, childCid), id = child.data.alias?.id
-      if (!id || isShippedLibrary(r.store, path, edge) || (mask.children && !mask.children.includes(id)) || !permitted(r, childCid, authority.peerId, access)) continue
+    const pinned = new Set<string>(), wanted = new Set<string>(), grantNodes: string[] = []
+    for (const { id, edge, member, grant } of heldByRequester ? [] : exchangedChildren(r, cid, path)) {
+      if ((mask.children && !mask.children.includes(id)) || (member && !memberEntryVisible(id, authority))) continue
+      // a grant is pinned by its node's cid; its content goes with the answer (it is small and immutable)
+      if (grant) { grantNodes.push(edge[1]); children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
+      const childCid = identityCid(r.store, edge), child = content(r.store, childCid)
+      if (!authority.owner && !permitted(r, childCid, authority.peerId, access)) continue
       const remote = isPeerReference(child) ? child.data.ref : undefined
       // a reference error is reported as the row it stands for; the provider asks for the template it lacks.
-      // The template belongs to the edge, so rows held by another peer carry it too.
-      const missing = missingTemplateOf(r.store, edge), template = pinnedTemplateOf(r.store, edge)!
-      ;(missing ? wanted : pinned).add(template)
+      // The template belongs to the edge, so rows held by another peer carry it too. A member entry's is MEMBER.
+      const missing = !member && missingTemplateOf(r.store, edge), template = member ? edge[0] : pinnedTemplateOf(r.store, edge)!
+      if (!member) (missing ? wanted : pinned).add(template)
       children.push({ id, ...(isHandle(child) ? { held: true as const } : {}), address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
     }
     // Only templates this node's visible rows are pinned to are served, never an arbitrary cid.
     const served = (request.templates ?? []).filter(cid => pinned.has(cid))
-    const templates = served.length ? reachableNodes(r.store, served) : null
+    const templates = served.length || grantNodes.length ? reachableNodes(r.store, [...served, ...grantNodes]) : null
     const proposals: ProposalView[] = readProposals(r.store, content(r.store, cid))
       .filter(p => authority.owner || grants.includes('edit') || p.peerId === authority.peerId)
       // the owner sees what each submission is called and which rows it adds (ids only: the rows load when opened)
@@ -259,15 +293,23 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   if (node.remoteLinkId !== request.linkId || JSON.stringify(node.address.scope) !== JSON.stringify([...request.scope, ...request.path])) throw new NodeAccessError('Node response does not match the request.')
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) throw new NodeAccessError('The receiving node no longer exists.')
+  // a member entry is not a projection of its own: it syncs in its node's rounds (node-sync.ts `installNodeShape`)
+  if (isMemberEntryId(at.at(-1))) throw new NodeAccessError('A member entry syncs with its node.')
   const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
-  const children = node.children.filter(child => !local.children || local.children.includes(child.id)).map(child => {
+  const listed = node.children.filter(child => (!local.children || local.children.includes(child.id)) && !child.pinned)
+  const memberType = r.store.primitive.memberField.getId()
+  const children = listed.filter(child => child.template !== memberType).map(child => {
     const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
     return pinnedRowEdge(r.store, stub, child.template)
   })
-  // Preserve local grants and masks; the provider cannot replace them with its own. A root keeps its shipped library.
+  // Preserve local grants and masks; the provider cannot replace them with its own (member entries it lists that are
+  // not here arrive unloaded, granting nothing until they sync). A root keeps its shipped library.
   const shipped = valueContent(r.store, cid).children.filter(edge => isShippedLibrary(r.store, at, edge))
-  const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId } }, put(r.store, { data, children: [...shipped, ...children] }), bookkeepingOf(r.store, before)), node.peerId)
+  const kept = bookkeepingOf(r.store, isPeerReference(before) ? { data: {}, children: [] } : before)
+  const known = new Set(kept.filter(e => isMemberEdge(r.store, e)).map(e => content(r.store, e[1]).data.alias?.id))
+  const members = listed.filter(child => child.template === memberType && isMemberEntryId(child.id) && !known.has(child.id)).map(child => unloadedMemberEdge(r.store, child))
+  const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId } }, put(r.store, { data, children: [...shipped, ...children] }), [...kept, ...members]), node.peerId)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), at, () => identity, 'replace'), now)
   r = setNodeLinkMask({ ...r }, at, node.peerId, node.linkId, ownMask, now, request.linkId)
   const endpoint = linkAt(r, at, node.peerId, node.linkId)!, ref = content(r.store, endpoint.cid)
@@ -291,7 +333,7 @@ export async function pullNode(request: NodeRequest, peers: NodeProvider[]): Pro
       if (node.peerId !== peer.id || node.remoteLinkId !== request.linkId || node.address.peerId !== peer.id ||
         JSON.stringify(node.address.scope) !== JSON.stringify([...request.scope, ...request.path])) throw new NodeAccessError('Node response does not match the request.')
       if (!node.data || typeof node.data !== 'object' || Array.isArray(node.data) || typeof node.linkId !== 'string' || !node.linkId || !Array.isArray(node.children) ||
-        node.children.some(child => !child || typeof child.id !== 'string' || !child.id || (child.held !== undefined && child.held !== true) || typeof child.address?.peerId !== 'string' || !child.address.peerId || !validPath(child.address.scope) ||
+        node.children.some(child => !child || typeof child.id !== 'string' || !child.id || (child.held !== undefined && child.held !== true) || (child.pinned !== undefined && !isCid(child.pinned)) || typeof child.address?.peerId !== 'string' || !child.address.peerId || !validPath(child.address.scope) ||
           (child.address.peerId === peer.id && JSON.stringify(child.address.scope) !== JSON.stringify([...node.address.scope, child.id])) ||
           (child.address.peerId !== peer.id && !child.held)) ||
         new Set(node.children.map(child => child.id)).size !== node.children.length) throw new NodeAccessError('Invalid node response.')

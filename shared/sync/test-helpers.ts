@@ -1,7 +1,7 @@
 /** Test helpers. */
 import { LIBRARY_ID, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } from './graph'
 import { view, type Replica } from './replica'
-import { exchangeNode, nodeTreeSync } from './node-sync'
+import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import type { NodeBranch, NodeRequest } from './node-provider'
 
 /** The root view without the root's own shipped library row: what the tests' rows are compared against. */
@@ -34,7 +34,7 @@ export function syncWith(client: Replica, server: Replica, options: SyncOptions 
   let during = options.during
   const scope = invited ?? [], localRoot = client.meta.localScope ?? []
   const authority = { peerId: client.meta.peerId, scope, owner: !invited, proposeOnly: !!invited, capabilities: SERVER_TRANSPORT_CAPABILITIES }
-  const run = nodeTreeSync(client, { peer: client.meta.serverPeerId ?? (invited ? null : server.meta.peerId), scope, remoteRoot: invited ? scope : [...at, ...localRoot], localRoot, branches, push }, () => now)
+  const run = nodeTreeSync(client, { peer: client.meta.serverPeerId ?? (invited ? null : server.meta.peerId), scope, remoteRoot: invited ? scope : [...at, ...localRoot], localRoot, branches, push, above: invited || at.length ? [] : accountContextAbove(client) }, () => now)
   let step = run.next()
   while (!step.done) {
     const request: NodeRequest = step.value.request

@@ -974,6 +974,8 @@ export function rootIsAlias(store: FosStore): boolean {
 }
 
 export const HOME_ID = 'fos:home'
+/** The account server's member on a store root (its offers, the key it publishes): `fos:peer:fos`. */
+export const SERVER_MEMBER = 'fos'
 
 /** Replace a member's offers (ACCEPTS edges) when they differ from `offers`, keeping its grants and switches. */
 export function withMemberOffers(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, consumes: Capability[], offers: Capability[]): FosNodeContent {
@@ -1728,8 +1730,9 @@ export type HostOffers = {
   server?: Capability[]
   integrations?: Record<string, Capability[]>
   /**
-   * Public keys of the host's peers (peer id → raw ed25519 key, base64), published in Home as graph data
-   * (sync/users.ts `publishPeerKey`) so devices check what those peers sign without asking an endpoint.
+   * Public keys of the host's peers (peer id → raw ed25519 key, base64), published as graph data on each peer's
+   * member entry on the store root (sync/users.ts `publishPeerKey`), which node exchange brings to the owner's devices,
+   * so they check what those peers sign without asking an endpoint.
    */
   keys?: Record<string, string>
 }
@@ -1903,6 +1906,38 @@ export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null
 /** A member entry's identity on its node: `fos:peer:<peer id>` (also the path step to it, and to the rows it holds). */
 export const MEMBER_ENTRY_PREFIX = 'fos:peer:'
 export const memberEntryId = (peerId: string): string => `${MEMBER_ENTRY_PREFIX}${peerId}`
+/** Is `id` (a path step, a child id) a member entry's identity? */
+export const isMemberEntryId = (id: string | undefined): id is string => !!id && id.startsWith(MEMBER_ENTRY_PREFIX)
+
+/** The node a node's member edges live on: its identity (a link's ref node), through a selected branch. */
+export function memberHolderCid(store: FosStore, cid: string): string {
+  const node = content(store, cid)
+  const edge = isBranchChoice(store, node) ? branchEdge(store, cid) : null
+  return edge ? memberHolderCid(store, identityCid(store, edge)) : cid
+}
+
+/** The member edges (`[MEMBER, entry]`) of the node `cid`. */
+export function memberEdgesOf(store: FosStore, cid: string): FosPathElem[] {
+  return content(store, memberHolderCid(store, cid)).children.filter((e) => isMemberEdge(store, e))
+}
+
+/**
+ * A member entry's grant or offer: `[CAPABILITY, x]` (the `to` direction) or `[ACCEPTS, x]` (the `from` direction),
+ * where `x` is a capability constructor or a typed handler ref. Immutable: a change is a new edge.
+ */
+export function isGrantEdge(store: FosStore, edge: FosPathElem): boolean {
+  return edge[0] === store.primitive.capabilityNode.getId() || edge[0] === store.primitive.acceptsNode.getId()
+}
+
+/**
+ * How node exchange names a grant edge among its entry's children: its direction and what it is (a handler's alias,
+ * a built-in capability's name, else the target's cid). Never an alias of a row, so a path never steps into one.
+ */
+export function grantChildId(store: FosStore, edge: FosPathElem): string {
+  const direction = edge[0] === store.primitive.acceptsNode.getId() ? 'from' : 'to'
+  const target = content(store, edge[1])
+  return `${direction}:${target.data.alias?.id ?? capabilityOfTarget(store, edge[1]) ?? edge[1]}`
+}
 
 export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
   const unique = [...new Set(capabilities)]
