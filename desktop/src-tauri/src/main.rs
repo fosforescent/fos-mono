@@ -44,7 +44,8 @@ mod workspace;
 #[derive(Parser)]
 #[command(name = "fos")]
 #[command(author = "Fosforescent")]
-#[command(version = "0.1.1")]
+// the crate version (Cargo.toml), kept equal to tauri.conf.json's
+#[command(version)]
 #[command(about = "Fosforescent — tasks that sync across your devices, directories and agents", long_about = None)]
 struct Cli {
     /// Directory to use as context (default: your home directory = your account root)

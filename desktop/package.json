@@ -1,6 +1,6 @@
 {
   "name": "@fosforescent/desktop",
-  "version": "0.1.4",
+  "version": "0.0.1",
   "description": "Fosforescent Desktop and Mobile App",
   "type": "module",
   "scripts": {
