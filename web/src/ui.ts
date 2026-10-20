@@ -2,7 +2,7 @@ import { localGitControls, canVerifySpecifications, openSpecificationVerificatio
 import { openAnalysis } from './analysis'
 import { connectNodeAgent, hostedMcpConnection, localMcpEndpoint, mcpConfig } from './node-agent'
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack } from './filesystem'
-import { AGENT_CLI_NAME, evaluationAgentControl, localRepository, openCliAgent, openSdkAgent, sdkAvailable } from './agents'
+import { AGENT_CLI_NAME, CLAUDE_DESKTOP_PEER, connectClaudeDesktop, disconnectClaudeDesktop, launchAgent, localRepository, openInClaudeDesktop, openInVsCode, runningAgents, stopAgent } from './agents'
 import { GRANTS, type ContextPeer as Peer, type Grant } from './app'
 import { inTauri, openExternal, tauriInvoke } from './project'
 import { parsePastedRows } from './paste'
@@ -236,7 +236,6 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   }
   const toolbar = div('execution-toolbar', '')
   const back = button('icon execution-back', '', () => app.exitExecution()); back.innerHTML = iconSvg('back')!; back.title = 'Back to editing'; back.setAttribute('aria-label', back.title); toolbar.append(back)
-  const delegate = evaluationAgentControl(app); if (delegate) toolbar.append(delegate)
   regions.node.prepend(toolbar)
   if (document.documentElement.requestFullscreen) {
     const fullscreen = button('icon execution-fullscreen', '', () => {
@@ -687,13 +686,9 @@ function constructorOptions(app: App): ConstructorItem[] {
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'peer' || c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
     ...(['search', 'llm', 'market'] as const).filter(cap => app.capabilityAvailable(cap, app.constructorContext()) || app.handlerOffers().some(o => o.capability === cap)).map(cap => ({ id: `action:${cap}`, label: cap === 'llm' ? 'Ask fos' : cap === 'search' ? 'Search' : 'List on the market', icon: cap === 'llm' ? '✦' : cap === 'search' ? 'search' : 'store', output: cap, group: account })),
     ...app.pullPeers().map(p => ({ id: 'pull', label: `Pull / sync from ${p.name}`, icon: 'pull', output: 'tool', group: p.id })),
-    // agent CLIs found on this computer: open the CLI here, or run the SDK against the local checkout
-    ...app.state.localAgents.flatMap(a => [
-      { id: `action:agent-cli:${a.provider}`, label: `Open ${a.name} CLI`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` },
-      ...(sdkAvailable(app, a.provider) ? [{ id: `action:agent-run:${a.provider}`, label: `Run ${a.name}…`, icon: 'agent', output: 'tool', group: `agent-cli:${a.provider}` }] : []),
-      // with the agent and the local MCP server both enabled here, the agent can work on this node through that server
-      ...(app.peerGrants(`agent-cli:${a.provider}`).length && app.peerGrants('mcp:local').length ? [{ id: `action:agent-task:${a.provider}`, label: `Launch ${a.name} to execute this task`, icon: '▶', output: 'tool', group: `agent-cli:${a.provider}` }] : []),
-    ]),
+    // agents on this computer: the CLI opens in a new terminal on this node (with the grants on its panel), Claude Desktop in a new chat
+    ...app.state.localAgents.map(a => ({ id: `action:agent-launch:${a.provider}`, label: `Launch ${a.name} on this task`, icon: '▶', output: 'tool', group: `agent-cli:${a.provider}` })),
+    ...(app.state.claudeDesktop ? [{ id: 'action:agent-app:claude-desktop', label: 'Open in Claude Desktop', icon: '▶', output: 'tool', group: CLAUDE_DESKTOP_PEER }] : []),
     ...[...new Set([...app.triggerKinds(app.constructorContext()), ...app.handlerOffers().filter(o => ['timer', 'cron', 'task-completion', 'request'].includes(o.capability ?? '')).map(o => o.capability as 'timer' | 'cron' | 'task-completion' | 'request')])].map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'Child evaluation' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: kind === 'timer' ? 'hourglass' : kind === 'request' ? 'request' : kind === 'task-completion' ? 'flag' : 'trigger', output: kind, group: 'triggers' }))]
 }
 function constructorState(app: App, item: ConstructorItem) {
@@ -750,7 +745,7 @@ function peerIcon(p: ContextPeer): string {
   if (p.integration) return ({ 'integration:github': '⑂', 'integration:google': 'calendar', 'integration:stripe': 'card', 'integration:phone': 'phone' } as Record<string, string>)[p.id] ?? 'integration'
   if (p.repository) return 'github'
   if (p.mcp) return 'plug'
-  if (p.agentCli) return 'agent'
+  if (p.agentCli || p.agentApp) return 'agent'
   return p.id.startsWith('user:') ? '♙' : 'device'
 }
 /** The constructor panel's tabs: this device first, then every peer of the context; each constructor belongs to the peer that provides it. */
@@ -790,17 +785,12 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (id.startsWith('handler:')) { try { app.insertHandler(id.slice(8), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id.startsWith('peer:')) { workspace(app).peer = id.slice(5); app.refresh(); return } // a sub-peer icon: open its own constructors
-  if (id.startsWith('action:agent-cli:') || id.startsWith('action:agent-run:') || id.startsWith('action:agent-task:')) {
-    const provider = id.slice(id.lastIndexOf(':') + 1) as 'claude' | 'codex', cwd = localRepository(app.state.replica, path) ?? ''
+  if (id.startsWith('action:agent-launch:')) {
+    const provider = id.slice(id.lastIndexOf(':') + 1) as 'claude' | 'codex'
     if (!app.state.localAgents.some(a => a.provider === provider)) { app.notify('error', `${AGENT_CLI_NAME[provider]} is not on this computer's PATH.`); return }
-    if (id.startsWith('action:agent-run:')) { if (!cwd) { app.notify('error', 'Attach a local checkout to this node first; the SDK runs against it.'); return } openSdkAgent(app, provider, cwd); return }
-    if (id.startsWith('action:agent-task:')) {
-      const endpoint = localMcpEndpoint(app)
-      if (!endpoint) { app.notify('error', 'Enable the local MCP server on this node first (its read, write or execute toggle).'); return }
-      openCliAgent(app, provider, cwd, app.currentRow()?.title, false, { autoStart: true, mcp: endpoint }); return
-    }
-    openCliAgent(app, provider, cwd); return
+    void launchAgent(app, provider, { scope: path }); return
   }
+  if (id === 'action:agent-app:claude-desktop') { void openInClaudeDesktop(app, path); return }
   if (id.startsWith('action:')) {
     const cap = id.slice(7) as 'search' | 'llm' | 'market'
     if (!['search','llm','market'].includes(cap) || !app.capabilityAvailable(cap, path)) { app.notify('error', 'This action has no active handler here.'); return }
@@ -1166,7 +1156,21 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
     }
     panel.push(switches)
     if (!grants.length) panel.push(div('muted', p.mcpServer ? 'Disabled: this server accepts no connections for this node until a grant is on.' : `Disabled here: ${p.name} gets nothing on this node until a grant is on.`))
-    if (p.agentCli) panel.push(div('muted', `${p.name} is on this computer's PATH (${p.agentCli.path}).${app.peerGrants('mcp:local').length ? '' : ' Enable the local MCP server too and it can work on this node directly.'}`))
+    if (p.agentCli) {
+      // the launch is the capability's own button: a new terminal on this node, connected to it as this peer
+      const provider = p.agentCli.provider, running = runningAgents(app, provider)
+      panel.push(div('muted', `${p.name} is on this computer's PATH (${p.agentCli.path}). Launch opens it in a new terminal on this node, connected to it as ${p.name} with the grants above: read for notes and rows, write to propose results, execute to see the outstanding tasks.`))
+      const launch = button('secondary small', `Launch ${p.name} on this task`, () => void launchAgent(app, provider)); launch.disabled = !grants.length || !!preview
+      panel.push(launch)
+      if (p.agentCli.vscode) panel.push(button('secondary small', 'Open in VS Code', () => void openInVsCode(app)))
+      if (running.length) panel.push(div('muted', `${running.length} ${p.name} session${running.length === 1 ? '' : 's'} running in a terminal.`), button('secondary small', 'Stop sessions', () => void Promise.all(running.map(l => stopAgent(app, l)))))
+    }
+    if (p.agentApp === 'claude-desktop') {
+      panel.push(div('muted', 'Open starts a new Claude Desktop chat with this task (you send it there). Connect adds this node\'s Fos MCP server to Claude Desktop\'s configuration, with the grants above, after showing what it writes.'))
+      const connect = button('secondary small', 'Connect to Claude Desktop…', () => void connectClaudeDesktop(app))
+      connect.disabled = !grants.length || !!preview || state.session?.kind !== 'user' || !app.isOnline('fos')
+      panel.push(button('secondary small', 'Open in Claude Desktop', () => void openInClaudeDesktop(app)), connect, button('secondary small', 'Remove from Claude Desktop', () => void disconnectClaudeDesktop(app)))
+    }
     if (p.mcpServer?.transport === 'desktop' && grants.length) {
       const endpoint = localMcpEndpoint(app)
       if (endpoint) {
@@ -1281,7 +1285,7 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
     if (task.construction?.name === app.settingKey(key)) box.append(settingControl(key, state, app))
     else box.append(span('muted', 'Owned by another device'))
   }
-  else if (task.construction?.handler && (task.construction.handler.startsWith('agent-cli:') || task.construction.handler.startsWith('mcp:'))) {
+  else if (task.construction?.handler && (task.construction.handler.startsWith('agent-cli:') || task.construction.handler.startsWith('agent-app:') || task.construction.handler.startsWith('mcp:'))) {
     // a sub-peer dropped into a row: pick one of its actions
     const handler = task.construction.handler, peer = app.contextPeers().find(p => p.id === handler)
     box.append(span('constructor-label', `@{${peer?.name ?? handler}}`))
@@ -2620,7 +2624,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     li.style.setProperty('--depth', '0')
     return li
   }
-  const peers = app.contextPeers().filter(p => onlyPeer ? p.id === onlyPeer || (onlyPeer === 'fos' && p.name === 'fos') : mode === 'integrations' ? !!(p.integration || p.mcp || p.repository || p.agentCli) : mode === 'device' ? p.id === state.replica.meta.peerId : !(p.integration || p.mcp || p.repository || p.agentCli) && p.id !== state.replica.meta.peerId)
+  const peers = app.contextPeers().filter(p => onlyPeer ? p.id === onlyPeer || (onlyPeer === 'fos' && p.name === 'fos') : mode === 'integrations' ? !!(p.integration || p.mcp || p.repository || p.agentCli || p.agentApp) : mode === 'device' ? p.id === state.replica.meta.peerId : !(p.integration || p.mcp || p.repository || p.agentCli || p.agentApp) && p.id !== state.replica.meta.peerId)
   const owner = app.canApprove()
   const capTitle: Record<string, string> = {
     read: 'May read the content of the node',
@@ -2679,8 +2683,8 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     const dot = span('presence' + (p.online ? ' online' : ''), '')
     dot.title = p.online ? 'online' : p.isAccount ? 'offline: what it registered shows as offline until it connects again' : 'offline (still a member; its capabilities show as offline)'
     const title = span('title peer-title', '')
-    if (!p.isAccount && !p.integration && !p.mcp && !p.agentCli) title.append(span('muted small', `${p.id.slice(0, 8)} · `))
-    title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp || p.repository || p.agentCli ? p.name : peerLabel(p.id, state)))
+    if (!p.isAccount && !p.integration && !p.mcp && !p.agentCli && !p.agentApp) title.append(span('muted small', `${p.id.slice(0, 8)} · `))
+    title.append(span('peer-name', p.isAccount || p.member ? `@${p.name}` : p.integration || p.mcp || p.repository || p.agentCli || p.agentApp ? p.name : peerLabel(p.id, state)))
     if (p.agentCli) title.append(span('muted small', `${p.agentCli.path} · read-only local peer`))
     if (p.isAccount && !state.session && app.currentRow()?.construction?.peerId === p.id) title.append(span('muted', 'not connected'))
     else if (p.isAccount && !state.session) {

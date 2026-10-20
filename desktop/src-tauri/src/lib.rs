@@ -19,6 +19,7 @@ mod node_agent {
     pub fn node_agent_stop(_id: String, _state: State<NodeAgents>) -> Result<(), String> { Err(UNAVAILABLE.into()) }
 }
 mod agents;
+mod claude_desktop;
 // shared with the CLI binary, which uses all of it
 #[allow(dead_code)]
 mod stores;
@@ -321,7 +322,8 @@ pub fn run() {
             write_project_file,
             link_node_directory, list_node_directory, read_node_file,
             node_agent::node_agent_start, node_agent::node_agent_poll, node_agent::node_agent_reply, node_agent::node_agent_stop,
-            agents::local_git, agents::validate_agent_repository, agents::agent_clis, agents::agent_start, agents::agent_poll, agents::agent_control,
+            agents::local_git, agents::validate_agent_repository, agents::agent_clis, agents::agent_start, agents::agent_poll, agents::agent_control, agents::open_agent_link,
+            claude_desktop::claude_desktop_mcp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -76,7 +76,7 @@ foreign reference targets require a separately authorized attachment.
 **Nodes shared across accounts.** An owner shares a node with another Fos user by
 granting their peer `user:<name>` capabilities on it (the `to @name` chips on the
 peer row: `read`, `edit` = submit and decide proposals, and `execute` = run
-evaluations). The recipient opens the node from the ref in their Home
+evaluations and list the outstanding work; `edit` and `execute` both include reading). The recipient opens the node from the ref in their Home
 (`App.openSharedNode`): `GET /user/data/peer-sync/locate?owner=&id=` answers
 where it lives in the owner's account and what they may do, then the same
 `provide-node` route with `owner` in the body serves it as that account's peer
@@ -923,11 +923,31 @@ Binding a CLI replica to the node and launching a terminal remain follow-up work
 
 ### Node-scoped agent connections
 
-**This device > Connect to agent** starts an authenticated loopback MCP endpoint
-in the desktop app. **Fos server > Connect to agent** creates a scoped peer
-credential for `/user/data/peer-sync/mcp`. Each dialog provides configuration
-to copy into an agent and a disconnect action. The hosted endpoint supports main
-branches only; desktop connections use the selected branch.
+The MCP server sub-peers serve a node: **This device > Local MCP server** is an
+authenticated loopback endpoint in the desktop app, **Fos server > Fos MCP
+server** a scoped peer credential for `/user/data/peer-sync/mcp` ("Create
+credential"). Both expose exactly the tools their Read / Write / Execute grants
+allow. The hosted endpoint supports main branches only; desktop connections use
+the selected branch.
+
+**Launching agents.** Claude Code and Codex (CLIs on PATH) and Claude Desktop are
+local sub-peers of the device (`agent-cli:<provider>`, `agent-app:claude-desktop`);
+their launch buttons are on the peer's own panel. "Launch … on this task" opens
+the CLI in a new terminal on the node (`agent-runtime/cli.mjs`), connected to a
+loopback MCP endpoint that acts as that agent peer with its grants as they are at
+each request (`startPeerMcp`): read for notes and rows, write to propose results,
+execute to see the outstanding work (`fos_outstanding`). Switching every grant
+off ends the connection. Claude Code also offers "Open in VS Code" when VS Code
+has its extension (`vscode://anthropic.claude-code/open?prompt=`, prefilled, not
+sent, and without the node's MCP, so the prompt inlines an outline of the rows).
+Claude Desktop offers "Open in Claude Desktop" (`claude://claude.ai/new?q=`,
+prefilled, not sent) and "Connect to Claude Desktop…", which creates a hosted
+credential for that peer and, after showing exactly what it writes, adds one
+`mcpServers` entry (`npx mcp-remote <url>` with the bearer header from `env`;
+the config file only starts stdio servers) to `claude_desktop_config.json`,
+keeping the other entries and a `.bak` of the old file. A phone user adding a
+task row to a node the agent is attached to makes it outstanding work for the
+agent on its next `fos_outstanding`, hosted or local (after sync).
 
 Both endpoints speak the shared MCP vocabulary (see "The event grammar"): the
 agent is an invited peer at the selected node, so it reads what its grants and
@@ -973,6 +993,7 @@ at which attachment); an event can never widen it.
 |---|---|---|
 | `read` | one node: text, children, branches, pending submissions, declared inputs of a running evaluation, available actions | `fos_read` |
 | `search` | bounded text search below a node | `fos_search` |
+| `outstanding` | open work below a node, the acting peer's own first (`execute`): rows made from the Task type (any pinned version) or a template row that are not done, and rows made from the Allocation type whose requirement is not satisfied; done tasks' subtrees and template definitions are skipped. Items carry `path`, `revision`, `valueRevision`, `blockedBy`, `requirement`, `assigned` | `fos_outstanding` |
 | `submit` | changes against the attachment (`add_task`, `add_note`, `add_plain`, `rename`, `complete`): the owner applies them, anyone else leaves a named proposal | `fos_propose` |
 | `input` | fill one declared hole of an execution: text, confirmation, choice or allocation | `fos_input` |
 | `complete` | evaluate a node: the owner's host runs its handler registry; anyone else leaves an *evaluation request* (below) | `fos_evaluate` |
@@ -1010,13 +1031,10 @@ the owner reviews it by hand. On the requesting side, `requestContinuation` sets
 evaluation runs when the answer arrives: the requested node's committed evaluation,
 or the rejected request.
 
-The desktop evaluation toolbar shows an agent icon when a configured Claude or
-Codex SDK is available. Clicking it starts an evaluation-only loopback MCP server
-and launches that SDK. The connection ends when the run finishes, is cancelled,
-or the user leaves the evaluation or changes accounts. Credentials stay out of
-the graph. Without a linked repository, the desktop uses a scratch Git workspace.
-Hosted SDK spawning is not wired to this toolbar; hosted evaluation MCP clients
-can connect using the endpoints above. Updated hosted routes require deployment.
+Agents work on evaluations through the same MCP tools (`fos_read` shows a running
+evaluation's declared inputs, `fos_input` fills them, `fos_evaluate` completes);
+there is no separate evaluation endpoint or SDK run. Updated hosted routes require
+deployment.
 
 ### Editor, interaction, and analysis
 

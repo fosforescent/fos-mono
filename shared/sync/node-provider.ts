@@ -144,6 +144,8 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
   return { ...r }
 }
 
+/** Grants that include reading the node: read itself, and edit and execute (a peer reads what it changes or runs). */
+const READING: Capability[] = ['read', 'edit', 'execute']
 export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuthority): Capability[] {
   let grants: Capability[] = authority.owner ? [...CAPABILITIES] : []
   for (let i = 0; i <= path.length; i++) {
@@ -152,7 +154,7 @@ export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuth
     const member = memberFor(r.store, content(r.store, cid), authority.peerId)
     if (!member) continue
     grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
-    if (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || (!grants.includes('read') && !grants.includes('edit'))) throw new NodeAccessError('Parent permissions deny node access.')
+    if (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || !grants.some(cap => READING.includes(cap))) throw new NodeAccessError('Parent permissions deny node access.')
   }
   return grants
 }
@@ -161,7 +163,7 @@ function permitted(r: Replica, cid: string, peer: string, inherited: boolean): b
   const member = memberFor(r.store, content(r.store, cid), peer)
   if (!member) return inherited
   if (member.disabled?.includes('read') || member.disabled?.includes('provideNode')) return false
-  return member.capabilities.some(cap => (cap === 'read' || cap === 'edit') && !member.disabled?.includes(cap))
+  return member.capabilities.some(cap => READING.includes(cap) && !member.disabled?.includes(cap))
 }
 
 /** One logical node only. No PREV, proposals, reference targets, or descendant values.

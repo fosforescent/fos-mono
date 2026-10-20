@@ -18,6 +18,7 @@ const tool = (name: string, kind: EventKind, description: string, properties: Re
 export const MCP_TOOLS = [
   tool('fos_read', 'read', 'Read a node: its text, immediate children, branch choices, pending submissions, declared inputs of a running evaluation and the actions available to you. Start at []. Paginate children with offset.', { offset: { type: 'integer', minimum: 0 } }, []),
   tool('fos_search', 'search', 'Search node text inside the attachment (bounded depth-first scan, active branches only). Returns paths for fos_read.', { query: { type: 'string', minLength: 1, maxLength: 200 }, offset: { type: 'integer', minimum: 0, maximum: 5000 } }, ['query']),
+  tool('fos_outstanding', 'outstanding', 'List open work inside the attachment: rows not done yet and requirements not satisfied yet, those assigned to you first, with paths, revision (for fos_propose expected), valueRevision (for fos_evaluate) and what blocks them. Read an item, do the work, then propose the result or complete it. Paginate with offset.', { offset: { type: 'integer', minimum: 0, maximum: 1000 } }, []),
   tool('fos_propose', 'submit', 'Submit changes against the attachment. Read [] first; expected must equal its revision. An owner applies them; anyone else leaves a named proposal for the owner to review. Does not run effects. Batch related edits.', {
     expected: { type: 'string' }, name: { type: 'string', minLength: 1, maxLength: 100 },
     changes: { type: 'array', minItems: 1, maxItems: 50, items: { type: 'object', properties: { path: pathSchema, operation: { enum: ['add_task', 'add_note', 'add_plain', 'rename', 'complete'] }, text: { type: 'string', maxLength: 16000 }, done: { type: 'boolean' } }, required: ['path', 'operation'], additionalProperties: false } },
@@ -34,7 +35,7 @@ export const MCP_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18', 
 
 /** Which grants expose a tool to a non-owner (any one of them). Owners see everything. */
 const TOOL_GRANTS: Record<string, Capability[]> = {
-  fos_read: ['read', 'edit'], fos_search: ['read', 'edit'], fos_propose: ['edit'], fos_input: ['edit'],
+  fos_read: ['read', 'edit', 'execute'], fos_search: ['read', 'edit', 'execute'], fos_outstanding: ['execute'], fos_propose: ['edit'], fos_input: ['edit'],
   fos_evaluate: ['edit', 'execute'], fos_decide: ['edit'], fos_create_branch: [], fos_invite: [],
 }
 /** The tools a credential may call: all of them for an owner, otherwise those its grants on the attachment allow (none when nothing is granted). */

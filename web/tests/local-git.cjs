@@ -45,8 +45,8 @@ async function main(){
  const launch=[...document.querySelectorAll('button')].find(button=>button.textContent==='Verify with Codex')
  assert(launch,'verification action offers an explicit agent choice')
  launch.click(); await new Promise(setImmediate)
- assert.equal(launched.provider,'codex');assert.equal(launched.cli,true);assert.equal(launched.verify,true)
- assert(!launched.evaluation,'verification receives read-only MCP context')
+ assert.equal(launched.provider,'codex');assert.equal(launched.verify,true)
+ assert(!launched.mcp,'verification receives read-only snapshot context, not the node MCP')
  assert(launched.prompt.includes(snapshot.head));assert(launched.context.nodes.some(node=>node.text==='Merged feature'))
  console.log('PASS: Git peer projects specs and queues manual verification without launching agents')
 }

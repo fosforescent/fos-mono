@@ -1,23 +1,18 @@
 # Desktop coding agents
 
-In the desktop node constructor menu, select **Repository → Filesystem Git repository**, and supply an existing checkout path. The native bridge validates it with Git and records the canonical working-tree root as an ordinary named `repo` argument on a filesystem peer row. The binding applies to descendants on the same device. A GitHub repository node also offers **Attach local checkout**; it retains its GitHub arguments.
+Claude Code and Codex appear as *local peers* of the device when their CLI is on this computer's PATH (`agent_clis`, checked at startup; a filesystem query, never a graph row), and Claude Desktop does when it is set up (its config directory exists). They nest under the **This device** tab of the constructor panel; their Read / Write / Execute toggles and the node's child and field masks apply like any peer's.
 
-Open a task under that repository, select **Actions**, and choose **Run Claude** or **Run Codex**. Enter the task prompt and press Start. Each run uses the current Git checkout; choosing a Fos branch does not check out a Git branch. Review and commit the resulting files using Git.
+## Launching on a node
 
-Requirements:
+The launch is a button on the agent's own panel. **Launch Claude Code on this task** (or Codex) opens the installed CLI in a new, visible terminal (PowerShell on Windows, Terminal on macOS, `x-terminal-emulator` elsewhere) with the node's text as its prompt. The CLI uses its own login and approval prompts; no model SDK is loaded and no account credentials are copied into Fos. Install the CLI separately, sign in with its normal flow, and make sure it is on the desktop app's PATH.
 
-- Node.js **20 or later** and Git on the desktop process's PATH.
-- Codex: native Codex sign-in (`codex login`) or `OPENAI_API_KEY` in the native environment.
-- Claude: `ANTHROPIC_API_KEY`, or the SDK's Bedrock/Vertex environment configuration. This integration does not offer consumer Claude sign-in.
-- Run **Check agent integrations** after changing configuration. The check reports missing SDK installations and credentials separately; it does not make a model request or validate credentials with the provider. Relaunch the desktop app if its environment changed. Keys are never stored in Fos nodes or sent to the webview.
+The terminal is connected to an authenticated loopback MCP endpoint for that node (`startPeerMcp` in `web/src/node-agent.ts`, relayed by `node_agent.rs`). It acts as the agent peer (`agent-cli:<provider>`) with the grants toggled on its panel *at each request*: read for notes and rows (`fos_read`, `fos_search`), write to propose results (`fos_propose`, reviewed like any proposal), execute to see the outstanding work (`fos_outstanding`: open tasks and unmet requirements in the node, its own first) and evaluate. Switching every grant off, changing the data session, or **Stop sessions** ends the connection. The terminal opens in the node's local checkout when one is attached, otherwise in a scratch directory under the app cache.
 
-`npm run prepare:agents` in `desktop` installs the pinned SDK dependencies without their optional native packages (`--omit=optional`): the Claude Code and Codex binaries each weigh hundreds of megabytes, so the bundle leaves them out and `executables.mjs` points each SDK at the `claude` or `codex` CLI already on PATH (`pathToClaudeCodeExecutable`, `codexPathOverride`; npm `.cmd` shims are unwrapped to what they run). A plain `npm install` in `agent-runtime` still brings the native packages, which the SDKs then use on their own. Desktop dev/build hooks run it automatically; release resources include the runtime and dependencies.
+**Open in VS Code** (Claude Code, when `code` is on PATH and VS Code has the `anthropic.claude-code` extension) opens a Claude Code tab with the prompt prefilled, not sent (`vscode://anthropic.claude-code/open?prompt=`, see [the extension docs](https://code.claude.com/docs/en/vs-code)). That tab cannot be handed an MCP connection, so the prompt inlines an outline of the node's rows. The Codex extension has no documented prompt link, so Codex launches in a terminal only.
 
-Claude Code and Codex appear as *local peers* of the device when their CLI is on this computer's PATH (`agent_clis`, checked at startup; a filesystem query, never a graph row). They nest under the **This device** tab of the constructor panel, read-only, and the node's child and field masks apply to them like any peer. Native SDK availability, plus an inherited local repository argument, decides whether a **Run …** action joins the **Open … CLI** action in that peer's constructors.
+**Open in Claude Desktop** starts a new chat with the prompt prefilled, not sent (`claude://claude.ai/new?q=`, [Claude Desktop deep links](https://support.claude.com/en/articles/14729294-open-claude-desktop-with-a-link)); if the link fails the prompt goes to the clipboard. **Connect to Claude Desktop…** (signed in, a grant on) creates a hosted credential for the Claude Desktop peer, previews the change and on confirmation adds one entry to `claude_desktop_config.json` (`claude_desktop.rs`). Claude Desktop's config file only starts local (stdio) servers, so the entry runs `npx -y mcp-remote <hosted url> --header Authorization:${FOS_AUTH_HEADER}` with the bearer credential in its `env`; other entries are kept and the previous file is saved as `.bak`. Restart Claude Desktop to load it; **Remove from Claude Desktop** deletes the entry and revokes the credential.
 
-Each launch creates a private loopback HTTP MCP endpoint with a random bearer token. It exposes `fos_read` and `fos_search` over a **read-only snapshot** of the spawning node's active subtree, with paths relative to that node. Linked values, peer constructors, sibling tasks, and inactive alternatives are excluded. It does not expose the account or the filesystem through MCP. Built-in SDK tools separately operate on the checkout. The snapshot is limited to 5,000 nodes / 64 levels / 2 MB; launch from a narrower task if needed.
-
-Claude tool approval requests appear in the launch dialog with Allow/Deny controls. Project permission settings are not loaded. Codex runs with workspace-write sandboxing, network disabled, and approval policy `never`: actions that require escalation fail instead of bypassing sandboxing. Neither provider is configured to bypass permissions. Cancel aborts the SDK; changing the active data session also cancels the run. Output stays in the dialog, not in synced nodes. This version does not mutate Fos tasks over MCP or automatically mark tasks complete.
+Requirements: Node.js **20 or later** on the desktop process's PATH (the runtime and `mcp-remote` run on it), and Git for repository features.
 
 Validation:
 
@@ -26,13 +21,11 @@ cd desktop/agent-runtime
 npm test
 ```
 
-The HTTP MCP test binds an ephemeral localhost port. Web `tests/agents.cjs` checks inherited repository bindings, device isolation, and subtree snapshots. No model API calls are made by these tests.
+The HTTP MCP test binds an ephemeral localhost port. Web `tests/agent-peers.cjs` checks discovery, the panel launch, the grants the endpoint dispatches with and the app links. No model API calls are made by these tests.
 
-SDK references: [Codex](https://developers.openai.com/codex/sdk/), [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk).
+## Feature verification and local Git peers
 
-## Interactive CLI agents and local Git peers
-
-The **Open Claude Code CLI** and **Open Codex CLI** constructor actions (on the agent peer) launch the installed command in a visible terminal. These launch modes use the CLI's own login and approval prompts; they do not use either model SDK or copy account credentials into Fos. Install the CLI separately, sign in using its normal flow, and ensure it is on the desktop app's PATH. A directory can be chosen without attaching a Git repository. The terminal gets a temporary, authenticated, read-only Fos MCP snapshot of the selected subtree. CLI filesystem tools separately operate in the chosen directory. Close/cancel the run to revoke that MCP endpoint. The optional Claude Chrome checkbox uses the installed CLI's Chrome integration; it does not install or authorize the browser extension.
+Feature verification launches the CLI the same way but with a temporary, authenticated, read-only MCP snapshot of the selected subtree (`context.mjs`, limited to 5,000 nodes / 64 levels / 2 MB) instead of the node's MCP. The optional Claude Chrome checkbox uses the installed CLI's Chrome integration; it does not install or authorize the browser extension.
 
 Attaching a checkout (or its `.git` path) adds a device-local **Local Git** peer with the `repo` capability. Its controls list, create, switch, and merge local branches. Commit or stash changes before branch operations. Local peers do not manufacture hosted pull requests; those remain a hosted repository capability.
 
@@ -40,9 +33,4 @@ Add **Feature specification** from the existing constructor icon menu. Specifica
 
 While the linked repository is open, the peer watches for merges; it also remembers the last observed commit locally to detect intervening merges on reopening. A detected merge creates one **Verify specifications after merge** task per commit, never an automatic agent run. The existing constructor menu includes **Verify specifications**. Selecting **Verify with Claude Code** or **Verify with Codex** immediately launches the verification CLI; there is no second Start step. The repository controls offer the same action, which prepares a prompt for Claude Code, Codex, or an external agent such as Claude Desktop. The checkout must be committed and clean. Configured browser/MCP tools stay under that agent's control; unavailable tools should produce `blocked` results.
 
-Paste the agent's JSON report into the verification dialog to record results. Reports must cover every specification and still match the commit and specification snapshot. Failed and blocked checks create issue task rows with evidence. These are recorded agent reports, not an independent certification that the application is correct. An external agent must be launched manually; Fos does not automate the Claude Desktop UI.
-
-
-## Node MCP launches
-
-A request with `mcp: { url, token }` points the agent at the node's own local MCP server (the `Local MCP server` sub-peer of the device in the web UI). The endpoint must be an authenticated loopback URL. The tools the agent sees are exactly the read / write / execute grants toggled on that peer; nothing is snapshotted and no evaluation endpoint is involved. The web launches this from the agent sub-peer's "Launch … to execute this task" action when both the agent and the local MCP server are enabled.
+Paste the agent's JSON report into the verification dialog to record results. Reports must cover every specification and still match the commit and specification snapshot. Failed and blocked checks create issue task rows with evidence. These are recorded agent reports, not an independent certification that the application is correct. Fos does not automate the Claude Desktop UI beyond opening a prefilled chat.
