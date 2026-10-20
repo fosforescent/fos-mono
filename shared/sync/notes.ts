@@ -10,6 +10,9 @@
  */
 
 import type { TaskView } from './graph'
+import { legacyTextPresentation } from './legacy-row-types'
+
+const isMarkdown = (row: TaskView) => (row.text ?? legacyTextPresentation(row.kind))?.mediaType === 'text/markdown'
 
 export type NoteVar = { value: string | string[]; source: 'child' | 'frontmatter' | 'ref' }
 export type NoteContext = { body: string; vars: Record<string, NoteVar>; frontmatter: Record<string, string> }
@@ -34,7 +37,7 @@ export function keyValueOf(title: string): { key: string; value: string } | null
 }
 
 function valueOfRow(row: TaskView, subRows: TaskView[]): string | string[] {
-  if (row.kind === 'note') return row.title
+  if (isMarkdown(row)) return row.title
   if (subRows.length) return subRows.map((r) => r.title)
   const kv = keyValueOf(row.title)
   return kv ? kv.value : row.title
@@ -49,12 +52,12 @@ export function noteContext(body: string, children: NoteChild[]): NoteContext {
     if (row.kind === 'ref') {
       const t = child.refTarget
       if (!t) continue
-      const kv = t.row.kind !== 'note' ? keyValueOf(t.row.title) : null
+      const kv = !isMarkdown(t.row) ? keyValueOf(t.row.title) : null
       const key = kv ? kv.key : firstLine(t.row.title)
       if (key) vars[key] = { value: kv ? kv.value : valueOfRow(t.row, t.subRows), source: 'ref' }
       continue
     }
-    const kv = row.kind !== 'note' ? keyValueOf(row.title) : null
+    const kv = !isMarkdown(row) ? keyValueOf(row.title) : null
     if (kv && !subRows.length) { vars[kv.key] = { value: kv.value, source: 'child' }; continue }
     const key = kv ? kv.key : firstLine(row.title)
     if (key) vars[key] = { value: subRows.length ? subRows.map((r) => r.title) : valueOfRow(row, subRows), source: 'child' }

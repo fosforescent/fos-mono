@@ -41,6 +41,11 @@ test('rows are collected with paths and market inheritance; supplies and referen
   expect(rows.map((x) => [x.aliasId, x.market, x.path.join('/')])).toEqual([['o', true, ''], ['s', true, 'o'], ['g', false, ''], ['q', false, 'g']])
 })
 
+test('constructed comment titles are indexed from their graph fields', () => {
+  const r = addRow(createReplica('a'), [], 'comment', 'A searchable comment', 1, { id: 'message' })
+  expect(collectRows(r.store).find(row => row.aliasId === 'message')).toMatchObject({ kind: 'plain', title: 'A searchable comment', text: 'A searchable comment' })
+})
+
 test('indexing embeds changed rows only, removes vanished rows; search ranks own rows and market rows', async () => {
   const prisma = fakePrisma()
   let alice = createReplica('a')

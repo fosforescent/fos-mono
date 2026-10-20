@@ -1,6 +1,7 @@
 // Bundle shared/sync/embed.ts into desktop/src-tauri/js/fos-core.js (the sync core the fos binary embeds).
 // esbuild is resolved from the workspace root first, then from web/, so a checkout where only `web` has run
 // `npm install` can still build the core (the Tauri hooks and the release workflows call this).
+require('./compile-library.cjs').compile()
 const path = require('node:path')
 const root = path.resolve(__dirname, '..')
 let esbuild

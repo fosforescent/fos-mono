@@ -1,0 +1,3202 @@
+{
+  "nodes": {
+    "v4-04c7ef36ba0f36c23c572ccf15564ff7b0316e67ec0ba2adf48c4c0767177d73": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-07e09e769ebfc9f4b5960c2c2e18e6660b18d53c07b704c3c864f91b3bb742da": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:note:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-0c033906203a4f0f339fe686d4cafba274006f2481772b293c057fb993ec5003": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-0cb1536f2aee4d43366429cb4168d4527ed6d853d611a8c53ad3fbb36673b712": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:tool"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "tool",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Ran it by hand"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-0e3d3ae2a6ba3a3a0e657e0553e0c4a21c5917e1fcc2da8a31b6c9801a40bf8c": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-117ed8a26370be0471b36a3982ddd96a5c99ad428a7b45f87b5a427d8d573817": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-0e3d3ae2a6ba3a3a0e657e0553e0c4a21c5917e1fcc2da8a31b6c9801a40bf8c"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-3d4fe7c892f9ed78d7eeba507524bc72aed40e0df404042684f934cc4b1c827f"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-73d8dfe37e32c01b9eca1288f5e90d2b0bb051051557f8247d91b745cf831d56"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-3a52b86e6f632850354dd0dcd8010b253aa5961b25258e86ccb4211d7a0f996b"
+        ],
+        [
+          "v4-2be7d2c8640b75c78d61cf65f312c3d580f6481619667d53e8191c0552199efe",
+          "v4-599eaf6afd14a165b0a580efe22ee0c1e9d9504e108fe298be6aa2d7e50eff4c"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-95a72213c2f270fe9a146e8168df0aa9ee4245176075ba34353ccd00770e96ec"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-d75f737f4ff67b1a82da52f7cb6b2e342faa6fd6a7b59154ab68fc78580f474e"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-e218f10f6a3b1fb2422a293c11362caad20212ffb3f3855bffb62cc6e4cf67e3"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-4714120a4518294d84b9270b55184a7d6a81bbf3ef90bc4104545610820fa3a3"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-8a4c104e45d6d878636c631cd622db1d5b0b44661637592ffaad4edfe2207d02"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-725a50c3c768ea1602de0766a66f409ea1bbce95357ad292b9e619221ae3e5d5"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-40ba58d8d07669acd3c04863827ef2bf5ae89310057872ad54e82b974d3aad88"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-5f8d417f75f0e3864af7e2b02ecefe22a1a304812d6319ce4469efbfcfe74a66"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-fa61678276cd732277bd9d460e21d9019c2040317d9c57765cfc0b757f271d55"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-1edd1f6645322952103c802883c7e97df67d235daf64af0d50d0c5d96b9f4dd9"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-0cb1536f2aee4d43366429cb4168d4527ed6d853d611a8c53ad3fbb36673b712"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-72b8a9a9b3acc042cc5fba1820e5345304782a4ef4067467f646ce1ebb563fba"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:manual"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Manual handlers"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-11b64677d95bb40cce89c89e883d800918003bb7dd75138ab0aac8581e9c1681": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-b84cfebbb526b52ff04502d2717ee4575a1c0386ce91ddbbbb63d8d77256cfe7"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-153934afa3fbd1a45bf8b75e38606014bb4bb74295d6b4257e525449f26138c9": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:device-root:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-17935fb5bf998371f01080a96b0860d157f1e63a56a01432accce9914907c335": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:meet:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-17fb1052001d5286c67689be2741c84e44869d16687b46adb19d6e2b8e3efb28": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:task:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-1861d595bf5ac32b09f0561f32743b6f61be83d15991d661ed49111464abfd0a": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:body:text"
+        },
+        "description": {
+          "content": "Body"
+        },
+        "parameter": {
+          "from": [
+            "text"
+          ],
+          "name": "body"
+        }
+      }
+    },
+    "v4-192b523db5fcf5d19aab88ba1deea48933d14aabad897e999020c604ae45e6d2": {
+      "children": [
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-1a23ce9dfc90ba16d97626a9a74f9b20c7729121372e66eb31edfaa63d010d44"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-1953e88880e6aba4b44a999497177b3803ba613803ee93f8ae52198ee8950384"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-f1e972f08df4bb1685e301dfc457b9fefbd06b069bf2561468321ced616e0212"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-87b29ca76de81a2bfdafa21bdd0c417ebcb57a449a277dd953e02de9aaea6d95"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-4478bdb66d288bba88c12fcf90cdcd04be030f33d63a2e094340d8179d63cde6"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-9a52cd7a4deab9946df9814dc2e381cbe8dd715c72ee6b427caa25c56dd9f1de"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-bc5457fc2100210c1a227a66968946cca40fad187ae614f943b7307997701dc1"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-c7c77bc8908c663fd1438d41f7ef9237021063d80a826a2638fbe1dee9ea1137"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-c97f50e610b83dc96d18b35ec283362a045bb2cfeae89b352ee5c1e6a5c44d87"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-3043cff501afbb7560cead93ff182ac160a21d6332ac1c37d26d67f08dcd8a0f"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-d3fbe8bb6e364d75eec3df5adae49e864beb3d0566e093d55201cb8079126369"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-ec43ccf82c6cf89b85fcde69ef26430096ac5e9195ba52a0306ed26506c9cf14"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-11b64677d95bb40cce89c89e883d800918003bb7dd75138ab0aac8581e9c1681"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-bed1e6b8b85addfbcde7b3b5cb02a729f4b0535ef01dbdf3f63a480797f466c6"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-b1acf73917ee7f29466519afc9b51c53a53ad1ee24896b838142b2ce1a137b69"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-db948cb4da6e0cb3aa832b9172a64bdfe18396bb162a3cf981a5eac8ef1e313a"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-650c2103798690ad0f1a09c65ac9b95cb3be7172496df3fe3bc2eb8c4bc0f104"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-9a88478b68fd4a3fddc25eacf1cb1babeba1e101fb284a8795e364d80d3b10f3"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:types"
+        },
+        "description": {
+          "content": "Row types"
+        }
+      }
+    },
+    "v4-1953e88880e6aba4b44a999497177b3803ba613803ee93f8ae52198ee8950384": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:plain"
+        }
+      }
+    },
+    "v4-1a23ce9dfc90ba16d97626a9a74f9b20c7729121372e66eb31edfaa63d010d44": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-3df79304442a0c2de344f95f5e2ba13ad603fb4c5bb1dc462233bbed7cc661dc"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:task"
+        }
+      }
+    },
+    "v4-1db586bcb8d4143f77b4ae3aa7c4864718169ae23e6820f78e365ef71014720b": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:readme"
+        },
+        "description": {
+          "content": "# Standard library\n\nTemplates every Fos account can use, offline: write `` [ ] `Plan a trip` `` in any node to start one. Edit them here to propose a change; members vote on proposals and the library merges what enough of them approve."
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-1edd1f6645322952103c802883c7e97df67d235daf64af0d50d0c5d96b9f4dd9": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:search"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "search",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Searched by hand"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-207cd3fa98c8b0f2980e54ef08087c13a70c27ab9827bad5745cb2237dfba625": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:contact"
+        },
+        "description": {
+          "content": "Billing contact: name <email>"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-22369dc80093b1b694f10b6ee84830d653c044393f0a51f3e3de7acb9d08c7d9": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:contact:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-2519fd083080b914295455126a87e67117403da4f6f46683c29c45cbaf64df3d": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:contact:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-26f5a97ae9369532fc6d511d1ad2069a2dcfdb7be58588a54bafb08b04748194": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:poll:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-27e8bd34c0af2473c44bfafbd934e8f8e120782eef7a5b68d68d219d3580c1ec": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-ff2453aa0b9e8d82b24ca7599fe87c908f62100163d14bc1b56211dc0424b453"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-8460270e7c5182247f7a0a706ea08b3eb0342bfa939e00b70a4bef1c7f96bb72"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-773bd63261cb52adc0c37b4557608c9d527a00ae6878452f0a169c23e11e1770"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-4a740632188d3eeed1ea0be100205452b1fbd1b965a238470b5af8611f597087"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:home"
+        },
+        "behavior": {
+          "content": "builtin:home"
+        },
+        "description": {
+          "content": "Home"
+        }
+      }
+    },
+    "v4-286f6e51b391c1322f1ac4756d81ac3773794b791b02a868f511a3430a2b1719": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-299eeaee324b02f2f87b8c71848e2661ebabec2c8e1959a281638dbe1eb8e833": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:plain:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-2b2de7254d643952b8d53a8104e20d49b4ba0c8157523a77f5b60f1f91016cad": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:lodging"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "task",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Book lodging"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-2b6d09c5f4b56f58c600a9ef9f8fe65f6e6a7c03c838edb7ace036cced2196a3": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:comment:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-2b865ba318f2dc4c3e6badca9538ce7e156aa2466c2bb2f178a97db8d3018e94": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-2bac01a88e2ac54ca042703074eebd1766e5df9debf4ed00ce85e6f7c002dc6f": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-87d0e187af07be31dfbab75716d13f3f060997830f9943baf407fd789f8b7467"
+        ],
+        [
+          "v4-8d4a8cc168e126a51181918252e724363b7537f3c517420b2404b92c700b8c12",
+          "v4-56c13f1226c79075118d1d354616783cc5f219dbde7b9892fab5c037d2128d3a"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:library:fos:library"
+        },
+        "name": {
+          "content": "fos:library"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-2be7d2c8640b75c78d61cf65f312c3d580f6481619667d53e8191c0552199efe": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-310dd7733fdaa0a1801f3e53759490739372013720be2232a99436db64fa2e5a"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-07e09e769ebfc9f4b5960c2c2e18e6660b18d53c07b704c3c864f91b3bb742da"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-f04076f1e0737e717d08705d5d42611148ec40ed01d4ec631dddbd2b27c1fd35"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-74363235e19725b2e95eff21e368f8bb7623fbbbe114a92a1f0e78eed1b99809"
+        ]
+      ],
+      "data": {
+        "behavior": {
+          "content": "builtin:note"
+        },
+        "description": {
+          "content": "Note"
+        }
+      }
+    },
+    "v4-2c98624f408b3eb6e69f86bb1b4a17fc336ab376105ca91a7b08938625c2e03e": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:send"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "task",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Send the invoice"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-2cd7a65cd39679ab4f314b5d6dcbc4e2ded5359104f96ae8f7b1c396db849558": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-2e1edc3f2ef4a988cb0e57d0441e1ff8a8b004c5eb62f5fe335fae8160a77d43": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:paid-task:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-2e942bb1871740f6e395fce5a812b28f68d773c3491a78cdd4ef28adf58cde02": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:template:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-3043cff501afbb7560cead93ff182ac160a21d6332ac1c37d26d67f08dcd8a0f": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:pattern"
+        }
+      }
+    },
+    "v4-310dd7733fdaa0a1801f3e53759490739372013720be2232a99436db64fa2e5a": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:note:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-3824debbf7f18800a758b2b2e607aa051b322e1c6bda4f2214f60f4961fcb7e4": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:transport"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "task",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Book transport"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-3a0dc70375ba3c235633e7eac9dd3935a330ac8324942b4d96e52ba5b253363a": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:query:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-3a1d9c742a6b692030d6810372e8a2ca5f8ecb2fa454ee150b91b60df41f5b39": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:paid-task:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-3a52b86e6f632850354dd0dcd8010b253aa5961b25258e86ccb4211d7a0f996b": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-3b7cd4ac58889786d6e01959b3f3c7b67ce0bf06735287b82fea59d481774050": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:id:id"
+        },
+        "description": {
+          "content": "Id"
+        },
+        "parameter": {
+          "name": "id"
+        }
+      }
+    },
+    "v4-3d4fe7c892f9ed78d7eeba507524bc72aed40e0df404042684f934cc4b1c827f": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-3df79304442a0c2de344f95f5e2ba13ad603fb4c5bb1dc462233bbed7cc661dc": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-afbed027e74b549c2bc9b163a022b2cf23b5bf7a1b42f75714b4d47650f70251"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-17fb1052001d5286c67689be2741c84e44869d16687b46adb19d6e2b8e3efb28"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-d9adab2a72d3c881c1763089b8a1ce3bb80fd3ee8e671d1018fe7de8073b4086"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-a56fb5560369b32bc4bccf57100d98a9314ee98ea1fa1e0210960b6ff2de07f9"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:task"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Task"
+        }
+      }
+    },
+    "v4-3f2ef15b63b6b969848cf41aa6c94354bf3bd160bad874b32bc94993c2641936": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-4054d862263bf6b2f847ed756501109854cae543e1d6b6ba1e9d127c39c7130b": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:name:name"
+        },
+        "description": {
+          "content": "Name"
+        },
+        "parameter": {
+          "name": "name"
+        }
+      }
+    },
+    "v4-40ba58d8d07669acd3c04863827ef2bf5ae89310057872ad54e82b974d3aad88": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:mail"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "mail",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Sent it myself"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-41377135b1245b80135d9bf954c580ca6ae68a230562a51c58acf1494200008f": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:amount"
+        },
+        "allocation": {
+          "amount": -100,
+          "capability": "allocation",
+          "resource": "",
+          "type": "account",
+          "unit": "usd"
+        },
+        "description": {
+          "content": "Amount due"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-4439f608e07f5d75947c335036c4b575dcf4ff4e9b4ca04e40082b12c8fb85d5": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:research:question"
+        },
+        "description": {
+          "content": "Question: …"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-4478bdb66d288bba88c12fcf90cdcd04be030f33d63a2e094340d8179d63cde6": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-8655ed1a2f919aebe9991a363eb722fbb75fdda325d14c29c941e693813ebd2e"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref"
+        }
+      }
+    },
+    "v4-45753f9d37e1be92b2c3af967ca67b4f07ffbba7b51fe9f60ae1048892ac0039": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:plain:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-461a39434f70a2ad9ff7c3fb2280943f0cabd1dc3c9776a142b1edb0aa651ccb": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-4714120a4518294d84b9270b55184a7d6a81bbf3ef90bc4104545610820fa3a3": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:things"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Set the items aside by hand"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-47d7cc99438bab8048c49b4769015b1618eda15bc033c17b19a4e0638ead6438": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:paid-task:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-4a473f5b49618cfb841811f2102daf16e234c97536d0b006f007402dafa2c3dd": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-4a740632188d3eeed1ea0be100205452b1fbd1b965a238470b5af8611f597087": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:home:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-4b4cc9535c8e15aaaf98361f91e2c7562c7075232d63e89b9916d52af3efe0e8": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:contact:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-4c55eee114460f0005a80e98aa06d9e2d419f8c497350f7ac58b54b057020a5d": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-22369dc80093b1b694f10b6ee84830d653c044393f0a51f3e3de7acb9d08c7d9"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-962b4bdf405bcc24b4002d257192baba8f5340f8d5233a8f0e2db85433654f83"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-4b4cc9535c8e15aaaf98361f91e2c7562c7075232d63e89b9916d52af3efe0e8"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-2519fd083080b914295455126a87e67117403da4f6f46683c29c45cbaf64df3d"
+        ],
+        [
+          "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88",
+          "v4-d985f35db219cb8d9ed32d412356ef81f99c2c873447a4b5a5556ea892e8c37c"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-c03eff3c9156c85d236985b3a9de5a2dd422636fc56f26edf8465d179e8badb0"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:contact"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Contact form"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-4f8c1976e9034d9e82c99b82a890486bee569b6354fe74658fb9d958e8ab2a3b": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-511cadee32796138dc5d5dff795028d76ad2a5d4fad4a498edbff98b585372a0": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-647f10c79e99abd3736989987adb5d85d2a8c51c3e6e5e45a8a110fa5530dea1"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-3a1d9c742a6b692030d6810372e8a2ca5f8ecb2fa454ee150b91b60df41f5b39"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-47d7cc99438bab8048c49b4769015b1618eda15bc033c17b19a4e0638ead6438"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-2e1edc3f2ef4a988cb0e57d0441e1ff8a8b004c5eb62f5fe335fae8160a77d43"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-5db26ff9fb816ce61d791d7345806cd324a2fab52eac5ba6a76505d60ec3e0a8"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-c195c658c7deb90a774cac9ffdf2c8262e34231ddf5a15451dd77357a4d8773a"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:paid-task"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Paid task"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-a21260e599317c71ab0c83ca95858380ff2d9fb394eaef595b32b4033cd9ea12"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-8d3c9986c5694776289530f7bff5a149bc55d342679aa69c6764c5372b6efbcc"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-2e942bb1871740f6e395fce5a812b28f68d773c3491a78cdd4ef28adf58cde02"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-8e5fffd61aa358dcc5137897b0d52354130288f49ebe8e3d6930250a9688c6b6"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:template"
+        },
+        "behavior": {
+          "content": "builtin:template"
+        },
+        "description": {
+          "content": "Template"
+        }
+      }
+    },
+    "v4-52cef96c79ffa52f8531d565245ea51ba0a27e342162ecfdb66135e6e7500f76": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:meet:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-56c13f1226c79075118d1d354616783cc5f219dbde7b9892fab5c037d2128d3a": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "Document Constructor"
+        }
+      }
+    },
+    "v4-599eaf6afd14a165b0a580efe22ee0c1e9d9504e108fe298be6aa2d7e50eff4c": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:readme"
+        },
+        "description": {
+          "content": "Fallbacks that work with no peer: the person who did it by hand records it here. Edit the labels to propose better ones; add a row to offer a fallback for another kind of requirement."
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-5db26ff9fb816ce61d791d7345806cd324a2fab52eac5ba6a76505d60ec3e0a8": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:paid-task:delivered"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "confirmation",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Work delivered"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-5f8d417f75f0e3864af7e2b02ecefe22a1a304812d6319ce4469efbfcfe74a66": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:repo"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "repo",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Opened the issue by hand"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-6025d7efd094c208ff22f8582c6a76ac4db69c2d387afc62e48a8011d22b2d71": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-9d30d380792fbd64866de049714a0668dbb68c55927c367ed4393636cbb4ec05"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-68ba5d05f6c54b77b66260e7de6c56fdaeaf2f17db1033d521628e8c4d5b3704"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-e6c2fbebae7d4413ad76d93f8ed962dfbc473b392b3f1b1a2d343473a9ce6f0e"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-3a0dc70375ba3c235633e7eac9dd3935a330ac8324942b4d96e52ba5b253363a"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:query"
+        },
+        "behavior": {
+          "content": "builtin:query"
+        },
+        "description": {
+          "content": "Query"
+        }
+      }
+    },
+    "v4-647f10c79e99abd3736989987adb5d85d2a8c51c3e6e5e45a8a110fa5530dea1": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:paid-task:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-650c2103798690ad0f1a09c65ac9b95cb3be7172496df3fe3bc2eb8c4bc0f104": {
+      "children": [
+        [
+          "v4-bed1e6b8b85addfbcde7b3b5cb02a729f4b0535ef01dbdf3f63a480797f466c6",
+          "v4-3b7cd4ac58889786d6e01959b3f3c7b67ce0bf06735287b82fea59d481774050"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-4054d862263bf6b2f847ed756501109854cae543e1d6b6ba1e9d127c39c7130b"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:person"
+        },
+        "description": {
+          "content": "Person"
+        },
+        "form": {
+          "title": [
+            "name"
+          ]
+        }
+      }
+    },
+    "v4-66ba67aecae468aecab5244bfa4f8ac6c31242329f0a61d20349abd508ca6e7f": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:poll:choice"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "choice",
+          "options": [
+            "Option A",
+            "Option B",
+            "Option C"
+          ],
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Which option?"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-68ba5d05f6c54b77b66260e7de6c56fdaeaf2f17db1033d521628e8c4d5b3704": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:query:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-69f74329b643778b600df2362724234e3ee635857f54e2fcf4b94d4446fa88e7": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-310dd7733fdaa0a1801f3e53759490739372013720be2232a99436db64fa2e5a"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-07e09e769ebfc9f4b5960c2c2e18e6660b18d53c07b704c3c864f91b3bb742da"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-f04076f1e0737e717d08705d5d42611148ec40ed01d4ec631dddbd2b27c1fd35"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-74363235e19725b2e95eff21e368f8bb7623fbbbe114a92a1f0e78eed1b99809"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-e4fff4a9f24fd8184d6fd62690a4fcc9ed691aad3bf341bb7c8da46ae8463035"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:note"
+        },
+        "description": {
+          "content": "Note"
+        },
+        "form": {
+          "open": true,
+          "text": {
+            "interpolate": true,
+            "mediaType": "text/markdown"
+          },
+          "title": [
+            "body"
+          ]
+        }
+      }
+    },
+    "v4-6d08bed5b9e67a049b7e3447fe0873d5ac5da3a3a57605ad976ad29ac218320a": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:where"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "confirmation",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Destination agreed"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-6eb65a17cf0551cd3abe1bdaacb0166938c2d16384ac83cf5732e47c306c55b8": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:meet:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-6f6161dd84a8d277060a8ade6fb17c5c789ca7b3b273d33e0f4058b80c669f6d": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-6ff279f2b9496518e14a576727558975cb041e8b869ada6577917f6b4ab16cfc": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:document-root:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-7073cb73cbeba0c0ea2b51c155e9a05fa2862993f993745aef0ac3b98831d840": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-723c1f3323e8f651606c426b8abc79f4127ee0dc3c9f66cf0929d910e15401f3": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-725a50c3c768ea1602de0766a66f409ea1bbce95357ad292b9e619221ae3e5d5": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:device:location"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "location",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Use this device's location"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-72b8a9a9b3acc042cc5fba1820e5345304782a4ef4067467f646ce1ebb563fba": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:market"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "market",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Arranged it outside the market"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-73d8dfe37e32c01b9eca1288f5e90d2b0bb051051557f8247d91b745cf831d56": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-74363235e19725b2e95eff21e368f8bb7623fbbbe114a92a1f0e78eed1b99809": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:note:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-75339f2b71fdd782844b9c00c9e176a7ee9d5caf9f87efad32f20ab300663763": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-a2f858f30deeb034b19fee8182f3977bbceae7f92f564a847525b6db06c0003d"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-fe53c6fea26de992476633218b3d82ad9bb3a9a9747e3e73982c880a845faa0c"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-fddbb38c2eb3e1284df6da72262d04e896b6ac2fa4af6eca0d6fc6c1e15fc1c4"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-2b6d09c5f4b56f58c600a9ef9f8fe65f6e6a7c03c838edb7ace036cced2196a3"
+        ],
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-1861d595bf5ac32b09f0561f32743b6f61be83d15991d661ed49111464abfd0a"
+        ],
+        [
+          "v4-650c2103798690ad0f1a09c65ac9b95cb3be7172496df3fe3bc2eb8c4bc0f104",
+          "v4-7d742622578bd0d32a45ff40535f79427fc0106f588aeab02c079599cbb95790"
+        ],
+        [
+          "v4-9a88478b68fd4a3fddc25eacf1cb1babeba1e101fb284a8795e364d80d3b10f3",
+          "v4-b95be916c60ba5eb315aa32935082482e8631e1edc612862e56658d8056718ec"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:comment"
+        },
+        "description": {
+          "content": "Comment"
+        },
+        "form": {
+          "attribution": {
+            "id": [
+              "person",
+              "id"
+            ],
+            "name": [
+              "person",
+              "name"
+            ]
+          },
+          "open": true,
+          "title": [
+            "body"
+          ]
+        }
+      }
+    },
+    "v4-756dab1521641b89cd9503f67099ece2a64137afd413888f45029e474eb0de0b": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:research:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-76e6a86eecafc4c580bb95c688ae441a961c8282530834400409073125adf78b": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-773bd63261cb52adc0c37b4557608c9d527a00ae6878452f0a169c23e11e1770": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:home:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-7b52c505c08e3ed43d81c9f9c19b3fe8020160c03168316a68a3151081c19c63": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-a23526a17782f95075dfcf444ebcbea15564354810e698bb73b9271e55bb6522"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-8aa96b079bab989108c57c4c949430aa927bcddaba99260153527ae95e51f605"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-81e79eb50c356b9b0265678da54ba993a73bcd4eda7b30c3c987df9e3ae29273"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-756dab1521641b89cd9503f67099ece2a64137afd413888f45029e474eb0de0b"
+        ],
+        [
+          "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88",
+          "v4-4439f608e07f5d75947c335036c4b575dcf4ff4e9b4ca04e40082b12c8fb85d5"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-c7fdf63ac684b289284de00beed1106200229b244bb26b322ffd711dc39a32df"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-8ccf2147675619de1a6f81253dc324190208017da53274cc4dafc86c30813c62"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:research"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Research note"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-2cd7a65cd39679ab4f314b5d6dcbc4e2ded5359104f96ae8f7b1c396db849558"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-6f6161dd84a8d277060a8ade6fb17c5c789ca7b3b273d33e0f4058b80c669f6d"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-723c1f3323e8f651606c426b8abc79f4127ee0dc3c9f66cf0929d910e15401f3"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-8f07d5e1ecbf970653a7b62e5735a7f30b24b7086ed34db667abf77560d90ed8"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation"
+        },
+        "behavior": {
+          "content": "builtin:allocation"
+        },
+        "description": {
+          "content": "Allocation"
+        }
+      }
+    },
+    "v4-7d742622578bd0d32a45ff40535f79427fc0106f588aeab02c079599cbb95790": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:person:author"
+        },
+        "description": {
+          "content": "Person"
+        },
+        "parameter": {
+          "from": [
+            "author"
+          ],
+          "name": "person"
+        }
+      }
+    },
+    "v4-81e79eb50c356b9b0265678da54ba993a73bcd4eda7b30c3c987df9e3ae29273": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:research:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-8460270e7c5182247f7a0a706ea08b3eb0342bfa939e00b70a4bef1c7f96bb72": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:home:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-84dd86930a0f97cfe970c9b91fe9484f76ead9832eab280d0bccacfcb5cea41a": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:device-root:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-8655ed1a2f919aebe9991a363eb722fbb75fdda325d14c29c941e693813ebd2e": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-461a39434f70a2ad9ff7c3fb2280943f0cabd1dc3c9776a142b1edb0aa651ccb"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-3f2ef15b63b6b969848cf41aa6c94354bf3bd160bad874b32bc94993c2641936"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-2b865ba318f2dc4c3e6badca9538ce7e156aa2466c2bb2f178a97db8d3018e94"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-fdaf7fc6a131a73a41a070febe3f8b497a972eb5c9fbf85c408a1554081d162c"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref"
+        },
+        "behavior": {
+          "content": "builtin:ref"
+        },
+        "description": {
+          "content": "Reference"
+        }
+      }
+    },
+    "v4-87b29ca76de81a2bfdafa21bdd0c417ebcb57a449a277dd953e02de9aaea6d95": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-75339f2b71fdd782844b9c00c9e176a7ee9d5caf9f87efad32f20ab300663763"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:comment"
+        },
+        "updated": {
+          "time": 0
+        }
+      }
+    },
+    "v4-87d0e187af07be31dfbab75716d13f3f060997830f9943baf407fd789f8b7467": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "{\"version\":2,\"seeded\":[\"lib:readme\",\"lib:trip\",\"lib:trip:where\",\"lib:trip:when\",\"lib:trip:budget\",\"lib:trip:transport\",\"lib:trip:lodging\",\"lib:invoice\",\"lib:invoice:contact\",\"lib:invoice:entries\",\"lib:invoice:amount\",\"lib:invoice:send\",\"lib:poll\",\"lib:poll:choice\",\"lib:paid-task\",\"lib:paid-task:delivered\",\"lib:paid-task:reward\",\"lib:contact\",\"lib:contact:message\",\"lib:contact:received\",\"lib:research\",\"lib:research:question\",\"lib:research:sources\",\"lib:research:summary\",\"lib:meet\",\"lib:meet:where\",\"lib:meet:when\",\"lib:manual\",\"lib:manual:readme\",\"lib:manual:payment\",\"lib:manual:points\",\"lib:manual:time\",\"lib:manual:things\",\"lib:manual:location\",\"lib:device:location\",\"lib:manual:mail\",\"lib:manual:repo\",\"lib:manual:llm\",\"lib:manual:search\",\"lib:manual:tool\",\"lib:manual:market\"],\"source\":\"bundle\"}"
+        }
+      }
+    },
+    "v4-8a4c104e45d6d878636c631cd622db1d5b0b44661637592ffaad4edfe2207d02": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:location"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "location",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Enter the location"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-8aa96b079bab989108c57c4c949430aa927bcddaba99260153527ae95e51f605": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:research:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-8b99c6bc8cc150ad67bff1f9e977f6832b0b72efec0b7565c5c42b0a291c6690": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:budget"
+        },
+        "allocation": {
+          "amount": -200,
+          "capability": "allocation",
+          "resource": "",
+          "type": "account",
+          "unit": "usd"
+        },
+        "description": {
+          "content": "Budget per person"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-8ccf2147675619de1a6f81253dc324190208017da53274cc4dafc86c30813c62": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:research:summary"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "confirmation",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Summary written"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-8d3c9986c5694776289530f7bff5a149bc55d342679aa69c6764c5372b6efbcc": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:template:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-8d4a8cc168e126a51181918252e724363b7537f3c517420b2404b92c700b8c12": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "Alias Instruction Constructor Node"
+        }
+      }
+    },
+    "v4-8e5fffd61aa358dcc5137897b0d52354130288f49ebe8e3d6930250a9688c6b6": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:template:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-8f07d5e1ecbf970653a7b62e5735a7f30b24b7086ed34db667abf77560d90ed8": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-9074d5a0fec3e15eb4a582e4851aa71a32949ad97326239b0eb91ec3c750bcb8": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:meet:when"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "allocation",
+          "resource": "",
+          "type": "calendar",
+          "unit": "h"
+        },
+        "description": {
+          "content": "Meeting time"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-93ad79397aea72181949c4b515f4e779ba0ec7ea23c9103910099e8806dd7778": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-4f8c1976e9034d9e82c99b82a890486bee569b6354fe74658fb9d958e8ab2a3b"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-b2cc29e63931fcbe52083cc2156d4dfdbc8069b0d9c3f9d591783a0a3fc07785"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-b142c02a5beafc3233b043964631f2be06238adebd169d60a78219d9b0bad9c2"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-4a473f5b49618cfb841811f2102daf16e234c97536d0b006f007402dafa2c3dd"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource"
+        },
+        "behavior": {
+          "content": "builtin:resource"
+        },
+        "description": {
+          "content": "Resource"
+        }
+      }
+    },
+    "v4-95a72213c2f270fe9a146e8168df0aa9ee4245176075ba34353ccd00770e96ec": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:payment"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "account",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Paid outside Fos"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-95d93514d3b76770073c8906a0cf2beeb01ec51661f3bb02b1d8b6d0c565fe2f": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:meet:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-962b4bdf405bcc24b4002d257192baba8f5340f8d5233a8f0e2db85433654f83": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:contact:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-96ed8e6a4c2a85bad7e3c4c2f0e4f9ac81f706e1f19be1bbf9ce7747496c624d": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:plain:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-989dd79ba6fb71016d6fd09f5138d50904a589b519a4cbf8c2b6811b7ed082b8": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:poll:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-991d5a83e4c6e58d26c409e870c643c5d74a793c51be3e9103abe301d5b1408e": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:when"
+        },
+        "allocation": {
+          "amount": -2,
+          "capability": "allocation",
+          "resource": "",
+          "type": "calendar",
+          "unit": "d"
+        },
+        "description": {
+          "content": "Travel dates"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-9a52cd7a4deab9946df9814dc2e381cbe8dd715c72ee6b427caa25c56dd9f1de": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-6025d7efd094c208ff22f8582c6a76ac4db69c2d387afc62e48a8011d22b2d71"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:query"
+        }
+      }
+    },
+    "v4-9a88478b68fd4a3fddc25eacf1cb1babeba1e101fb284a8795e364d80d3b10f3": {
+      "children": [
+        [
+          "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e",
+          "v4-e6f2a34b0dccebce039169efcd2d6c30f704205aca39e5752e2ff5d223426024"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:list-text"
+        },
+        "description": {
+          "content": "List of text"
+        },
+        "form": {
+          "repeat": true
+        }
+      }
+    },
+    "v4-9d30d380792fbd64866de049714a0668dbb68c55927c367ed4393636cbb4ec05": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:query:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-9f99aa985e5e830683412ab05857d317ffb16cdd6715de008a7674fc5c913f89": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:device-root:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-a21260e599317c71ab0c83ca95858380ff2d9fb394eaef595b32b4033cd9ea12": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:template:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-a217ca3b78ce352254ebd9b4cfa752052038400e915a66ca19a4f7cd5f82a574": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:document-root:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-a23526a17782f95075dfcf444ebcbea15564354810e698bb73b9271e55bb6522": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:research:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-a2f858f30deeb034b19fee8182f3977bbceae7f92f564a847525b6db06c0003d": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:comment:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-a463f2bad9b81910cc8b534df6c80edf225c0f53818549dec2bbe752d36d672d": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:poll:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-a56fb5560369b32bc4bccf57100d98a9314ee98ea1fa1e0210960b6ff2de07f9": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:task:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-a8bde03cf0b5820d09d3a6c5a4ef020c122b0e9b837ed809452d38766ffe5790": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-afbed027e74b549c2bc9b163a022b2cf23b5bf7a1b42f75714b4d47650f70251": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:task:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-b142c02a5beafc3233b043964631f2be06238adebd169d60a78219d9b0bad9c2": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-b1acf73917ee7f29466519afc9b51c53a53ad1ee24896b838142b2ce1a137b69": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:number"
+        },
+        "description": {
+          "content": "Number"
+        },
+        "form": {
+          "primitive": "number"
+        }
+      }
+    },
+    "v4-b1b7fecb3452707fb17c7c063a40310990cc9ff506e653a124f17ebf686c8017": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:document-root:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-b2cc29e63931fcbe52083cc2156d4dfdbc8069b0d9c3f9d591783a0a3fc07785": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-b6156ac6711351e7c584004e0f3b7f21fe50426e7ca1620829837eb5bbb359a6": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:meet:where"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "location",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Be at the meeting place"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-299eeaee324b02f2f87b8c71848e2661ebabec2c8e1959a281638dbe1eb8e833"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-ff9e490eda01acec82667dd1f8d4cd14b7546401ffecc98b84544446cdc69e76"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-45753f9d37e1be92b2c3af967ca67b4f07ffbba7b51fe9f60ae1048892ac0039"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-96ed8e6a4c2a85bad7e3c4c2f0e4f9ac81f706e1f19be1bbf9ce7747496c624d"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:plain"
+        },
+        "behavior": {
+          "content": "builtin:plain"
+        },
+        "description": {
+          "content": "Row"
+        }
+      }
+    },
+    "v4-b84cfebbb526b52ff04502d2717ee4575a1c0386ce91ddbbbb63d8d77256cfe7": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-b1b7fecb3452707fb17c7c063a40310990cc9ff506e653a124f17ebf686c8017"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-a217ca3b78ce352254ebd9b4cfa752052038400e915a66ca19a4f7cd5f82a574"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-b92befd3309117bdf105c652c9528f2562cf22d3c8b40e85ce88fd16f096a0ab"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-6ff279f2b9496518e14a576727558975cb041e8b869ada6577917f6b4ab16cfc"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:document-root"
+        },
+        "behavior": {
+          "content": "builtin:document-root"
+        },
+        "description": {
+          "content": "Document"
+        }
+      }
+    },
+    "v4-b92befd3309117bdf105c652c9528f2562cf22d3c8b40e85ce88fd16f096a0ab": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:document-root:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-b95be916c60ba5eb315aa32935082482e8631e1edc612862e56658d8056718ec": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:texts:texts"
+        },
+        "description": {
+          "content": "Texts"
+        },
+        "parameter": {
+          "name": "texts"
+        }
+      }
+    },
+    "v4-bc5457fc2100210c1a227a66968946cca40fad187ae614f943b7307997701dc1": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-93ad79397aea72181949c4b515f4e779ba0ec7ea23c9103910099e8806dd7778"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource"
+        }
+      }
+    },
+    "v4-bdbe2391366389dfcf0c34b877d07e83028664eb8ad0d5324e6696835951a84e": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:text"
+        },
+        "description": {
+          "content": "Text"
+        },
+        "form": {
+          "primitive": "text"
+        }
+      }
+    },
+    "v4-bed1e6b8b85addfbcde7b3b5cb02a729f4b0535ef01dbdf3f63a480797f466c6": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:peer"
+        },
+        "description": {
+          "content": "Peer"
+        },
+        "form": {
+          "primitive": "peer"
+        }
+      }
+    },
+    "v4-c03eff3c9156c85d236985b3a9de5a2dd422636fc56f26edf8465d179e8badb0": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:contact:received"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "confirmation",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Message received"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-c195c658c7deb90a774cac9ffdf2c8262e34231ddf5a15451dd77357a4d8773a": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:paid-task:reward"
+        },
+        "allocation": {
+          "amount": -5,
+          "capability": "allocation",
+          "resource": "",
+          "type": "points",
+          "unit": "ff"
+        },
+        "description": {
+          "content": "Reward"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-c7c77bc8908c663fd1438d41f7ef9237021063d80a826a2638fbe1dee9ea1137": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation"
+        }
+      }
+    },
+    "v4-c7fdf63ac684b289284de00beed1106200229b244bb26b322ffd711dc39a32df": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:research:sources"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "task",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Sources collected"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-c97f50e610b83dc96d18b35ec283362a045bb2cfeae89b352ee5c1e6a5c44d87": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:template"
+        }
+      }
+    },
+    "v4-cea75d5bede6ec2ecf5eb39aa7857dddea0784a75d5ae0a76dd0e778c3d3eb0e": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-286f6e51b391c1322f1ac4756d81ac3773794b791b02a868f511a3430a2b1719"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-7073cb73cbeba0c0ea2b51c155e9a05fa2862993f993745aef0ac3b98831d840"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-04c7ef36ba0f36c23c572ccf15564ff7b0316e67ec0ba2adf48c4c0767177d73"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-eedcc9049c31171faddfc64f06604c80b93a3db60de15c14a86700285f18a229"
+        ],
+        [
+          "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88",
+          "v4-207cd3fa98c8b0f2980e54ef08087c13a70c27ab9827bad5745cb2237dfba625"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-d596d940941b6fda0566664bed9bfc48d26859a5f2879506bf6e32da2b46efbd"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-41377135b1245b80135d9bf954c580ca6ae68a230562a51c58acf1494200008f"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-2c98624f408b3eb6e69f86bb1b4a17fc336ab376105ca91a7b08938625c2e03e"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:invoice"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Invoice"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-d0d07f06d8d97fe3e6a24cc7329f5cbb404289335e58ff7e9acbf037c2ea11c5": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-989dd79ba6fb71016d6fd09f5138d50904a589b519a4cbf8c2b6811b7ed082b8"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-a463f2bad9b81910cc8b534df6c80edf225c0f53818549dec2bbe752d36d672d"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-f2b7e6e622e5081c781848a9eeceabb4e25e4f1dd46969ad278c1c5c2ee69a02"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-26f5a97ae9369532fc6d511d1ad2069a2dcfdb7be58588a54bafb08b04748194"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-66ba67aecae468aecab5244bfa4f8ac6c31242329f0a61d20349abd508ca6e7f"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:poll"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Group decision"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-d3fbe8bb6e364d75eec3df5adae49e864beb3d0566e093d55201cb8079126369": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-27e8bd34c0af2473c44bfafbd934e8f8e120782eef7a5b68d68d219d3580c1ec"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:home"
+        }
+      }
+    },
+    "v4-d596d940941b6fda0566664bed9bfc48d26859a5f2879506bf6e32da2b46efbd": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:entries"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "confirmation",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Time entries reviewed"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-d5983909508a66cdb30d46010ebaaf6592fcc69d7662853b9545048c0a260660": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:trip:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-d5e6e3406f4433864bcd218a3cda9f99b3f4c6c3501915cb0ea5467eb2ae9cda": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-9f99aa985e5e830683412ab05857d317ffb16cdd6715de008a7674fc5c913f89"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-153934afa3fbd1a45bf8b75e38606014bb4bb74295d6b4257e525449f26138c9"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-84dd86930a0f97cfe970c9b91fe9484f76ead9832eab280d0bccacfcb5cea41a"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:device-root"
+        },
+        "behavior": {
+          "content": "builtin:device-root"
+        },
+        "description": {
+          "content": "Device root"
+        }
+      }
+    },
+    "v4-d75f737f4ff67b1a82da52f7cb6b2e342faa6fd6a7b59154ab68fc78580f474e": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:points"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "points",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Settled the points by hand"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-d985f35db219cb8d9ed32d412356ef81f99c2c873447a4b5a5556ea892e8c37c": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:contact:message"
+        },
+        "description": {
+          "content": "Message: …"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-d9adab2a72d3c881c1763089b8a1ce3bb80fd3ee8e671d1018fe7de8073b4086": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:task:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-db948cb4da6e0cb3aa832b9172a64bdfe18396bb162a3cf981a5eac8ef1e313a": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:time"
+        },
+        "description": {
+          "content": "Time"
+        },
+        "form": {
+          "primitive": "time"
+        }
+      }
+    },
+    "v4-dbe3e1d241416db94550aae1981e4da6d2f6f26674a5f8c914de805db2360ff8": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-95d93514d3b76770073c8906a0cf2beeb01ec51661f3bb02b1d8b6d0c565fe2f"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-6eb65a17cf0551cd3abe1bdaacb0166938c2d16384ac83cf5732e47c306c55b8"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-52cef96c79ffa52f8531d565245ea51ba0a27e342162ecfdb66135e6e7500f76"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-17935fb5bf998371f01080a96b0860d157f1e63a56a01432accce9914907c335"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-b6156ac6711351e7c584004e0f3b7f21fe50426e7ca1620829837eb5bbb359a6"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-9074d5a0fec3e15eb4a582e4851aa71a32949ad97326239b0eb91ec3c750bcb8"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:meet"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Meet up"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-dd3d7c6d1b0f9f97358161815af342fc56972646b82ea5b98baa34fee0137f8a": {
+      "children": [
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-a8bde03cf0b5820d09d3a6c5a4ef020c122b0e9b837ed809452d38766ffe5790"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-0c033906203a4f0f339fe686d4cafba274006f2481772b293c057fb993ec5003"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-d5983909508a66cdb30d46010ebaaf6592fcc69d7662853b9545048c0a260660"
+        ],
+        [
+          "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0",
+          "v4-76e6a86eecafc4c580bb95c688ae441a961c8282530834400409073125adf78b"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-6d08bed5b9e67a049b7e3447fe0873d5ac5da3a3a57605ad976ad29ac218320a"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-991d5a83e4c6e58d26c409e870c643c5d74a793c51be3e9103abe301d5b1408e"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-8b99c6bc8cc150ad67bff1f9e977f6832b0b72efec0b7565c5c42b0a291c6690"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-3824debbf7f18800a758b2b2e607aa051b322e1c6bda4f2214f60f4961fcb7e4"
+        ],
+        [
+          "v4-7c725859d1a90cc20bd57e2e7b1e002917bd10010d7770de11962cae1262750e",
+          "v4-2b2de7254d643952b8d53a8104e20d49b4ba0c8157523a77f5b60f1f91016cad"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:trip"
+        },
+        "behavior": {
+          "content": "builtin:task"
+        },
+        "description": {
+          "content": "Plan a trip"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-e218f10f6a3b1fb2422a293c11362caad20212ffb3f3855bffb62cc6e4cf67e3": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:time"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "calendar",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Booked the time by hand"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-e4fff4a9f24fd8184d6fd62690a4fcc9ed691aad3bf341bb7c8da46ae8463035": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:note:body"
+        },
+        "description": {
+          "content": "Body"
+        },
+        "parameter": {
+          "from": [
+            "text"
+          ],
+          "name": "body"
+        }
+      }
+    },
+    "v4-e6c2fbebae7d4413ad76d93f8ed962dfbc473b392b3f1b1a2d343473a9ce6f0e": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:query:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-e6f2a34b0dccebce039169efcd2d6c30f704205aca39e5752e2ff5d223426024": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:parameter:item:item"
+        },
+        "description": {
+          "content": "Item"
+        },
+        "parameter": {
+          "name": "item"
+        }
+      }
+    },
+    "v4-ec43ccf82c6cf89b85fcde69ef26430096ac5e9195ba52a0306ed26506c9cf14": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-d5e6e3406f4433864bcd218a3cda9f99b3f4c6c3501915cb0ea5467eb2ae9cda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "Target Constructor Node"
+        }
+      }
+    },
+    "v4-eedcc9049c31171faddfc64f06604c80b93a3db60de15c14a86700285f18a229": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:invoice:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-f04076f1e0737e717d08705d5d42611148ec40ed01d4ec631dddbd2b27c1fd35": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:note:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-f1e972f08df4bb1685e301dfc457b9fefbd06b069bf2561468321ced616e0212": {
+      "children": [
+        [
+          "v4-eceaa245e4ad4c5c83f9139b98488fe34fb8c12869a62488004094e5a345d429",
+          "v4-69f74329b643778b600df2362724234e3ee635857f54e2fcf4b94d4446fa88e7"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:note"
+        },
+        "updated": {
+          "time": 0
+        }
+      }
+    },
+    "v4-f2b7e6e622e5081c781848a9eeceabb4e25e4f1dd46969ad278c1c5c2ee69a02": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:poll:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-f32cad532e07a228ec1dda9c3cacc2bb2026f6a1cf0af4701276bac58c813cf0": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:pattern"
+        },
+        "behavior": {
+          "content": "builtin:pattern"
+        },
+        "description": {
+          "content": "Pattern"
+        }
+      }
+    },
+    "v4-f65fb1deaf4684b57e59e5836a44ab70083c9a86b7d8a8327ed40387e54f5923": {
+      "children": [
+        [
+          "v4-b832f0587c7dcb5564970a9e9061a76898f5677270d44fc5772a5f3690edfc88",
+          "v4-192b523db5fcf5d19aab88ba1deea48933d14aabad897e999020c604ae45e6d2"
+        ],
+        [
+          "v4-2be7d2c8640b75c78d61cf65f312c3d580f6481619667d53e8191c0552199efe",
+          "v4-1db586bcb8d4143f77b4ae3aa7c4864718169ae23e6820f78e365ef71014720b"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-dd3d7c6d1b0f9f97358161815af342fc56972646b82ea5b98baa34fee0137f8a"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-cea75d5bede6ec2ecf5eb39aa7857dddea0784a75d5ae0a76dd0e778c3d3eb0e"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-d0d07f06d8d97fe3e6a24cc7329f5cbb404289335e58ff7e9acbf037c2ea11c5"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-511cadee32796138dc5d5dff795028d76ad2a5d4fad4a498edbff98b585372a0"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-4c55eee114460f0005a80e98aa06d9e2d419f8c497350f7ac58b54b057020a5d"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-7b52c505c08e3ed43d81c9f9c19b3fe8020160c03168316a68a3151081c19c63"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-dbe3e1d241416db94550aae1981e4da6d2f6f26674a5f8c914de805db2360ff8"
+        ],
+        [
+          "v4-52220994dee1e4acb160ab5317c2f4eed9726e1b9156c34a37a9f39cec86f547",
+          "v4-117ed8a26370be0471b36a3982ddd96a5c99ad428a7b45f87b5a427d8d573817"
+        ],
+        [
+          "v4-56c13f1226c79075118d1d354616783cc5f219dbde7b9892fab5c037d2128d3a",
+          "v4-2bac01a88e2ac54ca042703074eebd1766e5df9debf4ed00ce85e6f7c002dc6f"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:library"
+        },
+        "description": {
+          "content": "Standard library"
+        }
+      }
+    },
+    "v4-fa61678276cd732277bd9d460e21d9019c2040317d9c57765cfc0b757f271d55": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:manual:llm"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "llm",
+          "resource": "",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Answered it myself"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v4-fdaf7fc6a131a73a41a070febe3f8b497a972eb5c9fbf85c408a1554081d162c": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref:accepts:lib:type:document-root"
+        },
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      }
+    },
+    "v4-fddbb38c2eb3e1284df6da72262d04e896b6ac2fa4af6eca0d6fc6c1e15fc1c4": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:comment:accepts:lib:type:device-root"
+        },
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v4-fe53c6fea26de992476633218b3d82ad9bb3a9a9747e3e73982c880a845faa0c": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:comment:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    },
+    "v4-ff2453aa0b9e8d82b24ca7599fe87c908f62100163d14bc1b56211dc0424b453": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:home:accepts:any"
+        },
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      }
+    },
+    "v4-ff9e490eda01acec82667dd1f8d4cd14b7546401ffecc98b84544446cdc69e76": {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:plain:accepts:lib:type:home"
+        },
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      }
+    }
+  },
+  "rootNodeId": "v4-f65fb1deaf4684b57e59e5836a44ab70083c9a86b7d8a8327ed40387e54f5923",
+  "version": 2
+}

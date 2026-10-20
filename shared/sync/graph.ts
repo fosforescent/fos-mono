@@ -4,7 +4,7 @@
  * Conventions used by the sync layer (all expressed with existing primitives):
  *
  *   row         edge [template, rowNode]          the template (instruction) says what the row is and how it behaves; the row
- *                                                  node (target) holds its own state. A template is a node with data.instanceKind:
+ *                                                  node (target) holds its own state. A template is a graph definition:
  *                                                  a row type (Task, Row, Note, Comment, Reference, Query, Resource, Allocation,
  *                                                  Template) from the Row types this root installed from the standard library,
  *                                                  or a template row ("Plan a trip"); pinned by the cid of the version used.
@@ -40,8 +40,11 @@
  */
 
 import { allocationValue } from './destructure'
+import * as COMPILED_LIBRARY from './library.generated.json'
+import { definitionId, definitionRowKind, legacyRowKind, legacyTextPresentation, withoutLegacyInstanceKind } from './legacy-row-types'
+import { formAttribution, formElements, formTitle, positionFormRows, type FormElement } from './forms'
 import { FosStore } from '../dag-implementation/store'
-import { referenceErrorTemplateContent, seedRowTypes, seedRowTypeContent, rowTypeId, type RowTypeKind } from '../dag-implementation/row-templates'
+import { rowTypeId, type RowTypeKind } from '../dag-implementation/row-templates'
 import { canonicalTypeErrors, isTypeErrorEdge, plainEdge, typeErrorOf, unwrapRootTarget } from './patterns'
 import { isCurrentCid, verifyCid } from '../dag-implementation/cid'
 import type { FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
@@ -227,7 +230,14 @@ export { rowTypeId }
 
 /** The seed's row types, their pattern rows stored in `store`. */
 export function seedTypes(store: FosStore): FosNodeContent[] {
-  return seedRowTypes((c) => put(store, c))
+  if (!store.table.has(COMPILED_LIBRARY.rootNodeId)) importNodes(store, COMPILED_LIBRARY.nodes as unknown as FosNodesData)
+  return COMPILED_LIBRARY.types as FosNodeContent[]
+}
+
+/** Adapt an old native comment declaration to the constructor shipped as graph data. */
+export function currentRowDefinition(store: FosStore, definition: FosNodeContent): FosNodeContent {
+  const kind = legacyRowKind(definition)
+  return kind === 'comment' || kind === 'note' ? seedTypes(store).find(type => definitionId(type) === `lib:type:${kind}`)! : definition
 }
 
 /**
@@ -235,7 +245,7 @@ export function seedTypes(store: FosStore): FosNodeContent[] {
  * starts with). The seed's version, which the library starts with.
  */
 export function setRootType(store: FosStore, kind: 'device-root' | 'document-root'): void {
-  const type = put(store, seedRowTypeContent(kind, (c) => put(store, c)))
+  const type = put(store, seedTypes(store).find(type => definitionId(type) === rowTypeId(kind))!)
   const root = content(store, store.rootNodeId)
   const ip = store.primitive.instructionPointerConstructor.getId()
   if (root.children.some(([i, t]) => i === ip && t === type)) return
@@ -285,7 +295,8 @@ function libraryRowType(store: FosStore, library: string, type: RowTypeKind): st
   const row = loaded(group) ? findChild(store, group, rowTypeId(type)) : null
   if (!loaded(row)) return null
   const value = valueCidOf(store, row)
-  return valueContent(store, value).data.instanceKind?.kind === type ? value : null
+  const definition = valueContent(store, value)
+  return put(store, currentRowDefinition(store, definition))
 }
 
 /**
@@ -294,10 +305,14 @@ function libraryRowType(store: FosStore, library: string, type: RowTypeKind): st
  * Template type.
  */
 export function rowTypesContent(store: FosStore, types: FosNodeContent[]): FosNodeContent {
-  const template = types.find((type) => type.data.instanceKind?.kind === 'template')
+  const template = types.find((type) => definitionId(type) === rowTypeId('template'))
   if (!template) throw new Error('Row types need a Template type.')
   const templateCid = put(store, template)
-  const children = types.map((type): FosPathElem => [templateCid, put(store, refNodeContent(store, { alias: { id: rowTypeId(type.data.instanceKind!.kind as RowTypeKind) } }, put(store, type)))])
+  const children = types.map((type): FosPathElem => {
+    const id = definitionId(type)
+    if (!id) throw new Error('A library definition needs a graph identity.')
+    return [templateCid, put(store, refNodeContent(store, { alias: { id } }, put(store, type)))]
+  })
   return { data: { alias: { id: ROW_TYPES_ID }, description: { content: 'Row types' } }, children }
 }
 
@@ -325,7 +340,7 @@ export function ensureLibraryRow(store: FosStore): void {
   if (findChild(store, root, LIBRARY_ID)) return
   const types = seedTypes(store)
   // its rows are made from its own Row type, like every row under it
-  const row = put(store, types.find((type) => type.data.instanceKind?.kind === 'plain')!)
+  const row = put(store, types.find((type) => definitionId(type) === rowTypeId('plain'))!)
   const library = put(store, withMember(store, { data: { alias: { id: LIBRARY_ID }, description: { content: 'Standard library' } }, children: [[row, put(store, rowTypesContent(store, types))]] }, 'fos', 'fos', ['persist'], ['persist']))
   const value = valueContent(store, root)
   commitRoot(store, put(store, { ...value, children: [...value.children, [row, library]] }), 0)
@@ -333,7 +348,7 @@ export function ensureLibraryRow(store: FosStore): void {
 
 /** Stand-in instruction for a row pinned to template `cid` that this store does not hold (see `resolveReferenceErrors`). */
 export function referenceErrorTemplate(store: FosStore, cid: string, kind: RowKind): string {
-  return put(store, referenceErrorTemplateContent(cid, kind, (c) => put(store, c)))
+  return put(store, { data: { description: { content: 'Reference error' }, missingTemplate: { cid, kind } }, children: seedTypes(store).find(type => definitionId(type) === rowTypeId('plain'))!.children })
 }
 
 /** The template a row edge is made from (its instruction), or null when the edge is not a row. */
@@ -354,7 +369,7 @@ export function userTemplateOf(store: FosStore, edge: FosPathElem): { cid: strin
   if (!cid) return null
   const template = content(store, cid), value = valueContent(store, cid)
   const id = template.data.alias?.id ?? value.data.alias?.id
-  return id ? { cid, id, name: value.data.description?.content ?? 'Template' } : null
+  return id && !id.startsWith('lib:type:') && !value.data.form ? { cid, id, name: value.data.description?.content ?? 'Template' } : null
 }
 
 /** A row pinned to a template this store has not received: what it is waiting for. */
@@ -398,7 +413,7 @@ export function withRowTemplate(store: FosStore, edge: FosPathElem, templateCid:
 }
 
 /**
- * What kind of row an edge is: the instanceKind of its template (edge[0]), or null when the edge is not a row
+ * Compatibility row classification: graph forms are plain rows; native adapters retain their old UI kind. Null for non-row edges
  * (choice, peer, member, an argument ref typed by its instruction, …). Allocation rows read as requirements or
  * supplies by the sign of their amount.
  */
@@ -410,7 +425,8 @@ export function rowKindOf(store: FosStore, edge: FosPathElem): RowKind | null {
   }
   const [instruction, target] = edge
   if (!store.table.has(instruction) || !store.table.has(target)) return null
-  const kind = valueContent(store, instruction).data.instanceKind?.kind as RowKind | undefined
+  const definition = valueContent(store, instruction)
+  const kind = definitionRowKind(definition) as RowKind | undefined
   if (!kind || !ROW_KINDS.includes(kind)) return null
   // a typed argument ([type, ref] whose ref is of that type) is a slot, not a row, even when the type is a template
   if (refTypeCid(store, content(store, target)) === instruction) return null
@@ -542,8 +558,6 @@ export function rowContent(kind: RowKind, id: string, text: string, now: number,
   if (kind === 'query') data.query = extra.query ?? {}
   if (kind === 'resource') data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
   if (kind === 'allocation') data.allocation = extra.allocation ?? { resource: '', type: 'inventory', amount: 0, unit: 'unit' }
-  if (kind === 'comment') data.comment = { content: text, authorID: extra.author?.id ?? '', authorName: extra.author?.name ?? '', time: now, votes: {} }
-  if (kind === 'template') data.instanceKind = { kind: TEMPLATE_INSTANCE_KIND }
   if (kind === 'ref') {
     data.ref = extra.refOwner ? { id: extra.refId ?? '', owner: extra.refOwner } : { id: extra.refId ?? '' }
     // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
@@ -553,8 +567,6 @@ export function rowContent(kind: RowKind, id: string, text: string, now: number,
   return { data, children: [] }
 }
 
-/** Instances of template rows are tasks (each template row is the instruction of the tasks made from it). */
-const TEMPLATE_INSTANCE_KIND = 'task'
 
 /** One write representation; older requirement records are only a read adapter. */
 export function canonicalRowData(data: FosNodeContent['data']): FosNodeContent['data'] {
@@ -597,7 +609,8 @@ export function withInstancePatterns(store: FosStore, cid: string, at: Scope, ro
     const value = content(store, row), p = value.data.pattern
     return [type, put(store, { ...value, data: { ...value.data, alias: { id: `${owner}:accepts:${p?.any ? 'any' : p?.type ?? row}` } } })]
   })
-  return patterns.length ? put(store, { ...node, children: [...node.children, ...patterns] }) : cid
+  const behavior = node.data.behavior ?? content(store, task).data.behavior
+  return put(store, { ...node, data: { ...withoutLegacyInstanceKind(node.data), ...(behavior ? { behavior } : {}) }, children: [...node.children, ...patterns] })
 }
 
 /**
@@ -605,18 +618,19 @@ export function withInstancePatterns(store: FosStore, cid: string, at: Scope, ro
  * so its pattern rows go (one that becomes a template gets them where its edge is made, `rowEdgeAt`).
  */
 export function convertRow(store: FosStore, value: FosNodeContent, kind: RowKind, now: number): FosNodeContent {
-  const converted = convertRowContent(value, kind, now)
+  const title = formTitle(store, value)
+  const { presentation: _presentation, scalar: _scalar, ...data } = value.data
+  const converted = convertRowContent({ ...value, data: { ...data, description: { content: title } } }, kind, now)
   return kind === 'template' ? converted : { ...converted, children: converted.children.filter((edge) => rowKindOf(store, edge) !== 'pattern') }
 }
 
 /** Same node as a different kind of row: completion added or dropped, comment/ref data adjusted. */
 export function convertRowContent(value: FosNodeContent, kind: RowKind, now: number): FosNodeContent {
-  const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, instanceKind: _ik, ...rest } = value.data
+  const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, behavior: _behavior, ...rest } = withoutLegacyInstanceKind(value.data)
   const data: FosNodeContent['data'] = { ...rest, updated: { time: now } }
   if (kind === 'task') data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now }
   // a row type in the library keeps the kind of rows it makes; any other template row makes tasks
-  if (kind === 'template') data.instanceKind = value.data.instanceKind ?? { kind: TEMPLATE_INSTANCE_KIND }
-  if (kind === 'comment') data.comment = value.data.comment ?? { content: value.data.description?.content ?? '', authorID: '', authorName: '', time: now, votes: {} }
+  if (kind === 'template' && value.data.behavior) data.behavior = value.data.behavior
   if (kind === 'ref') data.ref = value.data.ref ?? { id: '' }
   if (kind === 'requirement') data.requirement = demandOf(value) ?? { capability: 'confirmation' }
   if (kind === 'supply') data.supply = supplyOf(value) ?? { capability: 'confirmation', by: '', at: now }
@@ -926,8 +940,8 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
   const homeValue = homeCid ? valueContent(store, homeCid) : rowContent('home', HOME_ID, 'Home', 0)
   let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0)
   // a Home that was a template (older data) is no type: it keeps its rows but not a type's pattern rows
-  if (homeCid && (homeValue.data.instanceKind || homeValue.children.some((edge) => rowKindOf(store, edge) === 'pattern'))) {
-    const { instanceKind: _kind, ...data } = homeValue.data
+  if (homeCid && (legacyRowKind(homeValue) || homeValue.children.some((edge) => rowKindOf(store, edge) === 'pattern'))) {
+    const { behavior: _behavior, ...data } = withoutLegacyInstanceKind(homeValue.data)
     home = refNodeContent(store, home.data, put(store, { data, children: homeValue.children.filter((edge) => rowKindOf(store, edge) !== 'pattern') }), bookkeepingOf(store, home), refTypeCid(store, home))
   }
   // Integration handlers belong to Home; carry over old root bindings without losing overrides.
@@ -964,7 +978,7 @@ export function commitRoot(store: FosStore, newTargetCid: string, now: number, m
     : undefined
   const children: FosPathElem[] = [
     [store.primitive.targetPointerConstructor.getId(), newTargetCid],
-    [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : put(store, seedRowTypeContent('document-root', (c) => put(store, c)))],
+    [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : put(store, seedTypes(store).find(type => definitionId(type) === rowTypeId('document-root'))!)],
     [store.primitive.previousVersion.getId(), store.rootNodeId]
   ]
   if (mergeSourceCid) children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid])
@@ -1044,6 +1058,10 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 // View model: what the UI sees (opaque ids, no cids)
 
 export type TaskView = {
+  /** Native leaf editor chosen by the graph constructor. */
+  scalar?: NonNullable<FosDataContent['scalar']>['type'];
+  form?: FormElement;
+  text?: import('../types').TextPresentation;
   /** The row holds children its type does not accept (a type error, sync/patterns.ts): their alias ids. */
   typeError?: string[]
   /** This row is one of those its parent's type does not accept. */
@@ -1151,13 +1169,14 @@ export function edgeView(store: FosStore, edge: FosPathElem): TaskView | null {
 export function rowView(store: FosStore, nodeCid: string, kind: RowKind, edge?: FosPathElem): TaskView {
   const identity = content(store, nodeCid)
   const value = valueContent(store, nodeCid)
-  const created = value.data.todo?.time ?? value.data.updated?.time ?? 0
+  const created = value.data.created?.time ?? value.data.todo?.time ?? value.data.updated?.time ?? 0
   if (isPeerReference(identity)) kind = 'ref'
   const sub = countNode(store, nodeCid)
   const typeError = edge ? typeErrorOf(store, edge) : null
+  const definition = edge ? content(store, plainEdge(store, edge)[0]) : undefined
   const view: TaskView = {
     id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
-    title: value.data.description?.content ?? '',
+    title: formTitle(store, value, definition),
     kind,
     checkable: kind === 'task',
     done: kind === 'task' && !!value.data.todo?.completed,
@@ -1169,13 +1188,19 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind, edge?: 
     subtreeDone: sub.done,
     isLink: isLink(store, identity)
   }
+  if (definition?.data.form && !definition.data.form.primitive && !isPeerReference(identity)) view.form = formElements(store, plainEdge(store, edge!)[0], value)
+  view.text = definition?.data.form?.text ?? value.data.presentation?.text ?? legacyTextPresentation(kind)
+  if (value.data.scalar) view.scalar = value.data.scalar.type
   // a node held by another peer, not loaded yet: its name when the reference knows it
   if (isPeerReference(identity)) { view.refPeer = identity.data.ref!.peer; view.title = identity.data.description?.content ?? 'Peer-held node' }
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
   const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity
   if (refTypeCid(store, constructor) === capabilityTarget(store, 'peer') && constructor.data.name) view.construction = { handler: constructor.data.name.content }
   if (kind === 'ref') { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
-  if (kind === 'comment' && value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
+  const attribution = formAttribution(store, value, definition)
+  if (attribution) view.author = attribution
+  // Read-only compatibility for pre-constructor comments; edits migrate them.
+  else if (value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
   const template = edge ? userTemplateOf(store, edge) : null
   if (template) view.template = { id: template.id, name: template.name }
   const missing = edge ? missingTemplateOf(store, edge) : null
@@ -1425,7 +1450,7 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
   const value = valueContent(store, cid)    // the content: text, rows
   const link = isLink(store, identity)
   const view: NodeView = {
-    name: value.data.description?.content ?? null,
+    name: formTitle(store, value) || null,
     done: value.data.todo ? !!value.data.todo.completed : null,
     tasks: [], choices: [], peers: [],
     isLink: link,
@@ -1497,7 +1522,7 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
   for (const step of scope) {
     if (!current) { names.push(step); continue }
     const next = findChild(store, current, step)
-    names.push(next ? valueContent(store, next).data.description?.content ?? step : step)
+    names.push(next ? formTitle(store, valueContent(store, next)) || step : step)
     current = next
   }
   return names
@@ -2067,7 +2092,11 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       const edge = (original: FosPathElem | null | undefined): FosPathElem | null => original ? [owned.has(original[0]) ? copy(original[0]) : original[0], incoming] : null
       bound = putBranches(store, data.alias.id, edge(record.base), record.options.map(option => ({ ...option, edge: edge(option.edge) })), record.defaultName)
     }
-    const result = put(store, type ? refNodeContent(store, data, bound, [], type) : { data, children })
+    const valueCopy = { data, children }
+    const result = put(store, type ? refNodeContent(store, data, bound, [], type)
+      : isRefNode(store, identity) && !isHandle(identity) && (value.data.scalar || value.data.presentation)
+        ? refNodeContent(store, { alias: data.alias, ...(data.name ? { name: data.name } : {}) }, put(store, valueCopy))
+        : valueCopy)
     copied.set(cid, result)
     return result
   }
@@ -2103,13 +2132,13 @@ export function moveChild(store: FosStore, rootCid: string, fromPath: Scope, ali
       const kids = [...targetContent.children]
       const at = position.index === undefined || position.index < 0 ? kids.length : Math.min(position.index, kids.length)
       kids.splice(at, 0, moving)
-      children[parent.index] = withChildValue(store, parent.edge, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0)
+      children[parent.index] = withChildValue(store, parent.edge, positionFormRows(store, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0), targetContent.data.updated?.time ?? 0)
       return { ...value, children }
     }
     const sibling = findAliasEdge(store, value, position.relativeTo)
     if (!sibling) throw new Error('destination not found')
     children.splice(position.position === 'above' ? sibling.index : sibling.index + 1, 0, moving)
-    return { ...value, children }
+    return positionFormRows(store, { ...value, children }, value.data.updated?.time ?? 0)
   }
   root = updateAtScope(store, root, toPath, insert)
   return root
@@ -2127,13 +2156,13 @@ export function proposalView(store: FosStore, nodeValue: FosNodeContent, proposa
         for (const option of [choice.base, ...choice.options.map((o) => o.edge)]) {
           if (!option || !isRowEdge(store, option)) continue
           const id = identityCid(store, option)
-          map.set(edgeKey(store, option), { title: valueContent(store, id).data.description?.content ?? '', cid: id })
+          map.set(edgeKey(store, option), { title: formTitle(store, valueContent(store, id)), cid: id })
         }
         continue
       }
       if (!isRowEdge(store, edge)) continue
       const id = identityCid(store, edge)
-      map.set(edgeKey(store, edge), { title: valueContent(store, id).data.description?.content ?? '', cid: id })
+      map.set(edgeKey(store, edge), { title: formTitle(store, valueContent(store, id)), cid: id })
     }
     return map
   }

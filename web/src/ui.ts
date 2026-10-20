@@ -209,7 +209,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   regions.node.parentElement?.classList.add('execution-page')
   regions.mic.hidden = true
   details.delete(regions.node)
-  regions.node.replaceChildren(h4(app.currentRow()?.title ?? 'Execution'))
+  regions.node.replaceChildren(h4(resolveText(state.replica, state.view, app.currentRow()?.title ?? 'Execution').text))
   regions.node.classList.add('execution-view')
   renderCrumbs(regions.crumbs, state, app); renderStatus(regions.status, state, app); renderBanner(regions.banner, state, app)
   const rows: HTMLElement[] = [], root = [...state.view]
@@ -229,7 +229,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     time.append(notes, toggle)
     for (const entry of entries) time.append(div('time-entry', `${new Date(entry.start).toLocaleString()} ? ${entry.end === undefined ? 'Running' : Math.round((entry.end - entry.start) / 1000) + ' seconds'}${entry.notes ? ' ? ' + entry.notes : ''}`))
     regions.node.append(time)
-  } else if (current?.kind === 'note') {
+  } else if (current?.text?.mediaType === 'text/markdown') {
     const parentState = { ...state, view: root.slice(0, -1) }
     const output = renderNoteBody(current, [], parentState, app); output.title = ''; output.classList.add('execution-document')
     regions.node.replaceChildren(output)
@@ -271,7 +271,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   // Whether this node is work that gets completed (inputs, requirements or allocations anywhere beneath it),
   // as opposed to content such as a note that is only viewed or interacted with.
   let work = !!current?.requirement || !!current?.allocation || (!!record && record.status !== 'committed')
-  const walk = (path: Scope, depth: number) => {
+  const walk = (path: Scope, depth: number, fields: string[] = []) => {
     if (depth > 32 || rows.length > 1000) return
     for (const arg of app.textArguments(path.slice(root.length))) {
       const li = document.createElement('li'); li.className = 'task argument-row'; li.style.setProperty('--depth', String(depth))
@@ -285,9 +285,14 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
       rows.push(li)
     }
     for (const row of viewAt(state.replica, path)?.tasks ?? []) {
-      if (row.construction) continue
+      if (row.construction || fields.includes(row.id)) continue
       if (row.requirement || row.allocation) work = true
-      const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth)); li.append(span('constructor-label', ROW_KIND_LABEL[row.kind] ?? row.kind), span('title', row.title))
+      const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth))
+      const body = row.text?.mediaType === 'text/markdown'
+        ? renderNoteBody(row, [], { ...state, view: path }, app)
+        : span('title', resolveText(state.replica, [...path, row.id], row.title).text)
+      body.title = ''
+      li.append(span('constructor-label', ROW_KIND_LABEL[row.kind] ?? row.kind), body)
       if (row.allocation && !readNodeValue(state.replica, [...path, row.id], 'fos:consumed') && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
         const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(row.allocation.amount); amount.step = 'any'; amount.value = String(row.allocation.amount); amount.setAttribute('aria-label', `Use ${row.title}`); amount.disabled = locked
         li.append(amount, button('secondary small', 'Use allocation', () => app.consumeExecutionAllocation([...path, row.id], Number(amount.value))))
@@ -310,10 +315,10 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
       }
       for (const control of li.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button,select')) control.disabled = locked
       rows.push(li)
-      if (row.kind !== 'ref' && row.kind !== 'template') walk([...path, row.id], depth + 1)
+      if (row.kind !== 'ref' && row.kind !== 'template') walk([...path, row.id], depth + 1, row.form?.fields.map(field => field.path[0]!) ?? [])
     }
   }
-  walk(root, 0)
+  walk(root, 0, current?.form?.fields.map(field => field.path[0]!) ?? [])
   const status = document.createElement('li'); status.className = 'task has-constructor'; status.append(span('title', record?.status === 'committed' ? 'Complete' : record?.status === 'idle' ? '' : record?.status ?? ''))
   if (record?.error) status.append(span('error', record.error))
   // Tasks carry their own Complete above; other work gets one here, and plain content gets none.
@@ -1804,7 +1809,8 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
         child.choices.forEach((choice) => rows.push(renderNestedChoice(choice, [...at, task.id], depth + 1, state, app)))
-        rows.push(...renderRows(child, [...at, task.id], depth + 1, state, app))
+        const fields = !editingBelow ? new Set(task.form?.fields.map(field => field.path[0]) ?? []) : new Set<string>()
+        rows.push(...renderRows({ ...child, tasks: child.tasks.filter(row => !fields.has(row.id)) }, [...at, task.id], depth + 1, state, app))
       }
     }
   }
@@ -1912,7 +1918,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   // rows without children show no bullet; notes keep a middot so a note block reads as an item in the outline
   const toggle = hasChildren && !canExpandHere
     ? button('icon toggle zoom', '›', () => app.zoomTo([...at, task.id]))
-    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : task.kind === 'note' ? '·' : '', () => { if (hasChildren) app.toggleCollapsed(task.id) })
+    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : task.text?.mediaType === 'text/markdown' ? '·' : '', () => { if (hasChildren) app.toggleCollapsed(task.id) })
   if (hasChildren && !canExpandHere) toggle.title = `Open (${task.childCount} inside)`
   toggle.disabled = !hasChildren
   toggle.tabIndex = -1
@@ -1929,11 +1935,12 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   let body: HTMLElement
   if (task.kind === 'home') { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
+  else if (task.form && !task.text) { body = renderForm(task, at, state, app) }
   else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.kind === 'ref') {
     body = renderRefBody(task, app, [...at, task.id])
-  } else if (task.kind === 'note') {
+  } else if (task.text?.mediaType === 'text/markdown') {
     body = renderNoteBody(task, at, state, app)
   } else if (SPECIAL_KINDS.has(task.kind)) {
     body = renderSpecialBody(task, at, state, app)
@@ -1942,8 +1949,8 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     body = span('title', '')
     if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
     body.append(renderInlineText(task.title))
-    if (task.kind === 'comment') {
-      const who = span('author', task.author?.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'comment')
+    if (task.author) {
+      const who = span('author', task.author.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'Anonymous')
       body.prepend(who)
     }
     body.title = 'Click to edit'
@@ -2024,23 +2031,66 @@ function caretOnEdge(input: HTMLInputElement | HTMLTextAreaElement, edge: 'first
 
 /** The selected row's text, editable in place. Keys: ↑/↓ rows, Enter new row below, Ctrl+Enter done (notes: new row),
  *  Ctrl+Shift+Enter row inside, Tab/⇧Tab indent, Alt+↑/↓ move, Alt+→ zoom in, Alt+← zoom out, Backspace on blank deletes, Esc leaves. */
+function renderForm(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+  const root = div('node-form', '')
+  const render = (field: import('../../shared/sync/forms').FormElement): HTMLElement => {
+    const path = [...at, task.id, ...field.path]
+    if (!field.available) return span('muted', `${field.label}: load this field to edit`)
+    if (field.primitive) {
+      const label = document.createElement('label'); label.className = 'node-form-field'
+      label.append(span('muted', field.label))
+      const input = document.createElement(field.primitive === 'text' ? 'textarea' : 'input')
+      if (input instanceof HTMLInputElement) input.type = field.primitive === 'number' || field.primitive === 'time' ? 'number' : 'text'
+      else input.rows = Math.min(8, Math.max(1, String(field.value ?? '').split('\n').length))
+      input.value = String(field.value ?? ''); input.setAttribute('aria-label', field.label)
+      input.dataset.fieldPath = JSON.stringify(field.path)
+      const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...path.slice(0, -1)] }
+      let baseline = input.value
+      const save = () => {
+        if (input.value === baseline) return
+        if (input instanceof HTMLInputElement && input.type === 'number' && (!input.value.trim() || !Number.isFinite(Number(input.value)))) { input.setCustomValidity('Enter a number.'); input.reportValidity(); return }
+        const text = input.value
+        app.rewriteRowAt(path.slice(0, -1), path.at(-1)!, { kind: 'plain', text, done: false }, draft)
+        baseline = text
+      }
+      input.addEventListener('input', () => input.setCustomValidity(''))
+      input.addEventListener('commit-edit', save)
+      input.addEventListener('blur', () => { if (!renderDepth) save() })
+      input.addEventListener('click', event => event.stopPropagation())
+      input.addEventListener('keydown', event => { event.stopPropagation(); if ((event as KeyboardEvent).key === 'Escape') { input.value = baseline; input.blur() } })
+      label.append(input); return label
+    }
+    const group = document.createElement('fieldset'); group.className = 'node-form-group'
+    if (field.label) { const legend = document.createElement('legend'); legend.textContent = field.label; group.append(legend) }
+    for (const child of field.fields) {
+      const control = render(child)
+      if (field.repeat) control.append(button('secondary small', 'Remove', () => app.deleteTaskAt([...at, task.id, ...child.path.slice(0, -1)], child.path.at(-1)!)))
+      group.append(control)
+    }
+    if (field.repeat) group.append(button('secondary small', 'Add item', () => app.addRowAt(path, 'plain', ' ')))
+    return group
+  }
+  root.append(render(task.form!))
+  return root
+}
+
 function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
-  const multiline = task.kind === 'note'
+  const multiline = task.text?.mediaType === 'text/markdown'
   const input = document.createElement('textarea')
   input.rows = multiline ? Math.min(16, Math.max(2, task.title.split('\n').length + 1)) : 1
   input.className = 'edit'
   // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
   const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...at] }
-  const raw = task.kind === 'ref' || task.kind === 'supply' ? task.title : rawRowText(task)
+  const raw = task.text || task.kind === 'ref' || task.kind === 'supply' ? task.title : rawRowText(task)
   input.value = raw
-  input.placeholder = task.kind === 'note' ? '> Markdown…' : task.kind === 'comment' ? '// Comment…' : 'Row text…'
+  input.placeholder = multiline ? 'Markdown…' : task.kind === 'comment' ? '// Comment…' : 'Row text…'
   let committed = false
   const commit = () => {
     if (committed) return
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
-    if (input.value === raw) { if (!input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
-    if (task.kind === 'ref' || task.kind === 'supply') { app.rewriteRowAt(at, task.id, { kind: task.kind, text: input.value, done: task.done }, draft); return }
+    if (input.value === raw) { if (!task.scalar && !input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
+    if (task.text || task.scalar || task.kind === 'ref' || task.kind === 'supply') { app.rewriteRowAt(at, task.id, { kind: task.kind, text: input.value, done: task.done }, draft); return }
     // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
     const parsed = parseRowInput(input.value)
     if (parsed.kind === 'plain' && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
@@ -2069,7 +2119,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); const current = app.rowAt(path); if (current?.kind === 'task') { app.toggleTaskAt(at, current); app.refresh() } else if (current) app.addRowBelow(at, task.id); return }
     if (k === 'Enter' && !multiline && !event.shiftKey) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
     if (k === 'Tab') { event.preventDefault(); if (input.value.trim()) commit(); else committed = true; app.select(path); app.indentSelected(event.shiftKey); return }
-    if (k === 'Backspace' && input.value === '' && (ctrl || !multiline)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
+    if (k === 'Backspace' && input.value === '' && (ctrl || !multiline) && (!task.scalar || ctrl)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
     if (k === 'Backspace' && ctrl && event.shiftKey) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
     if (k === 'Escape') { event.preventDefault(); commit(); input.blur(); queueMicrotask(() => { const row = document.querySelector<HTMLElement>(`.tree .task[data-id="${task.id}"]`); if (row) row.focus(); else { focusGhost = true; app.select(null) } }); return }
     if (k === '.' && ctrl) { event.preventDefault(); app.openContextMenu({ kind: 'task', at, task }); return }
@@ -2159,7 +2209,8 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
 function noteChildren(task: TaskView, at: Scope, state: AppState, app: App): NoteChild[] {
   const node = viewAt(state.replica, [...state.view, ...at, task.id])
   if (!node) return []
-  return node.tasks.map((row) => {
+  const fields = new Set(task.form?.fields.map(field => field.path[0]) ?? [])
+  return node.tasks.filter(row => !fields.has(row.id)).map((row) => {
     const subRows = row.childCount ? viewAt(state.replica, [...state.view, ...at, task.id, row.id])?.tasks ?? [] : []
     if (row.kind !== 'ref') return { row, subRows }
     const target = app.refTarget(row.refId ?? '')
@@ -2174,7 +2225,7 @@ function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): H
   body.title = 'Click or press Enter to edit (Ctrl+Enter saves)'
   const ctx = noteContext(task.title, noteChildren(task, at, state, app))
   const resolve = noteResolver(ctx, [...state.view, ...at, task.id], state)
-  const expanded = ctx.body.trim() ? expandNoteText(ctx, resolve) : ''
+  const expanded = ctx.body.trim() ? task.text?.interpolate ? expandNoteText(ctx, resolve) : ctx.body : ''
   if (!expanded) { body.append(span('muted', '(empty note)')); return body }
   const cached = noteHtml.get(expanded)
   if (cached) {

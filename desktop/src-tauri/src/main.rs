@@ -74,7 +74,21 @@ enum Commands {
     /// Interactive shell
     Repl,
     /// Print the task tree
-    Ls,
+    Ls { id: Option<String> },
+    /// Read a graph node as JSON, or write its data and rows from a file
+    Node {
+        id: String,
+        #[arg(long)]
+        write: Option<PathBuf>,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Add a new row below this node (requires --write and --template)
+        #[arg(long, requires_all = ["write", "template"])]
+        under: Option<String>,
+        /// Instruction node for a new row
+        #[arg(long, requires = "under")]
+        template: Option<String>,
+    },
     /// Sync with the account now
     Sync,
     /// Fetch the checked-out branch without publishing local edits
@@ -119,7 +133,7 @@ enum Commands {
         #[arg(long, default_value_t = 4777)]
         port: u16,
     },
-    /// The standard library: `export` writes the bundle the web build carries (web/src/library.json)
+    /// Export the local library graph for builds, or pull a shared server library
     Library {
         #[command(subcommand)]
         action: LibraryAction,
@@ -135,6 +149,9 @@ enum Commands {
 enum LibraryAction {
     /// Pull the shared library through your account and write it as JSON (stdout, or --out <file>)
     Export {
+        /// Export this directory's editable library graph, without contacting a server
+        #[arg(long)]
+        local: bool,
         #[arg(long)]
         out: Option<PathBuf>,
         /// The account that owns the library, when your Home does not link one
@@ -174,7 +191,8 @@ fn main() {
             Commands::Run { port, host } => commands::cmd_run(ws, false, port, host.as_deref()),
             Commands::Serve { port, host } => commands::cmd_run(ws, true, port, host.as_deref()),
             Commands::Repl => commands::cmd_repl(ws),
-            Commands::Ls => commands::cmd_ls(&ws),
+            Commands::Ls { id } => commands::cmd_ls(&mut ws, id.as_deref()),
+            Commands::Node { id, write, out, under, template } => commands::cmd_node(&mut ws, &id, write.as_deref(), out.as_deref(), under.as_deref(), template.as_deref()),
             Commands::Sync => commands::cmd_sync(&mut ws),
             Commands::Push => ws.sync_with(true).map(|summary| println!("{}", summary)),
             Commands::Pull => ws.sync_with(false).map(|summary| println!("{}", summary)),
@@ -188,7 +206,7 @@ fn main() {
             Commands::Detach => commands::cmd_detach(&mut ws),
             Commands::Approve { id } => commands::cmd_decide(&mut ws, &id, "approve"),
             Commands::Reject { id } => commands::cmd_decide(&mut ws, &id, "reject"),
-            Commands::Library { action: LibraryAction::Export { out, owner } } => commands::cmd_library_export(&mut ws, out.as_deref(), &owner),
+            Commands::Library { action: LibraryAction::Export { out, owner, local } } => commands::cmd_library_export(&mut ws, out.as_deref(), &owner, local),
             Commands::Gui | Commands::Init { .. } | Commands::Reset { .. } => unreachable!(),
         }),
     };

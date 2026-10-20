@@ -101,9 +101,34 @@ pub fn cmd_sync(ws: &mut Workspace) -> Result<(), String> {
     Ok(())
 }
 
-pub fn cmd_ls(ws: &Workspace) -> Result<(), String> {
+pub fn cmd_ls(ws: &mut Workspace, id: Option<&str>) -> Result<(), String> {
+    if let Some(id) = id { ws.cwd = node_path(ws, id)?; }
     banner(ws);
     print_tree(ws);
+    Ok(())
+}
+
+fn node_path(ws: &Workspace, id: &str) -> Result<Vec<String>, String> {
+    let found = ws.core.call_json("findTask", &[json!("main"), json!("[]"), json!(id)]).map_err(|e| e.to_string())?;
+    let mut at: Vec<String> = serde_json::from_value(found["at"].clone()).map_err(|_| format!("node not found: {}", id))?;
+    at.push(found["id"].as_str().ok_or("node has no id")?.to_string());
+    Ok(at)
+}
+
+/// Graph authoring uses the same mutable refs, validation and history as the client.
+pub fn cmd_node(ws: &mut Workspace, id: &str, write: Option<&Path>, output: Option<&Path>, under: Option<&str>, template: Option<&str>) -> Result<(), String> {
+    let mut at = match under { Some(parent) => node_path(ws, parent)?, None => node_path(ws, id)? };
+    if let Some(file) = write {
+        let mut node: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(file).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        if under.is_some() { node["data"]["alias"] = json!({ "id": id }); }
+        let instruction = template.map(|name| node_path(ws, name).map(|path| json!(serde_json::to_string(&path).unwrap()))).transpose()?.unwrap_or(serde_json::Value::Null);
+        ws.core.call("writeGraphNode", &[json!("main"), json!(serde_json::to_string(&at).unwrap()), json!(node.to_string()), instruction, json!(crate::core::now_ms())]).map_err(|e| e.to_string())?;
+        ws.save()?;
+        if under.is_some() { at.push(id.to_string()); }
+    }
+    let node = ws.core.call_json("graphNode", &[json!("main"), json!(serde_json::to_string(&at).unwrap())]).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(&node).map_err(|e| e.to_string())? + "\n";
+    if let Some(file) = output { std::fs::write(file, text).map_err(|e| e.to_string())?; } else { print!("{}", text); }
     Ok(())
 }
 
@@ -290,15 +315,20 @@ pub fn cmd_decide(ws: &mut Workspace, prefix: &str, decision: &str) -> Result<()
     Ok(())
 }
 
-/// `fos library export [--out file] [--owner account]`: the standard library as the bundle the web build carries (web/src/library.json).
-pub fn cmd_library_export(ws: &mut Workspace, out_path: Option<&Path>, owner: &str) -> Result<(), String> {
-    let bundle = ws.library_export(owner)?;
+/// `fos library export --local --out .fos/library.json` exports the editable tree for builds.
+pub fn cmd_library_export(ws: &mut Workspace, out_path: Option<&Path>, owner: &str, local: bool) -> Result<(), String> {
+    let bundle = if local {
+        ws.core.call_json("libraryExportLocal", &[json!("main")]).map_err(|e| e.to_string())?
+    } else { ws.library_export(owner)? };
     let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())? + "\n";
     match out_path {
         Some(path) => {
             std::fs::write(path, text).map_err(|e| format!("cannot write {}: {}", path.display(), e))?;
-            let rows = bundle["rows"].as_array().map(|r| r.len()).unwrap_or(0);
-            out(&format!("{} wrote {} top-level rows of @{}'s library to {}", "✓".green(), rows, bundle["address"]["owner"].as_str().unwrap_or("?"), path.display()));
+            if local { out(&format!("wrote local library graph to {}", path.display())); }
+            else {
+                let rows = bundle["rows"].as_array().map(|r| r.len()).unwrap_or(0);
+                out(&format!("{} wrote {} top-level rows of @{}'s library to {}", "✓".green(), rows, bundle["address"]["owner"].as_str().unwrap_or("?"), path.display()));
+            }
         }
         None => print!("{}", text),
     }

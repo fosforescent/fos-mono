@@ -3,7 +3,7 @@ import { FosNode } from "./node"
 import { FosStore } from "./store"
 
 import { v4 as uuidv4 } from 'uuid';
-import { seedRowTypeContent } from "./row-templates"
+import * as COMPILED_LIBRARY from "../sync/library.generated.json"
 
 
 
@@ -675,7 +675,12 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const rootInstructionNode = getRootInstructionNode(store)
   const typeErrorConstructor = getTypeErrorConstructorNode(store)
   // a fresh store's root is a document root (row-templates.ts): its type is the root alias's instruction
-  const documentRootType = store.create(seedRowTypeContent('document-root', (c) => store.create(c).getId()))
+  const definitions = COMPILED_LIBRARY.nodes as unknown as Record<string, FosNodeContent>
+  const loadDefinition = (node: FosNodeContent): FosNode => {
+    for (const edge of node.children) for (const cid of edge) if (!store.table.has(cid)) loadDefinition(definitions[cid]!)
+    return store.create(node)
+  }
+  const documentRootType = loadDefinition(COMPILED_LIBRARY.types.find(type => type.data.alias?.id === 'lib:type:document-root') as FosNodeContent)
   const startRootAlias = getStartRootAlias(store, {
     terminal,
     previousVersion,

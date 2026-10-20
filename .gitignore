@@ -268,3 +268,7 @@ android-upload-key.jks
 
 # Local fos state (device identity, sessions, replicas)
 .fos/
+!/.fos/
+/.fos/*
+!/.fos/library.json
+!/.fos/.gitignore

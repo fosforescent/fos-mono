@@ -18,8 +18,8 @@
 
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
-import { rowTypeId, seedRowTypeContent } from '../dag-implementation/row-templates'
-import { content, valueContent, isHandle, isRefNode, refValueCid, put, rowKindOf, aliasIdOf, isChoiceEdge, missingTemplateOf, type RowKind } from './graph'
+import { rowTypeId } from '../dag-implementation/row-templates'
+import { seedTypes, content, valueContent, isHandle, isRefNode, refValueCid, put, rowKindOf, aliasIdOf, isChoiceEdge, missingTemplateOf, type RowKind } from './graph'
 
 export function isTypeErrorEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.typeErrorConstructor.getId()
@@ -49,7 +49,7 @@ export function rootTypeOf(store: FosStore): string {
   const root = content(store, store.rootNodeId)
   const isAlias = root.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
   const type = isAlias ? root.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())?.[1] : undefined
-  return type ?? put(store, seedRowTypeContent('document-root', (c) => put(store, c)))
+  return type ?? put(store, seedTypes(store).find(t => t.data.alias?.id === 'lib:type:document-root')!)
 }
 
 /** The root's content when it is in error (its rejected children), else null. */
@@ -81,13 +81,20 @@ function childType(store: FosStore, edge: FosPathElem): { type: string; version:
   const missing = missingTemplateOf(store, edge)
   if (missing) return { type: rowTypeId(libraryKind(missing.kind)), version: missing.cid }
   const kind = rowKindOf(store, edge)
-  return kind ? { type: rowTypeId(libraryKind(kind)), version: edge[0] } : null
+  const alias = content(store, edge[0]).data.alias?.id
+  return kind ? { type: alias?.startsWith('lib:type:') ? alias : rowTypeId(libraryKind(kind)), version: edge[0] } : null
 }
 const libraryKind = (kind: RowKind): string => kind === 'requirement' || kind === 'supply' ? 'allocation' : kind
 
 /** Does a node of type `typeCid` accept the row `child` (a plain row edge) among its children? */
 export function acceptsChild(store: FosStore, typeCid: string, child: FosPathElem): boolean {
   if (!store.table.has(typeCid)) return true // a missing type is a reference error, not a type error
+  const definition = content(store, typeCid)
+  if (definition.data.form) {
+    if (!rowKindOf(store, child)) return true
+    if (definition.children.some(([type]) => type === child[0])) return true
+    if (!definition.data.form.open) return false
+  }
   const type = childType(store, child)
   if (!type) return true // not a row: bookkeeping, arguments, choices
   const patterns = patternsOf(store, typeCid)

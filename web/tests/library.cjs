@@ -41,7 +41,7 @@ async function main() {
     return json(404, { error: `unexpected ${u.pathname}` })
   }
 
-  // my device: signed in; the server put the library's reference into Home on the first sync
+  // my device: signed in; the person explicitly links the shared library into Home
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}; app.syncNow = async () => {}
   c.mountUi(document.getElementById('app'), app)
@@ -85,6 +85,7 @@ async function main() {
   // records the supply (and a receipt for money or a place) as the person; no peer is involved.
   const fresh = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() }); fresh.scheduleSync = () => {}
   assert.deepEqual(c.libraryPath(fresh.state.replica), [c.LIBRARY_ID], 'a never-synced device ships the library in its root')
+  assert(!c.view(fresh.state.replica, [HOME]).tasks.some(row => row.id === LIB), 'Home has no library row unless explicitly linked')
   assert(c.manualHandlers(fresh.state.replica).length >= 12, 'the shipped copy carries the manual handlers')
   document.getElementById('app').replaceChildren()
   c.mountUi(document.getElementById('app'), fresh)

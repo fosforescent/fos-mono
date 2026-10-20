@@ -26,6 +26,11 @@ function newest(dir, matches) {
 }
 
 function main() {
+  const addCliPath = () => run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'desktop-cli-path.ps1')], { shell: false })
+  if (process.argv.includes('--path-only')) {
+    if (process.platform !== 'win32') throw new Error('--path-only is supported on Windows.')
+    addCliPath(); return
+  }
   if (build) {
     console.log(`Building the desktop app (API ${process.env.VITE_API_URL || 'default'})…`)
     run('npm', ['run', 'build'], { cwd: path.join(root, 'desktop') })
@@ -35,9 +40,8 @@ function main() {
     if (!installer) throw new Error(`No NSIS installer under ${bundles}; run without --no-build`)
     console.log(`Installing ${path.basename(installer)} silently…`)
     run(installer, ['/S'], { shell: false })
-    const cli = path.join(root, 'desktop', 'src-tauri', 'target', 'release', 'fos.exe')
     console.log('Installed. Launch "Fosforescent" from the Start menu.')
-    if (fs.existsSync(cli)) console.log(`The same binary is the fos CLI: ${cli}`)
+    addCliPath()
     return
   }
   if (process.platform === 'darwin') {

@@ -1,10 +1,11 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
+import { constructForm, formTitle } from './forms'
 import {
   demandOf, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
-  readProposals, refArguments, refNodeContent, refValueCid, resolveScope, rowContent,
-  rowEdgeAt, rowKindOf, updateAtScope, valueContent, type Scope
+  readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
+  rowEdgeAt, rowKindOf, rowTemplate, updateAtScope, valueContent, type Scope
 } from './graph'
 import {
   addRefAt, addRow, addTask, addSupply, applyProposalAt, headCid, instantiateTemplate,
@@ -55,7 +56,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     active.add(cid)
     sources.add(cid)
     const identity = content(store, cid), value = valueContent(store, cid)
-    const rendered = resolveText(r, at, value.data.description?.content ?? '(untitled)')
+    const rendered = resolveText(r, at, formTitle(store, value) || '(untitled)')
     for (const binding of rendered.bindings) { binding.problems.forEach(p => blockers.add(p)); binding.sources.forEach(cid => sources.add(cid)) }
     lines.push(`${'  '.repeat(depth)}${label}: ${rendered.text}`)
     const ref = identity.data.ref
@@ -91,7 +92,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   for (let i = 0; i < requestPath.length - 1; i++) {
     const ancestor = nodeAt(r, requestPath.slice(0, i))
     sources.add(ancestor.cid)
-    lines.push(`Ancestor: ${ancestor.value.data.description?.content ?? 'Project'}`)
+    lines.push(`Ancestor: ${formTitle(store, ancestor.value) || 'Project'}`)
     for (const edge of ancestor.value.children) {
       const kind = rowKindOf(store, edge)
       const child = identityCid(store, edge)
@@ -119,10 +120,10 @@ export function workAttempts(r: Replica, requestPath: Scope) {
     const snapshot = slots(r, cid, r.store.primitive.descriptionField.getId())[0]?.targetCid
     if (!snapshot) return []
     const saved = valueContent(r.store, snapshot)
-    const systemEdge = saved.children.find((edge) => rowKindOf(r.store, edge) === 'note')
-    const system = systemEdge ? valueContent(r.store, identityCid(r.store, systemEdge)).data.description?.content ?? '' : ''
+    const systemEdge = saved.children.find((edge) => valueContent(r.store, identityCid(r.store, edge)).data.presentation?.text?.mediaType === 'text/markdown' || rowKindOf(r.store, edge) === 'note')
+    const system = systemEdge ? formTitle(r.store, valueContent(r.store, identityCid(r.store, systemEdge))) : ''
     return [{ path, resultPath: [...path, result.id], resultCid: result.targetCid,
-      context: saved.data.description?.content ?? '', system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
+      context: formTitle(r.store, saved), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
   })
 }
 
@@ -152,7 +153,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
 
 export function proposeTaskResult(r: Replica, resultPath: Scope, text: string, now: number): Replica {
   if (!text.trim()) throw new Error('The model returned an empty result. Try again.')
-  const result = put(r.store, rowContent('note', newId(), text, now))
+  const result = put(r.store, constructForm(r.store, rowTemplate(r.store, 'note', resultPath), newId(), { text }, now))
   return proposeRefAt(r, resultPath, result, 'fos:llm', now).replica
 }
 
@@ -166,7 +167,7 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (current.blockers.length) throw new Error(current.blockers.join('\n'))
   if (attempt.context !== current.prompt) throw new Error('The task context changed. Run a new attempt before accepting.')
   const generating = nodeAt(r, requestPath).value.data.name?.content === 'fos:generate-subtasks'
-  const subtasks = generating ? (content(r.store, proposal.contentCid).data.description?.content ?? '').split('\n').flatMap(line => {
+  const subtasks = generating ? formTitle(r.store, valueContent(r.store, proposal.contentCid)).split('\n').flatMap(line => {
     const match = line.match(/^\s*(?:[-*]\s+)?\[ \]\s+(.+)$/)
     return match ? [match[1]!.trim()] : []
   }) : []

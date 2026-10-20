@@ -22,14 +22,14 @@ function receiveHome(r: Replica, at: string[]): Replica {
 
 test('only a device root accepts Home; nothing accepts a store root', () => {
   const r = device()
-  expect(content(r.store, rootTypeOf(r.store)).data.instanceKind).toEqual({ kind: 'device-root' })
+  expect(content(r.store, rootTypeOf(r.store)).data.alias).toEqual({ id: 'lib:type:device-root' })
   expect(userView(r)!.tasks.map(t => [t.id, t.kind])).toEqual([[HOME_ID, 'home']])
   // a device root also holds its own rows; Home and ordinary rows hold no Home
   expect(() => addTask(r, [], 'Device setting', 3, 'setting')).not.toThrow()
   expect(() => addRow(r, [HOME_ID], 'home', 'Another Home', 3)).toThrow(/does not accept/)
   expect(() => addRow(r, [HOME_ID, 't'], 'home', 'Home in a task', 3)).toThrow(/does not accept/)
   const doc = documentRoot()
-  expect(content(doc.store, rootTypeOf(doc.store)).data.instanceKind).toEqual({ kind: 'document-root' })
+  expect(content(doc.store, rootTypeOf(doc.store)).data.alias).toEqual({ id: 'lib:type:document-root' })
   expect(() => addRow(doc, [], 'home', 'Home in a project', 3)).toThrow(/does not accept/)
   expect(() => addTask(doc, [], 'Project task', 3)).not.toThrow()
 })
@@ -97,7 +97,7 @@ test('a bare root (as the seed and registration write it) commits as a document 
   nestScope(store, { store: host.store, root: headCid(host), at: [] })
   store.rootNodeId = put(store, { data: { alias: { id: 'ws' }, description: { content: 'workspace' } }, children: [] })
   const r = addTask(createReplica('server', store), [], 'first', 1, 'a')
-  expect(content(store, rootTypeOf(store)).data.instanceKind).toEqual({ kind: 'document-root' })
+  expect(content(store, rootTypeOf(store)).data.alias).toEqual({ id: 'lib:type:document-root' })
   expect(view(r, [])!.typeError).toBeUndefined()
   expect(view(r, [])!.tasks.map(t => t.title)).toEqual(['first'])
 })

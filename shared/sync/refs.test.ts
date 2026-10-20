@@ -2,7 +2,7 @@ import {
   refBranches, readChoice, branchEdge, selectBranch, createBranch, resolveBinding, addRefAt, addRow, addSupply, addTask, applyProposalAt, capabilityTarget, content,
   copyRowContent, createReplica, headCid, instantiateTemplate, mergeNodes, newId,
   proposeRefAt, put, refArguments, refNodeContent, refValueCid, resolveScope,
-  valueContent, view, serializeReplica, loadReplica, type Replica
+  valueContent, formTitle, view, serializeReplica, loadReplica, type Replica
 } from './index'
 
 function node(r: Replica, path: string[]) { return content(r.store, resolveScope(r.store, headCid(r), path)!) }
@@ -50,7 +50,7 @@ test('template instantiation shares deep copying, remaps internal refs and creat
   expect(first.id).not.toBe(second.id)
   expect(view(r, ['one'])!.tasks[1]!.refId).toBe('one')
   const children = view(r, ['one', first.id])!.tasks
-  const doc = children.find((t) => t.kind === 'note')!
+  const doc = children.find((t) => t.text?.mediaType === 'text/markdown')!
   expect(children.find((t) => t.kind === 'ref')!.refId).toBe(doc.id)
   const req = children.find((t) => t.kind === 'requirement')!
   expect(req.requirement!.satisfied).toBe(false)
@@ -73,7 +73,7 @@ test('copying remaps internal typed-ref targets and retains external defaults', 
   const copied = copyRowContent(r.store, resolveScope(r.store, headCid(r), ['parent'])!, 5, newId)
   const args = refArguments(r.store, content(r.store, copied), type)
   expect(args[0]!.targetCid).not.toBe(document)
-  expect(valueContent(r.store, args[0]!.targetCid!).data.description!.content).toBe('Document')
+  expect(formTitle(r.store, valueContent(r.store, args[0]!.targetCid!))).toBe('Document')
   expect(args[1]!.targetCid).toBe(external)
 })
 

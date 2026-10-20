@@ -571,10 +571,11 @@ describe('row kinds', () => {
     r = addRow(r, [], 'comment', 'nice', 5, { id: 'c', author: { id: 'peer-1', name: 'Ada' } })
     r = addRow(r, ['c'], 'comment', 'reply', 6, { id: 'c2' })
     const v = userView(r)!
-    expect(v.tasks.map((t) => [t.id, t.kind, t.checkable])).toEqual([['p', 'plain', false], ['t', 'task', true], ['n', 'note', false], ['c', 'comment', false]])
+    expect(v.tasks.map((t) => [t.id, t.kind, t.checkable])).toEqual([['p', 'plain', false], ['t', 'task', true], ['n', 'plain', false], ['c', 'plain', false]])
     expect(v.tasks.find((t) => t.id === 'n')!.title).toBe('# Title\n\nbody with {{who}}')
     expect(v.tasks.find((t) => t.id === 'c')!.author).toMatchObject({ name: 'Ada' })
-    expect(view(r, ['c'])!.tasks.map((t) => t.kind)).toEqual(['comment'])
+    expect(view(r, ['c'])!.tasks.map((t) => t.kind)).toEqual(['plain', 'plain', 'plain', 'plain'])
+    expect(view(r, ['c'])!.tasks.slice(0, 3).map(t => t.id)).toEqual(['c/field/body', 'c/field/person', 'c/field/texts'])
     // a plain row cannot be completed; converting it to a task makes it checkable
     expect(userView(setTaskDone(r, [], 'p', true, 7))!.tasks[0]).toMatchObject({ id: 'p', done: false, checkable: false })
     r = setRowKind(r, [], 'p', 'task', 8)
@@ -634,7 +635,7 @@ describe('row kinds', () => {
     const kinds = (r: Replica) => userView(r)!.tasks.map((t) => [t.id, t.kind])
     expect(kinds(a)).toEqual(kinds(b))
     expect(kinds(a)[0]).toEqual(['n', 'task'])
-    expect(kinds(a).slice(1).sort()).toEqual([['ca', 'comment'], ['pb', 'plain']])
+    expect(kinds(a).slice(1).sort()).toEqual([['ca', 'plain'], ['pb', 'plain']])
     expect(userView(a)!.choices).toEqual([])
   })
 })
@@ -928,7 +929,7 @@ describe('allocations: amounts add up, people allocate themselves, rows are rewr
     r = setRowContentAt(r, ['t'], 'rq', 'requirement', 'lunch walk', { requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } }, 4)
     const row = view(r, ['t'])!.tasks[0]!
     expect(row).toMatchObject({ id: 'rq', kind: 'requirement', title: 'lunch walk', childCount: 1, requirement: { resource: 'calendar', amount: 1, unit: 'h' } })
-    expect(view(r, ['t', 'rq'])!.tasks[0]).toMatchObject({ id: 'c', kind: 'comment', title: 'any place is fine' })
+    expect(view(r, ['t', 'rq'])!.tasks[0]).toMatchObject({ id: 'c', kind: 'plain', title: 'any place is fine' })
     // edited to "[x] lunch walk": a done task, still with its child
     r = setRowContentAt(r, ['t'], 'rq', 'task', 'lunch walk', { done: true }, 5)
     expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', kind: 'task', done: true, childCount: 1 })
