@@ -927,14 +927,17 @@ at the root). The home context (`fos` with no directory) does not list `~`. Outs
 the desktop shell (web, and mobile, which has no project context) nothing is listed.
 
 **File references.** A file row's **Reference** action (or **Reference this file** in
-an open file's workspace) adds an ordinary plain row to the hosting graph node. The
-row's value carries `data.file = { path, sha256, size }`: the `/`-separated path
-relative to the linked directory and the SHA-256 the desktop computed
+an open file's workspace) adds a row of the standard-library type
+`lib:type:file-reference` (`.fos/library.json`) to the hosting graph node: the row
+edge's left node is that type, and its form fields hold `path` (`/`-separated,
+relative to the linked directory), `sha256` and `size` as computed by the desktop
 (`hash_node_file`, `desktop/src-tauri/src/files.rs`: streamed in 64 KB blocks,
-confined to the linked root, refusing `..`, symbolic links, `.fos` and `.git`). It is
-plain row data rather than a row kind or a named value, so node exchange, merge and
-copies carry it (named values are typed argument refs, which node exchange does not
-send). The file itself is never stored. On render, a device resolves the reference
+confined to the linked root, refusing `..`, symbolic links, `.fos` and `.git`). A
+row is a reference because its type node is a version of that type
+(`isLibraryType`, any pinned version), never because of other data. The fields are
+ordinary mutable-ref rows, so node exchange (node by node, the fields included),
+merge and copies carry them. The file itself is never stored. A library seeded before
+the type existed resolves it from the build's definition (`libraryTypeAt`). On render, a device resolves the reference
 against the nearest node at or above the row's parent that has a linked directory,
 hashes the file again (results are cached for 5 s; Refresh clears them) and marks the
 reference **current** (with **Open file**), **stale** (with **Update reference**,

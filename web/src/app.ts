@@ -3044,7 +3044,7 @@ export class App {
   /** A plain row referencing a file in a linked directory (path relative to it, checksum from the desktop; web/src/filesystem.ts). */
   addFileReference(at: Scope, file: FileReference): string {
     const id = newId()
-    this.edit(addFileReference(this.state.replica, at, file, this.now(), { id }))
+    this.edit(addFileReference(this.state.replica, at, file, this.now(), id))
     return id
   }
   /** Re-pin a reference to the checksum its file has now. */

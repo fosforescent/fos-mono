@@ -290,13 +290,31 @@ const outerScopes = new WeakMap<FosStore, { store: FosStore; root: string; at: S
 
 /** The `type` row type of the library row `library`, when it is here (not a peer's unloaded node). */
 function libraryRowType(store: FosStore, library: string, type: RowTypeKind): string | null {
+  return libraryTypeIn(store, library, rowTypeId(type))
+}
+/** The row type with id `id` (`lib:type:…`) in the library row `library`, when it is here. */
+function libraryTypeIn(store: FosStore, library: string, id: string): string | null {
   const loaded = (cid: string | null): cid is string => !!cid && !isPeerReference(content(store, cid))
   const group = loaded(library) ? findChild(store, library, ROW_TYPES_ID) : null
-  const row = loaded(group) ? findChild(store, group, rowTypeId(type)) : null
+  const row = loaded(group) ? findChild(store, group, id) : null
   if (!loaded(row)) return null
   const value = valueCidOf(store, row)
   const definition = valueContent(store, value)
   return put(store, currentRowDefinition(store, definition))
+}
+/**
+ * The library row type `id` new rows at `at` are made from, resolved like `rowTemplate` (nearest library that has
+ * it); a library seeded before the type existed falls back to the build's definition. Null when neither has it.
+ */
+export function libraryTypeAt(store: FosStore, id: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
+  const library = findNearestRow(store, root, at, (row) => row.id === LIBRARY_ID && !!libraryTypeIn(store, row.cid, id))
+  if (library) return libraryTypeIn(store, library.cid, id)
+  const seeded = seedTypes(store).find(type => definitionId(type) === id)
+  return seeded ? put(store, seeded) : null
+}
+/** Whether `template` (a row edge's left node) is a version of the library type `id`: types are told apart by that node alone. */
+export function isLibraryType(store: FosStore, template: string, id: string): boolean {
+  return store.table.has(template) && definitionId(valueContent(store, template)) === id
 }
 
 /**

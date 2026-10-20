@@ -62,7 +62,7 @@ async function main() {
   assert(!root.querySelector('.file-content').isContentEditable)
   // "Reference this file" in the file's workspace adds the reference to the hosting graph node
   ;[...root.querySelectorAll('button')].find(b => b.textContent === 'Reference this file').click(); await tick()
-  const deep = view(app.state.replica, []).tasks.find(row => row.title === 'main.ts')
+  const deep = view(app.state.replica, []).tasks.find(row => fileReferenceAt(app.state.replica, [row.id])?.path === 'src/main.ts')
   assert(deep, 'the reference is a row of the project root')
   assert.deepEqual(fileReferenceAt(app.state.replica, [deep.id]), { path: 'src/main.ts', sha256: 'c'.repeat(64), size: 9 })
   ;[...root.querySelectorAll('button')].find(b => b.textContent === 'Parent node').click(); await tick()
@@ -70,12 +70,13 @@ async function main() {
 
   // the outline's Reference action
   ;[...root.querySelectorAll('.filesystem-row')].find(row => row.textContent.includes('README.md')).querySelector('.file-reference-add').click(); await tick()
-  const readme = view(app.state.replica, []).tasks.find(row => row.title === 'README.md')
-  assert.equal(readme.kind, 'plain', 'a file reference is a plain row with data, not a row kind')
+  const readme = view(app.state.replica, []).tasks.find(row => fileReferenceAt(app.state.replica, [row.id])?.path === 'README.md')
+  assert(readme, 'a file reference is a row of the library type')
   assert.deepEqual(fileReferenceAt(app.state.replica, [readme.id]), { path: 'README.md', sha256: 'a'.repeat(64), size: 2 })
   const state = () => [...root.querySelectorAll('.file-reference')].find(box => box.querySelector('code').textContent === 'README.md')?.dataset.state
   await tick()
   assert.equal(state(), 'current')
+  assert(!root.textContent.includes('a'.repeat(64)) && !root.querySelector('.task input[value="README.md"]'), 'the fields are not shown as rows or a hand-edited form')
 
   // the file changes on disk: the reference is stale until re-pinned
   files['README.md'] = 'v2!'; hashes['README.md'] = 'b'.repeat(64)
@@ -97,7 +98,7 @@ async function main() {
   const storage = createMemoryStorage(); storage.saveReplica(serialized)
   const other = new App({ baseUrl: 'http://localhost', autoLogin: null, storage, scopedDocument: true })
   other.scheduleSync = () => {}
-  assert(view(other.state.replica, []).tasks.some(row => row.title === 'README.md'))
+  assert(view(other.state.replica, []).tasks.some(row => fileReferenceAt(other.state.replica, [row.id])?.path === 'README.md'))
   root.replaceChildren(); mountUi(root, other); other.refresh(); await tick()
   assert.equal(root.querySelectorAll('.filesystem-row').length, 0, 'no file rows without the desktop shell')
   const away = [...root.querySelectorAll('.file-reference')].find(box => box.textContent.includes('README.md'))

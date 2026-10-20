@@ -231,16 +231,6 @@ export type FosDataContent = {
   listing?: {
     listedAt: number
   },
-  /**
-   * A row that references a file in a directory linked on some device (web/src/filesystem.ts): its `/`-separated
-   * path relative to that directory and the SHA-256 and size of the content it was made against. Only this record
-   * enters the graph, never the file; a device with the directory recomputes the checksum to show stale references.
-   */
-  file?: {
-    path: string
-    sha256: string
-    size: number
-  },
   /** A reference row: this node stands for the node whose alias id is `id` (shown by title; follows it on click). */
   ref?: {
     id: string

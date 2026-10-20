@@ -1933,7 +1933,10 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
   let body: HTMLElement
-  if (task.kind === 'home') { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
+  // a row of the file-reference type: the file name and, on this device, whether the file still matches (its fields are not edited by hand)
+  const fileReference = app.fileReference([...state.view, ...at, task.id])
+  if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
+  else if (task.kind === 'home') { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if (task.form && !task.text) { body = renderForm(task, at, state, app) }
   else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
@@ -1963,9 +1966,6 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' })), a = document.createElement('a'); a.href = url; a.download = attachment.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch { app.notify('error', 'This attachment could not be read.') }
   }))
-  // a row referencing a file in a linked directory: its path, and on this device whether the file still matches
-  const fileReference = app.fileReference([...state.view, ...at, task.id])
-  if (fileReference) body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference))
   const templateIcon = app.templateIcon([...state.view, ...at, task.id])
   if (templateIcon) body.prepend(span('template-icon', templateIcon))
   if (task.branches || viewAt(state.replica, [...state.view, ...path])?.proposals.length) body.append(branchSelector(task, at, app))
