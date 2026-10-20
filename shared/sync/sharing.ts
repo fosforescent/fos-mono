@@ -5,6 +5,7 @@ import { argumentRefs, capabilityPeers } from './bindings'
 import { readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
 import { addMemberAt, createReplica, homePath, addRow, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { FosStore } from '../dag-implementation/store'
+import type { TextPresentation } from '../types'
 import { capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
 
 export const SHARE_ARGUMENT = 'fos:sharing'
@@ -18,8 +19,10 @@ export type Participation = {
   approvals: string[]; ranking: string[]; fields: Record<string, string | boolean | number | { amount: number; type: string; unit: string; start?: number; end?: number }>
   account?: { owner: string; ref: string }
 }
+/** A published row: `title` is its short label; a markdown presentation also carries the whole `body`. */
+export type SharedRow = { id: string; title: string; depth: number; text?: { mediaType: TextPresentation['mediaType'] }; body?: string; truncated?: true }
 export type SharedNode = {
-  title: string; rows: Array<{ id: string; title: string; kind: string; depth: number }>
+  title: string; text?: SharedRow['text']; body?: string; truncated?: true; rows: SharedRow[]
   inputs: SharedInput[]; options: Array<{ id: string; label: string }>; poll: Poll | null
   proposals: Array<{ id: string; label: string }>; revision: string
   audience: 'public' | 'users'; counts: Record<string, number>; rankings: Record<string, number>; participants: number
@@ -91,6 +94,15 @@ export function participants(r: Replica, path: Scope): Participation[] {
   const peers = new Set([...(view(r, path)?.members ?? []).map(m => m.peerId), ...argumentRefs(r.store, cid).flatMap(a => a.name?.startsWith('fos:guest:') ? [a.name.slice('fos:guest:'.length)] : [])])
   return [...peers].flatMap(peer => { const record = participation(r, path, peer); return record ? [record] : [] })
 }
+/** Bounds on published markdown, in characters: one body, and every body of one projection together. */
+export const SHARED_BODY_LIMIT = 100_000
+export const SHARED_TOTAL_BODY = 1_000_000
+/** A page title for a markdown body: its first heading, else its first line without markup. */
+export function markdownTitle(markdown: string): string {
+  const lines = markdown.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const line = lines.find(l => /^#{1,6}\s/.test(l)) ?? lines[0] ?? ''
+  return line.replace(/^(#{1,6}|>|[-*+]|\d+[.)])\s+/, '').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`~]/g, '').trim().slice(0, 200)
+}
 export function sharedProjection(r: Replica, path: Scope, revision: (value: unknown) => string, peer?: string, interactive = false): SharedNode {
   const node = view(r, path), policy = sharing(r, path)
   if (!node || !policy) throw new Error('Shared node unavailable.')
@@ -98,14 +110,28 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   const visible = (at: Scope) => { try { nodeAuthorityAt(r, at, { peerId: visitor, scope: path, capabilities: ['read'] }); return true } catch { return false } }
   const textVisible = (at: Scope) => { const mask = nodeLinkMaskAt(r, at, visitor); return !mask?.fields || mask.fields.includes('description') }
   const current = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
-  const rows: SharedNode['rows'] = []
+  const rows: SharedRow[] = [], hashed: unknown[] = []
+  let budget = SHARED_TOTAL_BODY
+  // What is markdown comes from the graph's text presentation, never from the row's kind.
+  const present = (title: string, text: TextPresentation | undefined, shown: boolean): Pick<SharedRow, 'title' | 'text' | 'body' | 'truncated'> => {
+    if (!shown) return { title: '' }
+    if (text?.mediaType !== 'text/markdown') return { title: title.slice(0, 8000), ...(text ? { text: { mediaType: text.mediaType } } : {}) }
+    const body = title.slice(0, Math.max(0, Math.min(SHARED_BODY_LIMIT, budget)))
+    budget -= body.length
+    return { title: markdownTitle(title), text: { mediaType: 'text/markdown' }, body, ...(body.length < title.length ? { truncated: true as const } : {}) }
+  }
+  const page = present(current?.title ?? node.name ?? 'Shared node', current?.text, textVisible(path))
   const walk = (at: Scope, depth: number) => {
-    if (depth > 8 || rows.length >= 200) return
+    if (depth > 8 || hashed.length >= 200) return
     for (const row of view(r, at)?.tasks ?? []) {
-      if (rows.length >= 200) break
+      if (hashed.length >= 200) break
       const childPath = [...at, row.id]
       if (!visible(childPath)) continue
-      rows.push({ id: row.id, title: textVisible(childPath) ? row.title.slice(0, 8000) : '', kind: row.kind, depth })
+      const shown = textVisible(childPath)
+      // a constructor's scalar fields (a note's body) are already presented by the row they belong to
+      if (!row.scalar) rows.push({ id: row.id, depth, ...present(row.title, row.text, shown) })
+      // the revision keeps its earlier input, so votes cast before bodies were published still count
+      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', kind: row.kind, depth })
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
       if (row.kind !== 'ref') walk([...at, row.id], depth + 1)
     }
@@ -116,7 +142,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   const options = poll ? (current!.requirement!.options ?? []).slice(0, 100).map((label, index) => ({ id: `option:${index}`, label })) : []
   const proposals = node.proposals.filter(p => p.status === 'open').slice(0, 100).map(p => ({ id: `proposal:${p.id}`, label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
   const inputs = ((policy.execution || interactive) ? executionInputs(r, path) : sharedInputs(r, path)).filter(field => { const at = [...path, ...(field.path ?? [field.key])]; return visible(at) && textVisible(at) })
-  const key = revision({ policy: policy.id, title: current?.title ?? node.name, rows, inputs, options, poll, proposals })
+  const key = revision({ policy: policy.id, title: current?.title ?? node.name, rows: hashed, inputs, options, poll, proposals })
   const counts: Record<string, number> = {}, rankings: Record<string, number> = {}
   const cid = resolveScope(r.store, headCid(r), path)!
   const active = participants(r, path).filter(p => p.audience === policy.id && p.revision === key && hasCapability(r.store, content(r.store, cid), p.peer, 'read'))
@@ -124,7 +150,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'edit') && hasCapability(r.store, content(r.store, cid), p.peer, 'edit')) for (const id of p.approvals) counts[id] = (counts[id] ?? 0) + 1
     if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'rank') && hasCapability(r.store, content(r.store, cid), p.peer, 'rank')) p.ranking.forEach((id, i) => { rankings[id] = (rankings[id] ?? 0) + p.ranking.length - i })
   }
-  return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), title: textVisible(path) ? (current?.title ?? node.name ?? 'Shared node').slice(0, 8000) : 'Shared node', rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
+  return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), ...page, title: page.title || 'Shared node', rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
 }
 
 /** The sub-peer row for another account below this one's Home (their peer id is its member), created on demand. */

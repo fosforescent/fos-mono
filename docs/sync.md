@@ -960,6 +960,40 @@ or resource transfer. Graph-only evaluations run after all inputs are supplied;
 external integration effects still require their host-side handler. Hosted
 endpoints require deployment of the updated backend.
 
+### Published nodes as pages, and the embed script
+
+A published node reads as a small website (`web/src/site.ts`). The projection
+(`sharedProjection`, `shared/sync/sharing.ts`) carries each row's text
+presentation (`text.mediaType`) and, for markdown, its whole `body` (up to
+`SHARED_BODY_LIMIT`, 100,000 characters per body and `SHARED_TOTAL_BODY`,
+1,000,000 per projection; a cut body says `truncated`) next to a short `title`
+(`markdownTitle`: the first heading, else the first line). What is markdown comes
+from the graph's presentation, never from a row kind; a constructor's scalar
+fields (a note's body row) are not repeated as rows. Bindings (`{name}`) are not
+resolved, since arguments are never exported. The revision that votes are tied to
+is still computed from the earlier row shape, so existing polls keep their votes.
+
+The page is the node (its markdown, or its title as a heading). Leaf children are
+sections of the page; a child with rows of its own is a sub-page, linked from its
+parent with breadcrumbs back. Markdown goes through marked + DOMPurify. The share
+page (`#share=`) hides the app chrome (`#app.shared-site`), renders math and
+diagrams, and shows the input form only when there is something to answer
+(inputs, poll options, proposals or an execution).
+
+**Embedding.** `web/src/embed.ts` builds to `dist/embed.js` (a second Vite build,
+`web/vite.embed.config.ts`, IIFE, about 80 kB) and is served by Cloudflare Pages
+next to the app. `<script src="https://<app>/embed.js" data-fos-share="<share URL>"
+data-fos-api="<server>" async></script>` renders after itself, and any
+`<div data-fos-share=…>` renders inside; each gets a shadow root (styles isolated,
+colors and fonts inherited from the host page). It fetches
+`GET /public/node/read?owner=&share=&path=[…]` (`credentials: 'omit'`), which
+returns the projection without joining a visitor or writing anything, refuses
+Fos-user audiences, templates and executions, and is cached for 60 seconds. That
+route alone allows every origin through CORS; every other route keeps the
+account origins list. The embed shows math and diagram fences as source and links
+interactive nodes to the share page ("Respond on Fosforescent"). The publishing
+dialog offers "Copy embed" for public, non-template links.
+
 ### The event grammar: one vocabulary for every transport
 
 Every input surface is an adapter of one grammar (`shared/sync/events.ts`): HTTP,

@@ -203,12 +203,17 @@ const corsOptions = {
   credentials: true // This might be necessary depending on your auth method
 }
 
-// Enable CORS with the above options
-app.use(cors(corsOptions))
+// Enable CORS with the above options. The public read of a published node is the one exception: embeds fetch it
+// from any site, read-only and without credentials, so that route alone allows every origin.
+const PUBLIC_READ_PATH = '/public/node/read'
+const accountCors = cors(corsOptions)
+const publicReadCors = cors({ origin: '*', methods: ['GET'], credentials: false })
+const corsFor = (req: express.Request, res: express.Response, next: express.NextFunction) => (req.path === PUBLIC_READ_PATH ? publicReadCors : accountCors)(req, res, next)
+app.use(corsFor)
 app.set('trust proxy', '10.244.0.96');
 app.set('trust proxy', '10.124.0.3');
 // Handle preflight requests for all routes
-app.options('*', cors(corsOptions)) // Respond to preflight requests
+app.options('*', corsFor) // Respond to preflight requests
 
 stripeRoute.post('/', postSubscriptionWebhook)
 
@@ -303,6 +308,7 @@ const sharingHandlers = createSharingHandlers(prismaAccountStoreDeps, process.en
 const guestThrottle = slowDown({ windowMs: 60_000, delayAfter: 30, delayMs: 500 })
 app.post('/public/node/visit', guestThrottle, sharingHandlers.visit)
 app.post('/public/node/input', guestThrottle, sharingHandlers.submit)
+app.get(PUBLIC_READ_PATH, slowDown({ windowMs: 60_000, delayAfter: 60, delayMs: 500 }), sharingHandlers.read)
 
 // Device connection through an invite token (no session yet): claim, then poll for approval.
 app.post('/peer/connect', slowDown({

@@ -254,6 +254,17 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       }
       const r = createReplica(`user:${at.owner}`, (await deps.loadStore(at.owner))!.store), { peer, links, record } = outcome
       return res.json({ node: { ...sharedProjection(r, at.path, digest, peer, req.body.interaction === true), sources: account ? links : undefined, mine: record, capabilities: ['read', 'edit', 'rank'].filter(c => participantAccess(r, at.path, peer, c as 'read' | 'edit' | 'rank')) } })
+    }),
+    /** `GET /public/node/read?owner=&share=&path=[…]`: the public projection for embeds. Nothing is written (no guest joins), so any page may show it. */
+    read: run(async (req, res) => {
+      const q = req.query ?? {}
+      let path: unknown
+      try { path = typeof q.path === 'string' && q.path.length <= 9000 ? JSON.parse(q.path) : null } catch { path = null }
+      const at = address({ owner: q.owner, share: q.share, path })
+      const { r, policy } = await load(at, null)
+      if (policy.template) throw new Failure(404, 'Template endpoints cannot be embedded.')
+      res.setHeader?.('Cache-Control', 'public, max-age=60')
+      return res.json({ node: sharedProjection(r, at.path, digest) })
     })
   }
 }

@@ -62,6 +62,10 @@ Requirement destructuring (`destructure.ts`) uses named typed refs whose existin
 - `graph.ts` `memberFor`: audience members are implicit groups (`audience:users` = every `user:*`, `audience:public` = everyone); `hasCapability` and every grant walk use it. `sharing.ts` `participants` reads participation records off the node so audience members' votes count.
 - Tests: `library.test.ts`.
 
+## Published pages (2026-10-20)
+
+- `sharing.ts` `sharedProjection`: rows are `SharedRow` (`id`, short `title`, `depth`, `text.mediaType`, markdown `body`, `truncated`); the node itself carries the same `text`/`body`. Bodies are bounded by `SHARED_BODY_LIMIT` (100k) and `SHARED_TOTAL_BODY` (1M); `markdownTitle` derives the short title. Markdown comes from the row's text presentation, not its kind; scalar constructor fields (a note's body row) are not listed. Rows no longer carry `kind`. The revision hashes the earlier row shape (`{id, title ≤ 8000, kind, depth}`) so votes survive. Tests: `sharing.test.ts`.
+
 ## Graph-defined comments and notes (2026-10-19)
 
 - `.fos/library.json` is the portable library graph exported from the CLI tree. `scripts/compile-library.cjs` validates its CIDs and compiles `shared/sync/library.generated.json` before web/shared/backend builds and desktop core builds. No network or TypeScript definition fallback. `legacy-row-types.ts` reads old discriminators only; the graph source rejects `instanceKind`.

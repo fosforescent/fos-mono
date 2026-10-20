@@ -794,6 +794,14 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 
 #app.shared-execution > :not(.shared-node):not(.modal-backdrop) { display: none !important; }
 .shared-execution .shared-node { position: fixed; inset: 0; overflow: auto; z-index: 100; margin: 0; max-width: none; border: 0; border-radius: 0; padding: clamp(48px, 6vw, 80px); }
+/* A published node read as a website (site.ts): the page alone, the visitor's tools in a quiet footer. */
+#app.shared-site > :not(.shared-node):not(.modal-backdrop) { display: none !important; }
+.shared-site .shared-node { position: fixed; inset: 0; overflow: auto; z-index: 100; margin: 0; max-width: none; border: 0; border-radius: 0; padding: clamp(24px, 6vw, 80px) clamp(16px, 6vw, 80px); background: var(--bg, Canvas); font-size: 17px; }
+.shared-site .shared-node > form { max-width: 72ch; margin: 2rem auto; }
+.shared-site-tools { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.shared-site .shared-site-tools { max-width: 72ch; margin-left: auto; margin-right: auto; }
+.sharing-controls .embed-snippet { display: block; width: 100%; min-height: 4.5em; font-family: var(--mono); font-size: 12px; }
+.sharing-controls .embed-snippet[hidden], .sharing-controls button[hidden] { display: none; }
 
 .analysis-page { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 24px; border: 0; background: var(--bg, Canvas); color: var(--fg, CanvasText); }
 .analysis-page header { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }

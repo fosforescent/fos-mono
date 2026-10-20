@@ -1,4 +1,6 @@
 import { iconSvg } from './icons'
+import { hydrateDiagrams, renderMarkdown } from './markdown'
+import { parseShareAddress, renderSitePage, SITE_CSS } from './site'
 import type { App } from './app'
 import { configureSharing, sharedRequest, type ShareAddress } from './api'
 import { sharing, readNodeValue, participants, resolveScope, headCid, valueContent, put, isDirty, scopeBranches, resolveRef, type Poll, type SharedNode } from '../../shared/sync/index'
@@ -18,11 +20,17 @@ export function shareUrl(address: ShareAddress): string {
   return url.href
 }
 export function sharedAddress(hash: string): ShareAddress | null {
-  if (!hash.startsWith('#share=') || hash.length > 24000) return null
-  try {
-    const at = JSON.parse(decodeURIComponent(hash.slice(7))) as ShareAddress
-    return typeof at.owner === 'string' && !!at.owner && at.owner.length <= 128 && typeof at.share === 'string' && /^[\w-]{16,128}$/.test(at.share) && Array.isArray(at.path) && at.path.length <= 32 && at.path.every(id => typeof id === 'string' && !!id && id.length <= 256) ? { owner: at.owner, path: at.path, share: at.share } : null
-  } catch { return null }
+  return hash.startsWith('#share=') ? parseShareAddress(hash) : null
+}
+const attribute = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+/** The snippet that renders a public share link on another site (`embed.ts`, served next to the app as /embed.js). */
+export function embedSnippet(link: string, api: string): string {
+  return `<script src="${attribute(new URL('/embed.js', location.href).href)}" data-fos-share="${attribute(link)}" data-fos-api="${attribute(api.replace(/\/$/, ''))}" async></script>`
+}
+let siteStyle: HTMLStyleElement | null = null
+function ensureSiteStyle(): void {
+  if (siteStyle?.isConnected) return
+  siteStyle = document.createElement('style'); siteStyle.textContent = SITE_CSS; document.head.append(siteStyle)
 }
 
 /** Publishing configuration opened by the audience's Add peer constructor. */
@@ -40,6 +48,14 @@ export function sharingControls(app: App, audience: 'public' | 'users', template
   const output = element('input'); output.readOnly = true; output.setAttribute('aria-label', 'Shareable URL')
   if (policy?.enabled && state.session?.kind === 'user') output.value = shareUrl({ owner: state.session.username, path: app.currentScope(), share: policy.id })
   const copy = button('Copy link', () => { output.select(); void navigator.clipboard.writeText(output.value).catch(() => { status.textContent = 'Select and copy the URL above.' }) }); copy.disabled = !output.value
+  // a public, non-template link can also be shown inside another site (the read-only embed records no visitors)
+  const embed = element('textarea'); embed.readOnly = true; embed.className = 'embed-snippet'; embed.setAttribute('aria-label', 'Embed snippet')
+  const copyEmbed = button('Copy embed', () => { embed.select(); Promise.resolve(navigator.clipboard?.writeText(embed.value)).catch(() => { status.textContent = 'Select and copy the snippet above.' }) })
+  const showEmbed = () => {
+    embed.value = audience === 'public' && !templateTrigger && output.value && state.session ? embedSnippet(output.value, state.session.baseUrl) : ''
+    embed.hidden = copyEmbed.hidden = !embed.value
+  }
+  showEmbed()
   const path = [...state.view], scope = app.currentScope(), session = state.session
   const save = async (enabled: boolean) => {
     publish.disabled = revoke.disabled = true
@@ -53,7 +69,7 @@ export function sharingControls(app: App, audience: 'public' | 'users', template
       if (!cid || isDirty(r) || !app.isOnline('fos')) throw new Error('Finish syncing this node before sharing it.')
       const address = await configureSharing(session, { path: app.currentScope(), expected: put(r.store, valueContent(r.store, cid)), audience, enabled, template: templateTrigger, poll: (mode.value || null) as Poll['mode'] | null })
       if (templateTrigger) endpoint.value = enabled ? JSON.stringify({ method: 'POST', url: `${session.baseUrl.replace(/\/$/, '')}/${audience === 'public' ? 'public/node' : 'user/data/sharing'}/visit`, body: { owner: address.owner, path: address.path, share: address.share } }, null, 2) : ''
-      output.value = enabled ? shareUrl(address) : ''; copy.disabled = !enabled
+      output.value = enabled ? shareUrl(address) : ''; copy.disabled = !enabled; showEmbed()
       status.textContent = enabled ? 'Link ready. Visitors can submit input; “Apply poll result” on the choice resolves it from their responses.' : 'Link revoked.'
       await app.syncNow('sharing changed')
     } catch (error) { status.textContent = error instanceof Error ? error.message : String(error) }
@@ -62,7 +78,7 @@ export function sharingControls(app: App, audience: 'public' | 'users', template
   const publish = button(policy?.enabled ? 'Update publication' : 'Publish node', () => void save(true))
   const revoke = button('Revoke link', () => void save(false)); revoke.disabled = !policy?.enabled
   publish.disabled = state.session?.kind !== 'user' || !app.isOnline('fos')
-  box.append(publish, revoke, output, copy, status)
+  box.append(publish, revoke, output, copy, embed, copyEmbed, status)
   const records = participants(state.replica, state.view)
   if (records.length) {
     const results = element('details'); results.append(element('summary', `Guest input (${records.length})`))
@@ -112,24 +128,42 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
     status.setAttribute('role', 'status'); status.textContent = error instanceof Error ? error.message : String(error)
   }
   const load = async () => { const id = generation; try { await request('visit') } catch (error) { if (id === generation) showError(error) } }
-  const render = () => {
+  // the published node reads as a website: its page, sections and sub-pages (`site.ts`); `trail` is the sub-page shown
+  let trail: string[] = [], drawn = 0
+  const pageTitle = document.title
+  const modes = () => {
     root.classList.toggle('shared-execution', !!node?.execution && !panel.hidden)
-    panel.replaceChildren(element('h2', node?.title ?? 'Shared node'))
+    root.classList.toggle('shared-site', !!node && !node.execution && !panel.hidden)
+    document.title = node && !panel.hidden ? `${node.title} — Fosforescent` : pageTitle
+  }
+  const drawSite = async (target: HTMLElement) => {
+    const id = ++drawn, snapshot = node
+    if (!snapshot) return
+    ensureSiteStyle()
+    try {
+      await renderSitePage(target, snapshot, { markdown: renderMarkdown, hydrate: hydrateDiagrams, trail, navigate: next => { trail = next; void drawSite(target).then(() => panel.scrollTo?.({ top: 0 })) } })
+    } catch (error) { if (id === drawn) target.textContent = error instanceof Error ? error.message : String(error) }
+  }
+  const render = () => {
+    modes()
+    panel.replaceChildren()
+    if (!node) panel.append(element('h2', 'Shared node'))
+    else { const page = element('div'); page.className = 'shared-site-page'; panel.append(page); void drawSite(page) }
     if (node?.execution && document.documentElement.requestFullscreen) {
       const fullscreen = element('button', ''); fullscreen.className = 'icon shared-fullscreen'; fullscreen.type = 'button'
       const update = () => { fullscreen.innerHTML = iconSvg(document.fullscreenElement ? 'exit-fullscreen' : 'fullscreen')!; fullscreen.title = document.fullscreenElement ? 'Exit full screen' : 'Full screen'; fullscreen.setAttribute('aria-label', fullscreen.title) }
       update(); fullscreen.onclick = () => { void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).then(update).catch(() => {}) }; panel.append(fullscreen)
     }
-    panel.append(element('p', `Shared by ${address?.owner} · linked in your Home context.`))
-    panel.append(button('Refresh shared node', () => void load()))
-    if (!node?.execution) panel.append(button('Back to host peer', () => { if (linkedPath) app.goTo(linkedPath.slice(0, -1)); location.hash = '' }))
-    if (!currentSession()) panel.append(button('Sign in with my context', () => app.openModal('connect')))
+    const tools = element('footer'); tools.className = 'shared-site-tools'
+    tools.append(element('p', `Shared by ${address?.owner} · linked in your Home context.`))
+    tools.append(button('Refresh shared node', () => void load()))
+    if (!node?.execution) tools.append(button('Back to host peer', () => { if (linkedPath) app.goTo(linkedPath.slice(0, -1)); location.hash = '' }))
+    if (!currentSession()) tools.append(button('Sign in with my context', () => app.openModal('connect')))
     const status = element('p'); status.setAttribute('role', 'status'); panel.append(status)
-    if (!node) return
+    if (!node) { panel.append(tools); return }
     if (node.execution?.error) panel.append(element('p', node.execution.error))
     else if (node.execution?.status === 'committed') panel.append(element('p', 'Complete'))
     const snapshot = node, revision = node.revision, form = element('form')
-    for (const row of node.rows) { const el = element('p', row.title); el.style.paddingInlineStart = `${Math.min(row.depth, 8)}em`; panel.append(el) }
     const name = element('input'); name.maxLength = 80; name.setAttribute('autocomplete', 'nickname'); name.value = node.mine?.name ?? ''; name.required = !currentSession() && !!node.poll
     if (!currentSession()) form.append(label(node.poll ? 'Your display name (visible to the host) ' : 'Display name (optional) ', name))
     const approved = new Set(node.mine?.revision === revision ? node.mine.approvals : [])
@@ -216,14 +250,17 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
       } catch (error) { if (id === generation) showError(error) }
       finally { submit.disabled = false }
     }
-    form.append(element('p', `${snapshot.participants} response${snapshot.participants === 1 ? '' : 's'}. Responses are tallied; the owner applies the result to the choice. Approvals on proposed edits inform the owner's decision.`)); panel.append(form)
+    form.append(element('p', `${snapshot.participants} response${snapshot.participants === 1 ? '' : 's'}. Responses are tallied; the owner applies the result to the choice. Approvals on proposed edits inform the owner's decision.`))
+    // a page with nothing to answer is only read: no empty input form below it
+    if (node.execution || choices.length || form.querySelector('fieldset')) panel.append(form)
+    panel.append(tools)
   }
   const update = () => {
     if (app.state.connection === 'connecting' && !currentSession()) return
     const next = sharedAddress(location.hash), identity = `${JSON.stringify(next)}:${currentSession()?.username ?? 'anonymous'}`
-    if (identity === lastIdentity) { if (linkedPath) panel.hidden = JSON.stringify(app.state.view) !== JSON.stringify(linkedPath); root.classList.toggle('shared-execution', !!node?.execution && !panel.hidden); return }
-    lastIdentity = identity; generation++; address = next; node = null; linkedPath = null; token = undefined; panel.hidden = !next
-    if (!next) { root.classList.remove('shared-execution'); return }
+    if (identity === lastIdentity) { if (linkedPath) panel.hidden = JSON.stringify(app.state.view) !== JSON.stringify(linkedPath); modes(); return }
+    lastIdentity = identity; generation++; address = next; node = null; linkedPath = null; token = undefined; trail = []; panel.hidden = !next
+    if (!next) { modes(); return }
     try { token = localStorage.getItem(tokenKey()) ?? undefined } catch { /* private browsing */ }
     render(); void load()
   }

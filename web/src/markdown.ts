@@ -4,9 +4,7 @@
  */
 
 import DOMPurify from 'dompurify'
-import { marked } from 'marked'
-
-marked.setOptions({ gfm: true, breaks: true })
+import { markdownToSafeHtml } from './markdown-core'
 
 type Katex = { renderToString(tex: string, opts: { displayMode: boolean; throwOnError: boolean; output: 'html' }): string }
 let katexPromise: Promise<Katex> | null = null
@@ -55,7 +53,7 @@ export async function renderMarkdown(md: string): Promise<string> {
   const cached = cache.get(md)
   if (cached) return cached
   const { text, math } = extractMath(md)
-  let html = DOMPurify.sanitize(await marked.parse(text), { USE_PROFILES: { html: true }, ADD_ATTR: ['target'], FORBID_TAGS: ['style', 'img', 'picture', 'source', 'video', 'audio', 'input'], FORBID_ATTR: ['style', 'srcset', 'poster'] })
+  let html = markdownToSafeHtml(text)
   if (math.length) {
     const katex = await loadKatex()
     html = html.replace(/@@MATH(\d+)@@/g, (_m, i: string) => {
@@ -64,13 +62,6 @@ export async function renderMarkdown(md: string): Promise<string> {
       try { return katex.renderToString(item.tex, { displayMode: item.display, throwOnError: false, output: 'html' }) } catch { return `<code>${item.tex}</code>` }
     })
   }
-  // links open in a new tab
-  const template = document.createElement('template'); template.innerHTML = html
-  for (const link of template.content.querySelectorAll('a')) {
-    if (!link.hasAttribute('href')) link.replaceWith(...link.childNodes)
-    else { link.setAttribute('target', '_blank'); link.setAttribute('rel', 'noopener noreferrer') }
-  }
-  html = template.innerHTML
   cache.set(md, html)
   return html
 }
