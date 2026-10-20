@@ -203,12 +203,14 @@ const corsOptions = {
   credentials: true // This might be necessary depending on your auth method
 }
 
-// Enable CORS with the above options. The public read of a published node is the one exception: embeds fetch it
-// from any site, read-only and without credentials, so that route alone allows every origin.
+// Enable CORS with the above options. Published nodes are the one exception: embeds on any site read them and let
+// anonymous visitors answer (`/public/node/read|visit|input`, guest receipts in the body, never cookies or account
+// credentials), so those routes alone allow every origin, without credentials.
 const PUBLIC_READ_PATH = '/public/node/read'
+const PUBLIC_NODE_PATHS = [PUBLIC_READ_PATH, '/public/node/visit', '/public/node/input']
 const accountCors = cors(corsOptions)
-const publicReadCors = cors({ origin: '*', methods: ['GET'], credentials: false })
-const corsFor = (req: express.Request, res: express.Response, next: express.NextFunction) => (req.path === PUBLIC_READ_PATH ? publicReadCors : accountCors)(req, res, next)
+const publicNodeCors = cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type'], credentials: false })
+const corsFor = (req: express.Request, res: express.Response, next: express.NextFunction) => (PUBLIC_NODE_PATHS.includes(req.path) ? publicNodeCors : accountCors)(req, res, next)
 app.use(corsFor)
 app.set('trust proxy', '10.244.0.96');
 app.set('trust proxy', '10.124.0.3');

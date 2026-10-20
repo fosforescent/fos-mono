@@ -5,12 +5,13 @@
  *   <div data-fos-share="<share URL>"></div> <script src="https://<web app>/embed.js" async></script>
  *
  * Each `[data-fos-share]` element (a script renders right after itself) gets a shadow root with the published node
- * rendered as a page, fetched from the public read endpoint (`GET /public/node/read`, no credentials, nothing
- * recorded). `data-fos-api` overrides the account server the build points at. Markdown is sanitized; math and
+ * rendered as a page by the share page's renderer (`site.ts`), fetched from `GET /public/node/read` (no credentials, nothing
+ * recorded until the visitor answers: then they join as an anonymous peer through `/public/node/visit|input`).
+ * `data-fos-api` overrides the account server the build points at. Markdown is sanitized; math and
  * diagrams stay as source here (the share page renders them).
  */
 import { markdownToSafeHtml } from './markdown-core'
-import { parseShareAddress, publicReadUrl, renderSitePage, SITE_CSS } from './site'
+import { parseShareAddress, publicReadUrl, renderSitePage, siteAnswers, SITE_CSS, type SiteInteraction } from './site'
 import type { SharedNode } from '../../shared/sync/sharing'
 
 const env = import.meta.env as Record<string, string | undefined>
@@ -40,22 +41,54 @@ export async function mount(element: HTMLElement): Promise<void> {
   const api = (element.dataset.fosApi ?? DEFAULT_API).replace(/\/$/, '')
   const shareLink = /^https?:/.test(value) ? value : `${scriptOrigin}/#share=${encodeURIComponent(JSON.stringify(address))}`
   status.textContent = 'Loading…'
-  let node: SharedNode
-  try {
-    const response = await fetch(publicReadUrl(api, address), { credentials: 'omit' })
-    const result = await response.json().catch(() => ({})) as { node?: SharedNode; error?: string }
+  // A visitor joins (POST /public/node/visit, an anonymous peer of the node) only when they first answer or start;
+  // reading records nothing. Their receipt (and a template's private execution) is remembered on this site.
+  const key = `fos:embed:${api}:${JSON.stringify(address)}`
+  let saved: { visitorToken?: string; entryToken?: string; execution?: typeof address } = {}
+  try { saved = JSON.parse(localStorage.getItem(key) ?? '{}') ?? {} } catch { /* storage blocked */ }
+  const remember = () => { try { localStorage.setItem(key, JSON.stringify(saved)) } catch { /* storage blocked */ } }
+  let at = saved.execution ?? address, node = null as unknown as SharedNode, joined = false
+  const call = async (url: string, init?: RequestInit) => {
+    const response = await fetch(url, { credentials: 'omit', ...init })
+    const result = await response.json().catch(() => ({})) as { node?: SharedNode; error?: string; visitorToken?: string; entryToken?: string; address?: typeof address }
     if (!response.ok || !result.node) throw new Error(result.error ?? 'This published node is unavailable.')
-    node = result.node
-  } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); return }
-  status.remove()
-  const footer = document.createElement('p'); footer.className = 'fos-embed-footer'
-  const open = document.createElement('a'); open.href = shareLink; open.target = '_blank'; open.rel = 'noopener noreferrer'
-  open.textContent = node.poll || node.inputs.length || node.proposals.length ? 'Respond on Fosforescent' : 'Published with Fosforescent'
-  footer.append(open); root.append(footer)
-  const show = async (trail: string[]) => {
-    await renderSitePage(page, node, { markdown: markdownToSafeHtml, trail, navigate: next => { void show(next).then(() => host.scrollIntoView?.({ block: 'start' })) } })
+    return result as typeof result & { node: SharedNode }
   }
-  await show([])
+  const post = (action: 'visit' | 'input', body: object) => call(`${api}/public/node/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...at, ...body }) })
+  const visit = async () => {
+    const token = at === address && saved.entryToken ? saved.entryToken : saved.visitorToken
+    const result = await post('visit', token ? { visitorToken: token } : {})
+    if (result.entryToken) saved.entryToken = result.entryToken
+    if (result.address) { at = result.address; saved.execution = result.address }
+    if (result.visitorToken) saved.visitorToken = result.visitorToken
+    remember(); node = result.node; joined = true
+  }
+  try {
+    if (saved.visitorToken || saved.execution) await visit()
+    else node = (await call(publicReadUrl(api, address))).node
+  } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); return }
+  status.textContent = ''
+  const footer = document.createElement('p'); footer.className = 'fos-embed-footer'
+  const open = document.createElement('a'); open.href = shareLink; open.target = '_blank'; open.rel = 'noopener noreferrer'; open.textContent = 'Published with Fosforescent'
+  footer.append(open); root.append(footer)
+  let trail: string[] = [], answers = siteAnswers(node)
+  const fail = (error: unknown) => { status.textContent = error instanceof Error ? error.message : String(error) }
+  const interact: SiteInteraction = {
+    signedIn: false,
+    start: async () => { try { await visit(); answers = siteAnswers(node); trail = []; await show() } catch (error) { fail(error) } },
+    submit: async (given, revision) => {
+      try {
+        if (!joined) { await visit(); revision = node.revision }
+        const fields = Object.fromEntries(Object.entries(given.fields).filter(([, entry]) => entry.value !== undefined).map(([k, entry]) => [k, { value: entry.value }]))
+        node = (await post('input', { visitorToken: saved.visitorToken, revision, name: given.name, approvals: [...given.approvals], ranking: given.ranking, fields })).node
+        answers = siteAnswers(node); await show(); status.textContent = 'Saved. The host reviews what you sent.'
+      } catch (error) { fail(error) }
+    }
+  }
+  const show = async () => {
+    await renderSitePage(page, node, { markdown: markdownToSafeHtml, trail, answers, interact, navigate: next => { trail = next; void show().then(() => host.scrollIntoView?.({ block: 'start' })) } })
+  }
+  await show()
 }
 
 export function mountAll(scope: ParentNode = document): void {

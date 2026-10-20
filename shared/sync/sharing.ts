@@ -3,10 +3,13 @@ import { nodeAuthorityAt } from './node-context'
 import { nodeLinkMaskAt } from './node-provider'
 import { argumentRefs, capabilityPeers } from './bindings'
 import { readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
-import { addMemberAt, createReplica, homePath, addRow, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
+import { addMemberAt, createReplica, homePath, addRow, proposeRefAt, renameTask, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { FosStore } from '../dag-implementation/store'
-import type { TextPresentation } from '../types'
-import { capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
+import type { FosPathElem } from '../types'
+import { plainEdge } from './patterns'
+import { FIELD_TYPES, NOTE_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
+export * from './published-types'
+import { aliasIdOf, branchEdge, identityCid, isBranchChoice, isChoiceEdge, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
 
 export const SHARE_ARGUMENT = 'fos:sharing'
 export const POLL_ARGUMENT = 'fos:poll'
@@ -19,10 +22,16 @@ export type Participation = {
   approvals: string[]; ranking: string[]; fields: Record<string, string | boolean | number | { amount: number; type: string; unit: string; start?: number; end?: number }>
   account?: { owner: string; ref: string }
 }
-/** A published row: `title` is its short label; a markdown presentation also carries the whole `body`. */
-export type SharedRow = { id: string; title: string; depth: number; text?: { mediaType: TextPresentation['mediaType'] }; body?: string; truncated?: true }
+/**
+ * A published row. `type` is the library row type its edge is made from (the left node's id, the same for every
+ * pinned version of that type); viewers render by it. `title` is the short label; a note also carries its whole
+ * markdown `body`, a field its current value as `body`.
+ */
+export type SharedRow = { id: string; title: string; depth: number; type?: string; body?: string; truncated?: true }
 export type SharedNode = {
-  title: string; text?: SharedRow['text']; body?: string; truncated?: true; rows: SharedRow[]
+  title: string; type?: string; body?: string; truncated?: true; rows: SharedRow[]
+  /** A template endpoint: each visitor who starts it gets a private execution. */
+  template?: true
   inputs: SharedInput[]; options: Array<{ id: string; label: string }>; poll: Poll | null
   proposals: Array<{ id: string; label: string }>; revision: string
   audience: 'public' | 'users'; counts: Record<string, number>; rankings: Record<string, number>; participants: number
@@ -78,6 +87,35 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   walk(root, 0); return result.slice(0, 32)
 }
 
+/**
+ * A visitor's candidate values for a published node's holes, recorded as that visitor's submissions on the owner's
+ * node (the owner reviews and accepts them like any other): a missing binding (an unbound typed argument) gets a
+ * binding proposal on its ref, empty fields of rows one node proposal (`VISITOR_SUBMISSION`) setting them. Each
+ * visitor is its own peer, so a resubmission replaces only that visitor's earlier candidates. Paths are relative.
+ */
+export function proposeVisitorValues(r: Replica, path: Scope, peer: string, values: Array<{ path: Scope; value: string }>, now: number): Replica {
+  const rows: typeof values = []
+  for (const { path: relative, value } of values) {
+    const target = [...path, ...relative]
+    if (!value.trim()) continue
+    if (view(r, target.slice(0, -1))?.tasks.some(t => t.id === target.at(-1))) { rows.push({ path: relative, value }); continue }
+    r = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now).replica
+  }
+  if (!rows.length) return r
+  const store = r.store, root = headCid(r), cid = resolveScope(store, root, path)!
+  const base = put(store, valueContent(store, cid)), draftStore = new FosStore()
+  importNodes(draftStore, reachableNodes(store, [base]))
+  commitRoot(draftStore, base, now)
+  nestScope(draftStore, { store, root, at: path })
+  let draft = createReplica(peer, draftStore)
+  for (const row of rows) draft = renameTask(draft, row.path.slice(0, -1), row.path.at(-1)!, row.value, now)
+  if (headCid(draft) === base) return r
+  importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
+  const proposalCid = put(store, proposalContent(store, peer, VISITOR_SUBMISSION, headCid(draft), base, now))
+  commitRoot(store, updateAtScope(store, root, path, current => withProposal(store, makeLink(store, current, now), peer, proposalCid, VISITOR_SUBMISSION), 'node'), now)
+  return { ...r }
+}
+
 /** Keep the foreign identity on the ordinary ref; its target contains only the permitted projection. */
 export function writeParticipation(r: Replica, path: Scope, record: Participation, now: number): Replica {
   return writeLinkedNodeValue(r, path, `fos:guest:${record.peer}`, record, now, record.account ? { state: { owner: record.account.owner, id: record.account.ref } } : {})
@@ -93,6 +131,24 @@ export function participants(r: Replica, path: Scope): Participation[] {
   if (!cid) return []
   const peers = new Set([...(view(r, path)?.members ?? []).map(m => m.peerId), ...argumentRefs(r.store, cid).flatMap(a => a.name?.startsWith('fos:guest:') ? [a.name.slice('fos:guest:'.length)] : [])])
   return [...peers].flatMap(peer => { const record = participation(r, path, peer); return record ? [record] : [] })
+}
+/** The row edge with alias `id` among the rows of the node at `parent`. */
+export function childRowEdge(store: FosStore, parent: string | null, id: string): FosPathElem | null {
+  if (!parent) return null
+  return valueContent(store, parent).children.find(edge => {
+    try { const cid = identityCid(store, edge); return (aliasIdOf(content(store, cid)) ?? aliasIdOf(valueContent(store, cid))) === id } catch { return false }
+  }) ?? null
+}
+/** The library row type a row edge is made from: its left node's id, which every pinned version of the type shares. */
+export function rowTypeOfEdge(store: FosStore, edge: FosPathElem | null): string | undefined {
+  if (!edge) return undefined
+  edge = plainEdge(store, edge)
+  if (isChoiceEdge(store, edge)) {
+    const active = isBranchChoice(store, content(store, edge[1])) ? branchEdge(store, edge[1]) : null
+    return active ? rowTypeOfEdge(store, active) : undefined
+  }
+  const id = store.table.has(edge[0]) ? content(store, edge[0]).data.alias?.id : undefined
+  return id?.startsWith('lib:type:') ? id : undefined
 }
 /** Bounds on published markdown, in characters: one body, and every body of one projection together. */
 export const SHARED_BODY_LIMIT = 100_000
@@ -110,38 +166,52 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   const visible = (at: Scope) => { try { nodeAuthorityAt(r, at, { peerId: visitor, scope: path, capabilities: ['read'] }); return true } catch { return false } }
   const textVisible = (at: Scope) => { const mask = nodeLinkMaskAt(r, at, visitor); return !mask?.fields || mask.fields.includes('description') }
   const current = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
-  const rows: SharedRow[] = [], hashed: unknown[] = []
+  const rows: SharedRow[] = [], hashed: unknown[] = [], fields: SharedInput[] = []
   let budget = SHARED_TOTAL_BODY
-  // What is markdown comes from the graph's text presentation, never from the row's kind.
-  const present = (title: string, text: TextPresentation | undefined, shown: boolean): Pick<SharedRow, 'title' | 'text' | 'body' | 'truncated'> => {
-    if (!shown) return { title: '' }
-    if (text?.mediaType !== 'text/markdown') return { title: title.slice(0, 8000), ...(text ? { text: { mediaType: text.mediaType } } : {}) }
+  // How a row reads is decided by its type (the left node of its edge), never by its kind.
+  const present = (title: string, type: string | undefined, shown: boolean): Pick<SharedRow, 'title' | 'type' | 'body' | 'truncated'> => {
+    if (!shown) return { title: '', ...(type ? { type } : {}) }
+    if (type !== NOTE_TYPE) return { title: title.slice(0, 8000), ...(type ? { type } : {}) }
     const body = title.slice(0, Math.max(0, Math.min(SHARED_BODY_LIMIT, budget)))
     budget -= body.length
-    return { title: markdownTitle(title), text: { mediaType: 'text/markdown' }, body, ...(body.length < title.length ? { truncated: true as const } : {}) }
+    return { title: markdownTitle(title), type, body, ...(body.length < title.length ? { truncated: true as const } : {}) }
   }
-  const page = present(current?.title ?? node.name ?? 'Shared node', current?.text, textVisible(path))
-  const walk = (at: Scope, depth: number) => {
+  const store = r.store, edgeAt = (at: Scope) => at.length ? childRowEdge(store, resolveScope(store, headCid(r), at.slice(0, -1)), at.at(-1)!) : null
+  const page = present(current?.title ?? node.name ?? 'Shared node', rowTypeOfEdge(store, edgeAt(path)), textVisible(path))
+  const walk = (at: Scope, depth: number, presented: string[] | undefined) => {
     if (depth > 8 || hashed.length >= 200) return
+    const parent = resolveScope(store, headCid(r), at)
     for (const row of view(r, at)?.tasks ?? []) {
       if (hashed.length >= 200) break
       const childPath = [...at, row.id]
       if (!visible(childPath)) continue
-      const shown = textVisible(childPath)
-      // a constructor's scalar fields (a note's body) are already presented by the row they belong to
-      if (!row.scalar) rows.push({ id: row.id, depth, ...present(row.title, row.text, shown) })
+      const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id), type = rowTypeOfEdge(store, edge)
       // the revision keeps its earlier input, so votes cast before bodies were published still count
       hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', kind: row.kind, depth })
+      if (type && FIELD_TYPES.includes(type)) {
+        // a field of its row's product: the one the row presents (a note's body) is already shown by the row; an
+        // empty one is asked of the visitor, who submits a candidate value
+        const label = edge ? valueContent(store, identityCid(store, edge)).data.name?.content ?? '' : ''
+        if (presented?.length === 1 && presented[0] === label) continue
+        const relative = childPath.slice(path.length)
+        rows.push({ id: row.id, depth, type, title: label, ...(shown ? { body: row.title.slice(0, 8000) } : {}) })
+        if (shown && !row.title.trim() && type !== PEER_TYPE) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
+        continue
+      }
+      rows.push({ id: row.id, depth, ...present(row.title, type, shown) })
+      const definition = edge && store.table.has(plainEdge(store, edge)[0]) ? content(store, plainEdge(store, edge)[0]) : null
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
-      if (row.kind !== 'ref') walk([...at, row.id], depth + 1)
+      if (row.kind !== 'ref') walk([...at, row.id], depth + 1, definition?.data.form?.title)
     }
   }
-  walk(path, 0)
+  const own = edgeAt(path)
+  walk(path, 0, own && store.table.has(plainEdge(store, own)[0]) ? content(store, plainEdge(store, own)[0]).data.form?.title : undefined)
   const configured = readNodeValue<Poll>(r, path, POLL_ARGUMENT)
   const poll = configured && ['approval', 'rank'].includes(configured.mode) && current?.requirement?.capability === 'choice' && capabilityPeers(r, path, 'poll').includes('fos') ? configured : null
   const options = poll ? (current!.requirement!.options ?? []).slice(0, 100).map((label, index) => ({ id: `option:${index}`, label })) : []
-  const proposals = node.proposals.filter(p => p.status === 'open').slice(0, 100).map(p => ({ id: `proposal:${p.id}`, label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
-  const inputs = ((policy.execution || interactive) ? executionInputs(r, path) : sharedInputs(r, path)).filter(field => { const at = [...path, ...(field.path ?? [field.key])]; return visible(at) && textVisible(at) })
+  // visitors' own submissions are the owner's to review, not options other visitors vote on
+  const proposals = node.proposals.filter(p => p.status === 'open' && p.name !== VISITOR_SUBMISSION).slice(0, 100).map(p => ({ id: `proposal:${p.id}`, label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
+  const inputs = ((policy.execution || interactive) ? executionInputs(r, path) : [...sharedInputs(r, path), ...fields].slice(0, 32)).filter(field => { const at = [...path, ...(field.path ?? [field.key])]; return visible(at) && textVisible(at) })
   const key = revision({ policy: policy.id, title: current?.title ?? node.name, rows: hashed, inputs, options, poll, proposals })
   const counts: Record<string, number> = {}, rankings: Record<string, number> = {}
   const cid = resolveScope(r.store, headCid(r), path)!
@@ -150,7 +220,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'edit') && hasCapability(r.store, content(r.store, cid), p.peer, 'edit')) for (const id of p.approvals) counts[id] = (counts[id] ?? 0) + 1
     if (hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'rank') && hasCapability(r.store, content(r.store, cid), p.peer, 'rank')) p.ranking.forEach((id, i) => { rankings[id] = (rankings[id] ?? 0) + p.ranking.length - i })
   }
-  return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), ...page, title: page.title || 'Shared node', rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
+  return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), ...page, title: page.title || 'Shared node', ...(policy.template ? { template: true as const } : {}), rows, inputs, options, poll, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
 }
 
 /** The sub-peer row for another account below this one's Home (their peer id is its member), created on demand. */

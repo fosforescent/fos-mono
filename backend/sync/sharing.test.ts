@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
-import { addMemberAt, addRow, addTask, addRefAt, createReplica, setSharing, configurePoll, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, type Replica } from '@fosforescent/shared/sync/index'
+import { addMemberAt, addRow, addTask, addRefAt, createReplica, setSharing, configurePoll, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -155,8 +155,8 @@ test('the public read endpoint serves the projection for embeds without recordin
   }
   const ok = await read({ owner: 'host', share, path: JSON.stringify(['post']) })
   expect(ok.status).toBe(200)
-  expect(ok.body.node).toMatchObject({ title: 'A post', text: { mediaType: 'text/markdown' }, body: '# A post\n\nWith a **body**.' })
-  expect(ok.body.node.rows).toEqual([{ id: 'part', title: 'Part', depth: 0, text: { mediaType: 'text/markdown' }, body: '## Part\n\nMore.' }])
+  expect(ok.body.node).toMatchObject({ title: 'A post', type: 'lib:type:note', body: '# A post\n\nWith a **body**.' })
+  expect(ok.body.node.rows).toEqual([{ id: 'part', title: 'Part', depth: 0, type: 'lib:type:note', body: '## Part\n\nMore.' }])
   expect(ok.body.node.mine).toBeUndefined()
   expect(ok.headers['Cache-Control']).toBe('public, max-age=60')
   expect(JSON.stringify(ok.body)).not.toContain('host-only-secret')
@@ -166,4 +166,17 @@ test('the public read endpoint serves the projection for embeds without recordin
   expect((await read({ owner: 'host', share, path: 'not json' })).status).toBe(400)
   replicas.host = setSharing(replicas.host, ['post'], { id: share, audience: 'users', enabled: true }, 5)
   expect((await read({ owner: 'host', share, path: JSON.stringify(['post']) })).status).toBe(401)
+})
+test('answers to a missing binding are binding proposals on the owner node, one per anonymous visitor', async () => {
+  const s = setup(), visit = await s.call('visit', at), other = await s.call('visit', at)
+  const key = visit.body.node.inputs.find((f: any) => f.kind === 'text').key
+  expect((await s.call('submit', input(visit.body, { fields: { [key]: { value: 'Soup, hot' } } }))).status).toBe(200)
+  expect((await s.call('submit', input(other.body, { fields: { [key]: { value: 'Salad' } } }))).status).toBe(200)
+  const host = s.replicas.host, ref = content(host.store, resolveScope(host.store, headCid(host), ['poll', key])!)
+  const proposals = readProposals(host.store, ref).filter(p => p.status === 'open')
+  expect(proposals).toHaveLength(2)
+  expect(new Set(proposals.map(p => p.peerId)).size).toBe(2)
+  expect(proposals.every(p => p.peerId.startsWith('visitor:'))).toBe(true)
+  // still unbound: the owner decides
+  expect(refValueCid(host.store, ref)).toBeNull()
 })

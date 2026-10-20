@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
-import { applyMergePolicy, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, configurePoll, content, createReplica, capabilityPeers, readNodeValue, writeLinkedNodeValue, hasCapability, headCid, participation, put, resolveRef, resolveScope, setSharing, sharedProjection, sharing, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharePolicy, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, configurePoll, content, createReplica, capabilityPeers, readNodeValue, writeLinkedNodeValue, hasCapability, headCid, participation, put, resolveRef, resolveScope, setSharing, sharedProjection, sharing, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharePolicy, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 const sign = jsonwebtoken.sign ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.sign
 const verify = jsonwebtoken.verify ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.verify
@@ -231,6 +231,10 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
               r = addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: 'allocation', by: peer, ref: id }, now())
             }
           }
+        } else {
+          // on the shared original, text answers to holes (missing bindings, empty fields) are this visitor's candidate values
+          const candidates = Object.entries(fields).flatMap(([key, value]) => { const field = node.inputs.find(f => f.key === key)!; return field.kind === 'text' && typeof value === 'string' ? [{ path: field.path ?? [field.key], value }] : [] })
+          if (candidates.length) r = proposeVisitorValues(r, at.path, peer, candidates, now())
         }
         // the owner's standing decision: proposals that enough members approved merge now (the standard library's governance)
         const governed = applyMergePolicy(r, at.path, digest, now())
@@ -261,8 +265,8 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       let path: unknown
       try { path = typeof q.path === 'string' && q.path.length <= 9000 ? JSON.parse(q.path) : null } catch { path = null }
       const at = address({ owner: q.owner, share: q.share, path })
-      const { r, policy } = await load(at, null)
-      if (policy.template) throw new Failure(404, 'Template endpoints cannot be embedded.')
+      // a template endpoint reads as its page; a visitor's private execution starts with their first visit
+      const { r } = await load(at, null)
       res.setHeader?.('Cache-Control', 'public, max-age=60')
       return res.json({ node: sharedProjection(r, at.path, digest) })
     })
