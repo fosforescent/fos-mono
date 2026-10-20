@@ -42,7 +42,7 @@ function rewardedTask() {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['send-payment', 'points'] })
   r = addTask(r, [HOME_ID], 'Write the guide', 2, 'guide')
   r = addRow(r, [HOME_ID, 'guide'], ALLOCATION_TYPE, 'Guide delivered', 2, { id: 'done', requirement: { capability: 'confirmation' } })
-  r = addRow(r, [HOME_ID, 'guide'], MONEY_TYPE, 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' } })
+  r = addRow(r, [HOME_ID, 'guide'], MONEY_TYPE, 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'USD' } }) // as `-$ 20` parses
   return addSupply(r, [HOME_ID, 'guide'], 'done', { capability: 'confirmation', by: 'user:bob' }, 6)
 }
 
@@ -68,7 +68,7 @@ test('a money requirement opens one payment with the provider and waits; the con
   const rows = view(h.get(), [HOME_ID, 'guide', 'pay'])!.tasks
   const settledAllocation = rows.find(t => !!t.allocation)!
   expect(settledAllocation.type).toBe(MONEY_TYPE)
-  expect(settledAllocation.allocation).toMatchObject({ resource: 'pay', type: 'account', amount: 20, unit: 'usd', by: 'fos' })
+  expect(settledAllocation.allocation).toMatchObject({ resource: 'pay', type: 'account', amount: 20, unit: 'USD', by: 'fos' })
   // the payee is the user object the server attested, bound on the allocation (not a name in its data)
   expect(settledAllocation.allocation).not.toHaveProperty('person')
   expect(settledAllocation.user).toMatchObject({ account: '2', username: 'bob', name: 'Bob', verification: { by: 'fos', method: 'ed25519-server' } })

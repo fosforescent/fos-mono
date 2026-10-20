@@ -56,7 +56,7 @@ export function settlePaymentRecord(r: Replica, path: Scope, confirmation: { int
   if (request?.type !== MONEY_TYPE || !request.requirement) return { replica: r, settled: false }
   const id = `payment:${now.toString(36)}`
   let next = addRow(r, path, MONEY_TYPE, `${record.amount} ${record.unit.toUpperCase()} to @${record.payee}`, now, {
-    id, allocation: { resource: requirement, type: 'account', amount: record.amount, unit: record.unit, by: 'fos', at: now }, ...(record.payeeUser ? { user: record.payeeUser } : {})
+    id, allocation: { resource: requirement, type: 'account', amount: record.amount, unit: record.unit.toUpperCase(), by: 'fos', at: now }, ...(record.payeeUser ? { user: record.payeeUser } : {})
   })
   next = writePaymentRecord(next, path, { ...record, status: 'paid', url: null, paid: now, ...(confirmation.intent ? { intent: confirmation.intent } : {}) }, now)
   return { replica: next, settled: true }

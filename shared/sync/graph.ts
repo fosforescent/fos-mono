@@ -1415,7 +1415,7 @@ function requiredUser(store: FosStore, requirementCid: string, allocationCid: st
  * A requirement that names a user (`-@bob`, `-ff 5 @bob`) counts only allocations for that same user object.
  */
 export function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
-  return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit === req.unit) &&
+  return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit?.toUpperCase() === req.unit.toUpperCase()) &&
     (req.start === undefined || (a.start !== undefined && a.start <= req.start)) &&
     (req.end === undefined || a.end === undefined || a.end >= req.end) &&
     (!users?.required || (!!users.given && sameUser(users.required, users.given))) &&
