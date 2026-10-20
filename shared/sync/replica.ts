@@ -235,7 +235,7 @@ export function isDirty(replica: Replica): boolean {
     const head = resolveScope(replica.store, headCid(replica), local)
     return !head || valueContent(replica.store, head).children.some(edge => !isShippedLibrary(replica.store, local, edge))
   }
-  return materializedNodePaths(replica, local).some(path => {
+  return materializedNodePaths(replica, local, peer).some(path => {
     if (!nodePersistenceAllowed(replica, path)) return false
     const state = replica.meta.nodeSync?.[nodeSyncKey(peer, path, nodeBranches(replica, path))]
     return !state || !sameNodeShape(nodeShape(replica, path), state.local)

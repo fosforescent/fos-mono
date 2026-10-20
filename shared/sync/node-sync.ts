@@ -7,7 +7,7 @@ import { content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTem
   isMemberEntryId, isMemberEdge, memberEdgesOf, memberEntryId, makeLink, isRefNode, MEMBER_ENTRY_PREFIX, SERVER_MEMBER, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
-import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError, exchangedChildren, memberEntryVisible, unloadedMemberEdge, MEMBER_ENTRY_FIELDS,
+import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError, exchangedChildren, memberEntryVisible, unloadedMemberEdge, decidingMember, MEMBER_ENTRY_FIELDS,
   type NodeBranch, type NodeRequest, type NodeShape, type NodeChild, type ProvidedNode, type NodeAuthority } from './node-provider'
 
 export type NodeSyncState = { local: NodeShape; remote: NodeShape & Pick<ProvidedNode, 'proposals' | 'grants'> }
@@ -203,12 +203,10 @@ function heldHistory(store: Replica['store'], held: FosNodeContent, heldCid: str
 
 function allowedToEdit(r: Replica, path: Scope, authority: NodeAuthority): boolean {
   let allowed = inheritedNodeGrants(r, authority.scope, authority).includes('edit')
-  // the owner's devices are the owner; member entries say what other peers may do
-  if (authority.owner) return allowed && !!resolveScope(r.store, headCid(r), path)
   for (let i = authority.scope.length; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) return false
-    const member = memberFor(r.store, content(r.store, cid), authority.peerId)
+    const member = decidingMember(r.store, content(r.store, cid), authority)
     if (member) allowed = member.capabilities.includes('edit') && !member.disabled?.includes('edit')
   }
   return allowed
@@ -325,15 +323,26 @@ function reachableFrom(nodes: FosNodesData, roots: string[]): FosNodesData {
   return out
 }
 
-export function materializedNodePaths(r: Replica, at: Scope): Scope[] {
+/**
+ * The nodes here below `at` that sync, parents first. With `peer`: a member entry only when that peer listed it on its
+ * node (an owner's peer lists every entry once its node's round took it in; any other peer only its own), so entries
+ * only this side keeps (its local bookkeeping towards that peer) are not exchanged.
+ */
+export function materializedNodePaths(r: Replica, at: Scope, peer?: string | null): Scope[] {
   const paths: Scope[] = [], queue = [at]
   while (queue.length) {
     const path = queue.pop()!, cid = resolveScope(r.store, headCid(r), path)
     if (!cid || isHandle(content(r.store, cid))) continue
     paths.push(path)
-    for (const child of nodeShape(r, path).children) if (!child.held) queue.push([...path, child.id])
+    for (const child of nodeShape(r, path).children) if (!child.held && !child.pinned && (!peer || !isMemberEntryId(child.id) || memberEntryListed(r, path, peer, child.id))) queue.push([...path, child.id])
   }
   return paths.sort((a, b) => a.length - b.length)
+}
+
+/** Did `peer` list the member entry `id` on the node at `path` in the last exchange of that node? */
+export function memberEntryListed(r: Replica, path: Scope, peer: string, id: string): boolean {
+  const state = r.meta.nodeSync?.[nodeSyncKey(peer, path, nodeBranches(r, path))] ?? r.meta.nodeSync?.[nodeSyncKey(peer, path)]
+  return !!state?.remote.children.some(child => child.id === id)
 }
 
 /** Persistence boundaries are inherited; neither a dirty descendant nor an
@@ -446,7 +455,11 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
  */
 function withoutMemberWrites(request: NodeRequest, authority: NodeAuthority): NodeRequest {
   if (authority.owner || !request.update) return request
-  if (request.path.some(id => isMemberEntryId(id))) throw new NodeAccessError('Only the owner of a node changes its member entries.')
+  if (request.path.some(id => isMemberEntryId(id))) {
+    // asking what it may write (an empty update) is reading; a change is refused
+    if (sameNodeShape(request.update.base, request.update.value)) return { ...request, update: undefined }
+    throw new NodeAccessError('Only the owner of a node changes its member entries.')
+  }
   const strip = (shape: NodeShape): NodeShape => ({ ...shape, children: shape.children.filter(child => !isMemberEntryId(child.id)) })
   return { ...request, update: { base: strip(request.update.base), value: strip(request.update.value) } }
 }

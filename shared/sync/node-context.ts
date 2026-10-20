@@ -2,7 +2,7 @@ import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importN
 import { PLAIN_TYPE } from './library-types'
 import { createBranch } from './branches'
 import { headCid, loadReplica, serializeReplica, type Replica } from './replica'
-import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
+import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, decidingMember, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
 
 const prefix = (a: Scope, b: Scope) => a.length <= b.length && a.every((v, i) => v === b[i])
 type Exchange = (r: Replica, request: NodeRequest, authority: NodeAuthority, now: number) => { replica: Replica; node: ProvidedNode }
@@ -16,8 +16,7 @@ export function nodeAuthorityAt(r: Replica, path: Scope, authority: NodeAuthorit
     for (let i = authority.scope.length; i <= path.length; i++) {
       const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
       if (!cid) { if (i === authority.scope.length) throw new NodeAccessError('Attachment unavailable.'); break }
-      // the owner's devices are the owner; member entries say what other peers may do
-      const member = authority.owner ? undefined : memberFor(r.store, content(r.store, cid), authority.peerId)
+      const member = decidingMember(r.store, content(r.store, cid), authority)
       if (member) grants = member.capabilities.filter(c => !member.disabled?.includes(c) && !(c === 'read' && member.disabled?.includes('provideNode')))
       if (!grants.includes('read') && !grants.includes('edit')) throw new NodeAccessError('Node access denied.')
       if (member?.disabled?.includes('read') || member?.disabled?.includes('provideNode')) throw new NodeAccessError('Node access denied.')

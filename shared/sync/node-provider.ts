@@ -1,8 +1,8 @@
-import type { FosDataContent, FosNodesData, FosPathElem } from '../types'
+import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   valueContent, readMembers, memberFor, memberEntryId, isMemberEntryId, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
-  readProposals, submissionAdditions, CAPABILITIES, type ProposalView, type Capability, type Scope } from './graph'
+  readProposals, submissionAdditions, CAPABILITIES, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 
 /** Each endpoint owns its mask. Omitting an allowlist allows all; [] allows none. */
@@ -160,17 +160,32 @@ export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuth
   for (let i = 0; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) throw new NodeAccessError('Attachment unavailable.')
-    const member = memberFor(r.store, content(r.store, cid), authority.peerId)
-    // the owner's devices are the owner: member entries (their own, an audience's) say what others may do
-    if (!member || authority.owner) continue
+    const member = decidingMember(r.store, content(r.store, cid), authority)
+    if (!member) continue
     grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
     if (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || !grants.some(cap => READING.includes(cap))) throw new NodeAccessError('Parent permissions deny node access.')
   }
   return grants
 }
 
-function permitted(r: Replica, cid: string, peer: string, inherited: boolean): boolean {
-  const member = memberFor(r.store, content(r.store, cid), peer)
+/**
+ * The member entry that decides what `authority` may do on a node: for another peer its own entry, else its audience's
+ * (`memberFor`). The owner's devices are the owner: audiences say what others may do, and a device's own entry decides
+ * only when it is a grant (switched on or off), not when it only carries that device's offers (`publishTemplate`,
+ * `offerRelay` make a device a member that way).
+ */
+export function decidingMember(store: Replica['store'], value: FosNodeContent, authority: Pick<NodeAuthority, 'peerId' | 'owner'>): MemberRecord | undefined {
+  if (!authority.owner) return memberFor(store, value, authority.peerId)
+  const own = readMembers(store, value).find(m => m.peerId === authority.peerId)
+  if (!own || own.capabilities.length) return own
+  const entry = value.children.find(e => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === authority.peerId)
+  // an entry not loaded here yet (its device pushes it next) or one carrying only offers says nothing about grants
+  const node = entry && content(store, entry[1])
+  return node && (isPeerReference(node) || node.children.some(e => e[0] === store.primitive.acceptsNode.getId())) ? undefined : own
+}
+
+function permitted(r: Replica, cid: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>, inherited: boolean): boolean {
+  const member = decidingMember(r.store, content(r.store, cid), authority)
   if (!member) return inherited
   if (member.disabled?.includes('read') || member.disabled?.includes('provideNode')) return false
   return member.capabilities.some(cap => READING.includes(cap) && !member.disabled?.includes(cap))
@@ -241,9 +256,9 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       if (!edge) throw new NodeAccessError('Node unavailable.')
       cid = identityCid(r.store, edge)
       path.push(id)
-      const member = !authority.owner && memberFor(r.store, content(r.store, cid), authority.peerId)
+      const member = decidingMember(r.store, content(r.store, cid), authority)
       if (member) grants = member.capabilities.filter(cap => !member.disabled?.includes(cap))
-      access = authority.owner || permitted(r, cid, authority.peerId, access)
+      access = permitted(r, cid, authority, access)
       if (!access) throw new NodeAccessError('Node access denied.')
     }
     const heldByRequester = isPeerReference(content(r.store, cid)) && content(r.store, cid).data.ref?.peer === request.peerId && !!request.update
@@ -260,7 +275,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       // a grant is pinned by its node's cid; its content goes with the answer (it is small and immutable)
       if (grant) { grantNodes.push(edge[1]); children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
       const childCid = identityCid(r.store, edge), child = content(r.store, childCid)
-      if (!authority.owner && !permitted(r, childCid, authority.peerId, access)) continue
+      if (!permitted(r, childCid, authority, access)) continue
       const remote = isPeerReference(child) ? child.data.ref : undefined
       // a reference error is reported as the row it stands for; the provider asks for the template it lacks.
       // The template belongs to the edge, so rows held by another peer carry it too. A member entry's is MEMBER.
@@ -353,7 +368,7 @@ export async function pullNodeTree(request: NodeRequest, peer: NodeProvider, lim
     if (seen.has(key)) continue
     seen.add(key)
     const node = await pullNode(next, [peer]); result.push(node)
-    for (const child of node.children) if (!child.held) {
+    for (const child of node.children) if (!child.held && !child.pinned) {
       const path = [...next.path, child.id]
       const linkId = nodeRequestLinkId(request.peerId, { peerId: peer.id, scope: [...request.scope, ...path] })
       queue.push({ ...request, path, linkId })
