@@ -5,9 +5,10 @@ import { validateRegistration } from './confirmation'
 
 import { prisma } from '../prismaClient'
 
-import { FosStore, hashContent } from '@fosforescent/shared/dag-implementation/store'
+import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { verifyCid } from '@fosforescent/shared/dag-implementation/cid'
 import { validateNodeDataToDB } from '../util'
+import { accountRootAlias } from '../accountRoot'
 
 export const hashPassword = async (password: string) => {
   return await bcrypt.hash(password, 10)
@@ -78,22 +79,12 @@ export const postRegister = (confirmation: Confirmation) => async (req: Request,
 
     // Create an alias node for the user's root node
     const { v4: uuidv4 } = await import('uuid')
-    const aliasId = uuidv4()
-    const aliasData = {
-      alias: {
-        id: aliasId
-      }
-    }
-    const aliasContent = {
-      data: aliasData,
-      children: [[newStore.rootNodeId, newStore.rootNodeId]] as [string, string][]
-    }
-    const aliasCid = hashContent(aliasContent)
+    const { cid: aliasCid, content: aliasContent } = accountRootAlias(newStore.rootNodeId, uuidv4())
 
     await prisma.fosNodeModel.create({
       data: {
         cid: aliasCid,
-        data: aliasData
+        data: validateNodeDataToDB(aliasContent)
       }
     })
 

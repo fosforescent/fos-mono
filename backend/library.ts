@@ -4,11 +4,12 @@
  * `FOS_LIBRARY_OWNER` (default `fos-library`) does not exist yet.
  */
 import { randomBytes } from 'node:crypto'
-import { FosStore, hashContent } from '@fosforescent/shared/dag-implementation/store'
+import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { verifyCid } from '@fosforescent/shared/dag-implementation/cid'
 import { prisma } from './prismaClient'
 import { hashPassword } from './auth/register'
 import { validateNodeDataToDB } from './util'
+import { accountRootAlias } from './accountRoot'
 
 export const libraryOwner = () => process.env.FOS_LIBRARY_OWNER || 'fos-library'
 
@@ -22,9 +23,8 @@ export async function createSystemAccount(username: string): Promise<void> {
     return existing.has(cid) ? [] : [{ cid, data: validateNodeDataToDB(node) }]
   })
   if (entries.length) await prisma.fosNodeModel.createMany({ data: entries })
-  const aliasData = { alias: { id: randomBytes(16).toString('hex') } }
-  const aliasCid = hashContent({ data: aliasData, children: [[store.rootNodeId, store.rootNodeId]] as [string, string][] })
-  await prisma.fosNodeModel.create({ data: { cid: aliasCid, data: aliasData } })
+  const { cid: aliasCid, content: aliasContent } = accountRootAlias(store.rootNodeId, randomBytes(16).toString('hex'))
+  await prisma.fosNodeModel.create({ data: { cid: aliasCid, data: validateNodeDataToDB(aliasContent) } })
   const user = await prisma.userModel.create({
     data: {
       user_name: username,
