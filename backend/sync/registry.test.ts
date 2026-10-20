@@ -11,7 +11,7 @@ test('advertised capabilities are exactly transport facts plus registered handle
   expect(registry.serverCapabilities()).toEqual([...new Set([...SERVER_TRANSPORT_CAPABILITIES, 'search', 'llm'])].sort())
   for (const unbacked of ['mail', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'cron']) expect(registry.serverCapabilities()).not.toContain(unbacked)
   expect(registry.integrationOffers()).toEqual({ github: ['repo'], phone: ['notify'] })
-  const step = (capability: string) => ({ path: ['t', 'r'], row: { id: 'r', kind: 'requirement', requirement: { capability } } } as any)
+  const step = (capability: string) => ({ path: ['t', 'r'], row: { id: 'r', type: 'lib:type:allocation', requirement: { capability } } } as any)
   const r = createReplica('owner')
   expect(registry.executors(step('repo'), r)).toHaveLength(1)
   expect(registry.executors(step('search'), r)).toHaveLength(0)

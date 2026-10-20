@@ -20,11 +20,13 @@
  */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
-import { content, identityCid, libraryDefinition, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
-import { definitionId } from './legacy-row-types'
+import { content, identityCid, isLibraryType, libraryTypeAt, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
 import { constructForm, formRecord, type FormInput } from './forms'
 import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
+import { PLAIN_TYPE } from './library-types'
+import { ALLOCATION_TYPE } from './library-types'
+
 export const USER_TYPE_ID = 'lib:type:user'
 /** The field of a row that names a user (`-@bob`, `@bob 2h`, `-ff 5 reward @bob`). */
 export const USER_FIELD = 'user'
@@ -38,12 +40,12 @@ export type UserRecord = { account: string; username: string; name: string; publ
 
 /** Is `typeCid` (a row edge's left node) a version of the user type? */
 export function isUserType(store: FosStore, typeCid: string): boolean {
-  return store.table.has(typeCid) && definitionId(content(store, typeCid)) === USER_TYPE_ID
+  return isLibraryType(store, typeCid, USER_TYPE_ID)
 }
 
 /** The user type a row at `at` sees (nearest library, else the one this build ships). */
 export function userType(store: FosStore, at: Scope = [], root?: string): string {
-  const type = libraryDefinition(store, USER_TYPE_ID, at, root)
+  const type = libraryTypeAt(store, USER_TYPE_ID, at, root)
   if (!type) throw new Error('No standard library here defines users (lib:type:user).')
   return type
 }
@@ -160,7 +162,7 @@ export function cachedUser(r: Replica, username: string): UserRecord | null {
 export function cacheUser(r: Replica, user: UserRecord, now: number): Replica {
   if (!user.verification) return r
   const path = usersPath(r)
-  if (!resolveScope(r.store, headCid(r), path)) r = addRow(r, path.slice(0, -1), 'plain', 'People', now, { id: USERS_ID })
+  if (!resolveScope(r.store, headCid(r), path)) r = addRow(r, path.slice(0, -1), PLAIN_TYPE, 'People', now, { id: USERS_ID })
   const existing = cachedUser(r, user.username)
   if (existing && JSON.stringify(existing) === JSON.stringify(user)) return r
   if (existing) r = deleteTask(r, path, userObjectId(existing), now)
@@ -205,7 +207,7 @@ export const peerKeyId = (peerId: string): string => `${PEER_KEY_PREFIX}${peerId
 export function publishPeerKey(r: Replica, peerId: string, publicKey: string, now: number): Replica {
   if (!homePath(r).length || publishedKey(r, peerId) === publicKey) return r
   const users = usersPath(r), id = peerKeyId(peerId)
-  if (!resolveScope(r.store, headCid(r), users)) r = addRow(r, users.slice(0, -1), 'plain', 'People', now, { id: USERS_ID })
+  if (!resolveScope(r.store, headCid(r), users)) r = addRow(r, users.slice(0, -1), PLAIN_TYPE, 'People', now, { id: USERS_ID })
   if (resolveScope(r.store, headCid(r), [...users, id])) r = deleteTask(r, users, id, now)
   const type = userType(r.store, users)
   const peer: UserRecord = { account: peerId, username: peerId, name: peerId === 'fos' ? 'Fos' : peerId, publicKey, verification: null }
@@ -257,10 +259,10 @@ export const verifyRequestId = (username: string): string => `fos:verify:${usern
  */
 export function requestVerification(r: Replica, username: string, now: number): { replica: Replica; path: Scope } {
   const path = usersPath(r), name = username.trim().replace(/^@/, '')
-  if (!resolveScope(r.store, headCid(r), path)) r = addRow(r, path.slice(0, -1), 'plain', 'People', now, { id: USERS_ID })
+  if (!resolveScope(r.store, headCid(r), path)) r = addRow(r, path.slice(0, -1), PLAIN_TYPE, 'People', now, { id: USERS_ID })
   const id = verifyRequestId(name)
   if (resolveScope(r.store, headCid(r), [...path, id])) r = deleteTask(r, path, id, now)
-  r = addRow(r, path, 'requirement', `@${name}`, now, { id, requirement: { capability: 'verify' } })
+  r = addRow(r, path, ALLOCATION_TYPE, `@${name}`, now, { id, requirement: { capability: 'verify' } })
   return { replica: r, path: [...path, id] }
 }
 

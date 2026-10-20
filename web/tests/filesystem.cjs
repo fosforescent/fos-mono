@@ -9,6 +9,7 @@ const dom = new JSDOM('<main></main>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'localStorage', 'location', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'sessionStorage']) Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] })
 buildSync({ stdin: { contents: `export { App } from './src/app'; export { mountUi } from './src/ui'; export { createMemoryStorage } from './src/storage'; export * from './src/filesystem'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { App, mountUi, createMemoryStorage, createReplica, serializeReplica, filesystemRows, linkFilesystem, filesystemTemplate, filesystemNavigation, renderFilesystemNode, filesystemBack } = require(path.join(dir, 'test.cjs'))
+const PLAIN_TYPE = 'lib:type:plain'
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function main() {
   const app = { state: { replica: createReplica('local-device'), session: null, view: [] }, projectRoot: () => null, refresh() {}, notify(_kind, text) { throw new Error(text) } }
@@ -77,7 +78,7 @@ async function main() {
   const controller = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage(), scopedDocument: true })
   controller.scheduleSync = () => {}
   mountUi(root, controller)
-  const id = controller.addRowAt([], 'plain', 'Workspace')
+  const id = controller.addRowAt([], PLAIN_TYPE, 'Workspace')
   controller.goTo([id])
   await linkFilesystem(controller, '/work'); await tick(); await tick()
   const graphBefore = JSON.stringify(serializeReplica(controller.state.replica))

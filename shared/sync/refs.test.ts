@@ -4,6 +4,8 @@ import {
   proposeRefAt, put, refArguments, refNodeContent, refValueCid, resolveScope,
   valueContent, formTitle, view, serializeReplica, loadReplica, type Replica
 } from './index'
+import { PLAIN_TYPE, NOTE_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
+import { ALLOCATION_TYPE } from './library-types'
 
 function node(r: Replica, path: string[]) { return content(r.store, resolveScope(r.store, headCid(r), path)!) }
 function bind(r: Replica, path: string[], target: string, time: number) {
@@ -32,12 +34,12 @@ test('typed arguments accept ref values without flattening; replay and stale pro
 
 test('template instantiation shares deep copying, remaps internal refs and creates independent arguments', () => {
   let r = createReplica('owner')
-  r = addRow(r, [], 'template', 'Trip', 1, { id: 'template' })
+  r = addRow(r, [], TEMPLATE_TYPE, 'Trip', 1, { id: 'template' })
   r = addTask(r, ['template'], 'Nested', 2, 'nested')
-  r = addRow(r, ['template', 'nested'], 'note', 'Document', 3, { id: 'document' })
-  r = addRow(r, ['template', 'nested'], 'ref', 'Document ref', 4, { id: 'reference', refId: 'document' })
-  r = addRow(r, ['template'], 'ref', 'Root ref', 4, { id: 'root-reference', refId: 'template' })
-  r = addRow(r, ['template', 'nested'], 'requirement', 'weather', 5, { id: 'required', requirement: { capability: 'tool' } })
+  r = addRow(r, ['template', 'nested'], NOTE_TYPE, 'Document', 3, { id: 'document' })
+  r = addRow(r, ['template', 'nested'], REF_TYPE, 'Document ref', 4, { id: 'reference', refId: 'document' })
+  r = addRow(r, ['template'], REF_TYPE, 'Root ref', 4, { id: 'root-reference', refId: 'template' })
+  r = addRow(r, ['template', 'nested'], ALLOCATION_TYPE, 'weather', 5, { id: 'required', requirement: { capability: 'tool' } })
   r = addSupply(r, ['template', 'nested'], 'required', { capability: 'tool', by: 'old-run' }, 6)
   const type = capabilityTarget(r.store, 'tool')
   r = addRefAt(r, ['template', 'nested', 'required'], 'argument', type, 7)
@@ -51,8 +53,8 @@ test('template instantiation shares deep copying, remaps internal refs and creat
   expect(view(r, ['one'])!.tasks[1]!.refId).toBe('one')
   const children = view(r, ['one', first.id])!.tasks
   const doc = children.find((t) => t.text?.mediaType === 'text/markdown')!
-  expect(children.find((t) => t.kind === 'ref')!.refId).toBe(doc.id)
-  const req = children.find((t) => t.kind === 'requirement')!
+  expect(children.find((t) => t.refId !== undefined)!.refId).toBe(doc.id)
+  const req = children.find((t) => !!t.requirement)!
   expect(req.requirement!.satisfied).toBe(false)
   const args = refArguments(r.store, node(r, ['one', first.id, req.id]), type)
   expect(args).toHaveLength(1)
@@ -64,7 +66,7 @@ test('template instantiation shares deep copying, remaps internal refs and creat
 test('copying remaps internal typed-ref targets and retains external defaults', () => {
   let r = createReplica('owner')
   r = addTask(r, [], 'Parent', 1, 'parent')
-  r = addRow(r, ['parent'], 'note', 'Document', 2, { id: 'document' })
+  r = addRow(r, ['parent'], NOTE_TYPE, 'Document', 2, { id: 'document' })
   const type = capabilityTarget(r.store, 'tool')
   const document = resolveScope(r.store, headCid(r), ['parent', 'document'])!
   r = addRefAt(r, ['parent'], 'internal', type, 3, document)
@@ -108,7 +110,7 @@ test('binding offers are tied to a version, including when a ref moves away and 
 
 
 test('distinct supplied values branch with shared incoming identity and content; duplicates reuse their branch', () => {
-  let r = addRow(createReplica('owner'), [], 'plain', 'Project', 1, { id: 'project' })
+  let r = addRow(createReplica('owner'), [], PLAIN_TYPE, 'Project', 1, { id: 'project' })
   r = createBranch(r, ['project'], 'feature', 2)
   const type = capabilityTarget(r.store, 'tool')
   const a = put(r.store, { data: { description: { content: 'a' } }, children: [] })
@@ -128,7 +130,7 @@ test('distinct supplied values branch with shared incoming identity and content;
   branches = refBranches(r.store, node(r, path))!
   expect(branches.names).toHaveLength(2)
   expect(branchEdge(r.store, branches.cid)![0]).toBe(b)
-  r = addRow(r, path, 'plain', 'Only in b', 6, { id: 'b-child' })
+  r = addRow(r, path, PLAIN_TYPE, 'Only in b', 6, { id: 'b-child' })
   expect(view(r, path)!.tasks.map(t => t.title)).toEqual(['Only in b'])
   selectBranch(r.store, branches.id, 'feature')
   expect(view(r, path)!.tasks).toHaveLength(0)

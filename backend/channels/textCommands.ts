@@ -28,7 +28,7 @@ export type TextCommandDeps = {
   now?(): number
 }
 
-type Row = { id: string; title: string; done: boolean; kind: string; path: string[]; childCount: number; isLink?: boolean; refOwner?: string; refPeer?: string }
+type Row = { id: string; title: string; done: boolean; type: string; checkable: boolean; path: string[]; childCount: number; isLink?: boolean; refOwner?: string; refPeer?: string }
 
 export function createTextCommandInbound(deps: TextCommandDeps) {
   return async (message: InboundMessage): Promise<void> => {
@@ -52,7 +52,7 @@ export function createTextCommandInbound(deps: TextCommandDeps) {
       return
     }
     if (/^(list|ls|todo|tasks)$/i.test(text)) {
-      const open = (await home()).children.filter(row => row.kind === 'task' && !row.done).slice(0, 8)
+      const open = (await home()).children.filter(row => row.checkable && !row.done).slice(0, 8)
       await reply(open.length ? open.map((t, i) => `${i + 1}. ${t.title}`).join('\n') : 'fos: nothing open')
       return
     }

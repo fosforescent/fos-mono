@@ -24,8 +24,9 @@ import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, 
 import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { RESOURCE_NAME, ROW_KIND_LABEL, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
-import { CAPABILITY_LABEL, LIBRARY_ID, libraryLink, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowKind } from '../../shared/sync/index'
+import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
+import { CAPABILITY_LABEL, LIBRARY_ID, libraryLink, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
+import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
 
 type Regions = {
   context: HTMLElement
@@ -217,7 +218,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   const record = app.evaluationStatus(root)
   const locked = app.evaluating || !!record && record.status !== 'idle' && record.status !== 'rolled-back' && record.status !== 'awaiting-review'
   const current = app.currentRow()
-  if (current?.kind === 'task') {
+  if (!!current?.checkable) {
     const actions = div('execution-task-actions', '')
     const complete = button('primary', 'Complete', () => void app.finishExecution()); complete.disabled = locked
     const abort = button('secondary', 'Abort', () => void app.finishExecution(true)); abort.disabled = locked
@@ -292,16 +293,16 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
         ? renderNoteBody(row, [], { ...state, view: path }, app)
         : span('title', resolveText(state.replica, [...path, row.id], row.title).text)
       body.title = ''
-      li.append(span('constructor-label', ROW_KIND_LABEL[row.kind] ?? row.kind), body)
+      li.append(span('constructor-label', row.typeName ?? 'Row'), body)
       if (row.allocation && !readNodeValue(state.replica, [...path, row.id], 'fos:consumed') && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
         const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(row.allocation.amount); amount.step = 'any'; amount.value = String(row.allocation.amount); amount.setAttribute('aria-label', `Use ${row.title}`); amount.disabled = locked
         li.append(amount, button('secondary small', 'Use allocation', () => app.consumeExecutionAllocation([...path, row.id], Number(amount.value))))
       }
-      if (row.kind === 'task' && !row.done) {
+      if (row.checkable && !row.done) {
         const complete = button('secondary small', 'Complete', () => void app.evaluateAt([...path, row.id])); complete.disabled = locked; li.append(complete)
       }
       if (row.refPeer) watchPeerNode(li, app, [...path, row.id])
-      if (row.kind === 'ref' || row.refPeer) li.append(iconButton('\u25b6', 'Open peer task', () => void app.startExecution([...path, row.id])))
+      if (row.refId !== undefined || row.refPeer) li.append(iconButton('\u25b6', 'Open peer task', () => void app.startExecution([...path, row.id])))
       const req = row.requirement
       if (req && !req.satisfied) {
         const supply = (value: { capability: Capability; choice?: number; ref?: string }) => app.supplyRequirementAt(path, row.id, value as Parameters<App['supplyRequirementAt']>[2], true)
@@ -315,14 +316,14 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
       }
       for (const control of li.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button,select')) control.disabled = locked
       rows.push(li)
-      if (row.kind !== 'ref' && row.kind !== 'template') walk([...path, row.id], depth + 1, row.form?.fields.map(field => field.path[0]!) ?? [])
+      if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1, row.form?.fields.map(field => field.path[0]!) ?? [])
     }
   }
   walk(root, 0, current?.form?.fields.map(field => field.path[0]!) ?? [])
   const status = document.createElement('li'); status.className = 'task has-constructor'; status.append(span('title', record?.status === 'committed' ? 'Complete' : record?.status === 'idle' ? '' : record?.status ?? ''))
   if (record?.error) status.append(span('error', record.error))
   // Tasks carry their own Complete above; other work gets one here, and plain content gets none.
-  if (current?.kind !== 'task' && work) {
+  if (!current?.checkable && work) {
     const run = button('secondary small', 'Complete', () => void app.evaluateAt(root)); run.disabled = locked; status.append(run)
   }
   rows.push(status); regions.list.className = 'list tree execution-rows'; regions.list.replaceChildren(...rows)
@@ -436,7 +437,7 @@ function glyphCrumb<T extends HTMLElement>(el: T, symbol: '⌂' | '⚙', label: 
 function matchesSearch(row: TaskView, query: string): boolean {
   const types = [...query.matchAll(/(?:^|\s)type:([\w-]+)/g)].map(m => m[1])
   const text = query.replace(/(?:^|\s)type:[\w-]+/g, '').trim().toLowerCase()
-  return (!types.length || types.includes(row.kind) || types.includes(row.requirement?.capability ?? '') || types.includes(row.allocation?.type ?? '')) && row.title.toLowerCase().includes(text)
+  return (!types.length || types.includes(typeClass(row)) || types.includes(row.requirement?.capability ?? '') || types.includes(row.allocation?.type ?? '')) && row.title.toLowerCase().includes(text)
 }
 function pathLabel(names: string[]): string {
   return names.length === 0 ? '/' : '/' + names.join('/')
@@ -463,7 +464,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
       const row = viewAt(state.replica, view.slice(0, index), true)?.tasks.find(row => row.id === _id)
       const crumb = button('crumb', shortCrumb(labels.view[index] ?? '…'), () => app.goTo(view.slice(0, index + 1)))
       crumb.title = labels.view[index] ?? ''
-      const symbol = ({ task: '☑', note: 'note', comment: 'comment', template: '✦', allocation: 'money', requirement: '⑂' } as Record<string, string>)[row?.kind ?? '']
+      const symbol = ({ task: '☑', note: 'note', comment: 'comment', template: '✦', allocation: 'money', 'allocation-money': 'money', requirement: '⑂' } as Record<string, string>)[row ? typeClass(row) : '']
       if (symbol) { const icon = span('crumb-icon', ''); icon.innerHTML = iconSvg(symbol) ?? ''; crumb.prepend(icon) }
       crumbs.append(span('sep', '›'), crumb)
     })
@@ -560,7 +561,18 @@ function renderVersion(label: string, task: TaskView | null, plainLabel: string 
 let focusGhost = true
 /** Rows whose body carries controls (requirements, supplies, queries, banks, allocations) keep it while selected; this is the one being text-edited (double-click / Enter). */
 let editingSpecial: string | null = null
-const SPECIAL_KINDS: ReadonlySet<RowKind> = new Set<RowKind>(['requirement', 'supply', 'query', 'resource', 'allocation'])
+/** Rows of these types carry controls in their body (requirements, supplies, payments, allocations, queries, banks). */
+const hasControls = (task: TaskView) => isAllocationType(task.type) || task.type === QUERY_TYPE || task.type === RESOURCE_TYPE
+/**
+ * A row's type as a short style name (classes `type-…`, glyphs, `type:` search terms): its library type's id without
+ * `lib:type:`; what a row does on top of its type (a task made from a template, a requirement, a reference) wins.
+ */
+function typeClass(task: TaskView): string {
+  if (task.refId !== undefined) return 'ref'
+  if (task.requirement) return 'requirement'
+  if (task.checkable) return 'task'
+  return task.type.startsWith('lib:type:') ? task.type.slice('lib:type:'.length).replace(/:/g, '-') : 'plain'
+}
 type DragMode = 'move' | 'ref' | 'copy'
 let drag: { id: string; at: Scope; mode: DragMode } | null = null
 let pointerDown = false
@@ -600,7 +612,7 @@ function installRowClipboard(list: HTMLElement, app: App): void {
     if (!paths.length || !event.clipboardData) return
     const lines = paths.map(path => {
       const row = app.rowAt(path)!, depth = paths.filter(parent => parent.length < path.length && parent.every((id, i) => id === path[i])).length
-      return '  '.repeat(depth) + '- ' + rawRowText(row.kind === 'ref' && !row.refOwner ? app.refTarget(row.refId ?? '')?.row ?? row : row).replace(/\n/g, '\n' + '  '.repeat(depth + 1))
+      return '  '.repeat(depth) + '- ' + rawRowText(row.refId !== undefined && !row.refOwner ? app.refTarget(row.refId ?? '')?.row ?? row : row).replace(/\n/g, '\n' + '  '.repeat(depth + 1))
     })
     event.preventDefault(); event.clipboardData.setData('text/plain', lines.join('\n'))
   })
@@ -774,7 +786,7 @@ function seedRow(app: App, seed: string, path: Scope, replace: boolean): void {
     try { app.applyConstructor(path, parseRowInput(seed + (current?.title ?? '')), true) } catch (error) { app.notify('error', String(error)) }
     return
   }
-  if (path.length > view.length) { app.addRowInside(path.slice(view.length, -1), path.at(-1)!, 'plain', seed); return }
+  if (path.length > view.length) { app.addRowInside(path.slice(view.length, -1), path.at(-1)!, PLAIN_TYPE, seed); return }
   const ghost = document.querySelector<HTMLTextAreaElement>('.tree .task.ghost textarea.edit')
   if (!ghost) { app.addRowAtTop(parseRowInput(seed)); return }
   ghost.value = seed; ghost.dispatchEvent(new window.Event('input')); ghost.focus(); ghost.setSelectionRange(seed.length, seed.length)
@@ -801,7 +813,7 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (id.startsWith('action:')) {
     const cap = id.slice(7) as 'search' | 'llm' | 'market'
     if (!['search','llm','market'].includes(cap) || !app.capabilityAvailable(cap, path)) { app.notify('error', 'This action has no active handler here.'); return }
-    try { app.applyConstructor(path, { kind: 'requirement', text: CAPABILITY_LABEL[cap] ?? cap, done: false, extras: { requirement: { capability: cap } } }) } catch (error) { app.notify('error', String(error)) }
+    try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: CAPABILITY_LABEL[cap] ?? cap, done: false, extras: { requirement: { capability: cap } } }) } catch (error) { app.notify('error', String(error)) }
     return
   }
   if (!id.startsWith('trigger:')) { openConstructor(app, id, path, replace); return }
@@ -870,7 +882,7 @@ async function pickTimeForRequirement(app: App, path: Scope, task: TaskView): Pr
   const picked = await openTimeBlockPicker({ title: task.title || 'Time requirement', text: task.title, amount: r.amount, start: r.start, end: r.end, banks: timeBanks(app), bank: bank?.id ?? '', requirement: true, cta: 'Create allocation' })
   if (!picked || picked.start === undefined) return
   if (app.state.replica.store !== store) { app.notify('error', 'The data session changed. Pick the time again.'); return }
-  try { app.applyConstructor(path, { kind: 'allocation', text: task.title, done: false, extras: { allocation: { type: 'calendar', amount: picked.amount, unit: 'h', resource: picked.bank, start: picked.start, end: picked.end } } }, true) }
+  try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: task.title, done: false, extras: { allocation: { type: 'calendar', amount: picked.amount, unit: 'h', resource: picked.bank, start: picked.start, end: picked.end } } }, true) }
   catch (error) { app.notify('error', String(error)) }
 }
 /** A millisecond time as the value of a datetime-local input (local time, minutes). */
@@ -884,7 +896,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   const store = app.state.replica.store, dialog = document.createElement('dialog'), form = document.createElement('form')
   dialog.className = 'import-dialog constructor-dialog'
   const row = path.length ? viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1)) : undefined
-  const title = document.createElement('input'); title.setAttribute('aria-label', 'Constructor label'); title.placeholder = 'Label (optional)'; title.value = replace && row?.kind !== 'requirement' ? row?.title ?? '' : ''
+  const title = document.createElement('input'); title.setAttribute('aria-label', 'Constructor label'); title.placeholder = 'Label (optional)'; title.value = replace && !row?.requirement ? row?.title ?? '' : ''
   const select = document.createElement('select'); select.setAttribute('aria-label', 'Constructor type')
   const options = kind === 'peer' ? [['invite','Invite'],['direct','Direct connection'],['virtual','Virtual peer'],['fos','Fos server']] : kind === 'integration' ? [['google','Google'],['github','GitHub'],['stripe','Stripe'],['phone','Phone']] : kind === 'repository' ? [...(inTauri() ? [['filesystem', 'Filesystem Git repository']] : []), ['github','GitHub'],['gitlab','GitLab (unavailable)']] : [['inventory','Inventory'],['calendar','Calendar'],['account','Money']]
   for (const [value, label] of options) { const option = new Option(label, value); option.disabled = value === 'gitlab'; select.append(option) }
@@ -915,7 +927,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
     for (const entry of app.banks()) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
   }
   select.onchange = update; update()
-  const error = div('error', ''), submit = button('primary', replace && row?.kind !== 'requirement' && row?.kind !== 'home' ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
+  const error = div('error', ''), submit = button('primary', replace && !row?.requirement && row?.type !== HOME_TYPE ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
   const field = (text: string, input: HTMLElement) => { const label = document.createElement('label'); label.append(span('', text), input); return label }
   form.append(h4(CONSTRUCTORS.find(c => c.id === kind)!.label), title, field(resource ? 'Resource' : 'Handler', select))
   if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(field('Source bank', bank), pickTime, start, end) }
@@ -930,10 +942,10 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
       const begins = !start.hidden && start.value ? new Date(start.value).getTime() : undefined, ends = !end.hidden && end.value ? new Date(end.value).getTime() : undefined
       if ((begins !== undefined && !Number.isFinite(begins)) || (ends !== undefined && !Number.isFinite(ends)) || (begins !== undefined && ends !== undefined && ends <= begins)) throw new Error('The allocation end must be after its start.')
       if (kind === 'repository' && !['github', 'filesystem'].includes(select.value)) throw new Error('This repository handler is unavailable.')
-      const parsed = kind === 'peer' || kind === 'integration' ? { kind: 'plain' as const, text: title.value, done: false, peer: select.value }
-        : kind === 'bank' ? { kind: 'resource' as const, text: title.value || 'Resource bank', done: false, extras: { resource: { type, capacity: value, unit: unit.value } } }
-        : resource ? { kind: 'allocation' as const, text: title.value, done: false, extras: { allocation: { type, amount: value, unit: unit.value, resource: bank.value, ...(begins !== undefined ? { start: begins } : {}), ...(ends !== undefined ? { end: ends } : {}) } } }
-        : { kind: 'plain' as const, text: title.value || repository.value, done: false }
+      const parsed = kind === 'peer' || kind === 'integration' ? { type: PLAIN_TYPE, text: title.value, done: false, peer: select.value }
+        : kind === 'bank' ? { type: RESOURCE_TYPE, text: title.value || 'Resource bank', done: false, extras: { resource: { type, capacity: value, unit: unit.value } } }
+        : resource ? { type: type === 'account' ? MONEY_TYPE : ALLOCATION_TYPE, text: title.value, done: false, extras: { allocation: { type, amount: value, unit: unit.value, resource: bank.value, ...(begins !== undefined ? { start: begins } : {}), ...(ends !== undefined ? { end: ends } : {}) } } }
+        : { type: PLAIN_TYPE, text: title.value || repository.value, done: false }
       if (kind === 'repository' && select.value === 'filesystem') {
         submit.disabled = true
         const revision = headCid(app.state.replica)
@@ -954,7 +966,7 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
   if (constructor?.startsWith('peer:')) {
     event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear()
     const peer = app.contextPeers().find(p => p.id === constructor.slice(5))
-    try { app.applyConstructor(path, { kind: 'plain', text: peer?.name ?? constructor.slice(5), done: false, peer: constructor.slice(5) }, replace) } catch (error) { app.notify('error', String(error)) }
+    try { app.applyConstructor(path, { type: PLAIN_TYPE, text: peer?.name ?? constructor.slice(5), done: false, peer: constructor.slice(5) }, replace) } catch (error) { app.notify('error', String(error)) }
     return true
   }
   if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:') || constructor.startsWith('library:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
@@ -1002,7 +1014,7 @@ function mediaPicker(app: App, label: string, accept: string, attach = false): H
 
 function openPublishing(app: App, audience: 'public' | 'users', path = [...app.state.view], templateTrigger = false): void {
   if (proposalPreview(app)) return
-  if (templateTrigger && viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.kind !== 'template') path = app.applyConstructor(path, { kind: 'template', text: audience === 'public' ? 'Public workflow' : 'Fos workflow', done: false })
+  if (templateTrigger && viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.type !== TEMPLATE_TYPE) path = app.applyConstructor(path, { type: TEMPLATE_TYPE, text: audience === 'public' ? 'Public workflow' : 'Fos workflow', done: false })
   if (JSON.stringify(path) !== JSON.stringify(app.state.view)) app.goTo(path)
   const dialog = document.createElement('dialog'); dialog.className = 'constructor-dialog publish-dialog'
   dialog.append(h4(audience === 'public' ? 'Publish publicly' : 'Publish to Fos users'), sharingControls(app, audience, templateTrigger), button('secondary', 'Close', () => dialog.close()))
@@ -1210,7 +1222,7 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
     form.append(query, submit); form.className = 'marketplace-search'
     form.onsubmit = event => { event.preventDefault(); void app.searchAt([], query.value, true) }
     panel.push(form)
-    if (app.currentRow()?.kind === 'template') panel.push(button('secondary small', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
+    if (app.currentRow()?.type === TEMPLATE_TYPE) panel.push(button('secondary small', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
     if (!app.isOnline('fos')) panel.push(div('muted', 'Fos server is offline. Connect to use GitHub and other server integrations.'), button('secondary small', 'Connect Fos server', () => app.goToAccountPeer()))
   }
   if (group === server && !preview) {
@@ -1334,7 +1346,7 @@ function placeholderForm(app: App): HTMLElement {
   const box = combobox('Placeholder template', 'Choose a placeholder template…', query => [
     option('Text', 'text', 'Types'),
     ...app.allCapabilities().map(cap => option(CAPABILITY_LABEL[cap] ?? cap, cap, 'Types')),
-    ...app.searchLocalNodes(query, 'template').map(found => option(found.row.title, 'template:' + found.row.id, 'Templates'))
+    ...app.searchLocalNodes(query, TEMPLATE_TYPE).map(found => option(found.row.title, 'template:' + found.row.id, 'Templates'))
   ], () => [], 'Search template types, then drag…')
   box.addEventListener('dragstart', event => { if (!selected) return; event.stopPropagation(); event.dataTransfer?.setData('application/x-fos-placeholder', selected); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
   return box
@@ -1367,7 +1379,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   let cached = details.get(el)
   if (!cached || cached.key !== key || cached.store !== state.replica.store) {
     const input = document.createElement('textarea'); input.className = 'node-text'; input.rows = 4
-    input.setAttribute('aria-label', 'Current node text'); input.value = row?.kind === 'home' ? '' : title; input.hidden = row?.kind === 'home' || (!row && !preview); input.readOnly = !!preview || row?.id === HOME_ID || !!row?.refPeer
+    input.setAttribute('aria-label', 'Current node text'); input.value = row?.type === HOME_TYPE ? '' : title; input.hidden = row?.type === HOME_TYPE || (!row && !preview); input.readOnly = !!preview || row?.id === HOME_ID || !!row?.refPeer
     const controls = div('node-actions', '')
     const entry = { key, store: state.replica.store, input, baseline: title, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls }
     const save = () => {
@@ -1389,7 +1401,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (event.key === 'Escape') { event.preventDefault(); input.value = entry.baseline; input.blur() }
     })
     const search = combobox('Find a node to link', 'Search constructors or nodes…', query => [...constructorOptions(app).filter(c => constructorState(app, c).enabled).filter(c => c.label.toLowerCase().includes(query.toLowerCase())).map(c => ({ label: c.label, group: 'Constructors', drag: { type: CONSTRUCTOR_DRAG_TYPE, value: c.id }, run: () => insertConstructor(app, c.id) })), ...(query ? app.searchLocalNodes(query).map(found => ({
-      label: `${found.row.title} · ${found.row.kind}`, group: 'Values', disabled: !app.canLinkNode(found.row.id),
+      label: `${found.row.title} · ${found.row.typeName ?? 'Row'}`, group: 'Values', disabled: !app.canLinkNode(found.row.id),
       drag: { type: NODE_DRAG_TYPE, value: found.row.id }, run: () => app.linkNode(found.row.id)
     })) : [])], () => [], 'Search constructors on all peers, or nodes to link…')
     search.classList.add('node-search')
@@ -1449,9 +1461,9 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const prefs = workspace(app)
   const header = el.querySelector<HTMLElement>('.node-header')!, toolbar = header.querySelector<HTMLElement>('.node-toolbar')!
   const heading = header.querySelector<HTMLElement>('.node-title')!
-  if (row && row.kind !== 'home') heading.replaceChildren(alternativePicker(app, state.view, row, true))
+  if (row && row.type !== HOME_TYPE) heading.replaceChildren(alternativePicker(app, state.view, row, true))
   else heading.textContent = title
-  header.classList.toggle('home', row?.kind === 'home')
+  header.classList.toggle('home', row?.type === HOME_TYPE)
   header.querySelector('.shared-grants')?.remove()
   const shared = app.sharedNodeAt(state.view)
   if (shared) {
@@ -1471,12 +1483,12 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const accordionEl = el.querySelector<HTMLDetailsElement>('[data-accordion="context"]')!
   renderConstructorPanel(el.querySelector<HTMLElement>('.constructor-head')!, el.querySelector<HTMLElement>('.constructor-grid')!, el.querySelector<HTMLElement>('.constructor-suggestions')!, el.querySelector<HTMLElement>('.node-context')!, state, app)
   const inputOptions = el.querySelector<HTMLElement>('.node-input-options')!
-  inputOptions.replaceChildren(...(row && row.kind !== 'home' ? [alternativePicker(app, state.view, row)] : []))
+  inputOptions.replaceChildren(...(row && row.type !== HOME_TYPE ? [alternativePicker(app, state.view, row)] : []))
   el.classList.toggle('peer-held', app.isPeerNode(state.view))
   el.setAttribute('aria-busy', String(!!row?.refPeer))
   const controls = cached.controls
   controls.replaceChildren()
-  if (row?.kind === 'task') { const generate = button('secondary small', 'Generate subtasks…', () => app.generateSubtasks([])); generate.dataset.capability = 'llm'; generate.disabled = app.subtasksAvailability([]).status !== 'ready'; generate.title = generate.disabled ? 'Requires an active language-model handler' : ''; controls.append(generate) }
+  if (!!row?.checkable) { const generate = button('secondary small', 'Generate subtasks…', () => app.generateSubtasks([])); generate.dataset.capability = 'llm'; generate.disabled = app.subtasksAvailability([]).status !== 'ready'; generate.title = generate.disabled ? 'Requires an active language-model handler' : ''; controls.append(generate) }
   if (row?.requirement?.capability === 'llm') { const work = button('secondary small', 'Context & results', () => app.openWork(state.view.slice(0, -1), row.id, true)); work.dataset.capability = 'llm'; controls.append(work) }
   if (row?.requirement && !row.requirement.satisfied && !insideTemplate(state, state.view)) {
     if (row.requirement.capability === 'confirmation' && state.session) controls.append(button('secondary small', 'Confirm', () => app.supplyRequirementAt(state.view.slice(0, -1), row.id, { capability: 'confirmation' }, true)))
@@ -1501,7 +1513,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     }))
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
   }
-  if (!preview && row?.kind === 'template' && !row.id.startsWith('lib:type:')) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
+  if (!preview && row?.type === TEMPLATE_TYPE && !row.id.startsWith('lib:type:')) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
   // the library this device ships with: people who want to propose changes and vote link the shared one into Home
   if (!preview && row?.id === LIBRARY_ID && state.view.length === 1 && !libraryLink(state.replica)) {
     const contribute = button('secondary small', 'Contribute to the standard library', () => void app.contributeToLibrary())
@@ -1519,7 +1531,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   dynamicValues.replaceChildren()
   for (const arg of app.placeholders()) {
     const line = div('placeholder-row', '')
-    line.append(span('', `${arg.name} · ${arg.type}`), span('muted', insideTemplate(state, state.view) || row?.kind === 'template' ? 'template parameter' : arg.status))
+    line.append(span('', `${arg.name} · ${arg.type}`), span('muted', insideTemplate(state, state.view) || row?.type === TEMPLATE_TYPE ? 'template parameter' : arg.status))
     argumentDrop(line, app, [], arg.id)
     if (arg.type === 'text') line.append(argumentEditor(app, [], arg.id, arg.name, app.textArguments([]).find(a => a.id === arg.id)?.text ?? ''))
     else if (arg.child) line.append(div('argument-child muted', `${arg.child} · ${arg.type} — drop or choose a matching value`))
@@ -1533,15 +1545,15 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (trigger) dynamicValues.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
   if (triggerState && ['failed', 'running'].includes(triggerState.status)) dynamicValues.append(button('secondary small', 'Review / rearm trigger', () => app.retryCurrentTrigger()))
   // Placeholders and triggers are node state: shown whenever the node has any (or is a template that may declare them).
-  el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview || !(dynamicValues.childElementCount || row?.kind === 'template' || insideTemplate(state, state.view))
+  el.querySelector<HTMLElement>('.node-values')!.hidden = !!preview || !(dynamicValues.childElementCount || row?.type === TEMPLATE_TYPE || insideTemplate(state, state.view))
   const tags = new Set<string>()
-  const collect = (path: Scope) => { if (path.length > 64) return; for (const child of viewAt(state.replica, path)?.tasks ?? []) { tags.add(child.requirement?.capability ?? child.allocation?.type ?? child.kind); if (child.childCount) collect([...path, child.id]) } }
+  const collect = (path: Scope) => { if (path.length > 64) return; for (const child of viewAt(state.replica, path)?.tasks ?? []) { tags.add(child.requirement?.capability ?? child.allocation?.type ?? typeClass(child)); if (child.childCount) collect([...path, child.id]) } }
   if (preview) {
     const collectPreview = (cid: string, depth: number) => {
       if (depth > 32) return
       for (const child of viewNode(preview.store, cid).tasks) {
-        tags.add(child.requirement?.capability ?? child.allocation?.type ?? child.kind)
-        const nested = child.kind !== 'ref' ? findChild(preview.store, cid, child.id) : null
+        tags.add(child.requirement?.capability ?? child.allocation?.type ?? typeClass(child))
+        const nested = child.refId === undefined ? findChild(preview.store, cid, child.id) : null
         if (nested) collectPreview(nested, depth + 1)
       }
     }
@@ -1549,7 +1561,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   } else collect(state.view)
   // Capability tabs (language model, repository) filter the contextual actions; shown only when there is more than the main set.
   const availableTabs: Array<[string, string, string]> = [['main', '⌂', 'Main actions']]
-  if (row?.kind === 'task' || row?.requirement?.capability === 'llm') availableTabs.push(['llm', '✦', 'Language model actions'])
+  if (!!row?.checkable || row?.requirement?.capability === 'llm') availableTabs.push(['llm', '✦', 'Language model actions'])
   if (app.repositoryInfo() || localRepository(state.replica, state.view)) availableTabs.push(['repo', '⑂', 'Repository actions'])
   if (!availableTabs.some(([key]) => key === prefs.actionTab)) prefs.actionTab = 'main'
   for (const control of Array.from(controls.children) as HTMLElement[]) control.hidden = prefs.actionTab !== 'main' && control.dataset.capability !== prefs.actionTab
@@ -1628,10 +1640,10 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
       if (depth > 32) return []
       return viewNode(preview.store, cid).tasks.flatMap(task => {
         const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth)); li.append(span('title', task.title)); li.dataset.depth = String(depth); li.dataset.time = String(task.author?.time ?? task.createdAt)
-        const nested = task.kind !== 'ref' ? findChild(preview.store, cid, task.id) : null
+        const nested = task.refId === undefined ? findChild(preview.store, cid, task.id) : null
         if (preview.remote && task.refPeer) { li.classList.add('peer-held'); watchPeerNode(li, app, [...state.view, ...ids, task.id], () => app.autoLoadProposalNode(state.view, preview.proposal.id, [...ids, task.id])) }
         const descendants = nested ? renderReadOnly(nested, depth + 1, [...trail, task.title], [...ids, task.id]) : []
-        const tag = task.requirement?.capability ?? task.allocation?.type ?? task.kind
+        const tag = task.requirement?.capability ?? task.allocation?.type ?? typeClass(task)
         const include = (!prefs.search || matchesSearch(task, prefs.search))
         return [...(include ? [li] : []), ...descendants]
       })
@@ -1723,8 +1735,8 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
       event.stopPropagation()
       focusGhost = true // Set before commit: adding the first row renders synchronously.
       const created = commit()
-      if (created && (event.ctrlKey || event.metaKey) && !event.shiftKey) { const row = app.rowAt([created]); if (row?.kind === 'task') app.toggleTaskAt([], row) }
-      if (created && (event.ctrlKey || event.metaKey) && event.shiftKey) { focusGhost = false; app.addRowInside([], created, 'plain') }
+      if (created && (event.ctrlKey || event.metaKey) && !event.shiftKey) { const row = app.rowAt([created]); if (!!row?.checkable) app.toggleTaskAt([], row) }
+      if (created && (event.ctrlKey || event.metaKey) && event.shiftKey) { focusGhost = false; app.addRowInside([], created, PLAIN_TYPE) }
       return
     }
     if (k === 'ArrowDown' && !event.altKey) { event.preventDefault(); event.stopPropagation(); focusGhost = true; const created = commit(); if (!created && node.tasks.length) moveSelection(app, 1); return }
@@ -1832,7 +1844,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
     const groupOf = (task: TaskView): string => {
       const key = settingKeyFromName(task.construction?.name)
       if (task.construction?.peerId || key === 'sessions') return 'Account'
-      if (!key) return task.kind === 'home' ? '' : 'Other'
+      if (!key) return task.type === HOME_TYPE ? '' : 'Other'
       if (['name', 'theme', 'microphone', 'camera', 'geolocation', 'history'].includes(key)) return 'Device'
       if (['server', 'direct', 'peer', 'invite', 'virtual', 'phone', 'share'].includes(key)) return 'Connections'
       return 'Data'
@@ -1876,9 +1888,9 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const path: Scope = [...at, task.id]
   const selected = !!state.selected && state.selected.length === path.length && state.selected.every((p, i) => path[i] === p)
   const li = document.createElement('li')
-  li.className = 'task kind-' + task.kind + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '') + (task.typeError?.length ? ' type-error' : '') + (task.rejected ? ' type-rejected' : '')
+  li.className = 'task type-' + typeClass(task) + (task.checkable ? ' checkable' : '') + (task.refId !== undefined ? ' ref' : '') + (task.requirement ? ' requirement' : '') + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '') + (task.typeError?.length ? ' type-error' : '') + (task.rejected ? ' type-rejected' : '')
   // a type error: the row holds rows its type does not accept (they are marked too); everything else reads as before
-  if (task.typeError?.length) li.title = `${task.title || ROW_KIND_LABEL[task.kind]} does not accept ${task.typeError.length === 1 ? 'one of its rows' : `${task.typeError.length} of its rows`} (marked in red)`
+  if (task.typeError?.length) li.title = `${task.title || task.typeName || 'Row'} does not accept ${task.typeError.length === 1 ? 'one of its rows' : `${task.typeError.length} of its rows`} (marked in red)`
   else if (task.rejected) li.title = 'This row cannot be here: its parent’s type does not accept it. Move or remove it to fix the parent.'
   li.style.setProperty('--depth', String(depth))
   if (task.construction) li.classList.add('has-constructor')
@@ -1924,7 +1936,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     if (!drag || drag.id === task.id) return
     event.preventDefault()
     // a requirement takes what is dropped on it as a child (an allocation fills it, a template adds its requirements)
-    const position = task.kind === 'requirement' ? 'into' : dropPosition(li, event.clientY)
+    const position = !!task.requirement ? 'into' : dropPosition(li, event.clientY)
     li.classList.toggle('drop-above', position === 'above')
     li.classList.toggle('drop-below', position === 'below')
     li.classList.toggle('drop-into', position === 'into')
@@ -1943,13 +1955,13 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     }
     if (!drag || drag.id === task.id) return
     const dragged = app.rowAt([...drag.at, drag.id])
-    if (task.kind === 'requirement' && dragged) {
+    if (!!task.requirement && dragged) {
       // onto a requirement: an allocation is supplied to it (it stays in its bank), a template is executed inside it
       // (its requirements show as rows under this one), anything else is moved inside
-      if (dragged.kind === 'allocation') { app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: dragged.id }); drag = null; return }
-      if (dragged.kind === 'template') { app.addRowAt([...at, task.id], 'task', dragged.title, { templateName: dragged.title }); drag = null; return }
+      if (dragged.allocation && !dragged.requirement) { app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: dragged.id }); drag = null; return }
+      if (dragged.type === TEMPLATE_TYPE) { app.addRowAt([...at, task.id], TASK_TYPE, dragged.title, { templateName: dragged.title }); drag = null; return }
     }
-    const position = task.kind === 'requirement' ? 'into' : dropPosition(li, event.clientY)
+    const position = !!task.requirement ? 'into' : dropPosition(li, event.clientY)
     const move: MovePosition = position === 'into' ? { into: task.id } : { relativeTo: task.id, position }
     if (drag.mode === 'ref') app.addRefAt(at, drag.id, move)
     else if (drag.mode === 'copy') app.copyRowAt(drag.at, drag.id, at, move)
@@ -1986,21 +1998,21 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   // a row of the file-reference type: the file name and, on this device, whether the file still matches (its fields are not edited by hand)
   const fileReference = app.fileReference([...state.view, ...at, task.id])
   if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
-  else if (task.kind === 'home') { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
+  else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if (task.form && !task.text) { body = renderForm(task, at, state, app) }
-  else if (selected && task.kind !== 'ref' && (!SPECIAL_KINDS.has(task.kind) || editingSpecial === task.id)) {
+  else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
-  } else if (task.kind === 'ref') {
+  } else if (task.refId !== undefined) {
     body = renderRefBody(task, app, [...at, task.id])
   } else if (task.text?.mediaType === 'text/markdown') {
     body = renderNoteBody(task, at, state, app)
-  } else if (SPECIAL_KINDS.has(task.kind)) {
+  } else if (hasControls(task)) {
     body = renderSpecialBody(task, at, state, app)
     body.addEventListener('click', (event) => { if ((event.target as HTMLElement).closest('a,button,.destructure-trigger,.destructure-panel')) return; event.stopPropagation(); editingSpecial = task.id; app.select(path); app.refresh() })
   } else {
     body = span('title', '')
-    if (task.kind === 'template') { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
+    if (task.type === TEMPLATE_TYPE) { const b = span('kind-badge tpl', '`template'); b.title = 'Template: the nested rows and arguments inside are copied into every task that executes it ([ ] `name`)'; body.append(b, document.createTextNode(' ')) }
     body.append(renderInlineText(task.title))
     if (task.author) {
       const who = span('author', task.author.name ? `${task.author.name} · ${new Date(task.author.time).toLocaleString()}` : 'Anonymous')
@@ -2028,12 +2040,12 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   if (task.missingTemplate) { const b = span('kind-badge unmet', 'reference error'); b.title = 'Made from a template this device has not received yet. It was requested from the peer; the row updates when it arrives.'; meta.append(b) }
   if (task.template) { const b = span('kind-badge tpl' + (task.blockedBy?.length ? ' unmet' : ''), `\`${task.template.name}`); b.title = `Executes the template “${task.template.name}”: its nested rows were copied underneath${task.blockedBy?.length ? ` (${task.blockedBy.length} still unmet)` : ''}`; meta.append(b) }
   // allocations under a row show as little tags on it (money, time, things, people)
-  if (task.childCount > 0 && task.kind !== 'resource') {
+  if (task.childCount > 0 && task.type !== RESOURCE_TYPE) {
     for (const child of viewAt(state.replica, [...state.view, ...path])?.tasks ?? []) {
-      if (child.kind === 'allocation' && child.allocation) { const t = span('alloc-tag', allocationTag(child.allocation, child.user)); t.title = `${child.title || 'allocation'}${child.allocation.by ? ` · ${child.allocation.by}` : ''}`; meta.append(t) }
+      if (child.allocation && !child.requirement) { const t = span('alloc-tag', allocationTag(child.allocation, child.user)); t.title = `${child.title || 'allocation'}${child.allocation.by ? ` · ${child.allocation.by}` : ''}`; meta.append(t) }
     }
   }
-  if (!insideTemplate(state, [...state.view, ...path]) && task.kind === 'requirement' && task.requirement && !task.requirement.satisfied) li.classList.add('unmet')
+  if (!insideTemplate(state, [...state.view, ...path]) && !!task.requirement && task.requirement && !task.requirement.satisfied) li.classList.add('unmet')
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
   if (task.market) { const b = span('market-badge', '🛒'); b.title = 'Listed on the market: other accounts can find this and propose'; meta.append(b) }
   if (task.blockedBy?.length && !insideTemplate(state, [...state.view, ...path])) { const b = span('blocked-badge', `Needs: ${task.blockedBy.join(', ')}`); b.title = `Needs: ${task.blockedBy.join(', ')}`; meta.append(b) }
@@ -2103,7 +2115,7 @@ function renderForm(task: TaskView, at: Scope, state: AppState, app: App): HTMLE
         if (input.value === baseline) return
         if (input instanceof HTMLInputElement && input.type === 'number' && (!input.value.trim() || !Number.isFinite(Number(input.value)))) { input.setCustomValidity('Enter a number.'); input.reportValidity(); return }
         const text = input.value
-        app.rewriteRowAt(path.slice(0, -1), path.at(-1)!, { kind: 'plain', text, done: false }, draft)
+        app.rewriteRowAt(path.slice(0, -1), path.at(-1)!, { type: PLAIN_TYPE, text, done: false }, draft)
         baseline = text
       }
       input.addEventListener('input', () => input.setCustomValidity(''))
@@ -2120,7 +2132,7 @@ function renderForm(task: TaskView, at: Scope, state: AppState, app: App): HTMLE
       if (field.repeat) control.append(button('secondary small', 'Remove', () => app.deleteTaskAt([...at, task.id, ...child.path.slice(0, -1)], child.path.at(-1)!)))
       group.append(control)
     }
-    if (field.repeat) group.append(button('secondary small', 'Add item', () => app.addRowAt(path, 'plain', ' ')))
+    if (field.repeat) group.append(button('secondary small', 'Add item', () => app.addRowAt(path, PLAIN_TYPE, ' ')))
     return group
   }
   root.append(render(task.form!))
@@ -2134,19 +2146,19 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   input.className = 'edit'
   // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
   const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...at] }
-  const raw = task.text || task.kind === 'ref' || task.kind === 'supply' ? task.title : rawRowText(task)
+  const raw = task.text || task.refId !== undefined || !!task.supply ? task.title : rawRowText(task)
   input.value = raw
-  input.placeholder = multiline ? 'Markdown…' : task.kind === 'comment' ? '// Comment…' : 'Row text…'
+  input.placeholder = multiline ? 'Markdown…' : task.type === COMMENT_TYPE ? '// Comment…' : 'Row text…'
   let committed = false
   const commit = () => {
     if (committed) return
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
     if (input.value === raw) { if (!task.scalar && !input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
-    if (task.text || task.scalar || task.kind === 'ref' || task.kind === 'supply') { app.rewriteRowAt(at, task.id, { kind: task.kind, text: input.value, done: task.done }, draft); return }
+    if (task.text || task.scalar || task.refId !== undefined || !!task.supply) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
     // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
     const parsed = parseRowInput(input.value)
-    if (parsed.kind === 'plain' && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
+    if (parsed.type === PLAIN_TYPE && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
     app.rewriteRowAt(at, task.id, parsed, draft)
   }
   const path: Scope = [...at, task.id]
@@ -2168,8 +2180,8 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if (k === 'ArrowUp' && !event.shiftKey && caretOnEdge(input, 'first')) { event.preventDefault(); commit(); moveSelection(app, -1); return }
     if (k === 'ArrowDown' && !event.shiftKey && caretOnEdge(input, 'last')) { event.preventDefault(); commit(); moveSelection(app, 1); return }
     if (k === 'Enter' && event.shiftKey && !ctrl) { event.preventDefault(); event.stopPropagation(); commit(); app.newBranchAt([...state.view, ...path]); return }
-    if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id, 'plain'); return }
-    if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); const current = app.rowAt(path); if (current?.kind === 'task') { app.toggleTaskAt(at, current); app.refresh() } else if (current) app.addRowBelow(at, task.id); return }
+    if (k === 'Enter' && ctrl && event.shiftKey) { event.preventDefault(); commit(); app.addRowInside(at, task.id, PLAIN_TYPE); return }
+    if (k === 'Enter' && ctrl) { event.preventDefault(); commit(); const current = app.rowAt(path); if (!!current?.checkable) { app.toggleTaskAt(at, current); app.refresh() } else if (current) app.addRowBelow(at, task.id); return }
     if (k === 'Enter' && !multiline && !event.shiftKey) { event.preventDefault(); commit(); app.addRowBelow(at, task.id); return }
     if (k === 'Tab') { event.preventDefault(); if (input.value.trim()) commit(); else committed = true; app.select(path); app.indentSelected(event.shiftKey); return }
     if (k === 'Backspace' && input.value === '' && (ctrl || !multiline) && (!task.scalar || ctrl)) { event.preventDefault(); committed = true; moveSelection(app, -1); app.deleteTaskAt(at, task.id); return }
@@ -2249,9 +2261,9 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
   const target = app.refTarget(task.refId ?? '')
   if (target) {
     const link = button('link ref-link', firstLine(target.row.title) || '(untitled)', () => app.followRef(task.refId ?? ''))
-    link.title = `Reference to a ${ROW_KIND_LABEL[target.row.kind].toLowerCase()}; click to go there`
+    link.title = `Reference to a ${(target.row.typeName ?? 'row').toLowerCase()}; click to go there`
     body.append(arrow, link)
-    if (target.row.kind === 'task') body.append(span('muted', target.row.done ? ' (done)' : ''))
+    if (target.row.checkable) body.append(span('muted', target.row.done ? ' (done)' : ''))
   } else {
     body.append(arrow, span('muted', ' (missing reference)'))
   }
@@ -2265,7 +2277,7 @@ function noteChildren(task: TaskView, at: Scope, state: AppState, app: App): Not
   const fields = new Set(task.form?.fields.map(field => field.path[0]) ?? [])
   return node.tasks.filter(row => !fields.has(row.id)).map((row) => {
     const subRows = row.childCount ? viewAt(state.replica, [...state.view, ...at, task.id, row.id])?.tasks ?? [] : []
-    if (row.kind !== 'ref') return { row, subRows }
+    if (row.refId === undefined) return { row, subRows }
     const target = app.refTarget(row.refId ?? '')
     const targetSub = target && target.row.childCount ? viewAt(state.replica, [...target.path, target.row.id])?.tasks ?? [] : []
     return { row, subRows, refTarget: target ? { row: target.row, subRows: targetSub } : null }
@@ -2311,7 +2323,7 @@ function expandNoteText(ctx: ReturnType<typeof noteContext>, resolve: (name: str
 }
 
 function insideTemplate(state: AppState, fullPath: Scope): boolean {
-  return fullPath.some((id, i) => viewAt(state.replica, fullPath.slice(0, i))?.tasks.some(row => row.id === id && row.kind === 'template'))
+  return fullPath.some((id, i) => viewAt(state.replica, fullPath.slice(0, i))?.tasks.some(row => row.id === id && row.type === TEMPLATE_TYPE))
 }
 
 /** Requirement, supply, query, resource-bank and allocation rows: a kind badge, the text, and a status/balance. */
@@ -2392,7 +2404,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
   const body = span('title special', '')
   const badge = (text: string, cls = '') => { const b = span('kind-badge ' + cls, text); body.append(b) }
   const stop = (el: HTMLElement) => { el.addEventListener('click', (e) => e.stopPropagation()); return el }
-  if (task.kind === 'requirement' && task.requirement) {
+  if (!!task.requirement && task.requirement) {
     const r = task.requirement
     const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
     // A legible chip ("Needs money", "Decided", "Filled") with the amount beside it in monospace, instead of the raw marker.
@@ -2426,7 +2438,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       const handler = (cap: 'search' | 'market' | 'mail') => app.capabilityAvailable(cap, [...state.view, ...at, task.id]) ? peers.find((p) => p.online && p.capabilities.includes(cap)) : undefined
       const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
-      if (r.capability === 'allocation' && r.resource === 'account') for (const control of paymentControls(app, state, [...state.view, ...at, task.id], () => void app.askPeerAt(at, task))) body.append(stop(control))
+      if (task.type === MONEY_TYPE) for (const control of paymentControls(app, state, [...state.view, ...at, task.id], () => void app.askPeerAt(at, task))) body.append(stop(control))
       // the standard library's manual fallbacks for this kind of requirement
       for (const control of manualControls(app, state, at, task)) body.append(stop(control))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
@@ -2486,15 +2498,15 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         hint(`or type "${marker[r.resource ?? ''] ?? '$'} ${r.amount ?? 'amount'}" inside, or drop an allocation here`)
       }
     }
-  } else if (task.kind === 'supply' && task.supply) {
+  } else if (!!task.supply && task.supply) {
     badge('Supplied', 'ok')
     body.append(document.createTextNode(` ${task.title}${task.title.includes(task.supply.by) ? '' : ` · ${task.supply.by}`}`))
-    if (task.supply.ref) { const t = app.refTarget(task.supply.ref); if (t) body.append(stop(button('link small', firstLine(t.row.title) || t.row.kind, () => app.followRef(task.supply!.ref!)))) }
-  } else if (task.kind === 'query') {
+    if (task.supply.ref) { const t = app.refTarget(task.supply.ref); if (t) body.append(stop(button('link small', firstLine(t.row.title) || t.row.typeName || 'row', () => app.followRef(task.supply!.ref!)))) }
+  } else if (task.type === QUERY_TYPE) {
     badge('Query' + (task.query?.market ? ' · market' : ''), 'query')
     body.append(document.createTextNode(' ' + task.title + ' '))
     body.append(stop(button('secondary small', task.query?.executedAt ? 'Run again' : 'Search', () => void app.runQueryAt(at, task))))
-  } else if (task.kind === 'resource' && task.resource) {
+  } else if (task.type === RESOURCE_TYPE && task.resource) {
     badge(`Bank · ${RESOURCE_NAME[task.resource.type] ?? task.resource.type}`, 'bank')
     body.append(document.createTextNode(' ' + task.title + ' '))
     const r = task.resource
@@ -2505,7 +2517,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       fill.style.width = `${Math.min(100, Math.round(((r.available ?? 0) / r.capacity) * 100))}%`; fill.style.background = 'var(--bank)'
       bar.append(fill); bar.title = balance.textContent ?? ''; body.append(bar)
     }
-  } else if (task.kind === 'allocation' && task.allocation) {
+  } else if (task.allocation) {
     const a = task.allocation
     const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
     badge(`${a.type === 'person' ? '@' + (task.user?.username ?? '') : marker[a.type] ?? '+'} ${formatAmount(a.amount, a.unit)}${a.type !== 'person' && task.user ? ` @${task.user.username}` : ''}`, 'alloc')
@@ -2619,8 +2631,8 @@ function handleKey(event: KeyboardEvent, app: App): void {
     case event.key === 'Enter' && (event.ctrlKey || event.metaKey) && event.shiftKey:
       event.preventDefault(); app.addRowInside(at, task.id); break
     case event.key === 'Enter' && (event.ctrlKey || event.metaKey):
-      event.preventDefault(); if (task.kind === 'task') app.toggleTaskAt(at, task); else app.addRowBelow(at, task.id); break
-    case event.key === 'Enter' && SPECIAL_KINDS.has(task.kind):
+      event.preventDefault(); if (task.checkable) app.toggleTaskAt(at, task); else app.addRowBelow(at, task.id); break
+    case event.key === 'Enter' && hasControls(task):
       event.preventDefault(); editingSpecial = task.id; app.refresh(); break
     case event.key === 'Enter':
       event.preventDefault(); app.addRowBelow(at, task.id); break
@@ -2885,10 +2897,11 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
 
 function renderTemplatePicker(body: HTMLElement, state: AppState, app: App): void {
   const common = div('template-buttons', '')
-  for (const [kind, icon, label] of [['plain', '≡', 'Record'], ['task', '☑', 'Task'], ['note', 'note', 'Note'], ['comment', 'comment', 'Comment'], ['requirement', '⑂', 'Requirement'], ['allocation', 'money', 'Allocation'], ['resource', 'inventory', 'Resource bank'], ['template', '✦', 'Template']] as const) {
-    common.append(iconButton(icon, label, () => app.changeTemplate(kind)))
+  const types: Array<[string, string, string, Omit<RowExtras, 'store'>?]> = [[PLAIN_TYPE, '≡', 'Record'], [TASK_TYPE, '☑', 'Task'], [NOTE_TYPE, 'note', 'Note'], [COMMENT_TYPE, 'comment', 'Comment'], [ALLOCATION_TYPE, '⑂', 'Requirement', { requirement: { capability: 'confirmation' } }], [ALLOCATION_TYPE, 'money', 'Allocation'], [RESOURCE_TYPE, 'inventory', 'Resource bank'], [TEMPLATE_TYPE, '✦', 'Template']]
+  for (const [type, icon, label, extras] of types) {
+    common.append(iconButton(icon, label, () => app.changeTemplate(type, undefined, extras)))
   }
-  body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, 'template').filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).map(found => ({ label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) })), () => [], 'Search templates…'))
+  body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, TEMPLATE_TYPE).filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).map(found => ({ label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) })), () => [], 'Search templates…'))
   const form = document.createElement('form'); form.className = 'new-template-form'
   const name = document.createElement('input'); name.placeholder = 'Name (optional)'; name.setAttribute('aria-label', 'New template name')
   const icon = document.createElement('input'); icon.placeholder = 'Icon (optional)'; icon.setAttribute('aria-label', 'New template icon'); icon.maxLength = 16
@@ -3044,12 +3057,12 @@ function renderMarket(body: HTMLElement, state: AppState, app: App): void {
   if (!node) return
   const rows = document.createElement('ul')
   rows.className = 'market-rows'
-  const requirements = node.view.tasks.filter((t) => t.kind === 'requirement' && t.requirement)
+  const requirements = node.view.tasks.filter((t) => !!t.requirement && t.requirement)
   for (const t of node.view.tasks) {
     const li = document.createElement('li')
-    const kind = ROW_KIND_LABEL[t.kind] ?? t.kind
-    const badgeText = t.kind === 'requirement' ? (t.requirement?.satisfied ? '✓ ' : '! ') + (t.requirement?.capability ?? kind) : kind.toLowerCase()
-    li.append(span('kind-badge ' + (t.kind === 'requirement' ? (t.requirement?.satisfied ? 'ok' : 'needs') : ''), badgeText), document.createTextNode(' ' + (firstLine(t.title) || '')))
+    const kind = t.typeName ?? 'Row'
+    const badgeText = !!t.requirement ? (t.requirement?.satisfied ? '✓ ' : '! ') + (t.requirement?.capability ?? kind) : kind.toLowerCase()
+    li.append(span('kind-badge ' + (!!t.requirement ? (t.requirement?.satisfied ? 'ok' : 'needs') : ''), badgeText), document.createTextNode(' ' + (firstLine(t.title) || '')))
     rows.append(li)
   }
   if (!node.view.tasks.length) { const li = document.createElement('li'); li.className = 'muted'; li.textContent = 'No rows shown.'; rows.append(li) }

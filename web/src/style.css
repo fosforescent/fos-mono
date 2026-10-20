@@ -547,19 +547,19 @@ textarea.edit { width: 100%; font: inherit; font-family: var(--mono); font-size:
 .task.root-row.add-peer-row .add-peer { flex: 1; }
 .conflict-row { background: var(--warn-soft); gap: .5rem; }
 
-/* --- row kinds ---------------------------------------------------------------- */
-.task.kind-plain .title, .task.kind-comment .title { white-space: pre-wrap; }
+/* --- row types (classes type-<library type>, plus checkable / ref / requirement) -------- */
+.task.type-plain .title, .task.type-comment .title { white-space: pre-wrap; }
 .task .title a { color: var(--accent); text-decoration: underline; word-break: break-all; }
 .task .embeds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .task .embed { max-width: 100%; max-height: 240px; border-radius: 6px; border: 1px solid var(--line); }
 .task .embed.video { width: 100%; max-width: 480px; aspect-ratio: 16 / 9; height: auto; max-height: none; }
-.task.kind-comment { background: color-mix(in srgb, var(--query) 6%, transparent); }
-.task.kind-comment .author { display: block; font-size: 12px; color: var(--muted); }
-.task.kind-comment .toggle, .task.kind-comment .checkbox { opacity: 0.8; }
-.task.kind-ref .title.ref { display: inline-flex; align-items: center; gap: 6px; }
-.task.kind-ref .ref-arrow { color: var(--muted); }
-.task.kind-ref .ref-link { font-weight: 600; padding: 0; }
-.task.kind-note .note-body { display: block; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); line-height: 1.5; overflow-x: auto; white-space: normal; color: var(--fg-2); }
+.task.type-comment { background: color-mix(in srgb, var(--query) 6%, transparent); }
+.task.type-comment .author { display: block; font-size: 12px; color: var(--muted); }
+.task.type-comment .toggle, .task.type-comment .checkbox { opacity: 0.8; }
+.task.ref .title.ref { display: inline-flex; align-items: center; gap: 6px; }
+.task.ref .ref-arrow { color: var(--muted); }
+.task.ref .ref-link { font-weight: 600; padding: 0; }
+.task.type-note .note-body { display: block; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); line-height: 1.5; overflow-x: auto; white-space: normal; color: var(--fg-2); }
 .note-body h1, .note-body h2, .note-body h3 { margin: 0.2em 0 0.4em; line-height: 1.25; text-transform: none; letter-spacing: 0; color: var(--fg); }
 .note-body h1 { font-size: 1.25em; } .note-body h2 { font-size: 1.12em; } .note-body h3 { font-size: 1em; }
 .note-body p { margin: 0 0 0.6em; } .note-body p:last-child { margin-bottom: 0; }
@@ -571,7 +571,7 @@ textarea.edit { width: 100%; font: inherit; font-family: var(--mono); font-size:
 .note-body .diagram svg { max-width: 100%; height: auto; }
 .note-body .diagram-error { border: 1px solid var(--danger); }
 .note-body .katex-display { overflow-x: auto; }
-.task.kind-template .title { font-weight: 600; }
+.task.type-template .title { font-weight: 600; }
 
 /* type chips: uppercase, tinted by what the row needs or provides */
 .kind-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: var(--chip-bg); color: var(--fg-2); margin-right: 6px; vertical-align: middle; white-space: nowrap; }
@@ -594,7 +594,7 @@ textarea.edit { width: 100%; font: inherit; font-family: var(--mono); font-size:
 .tree .task.unmet.selected { background: var(--selected-bg); }
 .req-progress { display: inline-block; vertical-align: middle; width: 96px; height: 6px; margin-left: 4px; border-radius: 3px; background: var(--track); overflow: hidden; }
 .req-progress-fill { display: block; height: 100%; background: var(--warn); }
-.task.kind-requirement .kind-badge.ok ~ .req-progress .req-progress-fill { background: var(--accent); }
+.task.requirement .kind-badge.ok ~ .req-progress .req-progress-fill { background: var(--accent); }
 .req-have { font-family: var(--mono); font-size: 12px; }
 .req-hint { font-size: 12px; margin-left: 4px; }
 .kind-preview { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-text); white-space: nowrap; margin-left: 6px; }

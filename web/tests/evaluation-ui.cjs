@@ -7,14 +7,19 @@ const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-evaluation-u
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/analysis'; export {createMemoryStorage} from './src/storage'; export {createProjectStorage} from './src/project'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
-const { addRow, addConstructedRow, content, put, rowTemplate, analysisRows, queryAnalysis, analysisTotals, App, mountUi, createMemoryStorage, createProjectStorage, loadReplica, evaluationRecord, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'test.cjs'))
+const { addRow, addConstructedRow, content, put, rowTypeAt, analysisRows, queryAnalysis, analysisTotals, App, mountUi, createMemoryStorage, createProjectStorage, loadReplica, evaluationRecord, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'test.cjs'))
+const TASK_TYPE = 'lib:type:task'
+const PLAIN_TYPE = 'lib:type:plain'
+const NOTE_TYPE = 'lib:type:note'
+const ALLOCATION_TYPE = 'lib:type:allocation'
+const TEMPLATE_TYPE = 'lib:type:template'
 async function main() {
   const storage = createMemoryStorage()
   let release, first = true
   storage.flush = () => first ? (first = false, new Promise(resolve => { release = resolve })) : Promise.resolve()
   const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage }); app.scheduleSync = () => {}
   mountUi(document.getElementById('app'), app)
-  const target = app.applyConstructor(app.state.view, { kind: 'task', text: 'Research', done: false })
+  const target = app.applyConstructor(app.state.view, { type: TASK_TYPE, text: 'Research', done: false })
   assert(!document.querySelector('.constructor-grid [aria-label="Evaluate"]'))
   app.goTo(target)
   const beforeRun = JSON.stringify(storage.loadReplica())
@@ -35,7 +40,7 @@ async function main() {
   app.goTo(target.slice(0, -1)); app.goTo(target)
   app.goTo(target)
 
-  const inputTarget = app.applyConstructor(target.slice(0, -1), { kind: 'task', text: 'Requested research', done: false })
+  const inputTarget = app.applyConstructor(target.slice(0, -1), { type: TASK_TYPE, text: 'Requested research', done: false })
   app.goTo(inputTarget); app.addTextArgument([], 'Research_topic', '')
   await app.startExecution(inputTarget)
   assert(document.querySelector('.execution-view'))
@@ -47,7 +52,7 @@ async function main() {
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(app.evaluationStatus().status, 'committed')
   app.exitExecution()
-  const plain = app.applyConstructor(target.slice(0, -1), { kind: 'task', text: 'Write research plan', done: false })
+  const plain = app.applyConstructor(target.slice(0, -1), { type: TASK_TYPE, text: 'Write research plan', done: false })
   await app.startExecution(plain)
   assert(document.querySelector('#app.execution-page'))
   const back = document.querySelector('.execution-back'); assert(back?.querySelector('svg')); assert.equal(back.textContent, '')
@@ -68,7 +73,7 @@ async function main() {
   await app.finishExecution()
   assert.equal(app.currentRow().done, true)
   app.exitExecution()
-  const note = app.applyConstructor(target.slice(0, -1), { kind: 'note', text: '# Research output\n\n**Rendered result**' })
+  const note = app.applyConstructor(target.slice(0, -1), { type: NOTE_TYPE, text: '# Research output\n\n**Rendered result**' })
   await app.startExecution(note)
   await new Promise(resolve => setTimeout(resolve, 50))
   assert(document.querySelector('.execution-document strong')?.textContent === 'Rendered result')
@@ -77,12 +82,12 @@ async function main() {
 
   // Bind actual text/note rows into missing inputs, then render them in execution context.
   const parent = target.slice(0, -1)
-  const recipient = app.applyConstructor(parent, { kind: 'plain', text: 'Ada & Grace' })
-  const body = app.applyConstructor(parent, { kind: 'note', text: '**Bound note**\n\nSecond paragraph.' })
-  const composed = app.applyConstructor(parent, { kind: 'task', text: 'Hello {recipient}' })
-  const childText = app.applyConstructor(composed, { kind: 'plain', text: 'For {{recipient}}; still {missing}' })
-  const childNote = app.applyConstructor(composed, { kind: 'note', text: '# For {{recipient}}\n\n{body}' })
-  const localText = app.applyConstructor(composed, { kind: 'plain', text: 'Local {recipient}' })
+  const recipient = app.applyConstructor(parent, { type: PLAIN_TYPE, text: 'Ada & Grace' })
+  const body = app.applyConstructor(parent, { type: NOTE_TYPE, text: '**Bound note**\n\nSecond paragraph.' })
+  const composed = app.applyConstructor(parent, { type: TASK_TYPE, text: 'Hello {recipient}' })
+  const childText = app.applyConstructor(composed, { type: PLAIN_TYPE, text: 'For {{recipient}}; still {missing}' })
+  const childNote = app.applyConstructor(composed, { type: NOTE_TYPE, text: '# For {{recipient}}\n\n{body}' })
+  const localText = app.applyConstructor(composed, { type: PLAIN_TYPE, text: 'Local {recipient}' })
   app.goTo(composed)
   app.dropArgument([], app.placeholders().find(arg => arg.name === 'recipient').id, recipient.at(-1))
   app.dropArgument([childNote.at(-1)], app.placeholders([childNote.at(-1)]).find(arg => arg.name === 'body').id, body.at(-1))
@@ -104,10 +109,10 @@ async function main() {
   await new Promise(resolve => setTimeout(resolve, 50))
   assert.equal(document.querySelector('.execution-document strong')?.textContent, 'Bound note')
   assert.equal(app.currentRow().title, '# For {{recipient}}\n\n{body}')
-  assert.equal(app.currentRow().kind, 'plain', 'graph-defined Markdown has no native note kind')
+  assert.equal(app.currentRow().type, NOTE_TYPE, 'a note is a row of the Note type')
   app.exitExecution()
 
-  const store = app.state.replica.store, definition = content(store, rowTemplate(store, 'note', parent))
+  const store = app.state.replica.store, definition = content(store, rowTypeAt(store, NOTE_TYPE, parent))
   const custom = put(store, { ...definition, data: { ...definition.data, alias: { id: 'example:report' }, description: { content: 'An unfamiliar report' } } })
   app.set({ replica: addConstructedRow(app.state.replica, parent, custom, { text: '**Graph-selected renderer**' }, Date.now(), 'custom-report') })
   await app.startExecution([...parent, 'custom-report'])
@@ -123,7 +128,7 @@ async function main() {
   for (const label of ['Public template endpoint', 'Fos template endpoint', 'Cron trigger', 'Child evaluation']) assert(document.querySelector(`.constructor-grid [aria-label="${label}"]`), label)
 
   const need = [...target.slice(0, -1), 'choose-research']
-  app.set({ replica: addRow(app.state.replica, target.slice(0, -1), 'requirement', 'Choose research', Date.now(), { id: 'choose-research', requirement: { capability: 'choice', options: ['Graphs', 'Biology'] } }) })
+  app.set({ replica: addRow(app.state.replica, target.slice(0, -1), ALLOCATION_TYPE, 'Choose research', Date.now(), { id: 'choose-research', requirement: { capability: 'choice', options: ['Graphs', 'Biology'] } }) })
   await app.startExecution(need)
   assert(!document.querySelector('.execution-root-input button').disabled)
   document.querySelector('.execution-root-input button').click()
@@ -139,17 +144,17 @@ async function main() {
   const presentation = document.querySelector('[aria-label="Analysis presentation"]'); presentation.value = 'graph'; presentation.dispatchEvent(new window.Event('change'))
   assert(document.querySelector('.analysis-page svg[role="img"]'))
   assert.equal(JSON.stringify(storage.loadReplica()), analysisBefore, 'analysis does not mutate graph')
-  const matches = queryAnalysis(analysisRows(app.state.replica, app.state.view), 'Research*', 'task', '')
+  const matches = queryAnalysis(analysisRows(app.state.replica, app.state.view), 'Research*', 'Task', '')
   assert(matches.length > 0); assert.equal(analysisTotals(matches).count, matches.length)
-  assert(queryAnalysis(analysisRows(app.state.replica, app.state.view), '', '', 'open').every(entry => entry.row.kind === 'task'))
-  const totals = analysisTotals([{ row: { kind: 'allocation', allocation: { type: 'inventory', unit: 'item', amount: 2 } } }, { row: { kind: 'allocation', allocation: { type: 'inventory', unit: 'item', amount: 4 } } }, { row: { kind: 'allocation', allocation: { type: 'calendar', unit: 'h', amount: 1 } } }])
+  assert(queryAnalysis(analysisRows(app.state.replica, app.state.view), '', '', 'open').every(entry => entry.row.checkable))
+  const totals = analysisTotals([{ row: { typeName: 'Allocation', allocation: { type: 'inventory', unit: 'item', amount: 2 } } }, { row: { typeName: 'Allocation', allocation: { type: 'inventory', unit: 'item', amount: 4 } } }, { row: { typeName: 'Allocation', allocation: { type: 'calendar', unit: 'h', amount: 1 } } }])
   assert.deepEqual(totals.allocations['inventory / item'], { count: 2, sum: 6, min: 2, max: 4 })
   assert.equal(totals.allocations['calendar / h'].sum, 1)
   document.querySelector('[aria-label="Back to tree"]').click()
-  const template = app.applyConstructor(app.state.view, { kind: 'template', text: 'Research template' })
+  const template = app.applyConstructor(app.state.view, { type: TEMPLATE_TYPE, text: 'Research template' })
   await app.startExecution(template)
   assert.notDeepEqual(app.state.view, template, 'Play creates an instance of a template')
-  assert.equal(app.currentRow().kind, 'task')
+  assert.equal(app.currentRow().checkable, true)
   assert.equal(app.evaluationStatus(), null)
   app.exitExecution()
   let finishWrite, fail = false

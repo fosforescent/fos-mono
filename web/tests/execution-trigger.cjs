@@ -2,6 +2,8 @@ const assert = require('node:assert/strict')
 const { build } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
+const ALLOCATION_TYPE = 'lib:type:allocation'
+const TEMPLATE_TYPE = 'lib:type:template'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-execution-trigger-'))
 async function main() {
   await build({ nodePaths: [path.resolve(__dirname, '../node_modules'), ...(process.env.NODE_PATH ?? '').split(path.delimiter).filter(Boolean)], stdin: { contents: `export {createSharingHandlers} from './backend/sync/sharing'; export {createEventService} from './backend/sync/events'; export * from './shared/sync/execution-access'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'persistence', setup(b) {
@@ -10,12 +12,12 @@ async function main() {
     b.onResolve({ filter: /^@fosforescent\/shared\/sync\// }, args => ({ path: path.resolve(__dirname, '../../shared/sync', args.path.split('/').at(-1) + '.ts') }))
   } }] })
   const c = require(path.join(dir, 'test.cjs'))
-  let host = c.addRow(c.createReplica('user:host'), [], 'template', 'Research form', 1, { id: 'form' })
+  let host = c.addRow(c.createReplica('user:host'), [], TEMPLATE_TYPE, 'Research form', 1, { id: 'form' })
   host = c.addRefAt(host, ['form'], 'answer', host.store.primitive.documentField.getId(), 2, null, 'Research question')
-  host = c.addRow(host, ['form'], 'requirement', 'Confirm participation', 2, { id: 'confirm', requirement: { capability: 'confirmation' } })
-  host = c.addRow(host, ['form'], 'requirement', 'Choose topic', 2, { id: 'choice', requirement: { capability: 'choice', options: ['Graphs', 'Biology'] } })
-  host = c.addRow(host, ['form'], 'requirement', 'Provide items', 2, { id: 'items', requirement: { capability: 'allocation', resource: 'inventory', amount: 1, unit: 'item' } })
-  host = c.addRow(host, ['form'], 'allocation', 'Available items', 2, { id: 'offer', allocation: { type: 'inventory', amount: 2, unit: 'item' } })
+  host = c.addRow(host, ['form'], ALLOCATION_TYPE, 'Confirm participation', 2, { id: 'confirm', requirement: { capability: 'confirmation' } })
+  host = c.addRow(host, ['form'], ALLOCATION_TYPE, 'Choose topic', 2, { id: 'choice', requirement: { capability: 'choice', options: ['Graphs', 'Biology'] } })
+  host = c.addRow(host, ['form'], ALLOCATION_TYPE, 'Provide items', 2, { id: 'items', requirement: { capability: 'allocation', resource: 'inventory', amount: 1, unit: 'item' } })
+  host = c.addRow(host, ['form'], ALLOCATION_TYPE, 'Available items', 2, { id: 'offer', allocation: { type: 'inventory', amount: 2, unit: 'item' } })
   host = c.addTask(host, [], 'Private sibling secret', 3, 'private')
   const replicas = { host, alice: c.createReplica('user:alice'), bob: c.createReplica('user:bob') }
   const h = c.createSharingHandlers({ loadStore: async name => replicas[name] ? { user: { id: name === 'host' ? 1 : name === 'alice' ? 2 : 3, username: name }, store: replicas[name].store } : null, saveStore: async (user, store) => { replicas[user.username] = c.createReplica('user:' + user.username, store) }, now: () => 100 }, 'test-secret')
@@ -33,7 +35,7 @@ async function main() {
   const interact = async (claims, scope, event) => events.handle(events.principalOf(claims, scope), event)
   await assert.rejects(interact({ username: 'host', kind: 'peer' }, [], { kind: 'read', path: ['private'] }), /peer attachment/)
   replicas.host = c.addTask(replicas.host, [], 'API task', 3, 'api-task')
-  replicas.host = c.addRow(replicas.host, ['api-task'], 'requirement', 'Confirm', 3, { id: 'api-confirm', requirement: { capability: 'confirmation' } })
+  replicas.host = c.addRow(replicas.host, ['api-task'], ALLOCATION_TYPE, 'Confirm', 3, { id: 'api-confirm', requirement: { capability: 'confirmation' } })
   let snapshot = await interact({ username: 'host' }, ['api-task'], { kind: 'read', path: [] })
   assert.equal(snapshot.evaluation.inputs.length, 1, 'declared inputs travel with the read')
   await assert.rejects(interact({ username: 'host' }, ['api-task'], { kind: 'input', path: [], expected: 'stale', key: snapshot.evaluation.inputs[0].key, value: true }), /changed/)

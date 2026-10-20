@@ -6,6 +6,7 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
+const PLAIN_TYPE = 'lib:type:plain'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-agent-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
@@ -20,7 +21,7 @@ async function main() {
   app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage, scopedDocument: true })
   app.scheduleSync = () => {}; app.startPolling = () => {}; app.openEvents = () => {}
   c.mountUi(document.getElementById('app'), app)
-  const id = app.addRowAt([], 'plain', 'Agent project'); app.goTo([id])
+  const id = app.addRowAt([], PLAIN_TYPE, 'Agent project'); app.goTo([id])
   let stopped = 0, pending = [], replies = []
   window.__TAURI__ = { core: { invoke: async (command, args) => {
     if (command === 'node_agent_start') return { id: 'endpoint', url: 'http://127.0.0.1:1234/mcp', token: 'local-secret' }

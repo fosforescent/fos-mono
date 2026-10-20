@@ -3,16 +3,18 @@ import {
   createReplica, decideTaskResult, loadReplica, proposeTaskResult,
   renameTask, serializeReplica, setTaskDone, taskWorkContext, view, workAttempts
 } from './index'
+import { PLAIN_TYPE } from './library-types'
+import { NOTE_TYPE, ALLOCATION_TYPE } from './library-types'
 
 function setup() {
   let r = addMemberAt(createReplica('owner'), [], 'fos', 'fos', ['llm'], 0)
-  r = addRow(r, [], 'plain', 'Home', 1, { id: 'home' })
+  r = addRow(r, [], PLAIN_TYPE, 'Home', 1, { id: 'home' })
   r = addTask(r, ['home'], 'Rental app', 2, 'project')
-  r = addRow(r, ['home', 'project'], 'note', 'Architecture: keep inventory in one database.', 3, { id: 'brief' })
+  r = addRow(r, ['home', 'project'], NOTE_TYPE, 'Architecture: keep inventory in one database.', 3, { id: 'brief' })
   r = addTask(r, ['home', 'project'], 'Unrelated secret task', 3, 'other')
   r = addTask(r, ['home', 'project'], 'Reservations', 4, 'task')
-  r = addRow(r, ['home', 'project', 'task'], 'note', 'Two simultaneous requests must not reserve the same dress.', 5, { id: 'spec' })
-  r = addRow(r, ['home', 'project', 'task'], 'requirement', 'Propose a reservation plan.', 6, { id: 'request', requirement: { capability: 'llm' } })
+  r = addRow(r, ['home', 'project', 'task'], NOTE_TYPE, 'Two simultaneous requests must not reserve the same dress.', 5, { id: 'spec' })
+  r = addRow(r, ['home', 'project', 'task'], ALLOCATION_TYPE, 'Propose a reservation plan.', 6, { id: 'request', requirement: { capability: 'llm' } })
   return { r, path: ['home', 'project', 'task', 'request'] }
 }
 
@@ -58,7 +60,7 @@ test('accepted work becomes an explicit input to another task; missing or unacce
   let { r, path } = setup()
   r = addTask(r, ['home', 'project'], 'Implement reservation', 7, 'dependent')
   r = addRef(r, ['home', 'project', 'dependent'], 'request', 8)
-  r = addRow(r, ['home', 'project', 'dependent'], 'requirement', 'Refine implementation steps.', 9, { id: 'next', requirement: { capability: 'llm' } })
+  r = addRow(r, ['home', 'project', 'dependent'], ALLOCATION_TYPE, 'Refine implementation steps.', 9, { id: 'next', requirement: { capability: 'llm' } })
   const dependent = ['home', 'project', 'dependent', 'next']
   expect(taskWorkContext(r, dependent).blockers.join()).toMatch(/not accepted/)
   const run = beginTaskWork(r, path, taskWorkContext(r, path), 10)
@@ -74,7 +76,7 @@ test('changed criteria prevent accepting an old answer, and oversized context is
   r = proposeTaskResult(run.replica, run.resultPath, 'Old answer', 8)
   r = renameTask(r, ['home', 'project', 'task'], 'spec', 'New criteria', 9)
   expect(() => decideTaskResult(r, path, run.resultPath, workAttempts(r, path)[0]!.proposals[0]!.cid, true, 10)).toThrow(/context changed/)
-  r = addRow(r, ['home', 'project', 'task'], 'note', 'x'.repeat(20_001), 11)
+  r = addRow(r, ['home', 'project', 'task'], NOTE_TYPE, 'x'.repeat(20_001), 11)
   expect(taskWorkContext(r, path).blockers.join()).toMatch(/20,000/)
 })
 
@@ -84,7 +86,7 @@ test('the reusable work template requires readiness and uses the existing instan
   r = addPlanningTemplate(r, ['task'], 2)
   const rows = view(r, ['task'])!.tasks
   expect(rows.filter((t) => t.text?.mediaType === 'text/markdown')).toHaveLength(2)
-  const req = rows.find((t) => t.kind === 'requirement')!
+  const req = rows.find((t) => !!t.requirement)!
   const path = ['task', req.id]
   expect(taskWorkContext(r, path).blockers.join()).toMatch(/ready/)
   const confirm = view(r, path)!.tasks[0]!
@@ -109,8 +111,8 @@ test('the sent context stays pinned even if someone edits the visible snapshot n
 
 test('planning uses a note’s own variable context as well as passed text arguments', () => {
   let { r, path } = setup()
-  r = addRow(r, path.slice(0, -1), 'note', 'Required: {{subject}}', 7, { id: 'templated-note' })
-  r = addRow(r, [...path.slice(0, -1), 'templated-note'], 'plain', 'subject: prevent double bookings', 8)
+  r = addRow(r, path.slice(0, -1), NOTE_TYPE, 'Required: {{subject}}', 7, { id: 'templated-note' })
+  r = addRow(r, [...path.slice(0, -1), 'templated-note'], PLAIN_TYPE, 'subject: prevent double bookings', 8)
   const preview = taskWorkContext(r, path)
   expect(preview.blockers).toEqual([])
   expect(preview.prompt).toContain('Required: prevent double bookings')

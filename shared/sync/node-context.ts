@@ -1,4 +1,5 @@
 import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowEdgeAt, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
+import { PLAIN_TYPE } from './library-types'
 import { createBranch } from './branches'
 import { headCid, loadReplica, serializeReplica, type Replica } from './replica'
 import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
@@ -49,7 +50,7 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
       if (!nodeAuthorityAt(r, branch.scope, authority).includes('edit') || authority.proposeOnly) throw new NodeAccessError('Branch not available to this peer.')
       if (branch.scope.length) fork = createBranch(fork, branch.scope, branch.name, now)
       else {
-        const edge = rowEdgeAt(fork.store, 'plain', cid, [])
+        const edge = rowEdgeAt(fork.store, PLAIN_TYPE, cid, [])
         const choice = putBranches(fork.store, content(fork.store, cid).data.alias?.id ?? 'fos:root-branch', edge, [{ peerId: 'main', edge }, { peerId: branch.name, edge, base: edge }])
         commitRoot(fork.store, choice, now)
       }

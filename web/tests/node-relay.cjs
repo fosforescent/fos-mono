@@ -15,7 +15,7 @@ async function main() {
   browser = c.addTask(browser, [c.HOME_ID, 'held'], 'Unrequested descendant secret', 3, 'deep')
   let server = c.ensureHomeContext(c.createReplica('user:alice'), 1)
   const serverShape = c.nodeShape(server, [c.HOME_ID])
-  server = c.installNodeShape(server, [c.HOME_ID], { ...serverShape, children: [{ id: 'held', kind: 'task', address: { peerId: 'browser', scope: [c.HOME_ID, 'held'] } }] }, 4)
+  server = c.installNodeShape(server, [c.HOME_ID], { ...serverShape, children: [{ id: 'held', address: { peerId: 'browser', scope: [c.HOME_ID, 'held'] } }] }, 4)
   const relay = new c.NodeRelay(30)
   const closes = [], packets = []
   let answer = true, pending

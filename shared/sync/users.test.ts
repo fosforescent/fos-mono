@@ -1,12 +1,12 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
 import { addRow, addSupply, addTask, bindUserAt, createReplica, ensureHomeContext, headCid, loadReplica, serializeReplica, setRowContentAt, view, type Replica } from './replica'
-import { content, identityCid, isRefNode, resolveScope, valueContent, HOME_ID } from './graph'
-import { definitionId } from './legacy-row-types'
+import { content, identityCid, isRefNode, resolveScope, typeIdOf, valueContent, HOME_ID } from './graph'
 import { syncWith } from './test-helpers'
 import {
   USER_FIELD, USER_SELF_ATTESTATION, USER_SERVER_ATTESTATION, cacheUser, cachedUser, isUserType, rebindUsers, unverifiedUser, userAttestationPayload,
   userFieldEdge, userOf, usersPath, verifyUser, peerKeyId, publishedKey, publishedKeys, requestVerification, verifiedAt, verifyPublished, verifyRequestId, type UserRecord, type UserTrust
 } from './users'
+import { ALLOCATION_TYPE } from './library-types'
 
 // an ed25519 key from a fixed seed, as the server makes its identity key (backend/sync/verify.ts)
 const keyFrom = (byte: number) => {
@@ -26,12 +26,12 @@ const rowNode = (r: Replica, path: string[]) => valueContent(r.store, resolveSco
 
 test('"@bob" binds a ref to a user object, a row of the library user type read through its form', () => {
   let r = addTask(createReplica('d'), [], 'review', 1, 't')
-  r = addRow(r, ['t'], 'requirement', 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
+  r = addRow(r, ['t'], ALLOCATION_TYPE, 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
   const node = rowNode(r, ['t', 'rq'])
   // no string: the requirement holds no peer name; its `user` field is a ref whose type is lib:type:user
   expect(node.data.allocation?.peer).toBeUndefined()
   const edge = userFieldEdge(r.store, node)!
-  expect(definitionId(content(r.store, edge[0]))).toBe('lib:type:user')
+  expect(typeIdOf(r.store, edge[0])).toBe('lib:type:user')
   expect(isUserType(r.store, edge[0])).toBe(true)
   const ref = content(r.store, identityCid(r.store, edge))
   expect(isRefNode(r.store, ref)).toBe(true)
@@ -41,7 +41,7 @@ test('"@bob" binds a ref to a user object, a row of the library user type read t
   expect(row.user).toEqual(bob)
   expect(row.requirement!.summary).toBe('@bob')
   // the same record is the same node wherever it is bound
-  r = addRow(r, ['t'], 'requirement', 'again', 3, { id: 'rq2', requirement: { capability: 'peer' }, user: bob })
+  r = addRow(r, ['t'], ALLOCATION_TYPE, 'again', 3, { id: 'rq2', requirement: { capability: 'peer' }, user: bob })
   const other = userFieldEdge(r.store, rowNode(r, ['t', 'rq2']))!
   expect(valueContent(r.store, identityCid(r.store, other))).toEqual(valueContent(r.store, identityCid(r.store, edge)))
   // survives a reload
@@ -50,25 +50,25 @@ test('"@bob" binds a ref to a user object, a row of the library user type read t
 
 test('a requirement naming a user is filled only by that same user object', () => {
   let r = addTask(createReplica('d'), [], 'review', 1, 't')
-  r = addRow(r, ['t'], 'requirement', 'read it', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
-  r = addRow(r, ['t', 'rq'], 'allocation', '', 3, { id: 'a1', allocation: { resource: '', type: 'person', amount: 1, unit: 'h' }, user: attested({ account: '43', username: 'bobby', name: 'Bob', publicKey: '' }) })
+  r = addRow(r, ['t'], ALLOCATION_TYPE, 'read it', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
+  r = addRow(r, ['t', 'rq'], ALLOCATION_TYPE, '', 3, { id: 'a1', allocation: { resource: '', type: 'person', amount: 1, unit: 'h' }, user: attested({ account: '43', username: 'bobby', name: 'Bob', publicKey: '' }) })
   expect(view(r, [])!.tasks.find(t => t.id === 't')!.blockedBy).toEqual(['@bob'])
-  r = addRow(r, ['t', 'rq'], 'allocation', '', 4, { id: 'a2', allocation: { resource: '', type: 'person', amount: 1, unit: 'h' }, user: bob })
+  r = addRow(r, ['t', 'rq'], ALLOCATION_TYPE, '', 4, { id: 'a2', allocation: { resource: '', type: 'person', amount: 1, unit: 'h' }, user: bob })
   expect(view(r, [])!.tasks.find(t => t.id === 't')!.blockedBy).toBeUndefined()
   // an amount requirement for bob counts only bob's allocations
-  r = addRow(r, ['t'], 'requirement', 'reward', 5, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' }, user: bob })
-  r = addRow(r, ['t', 'pay'], 'allocation', '', 6, { id: 'p1', allocation: { resource: 'fos:points', type: 'points', amount: 5, unit: 'ff' } })
+  r = addRow(r, ['t'], ALLOCATION_TYPE, 'reward', 5, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' }, user: bob })
+  r = addRow(r, ['t', 'pay'], ALLOCATION_TYPE, '', 6, { id: 'p1', allocation: { resource: 'fos:points', type: 'points', amount: 5, unit: 'ff' } })
   expect(view(r, ['t'])!.tasks.find(t => t.id === 'pay')!.requirement).toMatchObject({ satisfied: false, have: 0, summary: 'points 5 ff @bob' })
-  r = addRow(r, ['t', 'pay'], 'allocation', '', 7, { id: 'p2', allocation: { resource: 'fos:points', type: 'points', amount: 5, unit: 'ff' }, user: bob })
+  r = addRow(r, ['t', 'pay'], ALLOCATION_TYPE, '', 7, { id: 'p2', allocation: { resource: 'fos:points', type: 'points', amount: 5, unit: 'ff' }, user: bob })
   expect(view(r, ['t'])!.tasks.find(t => t.id === 'pay')!.requirement).toMatchObject({ satisfied: true, have: 5 })
 })
 
 test('rewriting the row rebinds or drops its user', () => {
   let r = addTask(createReplica('d'), [], 'review', 1, 't')
-  r = addRow(r, ['t'], 'requirement', 'read it', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
-  r = setRowContentAt(r, ['t'], 'rq', 'requirement', 'read it', { requirement: { capability: 'peer' }, user: unverifiedUser('carol') }, 3)
+  r = addRow(r, ['t'], ALLOCATION_TYPE, 'read it', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
+  r = setRowContentAt(r, ['t'], 'rq', ALLOCATION_TYPE, 'read it', { requirement: { capability: 'peer' }, user: unverifiedUser('carol') }, 3)
   expect(view(r, ['t'])!.tasks[0]!.user).toMatchObject({ username: 'carol', verification: null })
-  r = setRowContentAt(r, ['t'], 'rq', 'requirement', 'read it', { requirement: { capability: 'confirmation' }, user: null }, 4)
+  r = setRowContentAt(r, ['t'], 'rq', ALLOCATION_TYPE, 'read it', { requirement: { capability: 'confirmation' }, user: null }, 4)
   expect(view(r, ['t'])!.tasks[0]!.user).toBeUndefined()
   expect(view(r, ['t', 'rq'])!.tasks).toEqual([])
 })
@@ -76,13 +76,13 @@ test('rewriting the row rebinds or drops its user', () => {
 test('verified objects are cached in Home; typed "@bob" binds the cached one, earlier unverified rows are rebound', () => {
   let r = ensureHomeContext(createReplica('d'), 1)
   r = addTask(r, [HOME_ID], 'review', 2, 't')
-  r = addRow(r, [HOME_ID, 't'], 'requirement', 'offline', 3, { id: 'early', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
+  r = addRow(r, [HOME_ID, 't'], ALLOCATION_TYPE, 'offline', 3, { id: 'early', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
   expect(cachedUser(r, 'bob')).toBeNull()
   r = cacheUser(r, bob, 4)
   expect(usersPath(r)).toEqual([HOME_ID, 'fos:users'])
   expect(cachedUser(r, 'BOB')).toEqual(bob)
   expect(cacheUser(r, bob, 5)).toBe(r)
-  r = addRow(r, [HOME_ID, 't'], 'requirement', 'online', 6, { id: 'late', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
+  r = addRow(r, [HOME_ID, 't'], ALLOCATION_TYPE, 'online', 6, { id: 'late', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
   expect(view(r, [HOME_ID, 't'])!.tasks.find(t => t.id === 'late')!.user).toEqual(bob)
   expect(view(r, [HOME_ID, 't'])!.tasks.find(t => t.id === 'early')!.user!.verification).toBeNull()
   r = rebindUsers(r, bob, 7)
@@ -91,7 +91,7 @@ test('verified objects are cached in Home; typed "@bob" binds the cached one, ea
 
 test('the user object travels with the row through node sync', () => {
   let a = addTask(createReplica('a'), [], 'review', 1, 't'), hub = createReplica('server'), b = createReplica('b')
-  a = addRow(a, ['t'], 'requirement', 'read it', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
+  a = addRow(a, ['t'], ALLOCATION_TYPE, 'read it', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
   a = syncWith(a, hub)
   b = syncWith(b, hub)
   const row = view(b, ['t'])!.tasks.find(t => t.id === 'rq')!

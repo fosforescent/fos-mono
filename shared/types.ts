@@ -135,7 +135,7 @@ export type FosDataContent = {
   /** On a proposal node (a peer's branch at a link node). */
   /**
    * A requirement row under a task ("-" prefix): a capability / effect handler that must be supplied before the
-   * task can be completed. The capability names the kind of child row that fills it: `task` (a done task),
+   * task can be completed. The capability names the child row that fills it: `task` (a done task),
    * `allocation` (an allocation of `resource`), `search` (a run query), `confirmation`/`choice` (a supply by a
    * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
    */
@@ -171,11 +171,11 @@ export type FosDataContent = {
   disabledCapabilities?: {
     content: string[]
   },
-  /** Historical serialized data only. New definitions use graph rows; retained for old-store migration. */
+  /** Historical serialized data only (cid migrations v3/v4 read it). A row's type is its edge's left node. */
   instanceKind?: {
     kind: string
   },
-  /** On a row type: the behavior its instances get from code (`builtin:<kind>`) until it is expressed as rows. */
+  /** Historical serialized data only (the frozen seeds of cid migrations v3/v4). Types are told apart by graph identity. */
   behavior?: {
     content: string
   },
@@ -192,7 +192,6 @@ export type FosDataContent = {
   /** On a reference-error template: the template a row is pinned to that this peer has not received yet. */
   missingTemplate?: {
     cid: string
-    kind: string
   },
   /** A query row: its description is the search text; results appear as reference rows under it. */
   query?: {
@@ -236,7 +235,9 @@ export type FosDataContent = {
     /** Device holding this version; content is fetched separately from the reference. */
     peer?: string
     /** Scoped locator for an unloaded node supplied by this peer. */
-    scope?: string[]; branches?: Array<{ scope: string[]; name: string }>; kind?: string
+    scope?: string[]; branches?: Array<{ scope: string[]; name: string }>
+    /** An unloaded node its provider listed as held (`NodeChild.held`): a reference row, or a node a third peer holds. */
+    held?: boolean
     version?: string
   },
   proposal?: {

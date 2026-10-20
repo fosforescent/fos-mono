@@ -5,9 +5,10 @@ import { keyValueOf, splitFrontmatter } from './notes'
 import { formTitle } from './forms'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  isBranchChoice, selectedBranchValue, type Capability, put, childRows, requirementSatisfied, content, identityCid, isChoiceEdge, refTypeCid, refValueCid,
+  isBranchChoice, selectedBranchValue, type Capability, put, childRows, flowOf, requirementSatisfied, content, identityCid, isChoiceEdge, refTypeCid, refValueCid,
   resolveScope, valueContent, type Scope
 } from './graph'
+import { PLAIN_TYPE, isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
 
 export type BindingEnvironment = HandlerEnvironment
@@ -45,7 +46,7 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
     const frontmatter = splitFrontmatter(formTitle(r.store, valueContent(r.store, cid))).frontmatter
     for (const [name, text] of Object.entries(frontmatter)) addText(name, text)
     const childNames = new Set<string>()
-    for (const child of childRows(r.store, cid, 'plain')) {
+    for (const child of childRows(r.store, cid).filter(c => c.type === PLAIN_TYPE)) {
       // Product fields are values, not legacy "key: value" declarations.
       if (child.value.data.scalar || child.value.data.presentation) continue
       const kv = keyValueOf(formTitle(r.store, child.value))
@@ -105,7 +106,7 @@ export function resolveBinding(store: FosStore, type: string, target: string | n
       }
       const peer = node.data.peerId?.content
       if (peer && environment.isPeerActive && !environment.isPeerActive(peer)) return fail('missing', `Peer ${peer} is not active`)
-      for (const child of childRows(store, cid, 'requirement')) {
+      for (const child of childRows(store, cid).filter(c => isAllocationType(c.type) && flowOf(c.type, c.value).requirement)) {
         if (!requirementSatisfied(store, child.cid)) { sources.add(child.cid); return fail('missing', 'A required resource or confirmation is unresolved') }
       }
       for (const arg of argumentRefs(store, cid)) {

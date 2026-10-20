@@ -9,7 +9,8 @@ import type { FosPathElem } from '../types'
 import { plainEdge } from './patterns'
 import { FIELD_TYPES, NOTE_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
-import { aliasIdOf, branchEdge, identityCid, isBranchChoice, isChoiceEdge, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
+import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
+import { aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, proposalContent, put, reachableNodes, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Scope } from './graph'
 
 export const SHARE_ARGUMENT = 'fos:sharing'
 export const POLL_ARGUMENT = 'fos:poll'
@@ -77,7 +78,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
       const req = row.requirement, relative = [...path.slice(root.length), row.id]
       if (row.allocation && !view(r, path)?.tasks.some(t => t.supply?.ref === row.id) && !readNodeValue(r, [...path, row.id], 'fos:consumed')) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: row.allocation.type, unit: row.allocation.unit, amount: row.allocation.amount, start: row.allocation.start, end: row.allocation.end })
       if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability)) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
-      if (row.kind !== 'ref' && row.kind !== 'template') walk([...path, row.id], depth + 1)
+      if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1)
     }
   }
   const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) : null
@@ -139,17 +140,8 @@ export function childRowEdge(store: FosStore, parent: string | null, id: string)
     try { const cid = identityCid(store, edge); return (aliasIdOf(content(store, cid)) ?? aliasIdOf(valueContent(store, cid))) === id } catch { return false }
   }) ?? null
 }
-/** The library row type a row edge is made from: its left node's id, which every pinned version of the type shares. */
-export function rowTypeOfEdge(store: FosStore, edge: FosPathElem | null): string | undefined {
-  if (!edge) return undefined
-  edge = plainEdge(store, edge)
-  if (isChoiceEdge(store, edge)) {
-    const active = isBranchChoice(store, content(store, edge[1])) ? branchEdge(store, edge[1]) : null
-    return active ? rowTypeOfEdge(store, active) : undefined
-  }
-  const id = store.table.has(edge[0]) ? content(store, edge[0]).data.alias?.id : undefined
-  return id?.startsWith('lib:type:') ? id : undefined
-}
+/** The library row type a row is made from (its view's `type`, the left node's id), when it is one: what a published page renders by. */
+const libraryType = (row: { type: string } | null | undefined): string | undefined => row?.type.startsWith('lib:type:') ? row.type : undefined
 /** Bounds on published markdown, in characters: one body, and every body of one projection together. */
 export const SHARED_BODY_LIMIT = 100_000
 export const SHARED_TOTAL_BODY = 1_000_000
@@ -168,7 +160,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   const current = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
   const rows: SharedRow[] = [], hashed: unknown[] = [], fields: SharedInput[] = []
   let budget = SHARED_TOTAL_BODY
-  // How a row reads is decided by its type (the left node of its edge), never by its kind.
+  // How a row reads is decided by its type (the left node of its edge) alone.
   const present = (title: string, type: string | undefined, shown: boolean): Pick<SharedRow, 'title' | 'type' | 'body' | 'truncated'> => {
     if (!shown) return { title: '', ...(type ? { type } : {}) }
     if (type !== NOTE_TYPE) return { title: title.slice(0, 8000), ...(type ? { type } : {}) }
@@ -177,7 +169,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     return { title: markdownTitle(title), type, body, ...(body.length < title.length ? { truncated: true as const } : {}) }
   }
   const store = r.store, edgeAt = (at: Scope) => at.length ? childRowEdge(store, resolveScope(store, headCid(r), at.slice(0, -1)), at.at(-1)!) : null
-  const page = present(current?.title ?? node.name ?? 'Shared node', rowTypeOfEdge(store, edgeAt(path)), textVisible(path))
+  const page = present(current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path))
   const walk = (at: Scope, depth: number, presented: string[] | undefined) => {
     if (depth > 8 || hashed.length >= 200) return
     const parent = resolveScope(store, headCid(r), at)
@@ -185,9 +177,8 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
       if (hashed.length >= 200) break
       const childPath = [...at, row.id]
       if (!visible(childPath)) continue
-      const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id), type = rowTypeOfEdge(store, edge)
-      // the revision keeps its earlier input, so votes cast before bodies were published still count
-      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', kind: row.kind, depth })
+      const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id), type = libraryType(row)
+      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth })
       if (type && FIELD_TYPES.includes(type)) {
         // a field of its row's product: the one the row presents (a note's body) is already shown by the row; an
         // empty one is asked of the visitor, who submits a candidate value
@@ -201,7 +192,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
       rows.push({ id: row.id, depth, ...present(row.title, type, shown) })
       const definition = edge && store.table.has(plainEdge(store, edge)[0]) ? content(store, plainEdge(store, edge)[0]) : null
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
-      if (row.kind !== 'ref') walk([...at, row.id], depth + 1, definition?.data.form?.title)
+      if (row.refId === undefined) walk([...at, row.id], depth + 1, definition?.data.form?.title)
     }
   }
   const own = edgeAt(path)
@@ -228,7 +219,7 @@ export function subPeerRowAt(r: Replica, owner: string, now: number): { replica:
   const home = homePath(r), peer = `user:${owner}`, hostId = `shared-host:${owner}`
   let host = (view(r, home)?.tasks ?? []).find(row => row.id === hostId || (row.requirement?.capability === 'peer' && row.requirement.peer === peer))
   if (!host) {
-    r = addRow(r, home, 'plain', owner, now, { id: hostId })
+    r = addRow(r, home, PLAIN_TYPE, owner, now, { id: hostId })
     host = view(r, home)!.tasks.find(row => row.id === hostId)!
   }
   const hostPath = [...home, host.id]
@@ -261,7 +252,7 @@ export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, 
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: hostPath })
-  const draft = addRow(createReplica(peer, draftStore), [], 'ref', title, now, { id: linkId, refOwner: owner, refId: aliasId })
+  const draft = addRow(createReplica(peer, draftStore), [], REF_TYPE, title, now, { id: linkId, refOwner: owner, refId: aliasId })
   importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
   const proposalCid = put(store, proposalContent(store, peer, name, headCid(draft), base, now))
   commitRoot(store, updateAtScope(store, root, hostPath, current => withProposal(store, makeLink(store, current, now), peer, proposalCid, name), 'node'), now)
@@ -277,12 +268,12 @@ export function ensureSharedLink(r: Replica, address: SharedAddress, title: stri
   if (existing) return { replica: r, path: [...existing.path, existing.row.id] }
   let host = (view(r, home)?.tasks ?? []).find(row => row.id === hostId || (row.requirement?.capability === 'peer' && row.requirement.peer === peer))
   if (!host) {
-    r = addRow(r, home, 'plain', anonymous ? 'Host' : address.owner, now, { id: hostId })
+    r = addRow(r, home, PLAIN_TYPE, anonymous ? 'Host' : address.owner, now, { id: hostId })
     host = view(r, home)!.tasks.find(row => row.id === hostId)!
   }
   const hostPath = [...home, host.id]
   if (!view(r, hostPath)?.members.some(member => member.peerId === peer)) r = addMemberAt(r, hostPath, peer, anonymous ? 'Host' : address.owner, [], now)
-  r = addRow(r, hostPath, 'ref', title, now, { id: linkId, refOwner: address.owner, refId: address.path.at(-1) ?? 'root' })
+  r = addRow(r, hostPath, REF_TYPE, title, now, { id: linkId, refOwner: address.owner, refId: address.path.at(-1) ?? 'root' })
   const path = [...hostPath, linkId]
   r = writeNodeValue(r, path, 'fos:shared-link', address, now)
   return { replica: r, path }

@@ -13,13 +13,17 @@
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { formTitle } from '@fosforescent/shared/sync/forms'
-import { createReplica, isRowOfType, marketGrantsOf, marketplaceOffers, withMainBranchPolicy, content, identityCid, rootTargetCid, rowKindOf, valueContent, isShippedLibrary, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, isRowOfType, marketGrantsOf, marketplaceOffers, withMainBranchPolicy, content, identityCid, rootTargetCid, isRowEdge, rowTypeIdOf, valueContent, isShippedLibrary, type Scope } from '@fosforescent/shared/sync/index'
 
 export type Embed = (texts: string[]) => Promise<number[][]>
 
 export const EMBEDDING_DIM = 768
 
-export type IndexedRow = { aliasId: string; kind: string; title: string; path: Scope; market: boolean; text: string }
+/**
+ * `type`: the row's type (its edge's left node's graph identity, `lib:type:…` or a template row's id; '' for a type
+ * without one), or `capability` for a published handler. Stored in the table's `kind` column.
+ */
+export type IndexedRow = { aliasId: string; type: string; title: string; path: Scope; market: boolean; text: string }
 
 /** Rows worth indexing, with the paths they live at and whether the market lists them. */
 export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
@@ -29,9 +33,9 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
     seen.add(cid)
     for (const edge of valueContent(store, cid).children) {
       if (out.length >= limit) return
-      const kind = rowKindOf(store, edge)
       // a device root's shipped library is not the account's content
-      if (!kind || isShippedLibrary(store, path, edge)) continue
+      if (!isRowEdge(store, edge) || isShippedLibrary(store, path, edge)) continue
+      const type = rowTypeIdOf(store, edge) ?? ''
       const id = identityCid(store, edge)
       const identity = content(store, id)
       const value = valueContent(store, id)
@@ -42,14 +46,14 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       const market = grants ? grants.includes('read') : inherited
       const title = formTitle(store, value).trim()
       // a reference (its row type) stands for a row indexed where it lives
-      if (title && !isRowOfType(store, edge, 'lib:type:ref')) out.push({ aliasId, kind, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
+      if (title && !isRowOfType(store, edge, 'lib:type:ref')) out.push({ aliasId, type, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
       walk(id, [...path, aliasId], market)
     }
   }
   withMainBranchPolicy(store, () => walk(rootTargetCid(store), [], false))
   for (const offer of marketplaceOffers(createReplica('market-index', store))) {
     const text = `${offer.label} ${valueContent(store, offer.cid).data.description?.content ?? ''}`.trim().slice(0, 600)
-    out.push({ aliasId: offer.id, kind: 'capability', title: offer.label, path: offer.path, market: true, text })
+    out.push({ aliasId: offer.id, type: 'capability', title: offer.label, path: offer.path, market: true, text })
   }
   return out
 }
@@ -80,7 +84,7 @@ export async function indexStore(prisma: Prisma, user: { id: number; username: s
         `INSERT INTO "RowEmbeddingModel" ("userId", "owner", "aliasId", "kind", "title", "path", "market", "textHash", "embedding", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::vector, NOW())
          ON CONFLICT ("userId", "aliasId") DO UPDATE SET "kind" = EXCLUDED."kind", "title" = EXCLUDED."title", "path" = EXCLUDED."path", "market" = EXCLUDED."market", "textHash" = EXCLUDED."textHash", "embedding" = EXCLUDED."embedding", "updatedAt" = NOW()`,
-        user.id, user.username, row.aliasId, row.kind, row.title, JSON.stringify(row.path), row.market, textHash(row.text, row.market), `[${vector.join(',')}]`
+        user.id, user.username, row.aliasId, row.type, row.title, JSON.stringify(row.path), row.market, textHash(row.text, row.market), `[${vector.join(',')}]`
       )
       embedded++
     }
@@ -88,7 +92,7 @@ export async function indexStore(prisma: Prisma, user: { id: number; username: s
   return { embedded, removed: gone.length }
 }
 
-export type SearchHit = { aliasId: string; title: string; kind: string; score: number; owner: string | null; path: Scope }
+export type SearchHit = { aliasId: string; title: string; type: string; score: number; owner: string | null; path: Scope }
 
 export async function searchRows(prisma: Prisma, params: { userId: number; query: string; market: boolean; limit: number }, embed: Embed): Promise<SearchHit[]> {
   const [vector] = await embed([params.query])
@@ -105,7 +109,7 @@ export async function searchRows(prisma: Prisma, params: { userId: number; query
   return rows.map((r) => ({
     aliasId: r.aliasId,
     title: r.title,
-    kind: r.kind,
+    type: r.kind,
     score: Number(r.score),
     owner: r.userId === params.userId ? null : r.owner,
     path: Array.isArray(r.path) ? (r.path as Scope) : typeof r.path === 'string' ? (JSON.parse(r.path) as Scope) : []

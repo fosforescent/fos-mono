@@ -7,10 +7,11 @@ import { createEvaluationService } from './evaluation'
 import { createEventService } from './events'
 import { createHandlerRegistry } from './registry'
 import { githubRepoHandler } from './hostHandlers'
+import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
 
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
-  r = addRow(r, ['project'], 'requirement', 'File issue', 1, { id: 'req', requirement: { capability: 'repo', repo: 'owner/repo' } })
+  r = addRow(r, ['project'], ALLOCATION_TYPE, 'File issue', 1, { id: 'req', requirement: { capability: 'repo', repo: 'owner/repo' } })
   r = addMemberAt(r, [], 'integration:github', 'GitHub', [], 1)
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 1, ['repo'])
   let calls = 0
@@ -65,7 +66,7 @@ test('a disconnected provider blocks the step instead of running it', async () =
 
 test('a rejected persistent claim stops before invoking any integration', async () => {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
-  r = addRow(r, ['project'], 'requirement', 'File issue', 1, { id: 'req', requirement: { capability: 'repo', repo: 'owner/repo' } })
+  r = addRow(r, ['project'], ALLOCATION_TYPE, 'File issue', 1, { id: 'req', requirement: { capability: 'repo', repo: 'owner/repo' } })
   r = addMemberAt(r, [], 'integration:github', 'GitHub', [], 1)
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 1, ['repo'])
   const issue = jest.fn()

@@ -9,12 +9,14 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs } = require(path.join(dir, 'app.cjs'))
+const PLAIN_TYPE = 'lib:type:plain'
+const TEMPLATE_TYPE = 'lib:type:template'
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function main() {
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() })
   a.scheduleSync = () => {}; mountUi(document.getElementById('app'), a)
   const id = a.addRowAtTop(parseRowInput('Rental booking'))
-  const child = a.addRowAt([id], 'plain', 'Details')
+  const child = a.addRowAt([id], PLAIN_TYPE, 'Details')
   a.select(null); await tick()
   let toggle = document.querySelector(`.task[data-id="${id}"] .toggle svg`)
   assert.equal(toggle.getAttribute('data-icon'), 'chevron-down')
@@ -31,7 +33,7 @@ async function main() {
   document.querySelector('[aria-label="New template icon"]').value = '👗'
   document.querySelector('#template-in-home').checked = true
   document.querySelector('.new-template-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
-  assert.equal(a.state.modal, null); assert.equal(a.currentRow().kind, 'template')
+  assert.equal(a.state.modal, null); assert.equal(a.currentRow().type, TEMPLATE_TYPE)
   const templatePath = [...a.state.view]
   assert.equal(templatePath[0], HOME_ID)
   assert.equal(view(a.state.replica, [HOME_ID]).tasks.find(r => r.id === id).template.id, templatePath.at(-1))
@@ -50,7 +52,7 @@ async function main() {
   assert.equal(headCid(a.state.replica), before)
   assert(a.state.notice.text.includes('cannot exceed'))
   const output = requirementOutputs(a.state.replica.store, resolveScope(a.state.replica.store, headCid(a.state.replica), [...templatePath, budget]))[0]
-  const record = a.addRowAt([], 'plain', 'Receipt')
+  const record = a.addRowAt([], PLAIN_TYPE, 'Receipt')
   const target = document.querySelector(`.task[data-id="${record}"]`)
   const drop = new window.Event('drop', { bubbles: true, cancelable: true })
   Object.defineProperty(drop, 'dataTransfer', { value: { types: ['application/x-fos-output'], getData: () => output.cid } })

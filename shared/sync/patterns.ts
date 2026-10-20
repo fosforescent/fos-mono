@@ -5,11 +5,11 @@
  * (dag-implementation/row-templates.ts). A pattern names a row type (`pattern.type`, e.g. `lib:type:home`) and
  * optionally pinned versions of it (`pattern.versions`); `pattern.any` is the wildcard. Without the wildcard a
  * type accepts the children its patterns match; with it, every child except those. A child is matched by its row type
- * (the library type of its kind) and its version (the template its edge is pinned to).
+ * (the graph identity of its edge's left node) and its version (the template its edge is pinned to).
  *
  * A row holding children its type does not accept is a type error: its edge is replaced by `[TYPE_ERROR, error]`,
  * the error node keeping the row's edge exactly ([INSTRUCTIONPOINTER, template] [TARGETPOINTER, row]) and naming the
- * rejected children (`data.typeError.rejected`). Reading through it (identityCid, rowKindOf, …) sees the row as it
+ * rejected children (`data.typeError.rejected`). Reading through it (identityCid, rowTypeOf, …) sees the row as it
  * was, so the row and its children look the same, only marked. A store root in error keeps its content behind an
  * error node as the root alias's target. Type errors are kept canonical: every commit re-derives them
  * (`canonicalTypeErrors`), so a row turns back into its plain edge as soon as nothing rejected is left. Local edits
@@ -18,8 +18,8 @@
 
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
-import { rowTypeId } from '../dag-implementation/row-templates'
-import { seedTypes, content, valueContent, isHandle, isRefNode, refValueCid, put, rowKindOf, aliasIdOf, isChoiceEdge, missingTemplateOf, type RowKind } from './graph'
+import { DOCUMENT_ROOT_TYPE, PATTERN_TYPE } from './library-types'
+import { seedTypes, content, valueContent, isHandle, isRefNode, refValueCid, put, isRowEdge, isRowOfType, rowTypeIdOf, typeIdOf, aliasIdOf, isChoiceEdge, missingTemplateOf } from './graph'
 
 export function isTypeErrorEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.typeErrorConstructor.getId()
@@ -49,7 +49,7 @@ export function rootTypeOf(store: FosStore): string {
   const root = content(store, store.rootNodeId)
   const isAlias = root.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
   const type = isAlias ? root.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())?.[1] : undefined
-  return type ?? put(store, seedTypes(store).find(t => t.data.alias?.id === 'lib:type:document-root')!)
+  return type ?? put(store, seedTypes(store).find(t => t.data.alias?.id === DOCUMENT_ROOT_TYPE)!)
 }
 
 /** The root's content when it is in error (its rejected children), else null. */
@@ -69,29 +69,30 @@ type Pattern = { any: true } | { any: false; type: string; versions?: string[] }
 /** A type's patterns: its pattern rows. */
 function patternsOf(store: FosStore, typeCid: string): Pattern[] {
   return content(store, typeCid).children.flatMap((edge): Pattern[] => {
-    if (rowKindOf(store, edge) !== 'pattern') return []
+    if (!isRowOfType(store, edge, PATTERN_TYPE)) return []
     const p = valueContent(store, edge[1]).data.pattern
     if (p?.any) return [{ any: true }]
     return p?.type ? [{ any: false, type: p.type, ...(p.versions?.length ? { versions: p.versions } : {}) }] : []
   })
 }
 
-/** A child row's type (the library type of its kind) and version (the template it is pinned to). */
+/**
+ * A child row's type (the graph identity of its edge's left node, '' for a type without one) and version (the template
+ * it is pinned to). Null for what is not a row, and for a row whose template has not arrived (a reference error).
+ */
 function childType(store: FosStore, edge: FosPathElem): { type: string; version: string } | null {
-  const missing = missingTemplateOf(store, edge)
-  if (missing) return { type: rowTypeId(libraryKind(missing.kind)), version: missing.cid }
-  const kind = rowKindOf(store, edge)
-  const alias = content(store, edge[0]).data.alias?.id
-  return kind ? { type: alias?.startsWith('lib:type:') ? alias : rowTypeId(libraryKind(kind)), version: edge[0] } : null
+  if (missingTemplateOf(store, edge) || !isRowEdge(store, edge)) return null
+  return { type: rowTypeIdOf(store, edge) ?? '', version: edge[0] }
 }
-const libraryKind = (kind: RowKind): string => kind === 'requirement' || kind === 'supply' ? 'allocation' : kind
 
 /** Does a node of type `typeCid` accept the row `child` (a plain row edge) among its children? */
 export function acceptsChild(store: FosStore, typeCid: string, child: FosPathElem): boolean {
   if (!store.table.has(typeCid)) return true // a missing type is a reference error, not a type error
+  // a type with no graph identity (a retired format, a reference error's stand-in) is not one this peer knows: no type errors
+  if (!typeIdOf(store, typeCid)) return true
   const definition = content(store, typeCid)
   if (definition.data.form) {
-    if (!rowKindOf(store, child)) return true
+    if (!isRowEdge(store, child)) return true
     if (definition.children.some(([type]) => type === child[0])) return true
     if (!definition.data.form.open) return false
   }
@@ -108,7 +109,7 @@ export function rejectedChildren(store: FosStore, typeCid: string, value: FosNod
   for (const edge of value.children) {
     if (isChoiceEdge(store, edge)) continue
     const row = plainEdge(store, edge)
-    if (!rowKindOf(store, row) || acceptsChild(store, typeCid, row)) continue
+    if (!isRowEdge(store, row) || acceptsChild(store, typeCid, row)) continue
     rejected.push(aliasIdOf(content(store, row[1])) ?? row[1])
   }
   return rejected
@@ -166,7 +167,7 @@ export function withoutTypeErrors(store: FosStore, cid: string): string {
   return mapChildren(store, unwrapRootTarget(store, cid), stripped, edge => {
     if (isChoiceEdge(store, edge)) return edge
     const row = plainEdge(store, edge)
-    return rowKindOf(store, row) ? [row[0], withoutTypeErrors(store, row[1])] : edge
+    return isRowEdge(store, row) ? [row[0], withoutTypeErrors(store, row[1])] : edge
   })
 }
 
@@ -174,7 +175,7 @@ export function withoutTypeErrors(store: FosStore, cid: string): string {
 function canonicalEdge(store: FosStore, edge: FosPathElem): FosPathElem {
   if (isChoiceEdge(store, edge)) return edge
   const row = plainEdge(store, edge)
-  if (!rowKindOf(store, row)) return edge
+  if (!isRowEdge(store, row)) return edge
   const next: FosPathElem = [row[0], canonicalNode(store, row[1])]
   const rejected = rejectedChildren(store, next[0], valueContent(store, next[1]))
   return rejected.length ? typeErrorEdge(store, next, rejected) : next
@@ -203,7 +204,7 @@ function errorsBelow(store: FosStore, cid: string): ReadonlySet<string> {
   if (!isHandle(content(store, cid))) for (const edge of valueContent(store, cid).children) {
     if (isChoiceEdge(store, edge)) continue
     const row = plainEdge(store, edge)
-    if (!rowKindOf(store, row)) continue
+    if (!isRowEdge(store, row)) continue
     const parent = aliasOfCid(store, row[1])
     add((typeErrorOf(store, edge) ?? []).map(id => `${parent} › ${id}`))
     add(errorsBelow(store, row[1]))

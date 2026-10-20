@@ -28,6 +28,7 @@ import { addRow, addTypedRow, createReplica, headCid, view, type Replica } from 
 import type { Change } from './events'
 
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
+import { ALLOCATION_TYPE } from './library-types'
 /** The library row types a plan may name, with what the model is told each is for. */
 export const ORGANIZE_TYPES: Record<string, string> = {
   [PLAIN_TYPE]: 'a short row: one point, task, decision, question or fact (the default)',
@@ -270,7 +271,7 @@ export function requestOrganize(replica: Replica, at: Scope, text: string, label
   if (!capture) throw new Error('Nothing to organize.')
   if (capture.length > ORGANIZE_LIMITS.captureChars) throw new Error(`Organize at most ${ORGANIZE_LIMITS.captureChars.toLocaleString('en-US')} characters at a time.`)
   const id = `${ORGANIZE_REQUEST_PREFIX}${makeId()}`
-  let r = addRow(replica, at, 'requirement', label.trim() || 'Capture', now, { id, requirement: { capability: 'organize' } })
+  let r = addRow(replica, at, ALLOCATION_TYPE, label.trim() || 'Capture', now, { id, requirement: { capability: 'organize' } })
   r = addTypedRow(r, [...at, id], typeAt(r, NOTE_TYPE, [...at, id]), capture, now, makeId())
   return { replica: r, path: [...at, id] }
 }

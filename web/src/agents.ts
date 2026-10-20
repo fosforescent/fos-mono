@@ -32,19 +32,20 @@ export function localRepository(r: Replica, path: Scope): string | null {
 }
 /** A read-only projection of the subtree at `at` (feature verification, and the outline a prompt inlines). */
 export function agentContext(r: Replica, at: Scope) {
-  const nodes: Array<{ path: Scope; text: string; kind: string; done: boolean | null }> = []
-  function walk(path: Scope, relative: Scope, kind: string) {
+  // `type`: the row's library type (its edge's left node's graph identity)
+  const nodes: Array<{ path: Scope; text: string; type: string; done: boolean | null }> = []
+  function walk(path: Scope, relative: Scope, type: string) {
     if (relative.length > 64 || nodes.length >= 5000) throw new Error('Task subtree is too large; launch from a smaller task.')
     const node = view(r, path)
     if (!node) throw new Error('Task is no longer available.')
-    nodes.push({ path: relative, text: node.name ?? '', kind, done: node.done })
+    nodes.push({ path: relative, text: node.name ?? '', type, done: node.done })
     for (const row of node.tasks) {
       // Linked values can point outside this subtree; do not disclose their targets.
-      if (row.kind === 'ref' || row.kind === 'supply' || row.construction) continue
-      walk([...path, row.id], [...relative, row.id], row.kind)
+      if (row.refId !== undefined || !!row.supply || row.construction) continue
+      walk([...path, row.id], [...relative, row.id], row.type)
     }
   }
-  walk(at, [], 'task')
+  walk(at, [], at.length ? view(r, at.slice(0, -1))?.tasks.find(t => t.id === at.at(-1))?.type ?? '' : '')
   return { revision: headCid(r), nodes }
 }
 

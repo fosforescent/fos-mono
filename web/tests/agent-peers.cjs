@@ -8,6 +8,8 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
+const TASK_TYPE = 'lib:type:task'
+const PLAIN_TYPE = 'lib:type:plain'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-agent-peers-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLDialogElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
@@ -38,7 +40,7 @@ async function main() {
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}; app.syncNow = async () => {}
   c.mountUi(document.getElementById('app'), app)
-  const trip = app.applyConstructor(app.state.view, { kind: 'task', text: 'Plan the group trip', done: false })
+  const trip = app.applyConstructor(app.state.view, { type: TASK_TYPE, text: 'Plan the group trip', done: false })
 
   // discovery: only CLIs on PATH become peers, and never rows
   await app.probeLocalAgents(); await tick()
@@ -110,7 +112,7 @@ async function main() {
   assert(panelButton('Connect to Claude Desktop…').disabled, 'connecting needs a grant and a signed-in account')
 
   // dragging the agent into a row gives a row with a select of its actions
-  app.applyConstructor(trip, { kind: 'plain', text: 'Claude Code', done: false, peer: 'agent-cli:claude' })
+  app.applyConstructor(trip, { type: PLAIN_TYPE, text: 'Claude Code', done: false, peer: 'agent-cli:claude' })
   app.goTo(trip); await tick()
   const select = document.querySelector('.tasks select[aria-label="Claude Code action"]')
   assert(select, 'the dropped sub-peer row has an action select')

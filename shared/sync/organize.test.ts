@@ -9,11 +9,11 @@ import { ORGANIZE_PEER, ORGANIZE_REQUEST_PREFIX, applyOrganizePlan, proposeOrgan
 
 function project(): Replica {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
-  r = addRow(r, [HOME_ID], 'plain', 'Garden', 2, { id: 'garden' })
-  r = addRow(r, [HOME_ID, 'garden'], 'plain', 'Tomatoes', 3, { id: 'tomatoes' })
-  r = addRow(r, [HOME_ID, 'garden', 'tomatoes'], 'plain', 'Stake them', 4, { id: 'stake' })
-  r = addRow(r, [HOME_ID], 'note', '# Trip\n\nlong body', 5, { id: 'trip' })
-  r = addRow(r, [], 'plain', 'Elsewhere', 6, { id: 'elsewhere' })
+  r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Garden', 2, { id: 'garden' })
+  r = addRow(r, [HOME_ID, 'garden'], PLAIN_TYPE, 'Tomatoes', 3, { id: 'tomatoes' })
+  r = addRow(r, [HOME_ID, 'garden', 'tomatoes'], PLAIN_TYPE, 'Stake them', 4, { id: 'stake' })
+  r = addRow(r, [HOME_ID], NOTE_TYPE, '# Trip\n\nlong body', 5, { id: 'trip' })
+  r = addRow(r, [], PLAIN_TYPE, 'Elsewhere', 6, { id: 'elsewhere' })
   return r
 }
 const titles = (r: Replica, at: string[]) => (view(r, at)?.tasks ?? []).filter(row => !row.scalar).map(row => row.title.split('\n')[0])
@@ -163,8 +163,8 @@ test('an organize request is a requirement in the target holding the capture as 
 /** The account (`server`) and a device that built the tree and synced it there, as an owner's device does. */
 function deviceAndAccount() {
   let device = ensureHomeContext(createReplica('device'), 1)
-  device = addRow(device, [HOME_ID], 'plain', 'Garden', 2, { id: 'garden' })
-  device = addRow(device, [HOME_ID, 'garden'], 'plain', 'Tomatoes', 3, { id: 'tomatoes' })
+  device = addRow(device, [HOME_ID], PLAIN_TYPE, 'Garden', 2, { id: 'garden' })
+  device = addRow(device, [HOME_ID, 'garden'], PLAIN_TYPE, 'Tomatoes', 3, { id: 'tomatoes' })
   const server = createReplica('user:alice')
   device = syncWith(device, server)
   return { device, server }
