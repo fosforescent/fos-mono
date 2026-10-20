@@ -2,7 +2,7 @@
  * What a row's type accepts as its children, and type errors.
  *
  * A type (a row type in the library, a template row, a store root's type) has pattern rows
- * (dag-implementation/row-templates.ts). A pattern names a row type (`pattern.type`, e.g. `lib:type:home`) and
+ * (made from the library's Pattern type, `lib:type:pattern`). A pattern names a row type (`pattern.type`, e.g. `lib:type:home`) and
  * optionally pinned versions of it (`pattern.versions`); `pattern.any` is the wildcard. Without the wildcard a
  * type accepts the children its patterns match; with it, every child except those. A child is matched by its row type
  * (the graph identity of its edge's left node) and its version (the template its edge is pinned to).

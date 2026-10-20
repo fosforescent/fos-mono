@@ -1003,7 +1003,7 @@ describe('peer capabilities', () => {
   it('a node shape pinned to another cid format is refused: that peer has to update', () => {
     const r = addTask(createReplica('dev'), [], 'x', 1, 'x')
     const shape = nodeShape(r, [])
-    const older = { ...shape, children: shape.children.map((c) => ({ ...c, template: formatCid(2, parseCid(c.template)!.digest) })) }
+    const older = { ...shape, children: shape.children.map((c) => ({ ...c, template: formatCid(parseCid(c.template)!.digest, '0.0.0') })) }
     expect(() => validateNodeShape(shape)).not.toThrow()
     expect(() => validateNodeShape(older)).toThrow(/Update the app/)
   })

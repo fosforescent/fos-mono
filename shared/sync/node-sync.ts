@@ -1,7 +1,7 @@
 import { exchangeNodeContext } from './node-context'
 import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
-import { isCid, isCurrentCid } from '../dag-implementation/cid'
+import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
 import { content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
   isMemberEntryId, isMemberEdge, memberEdgesOf, memberEntryId, makeLink, isRefNode, MEMBER_ENTRY_PREFIX, SERVER_MEMBER, type Scope } from './graph'
@@ -22,8 +22,9 @@ const shapeField = (path: Scope | undefined, key: string) => !forbidden.has(key)
 
 /** Check a shape from the wire. `at`: where it is (a member entry's shape names its own peer and may pin grants). */
 export function validateNodeShape(shape: NodeShape, at?: Scope): void {
-  // the only cids on the wire are pinned templates and grants: a peer in another cid format has to update first
-  if (Array.isArray(shape?.children) && shape.children.some(c => (isCid(c?.template) && !isCurrentCid(c.template)) || (isCid(c?.pinned) && !isCurrentCid(c!.pinned!)))) throw new NodeAccessError('This peer uses another content id format. Update the app to sync.')
+  // the only cids on the wire are pinned templates and grants: a peer in another data version has to update first
+  const outdated = (cid: unknown) => typeof cid === 'string' && cidVersion(cid) !== null && !isCurrentCid(cid)
+  if (Array.isArray(shape?.children) && shape.children.some(c => outdated(c?.template) || outdated(c?.pinned))) throw new NodeAccessError(`This peer uses another data version (this app: ${FOS_DATA_VERSION}). Update the app to sync.`)
   const entry = isMemberEntryId(at?.at(-1)) ? at!.at(-1)! : null
   if (!shape || !shape.data || typeof shape.data !== 'object' || Array.isArray(shape.data) || !Array.isArray(shape.children) || shape.children.length > 10000 ||
     Object.keys(shape.data).some(key => !shapeField(at, key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || (c.held !== undefined && c.held !== true) || !isCid(c.template) ||

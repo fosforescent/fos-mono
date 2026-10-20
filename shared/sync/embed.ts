@@ -38,7 +38,7 @@ import {
 } from './index'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
-import { ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
+import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
 import { CLIENT_CAPABILITIES, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
 import { writeGraphNode } from './replica'
 import type { FosNodeContent, FosNodesData } from '../types'
@@ -74,7 +74,7 @@ export const api = {
    */
   open(handle: string, serialized: string | null, peerId: string, home = true): void {
     let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
-    loaded = ensureDeviceLibrary(loaded, { address: null, version: 0, rows: [] }, Date.now())
+    loaded = ensureDeviceLibrary(loaded, { address: null, version: LIBRARY_VERSION, rows: [] }, Date.now())
     if (home) loaded = ensureHomeContext(loaded, Date.now())
     set(handle, { store: loaded.store, meta: { ...loaded.meta, peerId } })
     if (home) homes.add(handle); else homes.delete(handle)

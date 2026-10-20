@@ -20,6 +20,7 @@ import { acceptProvidedNode, type NodeRequest, type ProvidedNode } from './node-
 import { LIBRARY_ID, ROW_TYPES_ID, commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, seedTypes, findChild, findNearestRow, isHandle, isPeerReference, put, resolveScope, rowEdgeAt, rowTypeContents, rowTypesContent, updateAtScope, valueContent, type Scope, type TaskView } from './graph'
 import type { FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { headCid } from './replica'
+import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
 import { isBookkeepingEdge, valueCidOf } from './graph'
@@ -29,11 +30,13 @@ import { ALLOCATION_TYPE, COMMENT_TYPE, MONEY_TYPE, NOTE_TYPE, PLAIN_TYPE, REF_T
 export const MANUAL_HANDLERS_ID = 'lib:manual'
 /** Node value on the library: which seed version it carries, so later versions add what is missing. */
 export const LIBRARY_ARGUMENT = 'fos:library'
-export const LIBRARY_VERSION = COMPILED_LIBRARY.version
+/** The library's version is the data version (shared/version.ts); the compiler refuses a library graph in another. */
+export const LIBRARY_VERSION: string = FOS_DATA_VERSION
+if (COMPILED_LIBRARY.version !== LIBRARY_VERSION) throw new Error(`shared/sync/library.generated.json is in version ${COMPILED_LIBRARY.version}, this build is ${LIBRARY_VERSION}: run node scripts/compile-library.cjs.`)
 export const MERGE_POLICY_ARGUMENT = 'fos:merge-policy'
 
 export type LibraryAddress = SharedAddress & { title: string }
-export type LibraryInfo = { version: number; seeded: string[]; source?: 'server' | 'bundle' }
+export type LibraryInfo = { version: string; seeded: string[]; source?: 'server' | 'bundle' }
 /** Proposals on the node merge on their own once this many distinct members approved them. */
 export type MergePolicy = { approvals: number }
 export const DEFAULT_MERGE_POLICY: MergePolicy = { approvals: 2 }
@@ -53,11 +56,11 @@ export type SeedRow = { id: string; type: string; text: string; done?: boolean; 
   /** The nodes the types point at (their patterns), so a build's copy makes the same nodes. */
   nodes?: FosNodesData }
 /** What a client build carries: the library's address on the server (null when built without one) and its rows. */
-export type LibraryBundle = { address: LibraryAddress | null; version: number; rows: SeedRow[] }
+export type LibraryBundle = { address: LibraryAddress | null; version: string; rows: SeedRow[] }
 
 /** The templates every account starts with. Ids are stable so reseeding adds only what is missing. */
 export const STANDARD_LIBRARY = COMPILED_LIBRARY.rows as SeedRow[]
-export const BUNDLED_LIBRARY: LibraryBundle = { address: null, version: COMPILED_LIBRARY.version, rows: STANDARD_LIBRARY }
+export const BUNDLED_LIBRARY: LibraryBundle = { address: null, version: LIBRARY_VERSION, rows: STANDARD_LIBRARY }
 
 /** Export the editable local library as a build source, excluding history and access bookkeeping. */
 export function exportLocalLibrary(r: Replica, at: Scope = [LIBRARY_ID]): LibrarySource {
@@ -116,7 +119,7 @@ export function manualHandlersFor(r: Replica, requirement: { capability: Require
 
 export function libraryInfo(r: Replica, path: Scope): LibraryInfo | null {
   const value = readNodeValue<LibraryInfo>(r, path, LIBRARY_ARGUMENT)
-  return value && typeof value.version === 'number' && Array.isArray(value.seeded) ? value : null
+  return value && typeof value.version === 'string' && Array.isArray(value.seeded) ? value : null
 }
 
 /** Add the given rows below `path` where they are missing (by id); rows the node once had and lost are not re-added. */
@@ -246,7 +249,7 @@ export type PulledLibrary = { address: LibraryAddress; nodes: Array<{ request: N
  */
 export function exportProvidedLibrary(pulled: PulledLibrary, now: number): LibraryBundle {
   const root = pulled.nodes[0]
-  if (!root) return { address: pulled.address, version: 0, rows: [] }
+  if (!root) return { address: pulled.address, version: LIBRARY_VERSION, rows: [] }
   // a scratch row beside the scratch root's own shipped library
   const PULLED = 'fos:pulled-library'
   let r = addRow(createReplica('fos:cli'), [], REF_TYPE, pulled.address.title, now, { id: PULLED, refOwner: pulled.address.owner, refId: pulled.address.path.at(-1) ?? LIBRARY_ID })

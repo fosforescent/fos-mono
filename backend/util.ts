@@ -14,7 +14,7 @@ import {
 import { UserModel, FosNodeModel, PrismaClient } from "@prisma/client";
 
 import { FosStore } from "@fosforescent/shared/dag-implementation/store";
-import { verifyCid } from "@fosforescent/shared/dag-implementation/cid";
+import { assertCurrentCid, verifyCid } from "@fosforescent/shared/dag-implementation/cid";
 import { asAccountStore } from "./sync/deviceRoot";
 import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
 
@@ -96,6 +96,8 @@ export const dbToStore = async (
   const table: FosNodesData = {}
   for (const node of nodesToAdd) {
     const data = validateNodeData(node.data)
+    // rows of another data version are not migrated: the database has to be reset
+    assertCurrentCid(node.cid)
     if (!verifyCid(node.cid, data)) {
       throw new Error("Hashes don't match")
     }
@@ -156,13 +158,9 @@ export const dbToStore = async (
       await Promise.all(childrenPromises)
 
     }
-    // Rows may be in an older cid format than the (migrated) store: follow the migration mapping.
-    if (!newStore.table.has(newStore.remapCid(node.cid))) {
-      const remapped: FosNodeContent = {
-        ...nodeData,
-        children: nodeData.children.map(([a, b]) => [newStore.remapCid(a), newStore.remapCid(b)] as [string, string])
-      }
-      newStore.create(remapped)
+    if (!newStore.table.has(node.cid)) {
+      assertCurrentCid(node.cid)
+      newStore.create(nodeData)
     }
   }
 
@@ -170,17 +168,14 @@ export const dbToStore = async (
 
   // The first query already loaded every node linked to the user; the recursive
   // walk (one query per node) is only needed when the root is not among them.
-  if (!newStore.table.has(newStore.remapCid(user.fosNode.cid))) {
+  if (!newStore.table.has(user.fosNode.cid)) {
     await getChildNodesHelper(user.fosNode)
   }
 
   const rootContent = validateNodeData(user.fosNode.data)
-  const rootNodeId = newStore.table.has(newStore.remapCid(user.fosNode.cid))
-    ? newStore.remapCid(user.fosNode.cid)
-    : newStore.create({
-        ...rootContent,
-        children: rootContent.children.map(([a, b]) => [newStore.remapCid(a), newStore.remapCid(b)] as [string, string])
-      }).cid
+  const rootNodeId = newStore.table.has(user.fosNode.cid)
+    ? user.fosNode.cid
+    : newStore.create(rootContent).cid
 
   newStore.rootNodeId = rootNodeId
   newStore.trellisData = trellisData

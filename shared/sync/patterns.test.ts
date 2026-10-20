@@ -1,12 +1,19 @@
 /** What types accept (their pattern rows), and the type errors a row in the wrong place makes. */
 import { FosStore } from '../dag-implementation/store'
-import { patternRowContent } from '../dag-implementation/row-templates'
 import { HOME_ID, content, nestScope, put, resolveScope, rootStoredTarget, rowTypeAt, valueContent } from './graph'
 import { HOME_TYPE, NOTE_TYPE, PATTERN_TYPE, TASK_TYPE } from './library-types'
 import { addRow, addTask, copyNode, createReplica, deleteTask, ensureHomeContext, headCid, loadReplica, serializeReplica, view, type Replica } from './replica'
 import { installNodeShape } from './node-sync'
 import { acceptsChild, isTypeErrorEdge, rootTypeOf, typeErrorInner } from './patterns'
 import { userView } from './test-helpers'
+import type { FosNodeContent } from '../types'
+
+/** A pattern row's node: the wildcard, or a row type (any version unless `versions` pins some). */
+function patternRowContent(owner: string, pattern: { any: true } | { type: string; versions?: string[] }): FosNodeContent {
+  if ('any' in pattern) return { data: { alias: { id: `${owner}:accepts:any` }, description: { content: 'Any row' }, pattern: { any: true } }, children: [] }
+  const versions = pattern.versions?.length ? [...pattern.versions] : undefined
+  return { data: { alias: { id: `${owner}:accepts:${pattern.type}${versions ? `@${versions.join(',')}` : ''}` }, description: { content: pattern.type }, pattern: { type: pattern.type, ...(versions ? { versions } : {}) } }, children: [] }
+}
 
 const device = () => addTask(ensureHomeContext(createReplica('d'), 1), [HOME_ID], 'Task', 2, 't')
 /** A document root (a project's), nested in a device root for its row types. */

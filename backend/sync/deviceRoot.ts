@@ -7,12 +7,12 @@
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { nestScope, setRootType } from '@fosforescent/shared/sync/graph'
 import { createReplica, headCid, type Replica } from '@fosforescent/shared/sync/replica'
-import { ensureDeviceLibrary } from '@fosforescent/shared/sync/library'
+import { LIBRARY_VERSION, ensureDeviceLibrary } from '@fosforescent/shared/sync/library'
 import { DEVICE_ROOT_TYPE } from '@fosforescent/shared/sync/library-types'
 
 let deviceRoot: Replica | null = null
 export function serverDeviceRoot(): Replica {
-  return deviceRoot ??= ensureDeviceLibrary(createReplica('fos-server'), { address: null, version: 0, rows: [] }, 0)
+  return deviceRoot ??= ensureDeviceLibrary(createReplica('fos-server'), { address: null, version: LIBRARY_VERSION, rows: [] }, 0)
 }
 
 /** An account's store as the server holds it: a device root, nested in the server's own. */

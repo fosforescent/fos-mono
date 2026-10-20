@@ -3,10 +3,13 @@ import { content, formValueAt, isRefNode, put, reachableNodes, importNodes, reso
 import { constructForm, formTitle } from './forms'
 import { mergeNodes } from './merge'
 import { syncWith } from './test-helpers'
-import { seedRowTypeContent } from '../dag-implementation/row-templates'
 import { argumentRefs, resolveText } from './bindings'
 import { addRefAt } from './replica'
 import { PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE } from './library-types'
+import type { FosNodeContent } from '../types'
+
+/** A row type of the kind older builds wrote: no graph identity, only the retired markers. */
+const retiredType = (name: string, kind: string): FosNodeContent => ({ data: { description: { content: name }, instanceKind: { kind }, behavior: { content: `builtin:${kind}` } }, children: [] })
 
 test('notes are graph products with a text body, bindings, and ordinary child rows', () => {
   let r = createReplica('a')
@@ -34,7 +37,7 @@ test('notes are graph products with a text body, bindings, and ordinary child ro
 
 test('a note pinned to a retired type with no graph identity reads as a plain row; edits keep its bindings and children', () => {
   let r = createReplica('a')
-  const type = put(r.store, seedRowTypeContent('note', node => put(r.store, node)))
+  const type = put(r.store, retiredType('Note', 'note'))
   const old = put(r.store, { data: { alias: { id: 'old-note' }, description: { content: '# Old {name}' } }, children: [] })
   commitRoot(r.store, put(r.store, { ...valueContent(r.store, headCid(r)), children: [...valueContent(r.store, headCid(r)).children, [type, old]] }), 1)
   r = addRefAt(r, ['old-note'], 'old-binding', r.store.primitive.documentField.getId(), 2, put(r.store, { data: { description: { content: 'Grace' } }, children: [] }), 'name')
@@ -148,7 +151,7 @@ test('node-by-node exchange transports fields and their constructor definitions'
 
 test('legacy comments remain readable and migrate on edit without losing replies or authorship', () => {
   let r = createReplica('a')
-  const oldType = put(r.store, seedRowTypeContent('comment', c => put(r.store, c)))
+  const oldType = put(r.store, retiredType('Comment', 'comment'))
   const old = put(r.store, { data: { alias: { id: 'old' }, description: { content: 'Legacy' }, comment: { content: 'Legacy', authorID: 'alice', authorName: 'Alice', time: 1, votes: { bob: 'up' }, scope: 'private' } }, children: [] })
   const root = valueContent(r.store, headCid(r))
   commitRoot(r.store, put(r.store, { ...root, children: [...root.children, [oldType, old]] }), 1)

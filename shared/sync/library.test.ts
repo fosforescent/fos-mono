@@ -5,7 +5,7 @@ import { exchangeNode } from './node-sync'
 import { addMemberAt, addRow, createReplica, ensureHomeContext, headCid, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { nodeAuthorityAt } from './node-context'
 import { setSharing, sharedProjection, writeParticipation } from './sharing'
-import { DEFAULT_MERGE_POLICY, STANDARD_LIBRARY, applyMergePolicy, ensureLibraryLink, ensureDeviceLibrary, exportLibraryRows, exportProvidedLibrary, libraryPath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
+import { DEFAULT_MERGE_POLICY, LIBRARY_VERSION, STANDARD_LIBRARY, applyMergePolicy, ensureLibraryLink, ensureDeviceLibrary, exportLibraryRows, exportProvidedLibrary, libraryPath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
 import { LIBRARY_ID, nestScope } from './graph'
 import { PLAIN_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from './library-types'
 import { REF_TYPE } from './library-types'
@@ -43,7 +43,7 @@ test('seeding adds the standard templates once and records the version', () => {
   expect(rows.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(STANDARD_LIBRARY.filter(s => s.type === TEMPLATE_TYPE).map(s => s.text))
   // a template's own pattern rows (what tasks made from it accept) are rows too; its requirements are the rest
   expect(view(r, [...path, 'lib:trip'])!.tasks.filter(t => t.type !== PATTERN_TYPE).map(t => t.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
-  expect(libraryInfo(r, path)).toMatchObject({ version: 2 })
+  expect(libraryInfo(r, path)).toMatchObject({ version: LIBRARY_VERSION })
   expect(libraryInfo(r, path)!.seeded).toContain('lib:trip:budget')
   const again = seedStandardLibrary(r, path, 9)
   expect(headCid(again)).toBe(headCid(r))
@@ -118,15 +118,15 @@ test('the library exports as rows that seed an identical copy: every root ships 
   // a new root ships the library: its row is there from the start, filled from the build's bundle
   let device = ensureHomeContext(createReplica('user:device'), 1)
   expect(view(device, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
-  device = ensureDeviceLibrary(device, { address, version: 7, rows }, 2)
+  device = ensureDeviceLibrary(device, { address, version: '0.0.7', rows }, 2)
   expect(view(device, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(rows.filter(row => row.type === TEMPLATE_TYPE).map(row => row.text))
-  expect(libraryInfo(device, [LIBRARY_ID])).toMatchObject({ version: 7, source: 'bundle' })
-  expect(headCid(ensureDeviceLibrary(device, { address, version: 7, rows }, 3))).toBe(headCid(device))
+  expect(libraryInfo(device, [LIBRARY_ID])).toMatchObject({ version: '0.0.7', source: 'bundle' })
+  expect(headCid(ensureDeviceLibrary(device, { address, version: '0.0.7', rows }, 3))).toBe(headCid(device))
   expect(libraryLink(device)).toBeNull()
   expect(view(device, [HOME_ID])!.tasks.some(row => row.id === LIBRARY_ID)).toBe(false)
   expect(libraryPath(device)).toEqual([LIBRARY_ID])
   // a build made without a server ships the compiled .fos graph
-  const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: 0, rows: [] }, 2)
+  const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: LIBRARY_VERSION, rows: [] }, 2)
   expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(9)
   // contributing links the shared library into Home: under Home it is the one rows see; the shipped one stays in the root
   const linked = ensureLibraryLink(device, address, 10).replica
@@ -150,7 +150,7 @@ test('the nodes the fos CLI pulls through the account export as the same bundle 
   expect(bundle.address).toEqual(address)
   expect(bundle.rows).toEqual(exportLibraryRows(lib, path))
   expect(bundle.rows.filter(row => row.type === TEMPLATE_TYPE)).toHaveLength(9)
-  expect(exportProvidedLibrary({ address, nodes: [] }, 1)).toEqual({ address, version: 0, rows: [] })
+  expect(exportProvidedLibrary({ address, nodes: [] }, 1)).toEqual({ address, version: LIBRARY_VERSION, rows: [] })
 })
 
 test('the library carries manual fallback handlers for every kind of requirement, matched by capability and resource', () => {
@@ -164,7 +164,7 @@ test('the library carries manual fallback handlers for every kind of requirement
   expect(manualHandlersFor(r, { capability: 'mail' }).map(h => h.label)).toEqual(['Sent it myself'])
   expect(manualHandlersFor(r, { capability: 'confirmation' })).toEqual([])
   // a device that only ships the library from its build offers the same fallbacks
-  const device = ensureDeviceLibrary(ensureHomeContext(createReplica('user:device'), 1), { address, version: 1, rows: exportLibraryRows(r, [HOME_ID, LIBRARY_ID]) }, 2)
+  const device = ensureDeviceLibrary(ensureHomeContext(createReplica('user:device'), 1), { address, version: LIBRARY_VERSION, rows: exportLibraryRows(r, [HOME_ID, LIBRARY_ID]) }, 2)
   expect(manualHandlers(device)).toEqual(handlers)
   // a root whose shipped library was never filled has its row types but no fallbacks
   expect(manualHandlers(createReplica('user:none'))).toEqual([])

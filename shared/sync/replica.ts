@@ -9,6 +9,7 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
  */
 
 import { FosStore } from '../dag-implementation/store'
+import { UnsupportedDataVersionError } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
 import { constructForm, formFields, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
 import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
@@ -149,7 +150,10 @@ export function serializeReplica(replica: Replica): SerializedReplica {
   return { meta: replica.meta, context: exportReachableContext(replica.store, []) }
 }
 
-/** Rebuild a replica from untrusted JSON. Falls back to a fresh replica on any problem. */
+/**
+ * Rebuild a replica from untrusted JSON. Falls back to a fresh replica on any problem, including data written in
+ * another data version (`UnsupportedDataVersionError`): older data is not migrated, it is reset.
+ */
 export function loadReplica(input: unknown): Replica {
   // a bare root: whether a loaded replica is a device root is the caller's to say (`ensureDeviceLibrary`)
   const fresh = createReplica(undefined, new FosStore())
@@ -169,7 +173,8 @@ export function loadReplica(input: unknown): Replica {
     // rows a type does not accept (an older replica, or one written elsewhere) become type errors
     commitRoot(store, rootTargetCid(store), 0)
   } catch (error) {
-    console.warn('stored replica unreadable, starting fresh', error)
+    if (error instanceof UnsupportedDataVersionError) console.warn(`${error.message} Starting with a fresh replica.`)
+    else console.warn('stored replica unreadable, starting fresh', error)
     store = fresh.store
   }
   return {
@@ -178,7 +183,7 @@ export function loadReplica(input: unknown): Replica {
       peerId,
       scope,
       scopeNames: Array.isArray(meta.scopeNames) && meta.scopeNames.length === scope.length ? meta.scopeNames.map(String) : [...scope],
-      ...(meta.nodeSync && typeof meta.nodeSync === 'object' ? { nodeSync: remapNodeSync(store, meta.nodeSync) } : {}),
+      ...(meta.nodeSync && typeof meta.nodeSync === 'object' ? { nodeSync: meta.nodeSync } : {}),
       ...(meta.sharedNodes && typeof meta.sharedNodes === 'object' ? { sharedNodes: meta.sharedNodes } : {}),
       ...(meta.heldNodes && typeof meta.heldNodes === 'object' ? { heldNodes: meta.heldNodes } : {}),
       ...(Array.isArray(meta.localScope) && meta.localScope.length <= 64 && meta.localScope.every(id => typeof id === 'string') ? { localScope: [...meta.localScope] } : {}),
@@ -188,13 +193,6 @@ export function loadReplica(input: unknown): Replica {
       ...(meta.branches && typeof meta.branches === 'object' ? { branches: Object.fromEntries(Object.entries(meta.branches).filter(([, name]) => typeof name === 'string')) } : {})
     }
   }
-}
-
-/** A context stored in an older cid format was migrated by the store: the template (and pinned grant) cids node sync recorded follow along. */
-function remapNodeSync(store: FosStore, records: NonNullable<ReplicaMeta['nodeSync']>): NonNullable<ReplicaMeta['nodeSync']> {
-  if (!store.migration) return records
-  const shape = <T extends { children?: Array<{ template: string; pinned?: string }> }>(value: T): T => Array.isArray(value?.children) ? { ...value, children: value.children.map(child => ({ ...child, template: store.remapCid(child.template), ...(typeof child.pinned === 'string' ? { pinned: store.remapCid(child.pinned) } : {}) })) } : value
-  return Object.fromEntries(Object.entries(records).map(([key, state]) => [key, { ...state, local: shape(state.local), remote: shape(state.remote) }]))
 }
 
 /** Home is an ordinary constructor child of the account root, with a stable identity. */

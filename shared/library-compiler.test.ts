@@ -2,6 +2,7 @@ import * as sourceJson from '../.fos/library.json'
 import * as generated from './sync/library.generated.json'
 import { compileLibrary, type LibrarySource } from './library-compiler'
 import { hashContent } from './dag-implementation/cid'
+import { FOS_DATA_VERSION } from './version'
 import type { FosNodeContent } from './types'
 import { addConstructedRow, createReplica, importNodes, put, reachableNodes, view, writeGraphNode, rowTypeAt, exportLocalLibrary, COMMENT_TYPE, TEMPLATE_TYPE, LIBRARY_ID, ROW_TYPES_ID } from './sync/index'
 
@@ -39,10 +40,12 @@ test('a data-only definition edit changes constructed fields and UI projections'
 
 test('invalid or missing graph content fails compilation', () => {
   expect(() => compileLibrary({ ...source, nodes: {} })).toThrow()
+  // the library is in the data version its cids are: another version is refused
+  expect(() => compileLibrary({ ...source, version: '0.0.0' })).toThrow(/data version "0.0.0"/)
   expect(() => compileLibrary({ ...source, nodes: { ...source.nodes, [source.rootNodeId]: { data: {}, children: [] } } })).toThrow(/Invalid or missing/)
   const node: FosNodeContent = { data: { instanceKind: { kind: 'comment' } }, children: [] }
   const cid = hashContent(node)
-  expect(() => compileLibrary({ version: 2, rootNodeId: cid, nodes: { [cid]: node } })).toThrow(/instanceKind/)
+  expect(() => compileLibrary({ version: FOS_DATA_VERSION, rootNodeId: cid, nodes: { [cid]: node } })).toThrow(/instanceKind/)
 })
 
 test('locally authored definition rows export as buildable graph data', () => {

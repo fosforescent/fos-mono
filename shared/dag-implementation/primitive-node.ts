@@ -674,7 +674,7 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const dereferenceAlias = getDereferenceAliasActionNode(store)
   const rootInstructionNode = getRootInstructionNode(store)
   const typeErrorConstructor = getTypeErrorConstructorNode(store)
-  // a fresh store's root is a document root (row-templates.ts): its type is the root alias's instruction
+  // a fresh store's root is a document root (sync/patterns.ts): its type is the root alias's instruction
   const definitions = COMPILED_LIBRARY.nodes as unknown as Record<string, FosNodeContent>
   const loadDefinition = (node: FosNodeContent): FosNode => {
     for (const edge of node.children) for (const cid of edge) if (!store.table.has(cid)) loadDefinition(definitions[cid]!)

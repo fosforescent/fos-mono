@@ -1,13 +1,20 @@
-/** Compile a portable .fos graph. No type definitions or application templates live in this module. */
+/**
+ * Compile a portable .fos graph. No type definitions or application templates live in this module.
+ *
+ * The library's `version` is the data version (`FOS_DATA_VERSION`, shared/version.ts), the same one its cids carry: a
+ * source in another version is refused, so the library and the cid format cannot drift apart.
+ */
 import { hashContent, isCurrentCid, verifyCid } from './dag-implementation/cid'
+import { FOS_DATA_VERSION } from './version'
 import type { FosNodeContent, FosNodesData, FosPathElem } from './types'
 
-export type LibrarySource = { version: number; rootNodeId: string; nodes: FosNodesData }
+export type LibrarySource = { version: string; rootNodeId: string; nodes: FosNodesData }
 /** A row of the library; `type` is the graph identity of its edge's left node (`lib:type:…`, or a template row's id). */
 export type CompiledLibraryRow = { id: string; type: string; text: string; graph: { template: string; cid: string }; children?: CompiledLibraryRow[] }
 
 export function compileLibrary(source: LibrarySource) {
-  if (!source || !Number.isInteger(source.version) || !source.nodes || !source.nodes[source.rootNodeId]) throw new Error('Invalid .fos library graph.')
+  if (!source || !source.nodes || !source.nodes[source.rootNodeId]) throw new Error('Invalid .fos library graph.')
+  if (source.version !== FOS_DATA_VERSION) throw new Error(`The library graph is in data version ${JSON.stringify(source.version)}, this build is ${FOS_DATA_VERSION}: export it again (fos . library export --local).`)
   const nodes: FosNodesData = {}, visiting = new Set<string>()
   const visit = (cid: string) => {
     if (nodes[cid]) return
@@ -44,5 +51,5 @@ export function compileLibrary(source: LibrarySource) {
     return { id, type, text: node.data.description?.content ?? '', graph: { template, cid }, ...(children.length ? { children } : {}) }
   }
   const rows = root.children.map(row).filter((r): r is CompiledLibraryRow => !!r)
-  return { version: source.version, rootNodeId: source.rootNodeId, nodes: Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))), types, rows }
+  return { version: FOS_DATA_VERSION, rootNodeId: source.rootNodeId, nodes: Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))), types, rows }
 }
