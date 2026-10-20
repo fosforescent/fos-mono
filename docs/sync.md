@@ -919,6 +919,29 @@ implemented.
 `.fos`, `.git`, and symbolic links are excluded. Native folder queries are confined
 to the linked root. Errors remain in the local view and stale responses are discarded.
 
+A desktop window opened on a project (`fos <dir>`, which keeps its state in
+`<dir>/.fos/`) lists that directory at the project's root node without linking it
+(`linkedDirectory` in `web/src/filesystem.ts`: a "Link with directory" binding at the
+node, else a `local-repository` argument at or above it, else the project directory
+at the root). The home context (`fos` with no directory) does not list `~`. Outside
+the desktop shell (web, and mobile, which has no project context) nothing is listed.
+
+**File references.** A file row's **Reference** action (or **Reference this file** in
+an open file's workspace) adds an ordinary plain row to the hosting graph node. The
+row's value carries `data.file = { path, sha256, size }`: the `/`-separated path
+relative to the linked directory and the SHA-256 the desktop computed
+(`hash_node_file`, `desktop/src-tauri/src/files.rs`: streamed in 64 KB blocks,
+confined to the linked root, refusing `..`, symbolic links, `.fos` and `.git`). It is
+plain row data rather than a row kind or a named value, so node exchange, merge and
+copies carry it (named values are typed argument refs, which node exchange does not
+send). The file itself is never stored. On render, a device resolves the reference
+against the nearest node at or above the row's parent that has a linked directory,
+hashes the file again (results are cached for 5 s; Refresh clears them) and marks the
+reference **current** (with **Open file**), **stale** (with **Update reference**,
+which re-pins the new checksum), or **missing**. A device without that directory
+shows the path and "not available on this device". Dragging a file row onto a node
+is not implemented.
+
 Binding a CLI replica to the node and launching a terminal remain follow-up work.
 
 ### Node-scoped agent connections

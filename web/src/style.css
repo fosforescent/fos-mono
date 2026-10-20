@@ -765,6 +765,9 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 
 
 .file-content { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); }
+.file-reference { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 8px; min-width: 0; }
+.file-reference-path { font-family: var(--mono); font-size: 12px; color: var(--fg-2); overflow-wrap: anywhere; }
+.filesystem-row .file-reference-add { margin-left: auto; }
 
 .first-run { padding: 28px 16px 24px; display: flex; justify-content: center; color: var(--fg-2); }
 .first-run-keys { display: flex; align-items: center; gap: 8px; font-size: 15px; }

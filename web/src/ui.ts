@@ -1,7 +1,7 @@
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { openAnalysis } from './analysis'
 import { connectNodeAgent, hostedMcpConnection, localMcpEndpoint, mcpConfig } from './node-agent'
-import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack } from './filesystem'
+import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack, renderFileReference } from './filesystem'
 import { AGENT_CLI_NAME, evaluationAgentControl, localRepository, openCliAgent, openSdkAgent, sdkAvailable } from './agents'
 import { GRANTS, type ContextPeer as Peer, type Grant } from './app'
 import { inTauri, openExternal, tauriInvoke } from './project'
@@ -1963,6 +1963,9 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' })), a = document.createElement('a'); a.href = url; a.download = attachment.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch { app.notify('error', 'This attachment could not be read.') }
   }))
+  // a row referencing a file in a linked directory: its path, and on this device whether the file still matches
+  const fileReference = app.fileReference([...state.view, ...at, task.id])
+  if (fileReference) body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference))
   const templateIcon = app.templateIcon([...state.view, ...at, task.id])
   if (templateIcon) body.prepend(span('template-icon', templateIcon))
   if (task.branches || viewAt(state.replica, [...state.view, ...path])?.proposals.length) body.append(branchSelector(task, at, app))

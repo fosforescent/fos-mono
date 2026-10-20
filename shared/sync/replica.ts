@@ -526,6 +526,33 @@ export function setQueryOptionsAt(replica: Replica, at: Scope, queryId: string, 
   return updateTask(replica, at, queryId, now, (row) => (row.data.query ? { ...row, data: { ...row.data, query: { ...row.data.query, ...patch } } } : null))
 }
 
+export type FileReference = NonNullable<FosNodeContent['data']['file']>
+function validFileReference(file: FileReference): boolean {
+  return typeof file?.path === 'string' && !!file.path && !file.path.startsWith('/') && !/^[a-z]:/i.test(file.path) && !file.path.includes('\\') &&
+    file.path.split('/').every(name => name && name !== '.' && name !== '..') && /^[0-9a-f]{64}$/.test(file.sha256) && Number.isSafeInteger(file.size) && file.size >= 0
+}
+/**
+ * A plain row standing for a file in a linked directory: `data.file` holds its path relative to that directory and the
+ * checksum it was made against. Ordinary data on an ordinary row (no row kind, no typed argument), so node exchange,
+ * merge and copies carry it like any other field; the file's content never enters the graph.
+ */
+export function addFileReference(replica: Replica, at: Scope, file: FileReference, now: number, options: { id?: string; position?: MovePosition } = {}): Replica {
+  if (!validFileReference(file)) throw new Error('A file reference needs a relative path and a SHA-256 checksum.')
+  const id = options.id ?? newId()
+  const r = addRow(replica, at, 'plain', file.path.split('/').at(-1)!, now, { id, ...(options.position ? { position: options.position } : {}) })
+  return setFileReferenceAt(r, at, id, file, now)
+}
+/** Re-pin a file reference (the checksum the file now has, after the user reviewed the change). */
+export function setFileReferenceAt(replica: Replica, at: Scope, rowId: string, file: FileReference, now: number): Replica {
+  if (!validFileReference(file)) throw new Error('A file reference needs a relative path and a SHA-256 checksum.')
+  return updateTask(replica, at, rowId, now, row => ({ ...row, data: { ...row.data, file: { path: file.path, sha256: file.sha256, size: file.size } } }))
+}
+/** The file the row at `path` references, if it is one. */
+export function fileReferenceAt(replica: Replica, path: Scope): FileReference | null {
+  const cid = resolveScope(replica.store, headCid(replica), path)
+  return cid ? valueContent(replica.store, cid).data.file ?? null : null
+}
+
 /** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
 export function copyNode(replica: Replica, fromPath: Scope, aliasId: string, toPath: Scope, position: MovePosition, now: number): Replica {
   const from = resolveScope(replica.store, headCid(replica), fromPath)
