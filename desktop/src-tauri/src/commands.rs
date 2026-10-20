@@ -154,6 +154,30 @@ pub fn cmd_peers(ws: &Workspace, action: Option<&str>, name: Option<&str>) -> Re
     }
 }
 
+/// `inbox`: what relays delivered to this store's peer (its queues under its member entries, which arrive by sync).
+pub fn cmd_inbox(ws: &Workspace) -> Result<(), String> {
+    let inbox = ws.core.call_json("relayInbox", &[json!("main")]).map_err(|e| e.to_string())?;
+    let messages = inbox.as_array().cloned().unwrap_or_default();
+    if messages.is_empty() { out("(inbox empty)"); }
+    for m in messages {
+        let rows = m["rows"].as_array().map(|r| r.iter().filter_map(|t| t.as_str()).collect::<Vec<_>>().join(" · ")).unwrap_or_default();
+        out(&format!("{}  {}", m["id"].as_str().unwrap_or(""), rows));
+    }
+    Ok(())
+}
+
+/// `ack <id>`: acknowledge a delivered message (an ack row in its queue); the relay clears both after the sync.
+pub fn cmd_ack(ws: &mut Workspace, prefix: &str) -> Result<(), String> {
+    if prefix.is_empty() { return Err("ack <message id>".into()); }
+    let inbox = ws.core.call_json("relayInbox", &[json!("main")]).map_err(|e| e.to_string())?;
+    let message = inbox.as_array().and_then(|all| all.iter().find(|m| m["id"].as_str().map_or(false, |id| id.starts_with(prefix))).cloned()).ok_or_else(|| format!("no message {} in the inbox", prefix))?;
+    ws.core.call("relayAck", &[json!("main"), json!(message["queue"].to_string()), message["id"].clone(), json!(crate::core::now_ms())]).map_err(|e| e.to_string())?;
+    ws.save()?;
+    out(&format!("acknowledged {}", message["id"].as_str().unwrap_or("")));
+    if ws.session.is_some() { out(&ws.sync()?); }
+    Ok(())
+}
+
 pub fn cmd_status(ws: &Workspace) -> Result<(), String> {
     out(&serde_json::to_string_pretty(&ws.status()).unwrap_or_default());
     Ok(())
@@ -277,6 +301,8 @@ pub fn cmd_repl(ws: Workspace) -> Result<(), String> {
                 }
             }
             "sync" | "s" => ws.sync().map(|s| out(&s)),
+            "inbox" => cmd_inbox(&ws),
+            "ack" => cmd_ack(&mut ws, rest),
             "status" => { out(&serde_json::to_string_pretty(&ws.status()).unwrap_or_default()); Ok(()) }
             "peers" => { let mut words = rest.split_whitespace(); cmd_peers(&ws, words.next(), words.next()) }
             "attach" => cmd_attach(&mut ws, if rest.is_empty() { None } else { Some(rest) }),
@@ -284,7 +310,7 @@ pub fn cmd_repl(ws: Workspace) -> Result<(), String> {
             "branches" => { out(&ws.project.branches().join(", ")); Ok(()) }
             "approve" => cmd_decide(&mut ws, rest, "approve"),
             "reject" => cmd_decide(&mut ws, rest, "reject"),
-            "help" | "?" => { out("ls · add <title> · done <id> · open <id> · rm <id> · mv <id> under <id> · cd <id>|.. · sync · status · approve <id> · reject <id> · attach <token> · login [--password] · branches · quit"); Ok(()) }
+            "help" | "?" => { out("ls · add <title> · done <id> · open <id> · rm <id> · mv <id> under <id> · cd <id>|.. · sync · inbox · ack <id> · status · approve <id> · reject <id> · attach <token> · login [--password] · branches · quit"); Ok(()) }
             "quit" | "exit" | "q" => break,
             other => Err(format!("unknown command {}", other)),
         };

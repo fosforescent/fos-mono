@@ -51,7 +51,7 @@ The heart of Fosforescent is a content-addressable graph implementation in `shar
 - **Backend**: Node.js, Express, Prisma, PostgreSQL with pgvector (Vertex embeddings for row search)
 - **Desktop/CLI**: Tauri 2 + Rust, with the TypeScript sync core embedded in QuickJS
 - **Build**: Vite for web, tsc for backend, cargo/tauri for desktop, Docker for the backend image
-- **Testing**: node scripts in `web/tests`, Jest in `backend/` and `shared/`, `node --test` in `desktop/agent-runtime` and `plugins/`
+- **Testing**: node scripts in `web/tests`, Jest in `backend/` and `shared/`, `node --test` in `desktop/agent-runtime`
 - **Infrastructure**: Docker Compose, Terraform on GCP, Cloudflare Pages for the web app
 
 ## Development Commands
@@ -97,9 +97,8 @@ npm run test
 # Shared graph/sync tests
 cd shared && npx jest sync/
 
-# Desktop agent runtime and plugin packaging
+# Desktop agent runtime
 cd desktop/agent-runtime && node --test
-node --test plugins/bridge.test.mjs && python3 plugins/build_test.py
 
 # Rust
 cd desktop/src-tauri && cargo check
@@ -124,13 +123,13 @@ PostgreSQL via Prisma (`infra/prisma/schema.prisma`):
 ## Testing Strategy
 
 - **Web**: `web/tests/*.cjs` drive the real UI controller against an in-memory DOM and fake transports (`npm test` in `web/`)
-- **Shared**: Jest over merge, protocol, refs, evaluation, triggers and CID migration (`shared/sync/*.test.ts`)
+- **Shared**: Jest over merge, protocol, refs, evaluation, triggers and the cid format (`shared/sync/*.test.ts`, `shared/dag-implementation/cid.test.ts`)
 - **Backend**: Jest with injected dependencies, no network (`backend/**/*.test.ts`); `infra/apiTests` holds manual API smoke scripts
 - **Desktop**: `cargo test --bin fos`, `node --test` in `desktop/agent-runtime`
 
 ## Development Notes
 
-- The graph system uses cryptographic hashing (CID) for content addressing; cids carry a format version (`v1-…`) and older formats are migrated on load, see `docs/cid-versioning.md`
+- The graph system uses cryptographic hashing (CID) for content addressing; cids carry the data version (`v0.0.1-…`, `FOS_DATA_VERSION` in `shared/version.ts`, also the standard library's version). Older data is not migrated: it is refused and has to be reset, see `docs/cid-versioning.md`
 - Nodes are immutable - mutations create new nodes
 - The system supports both local and planned distributed operation via DHT
 - Row embeddings live in PostgreSQL (pgvector) and are reindexed after each save (`backend/search/rowIndex.ts`)

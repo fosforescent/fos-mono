@@ -1,25 +1,20 @@
 /**
- * Search and market endpoints (all behind the user JWT middleware):
- *   POST /user/data/search            {query, market, limit} → {hits}
- *   POST /user/data/search/reindex    re-embed this account's rows
+ * The market, as the fos server serves it (behind the user JWT middleware):
  *   GET  /user/data/market/node?owner=&id=   a listed node as a bidder sees it (own proposal only)
- *   POST /user/data/market/proposals  {owner, aliasId, rows} → this account's proposal on that node
+ *   POST /user/data/market/proposals  {owner, aliasId, bid} → this account's proposal on that node
  *
- * The market: a row listed by its owner (the `fos:listing` value on it) is searchable by other
- * accounts. A bidder sees the node's value and comments but only its own proposal; the owner
- * sees every proposal and approves one. Proposals are branches (shared/sync proposals) whose
- * content is the node's value plus the rows the bidder adds (comments, allocation references,
- * supplies for the task's requirements).
+ * A node is listed where the market peer (`MARKET_PEER`) is a member with `read`, and takes proposals where it also
+ * has `edit` (shared/sync/market.ts `marketGrantsAt`, inherited down the tree). A bidder sees the node's value but
+ * only its own proposal; the owner sees every proposal and approves one. A bid is rows the bidder built itself
+ * (`draftBid`/`copyBidRow`), appended to a branch of the node's value (`applyBid`) and recorded as the proposal
+ * `user:<bidder>`. Search is no route: it is the fos `search` effect (sync/hostHandlers.ts).
  */
 
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { LISTING_ARGUMENT, namedValueOf, createReplica, marketplaceOffers, commitRoot, content, findRowByAlias, hasCapability, makeLink, newId, proposalContent, put, readProposals, resolveScope, rootTargetCid, rowContent, rowEdgeAt, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type RowExtras, type RowKind, type Scope } from '@fosforescent/shared/sync/index'
-import { indexStore, searchRows, type Embed } from './rowIndex'
+import { BidError, applyBid, createReplica, marketGrantsAt, marketplaceOffers, commitRoot, content, findRowByAlias, hasCapability, makeLink, proposalContent, put, readProposals, resolveScope, rootTargetCid, stripLink, updateAtScope, viewNode, withProposal, type NodeView, type Scope } from '@fosforescent/shared/sync/index'
 
-export type SearchDeps = {
-  prisma: any
-  embed: Embed
+export type MarketRouteDeps = {
   loadStore(username: string): Promise<{ user: { id: number; username: string }; store: FosStore } | null>
   saveStore(user: { id: number; username: string }, store: FosStore): Promise<void>
   withUserLock<T>(key: string, fn: () => Promise<T>): Promise<T>
@@ -32,39 +27,18 @@ function username(req: Request): string | null {
   return u?.username && u.kind !== 'peer' ? u.username : null
 }
 
-export function createSearchHandlers(deps: SearchDeps) {
+/** The row `aliasId` of the owner's tree: its path, cid and what the market (and `user:<me>` as a member) may do there. */
+function locate(store: FosStore, aliasId: string, me: string) {
+  const root = rootTargetCid(store), found = findRowByAlias(store, root, aliasId)
+  if (!found) return null
+  const path: Scope = [...found.path, aliasId], cid = resolveScope(store, root, path)!, identity = content(store, cid)
+  const market = marketGrantsAt(store, root, path)
+  return { path, cid, identity, read: market.includes('read'), propose: market.includes('edit') || hasCapability(store, identity, `user:${me}`, 'edit') }
+}
+
+export function createMarketHandlers(deps: MarketRouteDeps) {
   const now = () => (deps.now ? deps.now() : Date.now())
   return {
-    async search(req: Request, res: Response): Promise<Response> {
-      const me = username(req)
-      if (!me) return res.status(401).json({ error: 'Unauthorized' })
-      const body = (req.body ?? {}) as { query?: unknown; market?: unknown; limit?: unknown }
-      const query = typeof body.query === 'string' ? body.query.trim().slice(0, 1000) : ''
-      if (!query) return res.status(400).json({ error: 'query required' })
-      try {
-        const loaded = await deps.loadStore(me)
-        if (!loaded) return res.status(401).json({ error: 'User not found' })
-        const hits = await searchRows(deps.prisma, { userId: loaded.user.id, query, market: body.market === true, limit: typeof body.limit === 'number' ? body.limit : 10 }, deps.embed)
-        return res.json({ hits })
-      } catch (error) {
-        console.error('search failed:', error instanceof Error ? error.message : error)
-        return res.status(502).json({ error: `search failed: ${error instanceof Error ? error.message : String(error)}` })
-      }
-    },
-
-    async reindex(req: Request, res: Response): Promise<Response> {
-      const me = username(req)
-      if (!me) return res.status(401).json({ error: 'Unauthorized' })
-      const loaded = await deps.loadStore(me)
-      if (!loaded) return res.status(401).json({ error: 'User not found' })
-      try {
-        const result = await indexStore(deps.prisma, loaded.user, loaded.store, deps.embed)
-        return res.json(result)
-      } catch (error) {
-        return res.status(502).json({ error: `indexing failed: ${error instanceof Error ? error.message : String(error)}` })
-      }
-    },
-
     /** A listed node as the requesting account may see it: value and comments, proposals filtered to its own. */
     async marketNode(req: Request, res: Response): Promise<Response> {
       const me = username(req)
@@ -80,73 +54,45 @@ export function createSearchHandlers(deps: SearchDeps) {
         const node = viewNode(store, offer.cid)
         return res.json({ owner, aliasId, view: { ...node, peers: [], members: [], proposals: [] }, myProposal: null, capability: true })
       }
-      const found = findRowByAlias(store, rootTargetCid(store), aliasId)
+      const found = locate(store, aliasId, me)
       if (!found) return res.status(404).json({ error: 'node not found' })
-      const cid = resolveScope(store, rootTargetCid(store), [...found.path, aliasId])!
-      const identity = content(store, cid)
-      // open to bidders when listed, and to accounts the owner made members of the node (with `edit`): they may send proposals (e.g. an allocation bin)
-      if (!namedValueOf(store, cid, LISTING_ARGUMENT) && owner !== me && !hasCapability(store, identity, `user:${me}`, 'edit')) return res.status(403).json({ error: 'not listed on the market, and you are not a member of it' })
-      const view = viewNode(store, cid)
+      // open to bidders where the market lists it, and to accounts the owner made members of the node (with `edit`)
+      if (!found.read && !found.propose && owner !== me) return res.status(403).json({ error: 'not listed on the market, and you are not a member of it' })
+      const view = viewNode(store, found.cid)
       const mine = `user:${me}`
       const filtered: NodeView = { ...view, peers: [], members: [], proposals: owner === me ? view.proposals : view.proposals.filter((p) => p.peerId === mine) }
       const myProposal = view.proposals.find((p) => p.peerId === mine) ?? null
       return res.json({ owner, aliasId, view: filtered, myProposal: myProposal ? { id: myProposal.id, status: myProposal.status } : null })
     },
 
-    /** Submit (or replace) this account's proposal on a listed node: the node's value plus the given rows. */
+    /** Submit (or replace) this account's proposal on a node: its value plus the bid's rows. */
     async marketProposal(req: Request, res: Response): Promise<Response> {
       const me = username(req)
       if (!me) return res.status(401).json({ error: 'Unauthorized' })
-      const body = (req.body ?? {}) as { owner?: unknown; aliasId?: unknown; rows?: unknown }
+      const body = (req.body ?? {}) as { owner?: unknown; aliasId?: unknown; bid?: unknown }
       const owner = typeof body.owner === 'string' ? body.owner : ''
       const aliasId = typeof body.aliasId === 'string' ? body.aliasId : ''
-      const rows = Array.isArray(body.rows) ? (body.rows as Array<{ kind?: unknown; text?: unknown; data?: unknown; under?: unknown; id?: unknown }>) : []
-      if (!owner || !aliasId || !rows.length) return res.status(400).json({ error: 'owner, aliasId and rows required' })
+      if (!owner || !aliasId || !body.bid) return res.status(400).json({ error: 'owner, aliasId and bid required' })
       if (owner === me) return res.status(400).json({ error: 'propose on your own node from the tree instead' })
       const outcome = await deps.withUserLock(`user:${owner}`, async () => {
         const loaded = await deps.loadStore(owner)
         if (!loaded) return { status: 404, body: { error: 'owner not found' } } as const
         const { user, store } = loaded
-        const found = findRowByAlias(store, rootTargetCid(store), aliasId)
+        const found = locate(store, aliasId, me)
         if (!found) return { status: 404, body: { error: 'node not found' } } as const
-        const path: Scope = [...found.path, aliasId]
-        const cid = resolveScope(store, rootTargetCid(store), path)!
-        const identity = content(store, cid)
-        const peerId = `user:${me}`
-        if (!namedValueOf(store, cid, LISTING_ARGUMENT) && !hasCapability(store, identity, peerId, 'edit')) return { status: 403, body: { error: 'not listed on the market, and you are not a member of it' } } as const
-        const t = now()
-        // The branch: the node's current value plus the bidder's rows. Built on the value directly
-        // (updateAtScope walks `under` paths inside it) so the owner's root pointer is never touched.
-        const mainValueCid = put(store, stripLink(store, identity))
-        let branchCid = mainValueCid
-        for (const row of rows) {
-          const kind = (typeof row.kind === 'string' && ['plain', 'comment', 'ref', 'supply', 'allocation', 'requirement', 'note', 'task'].includes(row.kind) ? row.kind : 'comment') as RowKind
-          const text = typeof row.text === 'string' ? row.text.trim().slice(0, 4000) : ''
-          const data = (row.data && typeof row.data === 'object' ? row.data : {}) as Record<string, unknown>
-          const under: Scope = typeof row.under === 'string' ? [row.under] : []
-          const extras: RowExtras = { store }
-          if (kind === 'supply' && data.supply && typeof data.supply === 'object') extras.supply = { ...(data.supply as NonNullable<RowExtras['supply']>), by: me, at: t }
-          if (kind === 'allocation' && data.allocation && typeof data.allocation === 'object') extras.allocation = { ...(data.allocation as NonNullable<RowExtras['allocation']>), by: me }
-          // an allocation bin: a row with requirement rows (what the receiver must fill) and allocation rows (what they get) sent as one proposal
-          if (kind === 'requirement' && data.requirement && typeof data.requirement === 'object') extras.requirement = { ...(data.requirement as NonNullable<RowExtras['requirement']>) }
-          if (kind === 'task') extras.done = false
-          if (kind === 'ref' && typeof data.refId === 'string') extras.refId = data.refId
-          if (kind === 'comment') extras.author = { id: peerId, name: me }
-          if (!text && !['supply', 'allocation', 'ref'].includes(kind)) continue
-          if (kind === 'ref' && !extras.refId) continue
-          if (under.length && !resolveScope(store, branchCid, under)) continue // an `under` that does not exist in this node: skip
-          const id = typeof row.id === 'string' && /^[A-Za-z0-9_-]{4,64}$/.test(row.id) && !findRowByAlias(store, branchCid, row.id) ? row.id : newId()
-          const rowCid = put(store, rowContent(kind, id, text, t, extras))
-          branchCid = updateAtScope(store, branchCid, under, (value) => ({ ...value, children: [...value.children, rowEdgeAt(store, kind, rowCid, [...path, ...under])], data: { ...value.data, updated: { time: t } } }))
-        }
-        if (branchCid === mainValueCid) return { status: 400, body: { error: 'no valid rows in the proposal' } } as const
+        if (!found.propose) return { status: 403, body: { error: 'the market takes no proposals on this node, and you are not a member of it' } } as const
+        const t = now(), peerId = `user:${me}`
+        // The branch: the node's current value plus the bid's rows, built on the value so the owner's root never moves.
+        const mainValueCid = put(store, stripLink(store, found.identity))
+        let branchCid: string
+        try { branchCid = applyBid(store, mainValueCid, body.bid, me) }
+        catch (error) { if (error instanceof BidError) return { status: 400, body: { error: error.message } } as const; throw error }
         // the proposal is named after the bidder: that is what the owner sees in the proposals list
         const proposalCid = put(store, proposalContent(store, peerId, me, branchCid, mainValueCid, t))
-        const nextIdentity = withProposal(store, makeLink(store, identity, t), peerId, proposalCid, me)
-        const nextRoot = updateAtScope(store, rootTargetCid(store), path, () => nextIdentity, 'node')
-        commitRoot(store, nextRoot, t)
+        const nextIdentity = withProposal(store, makeLink(store, found.identity, t), peerId, proposalCid, me)
+        commitRoot(store, updateAtScope(store, rootTargetCid(store), found.path, () => nextIdentity, 'node'), t)
         await deps.saveStore(user, store)
-        deps.notify?.(user.id, { type: 'sync_changed', scope: path, byPeerId: peerId })
+        deps.notify?.(user.id, { type: 'sync_changed', scope: found.path, byPeerId: peerId })
         return { status: 200, body: { proposalId: proposalCid, rows: readProposals(store, nextIdentity).length } } as const
       })
       return res.status(outcome.status).json(outcome.body)

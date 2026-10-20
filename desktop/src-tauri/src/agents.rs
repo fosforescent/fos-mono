@@ -1,4 +1,5 @@
-//! Desktop-only SDK bridge. Credentials stay in the native environment.
+//! Desktop agent launches: the coding-agent CLIs open in a visible terminal (through `../agent-runtime`), local Git,
+//! and the links that open an agent app with a prompt. Credentials stay in the native environment.
 use serde_json::{json, Value};
 use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
 use tauri::Manager;
@@ -56,12 +57,35 @@ fn find_on_path(name: &str, path: &std::ffi::OsStr) -> Option<String> {
     None
 }
 
-/// Which agent CLIs this computer has (`claude`, `codex` on PATH): the web app shows each one as a local peer with
-/// its constructor actions, and nothing when the CLI is absent. A filesystem query, never a graph row.
+/// Whether an editor extension directory for `publisher.name` is installed under `~/.vscode/extensions`.
+fn vscode_extension(id: &str) -> bool {
+    let Some(dir) = dirs::home_dir().map(|h| h.join(".vscode").join("extensions")) else { return false };
+    let prefix = format!("{id}-");
+    std::fs::read_dir(dir).map(|entries| entries.flatten().any(|e| e.file_name().to_string_lossy().to_lowercase().starts_with(&prefix))).unwrap_or(false)
+}
+/// Which agents this computer has: the CLIs on PATH (`claude`, `codex`), whether VS Code (`code` on PATH) has the
+/// Claude Code extension (its `vscode://anthropic.claude-code/open?prompt=` link opens a new tab with the prompt), and
+/// whether Claude Desktop has been set up (its config directory exists). The web app shows each as a local peer with
+/// its launch buttons, and nothing when it is absent. A filesystem query, never a graph row.
 #[tauri::command]
 pub fn agent_clis() -> Value {
     let path = std::env::var_os("PATH").unwrap_or_default();
-    json!({ "claude": find_on_path("claude", &path), "codex": find_on_path("codex", &path) })
+    let code = find_on_path("code", &path).is_some();
+    json!({
+        "claude": find_on_path("claude", &path),
+        "codex": find_on_path("codex", &path),
+        "vscode": { "claude": code && vscode_extension("anthropic.claude-code") },
+        "claudeDesktop": crate::claude_desktop::installed(),
+    })
+}
+/// Open an agent app at a prompt: only the Claude Code VS Code tab link and Claude Desktop's new-chat link.
+#[tauri::command]
+pub fn open_agent_link(url: String) -> Result<(), String> {
+    const ALLOWED: [&str; 2] = ["vscode://anthropic.claude-code/open?", "claude://claude.ai/new?"];
+    if url.len() > 20_000 || !ALLOWED.iter().any(|p| url.starts_with(p)) || url.chars().any(|c| c.is_whitespace() || c.is_control() || c == '"') {
+        return Err("Unsupported agent link".into());
+    }
+    open::that_detached(&url).map_err(|e| e.to_string())
 }
 fn runtime(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let path = if cfg!(debug_assertions) {
@@ -97,26 +121,24 @@ pub async fn agent_start(
     if request.to_string().len() > 2_000_000 {
         return Err("Task context is too large (2 MB limit)".into());
     }
-    if request.get("probe") != Some(&Value::Bool(true)) {
-        if !matches!(request["provider"].as_str(), Some("codex" | "claude")) {
-            return Err("Unknown SDK".into());
-        }
-        let path = if request["cli"].as_bool() == Some(true) {
-            let directory = std::fs::canonicalize(request["cwd"].as_str().ok_or("Directory required")?).map_err(|e| e.to_string())?;
-            if !directory.is_dir() { return Err("Choose a directory".into()); }
-            directory.to_string_lossy().into_owned()
-        } else if request.get("evaluation").is_some() && request["cwd"].as_str().unwrap_or("").is_empty() {
-            let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("evaluation-agent");
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            let output = Command::new("git").args(["init", "--quiet"]).arg(&dir).output().await.map_err(|e| e.to_string())?;
-            if !output.status.success() { return Err("Cannot prepare evaluation workspace".into()); }
-            dir.to_string_lossy().into_owned()
-        } else { repository(request["cwd"].as_str().ok_or("Repository path required")?).await? };
-        request["cwd"] = json!(path);
-        let prompt = request["prompt"].as_str().ok_or("Task prompt required")?;
-        if prompt.trim().is_empty() || prompt.len() > 100_000 {
-            return Err("Enter a task prompt (up to 100 KB)".into());
-        }
+    if !matches!(request["provider"].as_str(), Some("codex" | "claude")) {
+        return Err("Unknown agent".into());
+    }
+    // the terminal opens in the node's checkout when it has one, else in a scratch directory: the agent works on the
+    // node through its MCP connection either way
+    let cwd = request["cwd"].as_str().unwrap_or("").trim().to_string();
+    let directory = if cwd.is_empty() {
+        let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("agent-workspace");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        dir
+    } else {
+        std::fs::canonicalize(&cwd).map_err(|e| e.to_string())?
+    };
+    if !directory.is_dir() { return Err("Choose a directory".into()); }
+    request["cwd"] = json!(directory.to_string_lossy());
+    let prompt = request["prompt"].as_str().ok_or("Task prompt required")?;
+    if prompt.trim().is_empty() || prompt.len() > 100_000 {
+        return Err("Enter a task prompt (up to 100 KB)".into());
     }
     let mut runs = state.0.lock().await;
     runs.retain(|_, run| {
@@ -156,7 +178,7 @@ pub async fn agent_start(
             }
             if let Ok(event) = serde_json::from_str::<Value>(&line) {
                 let mut run = run.lock().await;
-                // Preserve permission requests; drop old progress when the UI falls behind.
+                // Keep errors and status; drop old progress text when the UI falls behind.
                 if run.events.len() >= 200 {
                     if let Some(i) = run.events.iter().position(|e| e["type"] == "text") {
                         run.events.remove(i);
@@ -168,7 +190,7 @@ pub async fn agent_start(
         let status = child.wait().await;
         let mut run = run.lock().await;
         if !status.map(|s| s.success()).unwrap_or(false) {
-            run.events.push(json!({"type":"error","message":"Agent runtime exited unexpectedly; check native SDK installation and credentials"}));
+            run.events.push(json!({"type":"error","message":"Agent runtime exited unexpectedly; check that Node.js 20+ is on PATH"}));
         }
         run.finished = true;
         run.input = None;
@@ -187,9 +209,7 @@ pub async fn agent_control(
     id: String,
     message: Value,
 ) -> Result<(), String> {
-    if message.to_string().len() > 1000
-        || !(message["cancel"] == true || message["permission"].is_string())
-    {
+    if message.to_string().len() > 1000 || message["cancel"] != true {
         return Err("Invalid agent control".into());
     }
     let runs = state.0.lock().await;
@@ -217,6 +237,13 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    #[test]
+    fn opens_only_the_agent_links() {
+        assert!(open_agent_link("https://example.com".into()).is_err());
+        assert!(open_agent_link("claude://claude.ai/new?q=a b".into()).is_err());
+        assert!(open_agent_link("vscode://other.extension/open?prompt=x".into()).is_err());
+    }
+
     #[tokio::test]
     async fn accepts_worktrees_and_rejects_non_repositories() {
         let dir = std::env::temp_dir().join(format!("fos-sdk-{}", uuid::Uuid::new_v4()));
@@ -233,7 +260,8 @@ mod tests {
         let nested = dir.join("nested");
         std::fs::create_dir(&nested).unwrap();
         assert_eq!(
-            PathBuf::from(repository(nested.to_str().unwrap()).await.unwrap()),
+            // git prints `C:/…`, canonicalize gives `\?\C:\…` on Windows: compare canonical forms
+            std::fs::canonicalize(repository(nested.to_str().unwrap()).await.unwrap()).unwrap(),
             std::fs::canonicalize(&dir).unwrap()
         );
         std::fs::remove_dir_all(dir).unwrap();

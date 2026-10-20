@@ -82,10 +82,22 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
 
 ## Release procedure
 
-1. Bump `version` in `desktop/src-tauri/tauri.conf.json` (e.g. `0.1.0` → `0.1.1`).
-   - Android `versionCode` is derived as `major*1000000 + minor*1000 + patch`.
-   - Both Play and TestFlight reject duplicate version codes/build numbers, so every
-     submission needs a bump.
+1. Bump `version` in `desktop/src-tauri/tauri.conf.json` (e.g. `0.0.1` → `0.0.2`), the
+   same version in `desktop/src-tauri/Cargo.toml` and the package.json files, and the
+   build numbers by one: `bundle.android.versionCode` and `bundle.iOS.bundleVersion`
+   (both `1005` for 0.0.1).
+   - The build numbers are set explicitly, not derived from `version`: the app restarted
+     at 0.0.1 after 0.1.4 had been uploaded, and Tauri's defaults
+     (`versionCode = major*1000000 + minor*1000 + patch`, `CFBundleVersion = version`)
+     would have gone back to 1 and `0.0.1`, below the uploaded 1004 and `0.1.4`.
+   - Both Play and TestFlight reject duplicate or lower version codes/build numbers, so
+     every submission needs a bump.
+   - The marketing version (`version`, iOS `CFBundleShortVersionString`, Android
+     `versionName`) restarted at 0.0.1. Play accepts that (only `versionCode` must grow).
+     App Store Connect refuses (ITMS-90062) a marketing version lower than a previously
+     *approved* one; builds that only went to internal TestFlight should not count, but if
+     an upload of 0.0.1 is refused for this, set `version` above 0.1.4 in a
+     `src-tauri/tauri.ios.conf.json` (Tauri merges it for iOS builds only).
 2. Commit, then tag and push:
 
    ```bash

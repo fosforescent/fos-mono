@@ -131,7 +131,7 @@ export async function connectNodeAgent(app: App, transport: 'desktop' | 'server'
 
 /** The hosted MCP connections made from this app (the `mcp:server` sub-peer), by node. */
 export function hostedMcpConnection(app: App, scope = app.state.view): Connection | null {
-  return (connections.get(app) ?? []).find(c => c.transport === 'server' && c.token && JSON.stringify(c.scope) === JSON.stringify(scope)) ?? null
+  return (connections.get(app) ?? []).find(c => c.transport === 'server' && c.peer === 'mcp:server' && c.token && JSON.stringify(c.scope) === JSON.stringify(scope)) ?? null
 }
 export function openNodeAgent(app: App, transport: 'desktop' | 'server'): void {
   const dialog = document.createElement('dialog'), form = document.createElement('form')
@@ -168,32 +168,37 @@ export function openNodeAgent(app: App, transport: 'desktop' | 'server'): void {
   dialog.append(form); dialog.addEventListener('close', () => { output.value = ''; dialog.remove() }); document.body.append(dialog); dialog.showModal()
 }
 
-/** A short-lived, evaluation-only endpoint; no graph editing tools. */
-export async function connectEvaluationAgent(app: App) {
-  const path = JSON.stringify(app.executionPath()), store = app.state.replica.store, session = app.state.session
-  if (!app.executionPath() || !app.canApprove()) throw new Error('Open an owned evaluation first.')
+/**
+ * A loopback MCP endpoint that acts as `peerId` at `scope` (a launched coding agent): every request is dispatched
+ * with the peer's grants there as they are at that moment, so toggling Read / Write / Execute on the peer's panel
+ * changes what the agent may do mid-session and switching all of them off ends it. It also ends when the data
+ * session changes or `stop` is called. Credentials stay in memory.
+ */
+export async function startPeerMcp(app: App, peerId: string, scope: string[], name: string): Promise<{ url: string; token: string; stop(): Promise<void> }> {
+  if (!inTauri()) throw new Error('Desktop app required.')
+  const store = app.state.replica.store, session = app.state.session, branches = nodeBranches(app.state.replica, scope)
+  if (!app.peerGrants(peerId, scope).length) throw new Error(`Turn on read, write or execute for ${name} here first.`)
   const endpoint = await tauriInvoke<{ id: string; url: string; token: string }>('node_agent_start')
   if (!endpoint) throw new Error('Desktop app required.')
   let stopped = false, timer: ReturnType<typeof setTimeout> | undefined
-  const current = () => app.state.replica.store === store && app.state.session === session && JSON.stringify(app.executionPath()) === path
+  const current = () => app.state.replica.store === store && app.state.session === session
   const stop = async () => { if (stopped) return; stopped = true; clearTimeout(timer); await tauriInvoke('node_agent_stop', { id: endpoint.id }) }
   const poll = async () => {
     if (stopped) return
-    if (!current()) { await stop().catch(() => {}); return }
+    if (!current() || !app.peerGrants(peerId, scope).length) { await stop().catch(() => {}); return }
     try {
       for (const request of await tauriInvoke<Array<{ id: string; message: unknown }>>('node_agent_poll', { id: endpoint.id }) ?? []) {
-        // Evaluation-only loopback: the same tools, as the owner, scoped to the running execution.
-        const response = await handleMcp(request.message, { owner: true, serverName: 'fos-evaluation', dispatch: async event => {
-          if (stopped || !current()) throw new Error('Evaluation connection ended.')
-          if (!['read', 'input', 'complete'].includes(event.kind)) throw new Error('Only reading, inputs and completion are available on an evaluation endpoint.')
-          return app.dispatchLocalEvent({ peerId: app.state.replica.meta.peerId, owner: true, scope: app.executionPath()! }, event)
+        const response = await handleMcp(request.message, { owner: false, capabilities: app.peerCapabilities(peerId, scope), serverName: 'fos-node', dispatch: async event => {
+          if (stopped || !current()) throw new Error('Agent connection ended.')
+          const scoped: FosEvent = event.kind !== 'decide' && event.kind !== 'invite' && branches.length && !event.branches?.length ? { ...event, branches: branches.map(b => ({ path: b.scope.slice(scope.length), name: b.name })) } as FosEvent : event
+          return app.dispatchLocalEvent({ peerId, owner: false, scope, name }, scoped)
         } })
         await tauriInvoke('node_agent_reply', { id: endpoint.id, requestId: request.id, response })
       }
-      if (!stopped) timer = setTimeout(() => void poll(), 200)
-    } catch { await stop().catch(() => {}) }
+    } catch { await stop().catch(() => {}); return }
+    if (!stopped) timer = setTimeout(() => void poll(), 300)
   }
-  void poll()
   window.addEventListener('pagehide', () => void stop().catch(() => {}), { once: true })
-  return { ...endpoint, stop }
+  void poll()
+  return { url: endpoint.url, token: endpoint.token, stop }
 }

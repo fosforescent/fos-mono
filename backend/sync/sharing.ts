@@ -1,8 +1,10 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
-import { applyMergePolicy, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, configurePoll, content, createReplica, capabilityPeers, readNodeValue, writeLinkedNodeValue, hasCapability, headCid, participation, put, resolveRef, resolveScope, setSharing, sharedProjection, sharing, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharePolicy, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, configurePoll, content, createReplica, capabilityPeers, readNodeValue, writeLinkedNodeValue, hasCapability, headCid, participation, put, resolveRef, resolveScope, setSharing, sharedProjection, sharing, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharePolicy, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
+import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
+import { MONEY_TYPE } from '@fosforescent/shared/sync/library-types'
 const sign = jsonwebtoken.sign ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.sign
 const verify = jsonwebtoken.verify ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.verify
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -83,7 +85,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         if (!cid || body.expected !== put(r.store, valueContent(r.store, cid))) throw new Failure(409, 'Sync this node and review its current contents before sharing.')
         const old = sharing(r, body.path)
         if (body.template !== undefined && typeof body.template !== 'boolean') throw new Failure(400, 'Invalid template trigger.')
-        if (body.template && view(r, body.path.slice(0, -1))?.tasks.find(t => t.id === body.path.at(-1))?.kind !== 'template') throw new Failure(400, 'Triggers require a template.')
+        if (body.template && view(r, body.path.slice(0, -1))?.tasks.find(t => t.id === body.path.at(-1))?.type !== TEMPLATE_TYPE) throw new Failure(400, 'Triggers require a template.')
         const policy: SharePolicy = { id: old?.enabled && old.audience === body.audience && !!old.template === !!body.template ? old.id : randomUUID(), audience: body.audience, enabled: body.enabled, ...(body.template ? { template: true } : {}) }
         // Validate poll before modifying the store.
         if (body.poll && !capabilityPeers(r, body.path, 'poll').includes('fos')) throw new Failure(409, 'The Fos poll handler is not available in this context.')
@@ -110,7 +112,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           if (!executionAddress) {
             createdExecution = true
             const template = view(r, at.path.slice(0, -1))?.tasks.find(t => t.id === at.path.at(-1))
-            if (template?.kind !== 'template') throw new Failure(409, 'This trigger requires a template.')
+            if (template?.type !== TEMPLATE_TYPE) throw new Failure(409, 'This trigger requires a template.')
             const id = randomUUID(), parent = at.path.slice(0, -1)
             r = addTask(r, parent, template.title, now(), id)
             r = instantiateTemplate(r, parent, id, template.id, now())
@@ -227,10 +229,18 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
             else if (field.kind === 'confirmation' || field.kind === 'choice') r = addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: field.kind, by: peer, ...(field.kind === 'choice' ? { choice: value as number } : {}) }, now())
             else {
               const amount = value as { amount: number; type: string; unit: string; start?: number; end?: number }, id = randomUUID()
-              r = addRow(r, target, 'allocation', field.name, now(), { id, allocation: amount as any })
-              r = addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: 'allocation', by: peer, ref: id }, now())
+              // money is a payment: the positive money row under the request fills it
+              if (amount.type === 'account') r = addRow(r, target, MONEY_TYPE, field.name, now(), { id, allocation: { ...amount, by: peer } as any })
+              else {
+                r = addRow(r, target, ALLOCATION_TYPE, field.name, now(), { id, allocation: amount as any })
+                r = addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: 'allocation', by: peer, ref: id }, now())
+              }
             }
           }
+        } else {
+          // on the shared original, text answers to holes (missing bindings, empty fields) are this visitor's candidate values
+          const candidates = Object.entries(fields).flatMap(([key, value]) => { const field = node.inputs.find(f => f.key === key)!; return field.kind === 'text' && typeof value === 'string' ? [{ path: field.path ?? [field.key], value }] : [] })
+          if (candidates.length) r = proposeVisitorValues(r, at.path, peer, candidates, now())
         }
         // the owner's standing decision: proposals that enough members approved merge now (the standard library's governance)
         const governed = applyMergePolicy(r, at.path, digest, now())
@@ -254,6 +264,17 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       }
       const r = createReplica(`user:${at.owner}`, (await deps.loadStore(at.owner))!.store), { peer, links, record } = outcome
       return res.json({ node: { ...sharedProjection(r, at.path, digest, peer, req.body.interaction === true), sources: account ? links : undefined, mine: record, capabilities: ['read', 'edit', 'rank'].filter(c => participantAccess(r, at.path, peer, c as 'read' | 'edit' | 'rank')) } })
+    }),
+    /** `GET /public/node/read?owner=&share=&path=[…]`: the public projection for embeds. Nothing is written (no guest joins), so any page may show it. */
+    read: run(async (req, res) => {
+      const q = req.query ?? {}
+      let path: unknown
+      try { path = typeof q.path === 'string' && q.path.length <= 9000 ? JSON.parse(q.path) : null } catch { path = null }
+      const at = address({ owner: q.owner, share: q.share, path })
+      // a template endpoint reads as its page; a visitor's private execution starts with their first visit
+      const { r } = await load(at, null)
+      res.setHeader?.('Cache-Control', 'public, max-age=60')
+      return res.json({ node: sharedProjection(r, at.path, digest) })
     })
   }
 }

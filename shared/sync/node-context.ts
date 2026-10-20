@@ -1,7 +1,8 @@
 import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowEdgeAt, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
+import { PLAIN_TYPE } from './library-types'
 import { createBranch } from './branches'
 import { headCid, loadReplica, serializeReplica, type Replica } from './replica'
-import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
+import { NodeAccessError, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, decidingMember, type NodeAuthority, type NodeRequest, type ProvidedNode } from './node-provider'
 
 const prefix = (a: Scope, b: Scope) => a.length <= b.length && a.every((v, i) => v === b[i])
 type Exchange = (r: Replica, request: NodeRequest, authority: NodeAuthority, now: number) => { replica: Replica; node: ProvidedNode }
@@ -15,7 +16,7 @@ export function nodeAuthorityAt(r: Replica, path: Scope, authority: NodeAuthorit
     for (let i = authority.scope.length; i <= path.length; i++) {
       const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
       if (!cid) { if (i === authority.scope.length) throw new NodeAccessError('Attachment unavailable.'); break }
-      const member = memberFor(r.store, content(r.store, cid), authority.peerId)
+      const member = decidingMember(r.store, content(r.store, cid), authority)
       if (member) grants = member.capabilities.filter(c => !member.disabled?.includes(c) && !(c === 'read' && member.disabled?.includes('provideNode')))
       if (!grants.includes('read') && !grants.includes('edit')) throw new NodeAccessError('Node access denied.')
       if (member?.disabled?.includes('read') || member?.disabled?.includes('provideNode')) throw new NodeAccessError('Node access denied.')
@@ -49,7 +50,7 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
       if (!nodeAuthorityAt(r, branch.scope, authority).includes('edit') || authority.proposeOnly) throw new NodeAccessError('Branch not available to this peer.')
       if (branch.scope.length) fork = createBranch(fork, branch.scope, branch.name, now)
       else {
-        const edge = rowEdgeAt(fork.store, 'plain', cid, [])
+        const edge = rowEdgeAt(fork.store, PLAIN_TYPE, cid, [])
         const choice = putBranches(fork.store, content(fork.store, cid).data.alias?.id ?? 'fos:root-branch', edge, [{ peerId: 'main', edge }, { peerId: branch.name, edge, base: edge }])
         commitRoot(fork.store, choice, now)
       }
@@ -68,7 +69,12 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
     const proposal = cid && readProposals(fork.store, content(fork.store, cid)).find(p => p.cid === request.proposal!.id)
     const permissions = nodeAuthorityAt(r, at, authority)
     if (!proposal || (!authority.owner && proposal.peerId !== authority.peerId && !permissions.includes('edit') && !permissions.includes('read-requests'))) throw new NodeAccessError('Proposal is not available to this peer.')
-    commitRoot(fork.store, updateAtScope(fork.store, headCid(fork), at, () => content(fork.store, proposal.contentCid), 'replace'), now)
+    // the proposed value stands in for the node; a node that is a mutable ref keeps its identity (alias) on the ref,
+    // not in the value, so the preview carries it over or the node could not be addressed
+    commitRoot(fork.store, updateAtScope(fork.store, headCid(fork), at, current => {
+      const proposed = content(fork.store, proposal.contentCid)
+      return current.data.alias && !proposed.data.alias ? { ...proposed, data: { ...proposed.data, alias: current.data.alias } } : proposed
+    }, 'replace'), now)
   }
   const served = exchange(fork, { ...request, branches: undefined, proposal: undefined }, { ...authority, owner: request.proposal ? true : authority.owner, proposeOnly: request.proposal ? false : authority.proposeOnly }, now)
   fork = served.replica

@@ -3,7 +3,8 @@ import { mergeNodes } from './merge'
 import { isAttempt } from './work'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { formTitle } from './forms'
-import { childRows, supplyOf, findRowByAlias, commitRoot, content, refValueCid, refTypeCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
+import { TEMPLATE_TYPE } from './library-types'
+import { findRowByAlias, commitRoot, content, refValueCid, refTypeCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
 export const EVALUATION_ARGUMENT = 'fos:evaluation'
@@ -75,8 +76,9 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
   const walk = (at: Scope, depth: number) => {
     if (depth > 64 || steps.length >= 1000) throw new Error('Narrow the evaluation to fewer than 1,000 rows and 64 levels.')
     const row = at.length ? view(r, at.slice(0, -1))?.tasks.find(t => t.id === at.at(-1)) ?? null : null
-    if (row?.kind === 'template') return
-    if (row && ['ref', 'supply'].includes(row.kind)) return
+    // a template's rows are a definition; references and supplies are not steps
+    if (row?.type === TEMPLATE_TYPE) return
+    if (row && (row.refId !== undefined || row.supply)) return
     const cid = resolveScope(r.store, headCid(r), at)
     // A handler's attempt records (pinned prompts, return slots) are bookkeeping, never steps.
     if (depth > 0 && cid && isAttempt(r, cid)) return
@@ -102,12 +104,12 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   }
   issues.push(...resolveText(r, step.path, formTitle(r.store, valueContent(r.store, cid))).bindings.flatMap(b => b.problems))
   const req = step.row?.requirement
-  if (req?.capability === 'allocation') for (const child of childRows(r.store, cid, 'supply')) {
-    const supplied = supplyOf(child.value)
+  if (req?.capability === 'allocation') for (const child of view(r, step.path)?.tasks ?? []) {
+    const supplied = child.supply
     if (supplied?.ref && !findRowByAlias(r.store, headCid(r), supplied.ref)) issues.push('The supplied allocation is unavailable for validation.')
   }
   if (req && !req.satisfied && !driver.handles(step)) {
-    const childTasks = view(r, step.path)?.tasks.filter(t => t.kind === 'task') ?? []
+    const childTasks = view(r, step.path)?.tasks.filter(t => t.checkable) ?? []
     if (req.capability !== 'task' || !childTasks.length) issues.push(`Unfulfilled ${req.capability}: ${step.row!.title}`)
   }
   return issues
@@ -126,11 +128,11 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   const steps = evaluationSteps(driver.get(), path)
   if (!steps.length) throw new Error('Apply the template before evaluating it.')
   const initial = driver.get()
-  if (path.some((id, i) => view(initial, path.slice(0, i))?.tasks.some(t => t.id === id && t.kind === 'template'))) throw new Error('Apply the template before evaluating it.')
+  if (path.some((id, i) => view(initial, path.slice(0, i))?.tasks.some(t => t.id === id && t.type === TEMPLATE_TYPE))) throw new Error('Apply the template before evaluating it.')
   const issues = [...allocationProblems(initial, steps), ...steps.flatMap(step => problems(driver.get(), step, driver))]
   if (issues.length) throw new Error([...new Set(issues)].join('\n'))
   const versions = new Map(steps.map(step => [JSON.stringify(step.path), instruction(driver.get(), step.path, driver.outputs?.(step))]))
-  const children = new Map(steps.map(step => [JSON.stringify(step.path), JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.kind]))]))
+  const children = new Map(steps.map(step => [JSON.stringify(step.path), JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.type]))]))
   const applied = new Set<string>()
   const record: EvaluationRecord = { id: newId(), status: 'opening', started: driver.now(), effects: [] }
   const save = () => driver.save(writeNodeValue(driver.get(), path, EVALUATION_ARGUMENT, record, driver.now()))
@@ -140,7 +142,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     const current = evaluationRecord(driver.get(), path)
     if (!current || current.id !== record.id || !['opening', 'running', 'committing'].includes(current.status)) throw new Error('The evaluation claim changed. Review recovery before retrying.')
     if (instruction(driver.get(), step.path, driver.outputs?.(step)) !== versions.get(JSON.stringify(step.path))) throw new Error('Instructions changed during evaluation. Review and run again.')
-    if (!applied.has(JSON.stringify(step.path)) && JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.kind])) !== children.get(JSON.stringify(step.path))) throw new Error('The child rows changed during evaluation. Review and run again.')
+    if (!applied.has(JSON.stringify(step.path)) && JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.type])) !== children.get(JSON.stringify(step.path))) throw new Error('The child rows changed during evaluation. Review and run again.')
     const errors = problems(driver.get(), fresh(step), driver)
     if (errors.length) throw new Error(errors.join('\n'))
   }
@@ -186,7 +188,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     if (allocationErrors.length) throw new Error(allocationErrors.join('\n'))
     let r = loadReplica(serializeReplica(live))
     for (const step of steps) for (const [id, name] of Object.entries(scopeBranches(live.store, headCid(live), step.path))) selectBranch(r.store, id, name)
-    for (const step of [...steps].reverse()) if (step.row?.kind === 'task') {
+    for (const step of [...steps].reverse()) if (step.row?.checkable) {
       r = setTaskDone(r, step.path.slice(0, -1), step.path.at(-1)!, true, driver.now())
       if (!view(r, step.path.slice(0, -1))?.tasks.find(t => t.id === step.path.at(-1))?.done) throw new Error('A task still has unfulfilled requirements.')
     }
@@ -236,7 +238,7 @@ export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[
     for (const row of view(r, path)?.tasks ?? []) {
       if (seen.has(row.id)) continue
       seen.add(row.id)
-      if (row.kind === 'template') continue
+      if (row.type === TEMPLATE_TYPE) continue
       if (row.resource) banks.set(row.id, row)
       if (row.requirement?.capability === 'allocation' && row.requirement.satisfied && row.requirement.amount !== undefined) banks.set(row.id, { ...row, resource: { type: row.requirement.resource ?? 'account', unit: row.requirement.unit ?? 'USD', capacity: row.requirement.amount, allocated: 0, available: row.requirement.amount } })
       if (row.allocation && required.has(row.allocation.resource)) allocations.push(row)

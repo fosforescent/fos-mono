@@ -9,6 +9,7 @@ import { createSystemAccount, libraryOwner } from './library'
 import { sendPlainEmail } from './email/email'
 import { createHandlerRegistry } from './sync/registry'
 import { createHostHandlers } from './sync/hostHandlers'
+import { identityKeyFromEnv, verifyHandler } from './sync/verify'
 import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
 import http from 'http'
@@ -35,8 +36,8 @@ import { postContactMessage } from './email/contactMessage'
 import { getSuggest } from './suggest'
 import { getPeerAttachment, deleteAttachment, indexNow, prismaAccountStoreDeps, serverPeerIdFor, withUserLock } from './sync/accountStore'
 import { tokenManager } from './tokenManager'
-import { createSearchHandlers } from './search/routes'
-import { vertexEmbed } from './search/rowIndex'
+import { createMarketHandlers } from './search/routes'
+import { searchRows, vertexEmbed } from './search/rowIndex'
 import { peerInviteHandlers } from './sync/peerInvites'
 import { deviceLoginHandlers } from './auth/deviceLogin'
 import { channelBus, createChannelsRouter, startChannels, stopChannels } from './channels'
@@ -48,6 +49,7 @@ import { getUserId } from './apiTokenAuth'
 import { afterSaveHooks } from './sync/accountStore'
 import { createNodeLocator, createNodeProvider } from './sync/provideNode'
 import { createVoiceNoteHandler, prismaVoiceUsage, voiceDepsFromEnv } from './voice/voiceNotes'
+import { createAccountOrganizer, organizeHandler } from './voice/organize'
 import {
   getMCPServers,
   getMCPServer,
@@ -203,12 +205,19 @@ const corsOptions = {
   credentials: true // This might be necessary depending on your auth method
 }
 
-// Enable CORS with the above options
-app.use(cors(corsOptions))
+// Enable CORS with the above options. Published nodes are the one exception: embeds on any site read them and let
+// anonymous visitors answer (`/public/node/read|visit|input`, guest receipts in the body, never cookies or account
+// credentials), so those routes alone allow every origin, without credentials.
+const PUBLIC_READ_PATH = '/public/node/read'
+const PUBLIC_NODE_PATHS = [PUBLIC_READ_PATH, '/public/node/visit', '/public/node/input']
+const accountCors = cors(corsOptions)
+const publicNodeCors = cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type'], credentials: false })
+const corsFor = (req: express.Request, res: express.Response, next: express.NextFunction) => (PUBLIC_NODE_PATHS.includes(req.path) ? publicNodeCors : accountCors)(req, res, next)
+app.use(corsFor)
 app.set('trust proxy', '10.244.0.96');
 app.set('trust proxy', '10.124.0.3');
 // Handle preflight requests for all routes
-app.options('*', cors(corsOptions)) // Respond to preflight requests
+app.options('*', corsFor) // Respond to preflight requests
 
 stripeRoute.post('/', postSubscriptionWebhook)
 
@@ -303,6 +312,7 @@ const sharingHandlers = createSharingHandlers(prismaAccountStoreDeps, process.en
 const guestThrottle = slowDown({ windowMs: 60_000, delayAfter: 30, delayMs: 500 })
 app.post('/public/node/visit', guestThrottle, sharingHandlers.visit)
 app.post('/public/node/input', guestThrottle, sharingHandlers.submit)
+app.get(PUBLIC_READ_PATH, slowDown({ windowMs: 60_000, delayAfter: 60, delayMs: 500 }), sharingHandlers.read)
 
 // Device connection through an invite token (no session yet): claim, then poll for approval.
 app.post('/peer/connect', slowDown({
@@ -333,19 +343,20 @@ dataRoutes.delete('/peer-sync/attachment', deleteAttachment)
 dataRoutes.get('/device-login/:code', deviceLoginHandlers.describe)
 dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
 dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
-// Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
-dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), prismaVoiceUsage(prisma)))
-// Semantic search over this account's rows (and market listings), market views and proposals (pgvector, Vertex embeddings)
-const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, notify: (userId, message) => {
+// Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (Gemini on Vertex, or OpenAI);
+// `?transcript=only` returns the transcript, which the client organizes into its node through an `organize`
+// requirement the fos `organize` handler fills (voice/organize.ts; the same budget)
+const voiceUsage = prismaVoiceUsage(prisma)
+dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), voiceUsage))
+// The market: listed nodes as bidders see them, and their proposals (search itself is the fos `search` effect)
+const marketHandlers = createMarketHandlers({ loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, notify: (userId, message) => {
   prismaAccountStoreDeps.notify?.(userId, message)
   // a proposal from another account also reaches the owner's linked phone
   const by = typeof message.byPeerId === 'string' ? message.byPeerId : ''
   if (message.type === 'sync_changed' && by.startsWith('user:')) void integrations.notifyUser(userId, `fos: new proposal from ${by.slice(5)}. Open the app to review it.`)
 } })
-dataRoutes.post('/search', searchHandlers.search)
-dataRoutes.post('/search/reindex', searchHandlers.reindex)
-dataRoutes.get('/market/node', searchHandlers.marketNode)
-dataRoutes.post('/market/proposals', searchHandlers.marketProposal)
+dataRoutes.get('/market/node', marketHandlers.marketNode)
+dataRoutes.post('/market/proposals', marketHandlers.marketProposal)
 dataRoutes.post('/sharing', sharingHandlers.configure)
 dataRoutes.post('/sharing/visit', sharingHandlers.visit)
 dataRoutes.post('/sharing/input', sharingHandlers.submit)
@@ -502,11 +513,28 @@ const mcpPeerDeps = prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (serve
 })
 // What this host can do, derived from the handlers below; every capability advertised to devices comes from here.
 // Effects are reached through `complete` events (sync/events.ts → sync/evaluation.ts), never through routes of their own.
+const searchEmbed = vertexEmbed()
+// `@name` is shorthand for a user object this server attests (sync/verify.ts): the `verify` handler fills verify
+// requirements with it; its public key is published in every account's Home, where devices check attestations
+const verify = verifyHandler({
+  async findUser(username) {
+    const user = await prisma.userModel.findUnique({ where: { user_name: username }, select: { id: true, user_name: true, user_profile: true } })
+    if (!user) return null
+    const profile = (user.user_profile ?? {}) as { displayName?: unknown; name?: unknown; publicKey?: unknown }
+    const text = (value: unknown) => typeof value === 'string' ? value : null
+    return { id: user.id, username: user.user_name, name: text(profile.displayName) ?? text(profile.name), publicKey: text(profile.publicKey) }
+  }
+}, identityKeyFromEnv())
 const registry = createHandlerRegistry(createHostHandlers({
+  verify,
+  // captures organized into a node: one provider instance per capture, metered under the voice budget
+  organize: organizeHandler(() => voiceDepsFromEnv(), voiceUsage),
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
   google: { connected: async id => !!await integrationDeps.connections.get(id, 'google'), createEvent: (userId, event) => integrations.createCalendarEvent(userId, event) },
   llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },
   market: { index: indexNow },
+  // pgvector over the account's rows, plus rows the market lists (search/rowIndex.ts)
+  search: { search: (user, query, market) => searchRows(prisma, { userId: user.id, query, market, limit: 10 }, searchEmbed) },
   points: {
     // fos points are the account's token balance (tokenManager); a payout is one ledger transaction, debit on the
     // owner and credit on the payee, recorded once per requirement (the handler's key)
@@ -568,7 +596,9 @@ channelBus.onInbound(createTextCommandInbound({
     return username ? { username, peerId: serverPeerIdFor(username) } : null
   },
   handle: (principal, event) => eventService.handle(principal, event),
-  reply: (message, text) => channelBus.send({ destination: message.source, to: message.replyTo, text }).then(() => undefined)
+  reply: (message, text) => channelBus.send({ destination: message.source, to: message.replyTo, text }).then(() => undefined),
+  // texted notes are organized into Home's subtree by the same `organize` handler, through an evaluation
+  organize: createAccountOrganizer(prismaAccountStoreDeps, evaluationService.runNode)
 }))
 
 // MCP peers: a server attached to a node runs its tools for "-tool" requirements under it

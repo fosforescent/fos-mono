@@ -5,9 +5,13 @@
  *
  *   "done <words>"         search, then submit the first matching open task as completed
  *   "list" | "ls" | "todo" read Home and reply with its open tasks
- *   anything else          submit a new row in Home ("[ ] text" makes a task, otherwise a plain row)
+ *   "[ ] text"             submit a new task in Home
+ *   anything else          organized for Home's subtree when the host can organize: an `organize` requirement in
+ *                          Home run through the same `organize` handler devices use (voice/organize.ts), whose
+ *                          result is one pending submission by `fos` on Home (the rows plus the message as a note),
+ *                          accepted or rejected on a device; otherwise (or when organizing fails) a plain row
  */
-import { HOME_ID, type FosEvent, type Principal } from '@fosforescent/shared/sync/index'
+import { HOME_ID, type FosEvent, type OrganizedResult, type Principal } from '@fosforescent/shared/sync/index'
 import type { InboundMessage } from './types'
 
 export type TextCommandDeps = {
@@ -16,9 +20,15 @@ export type TextCommandDeps = {
   /** Dispatch one event for the owner of that account (backend/sync/events.ts `handle`). */
   handle(principal: Principal & { username: string }, event: FosEvent): Promise<unknown>
   reply(message: InboundMessage, text: string): Promise<void>
+  /**
+   * Organize the text into the account's Home through the host's `organize` handler (voice/organize.ts
+   * `createAccountOrganizer`); null when it was not organized (over budget, the model failed).
+   */
+  organize?(username: string, text: string, label: string): Promise<OrganizedResult | null>
+  now?(): number
 }
 
-type Row = { id: string; title: string; done: boolean; kind: string; path: string[] }
+type Row = { id: string; title: string; done: boolean; type: string; checkable: boolean; path: string[]; childCount: number; isLink?: boolean; refOwner?: string; refPeer?: string }
 
 export function createTextCommandInbound(deps: TextCommandDeps) {
   return async (message: InboundMessage): Promise<void> => {
@@ -42,11 +52,23 @@ export function createTextCommandInbound(deps: TextCommandDeps) {
       return
     }
     if (/^(list|ls|todo|tasks)$/i.test(text)) {
-      const open = (await home()).children.filter(row => row.kind === 'task' && !row.done).slice(0, 8)
+      const open = (await home()).children.filter(row => row.checkable && !row.done).slice(0, 8)
       await reply(open.length ? open.map((t, i) => `${i + 1}. ${t.title}`).join('\n') : 'fos: nothing open')
       return
     }
     const task = text.match(/^(?:\[\s?\]|todo|task)\s*:?\s+(.+)$/is)
+    if (!task && deps.organize && text) {
+      try {
+        const done = await deps.organize(account.username, text, `Text message (${message.source})`)
+        if (done) {
+          const { rows: added, under } = done
+          await reply(`fos: organized for Home, waiting for you to accept it there: ${added} row${added === 1 ? '' : 's'}${under.length ? ` (under ${under.slice(0, 3).map(t => `“${t}”`).join(', ')}${under.length > 3 ? ', …' : ''})` : ''}, and the message kept as a note`)
+          return
+        }
+      } catch (error) {
+        console.error('organizing a texted message failed:', error instanceof Error ? error.message : error)
+      }
+    }
     const title = (task ? (task[1] as string) : text).trim().slice(0, 500)
     await send({ kind: 'submit', path: [], expected: (await home()).revision, changes: [{ path: [], operation: task ? 'add_task' : 'add_plain', text: title }] })
     await reply(`fos: added “${title}”`)

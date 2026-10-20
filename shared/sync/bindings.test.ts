@@ -1,5 +1,6 @@
 import { userView } from './test-helpers'
 import { proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, capabilityTarget, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
+import { PLAIN_TYPE, NOTE_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
 
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
 
@@ -27,7 +28,7 @@ test('explicit bindings stay pinned and multiple providers are a choice', () => 
 
 test('named text arguments substitute through templates; duplicate assertions report both sources', () => {
   let r = createReplica(); const type = r.store.primitive.documentField.getId()
-  r = addRow(r, [], 'template', 'Letter', 1, { id: 'template' })
+  r = addRow(r, [], TEMPLATE_TYPE, 'Letter', 1, { id: 'template' })
   r = addRefAt(r, ['template'], 'arg', type, 2, literal(r, 'Ada'), 'mytext')
   r = addTask(r, [], 'Letter to Ada', 3, 'instance')
   r = instantiateTemplate(r, [], 'instance', 'template', 4)
@@ -51,22 +52,22 @@ test('generate subtasks derives readiness from the LLM dependency and creates ro
   expect(preview.blockers).toEqual([])
   const run = beginTaskWork(r, path, preview, 4)
   r = proposeTaskResult(run.replica, run.resultPath, '- [ ] Define inventory schema\n- [ ] Test overlapping bookings', 5)
-  expect(view(r, ['project'])!.tasks.filter(row => row.kind === 'task')).toHaveLength(0)
+  expect(view(r, ['project'])!.tasks.filter(row => row.checkable)).toHaveLength(0)
   r = decideTaskResult(r, path, run.resultPath, workAttempts(r, path)[0]!.proposals[0]!.cid, true, 6)
-  expect(view(r, ['project'])!.tasks.filter(row => row.kind === 'task').map(row => row.title)).toEqual(['Define inventory schema','Test overlapping bookings'])
+  expect(view(r, ['project'])!.tasks.filter(row => row.checkable).map(row => row.title)).toEqual(['Define inventory schema','Test overlapping bookings'])
 })
 
 test('legacy note variables and frontmatter use the shared resolver without changing precedence', () => {
-  let r = addRow(createReplica(), [], 'note', '---\nmytext: default\n---\nHello {{mytext}}', 1, { id: 'note' })
-  r = addRow(r, ['note'], 'plain', 'mytext: child', 2, { id: 'child' })
+  let r = addRow(createReplica(), [], NOTE_TYPE, '---\nmytext: default\n---\nHello {{mytext}}', 1, { id: 'note' })
+  r = addRow(r, ['note'], PLAIN_TYPE, 'mytext: child', 2, { id: 'child' })
   expect(resolveText(r, ['note'], 'Hello {{mytext}}').text).toBe('Hello child')
-  r = addRow(r, ['note'], 'plain', 'mytext: incompatible', 3, { id: 'other' })
+  r = addRow(r, ['note'], PLAIN_TYPE, 'mytext: incompatible', 3, { id: 'other' })
   expect(resolveText(r, ['note'], '{{mytext}}').bindings[0]!.status).toBe('conflict')
 })
 
 test('handler requirements participate in readiness without executing anything', () => {
-  let r = addRow(createReplica(), [], 'plain', 'handler', 1, { id: 'handler' })
-  r = addRow(r, ['handler'], 'requirement', 'Approve first', 2, { id: 'approval', requirement: { capability: 'confirmation' } })
+  let r = addRow(createReplica(), [], PLAIN_TYPE, 'handler', 1, { id: 'handler' })
+  r = addRow(r, ['handler'], ALLOCATION_TYPE, 'Approve first', 2, { id: 'approval', requirement: { capability: 'confirmation' } })
   const handler = resolveScope(r.store, headCid(r), ['handler'])!
   expect(resolveBinding(r.store, r.store.primitive.llmCapability.getId(), handler).status).toBe('missing')
 })
@@ -113,7 +114,7 @@ test('editing memberships preserves typed handlers in their original direction',
 
 
 test('single-brace parameters create stable mutable-ref children through all text edit paths', () => {
-  let r = addRow(createReplica('params'), [], 'template', 'Letter {customer} {customer} {{legacy}} \\{literal}', 1, { id: 'letter' })
+  let r = addRow(createReplica('params'), [], TEMPLATE_TYPE, 'Letter {customer} {customer} {{legacy}} \\{literal}', 1, { id: 'letter' })
   const args = () => argumentRefs(r.store, resolveScope(r.store, headCid(r), ['letter'])!)
   expect(args().map(a => a.name)).toEqual(['customer'])
   const original = args()[0]!
@@ -126,7 +127,7 @@ test('single-brace parameters create stable mutable-ref children through all tex
   const proposed = proposeRefAt(r, path, literal(r, 'Ada'), r.meta.peerId, 3)
   r = applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, 3)
   expect(resolveText(r, ['letter'], 'Hello {customer}').text).toBe('Hello Ada')
-  r = setRowContentAt(r, [], 'letter', 'template', 'Only {recipient}', {}, 4)
+  r = setRowContentAt(r, [], 'letter', TEMPLATE_TYPE, 'Only {recipient}', {}, 4)
   expect(args().map(a => a.name)).toEqual(['customer', 'recipient'])
   expect(resolveText(r, ['letter'], 'Hello {customer}').text).toBe('Hello Ada')
   const bound = addRefAt(createReplica(), [], 'named', r.store.primitive.documentField.getId(), 4, null, 'name')

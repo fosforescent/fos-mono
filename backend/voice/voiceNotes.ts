@@ -4,6 +4,8 @@
  *
  *   POST /user/data/voice-notes   body: raw audio (Content-Type audio/webm, audio/mp4, …), ≤ 25 MB
  *   → { transcript, title, summary, clusters: [{ title, sentiment, summary, points }] }
+ *   POST /user/data/voice-notes?transcript=only   the same body → { transcript } (no summaries; the client organizes
+ *   the transcript into the node it was recorded at through an `organize` requirement, see organize.ts)
  *
  * Long transcripts are summarized hierarchically: fixed-size chunks are each
  * summarized, then the chunk summaries are summarized together, so the final
@@ -37,6 +39,8 @@ export type VoiceDeps = {
 export type VoiceUsage = {
   /** Who is calling (from the JWT); null → 401. */
   userOf(req: Request): Promise<{ id: number; paying: boolean } | null>
+  /** The same for an account known by name (texted messages, where there is no request). */
+  userNamed?(username: string): Promise<{ id: number; paying: boolean } | null>
   /** USD spent so far by this user on voice notes. */
   spent(userId: number): Promise<number>
   record(userId: number, entry: { usd: number; tokens: number; seconds: number; bytes: number; clusters: number }): Promise<void>
@@ -102,8 +106,40 @@ export async function voiceNoteFromAudio(deps: VoiceDeps, audio: Buffer, mimeTyp
   return { transcript, ...organized, summary: organized.summary || summary }
 }
 
+/** Why this user may not spend on the model now (the free budget is used up), or null when they may. */
+export async function budgetRefusal(usage: VoiceUsage, user: { id: number; paying: boolean }): Promise<{ error: string; spentUsd: number; budgetUsd: number } | null> {
+  if (user.paying) return null
+  const spent = await usage.spent(user.id)
+  return spent >= usage.budgetUsd ? { error: `Media notes have used up the free budget ($${usage.budgetUsd.toFixed(2)}). Subscribe to keep organizing media.`, spentUsd: spent, budgetUsd: usage.budgetUsd } : null
+}
+
+/**
+ * The caller under the budget: the user to meter, null without accounting, or false when the response was sent
+ * (401, 402, 500).
+ */
+export async function admitCaller(usage: VoiceUsage | undefined, req: Request, res: Response): Promise<{ id: number; paying: boolean } | null | false> {
+  if (!usage) return null
+  try {
+    const user = await usage.userOf(req)
+    if (!user) { res.status(401).json({ error: 'Unauthorized' }); return false }
+    const refusal = await budgetRefusal(usage, user)
+    if (refusal) { res.status(402).json(refusal); return false }
+    return user
+  } catch (error) {
+    console.error('voice note budget check failed:', error instanceof Error ? error.message : error)
+    res.status(500).json({ error: 'could not check the voice-note budget' })
+    return false
+  }
+}
+
+/** The media type the provider is told: parameters dropped, the aliases browsers and phones use folded (iOS records audio/mp4). */
+export function mediaTypeOf(header: string | undefined): string {
+  const type = (header ?? 'audio/webm').split(';')[0]!.trim().toLowerCase() || 'audio/webm'
+  return ({ 'audio/x-m4a': 'audio/mp4', 'audio/m4a': 'audio/mp4', 'audio/x-mp4': 'audio/mp4', 'audio/aacp': 'audio/aac', 'audio/x-aac': 'audio/aac', 'audio/x-wav': 'audio/wav', 'audio/wave': 'audio/wav', 'audio/mp3': 'audio/mpeg', 'video/quicktime': 'video/mp4' } as Record<string, string>)[type] ?? type
+}
+
 /** Accounting must never take the request (or the process) down: log and carry on. */
-async function recordSafely(usage: VoiceUsage, userId: number, entry: Parameters<VoiceUsage['record']>[1]): Promise<void> {
+export async function recordSafely(usage: VoiceUsage, userId: number, entry: Parameters<VoiceUsage['record']>[1]): Promise<void> {
   try {
     await usage.record(userId, entry)
   } catch (error) {
@@ -118,28 +154,21 @@ export function createVoiceNoteHandler(deps: VoiceDeps, usage?: VoiceUsage) {
     // express.raw gives a Buffer; accept any byte-array-like body (test environments may hand over another realm's Buffer)
     const audio = raw && typeof raw === 'object' && typeof raw.length === 'number' && raw.length > 0 ? Buffer.from(raw as unknown as Uint8Array) : null
     if (!audio) return res.status(400).json({ error: 'send media as the raw request body with its content type' })
-    const mimeType = (req.header('content-type') ?? 'audio/webm').split(';')[0] as string
+    const mimeType = mediaTypeOf(req.header('content-type'))
     if (!/^(audio\/|image\/(jpeg|png|webp)$|video\/(mp4|webm)$)/.test(mimeType)) return res.status(415).json({ error: 'Use audio, JPEG, PNG, WebP, MP4 or WebM.' })
     if (audio.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'Media input is limited to 25 MB.' })
-    let user: { id: number; paying: boolean } | null = null
-    if (usage) {
-      try {
-        user = await usage.userOf(req)
-        if (!user) return res.status(401).json({ error: 'Unauthorized' })
-        if (!user.paying) {
-          const spent = await usage.spent(user.id)
-          if (spent >= usage.budgetUsd) {
-            return res.status(402).json({ error: `Media notes have used up the free budget ($${usage.budgetUsd.toFixed(2)}). Subscribe to keep organizing media.`, spentUsd: spent, budgetUsd: usage.budgetUsd })
-          }
-        }
-      } catch (error) {
-        console.error('voice note budget check failed:', error instanceof Error ? error.message : error)
-        return res.status(500).json({ error: 'could not check the voice-note budget' })
-      }
-    }
+    const user = await admitCaller(usage, req, res)
+    if (user === false) return res
     const started = Date.now()
     deps.drain?.()
     try {
+      if ((req.query as Record<string, unknown> | undefined)?.transcript === 'only') {
+        const transcript = (await deps.transcribe(audio, mimeType)).trim()
+        if (!transcript) throw new Error('nothing was transcribed')
+        const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
+        if (usage && user) await recordSafely(usage, user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: audio.length, clusters: 0 })
+        return res.json({ transcript, cost: { usd: cost.usd, tokens: cost.tokens } })
+      }
       const note = await voiceNoteFromAudio(deps, audio, mimeType)
       const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
       if (usage && user) await recordSafely(usage, user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: audio.length, clusters: note.clusters.length })
@@ -247,7 +276,7 @@ export function openAiVoiceDeps(): VoiceDeps {
         return result.choices?.[0]?.message?.content ?? ''
       }
       const { toFile } = await import('openai')
-      const ext = mimeType.includes('mp4') || mimeType.includes('m4a') ? 'm4a' : mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3' : mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm'
+      const ext = mimeType.includes('mp4') || mimeType.includes('m4a') || mimeType.includes('aac') ? 'm4a' : mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3' : mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : 'webm'
       const file = await toFile(audio, `voice.${ext}`, { type: mimeType })
       const result = await openai.audio.transcriptions.create({ file, model: process.env.VOICE_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe' })
       usd += (audio.length / 360_000) * 0.003 // ≈ $0.003 per minute of opus at 48 kbps
@@ -280,15 +309,18 @@ export function openAiVoiceDeps(): VoiceDeps {
  * (TokenTransactionModel).
  */
 export function prismaVoiceUsage(prisma: { userModel: any; voiceUsageModel: any }, budgetUsd = Number(process.env.VOICE_FREE_BUDGET_USD ?? 1)): VoiceUsage {
+  const userNamed = async (username: string) => {
+    const user = await prisma.userModel.findUnique({ where: { user_name: username }, select: { id: true, subscription_status: true, role: true } })
+    if (!user) return null
+    const paying = ['active', 'trialing', 'past_due'].includes(String(user.subscription_status ?? '')) || ['admin', 'superadmin'].includes(String(user.role ?? ''))
+    return { id: user.id as number, paying }
+  }
   return {
     budgetUsd,
+    userNamed,
     async userOf(req) {
       const username = (req as Request & { claims?: { username?: string } }).claims?.username
-      if (!username) return null
-      const user = await prisma.userModel.findUnique({ where: { user_name: username }, select: { id: true, subscription_status: true, role: true } })
-      if (!user) return null
-      const paying = ['active', 'trialing', 'past_due'].includes(String(user.subscription_status ?? '')) || ['admin', 'superadmin'].includes(String(user.role ?? ''))
-      return { id: user.id, paying }
+      return username ? userNamed(username) : null
     },
     async spent(userId) {
       const total = await prisma.voiceUsageModel.aggregate({ where: { userId }, _sum: { usd: true } })

@@ -65,6 +65,9 @@ jobs:
       - name: Initialize iOS project
         run: cd desktop && npx tauri ios init
 
+      - name: Declare microphone permission
+        run: bash .github/scripts/patch-mobile-permissions.sh ios
+
       - name: Generate icons
         run: cd desktop && npx tauri icon src-tauri/app-icon.json
 

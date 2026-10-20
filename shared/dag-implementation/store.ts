@@ -10,8 +10,7 @@ import {
 
 import { AppStateLoaded, FosContextData, FosNodeContent, FosNodeId, FosPath, FosPathElem, FosRoute, NodeAddress, TrellisSerializedData } from '../types'
 
-import { hashContent } from './cid'
-import { migrateContext, needsMigration, type MigrationReport } from './migrations'
+import { assertCurrentCid, hashContent } from './cid'
 export { hashContent }
 
 import { Delta, diff, patch } from '@n1ru4l/json-patch-plus'
@@ -57,9 +56,6 @@ export class FosStore {
   primitive: PrimitiveAliases
   private hashCache = new WeakMap<FosNodeContent, string>();
 
-  /** Set when the loaded context was in an older cid format and was migrated on load. */
-  migration: MigrationReport | null = null
-
   updateCtxCallback: ((data: AppStateLoaded["data"]) => void) | null;
   commitCallback: ((data: AppStateLoaded["data"]) => void) | null;
 
@@ -78,23 +74,11 @@ export class FosStore {
     this.updateCtxCallback = mutationCallback || null
     this.commitCallback = commitCallback || null
 
-    if (fosCtxData && needsMigration(fosCtxData.fosData.nodes)) {
-      // Older cid format on disk: rehash bottom-up into the current format (see migrations.ts).
-      const report = migrateContext(fosCtxData.fosData, undefined, { table: this.table, primitive: this.primitive as unknown as Record<string, { getId(): string }> })
-      this.migration = report
-      const remapPath = (path: FosPath): FosPath => path.map(([a, b]) => [report.mapping[a] ?? a, report.mapping[b] ?? b])
-      fosCtxData = {
-        fosData: report.context,
-        trellisData: {
-          ...fosCtxData.trellisData,
-          focusRoute: remapPath(fosCtxData.trellisData.focusRoute ?? []),
-          collapsedList: (fosCtxData.trellisData.collapsedList ?? []).map(remapPath)
-        }
-      }
-      console.info(`[FosStore] migrated ${Object.keys(report.mapping).length} nodes from cid format v${report.fromVersions.join('/v')} to v${report.target}`)
-    }
-
     if (fosCtxData) {
+
+      // data in another version is not migrated: it is refused, and the caller resets it
+      assertCurrentCid(fosCtxData.fosData.rootNodeId)
+      Object.keys(fosCtxData.fosData.nodes).forEach((cid) => assertCurrentCid(cid))
 
       const rootNodeContent = fosCtxData.fosData.nodes[fosCtxData.fosData.rootNodeId]
       if (!rootNodeContent) {
@@ -122,11 +106,6 @@ export class FosStore {
 
         const cid = this.hash(nodeContent)
         this.table.set(cid, nodeContent)
-        if (key === "b3f17d6c4a0b8b5cee8a32d50d3af24c9bd665da316d4ec7824d03cc08e7d91c") {
-          const hasKey = allValidKeys.has(key)
-          const nodeContent = fosCtxData.fosData.nodes[key]!
-          console.log('key', key, hasKey, nodeContent, cid)
-        }
       })
 
 
@@ -142,12 +121,6 @@ export class FosStore {
     }
 
 
-  }
-
-
-  /** The current address of a cid from a context loaded in an older format (identity otherwise). */
-  remapCid(cid: string): string {
-    return this.migration?.mapping[cid] ?? cid
   }
 
 

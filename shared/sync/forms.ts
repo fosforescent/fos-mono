@@ -71,6 +71,31 @@ export function formValueAt(store: FosStore, node: FosNodeContent, path: string[
   return value
 }
 
+/**
+ * A constructed node's fields as plain values, read through the definition's parameter rows (nested products
+ * recurse; repeated fields become arrays). Missing or unloaded fields are left out.
+ */
+export function formRecord(store: FosStore, template: string, node: FosNodeContent, depth = 0): FormInput | undefined {
+  const form = content(store, template).data.form
+  if (!form || depth > 64) return undefined
+  if (form.primitive) return node.data.scalar?.value
+  const fields = formFields(store, template)
+  const valueOf = (edge: FosPathElem) => isPeerReference(content(store, identityCid(store, edge))) ? null : valueContent(store, identityCid(store, edge))
+  if (form.repeat) {
+    const field = fields[0]
+    if (!field) return []
+    return node.children.filter(([type]) => type === field.type).flatMap(edge => { const v = valueOf(edge); const r = v ? formRecord(store, field.type, v, depth + 1) : undefined; return r === undefined ? [] : [r] })
+  }
+  const out: { [key: string]: FormInput } = {}
+  for (const field of fields) {
+    const edge = node.children.find(e => e[0] === field.type && valueContent(store, identityCid(store, e)).data.name?.content === field.name)
+    const value = edge ? valueOf(edge) : null
+    const record = value ? formRecord(store, field.type, value, depth + 1) : undefined
+    if (record !== undefined) out[field.name] = record
+  }
+  return out
+}
+
 export function formTitle(store: FosStore, node: FosNodeContent, definition?: FosNodeContent): string {
   const title = definition?.data.form?.title ?? node.data.presentation?.title
   const scalar = title ? formValueAt(store, node, title)?.data.scalar : node.data.scalar

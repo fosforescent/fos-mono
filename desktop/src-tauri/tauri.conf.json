@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Fosforescent",
-  "version": "0.1.4",
+  "version": "0.0.1",
   "identifier": "com.fosforescent.app",
   "build": {
     "frontendDist": "../../web/dist",
@@ -39,10 +39,12 @@
     ],
     "iOS": {
       "developmentTeam": "2H3235CJSL",
-      "minimumSystemVersion": "15.0"
+      "minimumSystemVersion": "15.0",
+      "bundleVersion": "1005"
     },
     "android": {
-      "minSdkVersion": 24
+      "minSdkVersion": 24,
+      "versionCode": 1005
     },
     "resources": {
       "../agent-runtime/": "agent-runtime/",

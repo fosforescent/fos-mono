@@ -8,13 +8,15 @@ import { createEventService } from '../sync/events'
 import { createEvaluationService } from '../sync/evaluation'
 import { createHandlerRegistry } from '../sync/registry'
 import { withUserLock } from '../sync/accountStore'
+import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
+import { NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
 
 function setup(servers: McpServerInfo[]) {
   let r: Replica = createReplica('server')
   r = addTask(r, [], 'research', 1, 'proj')
   r = addTask(r, ['proj'], 'weather for the trip', 2, 'trip')
-  r = addRow(r, ['proj', 'trip'], 'requirement', 'Paris next week', 3, { id: 'rq', requirement: { capability: 'tool', tool: 'weather' } })
-  r = addRow(r, ['proj', 'trip'], 'requirement', 'anything', 4, { id: 'rq2', requirement: { capability: 'tool', tool: 'weather' } })
+  r = addRow(r, ['proj', 'trip'], ALLOCATION_TYPE, 'Paris next week', 3, { id: 'rq', requirement: { capability: 'tool', tool: 'weather' } })
+  r = addRow(r, ['proj', 'trip'], ALLOCATION_TYPE, 'anything', 4, { id: 'rq2', requirement: { capability: 'tool', tool: 'weather' } })
   const calls: Array<[number, string, string]> = []
   const saved: string[] = []
   const deps: McpPeerDeps = {
@@ -72,7 +74,7 @@ test('completing a tool requirement calls the attached server and records the an
   expect(calls).toEqual([[5, 'weather', 'Paris next week']])
   const rq = view(replica(), ['proj', 'trip'])!.tasks.find((t) => t.id === 'rq')!
   expect(rq.requirement?.satisfied).toBe(true)
-  expect(view(replica(), ['proj', 'trip', 'rq'])!.tasks.map((t) => [t.kind, t.title])).toEqual([['plain', 'weather(Paris next week) = sunny'], ['supply', 'run by mcp:5']])
+  expect(view(replica(), ['proj', 'trip', 'rq'])!.tasks.map((t) => [t.type, !!t.supply, t.title])).toEqual([[NOTE_TYPE, false, 'weather(Paris next week) = sunny'], [ALLOCATION_TYPE, true, 'run by mcp:5']])
   expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toEqual(['tool weather']) // rq2 still open
   expect(saved.length).toBeGreaterThan(0)
   // the listener runs what is still open (rq2 explicitly requests weather too)
@@ -114,7 +116,7 @@ test('an unavailable bound provider does not fall back and unsatisfied dependenc
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
   let r = replica()
-  r = addRow(r, ['proj', 'trip', 'rq'], 'requirement', 'Confirm', 20, { id: 'confirm', requirement: { capability: 'confirmation' } })
+  r = addRow(r, ['proj', 'trip', 'rq'], ALLOCATION_TYPE, 'Confirm', 20, { id: 'confirm', requirement: { capability: 'confirmation' } })
   expect((await run(['proj', 'trip'], 'rq')).json.error).toMatch(/unresolved dependencies|Unfulfilled confirmation/)
   expect(calls).toHaveLength(0)
   // Use the second request to test a bound provider disappearing.
@@ -169,7 +171,7 @@ test('multiple matching tools require a choice instead of silently choosing the 
   const { deps, replica, calls, run } = setup([weather])
   const h = createMcpPeerHandlers(deps)
   await call(h.attach, { scope: ['proj'], serverId: 5 })
-  addRow(replica(), ['proj', 'trip'], 'requirement', 'choose a tool', 20, { id: 'ambiguous', requirement: { capability: 'tool' } })
+  addRow(replica(), ['proj', 'trip'], ALLOCATION_TYPE, 'choose a tool', 20, { id: 'ambiguous', requirement: { capability: 'tool' } })
   const result = await run(['proj', 'trip'], 'ambiguous')
   expect(result.json.error).toMatch(/Choose a binding/)
   expect(calls).toEqual([])

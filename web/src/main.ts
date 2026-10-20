@@ -49,7 +49,7 @@ const app = new App({
   ...(deviceRoot ? { deviceRoot } : {}),
   ...(project ? { localStores: { read: (peerId: string) => readLocalStore(project, peerId), write: (peerId: string, serialized: unknown) => writeLocalStore(project, peerId, serialized) } } : {}),
   // [server] to/from in fos.config.toml fixes what this directory sends to and takes from the account server
-  project: project ? { dir: project.dir, branch: () => (storage as { branch?: () => string }).branch?.() ?? null, deviceName: project.config.attach?.name ?? project.dir.split(/[\\/]/).filter(Boolean).pop(), policy: serverPolicyOf(project.config) } : undefined
+  project: project ? { dir: project.dir, branch: () => (storage as { branch?: () => string }).branch?.() ?? null, deviceName: project.config.attach?.name ?? project.dir.split(/[\\/]/).filter(Boolean).pop(), policy: serverPolicyOf(project.config), home: project.home } : undefined
 })
 
 if (!project) app.enableVirtualPeers(virtual)

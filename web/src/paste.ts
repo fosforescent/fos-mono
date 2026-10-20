@@ -1,5 +1,19 @@
 import { parseDocument } from 'yaml'
 import { parseRowInput, type ParsedInput } from './rows'
+import { NOTE_TYPE } from '../../shared/sync/library-types'
+/** Characters from which unstructured text is offered for organizing instead of being split into one row per line. */
+export const LONG_PASTE = 1000
+/**
+ * A long block of prose: no Markdown headings, lists or fences, not YAML. Such a paste is better organized into the
+ * node by the model (App.organizeText) than split per line; structured pastes keep their structure.
+ */
+export function isLongProse(text: string): boolean {
+  const raw = text.replace(/\r\n?/g, '\n').trim()
+  if (raw.length < LONG_PASTE) return false
+  if (/^\s*(?:[-*+] |\d+[.)] |#{1,6} |```|\[[ xX]?\] )/m.test(raw)) return false
+  return !/^[\w"'][^\n]{0,80}:\s*\n/.test(raw) // a leading `key:` line block reads as YAML
+}
+
 /** Clipboard text is data: bounded traversal, no YAML aliases or executable constructors. */
 export function parsePastedRows(text: string): ParsedInput[] {
   if (text.length > 1_000_000) throw new Error('Paste at most 1 MB at a time.')
@@ -36,7 +50,7 @@ export function parsePastedRows(text: string): ParsedInput[] {
     const title = line.match(/^(#{1,6})\s+(.+)$/)
     if (title) { heading = title[1]!.length; append(row(title[2]!), heading * 100); continue }
     const indent = line.match(/^\s*/)?.[0].replace(/\t/g, '  ').length ?? 0
-    if (stack.at(-1)?.row.kind === 'note' && !/^\s*(?:[-*+] |\d+[.)] )/.test(line)) { stack.at(-1)!.row.text += '\n' + line.trimStart(); continue }
+    if (stack.at(-1)?.row.type === NOTE_TYPE && !/^\s*(?:[-*+] |\d+[.)] )/.test(line)) { stack.at(-1)!.row.text += '\n' + line.trimStart(); continue }
     const body = line.trim().replace(/^(?:[-*+] |\d+[.)] )/, '')
     append(row(body), heading * 100 + indent + 1)
   }

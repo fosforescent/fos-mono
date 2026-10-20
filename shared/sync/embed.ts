@@ -9,7 +9,9 @@ import {
   addRow,
   addTask,
   copyNode,
-  setRowKind,
+  setRowType,
+  COMMENT_TYPE,
+  NOTE_TYPE,
   applyProposalAt,
   shareHome,
   ensureHomeContext,
@@ -32,16 +34,16 @@ import {
   view,
   type MovePosition,
   type Replica,
-  type RowKind,
   type Scope
 } from './index'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
-import { ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
+import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
 import { CLIENT_CAPABILITIES, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
 import { writeGraphNode } from './replica'
 import type { FosNodeContent, FosNodesData } from '../types'
-import { exchangeNode, nodeTreeSync } from './node-sync'
+import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
+import { addRelayAck, relayInbox, relayQueues } from './relay'
 import type { ProvidedNode } from './node-provider'
 import { handleMcp } from './mcp-adapter'
 
@@ -72,7 +74,7 @@ export const api = {
    */
   open(handle: string, serialized: string | null, peerId: string, home = true): void {
     let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
-    loaded = ensureDeviceLibrary(loaded, { address: null, version: 0, rows: [] }, Date.now())
+    loaded = ensureDeviceLibrary(loaded, { address: null, version: LIBRARY_VERSION, rows: [] }, Date.now())
     if (home) loaded = ensureHomeContext(loaded, Date.now())
     set(handle, { store: loaded.store, meta: { ...loaded.meta, peerId } })
     if (home) homes.add(handle); else homes.delete(handle)
@@ -122,17 +124,17 @@ export const api = {
     set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []) } }))
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },
-  /** Add a row of `kind` ('task' | 'plain' | 'note' | 'comment' | 'ref') under `at`; returns its view. */
-  addRow(handle: string, atJson: string, kind: RowKind, text: string, now: number, optionsJson: string | null): string {
+  /** Add a row of the library row type `type` (`lib:type:task`, `lib:type:plain`, `lib:type:note`, …) under `at`; returns its view. */
+  addRow(handle: string, atJson: string, type: string, text: string, now: number, optionsJson: string | null): string {
     const r = get(handle)
     const at = parse<Scope>(atJson, [])
     const options = parse<{ done?: boolean; refId?: string; id?: string }>(optionsJson, {})
     const id = options.id ?? crypto.randomUUID()
-    set(handle, addRow(r, at, kind, text, now, { ...options, id }))
+    set(handle, addRow(r, at, type, text, now, { ...options, id }))
     const added = view(get(handle), at)?.tasks.find((t) => t.id === id) ?? null
     return JSON.stringify(added)
   },
-  setRowKind(handle: string, atJson: string, id: string, kind: RowKind, now: number): void { set(handle, setRowKind(get(handle), parse<Scope>(atJson, []), id, kind, now)) },
+  setRowType(handle: string, atJson: string, id: string, type: string, now: number): void { set(handle, setRowType(get(handle), parse<Scope>(atJson, []), id, type, now)) },
   addRef(handle: string, atJson: string, targetId: string, now: number): void { set(handle, addRef(get(handle), parse<Scope>(atJson, []), targetId, now)) },
   copyNode(handle: string, fromJson: string, id: string, toJson: string, positionJson: string, now: number): void {
     set(handle, copyNode(get(handle), parse<Scope>(fromJson, []), id, parse<Scope>(toJson, []), parse<MovePosition>(positionJson, { into: '' }), now))
@@ -146,7 +148,7 @@ export const api = {
       if (!node) return
       for (const t of node.tasks) {
         if (!at.length && t.id === LIBRARY_ID) continue // the library the store ships (not its own rows)
-        lines.push(`${'  '.repeat(depth)}${t.kind === 'task' ? (t.done ? '[x]' : '[ ]') : t.kind === 'note' ? ' ≡ ' : t.kind === 'comment' ? ' " ' : t.kind === 'ref' ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.kind === 'ref' ? `ref ${t.refId?.slice(0, 8) ?? ''}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
+        lines.push(`${'  '.repeat(depth)}${t.checkable ? (t.done ? '[x]' : '[ ]') : t.type === NOTE_TYPE ? ' ≡ ' : t.type === COMMENT_TYPE ? ' " ' : t.refId !== undefined ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.refId !== undefined ? `ref ${t.refId.slice(0, 8)}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
       for (const c of node.choices) lines.push(`${'  '.repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`)
@@ -178,6 +180,13 @@ export const api = {
   setTaskDone(handle: string, atJson: string, id: string, done: boolean, now: number): void { set(handle, setTaskDone(get(handle), parse<Scope>(atJson, []), id, done, now)) },
   renameTask(handle: string, atJson: string, id: string, title: string, now: number): void { set(handle, renameTask(get(handle), parse<Scope>(atJson, []), id, title, now)) },
   deleteTask(handle: string, atJson: string, id: string, now: number): void { set(handle, deleteTask(get(handle), parse<Scope>(atJson, []), id, now)) },
+  /** What relays delivered to this store's peer: the unacknowledged messages in its queues (`relayQueues`), with the titles of their rows. */
+  relayInbox(handle: string): string {
+    const r = get(handle)
+    return JSON.stringify(relayQueues(r, r.meta.peerId).flatMap(queue => relayInbox(r, queue).map(m => ({ id: m.id, to: m.to, queue, rows: m.rows.map(row => row.title) }))))
+  },
+  /** Acknowledge a delivered message: an ack row in its queue, which the relay clears after the next sync. */
+  relayAck(handle: string, queueJson: string, messageId: string, now: number): void { set(handle, addRelayAck(get(handle), parse<Scope>(queueJson, []), messageId, now)) },
   moveNode(handle: string, fromJson: string, id: string, toJson: string, positionJson: string, now: number): void {
     set(handle, moveNode(get(handle), parse<Scope>(fromJson, []), id, parse<Scope>(toJson, []), JSON.parse(positionJson), now))
   },
@@ -203,7 +212,8 @@ export const api = {
     const remoteRoot = kind === 'peer' ? scope : [...r.meta.scope, ...localRoot]
     const peer = r.meta.serverPeerId ?? (kind === 'peer' ? null : `user:${username}`)
     const state = { run: undefined as unknown as ReturnType<typeof nodeTreeSync>, now: Date.now() }
-    state.run = nodeTreeSync(r, { peer, scope, remoteRoot, localRoot, branches: branch ? [{ scope: remoteRoot, name: branch }] : [], push }, () => state.now)
+    // a user's device also takes its server's own member entry above Home (its offers, its published key)
+    state.run = nodeTreeSync(r, { peer, scope, remoteRoot, localRoot, branches: branch ? [{ scope: remoteRoot, name: branch }] : [], push, above: kind === 'user' ? accountContextAbove(r) : [] }, () => state.now)
     runs.set(handle, state)
   },
   /**

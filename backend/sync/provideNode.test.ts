@@ -1,7 +1,7 @@
 import { asAccountStore } from './deviceRoot'
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { HOME_ID, LIBRARY_ID, addMemberAt, addTask, contextBindings, createReplica, ensureHomeContext, readNodeValue, removeMemberAt, rootTargetCid, setMemberCapabilitiesAt, shareHome, syncNodeTree, view, viewNode, writeNodeValue, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, LIBRARY_ID, MARKET_PEER, RELAY_QUEUE_ID, TEMPLATE_TYPE, accountContextAbove, addRow, isDirty, marketGrantsAt, publishTemplate, relayInbox, relayQueues, setMarketAt, addMemberAt, addRelayMessage, addTask, contextBindings, createReplica, ensureHomeContext, readNodeValue, removeMemberAt, rootTargetCid, setMemberCapabilitiesAt, shareHome, syncNodeTree, view, viewNode, writeNodeValue, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
 
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
@@ -9,6 +9,9 @@ jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 
 import { createNodeProvider } from './provideNode'
 import type { AccountStoreDeps } from './accountStore'
+import { createHandlerRegistry } from './registry'
+import { relayHandler } from './hostHandlers'
+import { collectRows } from '../search/rowIndex'
 
 type Sent = { status: number; body: unknown }
 type Claims = { username: string; kind?: string; peerId?: string; scope?: string[] }
@@ -56,7 +59,7 @@ const ask = async (handler: Handler, request: unknown, claims: Claims | null): P
 async function sync(handler: Handler, replica: Replica, claims: Claims = { username: 'alice' }, push = true): Promise<Replica> {
   const r = claims.kind === 'peer' ? replica : shareHome(replica)
   const localRoot = r.meta.localScope ?? [], scope = claims.kind === 'peer' ? r.meta.scope : []
-  const done = await syncNodeTree(r, { peer: r.meta.serverPeerId ?? (claims.kind === 'peer' ? null : `user:${claims.username}`), scope, remoteRoot: claims.kind === 'peer' ? scope : localRoot, localRoot, branches: [], push },
+  const done = await syncNodeTree(r, { peer: r.meta.serverPeerId ?? (claims.kind === 'peer' ? null : `user:${claims.username}`), scope, remoteRoot: claims.kind === 'peer' ? scope : localRoot, localRoot, branches: [], push, above: claims.kind === 'peer' ? [] : accountContextAbove(r) },
     async (request: NodeRequest) => {
       const sent = await ask(handler, request, claims)
       if (sent.status !== 200) throw new Error(`${sent.status} ${JSON.stringify(sent.body)}`)
@@ -178,4 +181,59 @@ test('Home sync persists public siblings, never content excluded from Fos', asyn
   expect(JSON.stringify([...stores.get(7)!.table.values()])).not.toContain('Never upload this')
   expect(homeTitles(stores.get(7)!)).toContain('Shared sibling')
   expect(view(client, [HOME_ID, 'private'])!.tasks[0]!.id).toBe('secret')
+})
+
+test('a message one device leaves for another waits in that peer\'s queue on the account', async () => {
+  const { deps, stores } = makeDeps()
+  deps.registry = createHandlerRegistry([relayHandler()])
+  // the account knows the desktop's agent peer on the hub
+  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0, deps.registry.hostOffers())
+  account = addTask(account, [HOME_ID], 'Hub', 1, 'hub')
+  account = addMemberAt(account, [HOME_ID, 'hub'], 'desktop-agent', 'Desktop agent', ['read', 'edit'], 2)
+  stores.set(7, account.store)
+  const handler = createNodeProvider(deps)
+  let phone = await sync(handler, ensureHomeContext(createReplica('phone'), 0))
+  phone = addRelayMessage(phone, [HOME_ID, 'hub'], 'desktop-agent', 3, 'job')
+  phone = addTask(phone, [HOME_ID, 'hub', 'job'], 'Review the pull request', 4, 'job:task')
+  phone = await sync(handler, phone)
+  const stored = createReplica('user:alice', stores.get(7)!)
+  expect(view(stored, [HOME_ID, 'hub', 'fos:peer:desktop-agent', RELAY_QUEUE_ID, 'job'])!.tasks.map(t => t.title)).toEqual(['Review the pull request'])
+  expect(view(stored, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
+  phone = await sync(handler, phone)
+  expect(view(phone, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
+  // the queue is ordinary rows of the hub's member entry: another device of the account receives them by syncing
+  const desktop = await sync(handler, ensureHomeContext(createReplica('desktop'), 0), { username: 'alice' }, false)
+  expect(relayQueues(desktop, 'desktop-agent')).toEqual([[HOME_ID, 'hub', 'fos:peer:desktop-agent', RELAY_QUEUE_ID]])
+  expect(relayInbox(desktop, [HOME_ID, 'hub', 'fos:peer:desktop-agent', RELAY_QUEUE_ID]).map(m => [m.id, m.rows.map(r => r.title)])).toEqual([['job', ['Review the pull request']]])
+})
+
+test('member entries travel through provide-node: listings and offers made on a device reach the account and its market index', async () => {
+  const { deps, stores } = makeDeps()
+  const handler = createNodeProvider(deps)
+  let phone = addTask(ensureHomeContext(createReplica('phone'), 0), [HOME_ID], 'Shop', 1, 'shop')
+  phone = addRow(phone, [HOME_ID, 'shop'], TEMPLATE_TYPE, 'Design a logo', 2, { id: 'design' })
+  phone = setMarketAt(phone, [HOME_ID, 'shop'], true, 3)
+  phone = publishTemplate(phone, [HOME_ID, 'shop'], [HOME_ID, 'shop', 'design'], 'Logo design', 4, true)
+  phone = await sync(handler, phone)
+  const stored = createReplica('user:alice', stores.get(7)!)
+  expect(marketGrantsAt(stored.store, rootTargetCid(stored.store), [HOME_ID, 'shop'])).toEqual(expect.arrayContaining(['read', 'edit']))
+  // the index the server keeps after a save sees the listing and the offer
+  const rows = collectRows(stores.get(7)!)
+  expect(rows.find(r => r.aliasId === 'shop')).toMatchObject({ market: true })
+  expect(rows.find(r => r.aliasId === 'fos:published:design')).toMatchObject({ type: 'capability', title: 'Logo design', market: true, path: [HOME_ID, 'shop'] })
+  expect(isDirty(phone)).toBe(false)
+})
+
+test('a listing the server makes reaches the device; another device then sees the member it pushed', async () => {
+  const { deps, stores } = makeDeps()
+  const handler = createNodeProvider(deps)
+  let phone = await sync(handler, addTask(ensureHomeContext(createReplica('phone'), 0), [HOME_ID], 'Logo job', 1, 'job'))
+  // the server's market effect lists the job (the market peer becomes a member there)
+  stores.set(7, setMarketAt(createReplica('user:alice', stores.get(7)!), [HOME_ID, 'job'], true, 2).store)
+  phone = await sync(handler, phone)
+  expect(view(phone, [HOME_ID])!.tasks.find(t => t.id === 'job')!.market).toBe(true)
+  // a grant made on the phone reaches the laptop through the account
+  phone = await sync(handler, addMemberAt(phone, [HOME_ID, 'job'], 'user:bob', 'Bob', ['read'], 3))
+  const laptop = await sync(handler, ensureHomeContext(createReplica('laptop'), 0), { username: 'alice' }, false)
+  expect(view(laptop, [HOME_ID, 'job'])!.members.map(m => m.peerId).sort()).toEqual([MARKET_PEER, 'user:bob'])
 })

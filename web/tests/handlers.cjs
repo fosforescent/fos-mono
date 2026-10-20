@@ -3,6 +3,8 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
+const TASK_TYPE = 'lib:type:task'
+const TEMPLATE_TYPE = 'lib:type:template'
 const dir = mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'fos-handlers-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
@@ -12,8 +14,8 @@ try {
   const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() }); app.scheduleSync = () => {}
   mountUi(document.getElementById('app'), app)
   const parent = [...app.state.view]
-  const template = app.applyConstructor(parent, { kind: 'template', text: 'Feature workflow', done: false })
-  app.applyConstructor(template, { kind: 'task', text: 'Acceptance check', done: false })
+  const template = app.applyConstructor(parent, { type: TEMPLATE_TYPE, text: 'Feature workflow', done: false })
+  app.applyConstructor(template, { type: TASK_TYPE, text: 'Acceptance check', done: false })
   app.goTo(template)
   const publish = [...document.querySelectorAll('button')].find(b => b.textContent === 'Publish capability here')
   assert(publish); publish.click()
@@ -22,7 +24,7 @@ try {
   assert(offer?.enabled && offer.active)
   const pick = [...document.querySelectorAll('.constructor-palette button')].find(b => b.getAttribute('aria-label') === 'Feature workflow')
   assert(pick, 'publication appears through the normal constructor catalogue'); pick.click()
-  const instance = view(app.state.replica, parent).tasks.find(t => t.kind === 'task' && t.title === 'Feature workflow')
+  const instance = view(app.state.replica, parent).tasks.find(t => t.checkable && t.title === 'Feature workflow')
   assert(instance)
   assert(view(app.state.replica, [...parent, instance.id]).tasks.some(t => t.title === 'Acceptance check'))
   app.toggleHandler(offer.peerId, offer.id, false)

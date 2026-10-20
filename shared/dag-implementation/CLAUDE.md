@@ -98,7 +98,7 @@ Add methods:
 - **Tree Traversal**: Parent/child navigation methods
 
 #### Content Addressing
-- **Versioned cids**: `cid.ts` writes `v<N>-<digest>` and verifies legacy bare-hex (v0) rows with their own algorithm; `migrations.ts` holds the ordered format migrations and `migrateContext` rehashes a graph bottom-up. `FosStore` migrates older contexts on load (`store.migration`, `store.remapCid`). See `docs/cid-versioning.md` for how to add a format version.
+- **Versioned cids**: `cid.ts` writes `v<FOS_DATA_VERSION>-<digest>` (`v0.0.1-…`; the constant lives in `shared/version.ts` and is also the standard library's version) and parses any `v<dotted version>-<hex>`, so another version is recognised and refused. There are no migrations: `FosStore` throws `UnsupportedDataVersionError` when loaded with a context in another version (`assertCurrentCid`), and the data has to be reset. See `docs/cid-versioning.md`.
 - **Deterministic Hashing**: Identical content produces identical CIDs
 - **Integrity Verification**: Content tampering detection
 - **Deduplication**: Automatic elimination of duplicate nodes

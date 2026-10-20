@@ -1,6 +1,6 @@
 {
   "name": "@fosforescent/desktop",
-  "version": "0.1.4",
+  "version": "0.0.1",
   "description": "Fosforescent Desktop and Mobile App",
   "type": "module",
   "scripts": {
@@ -16,7 +16,7 @@
     "android:dev": "tauri android dev",
     "android:build": "tauri android build",
     "build:core": "node ../scripts/build-core.cjs",
-    "prepare:agents": "npm ci --prefix agent-runtime --ignore-scripts --omit=optional"
+    "prepare:agents": "npm ci --prefix agent-runtime --ignore-scripts"
   },
   "keywords": [
     "fosforescent",

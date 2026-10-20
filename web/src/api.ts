@@ -1,4 +1,4 @@
-import type { Capability, NodeView } from '../../shared/sync/index'
+import { USER_SERVER_ATTESTATION, userAttestationPayload, type Capability, type MarketBid, type NodeView, type UserRecord } from '../../shared/sync/index'
 
 export type Session = {
   baseUrl: string
@@ -233,12 +233,17 @@ export async function transcribeVoice(session: Session, audio: Blob): Promise<Vo
   return (await response.json()) as VoiceNote
 }
 
-export type SearchHit = { aliasId: string; title: string; kind: string; score: number; owner: string | null; path?: string[] }
-
-/** Semantic search over this account's rows (and, with `market`, rows other accounts listed). */
-export function searchRows(session: Session, query: string, options: { market?: boolean; limit?: number } = {}): Promise<{ hits: SearchHit[] }> {
-  return authed(session, 'POST', '/user/data/search', { query, market: !!options.market, limit: options.limit ?? 10 })
+/** Send a recording; the account only transcribes it (the client then organizes the transcript through an `organize` requirement). */
+export async function transcribeAudio(session: Session, audio: Blob): Promise<{ transcript: string }> {
+  const response = await fetch(`${session.baseUrl}/user/data/voice-notes?transcript=only`, {
+    method: 'POST',
+    headers: { 'Content-Type': audio.type || 'audio/webm', Authorization: `Bearer ${session.jwt}` },
+    body: audio
+  })
+  if (!response.ok) throw await responseError(response)
+  return (await response.json()) as { transcript: string }
 }
+
 
 export type MarketNode = { capability?: boolean; owner: string; aliasId: string; view: NodeView; myProposal: { id: string; status: string } | null }
 
@@ -246,9 +251,9 @@ export function getMarketNode(session: Session, owner: string, aliasId: string):
   return authed(session, 'GET', `/user/data/market/node?owner=${encodeURIComponent(owner)}&id=${encodeURIComponent(aliasId)}`)
 }
 
-/** Submit (or replace) this account's proposal on a listed node: rows to add under it (comments, allocation references, supplies). */
-export function submitMarketProposal(session: Session, owner: string, aliasId: string, rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }>): Promise<{ proposalId: string }> {
-  return authed(session, 'POST', '/user/data/market/proposals', { owner, aliasId, rows })
+/** Submit (or replace) this account's proposal on a node of another account: the rows of a bid it built (shared/sync/market.ts). */
+export function submitMarketProposal(session: Session, owner: string, aliasId: string, bid: MarketBid): Promise<{ proposalId: string }> {
+  return authed(session, 'POST', '/user/data/market/proposals', { owner, aliasId, bid })
 }
 
 /** The account's fos points (its token balance): the default pool for "ff" allocations. */
@@ -341,4 +346,19 @@ export async function sharedRequest(baseUrl: string, session: Session | null, ac
 export async function searchFosUsers(session: Session, query: string): Promise<string[]> {
   const result = await authed<{ users: Array<{ user_name: string }> }>(session, 'GET', `/groups/search/name?name=${encodeURIComponent(query.trim())}`)
   return [...new Set(result.users.map(user => user.user_name).filter(name => typeof name === 'string' && name !== session.username))]
+}
+
+const bytes = (base64: string): ArrayBuffer => Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer as ArrayBuffer
+/**
+ * The device's verify check for a server attestation: WebCrypto Ed25519 against the key that server published in this
+ * graph (`publishedKey`, the `fos:key:<peer>` row in Home; no endpoint). No key, another verifier or another method is
+ * false. Where the platform has no Ed25519 (older webviews) the answer is null: the object came through this
+ * account's own graph, and the server re-checks the attestation whenever it acts on it (payments, fos points).
+ */
+export async function checkUserAttestation(key: { peer: string; publicKey: string | null }, user: UserRecord): Promise<boolean | null> {
+  const v = user.verification
+  if (!v || v.method !== USER_SERVER_ATTESTATION || v.by !== key.peer || !key.publicKey) return false
+  let publicKey: CryptoKey
+  try { publicKey = await crypto.subtle.importKey('raw', bytes(key.publicKey), { name: 'Ed25519' }, false, ['verify']) } catch { return null }
+  return crypto.subtle.verify({ name: 'Ed25519' }, publicKey, bytes(v.attestation), new TextEncoder().encode(userAttestationPayload(user, v.by, v.method, v.issuedAt)))
 }

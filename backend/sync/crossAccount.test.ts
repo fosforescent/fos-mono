@@ -41,7 +41,8 @@ test('a user locates and pulls a node another account shared with them, inside t
   const request = { peerId: 'user:bob', scope: [HOME_ID, 'trip'], path: [], linkId: 'bob-link', owner: 'alice' }
   const pulled = await s.call(s.provide, 'bob', request)
   expect(pulled.status).toBe(200)
-  expect(pulled.body.children.map((c: any) => c.id)).toEqual(['flights'])
+  // bob's own member entry comes with the node (his masked view of its members); no one else's
+  expect(pulled.body.children.map((c: any) => c.id)).toEqual(['flights', 'fos:peer:user:bob'])
   expect(pulled.body.grants).toEqual(['read', 'edit'])
   expect(pulled.body.address).toEqual({ peerId: 'user:alice', scope: [HOME_ID, 'trip'] })
   expect((await s.call(s.provide, 'carol', { ...request, peerId: 'user:carol' })).status).toBe(403)

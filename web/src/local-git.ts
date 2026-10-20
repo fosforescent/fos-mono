@@ -1,5 +1,5 @@
 import type { App } from './app'
-import { openCliAgent } from './agents'
+import { launchAgent } from './agents'
 import { inTauri, tauriInvoke } from './project'
 import { argumentRefs, capabilityTarget, content, contextMembers, headCid, refValueCid, resolveScope, specificationRows, type FeatureSpecification, type Scope } from '../../shared/sync/index'
 
@@ -73,7 +73,7 @@ function verifyDialog(app: App, state: State) {
   const chrome=document.createElement('input'); chrome.type='checkbox'; chrome.setAttribute('aria-label','Use Claude Chrome integration')
   const browser=document.createElement('label'); browser.append(chrome,'Use configured Claude Chrome integration')
   const buttons = document.createElement('div')
-  for (const provider of ['claude','codex'] as const) { const b = document.createElement('button'); b.textContent = `Verify with ${provider === 'claude' ? 'Claude Code' : 'Codex'}`; b.onclick = () => { if (!valid(app,state)) return; openCliAgent(app,provider,state.binding.path,prompt.value + (target.value ? `\nApplication URL: ${target.value}` : ''),true,{autoStart:true,scope:state.binding.scope,chrome:chrome.checked}) }; buttons.append(b) }
+  for (const provider of ['claude','codex'] as const) { const b = document.createElement('button'); b.textContent = `Verify with ${provider === 'claude' ? 'Claude Code' : 'Codex'}`; b.onclick = () => { if (!valid(app,state)) return; void launchAgent(app,provider,{cwd:state.binding.path,prompt:prompt.value + (target.value ? `\nApplication URL: ${target.value}` : ''),verify:true,scope:state.binding.scope,chrome:chrome.checked}) }; buttons.append(b) }
   const report = document.createElement('textarea'); report.rows = 8; report.placeholder = 'Paste the verifier JSON report'; report.setAttribute('aria-label','Verification report')
   const status = document.createElement('p'); status.setAttribute('role','status')
   const save = document.createElement('button'); save.textContent = 'Record results and create issues'

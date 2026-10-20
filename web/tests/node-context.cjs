@@ -29,7 +29,8 @@ async function main() {
   // Explicitly add a main denial, since changing a nonexistent member is a no-op.
   r = c.withMainBranchPolicy(r.store, () => c.addMemberAt(r, ['p', 'nested'], 'client', null, [], 11))
   assert.throws(() => c.exchangeNode(r, nested, auth, 12), /denied/)
-  assert.equal(c.exchangeNode(r, req, auth, 12).node.children.length, 0)
+  // the denied row is gone; what is left is the client's own member entry
+  assert.deepEqual(c.exchangeNode(r, req, auth, 12).node.children.map(child => child.id), ['fos:peer:client'])
   const masked = c.nodeLinkEndpoint(r, ['p'], 'client')
   r = c.setNodeLinkMask(r, ['p'], 'client', masked.remoteId, { fields: [] }, 13)
   assert.deepEqual(c.exchangeNode(r, req, auth, 14).node.data, {})

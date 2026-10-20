@@ -17,7 +17,7 @@ export async function launchCli(request, context, signal, emit) {
     await writeFile(config, JSON.stringify({ mcpServers: { fos: { type: 'http', url: context.url, headers: { Authorization: `Bearer ${context.token}` } } } }), { mode: 0o600 })
     const args = cliArguments(request.provider, { ...context, config }, request)
     const prompt = request.mcp
-      ? `The fos MCP server is the selected node on the user's device, exposing only the tools the user granted (read, propose changes, decide, evaluate). Start with fos_read at []. Carry out the task and record the outcome on the node through those tools.\n\n${request.prompt}`
+      ? `The fos MCP server is the selected node on the user's device, exposing only the tools the user granted you there (read, propose changes, evaluate). Start with fos_read at []. fos_outstanding lists the open work in this node (tasks not done, unmet requirements, yours first) and stays current while you work, so check it again after each item. Read notes and rows on demand instead of guessing. Record outcomes on the node through those tools: propose results with fos_propose, complete tasks, evaluate with fos_evaluate.\n\n${request.prompt}`
       : `The fos MCP server is a read-only snapshot of the selected node. Start with fos_read at []. Do not modify .fos graph or specification files. ${request.verify ? 'Verify only; do not change implementation files. Report failed and blocked checks with evidence.' : 'Implement the task in this working directory.'}\n\n${request.prompt}`
     const launch = join(dir, 'launch.json')
     await writeFile(launch, JSON.stringify({ command: request.provider, args, prompt, result, pid: join(dir, 'pid.txt') }), { mode: 0o600 })

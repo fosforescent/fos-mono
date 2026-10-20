@@ -1,29 +1,33 @@
 import { addConstructedRow, addRow, createReplica, headCid, loadReplica, moveNode, renameTask, serializeReplica, setRowContentAt, view } from './replica'
-import { content, formValueAt, isRefNode, put, reachableNodes, importNodes, resolveScope, rowTemplate, valueContent, copyRowContent, commitRoot } from './index'
+import { content, formValueAt, isRefNode, put, reachableNodes, importNodes, resolveScope, rowTypeAt, valueContent, copyRowContent, commitRoot } from './index'
 import { constructForm, formTitle } from './forms'
 import { mergeNodes } from './merge'
 import { syncWith } from './test-helpers'
-import { seedRowTypeContent } from '../dag-implementation/row-templates'
 import { argumentRefs, resolveText } from './bindings'
 import { addRefAt } from './replica'
+import { PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE } from './library-types'
+import type { FosNodeContent } from '../types'
+
+/** A row type of the kind older builds wrote: no graph identity, only the retired markers. */
+const retiredType = (name: string, kind: string): FosNodeContent => ({ data: { description: { content: name }, instanceKind: { kind }, behavior: { content: `builtin:${kind}` } }, children: [] })
 
 test('notes are graph products with a text body, bindings, and ordinary child rows', () => {
   let r = createReplica('a')
-  const type = rowTemplate(r.store, 'note')
+  const type = rowTypeAt(r.store, NOTE_TYPE)
   const definition = content(r.store, type)
   expect(definition.data.behavior).toBeUndefined()
   expect(definition.data.instanceKind).toBeUndefined()
   expect(definition.data.form).toMatchObject({ title: ['body'], text: { mediaType: 'text/markdown', interpolate: true } })
   r = addRefAt(r, [], 'name', r.store.primitive.documentField.getId(), 1, put(r.store, { data: { description: { content: 'Ada' } }, children: [] }), 'name')
-  r = addRow(r, [], 'note', '# Hello {name}', 2, { id: 'document' })
-  r = addRow(r, ['document'], 'note', 'Child document', 3, { id: 'child' })
+  r = addRow(r, [], NOTE_TYPE, '# Hello {name}', 2, { id: 'document' })
+  r = addRow(r, ['document'], NOTE_TYPE, 'Child document', 3, { id: 'child' })
   const node = () => valueContent(r.store, resolveScope(r.store, headCid(r), ['document'])!)
   expect(node().data.description).toBeUndefined()
   expect(formValueAt(r.store, node(), ['body'])?.data.scalar).toEqual({ type: 'text', value: '# Hello {name}' })
-  expect(view(r, [])!.tasks.find(row => row.id === 'document')).toMatchObject({ kind: 'plain', text: { mediaType: 'text/markdown' } })
+  expect(view(r, [])!.tasks.find(row => row.id === 'document')).toMatchObject({ type: NOTE_TYPE, text: { mediaType: 'text/markdown' } })
   expect(resolveText(r, ['document'], formTitle(r.store, node())).text).toBe('# Hello Ada')
   const body = node().children[0]!
-  r = setRowContentAt(r, [], 'document', 'plain', '  ## Updated {name}\n\n{extra}', {}, 4)
+  r = setRowContentAt(r, [], 'document', NOTE_TYPE, '  ## Updated {name}\n\n{extra}', {}, 4)
   expect(content(r.store, node().children[0]![1]).data.alias).toEqual(content(r.store, body[1]).data.alias)
   expect(argumentRefs(r.store, resolveScope(r.store, headCid(r), ['document'])!).map(arg => arg.name)).toEqual(['name', 'extra'])
   r = loadReplica(serializeReplica(r))
@@ -31,28 +35,29 @@ test('notes are graph products with a text body, bindings, and ordinary child ro
   expect(view(r, ['document'])!.tasks.some(row => row.id === 'child')).toBe(true)
 })
 
-test('legacy notes migrate on edit while preserving bindings and child identities', () => {
+test('a note pinned to a retired type with no graph identity reads as a plain row; edits keep its bindings and children', () => {
   let r = createReplica('a')
-  const type = put(r.store, seedRowTypeContent('note', node => put(r.store, node)))
+  const type = put(r.store, retiredType('Note', 'note'))
   const old = put(r.store, { data: { alias: { id: 'old-note' }, description: { content: '# Old {name}' } }, children: [] })
   commitRoot(r.store, put(r.store, { ...valueContent(r.store, headCid(r)), children: [...valueContent(r.store, headCid(r)).children, [type, old]] }), 1)
   r = addRefAt(r, ['old-note'], 'old-binding', r.store.primitive.documentField.getId(), 2, put(r.store, { data: { description: { content: 'Grace' } }, children: [] }), 'name')
-  r = addRow(r, ['old-note'], 'plain', 'Keep child', 3, { id: 'child' })
+  r = addRow(r, ['old-note'], PLAIN_TYPE, 'Keep child', 3, { id: 'child' })
   const child = resolveScope(r.store, headCid(r), ['old-note', 'child'])
   r = renameTask(r, [], 'old-note', '# New {name}', 4)
-  expect(view(r, [])!.tasks.find(row => row.id === 'old-note')).toMatchObject({ kind: 'plain', title: '# New {name}', text: { mediaType: 'text/markdown' } })
+  expect(view(r, [])!.tasks.find(row => row.id === 'old-note')).toMatchObject({ type: '', title: '# New {name}', checkable: false })
+  expect(view(r, [])!.tasks.find(row => row.id === 'old-note')!.text).toBeUndefined()
   expect(resolveText(r, ['old-note'], '# New {name}').text).toBe('# New Grace')
   expect(resolveScope(r.store, headCid(r), ['old-note', 'child'])).toBe(child)
 })
 
 test('a graph note inherits shared context after node exchange and supports remote editing', () => {
   let a = createReplica('a'), server = createReplica('server'), b = createReplica('b')
-  a = addRow(a, [], 'note', '# Hello {name}', 1, { id: 'document' })
-  a = addRow(a, [], 'plain', 'name: Ada', 2, { id: 'name' })
+  a = addRow(a, [], NOTE_TYPE, '# Hello {name}', 1, { id: 'document' })
+  a = addRow(a, [], PLAIN_TYPE, 'name: Ada', 2, { id: 'name' })
   a = syncWith(a, server)
   b = syncWith(b, server)
   const row = () => view(b, [])!.tasks.find(row => row.id === 'document')!
-  expect(row()).toMatchObject({ kind: 'plain', title: '# Hello {name}', text: { mediaType: 'text/markdown' } })
+  expect(row()).toMatchObject({ type: NOTE_TYPE, title: '# Hello {name}', text: { mediaType: 'text/markdown' } })
   expect(resolveText(b, ['document'], row().title).text).toBe('# Hello Ada')
   b = renameTask(b, [], 'document', '## Welcome {name}', 10)
   b = syncWith(b, server, { now: 11 })
@@ -62,7 +67,7 @@ test('a graph note inherits shared context after node exchange and supports remo
 
 test('comments instantiate graph fields; editing the body preserves person, list and ref identity', () => {
   let r = createReplica('alice')
-  const type = rowTemplate(r.store, 'comment')
+  const type = rowTypeAt(r.store, COMMENT_TYPE)
   expect(content(r.store, type).data.behavior).toBeUndefined()
   r = addConstructedRow(r, [], type, { text: 'Hello', author: { id: 'alice', name: 'Alice' }, texts: ['one', 'one'] }, 1, 'message')
   const node = () => valueContent(r.store, resolveScope(r.store, headCid(r), ['message'])!)
@@ -75,7 +80,7 @@ test('comments instantiate graph fields; editing the body preserves person, list
   expect(items).toHaveLength(2)
   expect(items[0]![1]).not.toBe(items[1]![1])
   expect(items.map(e => valueContent(r.store, e[1]).data.position?.value)).toEqual([0, 1])
-  r = setRowContentAt(r, [], 'message', 'comment', 'Edited', {}, 2)
+  r = setRowContentAt(r, [], 'message', COMMENT_TYPE, 'Edited', {}, 2)
   expect(node().children.slice(1)).toEqual([person, list])
   expect(content(r.store, node().children[0]![1]).data.alias).toEqual(content(r.store, body[1]).data.alias)
   expect(view(r, [])!.tasks.find(t => t.id === 'message')).toMatchObject({ title: 'Edited', author: { name: 'Alice', time: 1 } })
@@ -92,7 +97,7 @@ test('an unfamiliar constructor travels as graph data and works on a second clie
   importNodes(b.store, reachableNodes(a.store, [type]))
   let r = addConstructedRow(b, [], type, { label: 'Sample', quantity: 7 }, 1, 'sample')
   expect(view(r, [])!.tasks.find(t => t.id === 'sample')!.title).toBe('Sample')
-  r = setRowContentAt(r, [], 'sample', 'plain', 'Revised', {}, 2)
+  r = setRowContentAt(r, [], 'sample', PLAIN_TYPE, 'Revised', {}, 2)
   const node = valueContent(r.store, resolveScope(r.store, headCid(r), ['sample'])!)
   expect(formTitle(r.store, node)).toBe('Revised')
   expect(formValueAt(r.store, node, ['quantity'])!.data.scalar!.value).toBe(7)
@@ -100,11 +105,11 @@ test('an unfamiliar constructor travels as graph data and works on a second clie
 })
 
 test('list entries can be added, edited and reordered through ordinary row operations', () => {
-  let r = addRow(createReplica('a'), [], 'comment', 'List owner', 1, { id: 'message' })
+  let r = addRow(createReplica('a'), [], COMMENT_TYPE, 'List owner', 1, { id: 'message' })
   const path = ['message', 'message/field/texts']
-  r = addRow(r, path, 'plain', 'First', 2, { id: 'one' })
-  r = addRow(r, path, 'plain', 'Second', 3, { id: 'two' })
-  r = setRowContentAt(r, path, 'one', 'plain', '// literal text', {}, 4)
+  r = addRow(r, path, PLAIN_TYPE, 'First', 2, { id: 'one' })
+  r = addRow(r, path, PLAIN_TYPE, 'Second', 3, { id: 'two' })
+  r = setRowContentAt(r, path, 'one', PLAIN_TYPE, '// literal text', {}, 4)
   r = moveNode(r, path, 'two', path, { relativeTo: 'one', position: 'above' }, 5)
   expect(view(r, path)!.tasks.map(t => t.title)).toEqual(['Second', '// literal text'])
   const list = valueContent(r.store, resolveScope(r.store, headCid(r), path)!)
@@ -113,7 +118,7 @@ test('list entries can be added, edited and reordered through ordinary row opera
 })
 
 test('independent fields merge, and copies own fresh field refs', () => {
-  let base = addRow(createReplica('a'), [], 'comment', 'Before', 1, { id: 'message', author: { id: 'a', name: 'Alice' } })
+  let base = addRow(createReplica('a'), [], COMMENT_TYPE, 'Before', 1, { id: 'message', author: { id: 'a', name: 'Alice' } })
   const original = resolveScope(base.store, headCid(base), ['message'])!
   let ours = loadReplica(serializeReplica(base)), theirs = loadReplica(serializeReplica(base))
   ours = renameTask(ours, [], 'message', 'After', 2)
@@ -134,11 +139,11 @@ test('independent fields merge, and copies own fresh field refs', () => {
 
 test('node-by-node exchange transports fields and their constructor definitions', () => {
   let a = createReplica('a'), server = createReplica('server'), b = createReplica('b')
-  a = addRow(a, [], 'comment', 'Across peers', 1, { id: 'message', author: { id: 'a', name: 'Alice' } })
+  a = addRow(a, [], COMMENT_TYPE, 'Across peers', 1, { id: 'message', author: { id: 'a', name: 'Alice' } })
   a = syncWith(a, server)
   b = syncWith(b, server)
   expect(view(b, [])!.tasks.find(t => t.id === 'message')).toMatchObject({ title: 'Across peers', author: { name: 'Alice' } })
-  b = setRowContentAt(b, [], 'message', 'comment', 'Reply edit', {}, 11)
+  b = setRowContentAt(b, [], 'message', COMMENT_TYPE, 'Reply edit', {}, 11)
   b = syncWith(b, server, { now: 12 })
   a = syncWith(a, server, { now: 13 })
   expect(view(a, [])!.tasks.find(t => t.id === 'message')!.title).toBe('Reply edit')
@@ -146,12 +151,12 @@ test('node-by-node exchange transports fields and their constructor definitions'
 
 test('legacy comments remain readable and migrate on edit without losing replies or authorship', () => {
   let r = createReplica('a')
-  const oldType = put(r.store, seedRowTypeContent('comment', c => put(r.store, c)))
+  const oldType = put(r.store, retiredType('Comment', 'comment'))
   const old = put(r.store, { data: { alias: { id: 'old' }, description: { content: 'Legacy' }, comment: { content: 'Legacy', authorID: 'alice', authorName: 'Alice', time: 1, votes: { bob: 'up' }, scope: 'private' } }, children: [] })
   const root = valueContent(r.store, headCid(r))
   commitRoot(r.store, put(r.store, { ...root, children: [...root.children, [oldType, old]] }), 1)
-  r = addRow(r, ['old'], 'plain', 'Existing child', 2, { id: 'reply' })
-  r = setRowContentAt(r, [], 'old', 'comment', 'Migrated', {}, 3)
+  r = addRow(r, ['old'], PLAIN_TYPE, 'Existing child', 2, { id: 'reply' })
+  r = setRowContentAt(r, [], 'old', COMMENT_TYPE, 'Migrated', {}, 3)
   const node = valueContent(r.store, resolveScope(r.store, headCid(r), ['old'])!)
   expect(node.data.comment).toBeUndefined()
   expect(formValueAt(r.store, node, ['legacy', 'vote:bob'])!.data.scalar!.value).toBe('up')

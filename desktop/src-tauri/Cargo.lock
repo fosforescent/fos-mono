@@ -1302,7 +1302,7 @@ dependencies = [
 
 [[package]]
 name = "fos"
-version = "0.1.4"
+version = "0.0.1"
 dependencies = [
  "chrono",
  "clap",
@@ -1315,6 +1315,7 @@ dependencies = [
  "rustyline",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-log",

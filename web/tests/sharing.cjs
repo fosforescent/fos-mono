@@ -44,6 +44,14 @@ async function main() {
     publish.click(); await tick()
     assert.equal(published.audience, audience)
     assert.deepEqual(published.path, a.currentScope())
+    const snippet = dialog.querySelector('.embed-snippet')
+    if (audience === 'public') {
+      assert.equal(snippet.hidden, false, 'a public link offers an embed snippet')
+      assert(snippet.value.startsWith('<script src="http://localhost/embed.js" data-fos-share="http://localhost/#share='), snippet.value)
+      assert(snippet.value.includes('data-fos-api="http://localhost"'))
+      assert.deepEqual(sharedAddress(new URL(snippet.value.match(/data-fos-share="([^"]+)"/)[1].replace(/&amp;/g, '&')).hash).share, 'share-id-0123456789')
+      assert([...dialog.querySelectorAll('button')].some(b => b.textContent === 'Copy embed' && !b.hidden))
+    } else assert.equal(snippet.hidden, true, 'links for Fos users need sign-in, so they are not embeddable')
     dialog.close()
   }
   a.state.session = savedSession; a.state.connection = savedConnection; a.syncNow = savedSync; global.fetch = savedFetch
@@ -65,6 +73,9 @@ async function main() {
   const panel = document.querySelector('.shared-node')
   assert(root.contains(panel), 'handler belongs to the linked node view, not a separate workspace')
   assert.equal(panel.hidden, false)
+  assert(root.classList.contains('shared-site'), 'a published node reads as a website')
+  assert.equal(panel.querySelector('.fos-site h1')?.textContent, 'Lunch?')
+  assert(panel.querySelector('.fos-site') && !panel.querySelector('.fos-site p.fos-site-text'), 'the page is rendered by the site renderer')
   let form = panel.querySelector('form')
   const name = form.querySelector('input[autocomplete="nickname"]')
   assert.equal(name.required, true)
@@ -80,6 +91,7 @@ async function main() {
   assert(!JSON.stringify(saved.body).includes('My private task'))
   assert.equal(a.state.session, null)
   a.goTo(['fos:home']); await tick(); assert.equal(panel.hidden, true)
+  assert(!root.classList.contains('shared-site'), 'leaving the shared ref shows the app again')
   a.openSharedLink('shared:share-id-0123456789'); await tick(); assert.equal(panel.hidden, false)
   assert.equal(view(a.state.replica, ['fos:home']).tasks.filter(t => t.title === 'Host').length, 1)
   assert.equal(panel.querySelector('input[autocomplete="nickname"]').value, 'Pat')

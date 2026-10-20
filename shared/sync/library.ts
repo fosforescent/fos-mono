@@ -20,20 +20,23 @@ import { acceptProvidedNode, type NodeRequest, type ProvidedNode } from './node-
 import { LIBRARY_ID, ROW_TYPES_ID, commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, seedTypes, findChild, findNearestRow, isHandle, isPeerReference, put, resolveScope, rowEdgeAt, rowTypeContents, rowTypesContent, updateAtScope, valueContent, type Scope, type TaskView } from './graph'
 import type { FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { headCid } from './replica'
+import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
 import { isBookkeepingEdge, valueCidOf } from './graph'
-import { legacyRowKind, withoutLegacyInstanceKind } from './legacy-row-types'
+import { ALLOCATION_TYPE, COMMENT_TYPE, MONEY_TYPE, NOTE_TYPE, PLAIN_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 
 /** The library row holding the manual fallback handlers (`manualHandlers`). */
 export const MANUAL_HANDLERS_ID = 'lib:manual'
 /** Node value on the library: which seed version it carries, so later versions add what is missing. */
 export const LIBRARY_ARGUMENT = 'fos:library'
-export const LIBRARY_VERSION = COMPILED_LIBRARY.version
+/** The library's version is the data version (shared/version.ts); the compiler refuses a library graph in another. */
+export const LIBRARY_VERSION: string = FOS_DATA_VERSION
+if (COMPILED_LIBRARY.version !== LIBRARY_VERSION) throw new Error(`shared/sync/library.generated.json is in version ${COMPILED_LIBRARY.version}, this build is ${LIBRARY_VERSION}: run node scripts/compile-library.cjs.`)
 export const MERGE_POLICY_ARGUMENT = 'fos:merge-policy'
 
 export type LibraryAddress = SharedAddress & { title: string }
-export type LibraryInfo = { version: number; seeded: string[]; source?: 'server' | 'bundle' }
+export type LibraryInfo = { version: string; seeded: string[]; source?: 'server' | 'bundle' }
 /** Proposals on the node merge on their own once this many distinct members approved them. */
 export type MergePolicy = { approvals: number }
 export const DEFAULT_MERGE_POLICY: MergePolicy = { approvals: 2 }
@@ -41,8 +44,11 @@ export const DEFAULT_MERGE_POLICY: MergePolicy = { approvals: 2 }
 type Requirement = NonNullable<import('../types').FosDataContent['requirement']>
 type Allocation = NonNullable<import('../types').FosDataContent['allocation']>
 type Resource = NonNullable<import('../types').FosDataContent['resource']>
-/** A row of the library as data: what the seed list, the server's export and the client's bundle all share. */
-export type SeedRow = { id: string; kind: 'template' | 'note' | 'plain' | 'requirement' | 'task' | 'allocation' | 'resource' | 'comment' | 'types'; text: string; done?: boolean; requirement?: Requirement; allocation?: Allocation; resource?: Resource; children?: SeedRow[]
+/**
+ * A row of the library as data: what the seed list, the server's export and the client's bundle all share. `type` is
+ * the library row type it is made from (`lib:type:…`); the Row types group (`lib:types`) carries `types` instead.
+ */
+export type SeedRow = { id: string; type: string; text: string; done?: boolean; requirement?: Requirement; allocation?: Allocation; resource?: Resource; children?: SeedRow[]
   /** Exact compiled row edge (local builds); imported without reconstructing domain payloads. */
   graph?: { template: string; cid: string }
   /** Legacy server bundle: exact row type contents and dependencies. */
@@ -50,11 +56,11 @@ export type SeedRow = { id: string; kind: 'template' | 'note' | 'plain' | 'requi
   /** The nodes the types point at (their patterns), so a build's copy makes the same nodes. */
   nodes?: FosNodesData }
 /** What a client build carries: the library's address on the server (null when built without one) and its rows. */
-export type LibraryBundle = { address: LibraryAddress | null; version: number; rows: SeedRow[] }
+export type LibraryBundle = { address: LibraryAddress | null; version: string; rows: SeedRow[] }
 
 /** The templates every account starts with. Ids are stable so reseeding adds only what is missing. */
 export const STANDARD_LIBRARY = COMPILED_LIBRARY.rows as SeedRow[]
-export const BUNDLED_LIBRARY: LibraryBundle = { address: null, version: COMPILED_LIBRARY.version, rows: STANDARD_LIBRARY }
+export const BUNDLED_LIBRARY: LibraryBundle = { address: null, version: LIBRARY_VERSION, rows: STANDARD_LIBRARY }
 
 /** Export the editable local library as a build source, excluding history and access bookkeeping. */
 export function exportLocalLibrary(r: Replica, at: Scope = [LIBRARY_ID]): LibrarySource {
@@ -70,10 +76,9 @@ export function exportLocalLibrary(r: Replica, at: Scope = [LIBRARY_ID]): Librar
   const copy = (cid: string): string => {
     if (memo.has(cid)) return memo.get(cid)!
     const node = content(r.store, cid)
-    // Old local libraries carry the retired discriminator. Preserve their native
-    // adapter while exporting the same graph without that historical metadata.
-    const kind = legacyRowKind(node), alias = aliases.get(cid)
-    const data = { ...withoutLegacyInstanceKind(node.data), ...(alias ? { alias: { id: alias } } : {}), ...(kind && !node.data.behavior ? { behavior: { content: `builtin:${kind}` } } : {}) }
+    // a library seeded by an older build carries retired markers on its types; the export leaves them out
+    const { instanceKind: _instanceKind, behavior, ...rest } = node.data, alias = aliases.get(cid)
+    const data = { ...rest, ...(behavior && !behavior.content.startsWith('builtin:') ? { behavior } : {}), ...(alias ? { alias: { id: alias } } : {}) }
     const clean = put(r.store, { data, children: node.children.filter(edge => !isBookkeepingEdge(r.store, edge)).map(([i, t]) => [copy(i), copy(t)]) })
     memo.set(cid, clean); return clean
   }
@@ -102,7 +107,7 @@ export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
   if (!path) return []
   return (view(r, [...path, MANUAL_HANDLERS_ID])?.tasks ?? []).flatMap(row => {
     const req = row.requirement
-    if (row.kind !== 'requirement' || !req || !row.title.trim()) return []
+    if (!req || !row.title.trim()) return []
     return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: row.id.startsWith('lib:device:') }]
   })
 }
@@ -114,7 +119,7 @@ export function manualHandlersFor(r: Replica, requirement: { capability: Require
 
 export function libraryInfo(r: Replica, path: Scope): LibraryInfo | null {
   const value = readNodeValue<LibraryInfo>(r, path, LIBRARY_ARGUMENT)
-  return value && typeof value.version === 'number' && Array.isArray(value.seeded) ? value : null
+  return value && typeof value.version === 'string' && Array.isArray(value.seeded) ? value : null
 }
 
 /** Add the given rows below `path` where they are missing (by id); rows the node once had and lost are not re-added. */
@@ -124,8 +129,8 @@ export function seedLibraryRows(r: Replica, path: Scope, rows: SeedRow[], now: n
   const add = (at: Scope, list: SeedRow[]) => {
     for (const row of list) {
       if (!view(r, at)?.tasks.some(t => t.id === row.id) && !seeded.has(row.id)) {
-        r = row.graph ? addGraphRow(r, at, row, now) : row.kind === 'types' ? addRowTypesRow(r, at, row, now)
-          : addRow(r, at, row.kind, row.text, now, { id: row.id, ...(row.requirement ? { requirement: row.requirement } : {}), ...(row.allocation ? { allocation: row.allocation } : {}), ...(row.resource ? { resource: row.resource } : {}) })
+        r = row.graph ? addGraphRow(r, at, row, now) : row.types ? addRowTypesRow(r, at, row, now)
+          : addRow(r, at, row.type, row.text, now, { id: row.id, ...(row.requirement ? { requirement: row.requirement } : {}), ...(row.allocation ? { allocation: row.allocation } : {}), ...(row.resource ? { resource: row.resource } : {}) })
         seeded.add(row.id)
       }
       if (row.graph && row.children) {
@@ -151,7 +156,7 @@ function addGraphRow(r: Replica, at: Scope, row: SeedRow, now: number): Replica 
 function addRowTypesRow(r: Replica, at: Scope, row: SeedRow, now: number): Replica {
   if (row.nodes) importNodes(r.store, row.nodes)
   const group = put(r.store, rowTypesContent(r.store, row.types ?? seedTypes(r.store)))
-  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, node => ({ ...node, children: [...node.children, rowEdgeAt(r.store, 'plain', group, at)] })), now)
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, node => ({ ...node, children: [...node.children, rowEdgeAt(r.store, PLAIN_TYPE, group, at)] })), now)
   return { ...r }
 }
 
@@ -160,22 +165,27 @@ export function seedStandardLibrary(r: Replica, path: Scope, now: number): Repli
   return seedLibraryRows(r, path, STANDARD_LIBRARY, now, LIBRARY_VERSION, 'server')
 }
 
-/** The library's rows as data (what `fos library export` writes for client builds): titles, kinds and typed fields, no bookkeeping. */
+/** The row types whose rows the library exports as data. */
+const EXPORTED_TYPES = [TEMPLATE_TYPE, NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, ALLOCATION_TYPE, MONEY_TYPE, RESOURCE_TYPE, COMMENT_TYPE]
+
+/** The library's rows as data (what `fos library export` writes for client builds): titles, types and typed fields, no bookkeeping. */
 export function exportLibraryRows(r: Replica, path: Scope, depth = 0): SeedRow[] {
   if (depth > 16) return []
   const rows: SeedRow[] = []
   for (const row of view(r, path)?.tasks ?? []) {
-    if (!['template', 'note', 'plain', 'requirement', 'task', 'allocation', 'resource', 'comment'].includes(row.kind) || row.id.startsWith('fos:')) continue
+    // a task made from a template is exported as a task (the template is a row of its own)
+    const type = row.checkable ? TASK_TYPE : row.type
+    if (!EXPORTED_TYPES.includes(type) || row.id.startsWith('fos:')) continue
     const data = row as TaskView
     if (row.id === ROW_TYPES_ID) {
       // the exact contents: rows pin row types by cid, so a build's copy must make the same nodes
       const types = rowTypeContents(r.store, resolveScope(r.store, headCid(r), [...path, row.id])!)
       const nodes = reachableNodes(r.store, types.flatMap(type => type.children.flatMap(([instruction, target]) => [instruction, target])))
-      rows.push({ id: row.id, kind: 'types', text: row.title, types: types.map(type => ({ data: type.data, children: type.children })), ...(Object.keys(nodes).length ? { nodes } : {}) })
+      rows.push({ id: row.id, type: row.type, text: row.title, types: types.map(type => ({ data: type.data, children: type.children })), ...(Object.keys(nodes).length ? { nodes } : {}) })
       continue
     }
-    const seed: SeedRow = { id: row.id, kind: row.kind as SeedRow['kind'], text: row.title }
-    if (row.kind === 'task' && row.done) seed.done = true
+    const seed: SeedRow = { id: row.id, type, text: row.title }
+    if (row.checkable && row.done) seed.done = true
     if (data.requirement) { const { satisfied, summary, have, need, ...requirement } = data.requirement; void satisfied; void summary; void have; void need; seed.requirement = requirement }
     if (data.allocation) seed.allocation = data.allocation
     if (data.resource) { const { allocated, available, ...resource } = data.resource; void allocated; void available; seed.resource = resource }
@@ -204,7 +214,7 @@ export function ensureDeviceLibrary(r: Replica, bundle: LibraryBundle, now: numb
   if (libraryInfo(r, path)) return r
   const rows = bundle.rows.length ? bundle.rows : STANDARD_LIBRARY
   // the build's Row types are the ones this root ships (the root started with the seed's)
-  const typesRow = rows.find(row => row.kind === 'types'), types = typesRow?.types
+  const typesRow = rows.find(row => row.types), types = typesRow?.types
   if (types?.length) {
     if (typesRow?.nodes) importNodes(r.store, typesRow.nodes)
     const group = put(r.store, rowTypesContent(r.store, types))
@@ -223,7 +233,7 @@ export function ensureLibraryLink(r: Replica, address: LibraryAddress, now: numb
   if (existing) return { replica: r, path: existing, added: false }
   const home = homePath(r)
   if (!view(r, home)) return { replica: r, path: home, added: false }
-  r = addRow(r, home, 'ref', address.title, now, { id: LIBRARY_ID, refOwner: address.owner, refId: address.path.at(-1) ?? LIBRARY_ID })
+  r = addRow(r, home, REF_TYPE, address.title, now, { id: LIBRARY_ID, refOwner: address.owner, refId: address.path.at(-1) ?? LIBRARY_ID })
   const path = [...home, LIBRARY_ID]
   r = writeNodeValue(r, path, 'fos:shared-link', { owner: address.owner, path: address.path, share: address.share }, now)
   return { replica: r, path, added: true }
@@ -239,13 +249,13 @@ export type PulledLibrary = { address: LibraryAddress; nodes: Array<{ request: N
  */
 export function exportProvidedLibrary(pulled: PulledLibrary, now: number): LibraryBundle {
   const root = pulled.nodes[0]
-  if (!root) return { address: pulled.address, version: 0, rows: [] }
+  if (!root) return { address: pulled.address, version: LIBRARY_VERSION, rows: [] }
   // a scratch row beside the scratch root's own shipped library
   const PULLED = 'fos:pulled-library'
-  let r = addRow(createReplica('fos:cli'), [], 'ref', pulled.address.title, now, { id: PULLED, refOwner: pulled.address.owner, refId: pulled.address.path.at(-1) ?? LIBRARY_ID })
+  let r = addRow(createReplica('fos:cli'), [], REF_TYPE, pulled.address.title, now, { id: PULLED, refOwner: pulled.address.owner, refId: pulled.address.path.at(-1) ?? LIBRARY_ID })
   for (const { request, node } of pulled.nodes) r = acceptProvidedNode(r, [PULLED, ...request.path.slice(root.request.path.length)], request, node, now)
   const rows = exportLibraryRows(r, [PULLED]), types = exactPulledTypes(r, pulled)
-  return { address: pulled.address, version: libraryInfo(r, [PULLED])?.version ?? LIBRARY_VERSION, rows: types ? rows.map(row => row.kind === 'types' ? { ...row, ...types } : row) : rows }
+  return { address: pulled.address, version: libraryInfo(r, [PULLED])?.version ?? LIBRARY_VERSION, rows: types ? rows.map(row => row.id === ROW_TYPES_ID ? { ...row, ...types } : row) : rows }
 }
 
 /**

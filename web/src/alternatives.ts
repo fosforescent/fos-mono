@@ -2,6 +2,7 @@ import type { App } from './app'
 import { view, viewNode, readProposal, headCid, HOME_ID, type Scope, type TaskView } from '../../shared/sync/index'
 const selected = new WeakMap<App, { path: string; id: string }>()
 import { combobox, type ComboOption } from './combobox'
+import { HOME_TYPE } from '../../shared/sync/library-types'
 export function proposalPreview(app: App) {
   const choice = selected.get(app)
   if (!choice || choice.path !== JSON.stringify(app.state.view) || !app.readsRequests()) return null
@@ -42,8 +43,8 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
     if (previewing) return row && query ? [{ label: `Copy to branch “${query}”`, group: 'Create', run: () => { if (app.copyProposalToBranch(active!.id, query)) { clearProposal(app); app.refresh() } } }] : []
     const actions: ComboOption[] = []
     if (row && query && !row.branches?.names.includes(query)) actions.push({ label: `Create branch “${query}”`, group: 'Create', run: () => { void app.createNodeBranch(path.slice(0, -1), row.id, query, true) } })
-    if (titleMode && row && row.kind !== 'home' && !row.refPeer && !row.construction && !row.template && query && query !== row.title) actions.push({ label: `Set node text to “${query}”`, group: 'Edit', run: () => app.editCurrentText(query, draft) })
-    if (titleMode && row && row.kind !== 'home' && !row.refPeer) actions.push({ label: 'Change template', group: 'Edit', run: () => app.openTemplatePicker(path) })
+    if (titleMode && row && row.type !== HOME_TYPE && !row.refPeer && !row.construction && !row.template && query && query !== row.title) actions.push({ label: `Set node text to “${query}”`, group: 'Edit', run: () => app.editCurrentText(query, draft) })
+    if (titleMode && row && row.type !== HOME_TYPE && !row.refPeer) actions.push({ label: 'Change template', group: 'Edit', run: () => app.openTemplatePicker(path) })
     return actions
   })
   box.classList.add('alternative-picker')

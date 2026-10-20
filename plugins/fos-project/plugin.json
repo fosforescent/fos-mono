@@ -1,9 +1,0 @@
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "fos-project",
-  "version": "0.1.0",
-  "description": "Navigate an attached Fos project task tree and propose implementation updates.",
-  "author": { "name": "Fosforescent" },
-  "repository": "https://github.com/fosforescent/fos-mono",
-  "homepage": "https://fosforescent.com"
-}

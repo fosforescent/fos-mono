@@ -1,12 +1,16 @@
 /**
  * The handlers this backend registers (see registry.ts). Each entry is a capability a peer provides on this host;
  * entries with an `effect` execute requirements through the shared evaluator when a `complete` event reaches them,
- * the rest are services reached by their own routes and are only advertised.
+ * the rest (cron, notify) are only advertised.
  */
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addRow, addSupply, beginTaskWork, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
+import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './registry'
+import { formTitle } from '@fosforescent/shared/sync/forms'
+import type { VerifyHandler } from './verify'
+import { PLAIN_TYPE, REF_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
+import { MONEY_TYPE } from '@fosforescent/shared/sync/library-types'
 
 export type GitHubIssueDeps = {
   connected(userId: number): Promise<boolean>
@@ -25,7 +29,7 @@ export function githubRepoHandler(deps: GitHubIssueDeps): HostHandler {
       const task = ctx.step.path.length > 1 ? ctx.step.path.at(-2) : null
       const issue = await deps.createIssue(ctx.userId, { repo: requirement.repo, title: ctx.step.row!.title || 'from fos', ...(task ? { body: 'From a fos task.' } : {}) })
       let r = ctx.replica()
-      r = addRow(r, ctx.step.path, 'plain', `${requirement.repo}#${issue.number} ${issue.url}`, ctx.now())
+      r = addRow(r, ctx.step.path, PLAIN_TYPE, `${requirement.repo}#${issue.number} ${issue.url}`, ctx.now())
       r = addSupply(r, ctx.step.path.slice(0, -1), ctx.step.path.at(-1)!, { capability: 'repo', by: 'integration:github', ref: String(issue.number) }, ctx.now())
       await ctx.update(r)
     }
@@ -54,7 +58,7 @@ export function calendarHandler(deps: CalendarDeps): HostHandler {
       const event = await deps.createEvent(ctx.userId, { summary: req.title || 'fos', description: req.title, start, end })
       const allocation = { resource: '', type: r.resource as ResourceType, amount: r.amount ?? (end - start) / 3_600_000, unit: 'h', start, end, ...(r.peer ? { person: r.peer } : {}) }
       void task
-      await ctx.update(addRow(ctx.replica(), ctx.step.path, 'allocation', event.url ? `on Google Calendar ${event.url}` : 'on Google Calendar', ctx.now(), { allocation }))
+      await ctx.update(addRow(ctx.replica(), ctx.step.path, ALLOCATION_TYPE, event.url ? `on Google Calendar ${event.url}` : 'on Google Calendar', ctx.now(), { allocation }))
     }
   }
 }
@@ -89,7 +93,7 @@ export type MarketDeps = {
 }
 
 /**
- * `-market` requirements under a task: the server lists the task (the `listing` flag on its ref node), indexes the
+ * `-market` requirements under a task: the server lists the task (the market peer becomes its member), indexes the
  * account so other accounts find it, and only then records the supply as its own. The client never writes a supply
  * in the server's name.
  */
@@ -100,9 +104,44 @@ export function marketHandler(deps: MarketDeps): HostHandler {
       const path = ctx.step.path
       if (path.length < 2) throw new Error('Market requirements go under a task; the task is what gets listed.')
       const taskPath = path.slice(0, -1)
-      await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now(), ctx.username))
+      await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now()))
       await deps.index({ id: ctx.userId, username: ctx.username }, ctx.replica().store)
       await ctx.update(addSupply(ctx.replica(), taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: taskPath.at(-1)! }, ctx.now()))
+    }
+  }
+}
+
+export type SearchHit = { aliasId: string; title: string; owner: string | null }
+export type SearchDeps = {
+  /** Semantic search (search/rowIndex.ts `searchRows`): the account's own rows, plus rows the market lists when `market`. */
+  search(user: { id: number; username: string }, query: string, market: boolean): Promise<SearchHit[]>
+}
+
+/**
+ * `-? text` requirements: the server's row search. The query is the requirement's text, or a query row inside it
+ * (its `market` option widens it to listed rows). Hits replace the earlier reference rows under the requirement
+ * (own rows as references, other accounts' as refs that remember the owner) and the supply is recorded as `fos`.
+ */
+export function searchHandler(deps: SearchDeps): HostHandler {
+  return {
+    peerId: 'fos', capability: 'search',
+    async effect(ctx) {
+      const path = ctx.step.path, r = ctx.replica(), cid = resolveScope(r.store, headCid(r), path)!
+      // which rows inside are what is decided by their row types: a query row says what to look for, refs are earlier hits
+      const queryRow = rowsOfType(r.store, cid, 'lib:type:query')[0]
+      const query = queryRow ? { id: queryRow.id, title: formTitle(r.store, valueContent(r.store, queryRow.cid)), market: !!valueContent(r.store, queryRow.cid).data.query?.market } : null
+      const text = (query?.title || ctx.step.row!.title).trim().slice(0, 1000)
+      if (!text) throw new Error('Say what to search for: "-? text".')
+      const hits = await deps.search({ id: ctx.userId, username: ctx.username }, text, !!query?.market)
+      let next = ctx.replica()
+      for (const ref of rowsOfType(r.store, cid, 'lib:type:ref')) next = deleteTask(next, path, ref.id, ctx.now())
+      for (const hit of hits) {
+        if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
+        if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
+        else next = addRow(next, path, REF_TYPE, hit.title, ctx.now(), { refId: hit.aliasId, refOwner: hit.owner })
+      }
+      next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'search', by: 'fos', ref: query?.id ?? path.at(-1)! }, ctx.now())
+      await ctx.update(next)
     }
   }
 }
@@ -146,25 +185,32 @@ export type PointsDeps = {
 }
 
 /**
- * Who a task pays: the user the requirement names with @, else the one signed-in user whose supplies filled the
- * task's other requirements. Anonymous respondents, several respondents and the owner themselves are refused.
+ * Who a task pays, as a user object this server attests: the one the requirement names with @ (its `user` field,
+ * whose attestation is checked here, so a tampered or foreign object is refused), else the one signed-in user whose
+ * supplies filled the task's other requirements. Anonymous respondents, several respondents and the owner themselves
+ * are refused.
  */
-function payeeOf(ctx: EffectContext, unit: string): string {
-  const r = ctx.replica(), path = ctx.step.path, req = ctx.step.row!.requirement!
+async function payeeOf(ctx: EffectContext, unit: string, identity: VerifyHandler): Promise<UserRecord> {
+  const path = ctx.step.path
   if (path.length < 2) throw new Error(`A ${unit} payment goes under the task it rewards.`)
-  const taskPath = path.slice(0, -1), self = `user:${ctx.username}`
-  let recipient = req.peer
-  if (!recipient) {
+  const r = ctx.replica(), taskPath = path.slice(0, -1), self = `user:${ctx.username}`
+  const named = ctx.step.row!.user
+  let recipient: UserRecord | null = null
+  if (named) {
+    if (!identity.verify(named)) throw new Error(`@${named.username} on this ${unit} row is not verified by this server; retype @${named.username} while signed in.`)
+    recipient = named
+  } else {
     const suppliers = new Set<string>()
-    for (const row of view(r, taskPath)?.tasks ?? []) if (row.kind === 'requirement' && row.id !== path.at(-1)) for (const supply of view(r, [...taskPath, row.id])?.tasks ?? []) if (supply.supply?.by) suppliers.add(supply.supply.by)
+    for (const row of view(r, taskPath)?.tasks ?? []) if (!!row.requirement && row.id !== path.at(-1)) for (const supply of view(r, [...taskPath, row.id])?.tasks ?? []) if (supply.supply?.by) suppliers.add(supply.supply.by)
     const people = [...suppliers].filter(p => p !== self && p !== 'fos')
     if (people.some(p => p.startsWith('visitor:'))) throw new Error(`${unit[0]!.toUpperCase()}${unit.slice(1)} go to signed-in Fos users; this respondent is anonymous.`)
     const users = people.filter(p => p.startsWith('user:')).map(p => p.slice('user:'.length))
     if (!users.length) throw new Error('No one to pay yet: the other requirements of this task have no respondent.')
     if (users.length > 1) throw new Error(`Several users answered (${users.map(u => `@${u}`).join(', ')}); name the recipient with @name on the ${unit} row.`)
-    recipient = users[0]!
+    recipient = await identity.resolve(users[0]!)
+    if (!recipient) throw new Error(`No Fos user is named @${users[0]}.`)
   }
-  if (recipient === ctx.username) throw new Error('The owner cannot pay themselves.')
+  if (recipient.username === ctx.username) throw new Error('The owner cannot pay themselves.')
   return recipient
 }
 
@@ -173,7 +219,7 @@ function payeeOf(ctx: EffectContext, unit: string): string {
  * points from the owner's balance to the respondent (the signed-in user whose supplies filled the task's other
  * requirements, or the user the requirement names with @) and records the allocation and supply as its own.
  */
-export function pointsHandler(deps: PointsDeps): HostHandler {
+export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHandler {
   return {
     peerId: 'fos', capability: 'points',
     handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'points' },
@@ -181,11 +227,11 @@ export function pointsHandler(deps: PointsDeps): HostHandler {
       const path = ctx.step.path, req = ctx.step.row!.requirement!
       const amount = req.amount ?? 0
       if (!(amount > 0)) throw new Error('Name an amount of fos points to pay.')
-      const taskPath = path.slice(0, -1), recipient = payeeOf(ctx, 'fos points')
+      const taskPath = path.slice(0, -1), recipient = await payeeOf(ctx, 'fos points', identity)
       const memo = `${ctx.step.row!.title || 'fos points'} (${taskPath.join('/')})`
-      await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient, amount, memo, `points:${ctx.username}:${path.join('/')}`)
+      await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient.username, amount, memo, `points:${ctx.username}:${path.join('/')}`)
       const id = `points:${ctx.now().toString(36)}`
-      let next = addRow(ctx.replica(), path, 'allocation', `${amount} fos points to @${recipient}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos', person: recipient } })
+      let next = addRow(ctx.replica(), path, ALLOCATION_TYPE, `${amount} fos points to ${recipient.name}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos' }, user: recipient })
       next = addSupply(next, taskPath, path.at(-1)!, { capability: 'allocation', by: 'fos', ref: id }, ctx.now())
       await ctx.update(next)
     }
@@ -202,15 +248,16 @@ export type PaymentDeps = {
 }
 
 /**
- * A money requirement (`-$ 20 reward`) under a task is a payment: when the task runs, the server opens one with the
+ * A request for money (`-$ 20 reward`: a negative row of the money type, `lib:type:allocation:money`) under a task is a payment: when the task runs, the server opens one with the
  * payment provider from the owner to the respondent and leaves the evaluation awaiting review. The provider's
  * confirmation (its webhook, `sync/payments.ts`) settles the requirement and continues the evaluation, whether or
  * not the owner's devices are online. Running again while the payment is open does not open a second one.
  */
-export function paymentHandler(deps: PaymentDeps): HostHandler {
+export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): HostHandler {
   return {
     peerId: 'fos', capability: 'send-payment',
-    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'account' },
+    // the row's type decides: a money row with a negative amount is a request for payment
+    handles: step => step.row?.type === MONEY_TYPE && !!step.row.requirement,
     async effect(ctx) {
       const path = ctx.step.path, req = ctx.step.row!.requirement!
       const amount = req.amount ?? 0, unit = (req.unit || 'usd').toLowerCase()
@@ -223,11 +270,11 @@ export function paymentHandler(deps: PaymentDeps): HostHandler {
         return
       }
       if (existing?.status === 'pending') return 'pending'
-      const recipient = payeeOf(ctx, 'payments')
+      const recipient = await payeeOf(ctx, 'payments', identity)
       const memo = `${ctx.step.row!.title || 'payment'} (${path.slice(0, -1).join('/')})`
-      const opened = await deps.request({ from: { id: ctx.userId, username: ctx.username }, toUsername: recipient, amount, unit, memo, key: `payment:${ctx.username}:${path.join('/')}`, path })
+      const opened = await deps.request({ from: { id: ctx.userId, username: ctx.username }, toUsername: recipient.username, amount, unit, memo, key: `payment:${ctx.username}:${path.join('/')}`, path })
       // recorded as open first; settlement (here when the provider charged a saved method, else the webhook) marks it paid
-      let next = writePaymentRecord(ctx.replica(), path, { id: opened.id, url: opened.url, status: 'pending', amount, unit, payer: ctx.username, payee: recipient, created: ctx.now(), ...(opened.intent ? { intent: opened.intent } : {}) }, ctx.now())
+      let next = writePaymentRecord(ctx.replica(), path, { id: opened.id, url: opened.url, status: 'pending', amount, unit, payer: ctx.username, payee: recipient.username, payeeUser: recipient, created: ctx.now(), ...(opened.intent ? { intent: opened.intent } : {}) }, ctx.now())
       if (opened.status === 'paid') next = settlePaymentRecord(next, path, { intent: opened.intent }, ctx.now()).replica
       await ctx.update(next)
       return opened.status === 'paid' ? undefined : 'pending'
@@ -253,11 +300,11 @@ export function mailHandler(deps: MailDeps): HostHandler {
     async effect(ctx) {
       const r = ctx.replica(), path = ctx.step.path, taskPath = path.slice(0, -1)
       const task = taskPath.length ? view(r, taskPath.slice(0, -1))?.tasks.find(t => t.id === taskPath.at(-1)) : null
-      const rows = (view(r, taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1) && t.kind !== 'supply').map(t => t.title)
+      const rows = (view(r, taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1) && !t.supply).map(t => t.title)
       const request = mailRequest(ctx.step.row!.title, task?.title ?? '', rows)
       if (!request) throw new Error('Name the recipient: "-mail someone@example.com Subject".')
       await deps.send(request.to, request.subject, request.text, ctx.username)
-      let next = addRow(ctx.replica(), path, 'plain', `Sent to ${request.to}: ${request.subject}`, ctx.now())
+      let next = addRow(ctx.replica(), path, PLAIN_TYPE, `Sent to ${request.to}: ${request.subject}`, ctx.now())
       next = addSupply(next, taskPath, path.at(-1)!, { capability: 'mail', by: 'fos' }, ctx.now())
       await ctx.update(next)
     }
@@ -269,10 +316,13 @@ export type HostHandlerDeps = {
   google: CalendarDeps
   llm: LlmDeps
   market: MarketDeps
+  search: SearchDeps
   points: PointsDeps
   /** Money payments through the account's payment provider (payments/stripe.ts); absent when none is configured. */
   payments?: PaymentDeps
   mail: MailDeps
+  /** Captures organized into a node (voice/organize.ts `organizeHandler`): `organize` requirements. */
+  organize?: HostHandler
   /** Attached MCP servers run `-tool` requirements (integrations/mcpPeers.ts `mcpToolHandler`). */
   tool?: HostHandler
   /** Is the account connected to the provider (`phone`)? */
@@ -281,22 +331,35 @@ export type HostHandlerDeps = {
   sms: boolean
   /** The cron runner is enabled on this instance (FOS_ENABLE_CRON). */
   cron: boolean
+  /** The server's user attestation (sync/verify.ts): fills `verify` requirements with attested user objects; payees are checked against it. */
+  verify: VerifyHandler
+}
+
+/**
+ * The relay (shared/sync/relay.ts, the standard library's Relay): a message a peer leaves on a node is moved into the
+ * queue of its addressee when the account knows that peer there (a member), and left alone otherwise. The same
+ * handler any device can run; here it runs as `fos` after every submission a node exchange brings in.
+ */
+export function relayHandler(): HostHandler {
+  return { peerId: 'fos', capability: 'relay', submission: (replica, path, now) => relayAfterSubmission(replica, path, 'fos', now) }
 }
 
 export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
   return [
-    // the server's own services: the row search index (search/routes.ts) is a route; market listing, polls and
-    // fos points run as effects
-    { peerId: 'fos', capability: 'search' },
+    // the server's own services, all effects: row search, market listing, polls, fos points, …
+    searchHandler(deps.search),
+    relayHandler(),
     marketHandler(deps.market),
     pollHandler(),
-    pointsHandler(deps.points),
-    ...(deps.payments ? [paymentHandler(deps.payments)] : []),
+    deps.verify,
+    pointsHandler(deps.points, deps.verify),
+    ...(deps.payments ? [paymentHandler(deps.payments, deps.verify)] : []),
     mailHandler(deps.mail),
     llmHandler(deps.llm),
     ...(deps.cron ? [{ peerId: 'fos', capability: 'cron' as const }] : []),
     githubRepoHandler(deps.github),
     calendarHandler(deps.google),
+    ...(deps.organize ? [deps.organize] : []),
     ...(deps.tool ? [deps.tool] : []),
     ...(deps.sms ? [{ peerId: 'integration:phone', capability: 'notify' as const, available: (id: number) => deps.connected(id, 'phone') }] : [])
   ]

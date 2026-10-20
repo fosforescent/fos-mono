@@ -8,8 +8,13 @@
  *
  *   read      one node: its text, children, branches, pending submissions and declared inputs
  *   search    text search below a node, bounded
+ *   outstanding  open work below a node: rows made from the Task type (or a template) that are not done and rows
+ *             made from the Allocation type whose requirement is not satisfied yet (the row's type decides, then its
+ *             state), those assigned to the acting peer first. A peer granted `execute` asks for it to find work,
+ *             then reads, proposes results or completes.
  *   submit    a submission: changes against a node. The owner applies them; anyone else leaves a proposal
- *             (a submission flagged for review) that the owner decides on.
+ *             (a submission flagged for review) that the owner decides on. An added row may name its id, so later
+ *             changes of the same submission add rows inside it (a nested group in one submission).
  *   branch    an alternative of a node (owner)
  *   input     fill one declared hole of an execution: text, confirmation, choice or allocation
  *   complete  evaluate a node. The owner's host runs its handler registry (the dispatcher only authorizes and returns
@@ -23,13 +28,16 @@
  * Capabilities as session types over this grammar come later; for now events are independent requests.
  */
 import { FosStore } from '../dag-implementation/store'
+import { NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
+import type { FosPathElem } from '../types'
 import {
-  branchSelection, commitRoot, content, contextScope, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
-  proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, resolveScope, rootTargetCid,
+  branchSelection, commitRoot, content, contextScope, demandOf, findAliasEdge, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
+  proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, requirementSatisfied,
+  requirementSummary, resolveScope, rootTargetCid, isTaskRow, isAllocationRow, isRowOfType,
   selectedBranchValue, updateAtScope, valueContent, viewNode, withBranches, withProposal, type Scope,
-  nestScope,
+  nestScope, libraryTypeAt,
 } from './graph'
-import { addMemberAt, addRow, applyProposalAt, createReplica, headCid, rejectProposalAt, renameTask, setTaskDone, type Replica } from './replica'
+import { addMemberAt, addRow, addTypedRow, applyProposalAt, createReplica, headCid, rejectProposalAt, renameTask, setTaskDone, type Replica } from './replica'
 import { createBranch } from './branches'
 import { executionInput, executionSnapshot } from './execution-access'
 import { capabilityPeers } from './bindings'
@@ -50,10 +58,17 @@ export type Principal = {
 }
 
 export type EventBranch = { path: Scope; name: string }
-export type Change = { path: Scope; operation: 'add_task' | 'add_note' | 'add_plain' | 'rename' | 'complete'; text?: string; done?: boolean }
+/**
+ * `add_row` adds a row of the standard-library row type `type` (e.g. `lib:type:note`, resolved by the nearest library
+ * at the parent) holding `text`. `id` (add operations only): the new row's alias id, so later changes of the same
+ * submission can add inside it.
+ */
+export type Change = { path: Scope; operation: 'add_row' | 'add_task' | 'add_note' | 'add_plain' | 'rename' | 'complete'; text?: string; done?: boolean; id?: string; type?: string }
+const ADDS: Array<Change['operation']> = ['add_row', 'add_task', 'add_note', 'add_plain']
 export type FosEvent =
   | { kind: 'read'; path?: Scope; branches?: EventBranch[]; offset?: number }
   | { kind: 'search'; path?: Scope; query: string; offset?: number; branches?: EventBranch[] }
+  | { kind: 'outstanding'; path?: Scope; offset?: number; branches?: EventBranch[] }
   | { kind: 'submit'; path?: Scope; expected: string; name?: string; changes: Change[]; branches?: EventBranch[] }
   | { kind: 'branch'; path: Scope; expected: string; name: string; branches?: EventBranch[] }
   | { kind: 'input'; path?: Scope; expected: string; key: string; value: unknown; branches?: EventBranch[] }
@@ -61,7 +76,7 @@ export type FosEvent =
   | { kind: 'decide'; path?: Scope; proposalId: string; decision: 'approve' | 'reject' }
   | { kind: 'invite'; path?: Scope; user: string }
 export type EventKind = FosEvent['kind']
-export const EVENT_KINDS: EventKind[] = ['read', 'search', 'submit', 'branch', 'input', 'complete', 'decide', 'invite']
+export const EVENT_KINDS: EventKind[] = ['read', 'search', 'outstanding', 'submit', 'branch', 'input', 'complete', 'decide', 'invite']
 
 /** What the host must still do after a dispatch: run its evaluator for `complete` (effects are host-side). */
 export type EvaluateRequest = { path: Scope; branches: Record<string, string>; expected: string; recover?: boolean }
@@ -109,12 +124,15 @@ export function parseEvent(input: unknown): FosEvent {
   switch (kind) {
     case 'read': return { kind, path, branches, offset: offsetOf(raw.offset) }
     case 'search': return { kind, path, branches, query: textOf(raw.query, 200), offset: offsetOf(raw.offset, 5000) }
+    case 'outstanding': return { kind, path, branches, offset: offsetOf(raw.offset, 1000) }
     case 'submit': {
       if (!Array.isArray(raw.changes) || !raw.changes.length || raw.changes.length > 50) throw new EventError('Supply 1–50 changes.')
       const changes: Change[] = raw.changes.map((change: any) => {
         if (!change || typeof change !== 'object') throw new EventError('Invalid change.')
-        if (!['add_task', 'add_note', 'add_plain', 'rename', 'complete'].includes(change.operation)) throw new EventError('Unknown change operation.')
-        return { path: pathOf(change.path), operation: change.operation, ...(change.text !== undefined ? { text: textOf(change.text) } : {}), ...(typeof change.done === 'boolean' ? { done: change.done } : {}) }
+        if (!['add_row', 'add_task', 'add_note', 'add_plain', 'rename', 'complete'].includes(change.operation)) throw new EventError('Unknown change operation.')
+        if ((change.operation === 'add_row') !== (change.type !== undefined) || (change.type !== undefined && (typeof change.type !== 'string' || !/^lib:type:[\w-]{1,64}$/.test(change.type)))) throw new EventError('add_row names a standard-library row type (lib:type:…); other operations take none.')
+        if (change.id !== undefined && (!ADDS.includes(change.operation) || typeof change.id !== 'string' || !/^[\w.:-]{1,128}$/.test(change.id) || change.id.startsWith('fos:'))) throw new EventError('Only added rows take an id (letters, digits, . : _ -).')
+        return { path: pathOf(change.path), operation: change.operation, ...(change.text !== undefined ? { text: textOf(change.text) } : {}), ...(typeof change.done === 'boolean' ? { done: change.done } : {}), ...(change.id !== undefined ? { id: change.id } : {}), ...(change.type !== undefined ? { type: change.type } : {}) }
       })
       return { kind, path, branches, expected: expectedOf(raw.expected), ...(raw.name !== undefined ? { name: textOf(raw.name, 100) } : {}), changes }
     }
@@ -176,7 +194,8 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
   const permission = (cid: string, capability: 'read' | 'edit' | 'execute') => {
     if (owner) return true
     const identity = content(store, selectedIdentity(store, cid))
-    return hasCapability(store, identity, principal.peerId, capability) || (capability === 'read' && hasCapability(store, identity, principal.peerId, 'edit'))
+    // edit and execute both include reading what they change or run
+    return hasCapability(store, identity, principal.peerId, capability) || (capability === 'read' && (hasCapability(store, identity, principal.peerId, 'edit') || hasCapability(store, identity, principal.peerId, 'execute')))
   }
   if (!permission(attached, 'read')) throw new EventError('Peer no longer has read access to this attachment.')
   const path = event.path ?? []
@@ -245,6 +264,42 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       }
       return unchanged({ matches, nextOffset: stack.length && visited < 5000 ? visited : null, truncated: stack.length > 0, scanned: visited })
     }
+    if (event.kind === 'outstanding') {
+      // A row is [type, row]: its type (the left node) says whether it is work. Tasks are rows made from the library's
+      // Task type (any pinned version, all of which share its id) or from a template row; requirements are rows made
+      // from its Allocation type that ask for something (a supply or a plain allocation is always satisfied); a template's
+      // rows are a definition and are skipped. Then
+      // their state decides: a task not done, a requirement not satisfied. A done task's subtree is skipped; masks hide
+      // children and text exactly as they do for read.
+      const offset = event.offset ?? 0
+      const stack: Array<{ at: Scope; edge?: FosPathElem; blockedBy?: string[] }> = [{ at: path }], seen = new Set<string>()
+      const open: Array<Record<string, unknown> & { assigned: boolean }> = []
+      let visited = 0
+      while (stack.length && visited < 5000 && open.length < 1100) {
+        const { at, edge, blockedBy } = stack.pop()!
+        const task = !!edge && isTaskRow(store, edge), requirement = !!edge && isAllocationRow(store, edge)
+        let current: string
+        try { current = resolve(at) } catch { continue }
+        if (seen.has(current)) continue
+        seen.add(current); visited++
+        const value = valueContent(store, current)
+        // a done task's subtree is finished; a template's is a definition, not work
+        if ((task && value.data.todo?.completed) || (!!edge && isRowOfType(store, edge, TEMPLATE_TYPE))) continue
+        const mask = owner ? null : nodeLinkMaskAt(r, absolute(at), principal.peerId)
+        if (at.length && (task || (requirement && !requirementSatisfied(store, current)))) {
+          const demand = requirement ? demandOf(value) : undefined
+          // assigned to this peer: bound as a member on the row itself, or named by the requirement
+          const assigned = readMembers(store, content(store, selectedIdentity(store, current))).some(m => m.peerId === principal.peerId) || (!!demand?.peer && [principal.peerId, principal.name].includes(demand.peer))
+          open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: requirementSummary(demand) } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
+        }
+        if (at.length < 32) {
+          const rows = viewNode(store, current).tasks.filter(row => !mask?.children || mask.children.includes(row.id))
+          for (const row of [...rows].reverse()) stack.push({ at: [...at, row.id], edge: findAliasEdge(store, value, row.id)?.edge, blockedBy: row.blockedBy })
+        }
+      }
+      const ordered = [...open.filter(item => item.assigned), ...open.filter(item => !item.assigned)]
+      return unchanged({ revision: attached, items: ordered.slice(offset, offset + 100), nextOffset: offset + 100 < ordered.length ? offset + 100 : null, truncated: stack.length > 0, scanned: visited })
+    }
     if (event.kind === 'complete') {
       if (event.expected !== put(store, valueContent(store, cid))) throw new EventError('The node changed. Read and review it before evaluating.')
       if (owner || permission(cid, 'execute')) return { replica: r, changed: false, result: { status: 'evaluating' }, evaluate: { path: absolute(path), branches: { ...branches, ...(event.selections ?? {}) }, expected: event.expected, ...(event.recover ? { recover: true } : {}) } }
@@ -299,15 +354,30 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
     if (path.length) throw new EventError('Submissions attach at []. Put relative paths in changes[].path.')
     if (!editable) throw new EventError('Peer cannot propose edits on this attachment.')
     const apply = (draft: Replica, draftStore: FosStore, base: Scope): Replica => {
+      // rows this submission added with an `id`: later changes may add inside them (they exist only in the draft)
+      const created = new Set<string>()
       for (const change of event.changes) {
-        const at = change.path, source = resolve(at)
+        const fresh = change.path.findIndex(id => created.has(id))
+        if (fresh >= 0 && !ADDS.includes(change.operation)) throw new EventError('Rows added by this submission only take further rows.')
+        const at = fresh >= 0 ? change.path.slice(0, fresh) : change.path, source = resolve(at)
         for (let i = 1; i <= at.length; i++) {
           const child = resolve(at.slice(0, i)), value = content(store, selectedIdentity(store, child))
           if (readMembers(store, value).some(m => m.peerId === principal.peerId) && !permission(child, 'edit')) throw new EventError('Peer cannot edit this child.')
         }
         if (!owner && nodeLinkMaskAt(r, absolute(at), principal.peerId).fields?.includes('description') === false) throw new EventError('Node text is not exposed to this peer.')
-        const target = [...base, ...at]
-        if (change.operation === 'add_task' || change.operation === 'add_note' || change.operation === 'add_plain') draft = addRow(draft, target, change.operation === 'add_task' ? 'task' : change.operation === 'add_note' ? 'note' : 'plain', textOf(change.text), now)
+        const target = [...base, ...change.path]
+        if (ADDS.includes(change.operation)) {
+          const parent = resolveScope(draftStore, headCid(draft), target)
+          if (!parent) throw new EventError('Node not found in this branch.')
+          if (change.id && (created.has(change.id) || viewNode(draftStore, parent).tasks.some(row => row.id === change.id))) throw new EventError('A row with that id already exists here.')
+          const before = headCid(draft)
+          if (change.operation === 'add_row') {
+            const type = libraryTypeAt(draftStore, change.type!, target)
+            if (!type) throw new EventError(`No standard library here has the row type ${change.type}.`)
+            draft = addTypedRow(draft, target, type, textOf(change.text), now, change.id)
+          } else draft = addRow(draft, target, change.operation === 'add_task' ? TASK_TYPE : change.operation === 'add_note' ? NOTE_TYPE : PLAIN_TYPE, textOf(change.text), now, change.id ? { id: change.id } : {})
+          if (change.id && headCid(draft) !== before) created.add(change.id)
+        }
         else if (change.operation === 'rename') {
           const text = textOf(change.text)
           if (!at.length) {

@@ -132,10 +132,10 @@ impl Workspace {
     /// "// x" a comment, anything else a plain row.
     pub fn add_task(&self, at: &[String], title: &str) -> Result<Value, String> {
         let at_json = serde_json::to_string(at).unwrap();
-        let (kind, text, done) = parse_row_input(title);
+        let (row_type, text, done) = parse_row_input(title);
         let created = self
             .core
-            .call_json("addRow", &[json!(HANDLE), json!(at_json), json!(kind), json!(text), json!(now_ms()), json!(json!({ "done": done }).to_string())])
+            .call_json("addRow", &[json!(HANDLE), json!(at_json), json!(row_type), json!(text), json!(now_ms()), json!(json!({ "done": done }).to_string())])
             .map_err(|e| e.to_string())?;
         self.save()?;
         Ok(created)
@@ -246,7 +246,8 @@ impl Workspace {
             let node = client::provide_node(&session, &request, Some(&owner))?;
             if let Some(children) = node["children"].as_array() {
                 for child in children {
-                    if child["kind"].as_str() == Some("ref") { continue; }
+                    // a reference row or a node another peer holds: not served through the library
+                    if child["held"].as_bool() == Some(true) { continue; }
                     if let Some(id) = child["id"].as_str() { let mut next = path.clone(); next.push(id.to_string()); queue.push(next); }
                 }
             }
@@ -273,22 +274,22 @@ impl Workspace {
     }
 }
 
-/// (kind, text, done) from an add-bar line.
+/// (row type, text, done) from an add-bar line: the standard library row type (`lib:type:…`) the row is made from.
 pub fn parse_row_input(raw: &str) -> (&'static str, String, bool) {
     let t = raw.trim_end();
     if let Some(rest) = t.strip_prefix("[x]").or_else(|| t.strip_prefix("[X]")) {
-        return ("task", rest.trim().to_string(), true);
+        return ("lib:type:task", rest.trim().to_string(), true);
     }
     if let Some(rest) = t.strip_prefix("[]").or_else(|| t.strip_prefix("[ ]")) {
-        return ("task", rest.trim().to_string(), false);
+        return ("lib:type:task", rest.trim().to_string(), false);
     }
     if let Some(rest) = t.strip_prefix("> ").or_else(|| t.strip_prefix('>')) {
-        return ("note", rest.trim_start().to_string(), false);
+        return ("lib:type:note", rest.trim_start().to_string(), false);
     }
     if let Some(rest) = t.strip_prefix("//") {
-        return ("comment", rest.trim().to_string(), false);
+        return ("lib:type:comment", rest.trim().to_string(), false);
     }
-    ("plain", t.trim().to_string(), false)
+    ("lib:type:plain", t.trim().to_string(), false)
 }
 
 #[cfg(test)]
@@ -323,11 +324,11 @@ mod row_tests {
 
     #[test]
     fn prefixes_pick_the_row_kind() {
-        assert_eq!(parse_row_input("[] buy milk"), ("task", "buy milk".into(), false));
-        assert_eq!(parse_row_input("[x] done"), ("task", "done".into(), true));
-        assert_eq!(parse_row_input("> # Title"), ("note", "# Title".into(), false));
-        assert_eq!(parse_row_input("- not a note"), ("plain", "- not a note".into(), false));
-        assert_eq!(parse_row_input("// hmm"), ("comment", "hmm".into(), false));
-        assert_eq!(parse_row_input("just text"), ("plain", "just text".into(), false));
+        assert_eq!(parse_row_input("[] buy milk"), ("lib:type:task", "buy milk".into(), false));
+        assert_eq!(parse_row_input("[x] done"), ("lib:type:task", "done".into(), true));
+        assert_eq!(parse_row_input("> # Title"), ("lib:type:note", "# Title".into(), false));
+        assert_eq!(parse_row_input("- not a note"), ("lib:type:plain", "- not a note".into(), false));
+        assert_eq!(parse_row_input("// hmm"), ("lib:type:comment", "hmm".into(), false));
+        assert_eq!(parse_row_input("just text"), ("lib:type:plain", "just text".into(), false));
     }
 }

@@ -8,6 +8,8 @@ import { createHandlerRegistry } from './registry'
 import { createSharingHandlers } from './sharing'
 import { ensureStandardLibrary, LIBRARY_GRANTS } from './library'
 import { ensureAccountContext } from './provideNode'
+import { TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
+import { REF_TYPE } from '@fosforescent/shared/sync/library-types'
 
 /** A host with any number of accounts; `createAccount` makes a fresh one like registration does. */
 function host() {
@@ -29,7 +31,7 @@ function proposeRow(r: Replica, path: Scope, peer: string, title: string, id: st
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: path })
-  const draft = addRow(createReplica(peer, draftStore), [], 'template', title, now, { id })
+  const draft = addRow(createReplica(peer, draftStore), [], TEMPLATE_TYPE, title, now, { id })
   importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
   const cid = put(store, proposalContent(store, peer, 'node-sync', headCid(draft), base, now))
   commitRoot(store, updateAtScope(store, root, path, current => withProposal(store, makeLink(store, current, now), peer, cid, 'node-sync'), 'node'), now)
@@ -43,7 +45,7 @@ test('the library account, node, sharing, policy and templates come to exist onc
   expect(address.share).toMatch(/^[\w-]{16,128}$/)
   const lib = h.get('fos-library')
   const node = view(lib, address.path)!
-  expect(node.tasks.filter(t => t.kind === 'template').length).toBeGreaterThanOrEqual(6)
+  expect(node.tasks.filter(t => t.type === TEMPLATE_TYPE).length).toBeGreaterThanOrEqual(6)
   expect(sharing(lib, address.path)).toMatchObject({ audience: 'users', enabled: true, id: address.share })
   expect(node.members.find(m => m.peerId === 'audience:users')!.capabilities).toEqual(expect.arrayContaining([...LIBRARY_GRANTS]))
   expect(mergePolicy(lib, address.path)).toEqual({ approvals: 2 })
@@ -57,7 +59,7 @@ test('the library account, node, sharing, policy and templates come to exist onc
   expect(libraryLink(alice)).toBeNull()
   alice = ensureLibraryLink(alice, address, 6).replica
   expect(libraryLink(alice)).toEqual([HOME_ID, LIBRARY_ID])
-  expect(view(alice, [HOME_ID])!.tasks.find(t => t.id === LIBRARY_ID)).toMatchObject({ kind: 'ref', refOwner: 'fos-library', refId: LIBRARY_ID })
+  expect(view(alice, [HOME_ID])!.tasks.find(t => t.id === LIBRARY_ID)).toMatchObject({ type: REF_TYPE, refOwner: 'fos-library', refId: LIBRARY_ID })
   expect(headCid(ensureAccountContext(alice, 6, registry))).toBe(headCid(alice))
   expect(libraryLink(ensureAccountContext(h.get('fos-library'), 7, registry))).toBeNull()
   expect(libraryLink(ensureAccountContext(ensureHomeContext(createReplica('user:bob'), 1), 8, createHandlerRegistry([])))).toBeNull()
@@ -88,7 +90,7 @@ test('members vote on a proposed change through the shared view and the library 
   const carolVote = await call('submit', { ...at, revision: carol.body.node.revision, approvals: [`proposal:${cid}`], ranking: [], fields: {} }, 'carol')
   expect(carolVote.status).toBe(200)
   const lib = h.get('fos-library')
-  expect(view(lib, address.path)!.tasks.some(t => t.id === 'lib:weekly' && t.kind === 'template')).toBe(true)
+  expect(view(lib, address.path)!.tasks.some(t => t.id === 'lib:weekly' && t.type === TEMPLATE_TYPE)).toBe(true)
   expect(view(lib, address.path)!.proposals.filter(p => p.status === 'open')).toHaveLength(0)
   expect(carolVote.body.node.proposals).toEqual([])
 })

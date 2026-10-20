@@ -2,6 +2,7 @@
 const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
+const NOTE_TYPE = 'lib:type:note'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-spec-test-'))
 try {
  buildSync({stdin:{contents:`export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`,resolveDir:path.resolve(__dirname,'..')},bundle:true,platform:'node',format:'cjs',outfile:path.join(dir,'test.cjs')})
@@ -9,7 +10,7 @@ try {
  const app=new App({baseUrl:'http://localhost',autoLogin:null,storage:createMemoryStorage()});app.scheduleSync=()=>{}
  const root=app.state.view
  let a=addSpecification(app.state.replica,root,'Parent',1),b=addSpecification(a.replica,a.path,'Child',2)
- let r=addRow(b.replica,b.path,'note','Evidence',3,{id:'evidence'})
+ let r=addRow(b.replica, b.path, NOTE_TYPE,'Evidence',3,{id:'evidence'})
  const specs=specificationRows(r,root);assert.equal(specs.length,2)
  const child=specs.find(row=>row.text==='Child'),parent=specs.find(row=>row.text==='Parent')
  r=importSpecifications(r,root,[{...child,parent:null},{...parent,parent:child.id}],4)

@@ -66,6 +66,9 @@ jobs:
       - name: Initialize Android project
         run: cd desktop && npx tauri android init
 
+      - name: Declare microphone permission
+        run: bash .github/scripts/patch-mobile-permissions.sh android
+
       - name: Generate icons
         run: cd desktop && npx tauri icon src-tauri/app-icon.json
 

@@ -1,6 +1,6 @@
 {
   "name": "@fosforescent/backend",
-  "version": "0.1.7",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "nodemon --config nodemon.json",

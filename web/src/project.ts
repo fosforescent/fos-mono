@@ -12,7 +12,7 @@
 import { branchFileName, parseToml, type FosProjectConfig } from '../../shared/sync/index'
 import type { ReplicaStorage } from './storage'
 
-export type ProjectInfo = { dir: string; config: FosProjectConfig; branch: string | null }
+export type ProjectInfo = { dir: string; config: FosProjectConfig; branch: string | null; home: boolean }
 
 type TauriWindow = Window & { __TAURI__?: { core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> } } }
 
@@ -31,12 +31,12 @@ export function openExternal(url: string): Promise<void> | null {
 }
 
 export async function findProject(): Promise<ProjectInfo | null> {
-  const call = tauriInvoke<{ dir: string; config: string; branch: string | null } | null>('find_project')
+  const call = tauriInvoke<{ dir: string; config: string; branch: string | null; home?: boolean } | null>('find_project')
   if (!call) return null
   try {
     const found = await call
     if (!found) return null
-    return { dir: found.dir, config: parseToml(found.config) as FosProjectConfig, branch: found.branch }
+    return { dir: found.dir, config: parseToml(found.config) as FosProjectConfig, branch: found.branch, home: !!found.home }
   } catch (error) {
     console.warn('find_project failed', error)
     return null

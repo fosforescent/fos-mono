@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { DEFAULT_MERGE_POLICY, LIBRARY_ID, LIBRARY_VERSION, addRow, createReplica, ensureHomeContext, exportLibraryRows, headCid, homePath, libraryInfo, mergePolicy, seedStandardLibrary, setMemberCapabilitiesAt, setMergePolicy, setSharing, sharing, view, type LibraryAddress, type LibraryBundle, type Replica } from '@fosforescent/shared/sync/index'
 import type { HandlerRegistry } from './registry'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
+import { PLAIN_TYPE } from '@fosforescent/shared/sync/library-types'
 
 export const LIBRARY_TITLE = 'Standard library'
 export const LIBRARY_GRANTS = ['read', 'edit', 'rank'] as const
@@ -30,7 +31,7 @@ export async function ensureStandardLibrary(deps: LibraryDeps, owner: string, re
     const before = headCid(r)
     r = ensureHomeContext(r, now, registry?.hostOffers())
     const home = homePath(r)
-    if (!view(r, home)?.tasks.some(t => t.id === LIBRARY_ID)) r = addRow(r, home, 'plain', LIBRARY_TITLE, now, { id: LIBRARY_ID })
+    if (!view(r, home)?.tasks.some(t => t.id === LIBRARY_ID)) r = addRow(r, home, PLAIN_TYPE, LIBRARY_TITLE, now, { id: LIBRARY_ID })
     const path = [...home, LIBRARY_ID]
     let policy = sharing(r, path)
     if (!policy?.enabled || policy.audience !== 'users') {

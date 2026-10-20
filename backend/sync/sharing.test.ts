@@ -1,13 +1,14 @@
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
-import { addMemberAt, addRow, addTask, addRefAt, createReplica, setSharing, configurePoll, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, type Replica } from '@fosforescent/shared/sync/index'
+import { addMemberAt, addRow, addTask, addRefAt, createReplica, setSharing, configurePoll, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createSharingHandlers } from './sharing'
+import { NOTE_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
 const share = 'public-link-0123456789', at = { owner: 'host', path: ['poll'], share }
 function setup(audience: 'public' | 'users' = 'public', mode: 'approval' | 'rank' = 'approval') {
-  let host = addRow(createReplica('user:host'), [], 'requirement', 'Lunch?', 1, { id: 'poll', requirement: { capability: 'choice', options: ['Soup', 'Salad'] } })
+  let host = addRow(createReplica('user:host'), [], ALLOCATION_TYPE, 'Lunch?', 1, { id: 'poll', requirement: { capability: 'choice', options: ['Soup', 'Salad'] } })
   host = setSharing(host, ['poll'], { id: share, audience, enabled: true }, 2)
   host = addMemberAt(host, [], 'fos', 'Fos', ['poll'], 2)
   host = configurePoll(host, ['poll'], mode, 3)
@@ -128,8 +129,8 @@ test('approving a proposed edit is input the owner decides with (the tally never
 })
 test('allocation links expose only requested fields and reject mismatching sources', async () => {
   const s = setup('users')
-  s.replicas.host = addRow(s.replicas.host, ['poll'], 'requirement', 'Bring one dress', 5, { id: 'need', requirement: { capability: 'allocation', resource: 'inventory', unit: 'dress', amount: 1 } })
-  s.replicas.guest = addRow(s.replicas.guest, [], 'allocation', 'private inventory label', 5, { id: 'dress', allocation: { resource: 'private-bank', type: 'inventory', unit: 'dress', amount: 1, start: 123, end: 456 } })
+  s.replicas.host = addRow(s.replicas.host, ['poll'], ALLOCATION_TYPE, 'Bring one dress', 5, { id: 'need', requirement: { capability: 'allocation', resource: 'inventory', unit: 'dress', amount: 1 } })
+  s.replicas.guest = addRow(s.replicas.guest, [], ALLOCATION_TYPE, 'private inventory label', 5, { id: 'dress', allocation: { resource: 'private-bank', type: 'inventory', unit: 'dress', amount: 1, start: 123, end: 456 } })
   const visit = await s.call('visit', at, 'guest')
   const saved = await s.call('submit', input(visit.body, { fields: { need: { source: 'dress' } } }), 'guest')
   expect(saved.status).toBe(200)
@@ -137,4 +138,46 @@ test('allocation links expose only requested fields and reject mismatching sourc
   expect(JSON.stringify(saved.body.node.mine)).not.toContain('private-bank')
   expect((await s.call('submit', input(visit.body, { fields: { need: { source: 'source' } } }), 'guest')).status).toBe(400)
   expect(view(s.replicas.guest, ['fos:home'])!.tasks.some(t => view(s.replicas.guest, ['fos:home', t.id])?.members.some(m => m.peerId === 'user:host'))).toBe(true)
+})
+test('the public read endpoint serves the projection for embeds without recording a visitor', async () => {
+  let host = addRow(createReplica('user:host'), [], NOTE_TYPE, '# A post\n\nWith a **body**.', 1, { id: 'post' })
+  host = addRow(host, ['post'], NOTE_TYPE, '## Part\n\nMore.', 2, { id: 'part' })
+  host = writeNodeValue(host, [], 'secret', 'host-only-secret', 3)
+  host = setSharing(host, ['post'], { id: share, audience: 'public', enabled: true }, 4)
+  const replicas: Record<string, Replica> = { host }
+  let saves = 0
+  const handlers = createSharingHandlers({ loadStore: async owner => replicas[owner] ? { user: { id: 1, username: owner }, store: replicas[owner].store } : null, saveStore: async () => { saves++ }, now: () => 10 }, 'test-only-secret')
+  const read = async (query: Record<string, unknown>) => {
+    let status = 200, result: any
+    const headers: Record<string, string> = {}
+    const res = { status(n: number) { status = n; return res }, json(b: unknown) { result = b; return res }, setHeader(k: string, v: string) { headers[k] = v } } as unknown as Response
+    await handlers.read({ query } as unknown as Request, res)
+    return { status, body: result, headers }
+  }
+  const ok = await read({ owner: 'host', share, path: JSON.stringify(['post']) })
+  expect(ok.status).toBe(200)
+  expect(ok.body.node).toMatchObject({ title: 'A post', type: 'lib:type:note', body: '# A post\n\nWith a **body**.' })
+  expect(ok.body.node.rows).toEqual([{ id: 'part', title: 'Part', depth: 0, type: 'lib:type:note', body: '## Part\n\nMore.' }])
+  expect(ok.body.node.mine).toBeUndefined()
+  expect(ok.headers['Cache-Control']).toBe('public, max-age=60')
+  expect(JSON.stringify(ok.body)).not.toContain('host-only-secret')
+  expect(saves).toBe(0)
+  expect(view(replicas.host, ['post'])!.members.some(m => m.peerId.startsWith('visitor:'))).toBe(false)
+  expect((await read({ owner: 'host', share: 'wrong-link-0123456789', path: JSON.stringify(['post']) })).status).toBe(404)
+  expect((await read({ owner: 'host', share, path: 'not json' })).status).toBe(400)
+  replicas.host = setSharing(replicas.host, ['post'], { id: share, audience: 'users', enabled: true }, 5)
+  expect((await read({ owner: 'host', share, path: JSON.stringify(['post']) })).status).toBe(401)
+})
+test('answers to a missing binding are binding proposals on the owner node, one per anonymous visitor', async () => {
+  const s = setup(), visit = await s.call('visit', at), other = await s.call('visit', at)
+  const key = visit.body.node.inputs.find((f: any) => f.kind === 'text').key
+  expect((await s.call('submit', input(visit.body, { fields: { [key]: { value: 'Soup, hot' } } }))).status).toBe(200)
+  expect((await s.call('submit', input(other.body, { fields: { [key]: { value: 'Salad' } } }))).status).toBe(200)
+  const host = s.replicas.host, ref = content(host.store, resolveScope(host.store, headCid(host), ['poll', key])!)
+  const proposals = readProposals(host.store, ref).filter(p => p.status === 'open')
+  expect(proposals).toHaveLength(2)
+  expect(new Set(proposals.map(p => p.peerId)).size).toBe(2)
+  expect(proposals.every(p => p.peerId.startsWith('visitor:'))).toBe(true)
+  // still unbound: the owner decides
+  expect(refValueCid(host.store, ref)).toBeNull()
 })

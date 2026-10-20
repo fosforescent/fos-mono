@@ -32,10 +32,12 @@ fos [dir] peers     the .fos stores on this machine this one is linked with; `pe
 - `stores.rs` - the `.fos` stores on this machine a store links with (Home's and those above it), and where the stores that linked it are (`.fos/stores.json`); compiled into both the CLI and the GUI (`link_local_stores` and `local_store` commands in `lib.rs`)
 - `client.rs` - account HTTP (`ureq`): login, connect-token attach with approval polling, device login (`/auth/device/start|poll`), attachment, node requests (`provide_node`, the sync transport), proposal decisions, detach
 - `local_server.rs` - `tiny_http` server: `/mcp` (the shared `fos_*` MCP vocabulary through the core's `mcp` entry point, as the directory's owner), `/p2p/offer|answer` relay, `/status`, `/events?since=` long-poll
-- `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync status approve reject attach login branches`)
-- `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file` for linked directory peers (`web/src/filesystem.ts`); plus the `node_agent::*` and `agents::*` commands
+- `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync inbox ack status approve reject attach login branches`; `inbox`/`ack <id>` list and acknowledge what relays delivered to this store's peer, through the embed's `relayInbox`/`relayAck`; a user session's sync also pulls the server's member entry above Home)
+- `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file`/`hash_node_file` for linked directories (`web/src/filesystem.ts`; a project window lists its own directory at its root, and `find_project` says `home` so the home context does not list `~`); plus the `node_agent::*` and `agents::*` commands
+- `files.rs` - files addressed relative to a linked root: `resolve_in_root` (refuses `..`, paths outside the root, symbolic links, `.fos`/`.git`) and `hash_in_root` (streamed SHA-256 for the checksums file-reference rows keep); compiled into the binary too so `cargo test --bin fos` runs its tests
 - `node_agent.rs` - authenticated loopback MCP relay for "Connect to agent" (`web/src/node-agent.ts`); desktop targets only (`tiny_http` is not built for iOS/Android), the mobile apps compile a stub in `lib.rs` whose commands return an error
-- `agents.rs` - spawns `../agent-runtime` (Claude Agent SDK / Codex SDK runs, CLI launches, local git), validates repositories, and `agent_clis` reports which agent CLIs (`claude`, `codex`) are on PATH so the web app shows them as local peers. The runtime is bundled without the SDKs' optional native binaries (`prepare:agents` uses `--omit=optional`, saving ~700 MB per install); `agent-runtime/executables.mjs` hands each SDK the CLI on PATH instead
+- `agents.rs` - spawns `../agent-runtime` (CLI launches in a visible terminal, local git), validates repositories, `agent_clis` reports which agent CLIs (`claude`, `codex`) are on PATH, whether VS Code has the Claude Code extension and whether Claude Desktop is set up, so the web app shows them as local peers; `open_agent_link` opens only `vscode://anthropic.claude-code/open?` and `claude://claude.ai/new?` links
+- `claude_desktop.rs` - `claude_desktop_mcp`: preview, add or remove one `fos-…` entry in Claude Desktop's `claude_desktop_config.json` (the only file it touches; other entries kept, `.bak` of the old file)
 
 Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. `make desktop-install` builds the release bundle and installs it on this computer (`scripts/desktop-install.cjs`); `make tauri-dev` runs the separate dev app (`tauri.dev.conf.json`: identifier `com.fosforescent.app.dev`, state in `~/.fos-dev` through `FOS_STATE_HOME`), so the installed app and the dev app can run side by side without sharing WebView storage, device identity or replicas. Ports: only `tauri dev` opens one (Vite on 5173); the installed app has none, and `fos run` takes `--port` when two CLIs serve at once. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle with `cd desktop && npm run build:core` (esbuild; `web/node_modules/.bin/esbuild` also works when the root workspace is not installed). Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
 
@@ -105,7 +107,7 @@ The Tauri app reads these environment variables on startup:
 
 ### Input Sources
 - `fos.config.toml` and `.fos/` project state
-- Linked directories (read-only listings and previews)
+- Linked directories (read-only listings, previews and SHA-256 checksums)
 - Agent runtime events (NDJSON from `agent-runtime`)
 
 ### Output Destinations
@@ -145,7 +147,7 @@ The web app signs in with the account directly; OAuth integration sign-ins open 
 ### ✅ Completed
 - **Project state**: `.fos/` shared by the GUI, CLI and REPL (`device.json`, `session.json`, `replicas/<branch>.json`)
 - **CLI launcher**: `fos .` launches the GUI, `fos init` writes `fos.config.toml`, `fos repl` for the terminal
-- **Agents**: SDK runs and CLI launches through `agent-runtime`, node-scoped loopback MCP
+- **Agents**: CLI launches in a terminal through `agent-runtime`, connected to the node over a loopback MCP as the agent peer; VS Code and Claude Desktop links; Claude Desktop MCP config
 
 ### ✅ Completed (continued)
 - **Online/offline transition**: the `web/` UI keeps a replica in webview localStorage, works offline, and merges with the account on login via `shared/sync` (three-way merge on the FosStore graph, CHOICE nodes for divergences, optional attachment to a single partition). See `docs/sync.md`.

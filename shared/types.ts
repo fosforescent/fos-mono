@@ -135,19 +135,22 @@ export type FosDataContent = {
   /** On a proposal node (a peer's branch at a link node). */
   /**
    * A requirement row under a task ("-" prefix): a capability / effect handler that must be supplied before the
-   * task can be completed. The capability names the kind of child row that fills it: `task` (a done task),
+   * task can be completed. The capability names the child row that fills it: `task` (a done task),
    * `allocation` (an allocation of `resource`), `search` (a run query), `confirmation`/`choice` (a supply by a
    * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
    */
   requirement?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
     resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount?: number
     unit?: string
     start?: number
     end?: number
     options?: string[]
-    /** `peer` requirements: the peer (username or device name) the task is assigned to. */
+    /**
+     * `peer` requirements: a peer id the task is assigned to (a shared host, a device). A user named with `-@name`
+     * is not a string here: the row's `user` field binds their user object (sync/users.ts).
+     */
     peer?: string
     /** `location` requirements ("-at Eiffel Tower 18:00..20:00"): the named place to be at, when the row names one. */
     place?: string
@@ -158,7 +161,7 @@ export type FosDataContent = {
   },
   /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
   supply?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
     by: string
     at: number
     ref?: string
@@ -168,11 +171,11 @@ export type FosDataContent = {
   disabledCapabilities?: {
     content: string[]
   },
-  /** Historical serialized data only. New definitions use graph rows; retained for old-store migration. */
+  /** Retired row marker (older builds wrote it): never a row discriminator, and the library compiler refuses it. A row's type is its edge's left node. */
   instanceKind?: {
     kind: string
   },
-  /** On a row type: the behavior its instances get from code (`builtin:<kind>`) until it is expressed as rows. */
+  /** A named code behavior. `builtin:*` ones are retired (the library compiler refuses them): types are told apart by graph identity. */
   behavior?: {
     content: string
   },
@@ -189,7 +192,6 @@ export type FosDataContent = {
   /** On a reference-error template: the template a row is pinned to that this peer has not received yet. */
   missingTemplate?: {
     cid: string
-    kind: string
   },
   /** A query row: its description is the search text; results appear as reference rows under it. */
   query?: {
@@ -222,14 +224,8 @@ export type FosDataContent = {
     start?: number
     end?: number
     by?: string
-    /** Person allocations ("@name 2h"): who is allocated. */
-    person?: string
     /** Location allocations ("at Paris"): the place, by name and/or coordinates (a device's position). */
     location?: { name?: string; lat?: number; lng?: number }
-  },
-  /** On a published handler offer (sync/handlers.ts `publishTemplate`): advertised on the marketplace. Rows are listed through the `fos:listing` node value instead (sync/market.ts). */
-  listing?: {
-    listedAt: number
   },
   /** A reference row: this node stands for the node whose alias id is `id` (shown by title; follows it on click). */
   ref?: {
@@ -239,7 +235,9 @@ export type FosDataContent = {
     /** Device holding this version; content is fetched separately from the reference. */
     peer?: string
     /** Scoped locator for an unloaded node supplied by this peer. */
-    scope?: string[]; branches?: Array<{ scope: string[]; name: string }>; kind?: string
+    scope?: string[]; branches?: Array<{ scope: string[]; name: string }>
+    /** An unloaded node its provider listed as held (`NodeChild.held`): a reference row, or a node a third peer holds. */
+    held?: boolean
     version?: string
   },
   proposal?: {

@@ -1,13 +1,19 @@
 import type { Request, Response } from 'express'
 import { createHash } from 'node:crypto'
-import { addMemberAt, addRow, addSupply, addTask, configurePoll, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, HOME_ID, loadReplica, serializeReplica, setMemberCapabilitiesAt, setSharing, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
+import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, configurePoll, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, setSharing, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
-import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler } from './hostHandlers'
+import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler, searchHandler } from './hostHandlers'
+import { verifyHandler, identityKeyFromSeed } from './verify'
+import { QUERY_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
+import { PLAIN_TYPE } from '@fosforescent/shared/sync/library-types'
+
+const accounts: Record<string, { id: number; username: string; name?: string }> = { bob: { id: 2, username: 'bob', name: 'Bob' }, carol: { id: 3, username: 'carol' } }
+const identity = verifyHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
 
 /** Each scenario gets its own store: a failed run leaves its journal in the store it ran against. */
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
@@ -30,7 +36,7 @@ function host(r: Replica, registry: ReturnType<typeof createHandlerRegistry>) {
 test('the llm effect pins the attempt, leaves the answer for review, and commits once the owner accepts it', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['llm'] })
   r = addTask(r, [HOME_ID], 'Plan the launch', 2, 'plan')
-  r = addRow(r, [HOME_ID, 'plan'], 'requirement', 'Draft the plan', 2, { id: 'ask', requirement: { capability: 'llm' } })
+  r = addRow(r, [HOME_ID, 'plan'], ALLOCATION_TYPE, 'Draft the plan', 2, { id: 'ask', requirement: { capability: 'llm' } })
   const complete = jest.fn(async () => '1. Announce\n2. Ship')
   const h = host(r, createHandlerRegistry([llmHandler({ complete })]))
   const first = await h.complete([HOME_ID, 'plan'], ['ask'])
@@ -57,7 +63,7 @@ test('the calendar effect creates the event and the allocation that fills a time
   let r = ensureHomeContext(createReplica('user:owner'), 1, { integrations: { google: ['calendar'] } })
   r = addTask(r, [HOME_ID], 'Team offsite', 2, 'offsite')
   const start = 1_760_000_000_000
-  r = addRow(r, [HOME_ID, 'offsite'], 'requirement', 'Kickoff hour', 2, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start, end: start + 3_600_000 } })
+  r = addRow(r, [HOME_ID, 'offsite'], ALLOCATION_TYPE, 'Kickoff hour', 2, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start, end: start + 3_600_000 } })
   const createEvent = jest.fn(async () => ({ url: 'https://calendar.google.com/ev1', id: 'ev1' }))
   const h = host(r, createHandlerRegistry([calendarHandler({ connected: async () => true, createEvent })]))
   const result = await h.complete([HOME_ID, 'offsite'], ['slot'])
@@ -66,13 +72,13 @@ test('the calendar effect creates the event and the allocation that fills a time
   expect(createEvent).toHaveBeenCalledWith(1, { summary: 'Kickoff hour', description: 'Kickoff hour', start, end: start + 3_600_000 })
   const slot = view(h.get(), [HOME_ID, 'offsite'])!.tasks.find(t => t.id === 'slot')!
   expect(slot.requirement!.satisfied).toBe(true)
-  expect(view(h.get(), [HOME_ID, 'offsite', 'slot'])!.tasks.map(t => [t.kind, t.title])).toEqual([['allocation', 'on Google Calendar https://calendar.google.com/ev1']])
+  expect(view(h.get(), [HOME_ID, 'offsite', 'slot'])!.tasks.map(t => [t.type, !!t.allocation, t.title])).toEqual([[ALLOCATION_TYPE, true, 'on Google Calendar https://calendar.google.com/ev1']])
 })
 
 test('an effect whose peer is not connected blocks instead of running', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { integrations: { google: ['calendar'] } })
   r = addTask(r, [HOME_ID], 'Offsite', 2, 'offsite')
-  r = addRow(r, [HOME_ID, 'offsite'], 'requirement', 'Slot', 2, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start: 5, end: 3_600_005 } })
+  r = addRow(r, [HOME_ID, 'offsite'], ALLOCATION_TYPE, 'Slot', 2, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start: 5, end: 3_600_005 } })
   const createEvent = jest.fn()
   const h = host(r, createHandlerRegistry([calendarHandler({ connected: async () => false, createEvent })]))
   const result = await h.complete([HOME_ID, 'offsite'], ['slot'])
@@ -86,7 +92,7 @@ test('an effect whose peer is not connected blocks instead of running', async ()
 test('the market effect lists the task, indexes the account, and records the supply as the server (the client writes neither)', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['market'] })
   r = addTask(r, [HOME_ID], 'Design a logo', 2, 'logo')
-  r = addRow(r, [HOME_ID, 'logo'], 'requirement', 'market', 2, { id: 'list', requirement: { capability: 'market' } })
+  r = addRow(r, [HOME_ID, 'logo'], ALLOCATION_TYPE, 'market', 2, { id: 'list', requirement: { capability: 'market' } })
   const indexed: Array<{ username: string; listed: boolean }> = []
   const index = jest.fn(async (user: { username: string }, store: any) => { indexed.push({ username: user.username, listed: !!view(createReplica('x', store), [HOME_ID])!.tasks.find(t => t.id === 'logo')!.market }) })
   const h = host(r, createHandlerRegistry([marketHandler({ index })]))
@@ -98,15 +104,35 @@ test('the market effect lists the task, indexes the account, and records the sup
   const after = view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'logo')!
   expect(after.market).toBe(true)
   expect(after.done).toBe(false) // listing a task does not complete it; only its listing requirement is filled
-  const supplies = view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.filter(t => t.kind === 'supply')
+  const supplies = view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.filter(t => !!t.supply)
   expect(supplies.map(s => [s.supply!.capability, s.supply!.by, s.supply!.ref])).toEqual([['market', 'fos', 'logo']])
+  // the listing is the market peer as a member of the task
+  expect(readMembers(h.get().store, content(h.get().store, resolveScope(h.get().store, headCid(h.get()), [HOME_ID, 'logo'])!)).map(m => m.peerId)).toContain(MARKET_PEER)
+})
+
+test('the search effect fills a -? requirement: hits become ref rows under it, then the supply is recorded as the server', async () => {
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['search'] })
+  r = addTask(r, [HOME_ID], 'Logo brief', 2, 'brief')
+  r = addTask(r, [HOME_ID], 'Find designers', 2, 'find')
+  r = addRow(r, [HOME_ID, 'find'], ALLOCATION_TYPE, 'logo designers', 2, { id: 'ask', requirement: { capability: 'search' } })
+  r = addRow(r, [HOME_ID, 'find', 'ask'], QUERY_TYPE, 'logo designers', 2, { id: 'q', query: { market: true } })
+  const search = jest.fn(async () => [{ aliasId: 'brief', title: 'Logo brief', owner: null }, { aliasId: 'job', title: 'Logo job', owner: 'alice' }, { aliasId: 'gone', title: 'Gone', owner: null }])
+  const h = host(r, createHandlerRegistry([searchHandler({ search })]))
+  const result = await h.complete([HOME_ID, 'find'], ['ask'])
+  if (!result.body.evaluation) throw new Error(`search failed: ${JSON.stringify(result.body)}`)
+  expect(result.body.evaluation.status).toBe('committed')
+  expect(search).toHaveBeenCalledWith({ id: 1, username: 'owner' }, 'logo designers', true)
+  const rows = view(h.get(), [HOME_ID, 'find', 'ask'])!.tasks
+  expect(rows.filter(t => t.refId !== undefined).map(t => [t.refId, t.refOwner ?? null])).toEqual([['brief', null], ['job', 'alice']])
+  expect(rows.filter(t => t.supply).map(t => [t.supply!.capability, t.supply!.by, t.supply!.ref])).toEqual([['search', 'fos', 'q']])
+  expect(view(h.get(), [HOME_ID, 'find'])!.tasks.find(t => t.id === 'ask')!.requirement!.satisfied).toBe(true)
 })
 
 test('a poll resolves its choice from the responses when the node runs; ties and silence block', async () => {
   const share = 'public-link-0123456789'
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['poll'] })
   r = addTask(r, [HOME_ID], 'Dinner', 2, 'dinner')
-  r = addRow(r, [HOME_ID, 'dinner'], 'requirement', 'Where?', 2, { id: 'where', requirement: { capability: 'choice', options: ['Soup', 'Salad', 'Tacos'] } })
+  r = addRow(r, [HOME_ID, 'dinner'], ALLOCATION_TYPE, 'Where?', 2, { id: 'where', requirement: { capability: 'choice', options: ['Soup', 'Salad', 'Tacos'] } })
   r = setSharing(r, [HOME_ID, 'dinner', 'where'], { id: share, audience: 'public', enabled: true }, 3)
   r = configurePoll(r, [HOME_ID, 'dinner', 'where'], 'rank', 3)
   const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -125,23 +151,23 @@ test('a poll resolves its choice from the responses when the node runs; ties and
   expect(result.body.evaluation.status).toBe('committed')
   const where = view(decided.get(), [HOME_ID, 'dinner'])!.tasks.find(t => t.id === 'where')!
   expect(where.requirement!.satisfied).toBe(true)
-  expect(view(decided.get(), [HOME_ID, 'dinner', 'where'])!.tasks.filter(t => t.kind === 'supply').map(t => [t.supply!.by, t.supply!.choice])).toEqual([['fos', 1]])
+  expect(view(decided.get(), [HOME_ID, 'dinner', 'where'])!.tasks.filter(t => !!t.supply).map(t => [t.supply!.by, t.supply!.choice])).toEqual([['fos', 1]])
 })
 
 test('a fos-points payout moves points on the ledger to the respondent and records the allocation as the server', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['points'] })
   r = addTask(r, [HOME_ID], 'Answer the survey', 2, 'survey')
-  r = addRow(r, [HOME_ID, 'survey'], 'requirement', 'Favourite colour?', 2, { id: 'q', requirement: { capability: 'choice', options: ['Red', 'Blue'] } })
-  r = addRow(r, [HOME_ID, 'survey'], 'requirement', 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } })
+  r = addRow(r, [HOME_ID, 'survey'], ALLOCATION_TYPE, 'Favourite colour?', 2, { id: 'q', requirement: { capability: 'choice', options: ['Red', 'Blue'] } })
+  r = addRow(r, [HOME_ID, 'survey'], ALLOCATION_TYPE, 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } })
   const transfers: unknown[] = []
   const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
   // nobody has answered: nothing to pay
-  const early = host(fresh(r), createHandlerRegistry([pointsHandler({ transfer })]))
+  const early = host(fresh(r), createHandlerRegistry([pointsHandler({ transfer }, identity)]))
   expect(String((await early.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/No one to pay yet/)
   expect(transfer).not.toHaveBeenCalled()
   // bob answers (a supply by his account), then the task runs
   const answered = addSupply(r, [HOME_ID, 'survey'], 'q', { capability: 'choice', by: 'user:bob', choice: 1 }, 6)
-  const h = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer })]))
+  const h = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer }, identity)]))
   const result = await h.complete([HOME_ID, 'survey'], [])
   if (!result.body.evaluation) throw new Error(`payout failed: ${JSON.stringify(result.body)}`)
   expect(result.body.evaluation.status).toBe('committed')
@@ -149,13 +175,40 @@ test('a fos-points payout moves points on the ledger to the respondent and recor
   const pay = view(h.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!
   expect(pay.requirement!.satisfied).toBe(true)
   const rows = view(h.get(), [HOME_ID, 'survey', 'pay'])!.tasks
-  expect(rows.find(t => t.kind === 'allocation')!.allocation).toMatchObject({ resource: 'fos:points', type: 'points', amount: 5, unit: 'ff', by: 'fos', person: 'bob' })
-  expect(rows.find(t => t.kind === 'supply')!.supply).toMatchObject({ capability: 'allocation', by: 'fos' })
+  const payout = rows.find(t => !!t.allocation)!
+  expect(payout.allocation).toMatchObject({ resource: 'fos:points', type: 'points', amount: 5, unit: 'ff', by: 'fos' })
+  expect(payout.user).toMatchObject({ account: '2', username: 'bob', name: 'Bob' })
+  expect(payout.title).toBe('5 fos points to Bob')
+  expect(rows.find(t => !!t.supply)!.supply).toMatchObject({ capability: 'allocation', by: 'fos' })
   expect(view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'survey')!.done).toBe(true)
   // a failing ledger leaves the requirement open and the task unfinished
-  const broke = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer: async () => { throw new Error('Insufficient tokens') } })]))
+  const broke = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer: async () => { throw new Error('Insufficient tokens') } }, identity)]))
   expect(String((await broke.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/Insufficient tokens/)
   expect(view(broke.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(false)
+})
+
+test('a payout to @name pays the user object the requirement binds, only when this server attested it unchanged', async () => {
+  const carol = (await identity.resolve('carol'))!
+  const named = (user: typeof carol) => {
+    let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['points'] })
+    r = addTask(r, [HOME_ID], 'Thank carol', 2, 'thanks')
+    // "-ff 3 thanks @carol": no respondent needed, the row names the payee
+    return addRow(r, [HOME_ID, 'thanks'], ALLOCATION_TYPE, 'thanks', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 3, unit: 'ff' }, user })
+  }
+  const transfers: unknown[] = []
+  const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
+  const h = host(fresh(named(carol)), createHandlerRegistry([pointsHandler({ transfer }, identity)]))
+  const result = await h.complete([HOME_ID, 'thanks'], [])
+  if (!result.body.evaluation) throw new Error(`named payout failed: ${JSON.stringify(result.body)}`)
+  expect(transfers).toEqual([['owner', 'carol', 3]])
+  expect(view(h.get(), [HOME_ID, 'thanks'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(true)
+  // a tampered object (same signature, another username), an unverified one and one signed by another key are refused
+  const forged = verifyHandler({ findUser: async username => accounts[username] ?? null }, identityKeyFromSeed(Buffer.alloc(32, 2)))
+  for (const user of [{ ...carol, username: 'bob' }, { ...carol, verification: null }, (await forged.resolve('carol'))!]) {
+    const refused = await host(fresh(named(user)), createHandlerRegistry([pointsHandler({ transfer }, identity)])).complete([HOME_ID, 'thanks'], ['pay'])
+    expect(String(refused.body.error)).toMatch(/not verified by this server/)
+  }
+  expect(transfer).toHaveBeenCalledTimes(1)
 })
 
 test('the mail effect emails the first address in the row with the task as the body, and records the supply as the server', async () => {
@@ -165,7 +218,7 @@ test('the mail effect emails the first address in the row with the task as the b
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] })
   r = addTask(r, [HOME_ID], 'Plan the group trip', 2, 'trip')
   r = addTask(r, [HOME_ID, 'trip'], 'Book flights', 2, 'flights')
-  r = addRow(r, [HOME_ID, 'trip'], 'requirement', 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' } })
+  r = addRow(r, [HOME_ID, 'trip'], ALLOCATION_TYPE, 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' } })
   const sent: unknown[] = []
   const send = jest.fn(async (to: string, subject: string, text: string, onBehalfOf: string) => { sent.push([to, subject, text, onBehalfOf]) })
   const h = host(fresh(r), createHandlerRegistry([mailHandler({ send })]))
@@ -174,10 +227,10 @@ test('the mail effect emails the first address in the row with the task as the b
   expect(result.body.evaluation.status).toBe('committed')
   expect(sent).toEqual([['team@example.com', 'Trip plans', 'Plan the group trip\n- Book flights', 'owner']])
   const rows = view(h.get(), [HOME_ID, 'trip', 'notify'])!.tasks
-  expect(rows.find(t => t.kind === 'plain')!.title).toBe('Sent to team@example.com: Trip plans')
-  expect(rows.find(t => t.kind === 'supply')!.supply).toMatchObject({ capability: 'mail', by: 'fos' })
+  expect(rows.find(t => t.type === PLAIN_TYPE)!.title).toBe('Sent to team@example.com: Trip plans')
+  expect(rows.find(t => !!t.supply)!.supply).toMatchObject({ capability: 'mail', by: 'fos' })
   // no recipient: nothing is sent and the requirement stays open
-  const bad = addRow(ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] }), [HOME_ID], 'requirement', 'tell everyone', 2, { id: 'vague', requirement: { capability: 'mail' } })
+  const bad = addRow(ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] }), [HOME_ID], ALLOCATION_TYPE, 'tell everyone', 2, { id: 'vague', requirement: { capability: 'mail' } })
   const refused = await host(fresh(bad), createHandlerRegistry([mailHandler({ send })])).complete([HOME_ID], ['vague'])
   expect(String(refused.body.error)).toMatch(/Name the recipient/)
   expect(send).toHaveBeenCalledTimes(1)
