@@ -2,7 +2,7 @@ import { addRow, addTask, createReplica, ensureHomeContext, headCid, moveNode, v
 import { findEdge, HOME_ID, libraryTypeAt, resolveScope, valueContent } from './graph'
 import { dispatchEvent, parseEvent } from './events'
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
-import { applyOrganizePlan, captureOutline, organizePlanChanges, outlineText, parseOrganizePlan, parseOutline, type OrganizePlan } from './organize'
+import { ORGANIZE_REQUEST_PREFIX, applyOrganizePlan, captureOutline, organizePlanChanges, organizeRequestAt, outlineText, parseOrganizePlan, parseOutline, requestOrganize, type OrganizePlan } from './organize'
 
 function project(): Replica {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
@@ -136,4 +136,23 @@ test('rows added through the grammar without ids behave as before', () => {
   r = dispatchEvent(r, parseEvent({ kind: 'submit', expected: read.revision, changes: [{ path: [], operation: 'add_plain', text: 'bread' }, { path: ['milk'], operation: 'add_plain', text: 'oat' }] }), principal, 4).replica
   expect(titles(r, [HOME_ID])).toEqual(['milk', 'bread'])
   expect(titles(r, [HOME_ID, 'milk'])).toEqual(['oat'])
+})
+
+test('an organize request is a requirement in the target holding the capture as its note, outside the outline', async () => {
+  const r = project()
+  const asked = requestOrganize(r, [HOME_ID, 'garden'], '  water the tomatoes  ', 'Voice note', 9, () => 'x1')
+  expect(asked.path).toEqual([HOME_ID, 'garden', `${ORGANIZE_REQUEST_PREFIX}x1`])
+  const row = view(asked.replica, [HOME_ID, 'garden'])!.tasks.find(t => t.id === asked.path.at(-1))!
+  expect(row.title).toBe('Voice note')
+  expect(row.requirement).toMatchObject({ capability: 'organize', satisfied: false })
+  // the capture is the requirement's row made from the note type (the edge's left node)
+  const note = view(asked.replica, asked.path)!.tasks[0]!
+  const edge = findEdge(asked.replica.store, valueContent(asked.replica.store, resolveScope(asked.replica.store, headCid(asked.replica), asked.path)!), 'a:' + note.id)!
+  expect(edge[0]).toBe(libraryTypeAt(asked.replica.store, NOTE_TYPE, asked.path))
+  expect(organizeRequestAt(asked.replica, asked.path)).toEqual({ label: 'Voice note', text: 'water the tomatoes' })
+  expect(organizeRequestAt(asked.replica, [HOME_ID, 'garden', 'tomatoes'])).toBeNull()
+  // the organizer never files into its own request
+  expect((await captureOutline(asked.replica, [HOME_ID, 'garden'])).map(e => e.id)).toEqual(['tomatoes', 'stake'])
+  expect(() => requestOrganize(r, [HOME_ID, 'garden'], '   ', 'x', 9)).toThrow(/Nothing to organize/)
+  expect(() => requestOrganize(r, [HOME_ID, 'gone'], 'text', 'x', 9)).toThrow(/removed/)
 })

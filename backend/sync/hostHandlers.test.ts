@@ -8,10 +8,10 @@ import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
 import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler, searchHandler } from './hostHandlers'
-import { identityHandler, identityKeyFromSeed } from './identity'
+import { verifyHandler, identityKeyFromSeed } from './verify'
 
 const accounts: Record<string, { id: number; username: string; name?: string }> = { bob: { id: 2, username: 'bob', name: 'Bob' }, carol: { id: 3, username: 'carol' } }
-const identity = identityHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
+const identity = verifyHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
 
 /** Each scenario gets its own store: a failed run leaves its journal in the store it ran against. */
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
@@ -201,7 +201,7 @@ test('a payout to @name pays the user object the requirement binds, only when th
   expect(transfers).toEqual([['owner', 'carol', 3]])
   expect(view(h.get(), [HOME_ID, 'thanks'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(true)
   // a tampered object (same signature, another username), an unverified one and one signed by another key are refused
-  const forged = identityHandler({ findUser: async username => accounts[username] ?? null }, identityKeyFromSeed(Buffer.alloc(32, 2)))
+  const forged = verifyHandler({ findUser: async username => accounts[username] ?? null }, identityKeyFromSeed(Buffer.alloc(32, 2)))
   for (const user of [{ ...carol, username: 'bob' }, { ...carol, verification: null }, (await forged.resolve('carol'))!]) {
     const refused = await host(fresh(named(user)), createHandlerRegistry([pointsHandler({ transfer }, identity)])).complete([HOME_ID, 'thanks'], ['pay'])
     expect(String(refused.body.error)).toMatch(/not verified by this server/)

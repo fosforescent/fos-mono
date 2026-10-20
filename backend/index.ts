@@ -9,7 +9,7 @@ import { createSystemAccount, libraryOwner } from './library'
 import { sendPlainEmail } from './email/email'
 import { createHandlerRegistry } from './sync/registry'
 import { createHostHandlers } from './sync/hostHandlers'
-import { createIdentityRoutes, identityHandler, identityKeyFromEnv } from './sync/identity'
+import { identityKeyFromEnv, verifyHandler } from './sync/verify'
 import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
 import http from 'http'
@@ -49,7 +49,7 @@ import { getUserId } from './apiTokenAuth'
 import { afterSaveHooks } from './sync/accountStore'
 import { createNodeLocator, createNodeProvider } from './sync/provideNode'
 import { createVoiceNoteHandler, prismaVoiceUsage, voiceDepsFromEnv } from './voice/voiceNotes'
-import { accountOrganizer, createOrganizeHandler } from './voice/organize'
+import { createAccountOrganizer, organizeHandler } from './voice/organize'
 import {
   getMCPServers,
   getMCPServer,
@@ -344,10 +344,9 @@ dataRoutes.get('/device-login/:code', deviceLoginHandlers.describe)
 dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
 dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
 // Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (Gemini on Vertex, or OpenAI);
-// `?transcript=only` returns the transcript, which the client organizes into its node with `/voice-notes/organize`
-// (captured text + the node's outline in, a placement plan out; the same budget)
+// `?transcript=only` returns the transcript, which the client organizes into its node through an `organize`
+// requirement the fos `organize` handler fills (voice/organize.ts; the same budget)
 const voiceUsage = prismaVoiceUsage(prisma)
-dataRoutes.post('/voice-notes/organize', createOrganizeHandler(voiceDepsFromEnv(), voiceUsage))
 dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), voiceUsage))
 // The market: listed nodes as bidders see them, and their proposals (search itself is the fos `search` effect)
 const marketHandlers = createMarketHandlers({ loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, notify: (userId, message) => {
@@ -515,9 +514,9 @@ const mcpPeerDeps = prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (serve
 // What this host can do, derived from the handlers below; every capability advertised to devices comes from here.
 // Effects are reached through `complete` events (sync/events.ts → sync/evaluation.ts), never through routes of their own.
 const searchEmbed = vertexEmbed()
-// `@name` is shorthand for a user object this server attests (sync/identity.ts): resolved by a signed-in account,
-// checked by anyone against the public key
-const identity = identityHandler({
+// `@name` is shorthand for a user object this server attests (sync/verify.ts): the `verify` handler fills verify
+// requirements with it; its public key is published in every account's Home, where devices check attestations
+const verify = verifyHandler({
   async findUser(username) {
     const user = await prisma.userModel.findUnique({ where: { user_name: username }, select: { id: true, user_name: true, user_profile: true } })
     if (!user) return null
@@ -526,11 +525,10 @@ const identity = identityHandler({
     return { id: user.id, username: user.user_name, name: text(profile.displayName) ?? text(profile.name), publicKey: text(profile.publicKey) }
   }
 }, identityKeyFromEnv())
-const identityRoutes = createIdentityRoutes(identity)
-app.get('/identity/key', identityRoutes.key)
-dataRoutes.get('/users/:username', (req, res) => void identityRoutes.user(req, res))
 const registry = createHandlerRegistry(createHostHandlers({
-  identity,
+  verify,
+  // captures organized into a node: one provider instance per capture, metered under the voice budget
+  organize: organizeHandler(() => voiceDepsFromEnv(), voiceUsage),
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
   google: { connected: async id => !!await integrationDeps.connections.get(id, 'google'), createEvent: (userId, event) => integrations.createCalendarEvent(userId, event) },
   llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },
@@ -599,8 +597,8 @@ channelBus.onInbound(createTextCommandInbound({
   },
   handle: (principal, event) => eventService.handle(principal, event),
   reply: (message, text) => channelBus.send({ destination: message.source, to: message.replyTo, text }).then(() => undefined),
-  // texted notes are organized into Home's subtree, metered like voice notes (one provider instance per message)
-  organize: (username, input) => accountOrganizer(voiceDepsFromEnv(), voiceUsage)(username, input)
+  // texted notes are organized into Home's subtree by the same `organize` handler, through an evaluation
+  organize: createAccountOrganizer(prismaAccountStoreDeps, evaluationService.runNode)
 }))
 
 // MCP peers: a server attached to a node runs its tools for "-tool" requirements under it

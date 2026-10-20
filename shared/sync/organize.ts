@@ -11,14 +11,19 @@
  * resolved at the target like any row type (`libraryTypeAt`, nearest library); the row's edge is `[that type, row]`.
  * The raw capture is a row of the note type.
  *
- * Applying is ordinary graph edits (`addTypedRow`) on a replica, or ordinary `submit` changes (`add_row`) of the event
- * grammar (events.ts) for hosts that act through events (texted messages).
+ * Organizing is an effect of the host: a client (or the texting channel) places an `organize` requirement in the
+ * target holding the capture (`requestOrganize`) and evaluates it; the account server's `organize` handler
+ * (backend/voice/organize.ts) builds the outline from the account's own store, asks its model, applies the plan with
+ * `applyOrganizePlan` (ordinary graph edits, `addTypedRow`) and records the supply. `organizePlanChanges` expresses
+ * the same edits as `submit` changes (`add_row`) of the event grammar (events.ts).
  */
-import { libraryTypeAt, newId, rootTargetCid, type Scope, type TaskView } from './graph'
-import { addTypedRow, view, type Replica } from './replica'
+import { libraryTypeAt, newId, resolveScope, rootTargetCid, rowsOfType, valueContent, type Scope, type TaskView } from './graph'
+import { formTitle } from './forms'
+import { addRow, addTypedRow, headCid, view, type Replica } from './replica'
 import type { Change } from './events'
 
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
+import { ALLOCATION_TYPE } from './library-types'
 /** The library row types a plan may name, with what the model is told each is for. */
 export const ORGANIZE_TYPES: Record<string, string> = {
   [PLAIN_TYPE]: 'a short row: one point, task, decision, question or fact (the default)',
@@ -204,6 +209,43 @@ export async function applyOrganizePlan(replica: Replica, at: Scope, plan: Organ
   const captureId = makeId()
   r = addTypedRow(r, at, typeAt(r, NOTE_TYPE, at), captureNoteText(capture.label, capture.stamp, capture.text, plan.title), now, captureId)
   return { replica: r, rows, captureId }
+}
+
+// ---------------------------------------------------------------------------
+// Organize requirements: how a capture reaches the host's organizer
+
+/** Identity prefix of an organize requirement (a `fos:` row: never part of an outline, never organized into). */
+export const ORGANIZE_REQUEST_PREFIX = 'fos:organize:'
+/** The named value the organizer leaves on the requirement it filled: what it placed and where the capture went. */
+export const ORGANIZED_VALUE = 'fos:organized'
+export type OrganizedResult = { rows: number; under: string[]; captureId: string; title: string }
+
+/**
+ * Ask the host to organize a capture into the node at `at`: an `organize` requirement placed in that node (its text
+ * says what the capture is, e.g. "Voice note"), holding the captured text as a child note. Evaluating it (a
+ * `complete` event, the account server's `organize` handler) applies the plan under `at`, keeps the capture as a note
+ * there, records the supply and leaves an `OrganizedResult` on the requirement. Answers the requirement's path.
+ */
+export function requestOrganize(replica: Replica, at: Scope, text: string, label: string, now: number, makeId: () => string = newId): { replica: Replica; path: Scope } {
+  if (!view(replica, at)) throw new Error('The capture location was removed.')
+  const capture = text.trim()
+  if (!capture) throw new Error('Nothing to organize.')
+  if (capture.length > ORGANIZE_LIMITS.captureChars) throw new Error(`Organize at most ${ORGANIZE_LIMITS.captureChars.toLocaleString('en-US')} characters at a time.`)
+  const id = `${ORGANIZE_REQUEST_PREFIX}${makeId()}`
+  let r = addRow(replica, at, ALLOCATION_TYPE, label.trim() || 'Capture', now, { id, requirement: { capability: 'organize' } })
+  r = addTypedRow(r, [...at, id], typeAt(r, NOTE_TYPE, [...at, id]), capture, now, makeId())
+  return { replica: r, path: [...at, id] }
+}
+
+/** What an organize requirement at `path` carries: the label (its text) and the captured text (its note), or null. */
+export function organizeRequestAt(replica: Replica, path: Scope): { label: string; text: string } | null {
+  const parent = view(replica, path.slice(0, -1)), row = parent?.tasks.find(t => t.id === path.at(-1))
+  const cid = resolveScope(replica.store, headCid(replica), path)
+  if (!row || !cid || row.requirement?.capability !== 'organize') return null
+  // the capture is the requirement's row made from the note type (the edge's left node), not any row inside it
+  const note = rowsOfType(replica.store, cid, NOTE_TYPE)[0]
+  const text = note ? formTitle(replica.store, valueContent(replica.store, note.cid)).trim() : ''
+  return text ? { label: row.title, text } : null
 }
 
 /** The cid of the library row type `typeId` at `at` (nearest library); the plain row type when that library lacks it. */

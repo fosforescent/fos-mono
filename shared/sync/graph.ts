@@ -212,7 +212,7 @@ export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'po
  * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
  * peer that registered that capability, or a `peer` (the named peer confirms the assignment).
  */
-export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool'
+export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
 /** Capabilities a peer can register with (shown as resource banks in the context panel). */
 export const PEER_CAPABILITIES: CapabilityKind[] = ['search', 'market', 'mail', 'llm', 'repo', 'tool']
 
@@ -1368,6 +1368,8 @@ export function requirementSummary(req: NonNullable<FosDataContent['requirement'
     case 'llm': return 'llm'
     case 'repo': return req.repo ? `repo ${req.repo}` : 'repo'
     case 'tool': return req.tool ? `tool ${req.tool}` : 'tool'
+    case 'verify': return user ? `verify @${user.username}` : 'verify'
+    case 'organize': return 'organize'
   }
 }
 
@@ -1479,6 +1481,9 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
       case 'llm': return !!s.by
       case 'repo': return !!s.by
       case 'tool': return !!s.by
+      // filled by the verifier, which binds the attested user object as the requirement's user field
+      case 'verify': return !!s.by && !!named?.verification
+      case 'organize': return !!s.by
       case 'peer': return !!s.by && (!req.peer || s.by === req.peer) && (!named || s.by === userPeerId(named) || s.by === named.username)
       case 'allocation': {
         if (!s.ref) return false
@@ -1684,8 +1689,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'identity'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'identity']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'verify' | 'organize'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'verify', 'organize']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1714,14 +1719,22 @@ export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'r
 export const SERVER_TRANSPORT_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'peer', 'persist', 'provideNode', 'sync']
 export const CLIENT_CAPABILITIES: Capability[] = ['provideNode', 'sync', 'timer', 'task-completion', 'request']
 /** What a host (the account server) currently offers: its own services and, per integration peer id, that peer's handlers. */
-export type HostOffers = { server?: Capability[]; integrations?: Record<string, Capability[]> }
+export type HostOffers = {
+  server?: Capability[]
+  integrations?: Record<string, Capability[]>
+  /**
+   * Public keys of the host's peers (peer id → raw ed25519 key, base64), published in Home as graph data
+   * (sync/users.ts `publishPeerKey`) so devices check what those peers sign without asking an endpoint.
+   */
+  keys?: Record<string, string>
+}
 /** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
 export const CAPABILITY_LABEL: Record<Capability, string> = {
   provideNode: 'provide nodes', sync: 'traverse and sync',
   read: 'read', 'read-requests': 'read requests', edit: 'edit (propose and decide proposals)', execute: 'run evaluations', autopush: 'autopush',
   direct: 'direct connect', local: 'this machine (files)', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
   calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response', identity: 'verify users'
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response', verify: 'verify users', organize: 'organize captures'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1860,7 +1873,7 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'notify': return p.notifyCapability.getId()
     case 'rank': case 'local':
     case 'poll': case 'peer': case 'persist': case 'provideNode': case 'sync':
-    case 'timer': case 'cron': case 'task-completion': case 'request': case 'response': case 'points': case 'execute': case 'identity':
+    case 'timer': case 'cron': case 'task-completion': case 'request': case 'response': case 'points': case 'execute': case 'verify': case 'organize':
       return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
   }
 }

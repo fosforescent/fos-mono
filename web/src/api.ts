@@ -233,7 +233,7 @@ export async function transcribeVoice(session: Session, audio: Blob): Promise<Vo
   return (await response.json()) as VoiceNote
 }
 
-/** Send a recording; the account only transcribes it (the client organizes the transcript with `organizeCapture`). */
+/** Send a recording; the account only transcribes it (the client then organizes the transcript through an `organize` requirement). */
 export async function transcribeAudio(session: Session, audio: Blob): Promise<{ transcript: string }> {
   const response = await fetch(`${session.baseUrl}/user/data/voice-notes?transcript=only`, {
     method: 'POST',
@@ -244,10 +244,6 @@ export async function transcribeAudio(session: Session, audio: Blob): Promise<{ 
   return (await response.json()) as { transcript: string }
 }
 
-/** Ask the account's model where captured text belongs in a node's subtree (shared/sync/organize.ts plan). */
-export function organizeCapture(session: Session, input: { text: string; title: string; outline: Array<{ id: string; parent: string | null; title: string }> }): Promise<{ plan: import('../../shared/sync/index').OrganizePlan }> {
-  return authed(session, 'POST', '/user/data/voice-notes/organize', input)
-}
 
 export type MarketNode = { capability?: boolean; owner: string; aliasId: string; view: NodeView; myProposal: { id: string; status: string } | null }
 
@@ -352,28 +348,16 @@ export async function searchFosUsers(session: Session, query: string): Promise<s
   return [...new Set(result.users.map(user => user.user_name).filter(name => typeof name === 'string' && name !== session.username))]
 }
 
-/** The user object `@name` stands for, attested by the account server (backend/sync/identity.ts); null when no account has that name. */
-export async function fetchUser(session: Session, username: string): Promise<UserRecord | null> {
-  try { return (await authed<{ user: UserRecord }>(session, 'GET', `/user/data/users/${encodeURIComponent(username)}`)).user }
-  catch (error) { if (error instanceof ApiError && error.status === 404) return null; throw error }
-}
-
-/** The key the account server attests users with: `{ peer, alg: 'ed25519', publicKey }` (raw key, base64). */
-export async function fetchIdentityKey(baseUrl: string): Promise<{ peer: string; alg: string; publicKey: string }> {
-  const response = await fetch(`${baseUrl}/identity/key`)
-  if (!response.ok) throw await responseError(response)
-  return response.json() as Promise<{ peer: string; alg: string; publicKey: string }>
-}
-
 const bytes = (base64: string): ArrayBuffer => Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer as ArrayBuffer
 /**
- * Check a server attestation with WebCrypto Ed25519 against the server's published key. Where the platform has no
- * Ed25519 (older webviews) the answer is null: the object came over the authenticated connection to that same server,
- * and the server re-checks the attestation whenever it acts on it (payments, fos points).
+ * The device's verify check for a server attestation: WebCrypto Ed25519 against the key that server published in this
+ * graph (`publishedKey`, the `fos:key:<peer>` row in Home; no endpoint). No key, another verifier or another method is
+ * false. Where the platform has no Ed25519 (older webviews) the answer is null: the object came through this
+ * account's own graph, and the server re-checks the attestation whenever it acts on it (payments, fos points).
  */
-export async function checkUserAttestation(key: { peer: string; publicKey: string }, user: UserRecord): Promise<boolean | null> {
+export async function checkUserAttestation(key: { peer: string; publicKey: string | null }, user: UserRecord): Promise<boolean | null> {
   const v = user.verification
-  if (!v || v.method !== USER_SERVER_ATTESTATION || v.by !== key.peer) return false
+  if (!v || v.method !== USER_SERVER_ATTESTATION || v.by !== key.peer || !key.publicKey) return false
   let publicKey: CryptoKey
   try { publicKey = await crypto.subtle.importKey('raw', bytes(key.publicKey), { name: 'Ed25519' }, false, ['verify']) } catch { return null }
   return crypto.subtle.verify({ name: 'Ed25519' }, publicKey, bytes(v.attestation), new TextEncoder().encode(userAttestationPayload(user, v.by, v.method, v.issuedAt)))

@@ -8,7 +8,7 @@ import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './registry'
 import { formTitle } from '@fosforescent/shared/sync/forms'
-import type { IdentityHandler } from './identity'
+import type { VerifyHandler } from './verify'
 
 export type GitHubIssueDeps = {
   connected(userId: number): Promise<boolean>
@@ -188,7 +188,7 @@ export type PointsDeps = {
  * supplies filled the task's other requirements. Anonymous respondents, several respondents and the owner themselves
  * are refused.
  */
-async function payeeOf(ctx: EffectContext, unit: string, identity: IdentityHandler): Promise<UserRecord> {
+async function payeeOf(ctx: EffectContext, unit: string, identity: VerifyHandler): Promise<UserRecord> {
   const path = ctx.step.path
   if (path.length < 2) throw new Error(`A ${unit} payment goes under the task it rewards.`)
   const r = ctx.replica(), taskPath = path.slice(0, -1), self = `user:${ctx.username}`
@@ -217,7 +217,7 @@ async function payeeOf(ctx: EffectContext, unit: string, identity: IdentityHandl
  * points from the owner's balance to the respondent (the signed-in user whose supplies filled the task's other
  * requirements, or the user the requirement names with @) and records the allocation and supply as its own.
  */
-export function pointsHandler(deps: PointsDeps, identity: IdentityHandler): HostHandler {
+export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHandler {
   return {
     peerId: 'fos', capability: 'points',
     handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'points' },
@@ -251,7 +251,7 @@ export type PaymentDeps = {
  * confirmation (its webhook, `sync/payments.ts`) settles the requirement and continues the evaluation, whether or
  * not the owner's devices are online. Running again while the payment is open does not open a second one.
  */
-export function paymentHandler(deps: PaymentDeps, identity: IdentityHandler): HostHandler {
+export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): HostHandler {
   return {
     peerId: 'fos', capability: 'send-payment',
     handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'account' },
@@ -318,6 +318,8 @@ export type HostHandlerDeps = {
   /** Money payments through the account's payment provider (payments/stripe.ts); absent when none is configured. */
   payments?: PaymentDeps
   mail: MailDeps
+  /** Captures organized into a node (voice/organize.ts `organizeHandler`): `organize` requirements. */
+  organize?: HostHandler
   /** Attached MCP servers run `-tool` requirements (integrations/mcpPeers.ts `mcpToolHandler`). */
   tool?: HostHandler
   /** Is the account connected to the provider (`phone`)? */
@@ -326,8 +328,8 @@ export type HostHandlerDeps = {
   sms: boolean
   /** The cron runner is enabled on this instance (FOS_ENABLE_CRON). */
   cron: boolean
-  /** The server's user attestation (sync/identity.ts): `@name` resolves to it, payees are checked against it. */
-  identity: IdentityHandler
+  /** The server's user attestation (sync/verify.ts): fills `verify` requirements with attested user objects; payees are checked against it. */
+  verify: VerifyHandler
 }
 
 /**
@@ -346,14 +348,15 @@ export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
     relayHandler(),
     marketHandler(deps.market),
     pollHandler(),
-    deps.identity,
-    pointsHandler(deps.points, deps.identity),
-    ...(deps.payments ? [paymentHandler(deps.payments, deps.identity)] : []),
+    deps.verify,
+    pointsHandler(deps.points, deps.verify),
+    ...(deps.payments ? [paymentHandler(deps.payments, deps.verify)] : []),
     mailHandler(deps.mail),
     llmHandler(deps.llm),
     ...(deps.cron ? [{ peerId: 'fos', capability: 'cron' as const }] : []),
     githubRepoHandler(deps.github),
     calendarHandler(deps.google),
+    ...(deps.organize ? [deps.organize] : []),
     ...(deps.tool ? [deps.tool] : []),
     ...(deps.sms ? [{ peerId: 'integration:phone', capability: 'notify' as const, available: (id: number) => deps.connected(id, 'phone') }] : [])
   ]

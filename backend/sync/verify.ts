@@ -1,12 +1,15 @@
 /**
  * The fos server attests users. `@name` in a row is shorthand for a user object (shared/sync/users.ts, the standard
- * library type `lib:type:user`): account id, username, display name, public key and a verification. This handler
- * resolves a username to that object and signs it with the server's ed25519 identity key, so the object can travel
- * through anyone's graph and still be checked:
+ * library type `lib:type:user`): account id, username, display name, public key and a verification. Resolving a
+ * username to that object is the effect of this server's `verify` handler, reached like every other effect: a
+ * `verify` requirement (`requestVerification`, its text `@name`) evaluated through a `complete`
+ * event. The handler binds the attested object as the requirement's `user` field, signed with the server's ed25519
+ * identity key, and records the supply. There is no route:
  *
- * - clients fetch the key once from `GET /identity/key` (`{ peer: 'fos', alg: 'ed25519', publicKey }`, the raw
- *   32-byte key in base64) and check `verification.attestation` over `userAttestationPayload` (web/src/api.ts
- *   `checkUserAttestation`, WebCrypto Ed25519);
+ * - the public key is graph data: the handler's `publicKey` is in the registry's `hostOffers().keys`, which
+ *   `ensureHomeContext` writes into every account's Home as the `fos:key:fos` row (`publishPeerKey`); node exchange
+ *   carries it to devices, whose own verify handler checks `verification.attestation` over `userAttestationPayload`
+ *   against it (`verifyPublished`; WebCrypto Ed25519 in the app);
  * - the server re-checks the attestation whenever it acts on a user object it reads from a graph (`verify`, used by
  *   the payment and fos-points payees), so a tampered or foreign object is refused there regardless of the client.
  *
@@ -16,9 +19,8 @@
  * object (read from the account's profile when it has one) and `ed25519-self` verifications are signed by it.
  */
 import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
-import type { Request, Response } from 'express'
-import { USER_SERVER_ATTESTATION, userAttestationPayload, verifyUser, type UserRecord } from '@fosforescent/shared/sync/index'
-import type { HostHandler } from './registry'
+import { USER_SERVER_ATTESTATION, addSupply, bindUserAt, userAttestationPayload, verifyUser, type UserRecord } from '@fosforescent/shared/sync/index'
+import type { EffectContext, HostHandler } from './registry'
 
 export type IdentityKey = { privateKey: KeyObject; publicKey: string }
 
@@ -37,7 +39,7 @@ export function identityKeyFromEnv(env: NodeJS.ProcessEnv = process.env): Identi
   const seed = env.FOS_IDENTITY_SEED?.trim()
   if (seed) return identityKeyFromSeed(/^[0-9a-f]{64}$/i.test(seed) ? Buffer.from(seed, 'hex') : Buffer.from(seed, 'base64'))
   if (env.JWT_SECRET) return identityKeyFromSeed(Buffer.from(hkdfSync('sha256', env.JWT_SECRET, 'fos', 'fos identity key v1', 32)))
-  console.warn('[identity] no FOS_IDENTITY_SEED or JWT_SECRET: user attestations use a key that lasts only this process')
+  console.warn('[verify] no FOS_IDENTITY_SEED or JWT_SECRET: user attestations use a key that lasts only this process')
   return identityKeyFromSeed(randomBytes(32))
 }
 
@@ -47,16 +49,14 @@ export function verifyEd25519(payload: string, signature: string, publicKey: str
   return verify(null, Buffer.from(payload), key, Buffer.from(signature, 'base64'))
 }
 
-export type IdentityDeps = {
+export type VerifyDeps = {
   /** The account named `username`, with its display name and a registered public key when it has them. */
   findUser(username: string): Promise<{ id: number; username: string; name?: string | null; publicKey?: string | null } | null>
   now?(): number
 }
 
-export type IdentityHandler = HostHandler & {
-  /** The peer id attestations name as their verifier. */
-  peer: string
-  /** This server's public key (raw ed25519, base64). */
+export type VerifyHandler = HostHandler & {
+  /** This server's public key (raw ed25519, base64), published in each account's Home. */
   publicKey: string
   /** The attested user object for `username`, or null when no account has that name. */
   resolve(username: string): Promise<UserRecord | null>
@@ -65,43 +65,43 @@ export type IdentityHandler = HostHandler & {
   verify(user: UserRecord): boolean
 }
 
-/** The fos `identity` service: resolve and attest users (a route, `createIdentityRoutes`; no evaluation effect). */
-export function identityHandler(deps: IdentityDeps, key: IdentityKey, peer = 'fos'): IdentityHandler {
+/** The username a verify requirement asks about: the `@name` in its text (else a user field it already has). */
+function wanted(ctx: EffectContext): string {
+  const row = ctx.step.row!
+  const name = (row.title.match(/@([\w.-]{1,64})/)?.[1] ?? row.user?.username ?? '').trim()
+  if (!name) throw new Error('Name the user to verify: "@name".')
+  return name
+}
+
+/** The fos `verify` service: a `verify` requirement is filled with the attested user object and the server's supply. */
+export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'): VerifyHandler {
   const now = () => deps.now?.() ?? Date.now()
   const attest = (user: Omit<UserRecord, 'verification'>): UserRecord => {
     const issuedAt = now(), base = { account: user.account, username: user.username, name: user.name, publicKey: user.publicKey }
     const attestation = sign(null, Buffer.from(userAttestationPayload(base, peer, USER_SERVER_ATTESTATION, issuedAt)), key.privateKey).toString('base64')
     return { ...base, verification: { by: peer, method: USER_SERVER_ATTESTATION, issuedAt, attestation } }
   }
+  const resolve = async (username: string): Promise<UserRecord | null> => {
+    const found = await deps.findUser(username.trim().replace(/^@/, ''))
+    return found ? attest({ account: String(found.id), username: found.username, name: found.name?.trim() || found.username, publicKey: found.publicKey?.trim() ?? '' }) : null
+  }
   return {
-    peerId: peer, capability: 'identity', peer, publicKey: key.publicKey, attest,
-    async resolve(username) {
-      const found = await deps.findUser(username.trim().replace(/^@/, ''))
-      return found ? attest({ account: String(found.id), username: found.username, name: found.name?.trim() || found.username, publicKey: found.publicKey?.trim() ?? '' }) : null
-    },
+    peerId: peer, capability: 'verify', publicKey: key.publicKey, attest, resolve,
     verify(user) {
       return user.verification?.method === USER_SERVER_ATTESTATION && verifyUser(user, { servers: { [peer]: key.publicKey }, verify: verifyEd25519 }).ok
-    }
-  }
-}
-
-function username(req: Request): string | null {
-  const claims = (req as Request & { claims?: { username?: string; kind?: string } }).claims
-  return claims?.username && claims.kind !== 'peer' ? claims.username : null
-}
-
-/** `GET /identity/key` (public) and `GET /user/data/users/:username` (a signed-in account): the attested user object. */
-export function createIdentityRoutes(identity: IdentityHandler) {
-  return {
-    key(_req: Request, res: Response): Response {
-      return res.json({ peer: identity.peer, alg: 'ed25519', publicKey: identity.publicKey })
     },
-    async user(req: Request, res: Response): Promise<Response> {
-      if (!username(req)) return res.status(401).json({ error: 'Sign in to look up users.' })
-      const name = String(req.params.username ?? '').trim()
-      if (!name) return res.status(400).json({ error: 'Name a user.' })
-      const user = await identity.resolve(name)
-      return user ? res.json({ user }) : res.status(404).json({ error: `No Fos user is named @${name}.` })
+    async prepare(ctx) {
+      // an unknown name fails before the evaluation opens, so nothing is journaled for it
+      const name = wanted(ctx)
+      if (!await deps.findUser(name)) throw new Error(`No Fos user is named @${name}.`)
+    },
+    async effect(ctx) {
+      const name = wanted(ctx), path = ctx.step.path
+      const user = await resolve(name)
+      if (!user) throw new Error(`No Fos user is named @${name}.`)
+      let next = bindUserAt(ctx.replica(), path, user, ctx.now())
+      next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'verify', by: peer, ref: user.account }, ctx.now())
+      await ctx.update(next)
     }
   }
 }
