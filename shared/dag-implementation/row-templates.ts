@@ -1,10 +1,11 @@
 /**
- * The seed of the standard library's Row types.
+ * Frozen migration data: the seed of the standard library's Row types that cid migrations v3 and v4 pin existing rows
+ * to. Nothing outside the migrations makes rows from it: the library's row types are graph data (`.fos/library.json`),
+ * told apart by graph identity (`lib:type:…`), and carry no `instanceKind` or `behavior`.
  *
  * Every row in a node's children is the edge [template, rowNode]: the template is the instruction (what the row is,
- * its behavior) and the row node the target (its own state). A template is any node whose data carries
- * `instanceKind`. Row types live in the standard library's "Row types" group, which members change by vote; new rows
- * are made from the nearest library above them (`rowTemplate` in sync/graph.ts).
+ * its behavior) and the row node the target (its own state). In these frozen formats a template is a node whose data
+ * carries `instanceKind`.
  *
  * A type says which rows it accepts as children with pattern rows of its own (patterns as types,
  * docs/language-design.md §2.1), made from the Pattern type: a pattern names a row type (`pattern.type`, a library
@@ -17,12 +18,8 @@
  * a device's own root or an account's store on the server) accepts Home; nothing accepts a device root or a document
  * root (`document-root`: the root of a project, a document or a draft).
  *
- * This is what the library starts with, what a new device root ships, and what cid migration v4 pins existing rows
- * to. Never edit it: a changed row type is a new library version, not a new seed. (The seed v3 pinned to, before
- * types had patterns, lives in migration-v3.ts.)
- *
- * Kinds whose behavior still lives in code name it (`behavior: builtin:<kind>`). Requirement and supply rows are
- * allocation rows read by the sign of their amount, so they share the allocation type.
+ * Never edit it: migrated content must hash the same on every peer. (The seed v3 pinned to, before types had
+ * patterns, lives in migration-v3.ts.)
  */
 
 import type { FosNodeContent, FosPathElem } from '../types'
@@ -95,13 +92,4 @@ export function seedRowTypeContent(kind: RowTypeKind, put: (content: FosNodeCont
 export function seedRowTypes(put: (content: FosNodeContent) => string): FosNodeContent[] {
   const patternType = seedPatternType(put)
   return ROW_TYPE_SEED.map((type) => rowTypeContent(type, patternType, put))
-}
-
-/**
- * Stand-in template for a row pinned to template `cid` that this peer has not received: the row node is kept as is
- * and the row reads as a reference error until the template arrives and replaces this instruction. Not knowing the
- * template, it accepts any child (the wildcard alone).
- */
-export function referenceErrorTemplateContent(cid: string, kind: string, put: (content: FosNodeContent) => string): FosNodeContent {
-  return { data: { description: { content: 'Reference error' }, instanceKind: { kind: 'reference-error' }, missingTemplate: { cid, kind } }, children: patternRows(`reference-error:${cid}`, { any: true, types: [] }, seedPatternType(put), put) }
 }

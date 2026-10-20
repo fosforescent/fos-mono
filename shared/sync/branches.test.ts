@@ -1,6 +1,7 @@
 import { syncWith, userView } from './test-helpers'
 import { FosStore } from '../dag-implementation/store'
 import { addRow, addTask, createBranch, createReplica, headCid, importNodes, loadReplica, mergeNodes, commitRoot, reachableNodes, renameTask, selectBranch, serializeReplica, setTaskDone, view } from './index'
+import { NOTE_TYPE } from './library-types'
 
 test('branch choices preserve the entire subtree and selection does not edit shared state', () => {
   let r = addTask(createReplica('a'), [], 'Project', 1, 'project')
@@ -10,7 +11,7 @@ test('branch choices preserve the entire subtree and selection does not edit sha
   r = renameTask(r, [], 'project', 'Alternative project', 4)
   r = renameTask(r, ['project'], 'child', 'Alternative child', 5)
   r = setTaskDone(r, ['project'], 'child', true, 6)
-  r = addRow(r, ['project','child'], 'note', 'Only in test1', 7)
+  r = addRow(r, ['project','child'], NOTE_TYPE, 'Only in test1', 7)
   const head = headCid(r)
   selectBranch(r.store, 'project', 'main')
   expect(headCid(r)).toBe(head)

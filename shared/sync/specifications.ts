@@ -1,13 +1,14 @@
 import { readNodeValue, writeNodeValue } from './evaluation'
 import { addRow, addTask, deleteTask, moveNode, renameTask, view, type Replica } from './replica'
 import { newId, type Scope } from './graph'
+import { NOTE_TYPE } from './library-types'
 export type FeatureSpecification = { id: string; parent: string | null; text: string }
 export function specificationRows(r: Replica, root: Scope): FeatureSpecification[] {
   const result: FeatureSpecification[] = []
   const walk = (path: Scope, parent: string | null, depth: number) => {
     if (depth > 64 || result.length >= 2000) throw new Error('Too many nested specifications.')
     for (const row of view(r, path)?.tasks ?? []) {
-      if (row.kind === 'ref' || row.refPeer || row.construction) continue
+      if (row.refId !== undefined || row.refPeer || row.construction) continue
       const at = [...path, row.id], spec = readNodeValue(r, at, 'fos:specification') !== null
       if (spec) result.push({ id: row.id, parent, text: row.title })
       walk(at, spec ? row.id : parent, depth + 1)
@@ -17,7 +18,7 @@ export function specificationRows(r: Replica, root: Scope): FeatureSpecification
 }
 export function addSpecification(r: Replica, parent: Scope, text: string, now: number) {
   const id = newId(), path = [...parent, id]
-  r = addRow(r, parent, 'note', text, now, { id })
+  r = addRow(r, parent, NOTE_TYPE, text, now, { id })
   return { replica: writeNodeValue(r, path, 'fos:specification', { version: 1 }, now), path }
 }
 export function validateSpecifications(value: unknown): FeatureSpecification[] {
@@ -30,7 +31,7 @@ export function validateSpecifications(value: unknown): FeatureSpecification[] {
 export function importSpecifications(r: Replica, root: Scope, value: unknown, now: number): Replica {
   const next = validateSpecifications(value), existing = specificationRows(r, root)
   const paths = new Map<string, Scope>(), all = new Set<string>()
-  const collect = (at: Scope) => { for (const row of view(r, at)?.tasks ?? []) { all.add(row.id); if (row.kind === 'ref' || row.refPeer || row.construction) continue; const path = [...at,row.id]; if (existing.some(spec => spec.id === row.id)) paths.set(row.id,path); collect(path) } }
+  const collect = (at: Scope) => { for (const row of view(r, at)?.tasks ?? []) { all.add(row.id); if (row.refId !== undefined || row.refPeer || row.construction) continue; const path = [...at,row.id]; if (existing.some(spec => spec.id === row.id)) paths.set(row.id,path); collect(path) } }
   collect(root)
   const keep = new Map(next.map(row => [row.id,row]))
   for (const row of next) if (all.has(row.id) && !paths.has(row.id)) throw new Error('Specification ID collides with another graph row.')
@@ -39,7 +40,7 @@ export function importSpecifications(r: Replica, root: Scope, value: unknown, no
   if (topologyChanged) {
     // Park retained subtrees before changing their parents; never recreate them.
     const anchor = newId()
-    r = addRow(r,root,'note','Moving specifications',now,{id:anchor})
+    r = addRow(r, root, NOTE_TYPE,'Moving specifications',now,{id:anchor})
     for (const [id,path] of [...paths].sort((a,b) => b[1].length-a[1].length)) {
       if (!keep.has(id)) r = deleteTask(r,path.slice(0,-1),id,now)
       else { r = moveNode(r,path.slice(0,-1),id,root,{relativeTo:anchor,position:'above'},now); paths.set(id,[...root,id]) }
@@ -52,7 +53,7 @@ export function importSpecifications(r: Replica, root: Scope, value: unknown, no
     if (row.parent) put(keep.get(row.parent)!)
     const parent = row.parent ? placed.get(row.parent)! : root
     let path = paths.get(row.id)
-    if (!path) { r = addRow(r,parent,'note',row.text,now,{id:row.id}); path=[...parent,row.id] }
+    if (!path) { r = addRow(r, parent, NOTE_TYPE,row.text,now,{id:row.id}); path=[...parent,row.id] }
     else {
       if (topologyChanged && row.parent) { r=moveNode(r,path.slice(0,-1),row.id,parent.slice(0,-1),{into:parent.at(-1)!},now); path=[...parent,row.id] }
       r = renameTask(r,path.slice(0,-1),row.id,row.text,now)

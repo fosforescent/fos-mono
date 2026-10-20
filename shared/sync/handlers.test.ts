@@ -1,4 +1,5 @@
 import { addMemberAt, addTask, capabilityPeers, capabilityTarget, contextBindings, createBranch, createReplica, discoverHandlers, headCid, put, refNodeContent, resolveBinding, selectBranch, setHandlerEnabledAt, setHandlerOffersAt, setMemberCapabilitiesAt, workHandler, view } from './index'
+import { TEMPLATE_TYPE } from './library-types'
 
 test('permissions do not become handlers; built-in offers use the same candidates as typed offers', () => {
   let r = addMemberAt(createReplica('owner'), [], 'guest', 'Guest', ['llm', 'edit'], 1)
@@ -47,7 +48,7 @@ test('wrong handler type is rejected without advancing the head', () => {
 
 test('published templates use ordinary instantiation and inherit per-peer toggles', async () => {
   const { addRow, publishTemplate, instantiateTemplateValue, refValueCid, content, resolveScope } = await import('./index')
-  let r = addRow(createReplica('device'), [], 'template', 'Build {feature}', 1, { id: 'template' })
+  let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Build {feature}', 1, { id: 'template' })
   r = addTask(r, ['template'], 'Write tests', 2, 'tests')
   r = addTask(r, [], 'Project', 3, 'project')
   r = publishTemplate(r, [], ['template'], 'Build feature', 4)

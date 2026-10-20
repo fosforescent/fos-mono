@@ -2,6 +2,7 @@
 import { evaluationRecord, readNodeValue, writeNodeValue } from './evaluation'
 import { addTask, headCid, instantiateTemplate, view, type Replica } from './replica'
 import { capabilityTarget, newId, resolveScope, valueContent, type Scope } from './graph'
+import { TEMPLATE_TYPE } from './library-types'
 export type TriggerKind = 'timer' | 'cron' | 'task-completion' | 'request' | 'response'
 /** What a `response` trigger waits for: the evaluation request this peer left on another peer's node. */
 export type AwaitedResponse = { request: string; node: Scope; requestedAt: number }
@@ -39,7 +40,7 @@ export function cronMatches(expression: string, now: number): boolean {
 }
 export function setNodeTrigger(r: Replica, path: Scope, trigger: NodeTrigger, now: number): Replica {
   // A continuation waits on the node that made the request; every other trigger instantiates a template.
-  if (trigger.kind !== 'response' && (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.kind !== 'template')) throw new Error('Triggers require a template.')
+  if (trigger.kind !== 'response' && (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.type !== TEMPLATE_TYPE)) throw new Error('Triggers require a template.')
   if (trigger.kind === 'response' && (!trigger.response || typeof trigger.response.request !== 'string' || !Array.isArray(trigger.response.node))) throw new Error('A response trigger names the request it waits for.')
   if (trigger.kind === 'cron') cronMatches(trigger.expression ?? '', now)
   if (trigger.kind === 'timer' && (!Number.isFinite(trigger.due) || trigger.due! < now)) throw new Error('Choose a future time.')
@@ -77,10 +78,10 @@ export function configuredTriggers(r: Replica): Array<{ path: Scope; trigger: No
     const trigger = nodeTrigger(r, path)
     if (trigger) result.push({ path, trigger })
     for (const row of view(r, path)?.tasks ?? []) {
-      if (seen.has(row.id) || row.kind === 'ref') continue
+      if (seen.has(row.id) || row.refId !== undefined) continue
       seen.add(row.id)
       // Only the template itself can trigger; its internal declarations are inactive until applied.
-      if (row.kind === 'template') {
+      if (row.type === TEMPLATE_TYPE) {
         const nested = nodeTrigger(r, [...path, row.id]); if (nested) result.push({ path: [...path, row.id], trigger: nested })
       } else walk([...path, row.id])
     }
@@ -103,7 +104,7 @@ export async function runNodeTriggers(driver: {
     if (!event || prior?.occurrence === event || prior?.status === 'running' || prior?.status === 'failed') continue
     let r = driver.get(), target = path
     const row = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
-    if (row?.kind === 'template') {
+    if (row?.type === TEMPLATE_TYPE) {
       const id = newId(), parent = path.slice(0, -1)
       r = addTask(r, parent, row.title, driver.now(), id)
       r = instantiateTemplate(r, parent, id, row.id, driver.now()); target = [...parent, id]

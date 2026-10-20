@@ -1,9 +1,10 @@
 import {
   SERVER_TRANSPORT_CAPABILITIES, addMemberAt, addTask, commitRoot, content, createReplica, exchangeNode, headCid, nodeTreeSync, put, readProposals,
-  resolveScope, rowTemplate, setMemberCapabilitiesAt, updateAtScope, view, type NodeAuthority, type NodeSyncContext, type Replica, type Scope,
+  resolveScope, rowTypeAt, setMemberCapabilitiesAt, updateAtScope, view, type NodeAuthority, type NodeSyncContext, type Replica, type Scope,
 } from './index'
 import { RELAY_QUEUE_ID, addRelayAck, addRelayMessage, offerRelay, relayAfterSubmission, relayAt, relayInbox, relayQueueSync, rowsLeftAt } from './relay'
 import { syncWith } from './test-helpers'
+import { PLAIN_TYPE } from './library-types'
 
 const HUB: Scope = ['hub']
 const queueOf = (peer: string): Scope => [...HUB, `fos:peer:${peer}`, RELAY_QUEUE_ID]
@@ -36,7 +37,7 @@ function sync(client: Replica, server: Replica, context: NodeSyncContext, author
 function inbox(peerId: string): Replica {
   const r = createReplica(peerId)
   const row = put(r.store, { data: { alias: { id: 'inbox' } }, children: [] })
-  commitRoot(r.store, updateAtScope(r.store, headCid(r), [], value => ({ ...value, children: [...value.children, [rowTemplate(r.store, 'plain'), row]] })), 1)
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), [], value => ({ ...value, children: [...value.children, [rowTypeAt(r.store, PLAIN_TYPE), row]] })), 1)
   return { ...r }
 }
 

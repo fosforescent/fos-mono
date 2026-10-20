@@ -10,9 +10,8 @@
  */
 
 import type { TaskView } from './graph'
-import { legacyTextPresentation } from './legacy-row-types'
 
-const isMarkdown = (row: TaskView) => (row.text ?? legacyTextPresentation(row.kind))?.mediaType === 'text/markdown'
+const isMarkdown = (row: TaskView) => row.text?.mediaType === 'text/markdown'
 
 export type NoteVar = { value: string | string[]; source: 'child' | 'frontmatter' | 'ref' }
 export type NoteContext = { body: string; vars: Record<string, NoteVar>; frontmatter: Record<string, string> }
@@ -49,7 +48,7 @@ export function noteContext(body: string, children: NoteChild[]): NoteContext {
   for (const [k, v] of Object.entries(frontmatter)) vars[k] = { value: v, source: 'frontmatter' }
   for (const child of children) {
     const { row, subRows } = child
-    if (row.kind === 'ref') {
+    if (row.refId !== undefined) {
       const t = child.refTarget
       if (!t) continue
       const kv = !isMarkdown(t.row) ? keyValueOf(t.row.title) : null

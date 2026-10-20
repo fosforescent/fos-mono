@@ -1,8 +1,8 @@
 import type { FosDataContent, FosNodesData } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
-  valueContent, readMembers, memberFor, isMemberEdge, memberEntryId, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, rowKindOf, identityCid, withMainBranchPolicy,
-  readProposals, CAPABILITIES, type ProposalView, ROW_KINDS, type Capability, type Scope, type RowKind } from './graph'
+  valueContent, readMembers, memberFor, isMemberEdge, memberEntryId, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
+  readProposals, CAPABILITIES, type ProposalView, type Capability, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 
 /** Each endpoint owns its mask. Omitting an allowlist allows all; [] allows none. */
@@ -17,8 +17,12 @@ export type NodeRequest = {
   templateNodes?: FosNodesData
 }
 export type NodeShape = { data: FosDataContent; children: NodeChild[] }
-/** `template`: what the child row is made from (its row edge's instruction): a row type or a template row, pinned by cid. */
-export type NodeChild = { id: string; kind: RowKind; address: NodeAddress; template: string }
+/**
+ * One child row: `template` is what it is made from (its row edge's left node: a row type or a template row, pinned by
+ * cid), so the type travels as the template and nothing else. `held`: its content is not served through this node (a
+ * reference row, whose target has its own attachment, or a node another peer holds: `address` says which).
+ */
+export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true }
 export type ProvidedNode = {
   peerId: string; linkId: string; remoteLinkId: string; address: NodeAddress
   data: FosDataContent; children: NodeChild[]; mask?: NodeMask; proposals?: ProposalView[]; grants?: Capability[]
@@ -201,7 +205,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       if (mask.children && !mask.children.includes(id)) throw new NodeAccessError('Node access denied.')
       const identity = content(r.store, cid)
       if (isHandle(identity)) throw new NodeAccessError('Reference targets require their own attachment.')
-      const edge = valueContent(r.store, cid).children.find(e => rowKindOf(r.store, e) && content(r.store, identityCid(r.store, e)).data.alias?.id === id)
+      const edge = valueContent(r.store, cid).children.find(e => isRowEdge(r.store, e) && content(r.store, identityCid(r.store, e)).data.alias?.id === id)
       if (!edge) throw new NodeAccessError('Node unavailable.')
       cid = identityCid(r.store, edge)
       path.push(id)
@@ -220,8 +224,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const pinned = new Set<string>(), wanted = new Set<string>()
     for (const edge of value.children) {
       if (isBookkeepingEdge(r.store, edge)) continue
-      const kind = rowKindOf(r.store, edge)
-      if (!kind) continue
+      if (!isRowEdge(r.store, edge)) continue
       const childCid = identityCid(r.store, edge), child = content(r.store, childCid), id = child.data.alias?.id
       if (!id || isShippedLibrary(r.store, path, edge) || (mask.children && !mask.children.includes(id)) || !permitted(r, childCid, authority.peerId, access)) continue
       const remote = isPeerReference(child) ? child.data.ref : undefined
@@ -229,7 +232,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       // The template belongs to the edge, so rows held by another peer carry it too.
       const missing = missingTemplateOf(r.store, edge), template = pinnedTemplateOf(r.store, edge)!
       ;(missing ? wanted : pinned).add(template)
-      children.push({ id, kind: remote ? 'ref' : missing ? missing.kind : kind, address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
+      children.push({ id, ...(isHandle(child) ? { held: true as const } : {}), address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
     }
     // Only templates this node's visible rows are pinned to are served, never an arbitrary cid.
     const served = (request.templates ?? []).filter(cid => pinned.has(cid))
@@ -257,8 +260,8 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
   const children = node.children.filter(child => !local.children || local.children.includes(child.id)).map(child => {
-    const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', kind: child.kind, scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
-    return pinnedRowEdge(r.store, child.kind, stub, child.template)
+    const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
+    return pinnedRowEdge(r.store, stub, child.template)
   })
   // Preserve local grants and masks; the provider cannot replace them with its own. A root keeps its shipped library.
   const shipped = valueContent(r.store, cid).children.filter(edge => isShippedLibrary(r.store, at, edge))
@@ -286,9 +289,9 @@ export async function pullNode(request: NodeRequest, peers: NodeProvider[]): Pro
       if (node.peerId !== peer.id || node.remoteLinkId !== request.linkId || node.address.peerId !== peer.id ||
         JSON.stringify(node.address.scope) !== JSON.stringify([...request.scope, ...request.path])) throw new NodeAccessError('Node response does not match the request.')
       if (!node.data || typeof node.data !== 'object' || Array.isArray(node.data) || typeof node.linkId !== 'string' || !node.linkId || !Array.isArray(node.children) ||
-        node.children.some(child => !child || typeof child.id !== 'string' || !child.id || !ROW_KINDS.includes(child.kind) || typeof child.address?.peerId !== 'string' || !child.address.peerId || !validPath(child.address.scope) ||
+        node.children.some(child => !child || typeof child.id !== 'string' || !child.id || (child.held !== undefined && child.held !== true) || typeof child.address?.peerId !== 'string' || !child.address.peerId || !validPath(child.address.scope) ||
           (child.address.peerId === peer.id && JSON.stringify(child.address.scope) !== JSON.stringify([...node.address.scope, child.id])) ||
-          (child.address.peerId !== peer.id && child.kind !== 'ref')) ||
+          (child.address.peerId !== peer.id && !child.held)) ||
         new Set(node.children.map(child => child.id)).size !== node.children.length) throw new NodeAccessError('Invalid node response.')
       return node
     } catch (e) { error = e }
@@ -306,7 +309,7 @@ export async function pullNodeTree(request: NodeRequest, peer: NodeProvider, lim
     if (seen.has(key)) continue
     seen.add(key)
     const node = await pullNode(next, [peer]); result.push(node)
-    for (const child of node.children) if (child.kind !== 'ref') {
+    for (const child of node.children) if (!child.held) {
       const path = [...next.path, child.id]
       const linkId = nodeRequestLinkId(request.peerId, { peerId: peer.id, scope: [...request.scope, ...path] })
       queue.push({ ...request, path, linkId })

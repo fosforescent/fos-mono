@@ -7,13 +7,15 @@ import { nodeAuthorityAt } from './node-context'
 import { setSharing, sharedProjection, writeParticipation } from './sharing'
 import { DEFAULT_MERGE_POLICY, STANDARD_LIBRARY, applyMergePolicy, ensureLibraryLink, ensureDeviceLibrary, exportLibraryRows, exportProvidedLibrary, libraryPath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
 import { LIBRARY_ID, nestScope } from './graph'
+import { PLAIN_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from './library-types'
+import { REF_TYPE } from './library-types'
 
 const share = 'library-share-0123456789', address = { owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], share, title: 'Standard library' }
 const revision = (value: unknown) => JSON.stringify(value).length.toString(36)
 
 function library(): { r: Replica; path: Scope } {
   let r = ensureHomeContext(createReplica('user:fos-library'), 1)
-  r = addRow(r, [HOME_ID], 'plain', 'Standard library', 1, { id: LIBRARY_ID })
+  r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Standard library', 1, { id: LIBRARY_ID })
   const path = [HOME_ID, LIBRARY_ID]
   r = setSharing(r, path, { id: share, audience: 'users', enabled: true }, 2)
   r = setMemberCapabilitiesAt(r, path, 'audience:users', ['read', 'edit', 'rank'], [], 2)
@@ -28,7 +30,7 @@ function proposeRow(r: Replica, path: Scope, peer: string, title: string, id: st
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: path })
-  const draft = addRow(createReplica(peer, draftStore), [], 'template', title, now, { id })
+  const draft = addRow(createReplica(peer, draftStore), [], TEMPLATE_TYPE, title, now, { id })
   importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
   const cid = put(store, proposalContent(store, peer, 'node-sync', headCid(draft), base, now))
   commitRoot(store, updateAtScope(store, root, path, current => withProposal(store, makeLink(store, current, now), peer, cid, 'node-sync'), 'node'), now)
@@ -38,16 +40,16 @@ function proposeRow(r: Replica, path: Scope, peer: string, title: string, id: st
 test('seeding adds the standard templates once and records the version', () => {
   const { r, path } = library()
   const rows = view(r, path)!.tasks
-  expect(rows.filter(t => t.kind === 'template').map(t => t.title)).toEqual(STANDARD_LIBRARY.filter(s => s.kind === 'template').map(s => s.text))
+  expect(rows.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(STANDARD_LIBRARY.filter(s => s.type === TEMPLATE_TYPE).map(s => s.text))
   // a template's own pattern rows (what tasks made from it accept) are rows too; its requirements are the rest
-  expect(view(r, [...path, 'lib:trip'])!.tasks.filter(t => t.kind !== 'pattern').map(t => t.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
+  expect(view(r, [...path, 'lib:trip'])!.tasks.filter(t => t.type !== PATTERN_TYPE).map(t => t.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
   expect(libraryInfo(r, path)).toMatchObject({ version: 2 })
   expect(libraryInfo(r, path)!.seeded).toContain('lib:trip:budget')
   const again = seedStandardLibrary(r, path, 9)
   expect(headCid(again)).toBe(headCid(r))
   // a row the group removed is not reseeded: the seed list remembers what it already added
-  const trimmed = seedStandardLibrary(addRow(r, path, 'plain', 'keep', 10), path, 11)
-  expect(view(trimmed, path)!.tasks.filter(t => t.kind === 'template')).toHaveLength(9)
+  const trimmed = seedStandardLibrary(addRow(r, path, PLAIN_TYPE, 'keep', 10), path, 11)
+  expect(view(trimmed, path)!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(9)
 })
 
 test('people who contribute link the shared library into Home, carrying its address; nobody gets one by default', () => {
@@ -58,7 +60,7 @@ test('people who contribute link the shared library into Home, carrying its addr
   expect(linked.path).toEqual([HOME_ID, LIBRARY_ID])
   r = linked.replica
   const row = view(r, [HOME_ID])!.tasks.find(t => t.id === LIBRARY_ID)!
-  expect(row).toMatchObject({ kind: 'ref', title: 'Standard library', refOwner: 'fos-library', refId: LIBRARY_ID })
+  expect(row).toMatchObject({ type: REF_TYPE, title: 'Standard library', refOwner: 'fos-library', refId: LIBRARY_ID })
   expect(libraryLink(r)).toEqual([HOME_ID, LIBRARY_ID])
   const second = ensureLibraryLink(r, address, 3)
   expect(second.added).toBe(false)
@@ -95,7 +97,7 @@ test('a proposal merges once enough members approved it; a lone approval waits',
   r = vote('user:carol', 13)
   const merged = applyMergePolicy(r, path, revision, 14)
   expect(merged.merged).toEqual([proposed.cid])
-  expect(view(merged.replica, path)!.tasks.some(t => t.id === 'lib:weekly' && t.kind === 'template')).toBe(true)
+  expect(view(merged.replica, path)!.tasks.some(t => t.id === 'lib:weekly' && t.type === TEMPLATE_TYPE)).toBe(true)
   expect(view(merged.replica, path)!.proposals.filter(p => p.status === 'open')).toHaveLength(0)
   expect(applyMergePolicy(merged.replica, path, revision, 15).merged).toEqual([])
   // without a policy the owner decides by hand, however many approve
@@ -110,14 +112,14 @@ test('a proposal merges once enough members approved it; a lone approval waits',
 test('the library exports as rows that seed an identical copy: every root ships it from its build, and a library linked in Home overrides it there', () => {
   const { r: lib, path } = library()
   const rows = exportLibraryRows(lib, path)
-  expect(rows.map(row => [row.id, row.kind])).toEqual(STANDARD_LIBRARY.map(row => [row.id, row.kind]))
+  expect(rows.map(row => [row.id, row.type])).toEqual(STANDARD_LIBRARY.map(row => [row.id, row.type]))
   expect(rows.find(row => row.id === 'lib:trip')!.children!.map(c => c.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
   expect(rows.find(row => row.id === 'lib:readme')!.text).toMatch(/^# Standard library/)
   // a new root ships the library: its row is there from the start, filled from the build's bundle
   let device = ensureHomeContext(createReplica('user:device'), 1)
   expect(view(device, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
   device = ensureDeviceLibrary(device, { address, version: 7, rows }, 2)
-  expect(view(device, [LIBRARY_ID])!.tasks.filter(t => t.kind === 'template').map(t => t.title)).toEqual(rows.filter(row => row.kind === 'template').map(row => row.text))
+  expect(view(device, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(rows.filter(row => row.type === TEMPLATE_TYPE).map(row => row.text))
   expect(libraryInfo(device, [LIBRARY_ID])).toMatchObject({ version: 7, source: 'bundle' })
   expect(headCid(ensureDeviceLibrary(device, { address, version: 7, rows }, 3))).toBe(headCid(device))
   expect(libraryLink(device)).toBeNull()
@@ -125,7 +127,7 @@ test('the library exports as rows that seed an identical copy: every root ships 
   expect(libraryPath(device)).toEqual([LIBRARY_ID])
   // a build made without a server ships the compiled .fos graph
   const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: 0, rows: [] }, 2)
-  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.kind === 'template')).toHaveLength(9)
+  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(9)
   // contributing links the shared library into Home: under Home it is the one rows see; the shipped one stays in the root
   const linked = ensureLibraryLink(device, address, 10).replica
   expect(libraryLink(linked)).toEqual([HOME_ID, LIBRARY_ID])
@@ -142,12 +144,12 @@ test('the nodes the fos CLI pulls through the account export as the same bundle 
     const request = { peerId: 'user:dev', scope, path: relative, linkId: `fos-cli:${relative.join('/')}` }
     const served = exchangeNode(lib, request, { peerId: 'user:dev', scope, owner: false, proposeOnly: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }, 50 + pulled.length)
     pulled.push({ request, node: served.node })
-    for (const child of served.node.children) if (child.kind !== 'ref') queue.push([...relative, child.id])
+    for (const child of served.node.children) if (child.refId === undefined) queue.push([...relative, child.id])
   }
   const bundle = exportProvidedLibrary({ address, nodes: pulled }, 99)
   expect(bundle.address).toEqual(address)
   expect(bundle.rows).toEqual(exportLibraryRows(lib, path))
-  expect(bundle.rows.filter(row => row.kind === 'template')).toHaveLength(9)
+  expect(bundle.rows.filter(row => row.type === TEMPLATE_TYPE)).toHaveLength(9)
   expect(exportProvidedLibrary({ address, nodes: [] }, 1)).toEqual({ address, version: 0, rows: [] })
 })
 

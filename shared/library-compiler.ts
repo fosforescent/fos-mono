@@ -3,7 +3,8 @@ import { hashContent, isCurrentCid, verifyCid } from './dag-implementation/cid'
 import type { FosNodeContent, FosNodesData, FosPathElem } from './types'
 
 export type LibrarySource = { version: number; rootNodeId: string; nodes: FosNodesData }
-export type CompiledLibraryRow = { id: string; kind: string; text: string; graph: { template: string; cid: string }; children?: CompiledLibraryRow[] }
+/** A row of the library; `type` is the graph identity of its edge's left node (`lib:type:…`, or a template row's id). */
+export type CompiledLibraryRow = { id: string; type: string; text: string; graph: { template: string; cid: string }; children?: CompiledLibraryRow[] }
 
 export function compileLibrary(source: LibrarySource) {
   if (!source || !Number.isInteger(source.version) || !source.nodes || !source.nodes[source.rootNodeId]) throw new Error('Invalid .fos library graph.')
@@ -14,6 +15,7 @@ export function compileLibrary(source: LibrarySource) {
     const node = source.nodes[cid]
     if (!node || !isCurrentCid(cid) || !verifyCid(cid, node)) throw new Error(`Invalid or missing library node ${cid}.`)
     if ('instanceKind' in node.data) throw new Error('Library definitions must not contain instanceKind.')
+    if (node.data.behavior?.content?.startsWith('builtin:')) throw new Error('Library definitions must not name builtin behaviors: a type is told apart by its graph identity.')
     visiting.add(cid)
     for (const [i, t] of node.children) { visit(i); visit(t) }
     visiting.delete(cid)
@@ -36,10 +38,10 @@ export function compileLibrary(source: LibrarySource) {
     const identity = nodes[cid]!, node = value(cid), instruction = value(template)
     const id = identity.data.alias?.id ?? node.data.alias?.id
     if (!id) return null
-    const kind = id === 'lib:types' ? 'types' : instruction.data.form ? 'plain' : instruction.data.behavior?.content?.replace(/^builtin:/, '')
-    if (!kind || kind === 'pattern') return null
+    const type = instruction.data.alias?.id
+    if (!type || type === 'lib:type:pattern') return null
     const children = node.children.map(row).filter((r): r is CompiledLibraryRow => !!r)
-    return { id, kind, text: node.data.description?.content ?? '', graph: { template, cid }, ...(children.length ? { children } : {}) }
+    return { id, type, text: node.data.description?.content ?? '', graph: { template, cid }, ...(children.length ? { children } : {}) }
   }
   const rows = root.children.map(row).filter((r): r is CompiledLibraryRow => !!r)
   return { version: source.version, rootNodeId: source.rootNodeId, nodes: Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))), types, rows }

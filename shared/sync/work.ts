@@ -5,8 +5,9 @@ import { constructForm, formTitle } from './forms'
 import {
   demandOf, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
-  rowEdgeAt, rowKindOf, rowTemplate, updateAtScope, valueContent, type Scope
+  rowEdgeAt, rowTypeAt, rowTypeOf, typeIdOf, isRowEdge, isRowOfType, isAllocationRow, flowOf, updateAtScope, valueContent, type Scope
 } from './graph'
+import { ALLOCATION_TYPE, NOTE_TYPE, PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
 import {
   addRefAt, addRow, addTask, addSupply, applyProposalAt, headCid, instantiateTemplate,
   proposeRefAt, rejectProposalAt, view, type Replica
@@ -47,7 +48,14 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   const handler = workHandler(r, requestPath)
   handler.problems.forEach(problem => blockers.add(problem))
   if (demandOf(request.value)?.capability !== 'llm') throw new Error('Select a language-model requirement.')
-  const emit = (cid: string, label: string, depth: number, external = false, ancestorNotes = false, at: Scope = requestPath) => {
+  // a row's type is its edge's left node: its name labels the row in the prompt; rows that read as text are context
+  const typeLabel = (edge: [string, string]) => valueContent(store, rowTypeOf(store, edge)!).data.description?.content ?? 'Row'
+  const isSupply = (edge: [string, string]) => isAllocationRow(store, edge) && !!flowOf(typeIdOf(store, rowTypeOf(store, edge)) ?? '', valueContent(store, identityCid(store, edge))).supply
+  const isText = (edge: [string, string]) => {
+    const type = rowTypeOf(store, edge)!, id = typeIdOf(store, type)
+    return !id || id === PLAIN_TYPE || id === REF_TYPE || !!valueContent(store, type).data.form
+  }
+  const emit =(cid: string, label: string, depth: number, external = false, ancestorNotes = false, at: Scope = requestPath) => {
     if (depth > 30) { blockers.add('An input is nested too deeply.'); return }
     if (active.has(cid)) { blockers.add('An input reference contains a cycle.'); return }
     if (isAttempt(r, cid) || included.has(cid)) return
@@ -65,8 +73,8 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       if (!found) blockers.add(`Input unavailable: ${value.data.description?.content || ref.id}`)
       else {
         const target = resolveScope(store, headCid(r), [...found.path, found.row.id])!
-        if (found.row.kind === 'requirement' && !found.row.requirement?.satisfied) blockers.add(`Input not accepted: ${found.row.title}`)
-        if (found.row.kind === 'task' && !found.row.done) blockers.add(`Input task unfinished: ${found.row.title}`)
+        if (!!found.row.requirement && !found.row.requirement?.satisfied) blockers.add(`Input not accepted: ${found.row.title}`)
+        if (found.row.checkable && !found.row.done) blockers.add(`Input task unfinished: ${found.row.title}`)
         emit(target, 'Referenced input', depth + 1, true, false, [...found.path, found.row.id])
       }
     }
@@ -77,15 +85,14 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       else emit(resolved.cid!, 'Bound input', depth + 1, true)
     }
     for (const edge of value.children) {
-      const kind = rowKindOf(store, edge)
-      if (!kind || kind === 'supply' || kind === 'template') continue
-      if (ancestorNotes && !['note', 'plain', 'ref'].includes(kind)) continue
+      if (!isRowEdge(store, edge) || isSupply(edge) || isRowOfType(store, edge, TEMPLATE_TYPE)) continue
+      if (ancestorNotes && !isText(edge)) continue
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
       if (content(store, child).data.name?.content?.startsWith('fos:')) continue
       // Other work requests are context only once accepted, when explicitly referenced.
-      if (kind === 'requirement' && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue
-      emit(child, kind, depth + 1, external, ancestorNotes, [...at, content(store, child).data.alias!.id])
+      if (isAllocationRow(store, edge) && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue
+      emit(child, typeLabel(edge), depth + 1, external, ancestorNotes, [...at, content(store, child).data.alias!.id])
     }
     active.delete(cid)
   }
@@ -94,16 +101,16 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     sources.add(ancestor.cid)
     lines.push(`Ancestor: ${formTitle(store, ancestor.value) || 'Project'}`)
     for (const edge of ancestor.value.children) {
-      const kind = rowKindOf(store, edge)
+      if (!isRowEdge(store, edge)) continue
       const child = identityCid(store, edge)
       if (content(store, child).data.alias?.id === requestPath[i]) continue
-      if (kind === 'note' || kind === 'plain' || kind === 'ref') emit(child, kind, 0, false, true, [...requestPath.slice(0, i), content(store, child).data.alias!.id])
+      if (isText(edge)) emit(child, typeLabel(edge), 0, false, true, [...requestPath.slice(0, i), content(store, child).data.alias!.id])
     }
   }
   const parent = nodeAt(r, requestPath.slice(0, -1))
   emit(parent.cid, 'Selected task', 0, false, false, requestPath.slice(0, -1))
   for (const row of view(r, requestPath)?.tasks ?? []) {
-    if (row.kind === 'requirement' && !row.requirement?.satisfied) blockers.add(`Required before delegation: ${row.title}`)
+    if (!!row.requirement && !row.requirement?.satisfied) blockers.add(`Required before delegation: ${row.title}`)
   }
   if (view(r, requestPath)?.choices.length || view(r, requestPath.slice(0, -1))?.choices.length) blockers.add('Resolve the task’s conflicting choices first.')
   if (view(r, requestPath.slice(0, -1))?.tasks.find((t) => t.id === requestPath.at(-1))?.requirement?.satisfied) blockers.add('This request already has an accepted result.')
@@ -120,7 +127,7 @@ export function workAttempts(r: Replica, requestPath: Scope) {
     const snapshot = slots(r, cid, r.store.primitive.descriptionField.getId())[0]?.targetCid
     if (!snapshot) return []
     const saved = valueContent(r.store, snapshot)
-    const systemEdge = saved.children.find((edge) => valueContent(r.store, identityCid(r.store, edge)).data.presentation?.text?.mediaType === 'text/markdown' || rowKindOf(r.store, edge) === 'note')
+    const systemEdge = saved.children.find((edge) => valueContent(r.store, identityCid(r.store, edge)).data.presentation?.text?.mediaType === 'text/markdown' || isRowOfType(r.store, edge, NOTE_TYPE))
     const system = systemEdge ? formTitle(r.store, valueContent(r.store, identityCid(r.store, systemEdge))) : ''
     return [{ path, resultPath: [...path, result.id], resultCid: result.targetCid,
       context: formTitle(r.store, saved), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
@@ -137,9 +144,9 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   const handler = resolved.cid!
   if (valueContent(store, handler).data.peerId?.content !== 'fos' || valueContent(store, handler).data.description?.content !== 'llm') throw new Error('No executor is configured for this language-model handler.')
   const id = newId(), path = [...requestPath, id], contextId = newId(), resultId = newId()
-  r = addRow(r, requestPath, 'plain', `Agent attempt ${workAttempts(r, requestPath).length + 1}`, now, { id })
-  r = addRow(r, path, 'note', current.prompt, now, { id: contextId })
-  r = addRow(r, [...path, contextId], 'note', WORK_SYSTEM, now)
+  r = addRow(r, requestPath, PLAIN_TYPE, `Agent attempt ${workAttempts(r, requestPath).length + 1}`, now, { id })
+  r = addRow(r, path, NOTE_TYPE, current.prompt, now, { id: contextId })
+  r = addRow(r, [...path, contextId], NOTE_TYPE, WORK_SYSTEM, now)
   for (const source of current.sources) r = addRefAt(r, [...path, contextId], newId(), store.primitive.documentField.getId(), now, source)
   const snapshot = nodeAt(r, [...path, contextId]).cid
   r = addRefAt(r, path, newId(), store.primitive.descriptionField.getId(), now, snapshot)
@@ -153,7 +160,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
 
 export function proposeTaskResult(r: Replica, resultPath: Scope, text: string, now: number): Replica {
   if (!text.trim()) throw new Error('The model returned an empty result. Try again.')
-  const result = put(r.store, constructForm(r.store, rowTemplate(r.store, 'note', resultPath), newId(), { text }, now))
+  const result = put(r.store, constructForm(r.store, rowTypeAt(r.store, NOTE_TYPE, resultPath), newId(), { text }, now))
   return proposeRefAt(r, resultPath, result, 'fos:llm', now).replica
 }
 
@@ -176,7 +183,7 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (refValueCid(r.store, content(r.store, nodeAt(r, resultPath).cid)) !== proposal.contentCid) throw new Error('The return ref changed. Review the current proposal again.')
   const result = content(r.store, proposal.contentCid)
   if (!result.data.alias?.id) throw new Error('Result has no identity.')
-  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, 'note', proposal.contentCid, requestPath)] }))
+  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, NOTE_TYPE, proposal.contentCid, requestPath)] }))
   commitRoot(r.store, next, now)
   for (const title of subtasks) r = addTask(r, requestPath.slice(0, -1), title, now)
   return addSupply(r, requestPath.slice(0, -1), requestPath.at(-1)!, { capability: 'llm', by: 'fos:llm', ref: result.data.alias.id }, now)
@@ -186,12 +193,12 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
 export function addPlanningTemplate(r: Replica, taskPath: Scope, now: number): Replica {
   const templateId = 'fos:implement-and-verify'
   if (!findRowByAlias(r.store, headCid(r), templateId)) {
-    r = addRow(r, [], 'template', 'Implement and verify', now, { id: templateId })
-    r = addRow(r, [templateId], 'note', 'Specification\nDescribe the required outcome, constraints, and important decisions.', now)
-    r = addRow(r, [templateId], 'note', 'Acceptance examples\nDescribe concrete inputs and expected outcomes. Replace these instructions before delegating.', now)
+    r = addRow(r, [], TEMPLATE_TYPE, 'Implement and verify', now, { id: templateId })
+    r = addRow(r, [templateId], NOTE_TYPE, 'Specification\nDescribe the required outcome, constraints, and important decisions.', now)
+    r = addRow(r, [templateId], NOTE_TYPE, 'Acceptance examples\nDescribe concrete inputs and expected outcomes. Replace these instructions before delegating.', now)
     const reqId = newId()
-    r = addRow(r, [templateId], 'requirement', 'Propose a detailed implementation plan and verification steps. Identify missing decisions.', now, { id: reqId, requirement: { capability: 'llm' } })
-    r = addRow(r, [templateId, reqId], 'requirement', 'Specification, acceptance examples and required input references are ready', now, { requirement: { capability: 'confirmation' } })
+    r = addRow(r, [templateId], ALLOCATION_TYPE, 'Propose a detailed implementation plan and verification steps. Identify missing decisions.', now, { id: reqId, requirement: { capability: 'llm' } })
+    r = addRow(r, [templateId, reqId], ALLOCATION_TYPE, 'Specification, acceptance examples and required input references are ready', now, { requirement: { capability: 'confirmation' } })
     r = addRefAt(r, [templateId, reqId], newId(), capabilityTarget(r.store, 'llm'), now)
   }
   return instantiateTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, templateId, now)
@@ -201,8 +208,8 @@ export function addPlanningTemplate(r: Replica, taskPath: Scope, now: number): R
 export function addSubtasksTemplate(r: Replica, taskPath: Scope, now: number): { replica: Replica; requestId: string } {
   const templateId = 'fos:generate-subtasks'
   if (!findRowByAlias(r.store, headCid(r), templateId)) {
-    r = addRow(r, [], 'template', 'Generate subtasks', now, { id: templateId })
-    r = addRow(r, [templateId], 'requirement', 'Generate fine-grained subtasks with acceptance criteria. Return one unchecked Markdown task per line, like [ ] Implement reservation validation — reject overlapping bookings. Do not claim the tasks are completed.', now, { id: 'fos:subtask-request', requirement: { capability: 'llm' } })
+    r = addRow(r, [], TEMPLATE_TYPE, 'Generate subtasks', now, { id: templateId })
+    r = addRow(r, [templateId], ALLOCATION_TYPE, 'Generate fine-grained subtasks with acceptance criteria. Return one unchecked Markdown task per line, like [ ] Implement reservation validation — reject overlapping bookings. Do not claim the tasks are completed.', now, { id: 'fos:subtask-request', requirement: { capability: 'llm' } })
     r = addRefAt(r, [templateId, 'fos:subtask-request'], newId(), capabilityTarget(r.store, 'llm'), now, null, 'model')
     commitRoot(r.store, updateAtScope(r.store, headCid(r), [templateId, 'fos:subtask-request'], value => ({ ...value, data: { ...value.data, name: { content: templateId } } })), now)
   }

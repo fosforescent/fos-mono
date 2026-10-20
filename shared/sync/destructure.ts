@@ -1,6 +1,7 @@
 /** Requirement outputs are named typed refs pointing at their source's stable identity. */
 import type { FosStore } from '../dag-implementation/store'
-import { newId, childRows, commitRoot, content, demandOf, findRowByAlias, identityCid, put, refNodeContent, refTypeCid, refValueCid, requirementSatisfied, resolveScope, rootTargetCid, supplyOf, updateAtScope, valueContent, type Scope } from './graph'
+import { newId, childRows, commitRoot, content, demandOf, findRowByAlias, flowOf, identityCid, put, refNodeContent, refTypeCid, refValueCid, requirementSatisfied, resolveScope, rootTargetCid, updateAtScope, valueContent, type Scope } from './graph'
+import { isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
 
 export function requirementOutputs(store: FosStore, cid: string) {
@@ -43,7 +44,7 @@ export function resolveRequirementOutput(store: FosStore, cid: string): { cid?: 
     if (!slice || !Number.isFinite(slice.amount) || slice.amount <= 0 || req.amount === undefined || total > req.amount + 1e-9 || slice.amount > req.amount || slice.type !== (req.resource ?? 'account') || slice.unit !== (req.unit ?? 'USD')) return { error: 'The pieces no longer fit the source requirement.' }
     return { cid: put(store, { data: { allocation: slice, description: { content: `${slice.amount} ${slice.unit}` } }, children: [] }) }
   }
-  const choices = [...new Set(childRows(store, sourceCid, 'supply').map(row => supplyOf(row.value)?.choice).filter((n): n is number => n !== undefined))]
+  const choices = [...new Set(childRows(store, sourceCid).map(row => isAllocationType(row.type) ? flowOf(row.type, row.value).supply?.choice : undefined).filter((n): n is number => n !== undefined))]
   if (choices.length !== 1 || !req.options?.[choices[0]!]) return { error: 'Choose exactly one constructor for the source requirement.' }
   return { cid: put(store, { data: { description: { content: req.options[choices[0]!]! } }, children: [] }) }
 }

@@ -1,10 +1,9 @@
-import { definitionRowKind } from './legacy-row-types'
 import { exchangeNodeContext } from './node-context'
 import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
 import { isCid, isCurrentCid } from '../dag-implementation/cid'
-import { content, valueContent, identityCid, rowKindOf, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTemplateOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
-  scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, ROW_KINDS, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
+import { content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
+  scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
 import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError,
@@ -15,14 +14,14 @@ const forbidden = new Set(['alias', 'ref', 'versionControl', 'disabledCapabiliti
 const empty = (): NodeShape => ({ data: {}, children: [] })
 // Key order is not content: jsonb storage and object spreads reorder keys of the same value.
 const equal = sameValue
-const childValue = (child?: NodeChild) => child && { id: child.id, kind: child.kind, template: child.template, ...(child.kind === 'ref' ? { address: child.address } : {}) }
+const childValue = (child?: NodeChild) => child && { id: child.id, template: child.template, ...(child.held ? { held: true, address: child.address } : {}) }
 export const nodeSyncKey = (peer: string, path: Scope, branches?: NodeBranch[]): string => JSON.stringify(branches?.length ? [peer, path, [...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : [peer, path])
 
 export function validateNodeShape(shape: NodeShape): void {
   // the only cids on the wire are pinned templates: a peer in another cid format has to update first
   if (Array.isArray(shape?.children) && shape.children.some(c => isCid(c?.template) && !isCurrentCid(c.template))) throw new NodeAccessError('This peer uses another content id format. Update the app to sync.')
   if (!shape || !shape.data || typeof shape.data !== 'object' || Array.isArray(shape.data) || !Array.isArray(shape.children) || shape.children.length > 10000 ||
-    Object.keys(shape.data).some(key => forbidden.has(key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || !ROW_KINDS.includes(c.kind) || c.kind === 'reference-error' || !isCid(c.template) ||
+    Object.keys(shape.data).some(key => forbidden.has(key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || (c.held !== undefined && c.held !== true) || !isCid(c.template) ||
       !c.address || typeof c.address.peerId !== 'string' || !Array.isArray(c.address.scope) || c.address.scope.length > 64 || c.address.scope.some(id => typeof id !== 'string' || !id || id === '.' || id === '..')) ||
     new Set(shape.children.map(c => c.id)).size !== shape.children.length || JSON.stringify(shape).length > 1024 * 1024) throw new NodeAccessError('Invalid node update.')
 }
@@ -34,14 +33,14 @@ export function nodeShape(r: Replica, path: Scope, root = headCid(r)): NodeShape
   const value = valueContent(r.store, cid)
   const children: NodeChild[] = []
   for (const edge of value.children) {
-    const kind = rowKindOf(r.store, edge)
-    if (!kind) continue
+    if (!isRowEdge(r.store, edge)) continue
     const child = content(r.store, identityCid(r.store, edge)), id = child.data.alias?.id
     if (!id || isShippedLibrary(r.store, path, edge)) continue
     const ref = isPeerReference(child) ? child.data.ref : undefined
     // a reference error is the row it stands for, pinned to the template it waits for
-    const missing = missingTemplateOf(r.store, edge), template = pinnedTemplateOf(r.store, edge)!
-    children.push({ id, kind: ref?.kind && ROW_KINDS.includes(ref.kind as NodeChild['kind']) ? ref.kind as NodeChild['kind'] : missing ? missing.kind : kind, address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) }, template })
+    const template = pinnedTemplateOf(r.store, edge)!
+    const held = isPeerReference(child) ? !!child.data.ref?.held : isHandle(child)
+    children.push({ id, ...(held ? { held: true as const } : {}), address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) }, template })
   }
   return { data: Object.fromEntries(Object.entries(value.data).filter(([key]) => !forbidden.has(key))) as FosDataContent, children }
 }
@@ -81,18 +80,18 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
   if (!cid) throw new NodeAccessError('Node no longer exists.')
   const before = content(r.store, cid), held = isPeerReference(before)
   const value = held ? { data: {}, children: [] } : valueContent(r.store, cid)
-  const existing = new Map(value.children.filter(e => rowKindOf(r.store, e)).map(e => [content(r.store, identityCid(r.store, e)).data.alias?.id, e]))
+  const existing = new Map(value.children.filter(e => isRowEdge(r.store, e)).map(e => [content(r.store, identityCid(r.store, e)).data.alias?.id, e]))
   const children = shape.children.map(child => {
     const edge = existing.get(child.id)
     if (edge) {
-      const same = !missingTemplateOf(r.store, edge) && rowKindOf(r.store, edge) === child.kind && pinnedTemplateOf(r.store, edge) === child.template
-      return same ? edge : pinnedRowEdge(r.store, child.kind, identityCid(r.store, edge), child.template)
+      const same = !missingTemplateOf(r.store, edge) && pinnedTemplateOf(r.store, edge) === child.template
+      return same ? edge : pinnedRowEdge(r.store, identityCid(r.store, edge), child.template)
     }
-    if (restored.has(child.id)) return pinnedRowEdge(r.store, child.kind, restored.get(child.id)!, child.template)
-    const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', kind: child.kind, scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
-    return pinnedRowEdge(r.store, child.kind, stub, child.template)
+    if (restored.has(child.id)) return pinnedRowEdge(r.store, restored.get(child.id)!, child.template)
+    const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
+    return pinnedRowEdge(r.store, stub, child.template)
   })
-  const next = { data: { ...Object.fromEntries(Object.entries(value.data).filter(([key]) => forbidden.has(key))), ...shape.data }, children: [...value.children.filter(e => !rowKindOf(r.store, e) || isShippedLibrary(r.store, path, e)), ...children] }
+  const next = { data: { ...Object.fromEntries(Object.entries(value.data).filter(([key]) => forbidden.has(key))), ...shape.data }, children: [...value.children.filter(e => !isRowEdge(r.store, e) || isShippedLibrary(r.store, path, e)), ...children] }
   const root = held
     // a node its holder sent blank before (a reference with history) gets its content as the version after that reference
     ? updateAtScope(r.store, headCid(r), path, () => refNodeContent(r.store, { alias: before.data.alias }, put(r.store, next), heldHistory(r.store, before, cid)), 'replace')
@@ -180,7 +179,7 @@ export function missingTemplatesAt(r: Replica, path: Scope): string[] {
 export function templateNodesAt(r: Replica, path: Scope, wanted: string[]): FosNodesData | null {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid || isHandle(content(r.store, cid))) return null
-  const pinned = new Set(valueContent(r.store, cid).children.flatMap(edge => missingTemplateOf(r.store, edge) ? [] : rowTemplateOf(r.store, edge) ?? []))
+  const pinned = new Set(valueContent(r.store, cid).children.flatMap(edge => missingTemplateOf(r.store, edge) ? [] : rowTypeOf(r.store, edge) ?? []))
   const ask = wanted.filter(t => pinned.has(t) && r.store.table.has(t))
   return ask.length ? reachableNodes(r.store, ask) : null
 }
@@ -201,7 +200,7 @@ export function acceptTemplateNodes(r: Replica, path: Scope, nodes: FosNodesData
 export function resolveReferenceErrors(r: Replica, path: Scope, now: number): Replica {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid || isHandle(content(r.store, cid))) return r
-  const ready = (edge: [string, string]) => { const missing = missingTemplateOf(r.store, edge); return !!missing && r.store.table.has(missing.cid) && definitionRowKind(valueContent(r.store, missing.cid)) === missing.kind }
+  const ready = (edge: [string, string]) => { const missing = missingTemplateOf(r.store, edge); return !!missing && r.store.table.has(missing.cid) }
   if (!valueContent(r.store, cid).children.some(ready)) return r
   const root = updateAtScope(r.store, headCid(r), path, value => ({ ...value, children: value.children.map(edge => ready(edge) ? [missingTemplateOf(r.store, edge)!.cid, edge[1]] as [string, string] : edge) }))
   commitRoot(r.store, root, now)
@@ -226,7 +225,7 @@ export function materializedNodePaths(r: Replica, at: Scope): Scope[] {
     const path = queue.pop()!, cid = resolveScope(r.store, headCid(r), path)
     if (!cid || isHandle(content(r.store, cid))) continue
     paths.push(path)
-    for (const child of nodeShape(r, path).children) if (child.kind !== 'ref') queue.push([...path, child.id])
+    for (const child of nodeShape(r, path).children) if (!child.held) queue.push([...path, child.id])
   }
   return paths.sort((a, b) => a.length - b.length)
 }
@@ -345,8 +344,7 @@ function keepAsHeld(r: Replica, request: NodeRequest, authority: NodeAuthority, 
   if (!cid || !parent) throw new NodeAccessError('Node unavailable.')
   const node = content(r.store, cid)
   if (!(isPeerReference(node) && node.data.ref?.peer === request.peerId)) {
-    const edge = valueContent(r.store, parent).children.find(e => rowKindOf(r.store, e) && content(r.store, identityCid(r.store, e)).data.alias?.id === id)
-    const ref = { id, peer: request.peerId, version: 'unloaded', kind: edge ? rowKindOf(r.store, edge)! : 'task', scope: path }
+    const ref = { id, peer: request.peerId, version: 'unloaded', scope: path }
     const held = { data: { alias: { id }, ref }, children: [[r.store.primitive.previousVersion.getId(), cid]] as FosNodeContent['children'] }
     commitRoot(r.store, updateAtScope(r.store, headCid(r), path, () => held, 'replace'), now)
     r = { ...r }
@@ -448,7 +446,9 @@ export function finishNodeSync(r: Replica, plan: NodeSyncPlan, remote: ProvidedN
   const current = nodeShape(r, plan.path)
   const normalized = { ...remote, children: remote.children.map(child => {
     const existing = plan.local.children.find(c => c.id === child.id)
-    return child.address.peerId === r.meta.peerId && existing ? { ...child, kind: existing.kind } : child
+    if (child.address.peerId !== r.meta.peerId || !existing) return child
+    const { held: _held, ...own } = child
+    return existing.held ? { ...own, held: true as const } : own
   }) }
   const filtered = outgoingNodeShape(r, plan.path, peer, normalized)
   const previousRemote = outgoingNodeShape(r, plan.path, peer, plan.previousRemote ?? empty())
@@ -530,7 +530,7 @@ export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => n
     // (the peer lists a child it has not received yet as a reference to this device; reference rows are not nodes)
     for (const child of accepted.children) {
       const cid = resolveScope(r.store, headCid(r), [...path, child.id]), node = cid ? content(r.store, cid) : null
-      if (node && (isPeerReference(node) ? node.data.ref?.peer === accepted.peerId : !isHandle(node))) queue.push({ path: [...path, child.id], held: child.kind === 'ref' && child.address.peerId === r.meta.peerId })
+      if (node && (isPeerReference(node) ? node.data.ref?.peer === accepted.peerId : !isHandle(node))) queue.push({ path: [...path, child.id], held: !!child.held && child.address.peerId === r.meta.peerId })
     }
   }
   return { replica: r, peer, synced }

@@ -1,5 +1,6 @@
 import { userView } from './test-helpers'
 import { addTask, addRow, createReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
+import { TEMPLATE_TYPE } from './library-types'
 
 test('UTC cron validates fields and handles ranges, steps and day OR semantics', () => {
   const now = Date.UTC(2026, 9, 14, 9, 15)
@@ -11,7 +12,7 @@ test('UTC cron validates fields and handles ranges, steps and day OR semantics',
   expect(() => cronMatches('* * *', now)).toThrow()
 })
 test('timer belongs to one device, claims before running and does not replay after reload', async () => {
-  let r = addRow(createReplica('device'), [], 'template', 'Run', 0, { id: 'task' }), time = 10
+  let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Run', 0, { id: 'task' }), time = 10
   r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 0, due: 20 }, 0)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => time, available: (id: string) => id === 'device', evaluate: async () => { expect(triggerState(r, ['task'])?.status).toBe('running'); runs++ } }
@@ -23,7 +24,7 @@ test('timer belongs to one device, claims before running and does not replay aft
 })
 test('parent completion fires once; editing its title does not refire; reopening arms it again', async () => {
   let r = addTask(createReplica('device'), [], 'Parent', 1, 'parent')
-  r = addRow(r, ['parent'], 'template', 'After parent', 1, { id: 'child' })
+  r = addRow(r, ['parent'], TEMPLATE_TYPE, 'After parent', 1, { id: 'child' })
   r = setNodeTrigger(r, ['parent', 'child'], { kind: 'task-completion', peer: 'device', enabled: true, created: 1 }, 1)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async () => { runs++ } }
@@ -34,7 +35,7 @@ test('parent completion fires once; editing its title does not refire; reopening
   r = setTaskDone(r, [], 'parent', true, 5); await runNodeTriggers(driver); expect(runs).toBe(2)
 })
 test('template triggers create an independent instance and failed runs do not spin', async () => {
-  let r = addRow(createReplica('device'), [], 'template', 'Workflow', 1, { id: 'template' })
+  let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Workflow', 1, { id: 'template' })
   r = addTask(r, ['template'], 'Step', 1, 'step')
   r = setNodeTrigger(r, ['template'], { kind: 'timer', peer: 'device', enabled: true, created: 1, due: 2 }, 1)
   let runs = 0
@@ -47,7 +48,7 @@ test('template triggers create an independent instance and failed runs do not sp
 
 test('an incoming proposal fires the request trigger and its saved occurrence is not replayed', async () => {
   const { makeLinkAt, proposalContent, withProposal, commitRoot, updateAtScope, headCid, resolveScope, put, rowContent } = await import('./index')
-  let r = makeLinkAt(addRow(createReplica('device'), [], 'template', 'Inbox', 1, { id: 'inbox' }), ['inbox'], 1)
+  let r = makeLinkAt(addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Inbox', 1, { id: 'inbox' }), ['inbox'], 1)
   r = setNodeTrigger(r, ['inbox'], { kind: 'request', peer: 'device', enabled: true, created: 2 }, 2)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async () => { runs++ } }
@@ -66,7 +67,7 @@ test('an incoming proposal fires the request trigger and its saved occurrence is
 
 test('changing the trigger reuses its typed argument and switches its capability type', async () => {
   const { argumentRefs, capabilityTarget, headCid, resolveScope } = await import('./index')
-  let r = addRow(createReplica('device'), [], 'template', 'Task', 1, { id: 'task' })
+  let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Task', 1, { id: 'task' })
   r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 1, due: 10 }, 1)
   const args = () => argumentRefs(r.store, resolveScope(r.store, headCid(r), ['task'])!)
   expect(args()[0]!.type).toBe(capabilityTarget(r.store, 'timer'))
@@ -79,7 +80,7 @@ test('changing the trigger reuses its typed argument and switches its capability
 test('child evaluation creates a fresh template instance for each completed parent execution', async () => {
   const { writeNodeValue } = await import('./index')
   let r = addTask(createReplica('device'), [], 'Parent', 1, 'parent')
-  r = addRow(r, ['parent'], 'template', 'Child workflow', 1, { id: 'child' })
+  r = addRow(r, ['parent'], TEMPLATE_TYPE, 'Child workflow', 1, { id: 'child' })
   r = setNodeTrigger(r, ['parent', 'child'], { kind: 'task-completion', peer: 'device', enabled: true, created: 1 }, 1)
   const targets: string[][] = []
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async (path: string[]) => { targets.push(path) } }

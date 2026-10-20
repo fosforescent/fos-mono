@@ -3,6 +3,7 @@ import { exchangeNode, nodeShape } from './node-sync'
 import { acceptProvidedNode, type NodeAuthority, type NodeRequest } from './node-provider'
 import { FILE_REFERENCE_TYPE, addFileReference, addRow, addTask, copyNode, createReplica, ensureHomeContext, fileReferenceAt, headCid, setFileReferenceAt, view, type Replica } from './replica'
 import { BUNDLED_LIBRARY, ensureDeviceLibrary } from './library'
+import { PLAIN_TYPE } from './library-types'
 
 const pinned = { path: 'docs/plan.md', sha256: 'a'.repeat(64), size: 12 }
 const device = (peer: string) => ensureHomeContext(ensureDeviceLibrary(createReplica(peer), BUNDLED_LIBRARY, 0), 1)
@@ -22,7 +23,7 @@ test('a file reference is a row of the library type, its values in the type\'s f
   const copy = view(r, [HOME_ID])!.tasks.find(t => t.title === 'docs/plan.md')!
   expect(fileReferenceAt(r, [HOME_ID, copy.id])?.path).toBe('docs/plan.md')
   // a plain row is not a reference, whatever it says
-  r = addRow(r, [HOME_ID], 'plain', 'docs/plan.md', 6, { id: 'plain' })
+  r = addRow(r, [HOME_ID], PLAIN_TYPE, 'docs/plan.md', 6, { id: 'plain' })
   expect(fileReferenceAt(r, [HOME_ID, 'plain'])).toBeNull()
   expect(() => setFileReferenceAt(r, [HOME_ID], 'plain', pinned, 7)).toThrow()
   for (const path of ['/etc/passwd', '../x', 'a/../b', 'C:/x', 'a\\b', '']) expect(() => addFileReference(r, [HOME_ID], { ...pinned, path }, 8)).toThrow()

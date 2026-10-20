@@ -1,11 +1,12 @@
 import { addTask, createReplica, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, refTypeCid, refValueCid, argumentRefs, capabilityTarget, copyProposalBranch, view, selectBranch, writeNodeValue, rowEdgeAt } from './index'
+import { PLAIN_TYPE } from './library-types'
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
   r = addTask(r, ['project'], 'Main child', 2, 'main-child')
   const store = r.store, cid = resolveScope(store, headCid(r), ['project'])!, base = putStripped(store, content(store, cid))
   // Put a simple proposed subtree in the same store for the constructor's branch argument.
   const leaf = put(store, { data: { alias: { id: 'proposed-child' }, description: { content: 'Proposed child' } }, children: [] })
-  const branch = put(store, { data: { description: { content: 'Proposed project' } }, children: [rowEdgeAt(store, 'plain', leaf, [])] })
+  const branch = put(store, { data: { description: { content: 'Proposed project' } }, children: [rowEdgeAt(store, PLAIN_TYPE, leaf, [])] })
   const proposal = put(store, proposalContent(store, 'peer', 'Alternative', branch, base, 4))
   commitRoot(store, updateAtScope(store, headCid(r), ['project'], node => withProposal(store, makeLink(store, node, 4), 'peer', proposal, 'Alternative'), 'node'), 5)
   return { r, proposal, branch, base }

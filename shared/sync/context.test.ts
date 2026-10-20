@@ -1,14 +1,16 @@
 import { syncWith, userView } from './test-helpers'
-import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, rowKindOf, rowTemplate, valueContent, view } from './index'
+import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, isRowOfType, rowTypeAt, valueContent, view } from './index'
+import { ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
+import { HOME_TYPE } from './library-types'
 
 test('legacy rows move into Home, constructors and peers remain at root, and migration is idempotent', () => {
   let r = addTask(createReplica('device'), [], 'Existing project', 1, 'project')
-  r = addRow(r, [], 'template', 'Workflow', 2, { id: 'workflow' })
+  r = addRow(r, [], TEMPLATE_TYPE, 'Workflow', 2, { id: 'workflow' })
   r = addMemberAt(r, [], 'other', 'Other', ['read'], 3)
   const previousProject = findChild(r.store, headCid(r), 'project')
   r = ensureHomeContext(r, 4)
   expect(homePath(r)).toEqual([HOME_ID])
-  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('home')
+  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.type).toBe(HOME_TYPE)
   const rootMembers = content(r.store, headCid(r)).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
   const homeMembers = content(r.store, findChild(r.store, headCid(r), HOME_ID)!).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
   expect(homeMembers.some(edge => rootMembers.some(root => root[1] === edge[1]))).toBe(false)
@@ -33,14 +35,14 @@ test('scoped documents are already instances and never receive an extra Home wra
 
 test('resource demands and contributions use the same signed allocation representation and match', () => {
   let r = addTask(createReplica(), [], 'Trip', 1, 'trip')
-  r = addRow(r, ['trip'], 'requirement', 'Budget', 2, { id: 'need', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
+  r = addRow(r, ['trip'], ALLOCATION_TYPE, 'Budget', 2, { id: 'need', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
   const task = findChild(r.store, headCid(r), 'trip')!
   const demand = findChild(r.store, task, 'need')!
   expect(valueContent(r.store, demand).data.requirement).toBeUndefined()
   expect(valueContent(r.store, demand).data.allocation?.amount).toBe(-50)
-  const edge = valueContent(r.store, task).children.find(e => rowKindOf(r.store, e) === 'requirement')!
-  expect(edge[0]).toBe(rowTemplate(r.store, 'allocation'))
-  r = addRow(r, ['trip', 'need'], 'allocation', 'Contribution', 3, { id: 'give', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
+  const edge = valueContent(r.store, task).children.find(e => isRowOfType(r.store, e, ALLOCATION_TYPE))!
+  expect(edge[0]).toBe(rowTypeAt(r.store, ALLOCATION_TYPE))
+  r = addRow(r, ['trip', 'need'], ALLOCATION_TYPE, 'Contribution', 3, { id: 'give', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
   expect(view(r, ['trip', 'need'])!.tasks[0]!.allocation?.amount).toBe(50)
   expect(view(r, ['trip'])!.tasks[0]!.requirement?.satisfied).toBe(true)
   expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
@@ -75,7 +77,7 @@ test('moving rows inside the Home constructor follows its mutable value', () => 
 
 test('handler demands and their supplied values share the same flow primitive', () => {
   let r = addTask(createReplica(), [], 'Task', 1, 'task')
-  r = addRow(r, ['task'], 'requirement', 'Confirm', 2, { id: 'need', requirement: { capability: 'confirmation' } })
+  r = addRow(r, ['task'], ALLOCATION_TYPE, 'Confirm', 2, { id: 'need', requirement: { capability: 'confirmation' } })
   r = addSupply(r, ['task'], 'need', { capability: 'confirmation', by: 'user' }, 3, 'answer')
   const task = findChild(r.store, headCid(r), 'task')!
   const need = findChild(r.store, task, 'need')!
@@ -89,10 +91,10 @@ test('handler demands and their supplied values share the same flow primitive', 
 
 
 test('legacy Home template becomes an ordinary container without losing children', () => {
-  let r = addRow(createReplica(), [], 'template', 'Home', 1, { id: HOME_ID })
+  let r = addRow(createReplica(), [], TEMPLATE_TYPE, 'Home', 1, { id: HOME_ID })
   r = addTask(r, [HOME_ID], 'Keep this', 2, 'child')
   r = ensureHomeContext(r, 3)
-  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.kind).toBe('home')
+  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.type).toBe(HOME_TYPE)
   expect(view(r, [HOME_ID])!.tasks[0].id).toBe('child')
   expect(ensureHomeContext(r, 4)).toBe(r)
 })

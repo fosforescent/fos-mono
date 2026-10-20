@@ -28,12 +28,12 @@
  * Capabilities as session types over this grammar come later; for now events are independent requests.
  */
 import { FosStore } from '../dag-implementation/store'
-import { rowTypeId } from '../dag-implementation/row-templates'
+import { NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import type { FosPathElem } from '../types'
 import {
   branchSelection, commitRoot, content, contextScope, demandOf, findAliasEdge, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
   proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, requirementSatisfied,
-  requirementSummary, resolveScope, rootTargetCid, rowTemplateOf, userTemplateOf,
+  requirementSummary, resolveScope, rootTargetCid, isTaskRow, isAllocationRow, isRowOfType,
   selectedBranchValue, updateAtScope, valueContent, viewNode, withBranches, withProposal, type Scope,
   nestScope, libraryTypeAt,
 } from './graph'
@@ -272,34 +272,29 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       // their state decides: a task not done, a requirement not satisfied. A done task's subtree is skipped; masks hide
       // children and text exactly as they do for read.
       const offset = event.offset ?? 0
-      const madeFrom = (type: string | null, id: string) => !!type && content(store, type).data.alias?.id === id
-      const work = (edge: FosPathElem | undefined): 'task' | 'requirement' | 'template' | null => {
-        if (!edge) return null
-        const type = rowTemplateOf(store, edge)
-        return madeFrom(type, rowTypeId('task')) || userTemplateOf(store, edge) ? 'task' : madeFrom(type, rowTypeId('allocation')) ? 'requirement' : madeFrom(type, rowTypeId('template')) ? 'template' : null
-      }
-      const stack: Array<{ at: Scope; type: ReturnType<typeof work>; blockedBy?: string[] }> = [{ at: path, type: null }], seen = new Set<string>()
+      const stack: Array<{ at: Scope; edge?: FosPathElem; blockedBy?: string[] }> = [{ at: path }], seen = new Set<string>()
       const open: Array<Record<string, unknown> & { assigned: boolean }> = []
       let visited = 0
       while (stack.length && visited < 5000 && open.length < 1100) {
-        const { at, type, blockedBy } = stack.pop()!
+        const { at, edge, blockedBy } = stack.pop()!
+        const task = !!edge && isTaskRow(store, edge), requirement = !!edge && isAllocationRow(store, edge)
         let current: string
         try { current = resolve(at) } catch { continue }
         if (seen.has(current)) continue
         seen.add(current); visited++
         const value = valueContent(store, current)
         // a done task's subtree is finished; a template's is a definition, not work
-        if ((type === 'task' && value.data.todo?.completed) || type === 'template') continue
+        if ((task && value.data.todo?.completed) || (!!edge && isRowOfType(store, edge, TEMPLATE_TYPE))) continue
         const mask = owner ? null : nodeLinkMaskAt(r, absolute(at), principal.peerId)
-        if (at.length && (type === 'task' || (type === 'requirement' && !requirementSatisfied(store, current)))) {
-          const demand = type === 'requirement' ? demandOf(value) : undefined
+        if (at.length && (task || (requirement && !requirementSatisfied(store, current)))) {
+          const demand = requirement ? demandOf(value) : undefined
           // assigned to this peer: bound as a member on the row itself, or named by the requirement
           const assigned = readMembers(store, content(store, selectedIdentity(store, current))).some(m => m.peerId === principal.peerId) || (!!demand?.peer && [principal.peerId, principal.name].includes(demand.peer))
           open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: requirementSummary(demand) } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
         }
         if (at.length < 32) {
           const rows = viewNode(store, current).tasks.filter(row => !mask?.children || mask.children.includes(row.id))
-          for (const row of [...rows].reverse()) stack.push({ at: [...at, row.id], type: work(findAliasEdge(store, value, row.id)?.edge), blockedBy: row.blockedBy })
+          for (const row of [...rows].reverse()) stack.push({ at: [...at, row.id], edge: findAliasEdge(store, value, row.id)?.edge, blockedBy: row.blockedBy })
         }
       }
       const ordered = [...open.filter(item => item.assigned), ...open.filter(item => !item.assigned)]
@@ -380,7 +375,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
             const type = libraryTypeAt(draftStore, change.type!, target)
             if (!type) throw new EventError(`No standard library here has the row type ${change.type}.`)
             draft = addTypedRow(draft, target, type, textOf(change.text), now, change.id)
-          } else draft = addRow(draft, target, change.operation === 'add_task' ? 'task' : change.operation === 'add_note' ? 'note' : 'plain', textOf(change.text), now, change.id ? { id: change.id } : {})
+          } else draft = addRow(draft, target, change.operation === 'add_task' ? TASK_TYPE : change.operation === 'add_note' ? NOTE_TYPE : PLAIN_TYPE, textOf(change.text), now, change.id ? { id: change.id } : {})
           if (change.id && headCid(draft) !== before) created.add(change.id)
         }
         else if (change.operation === 'rename') {

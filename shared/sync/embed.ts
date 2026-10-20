@@ -9,7 +9,9 @@ import {
   addRow,
   addTask,
   copyNode,
-  setRowKind,
+  setRowType,
+  COMMENT_TYPE,
+  NOTE_TYPE,
   applyProposalAt,
   shareHome,
   ensureHomeContext,
@@ -32,7 +34,6 @@ import {
   view,
   type MovePosition,
   type Replica,
-  type RowKind,
   type Scope
 } from './index'
 import { dispatchEvent, type FosEvent } from './events'
@@ -122,17 +123,17 @@ export const api = {
     set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []) } }))
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },
-  /** Add a row of `kind` ('task' | 'plain' | 'note' | 'comment' | 'ref') under `at`; returns its view. */
-  addRow(handle: string, atJson: string, kind: RowKind, text: string, now: number, optionsJson: string | null): string {
+  /** Add a row of the library row type `type` (`lib:type:task`, `lib:type:plain`, `lib:type:note`, …) under `at`; returns its view. */
+  addRow(handle: string, atJson: string, type: string, text: string, now: number, optionsJson: string | null): string {
     const r = get(handle)
     const at = parse<Scope>(atJson, [])
     const options = parse<{ done?: boolean; refId?: string; id?: string }>(optionsJson, {})
     const id = options.id ?? crypto.randomUUID()
-    set(handle, addRow(r, at, kind, text, now, { ...options, id }))
+    set(handle, addRow(r, at, type, text, now, { ...options, id }))
     const added = view(get(handle), at)?.tasks.find((t) => t.id === id) ?? null
     return JSON.stringify(added)
   },
-  setRowKind(handle: string, atJson: string, id: string, kind: RowKind, now: number): void { set(handle, setRowKind(get(handle), parse<Scope>(atJson, []), id, kind, now)) },
+  setRowType(handle: string, atJson: string, id: string, type: string, now: number): void { set(handle, setRowType(get(handle), parse<Scope>(atJson, []), id, type, now)) },
   addRef(handle: string, atJson: string, targetId: string, now: number): void { set(handle, addRef(get(handle), parse<Scope>(atJson, []), targetId, now)) },
   copyNode(handle: string, fromJson: string, id: string, toJson: string, positionJson: string, now: number): void {
     set(handle, copyNode(get(handle), parse<Scope>(fromJson, []), id, parse<Scope>(toJson, []), parse<MovePosition>(positionJson, { into: '' }), now))
@@ -146,7 +147,7 @@ export const api = {
       if (!node) return
       for (const t of node.tasks) {
         if (!at.length && t.id === LIBRARY_ID) continue // the library the store ships (not its own rows)
-        lines.push(`${'  '.repeat(depth)}${t.kind === 'task' ? (t.done ? '[x]' : '[ ]') : t.kind === 'note' ? ' ≡ ' : t.kind === 'comment' ? ' " ' : t.kind === 'ref' ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.kind === 'ref' ? `ref ${t.refId?.slice(0, 8) ?? ''}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
+        lines.push(`${'  '.repeat(depth)}${t.checkable ? (t.done ? '[x]' : '[ ]') : t.type === NOTE_TYPE ? ' ≡ ' : t.type === COMMENT_TYPE ? ' " ' : t.refId !== undefined ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.refId !== undefined ? `ref ${t.refId.slice(0, 8)}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
       for (const c of node.choices) lines.push(`${'  '.repeat(depth)}[?] ${c.id.slice(0, 8)} ${c.subject} (conflict, ${c.options.length} versions)`)
