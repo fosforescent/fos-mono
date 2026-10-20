@@ -1,137 +1,90 @@
-# Versioned content addresses
+# Data version and content addresses
 
-Every node in the graph is addressed by a cid, the hash of its content. The
-hash algorithm, the canonical form that is hashed, and the node schema will all
-change over time. To keep old and new objects apart and upgrade them in order,
-cids carry a format version, and the formats are migrated like database
-schemas.
+Every node in the graph is addressed by a cid, the hash of its content. Every
+cid carries the **data version** it was written in, and that same version is
+the standard library's version. There is one constant for both:
 
-Code: `shared/dag-implementation/cid.ts` (formats, parsing, hashing,
-verification) and `shared/dag-implementation/migrations.ts` (ordered
-migrations, `migrateContext`).
+```ts
+// shared/version.ts
+export const FOS_DATA_VERSION = '0.0.1'
+```
+
+Older data is **not migrated**. Data in another version is refused: the
+store, replica or database holding it has to be reset. The project restarted
+at 0.0.1 with this scheme; data written by earlier builds (cid formats v0 to
+v5) is not readable.
+
+Code: `shared/version.ts` (the constant), `shared/dag-implementation/cid.ts`
+(format, parsing, hashing, verification), `shared/library-compiler.ts` (the
+library's version check).
 
 ## Format
 
 ```
-v<N>-<digest>        current formats, e.g. v1-3f9a…   (N selects the algorithm)
-<digest>             version 0: legacy bare hex written before versions existed
+v<FOS_DATA_VERSION>-<digest>      e.g. v0.0.1-3f9a…   (64 hex characters)
 ```
 
-| version | digest                                                    | notes |
-|---------|-----------------------------------------------------------|-------|
-| 0       | sha3-256 of `{data: canonical JSON, children: sorted edges}` | read-only; never produced |
-| 1       | same digest, prefixed `v1-`                               | superseded |
-| 2       | edges hashed in order and direction                       | superseded |
-| 3       | same digest as v2; schema: rows are `[template, rowNode]` | superseded |
-| 4       | same digest as v2; schema: types carry pattern rows, Home and store roots are typed | superseded |
-| 5       | same digest as v2; schema: a row type is its graph identity alone | current |
+* The digest is the sha3-256 hex of `{ data, children }`, where `data` is the
+  node's data as JSON with object keys sorted deeply and `children` are the
+  edges exactly as written: edge order and direction are part of a node's
+  identity, so `[a, b]` and `[b, a]` differ and child order replicates.
+* The version is part of the address, not of the data: a node's content never
+  says which version addresses it. Since every edge holds child cids, the
+  version also reaches every parent's digest.
 
-`CID_FORMATS` in `cid.ts` is the registry. `hashContent` always writes the
-current format; `verifyCid(cid, content)` checks a cid with the algorithm of
-its own version, so legacy rows verify without being rehashed first.
+Parsing (`parseCid`) accepts any versioned cid, `v<n>(.<n>)*-<64 hex>`, so a
+cid of another version can be told apart from garbage; `cidVersion` also
+reports a bare 64-hex digest (written before cids had versions) as
+`unversioned`. Only the current version is current:
 
-The version is part of the address, not of the data: a node's content never
-needs to describe which format addresses it.
+| function | does |
+|---|---|
+| `hashContent(content)` | the cid of `content` in the current version |
+| `isCurrentCid(cid)` | the cid's prefix is exactly `v<FOS_DATA_VERSION>-` and the digest is well-formed |
+| `verifyCid(cid, content)` | `cid` is current and addresses `content`; a cid of another version never verifies |
+| `assertCurrentCid(cid)` | throws `UnsupportedDataVersionError` unless the cid is current |
+| `isCid(value)` | a versioned cid of any version (wire validation) |
+| `shortCid(cid)` | prefix plus the first hex characters, for logs |
 
-## Migrations
+## Where the version is checked
 
-`MIGRATIONS` in `migrations.ts` is an ordered list of steps
-`{ from, to, description, upgrade? }`. `upgrade` transforms a node's own data
-for the new format; edges are remapped automatically.
+* **Store.** `new FosStore({ fosCtxData })` asserts that the root and every
+  node key are current cids and throws `UnsupportedDataVersionError`
+  ("Unsupported data version (…): this app reads data version 0.0.1 only.
+  Reset the stored data.") otherwise. There is no migration on load.
+* **Device replicas.** `loadReplica` (the web app's localStorage replica, the
+  desktop and CLI `.fos/` replicas through the embedded core) catches the
+  error, logs it and starts with a fresh replica: the stored data is reset.
+* **Backend.** `dbToStore` asserts every row it reads is current before
+  verifying it, so an account whose rows are in another version fails to load
+  with the same error; the database has to be reset.
+* **Sync.** The only cids node exchange carries are pinned templates and pinned
+  grants. `validateNodeShape` refuses a shape pinned to another version with
+  "This peer uses another data version (this app: 0.0.1). Update the app to
+  sync.", and `importNodes` only accepts current nodes that verify.
+* **Library.** `.fos/library.json` and the compiled
+  `shared/sync/library.generated.json` carry `"version": "0.0.1"`.
+  `compileLibrary` refuses a source whose version is not `FOS_DATA_VERSION`
+  (and any node that is not a current cid) and stamps the constant on its
+  output; `shared/sync/library.ts` sets `LIBRARY_VERSION = FOS_DATA_VERSION` and
+  throws at load if the compiled bundle is in another version. The library's
+  version and the cid format therefore cannot drift apart.
 
-`migrateContext(context, target)` rehashes a serialized graph bottom-up: a
-node's children are migrated first, its edges rewritten to the new cids, each
-intermediate `upgrade` applied, and only then is the node hashed in the target
-format. It returns the migrated context and an old→new mapping. Nodes already
-in the target format whose edges are current keep their cid, so running it on
-a current graph is a no-op; dangling references and newer-than-target nodes
-throw `MigrationError`.
+## Changing the version
 
-## Where migration happens
+Changing anything that changes cids (the canonical form, the digest, the node
+schema of shipped data, or the standard library's content in a way that makes
+old data meaningless) means a new data version:
 
-* **On load.** `new FosStore({ fosCtxData })` detects an older format,
-  migrates, and records the report in `store.migration`; `store.remapCid(old)`
-  gives the new address. Routes in the context and trellis data are remapped.
-* **Backend.** `dbToStore` verifies rows with `verifyCid`, so legacy rows load;
-  the store migrates; the next `storeToDb` writes the new nodes and repoints
-  the user's root. Old rows remain in `FosNodeModel` untouched (they are still
-  valid under their own version) and can be garbage-collected later.
-* **Devices.** `loadReplica` migrates the stored graph and follows the sync
-  base along the mapping.
-* **Sync.** Requests and responses carry `cidVersion`; a peer in a different
-  format gets `version-mismatch` (HTTP 409) and the app stops retrying until it
-  is updated. Imported nodes must be in the current format and verify.
+1. Bump `FOS_DATA_VERSION` in `shared/version.ts`.
+2. Rehash `.fos/library.json` into the new version (bottom-up, content
+   unchanged: every cid in its nodes, edges and `rootNodeId` is recomputed with
+   `hashContent`), set its `version`, and run
+   `node scripts/compile-library.cjs`.
+3. Regenerate any test fixture holding literal cids; never hand-edit them.
+4. Deploy the backend and reset the data it holds. Clients in the old version
+   are refused by node exchange until they update; their stored replicas reset
+   on their first load in the new version.
 
-## Adding a format version
-
-1. Add the new entry to `CID_FORMATS` (algorithm, canonical form) and bump
-   `CURRENT_CID_VERSION`.
-2. Append `{ from: N, to: N+1, description, upgrade }` to `MIGRATIONS`. Put
-   schema changes to node data in `upgrade`.
-3. Add a case to `cid.test.ts` that builds a graph in version N (see
-   `downgradeToLegacy` there for the pattern) and proves it migrates.
-4. Deploy the backend first: a node shape pinned to another format is refused
-   (`validateNodeShape`, "update the app") rather than mixing formats in one
-   store.
-
-v3 changes the schema only: v2 rows were `[rowNode, KIND]` with a row-kind
-primitive on the target side, and v3 rows are `[template, rowNode]` (see
-`migration-v3.ts`). That step needs the whole graph and the loading store's
-primitives, so it is a `plan` (called once per run with the input nodes and a
-`MigrationEnvironment`) rather than a per-node `upgrade`; it may also emit
-nodes already in the target format (the seed version of the standard library's row types, which every device root ships).
-
-v4 changes the schema only too (`migration-v4.ts`): types get pattern rows
-(what rows they accept; the seed's ordinary ones where a type had none, so the
-v3 seed becomes the v4 seed exactly), Row types groups get the Pattern, Home,
-Device root and Document types, the `fos:home` row is made from the Home type,
-and every root alias is typed (a device root when it holds the library or Home,
-else a document root). Steps of one run see each other's emitted nodes through
-`MigrationTools.read`: v3's emitted seed types are upgraded by v4 where edges
-point at them.
-
-v5 changes the schema only (`migration-v5.ts`): a row is `[type, row]` and its type
-is told apart by the type node's alias (`lib:type:…`) alone, so the markers v4
-types and templates carried go. Per node, bottom-up like every step:
-
-* a node with `instanceKind` or `behavior: builtin:<kind>` and no alias (the
-  v3/v4 seed types, alias-less library versions) gets the alias
-  `lib:type:<kind>` and loses the markers; the v4 seed thus becomes the
-  library's types exactly. An unknown kind becomes a version of
-  `lib:type:plain` (its own data and rows kept), `requirement`/`supply`
-  become `lib:type:allocation`;
-* library types with an alias and a `builtin:` behavior lose the behavior
-  (again the library's types exactly); template rows, Home and other nodes
-  with an identity of their own lose `instanceKind`/`builtin:` behavior and
-  keep their alias, so tasks made from a template stay its instances;
-  reference-error stand-ins keep only the cid they wait for;
-* the seed's Note and Comment types, which had no constructor, are replaced by
-  the library's graph-defined ones, and rows pinned to them are rebuilt as
-  values of those constructors (as `constructRowValue` does on edit): the
-  Markdown body in `body`, a comment's author in `person`, its votes and
-  scope as `legacy` metadata, the row's other data, children and bound
-  `{name}` parameters kept;
-* money (allocation rows of the `account` resource, `-$ 50` / `$ 20`) is
-  re-pinned to `lib:type:allocation:money`, which `flowOf` reads by sign
-  (negative = a request, positive = a payment); the separate supply the old
-  payment settlement wrote beside a payment is dropped, since the payment now
-  fills its request alone. Other resources stay `lib:type:allocation`.
-
-The same applies inside pointers (a choice's alternative, a branch, a merge
-base: `[IP, type]`, `[TP, row]`) and history. The step builds rows from frozen
-copies of the library's Note, Comment and Money types
-(`migration-v5-types.json`) and its own copy of the constructor logic, never
-from the build's library or the live helpers, so every peer and build migrates
-the same v4 graph to the same cids. A rebuilt row's edges still point at input
-nodes, so the step adds it with `MigrationTools.derive` (migrated like an input
-node already in the target format). Stored node sync records follow the mapping
-for their templates and pinned grants. A peer still on v4 is refused by node
-exchange ("update the app", `validateNodeShape`) until it updates; its own
-store migrates on its next load, to the same cids. `migration-v5.test.ts`
-replays a device replica written by the release and main builds
-(`fixtures/v4-replica.json`).
-
-v2 did exactly this: v0/v1 sorted the two cids *within* each edge and the
-edges themselves, so `[a, b]` and `[b, a]` hashed the same and child order was
-not part of identity. v2 hashes edges as written; stored v1 graphs migrate on
-load with their stored order kept as the canonical order.
+Adding fields that old nodes simply lack, or library rows that seeding adds
+where they are missing (`seedLibraryRows`), does not need a new version.

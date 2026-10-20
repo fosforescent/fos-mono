@@ -61,7 +61,7 @@ shared/
 │   ├── node.ts            # FosNode - immutable content-addressed nodes
 │   ├── store.ts           # FosStore - graph storage and queries
 │   ├── primitive-node.ts  # Built-in primitive types and constructors
-│   ├── cid.ts / migrations.ts  # versioned content ids and format migrations
+│   ├── cid.ts             # content ids in the data version (../version.ts); no migrations
 │   └── channel.ts         # Communication channels (stub)
 │
 ├── sync/                  # Refs, rows, merge, protocol, evaluation, triggers (docs/sync.md)

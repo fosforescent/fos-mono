@@ -306,7 +306,7 @@ resumes it.
 Tasks contain tasks: a task edge's node carries its own task edges, so the
 view is a tree and a scope path is a path of node ids
 ("zoom" shows one node with its subtree). Child **order is part of a node's
-identity** (cid v2 hashes edges in order), so drag-and-drop reorders replicate
+identity** (cids hash edges in order), so drag-and-drop reorders replicate
 like any other change. The merge keeps order: ours' order is the backbone and
 children added by the other side are placed next to the neighbour they follow
 there; when both sides reorder the same children, ours wins and no choice is
@@ -488,9 +488,8 @@ is (`.fos/stores.json`, never in the graph; `desktop/src-tauri/src/stores.rs`).
 `lib:type:note`, `lib:type:allocation:money`, ...) whose content is the row type a row edge pins. A row
 is told apart by that left node alone (`rowTypeOf`, `isRowOfType`, any pinned
 version, by graph identity); there is no row kind and no `builtin:` behavior
-marker. Stored rows pinned to the older types (the alias-less seed of cid
-migrations v3/v4, library types with `builtin:` behaviors) were re-pinned by
-cid migration v5 (`dag-implementation/migration-v5.ts`, `docs/cid-versioning.md`). New rows
+marker. Data from builds before data version 0.0.1 (which had such markers)
+is not readable and is not migrated (`docs/cid-versioning.md`). New rows
 are made from the nearest library row (`fos:library`) above them that has the
 type (`rowTypeAt`; a library seeded before a type existed falls back to the
 build's definition); with none, making a row is an error. The library is a
@@ -502,9 +501,8 @@ shared library into Home** (`ensureLibraryLink`, "Contribute to the standard
 library" on the shipped library row) with the fos server as its peer, and
 under Home it overrides the shipped one. A changed row type is a new version:
 new rows are made from it, rows made before keep the version they pin. The
-seed (`dag-implementation/row-templates.ts`) is the library's first version,
-what cid migration v4 pinned existing rows to; v5 gave its types their graph identity, which makes them the
-library's own types.
+library's `version` is the data version (`FOS_DATA_VERSION`), the one its cids
+carry.
 A version is its types' contents, which rows pin by cid, so the build's bundle
 holds those contents exactly (with the pattern rows they hold, `SeedRow.nodes`).
 Every row on the wire names its template; a peer missing one shows the row as a
