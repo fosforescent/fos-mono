@@ -13,6 +13,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
+const ALLOCATION_TYPE = 'lib:type:allocation'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 // the server's ed25519 identity key, as backend/sync/verify.ts makes it from a seed
@@ -62,7 +63,7 @@ async function main() {
   const named = id => c.view(app.state.replica, [HOME, 'review']).tasks.find(t => t.id === id).user
 
   // typing "-@bob …" binds the unverified object, then the server's verify handler fills a verify requirement
-  app.addRowAt([HOME, 'review'], 'requirement', 'read it', { id: 'rq', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
+  app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'read it', { id: 'rq', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
   await settle()
   assert.deepEqual(calls, ['/user/data/events'], 'only a complete event: no user or key route')
   const bob = named('rq')
@@ -72,7 +73,7 @@ async function main() {
   assert.deepEqual(c.cachedUser(app.state.replica, 'bob'), bob, 'kept among the people in Home')
   assert(!c.view(app.state.replica, [HOME, 'fos:users']).tasks.some(t => t.id === c.verifyRequestId('bob')), 'the filled request is removed')
   // later rows bind the cached object without asking again
-  app.addRowAt([HOME, 'review'], 'requirement', 'again', { id: 'rq2', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
+  app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'again', { id: 'rq2', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
   await settle()
   assert.equal(calls.length, 1)
   assert.deepEqual(named('rq2'), bob)
@@ -80,10 +81,10 @@ async function main() {
   // an object signed by another key, or changed after signing, fails the device's check against the published key
   for (const [label, setup] of [['foreign key', () => { signer = stranger }], ['tampered', () => { signer = server; tamper = true }]]) {
     setup()
-    app.addRowAt([HOME, 'review'], 'requirement', label, { id: label, extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
+    app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, label, { id: label, extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
     // forget the cached object so the name is asked for again
     app.set({ replica: c.deleteTask(app.state.replica, [HOME, 'fos:users'], c.userObjectId({ username: 'bob' }), 11) })
-    app.addRowAt([HOME, 'review'], 'requirement', label + ' 2', { id: label + '2', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
+    app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, label + ' 2', { id: label + '2', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
     await settle()
     assert.match(app.state.notice.text, /verification of @bob does not check out/, label)
     assert.equal(c.cachedUser(app.state.replica, 'bob'), null, `${label}: nothing is cached`)
@@ -92,7 +93,7 @@ async function main() {
   tamper = false
 
   // an unknown name: the server's refusal is shown and the request removed
-  app.addRowAt([HOME, 'review'], 'requirement', 'who', { id: 'nobody', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('nobody') } })
+  app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'who', { id: 'nobody', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('nobody') } })
   await settle()
   assert.match(app.state.notice.text, /No Fos user is named @nobody/)
   assert(!c.view(app.state.replica, [HOME, 'fos:users']).tasks.some(t => t.id === c.verifyRequestId('nobody')))
@@ -100,14 +101,14 @@ async function main() {
   // the server's key missing from the graph: nothing verifies
   signer = server
   app.set({ replica: c.deleteTask(app.state.replica, [HOME, 'fos:users'], c.peerKeyId('fos'), 12) })
-  app.addRowAt([HOME, 'review'], 'requirement', 'no key', { id: 'nokey', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
+  app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'no key', { id: 'nokey', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
   await settle()
   assert.match(app.state.notice.text, /does not check out/)
 
   // offline nothing is asked: the row keeps the unverified object until a later edit online
   const before = calls.length
   app.set({ connection: 'offline' })
-  app.addRowAt([HOME, 'review'], 'requirement', 'offline', { id: 'offline', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('carol') } })
+  app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'offline', { id: 'offline', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('carol') } })
   await settle()
   assert.equal(calls.length, before)
   assert.equal(named('offline').verification, null)

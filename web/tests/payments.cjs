@@ -9,15 +9,18 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const { App, mountUi, createMemoryStorage, addRow, addSupply, writePaymentRecord, settlePaymentRecord, paymentRecord, HOME_ID } = require(path.join(dir, 'test.cjs'))
+const MONEY_TYPE = 'lib:type:allocation:money'
+const TASK_TYPE = 'lib:type:task'
+const ALLOCATION_TYPE = 'lib:type:allocation'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {
   const storage = createMemoryStorage()
   const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage }); app.scheduleSync = () => {}
   mountUi(document.getElementById('app'), app)
-  const task = app.applyConstructor([HOME_ID], { kind: 'task', text: 'Write the guide', done: false })
-  app.set({ replica: addRow(app.state.replica, task, 'requirement', 'reward', Date.now(), { id: 'pay', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' } }) })
-  app.set({ replica: addRow(app.state.replica, task, 'requirement', 'tip', Date.now(), { id: 'tip', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } }) })
+  const task = app.applyConstructor([HOME_ID], { type: TASK_TYPE, text: 'Write the guide', done: false })
+  app.set({ replica: addRow(app.state.replica, task, MONEY_TYPE, 'reward', Date.now(), { id: 'pay', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' } }) })
+  app.set({ replica: addRow(app.state.replica, task, ALLOCATION_TYPE, 'tip', Date.now(), { id: 'tip', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } }) })
   app.goTo(task); await tick()
   const row = id => document.querySelector(`.tree .task[data-id="${id}"]`)
   const texts = id => [...row(id).querySelectorAll('button')].map(b => b.textContent)
@@ -55,8 +58,8 @@ async function main() {
   assert(!settlePaymentRecord(app.state.replica, payPath, {}, Date.now()).settled, 'settling twice is a no-op')
 
   // a failed payment explains itself and, without a handler, offers no retry button
-  const other = app.applyConstructor([HOME_ID], { kind: 'task', text: 'Another', done: false })
-  app.set({ replica: addRow(app.state.replica, other, 'requirement', 'fee', Date.now(), { id: 'fee', requirement: { capability: 'allocation', resource: 'account', amount: 3, unit: 'eur' } }) })
+  const other = app.applyConstructor([HOME_ID], { type: TASK_TYPE, text: 'Another', done: false })
+  app.set({ replica: addRow(app.state.replica, other, MONEY_TYPE, 'fee', Date.now(), { id: 'fee', requirement: { capability: 'allocation', resource: 'account', amount: 3, unit: 'eur' } }) })
   app.set({ replica: writePaymentRecord(app.state.replica, [...other, 'fee'], { id: 'cs_2', url: null, status: 'failed', amount: 3, unit: 'eur', payer: 'owner', payee: 'bob', created: Date.now(), error: 'The payment page expired before it was paid.' }, Date.now()) })
   app.goTo(other); await tick()
   assert(row('fee').textContent.includes('expired before it was paid'))

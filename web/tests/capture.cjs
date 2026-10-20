@@ -11,6 +11,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/recording'; export {isLongProse} from './src/paste'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
+const PLAIN_TYPE = 'lib:type:plain'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {
@@ -64,9 +65,9 @@ async function main() {
   c.mountUi(document.getElementById('app'), app)
   let me = c.ensureHomeContext(c.createReplica('user:me'), 1)
   me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
-  me = c.addRow(me, [HOME], 'plain', 'Garden', 2, { id: 'garden' })
-  me = c.addRow(me, [HOME, 'garden'], 'plain', 'Tomatoes', 3, { id: 'tomatoes' })
-  me = c.addRow(me, [HOME], 'plain', 'Work', 4, { id: 'work' })
+  me = c.addRow(me, [HOME], PLAIN_TYPE, 'Garden', 2, { id: 'garden' })
+  me = c.addRow(me, [HOME, 'garden'], PLAIN_TYPE, 'Tomatoes', 3, { id: 'tomatoes' })
+  me = c.addRow(me, [HOME], PLAIN_TYPE, 'Work', 4, { id: 'work' })
   app.set({ replica: me, session: { kind: 'user', username: 'me', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
   app.recordServerOffers([...c.SERVER_TRANSPORT_CAPABILITIES, 'llm'])
   app.goTo([HOME, 'garden']); await tick()

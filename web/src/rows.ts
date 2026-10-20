@@ -1,15 +1,16 @@
 /**
- * Row kinds in the tree (see shared/sync/graph.ts: a row is [node, KIND]).
- * Typing into a row makes it a plain row unless the text starts with a marker
+ * Row types in the tree (see shared/sync/graph.ts: a row is [type, node], its type the standard library row type it
+ * is made from). Typing into a row makes it a plain row unless the text starts with a marker
  * (the full list is in SYNTAX_HELP, shown by Ctrl+H):
  *
  *   [ ] / [x]   task (open / done); "[ ] `name`" executes the template `name`
  *   >           note block (markdown)
  *   //          comment
- *   -<kind>     requirement: the task needs a child row of that kind before it can be done
+ *   -<marker>   requirement: the task needs a child row of that type before it can be done
  *               -[ ] subtask · -$ 50 money · -: 1h time · -# 2 widgets things · -@bob a person
  *               -? search · -market · -mail · -choice: a | b · - confirmation
- *   $ : # @     allocation of money / time / things / a person, taken from the parent context
+ *   $ : # @     allocation of money / time / things / a person, taken from the parent context (money is the type
+ *               lib:type:allocation:money: "$ 50" a payment, "-$ 50" a request for one, told apart by sign)
  *               (the bank above it, the bank the requirement names, or the default pool of that
  *               type: the first bank of that type at the top level). An optional window follows the
  *               amount: "2026-10-13", "2026-10-13T09:00..2026-10-13T11:00", "..2026-12-31";
@@ -24,10 +25,11 @@
  * Links in plain rows and comments are rendered as anchors; image and YouTube links as embeds.
  */
 
-import { unverifiedUser, type ResourceType, type RowExtras, type RowKind, type TaskView, type UserRecord } from '../../shared/sync/index'
+import { ALLOCATION_TYPE, MONEY_TYPE, NOTE_TYPE, COMMENT_TYPE, PLAIN_TYPE, QUERY_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType, unverifiedUser, type ResourceType, type RowExtras, type TaskView, type UserRecord } from '../../shared/sync/index'
 
 export type ParsedInput = {
-  kind: RowKind
+  /** The standard library row type the line makes (`lib:type:…`). */
+  type: string
   text: string
   done: boolean
   extras?: Omit<RowExtras, 'store'>
@@ -151,7 +153,7 @@ function markerType(text: string): { type: ResourceType; length: number } | null
 }
 
 /**
- * The part after "-": the kind of child row the requirement needs.
+ * The part after "-": the child row the requirement needs.
  *   "[ ] text" task · "$ 50" / ": 1h" / "# 2 widgets" an allocation of money / time / things (window allowed)
  *   "@calendar 1h", "@money 50", "@inventory 2" the same by bank word · "@name text" the person `name` (they allocate themself)
  *   "? text" or "search: text" search · "market text" · "mail text" · "choice: a | b" · anything else is a confirmation
@@ -190,7 +192,10 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
   return { requirement: { capability: 'confirmation' }, label: t.replace(/^confirm(?:ation)?\s*:?\s*/i, '') || 'confirmation' }
 }
 
-/** A typed row: the marker decides the kind (see the file comment); anything else is a plain row. */
+/** Money rows are their own type; every other resource's rows are allocations. */
+const flowType = (resource: ResourceType | undefined) => resource === 'account' ? MONEY_TYPE : ALLOCATION_TYPE
+
+/** A typed row: the marker decides the row type (see the file comment); anything else is a plain row. */
 export function parseRowInput(raw: string): ParsedInput {
   const lines = raw.replace(/\r\n/g, '\n').split('\n')
   // Markdown owns its newlines; other cells use indentation to construct children.
@@ -214,13 +219,13 @@ export function parseRowInput(raw: string): ParsedInput {
     const done = !!m[1]
     const rest = m[2] ?? ''
     const tpl = parseTemplateRef(rest)
-    if (tpl) return { kind: 'task', text: tpl.rest || tpl.templateName, done, templateName: tpl.templateName }
-    return { kind: 'task', text: rest, done }
+    if (tpl) return { type: TASK_TYPE, text: tpl.rest || tpl.templateName, done, templateName: tpl.templateName }
+    return { type: TASK_TYPE, text: rest, done }
   }
-  if ((m = text.match(/^>\s?(.*)$/s))) return { kind: 'note', text: m[1] ?? '', done: false }
-  if ((m = text.match(/^\/\/\s*(.*)$/s))) return { kind: 'comment', text: m[1] ?? '', done: false }
-  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? ''); return { kind: 'requirement', text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
-  if ((m = text.match(/^\?\s*(.*)$/s))) return { kind: 'query', text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
+  if ((m = text.match(/^>\s?(.*)$/s))) return { type: NOTE_TYPE, text: m[1] ?? '', done: false }
+  if ((m = text.match(/^\/\/\s*(.*)$/s))) return { type: COMMENT_TYPE, text: m[1] ?? '', done: false }
+  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? ''); return { type: flowType(extras.requirement?.capability === 'allocation' ? extras.requirement.resource : undefined), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
+  if ((m = text.match(/^\?\s*(.*)$/s))) return { type: QUERY_TYPE, text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
   if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff)\b\s*:?\s*(.*)$/is))) {
     const type = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
     const rest = (m[2] ?? '').trim()
@@ -228,14 +233,14 @@ export function parseRowInput(raw: string): ParsedInput {
     const cap = rest.match(/^(.*?)\s+(\d+(?:[.,]\d+)?\s*[A-Za-z€$£]*)$/)
     const amt = cap ? parseAmount(cap[2] ?? '', type) : null
     const unit = amt?.unit ?? DEFAULT_UNIT[type]
-    return { kind: 'resource', text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, ...(amt ? { capacity: amt.amount } : {}) } } }
+    return { type: RESOURCE_TYPE, text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, ...(amt ? { capacity: amt.amount } : {}) } } }
   }
   const typed = markerType(text)
-  if (typed) { const { allocation, text: rest } = parseAllocation(typed.type, text.slice(typed.length)); const { user, text: label } = typed.type === 'location' ? { user: null, text: rest } : namedUser(rest); return { kind: 'allocation', text: label, done: false, extras: { allocation, user } } }
-  if ((m = text.match(/^@\{([^}]*)\}?\s*$/))) return { kind: 'plain', text, done: false, peer: (m[1] ?? '').trim() }
-  if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? ''); return { kind: 'allocation', text: label, done: false, extras: { allocation, user: unverifiedUser(m[1] as string) } } }
-  if ((m = text.match(/^`\s*([^`]*)`?\s*$/s))) return { kind: 'template', text: (m[1] ?? '').trim(), done: false }
-  return { kind: 'plain', text: text.trim(), done: false }
+  if (typed) { const { allocation, text: rest } = parseAllocation(typed.type, text.slice(typed.length)); const { user, text: label } = typed.type === 'location' ? { user: null, text: rest } : namedUser(rest); return { type: flowType(allocation.type), text: label, done: false, extras: { allocation, user } } }
+  if ((m = text.match(/^@\{([^}]*)\}?\s*$/))) return { type: PLAIN_TYPE, text, done: false, peer: (m[1] ?? '').trim() }
+  if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? ''); return { type: ALLOCATION_TYPE, text: label, done: false, extras: { allocation, user: unverifiedUser(m[1] as string) } } }
+  if ((m = text.match(/^`\s*([^`]*)`?\s*$/s))) return { type: TEMPLATE_TYPE, text: (m[1] ?? '').trim(), done: false }
+  return { type: PLAIN_TYPE, text: text.trim(), done: false }
 }
 
 /** An amount with its window as it is typed: "50 USD 2026-10-13..2026-10-20". */
@@ -247,47 +252,54 @@ function amountAndWindow(amount: number | undefined, unit: string | undefined, w
   return parts.join(' ')
 }
 
-/** The marker form of a row, so editing shows exactly what was typed ("-$ 50 lunch", "[x] done", "> note", "@bob 2h …"). */
+/**
+ * The marker form of a row, so editing shows exactly what was typed ("-$ 50 lunch", "[x] done", "@bob 2h …"), by its
+ * type. A type with a graph form (notes, comments) is edited as its text.
+ */
 export function rawRowText(task: TaskView): string {
   const join = (...parts: string[]) => parts.filter((p) => p !== '').join(' ')
-  switch (task.kind) {
-    case 'task': return join(task.done ? '[x]' : '[ ]', task.template ? `\`${task.template.name}\`` : '', task.title)
-    case 'note': return `> ${task.title}`
-    case 'comment': return `// ${task.title}`
-    case 'query': return `? ${task.title}`
-    case 'template': return `\`${task.title}`
-    case 'resource': {
+  if (task.checkable) return join(task.done ? '[x]' : '[ ]', task.template ? `\`${task.template.name}\`` : '', task.title)
+  if (isAllocationType(task.type)) return task.requirement ? rawRequirementText(task) : rawAllocationText(task)
+  switch (task.type) {
+    case QUERY_TYPE: return `? ${task.title}`
+    case TEMPLATE_TYPE: return `\`${task.title}`
+    case RESOURCE_TYPE: {
       const r = task.resource
       if (!r) return `@inventory ${task.title}`
       const word = r.type === 'account' ? 'money' : r.type === 'points' ? 'points' : r.type
       return join(`@${word}`, task.title, r.capacity !== undefined ? formatAmount(r.capacity, r.unit) : '')
     }
-    case 'allocation': {
-      const a = task.allocation
-      if (!a) return `$ ${task.title}`
-      const marker = a.type === 'person' ? `@${task.user?.username ?? 'someone'}` : RESOURCE_MARKER[a.type]
-      return join(marker, amountAndWindow(a.amount, a.unit, a), a.type !== 'person' && task.user ? `@${task.user.username}` : '', task.title)
-    }
-    case 'requirement': {
-      const r = task.requirement
-      if (!r) return `- ${task.title}`
-      switch (r.capability) {
-        case 'task': return join('-[ ]', task.title)
-        case 'allocation': return join(`-${RESOURCE_MARKER[r.resource ?? 'inventory']}`, amountAndWindow(r.amount, r.unit, r), task.user ? `@${task.user.username}` : '', task.title)
-        case 'peer': return join(`-@${task.user?.username ?? r.peer ?? ''}`, task.title)
-        case 'search': return join('-?', task.title)
-        case 'market': return join('-market', task.title)
-        case 'mail': return join('-mail', task.title)
-        case 'llm': return join('-llm', task.title)
-        case 'repo': return join('-repo', r.repo ?? '', task.title)
-        case 'tool': return join('-tool', r.tool ?? '', task.title)
-        case 'choice': return `-choice: ${(r.options ?? []).join(' | ')}`
-        case 'confirmation': return join('-', task.title === 'confirmation' ? '' : task.title)
-      }
-      return `- ${task.title}`
-    }
     default: return task.title
   }
+}
+
+/** An allocation (or payment) as typed: "$ 50 lunch", ": 1h", "@bob 2h". */
+function rawAllocationText(task: TaskView): string {
+  const join = (...parts: string[]) => parts.filter((p) => p !== '').join(' ')
+  const a = task.allocation
+  if (!a) return task.supply ? task.title : `$ ${task.title}`
+  const marker = a.type === 'person' ? `@${task.user?.username ?? 'someone'}` : RESOURCE_MARKER[a.type]
+  return join(marker, amountAndWindow(a.amount, a.unit, a), a.type !== 'person' && task.user ? `@${task.user.username}` : '', task.title)
+}
+
+/** A requirement (a negative entry) as typed: "-$ 50 lunch", "-[ ] book", "- confirm". */
+function rawRequirementText(task: TaskView): string {
+  const join = (...parts: string[]) => parts.filter((p) => p !== '').join(' ')
+  const r = task.requirement!
+  switch (r.capability) {
+    case 'task': return join('-[ ]', task.title)
+    case 'allocation': return join(`-${RESOURCE_MARKER[r.resource ?? 'inventory']}`, amountAndWindow(r.amount, r.unit, r), task.user ? `@${task.user.username}` : '', task.title)
+    case 'peer': return join(`-@${task.user?.username ?? r.peer ?? ''}`, task.title)
+    case 'search': return join('-?', task.title)
+    case 'market': return join('-market', task.title)
+    case 'mail': return join('-mail', task.title)
+    case 'llm': return join('-llm', task.title)
+    case 'repo': return join('-repo', r.repo ?? '', task.title)
+    case 'tool': return join('-tool', r.tool ?? '', task.title)
+    case 'choice': return `-choice: ${(r.options ?? []).join(' | ')}`
+    case 'confirmation': return join('-', task.title === 'confirmation' ? '' : task.title)
+  }
+  return `- ${task.title}`
 }
 
 /** The little tag an allocation shows on the row it sits under: icon, amount, window and who. */
@@ -303,31 +315,28 @@ export function allocationTag(a: NonNullable<TaskView['allocation']>, user?: Use
 export function describeParsed(p: ParsedInput): string {
   if (p.peer !== undefined) return 'peer'
   const amt = (a: { amount?: number; unit?: string } | undefined) => (a && a.amount !== undefined ? ' ' + formatAmount(a.amount, a.unit ?? '') : '')
-  switch (p.kind) {
-    case 'task': return p.templateName ? `task · executes \`${p.templateName}\`${p.done ? ' · done' : ''}` : `task${p.done ? ' · done' : ''}`
-    case 'note': return 'note'
-    case 'comment': return 'comment'
-    case 'query': return 'query'
-    case 'template': return 'template'
-    case 'resource': return `bank · ${RESOURCE_NAME[p.extras?.resource?.type ?? 'inventory']}${p.extras?.resource?.capacity !== undefined ? ' · ' + formatAmount(p.extras.resource.capacity, p.extras.resource.unit) : ''}`
-    case 'allocation': { const a = p.extras?.allocation; return `allocation · ${a ? RESOURCE_NAME[a.type] : ''}${p.extras?.user ? ' @' + p.extras.user.username : ''}${amt(a)}${a && formatWindow(a) ? ' · ' + formatWindow(a) : ''}` }
-    case 'requirement': {
-      const r = p.extras?.requirement
-      if (!r) return 'requirement'
-      switch (r.capability) {
-        case 'allocation': return `requirement · ${RESOURCE_NAME[r.resource ?? 'inventory']}${r.amount !== undefined ? amt(r) : ' (any amount)'}`
-        case 'task': return `requirement · a task${p.templateName ? ` executing \`${p.templateName}\`` : ''}`
-        case 'peer': return `requirement · @${p.extras?.user?.username ?? r.peer ?? 'someone'}`
-        case 'choice': return `requirement · choice (${(r.options ?? []).join(' | ')})`
-        default: return `requirement · ${r.capability}`
-      }
+  if (isAllocationType(p.type) && p.extras?.requirement) {
+    const r = p.extras.requirement
+    switch (r.capability) {
+      case 'allocation': return `requirement · ${RESOURCE_NAME[r.resource ?? 'inventory']}${r.amount !== undefined ? amt(r) : ' (any amount)'}`
+      case 'task': return `requirement · a task${p.templateName ? ` executing \`${p.templateName}\`` : ''}`
+      case 'peer': return `requirement · @${p.extras?.user?.username ?? r.peer ?? 'someone'}`
+      case 'choice': return `requirement · choice (${(r.options ?? []).join(' | ')})`
+      default: return `requirement · ${r.capability}`
     }
+  }
+  if (isAllocationType(p.type)) { const a = p.extras?.allocation; return `${p.type === MONEY_TYPE ? 'payment' : 'allocation'} · ${a ? RESOURCE_NAME[a.type] : ''}${p.extras?.user ? ' @' + p.extras.user.username : ''}${amt(a)}${a && formatWindow(a) ? ' · ' + formatWindow(a) : ''}` }
+  switch (p.type) {
+    case TASK_TYPE: return p.templateName ? `task · executes \`${p.templateName}\`${p.done ? ' · done' : ''}` : `task${p.done ? ' · done' : ''}`
+    case NOTE_TYPE: return 'note'
+    case COMMENT_TYPE: return 'comment'
+    case QUERY_TYPE: return 'query'
+    case TEMPLATE_TYPE: return 'template'
+    case RESOURCE_TYPE: return `bank · ${RESOURCE_NAME[p.extras?.resource?.type ?? 'inventory']}${p.extras?.resource?.capacity !== undefined ? ' · ' + formatAmount(p.extras.resource.capacity, p.extras.resource.unit) : ''}`
     default: return ''
   }
 }
 
-/** The marker that recreates a row of `kind` when its text is edited from the start (shown in the help). */
-export const ROW_KIND_LABEL: Record<RowKind, string> = { task: 'Task', plain: 'Row', note: 'Note', comment: 'Comment', ref: 'Reference', requirement: 'Requirement', supply: 'Supply', query: 'Query', resource: 'Resource bank', allocation: 'Allocation', template: 'Template', pattern: 'Pattern', home: 'Home', 'reference-error': 'Reference error' }
 
 /** Row syntax, for the Ctrl+H help: [what you type, what it makes]. */
 export const SYNTAX_HELP: Array<[string, string]> = [

@@ -10,6 +10,13 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
+const MONEY_TYPE = 'lib:type:allocation:money'
+const TASK_TYPE = 'lib:type:task'
+const PLAIN_TYPE = 'lib:type:plain'
+const NOTE_TYPE = 'lib:type:note'
+const ALLOCATION_TYPE = 'lib:type:allocation'
+const TEMPLATE_TYPE = 'lib:type:template'
+const PATTERN_TYPE = 'lib:type:pattern'
 const { parseRowInput } = c
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
@@ -17,7 +24,7 @@ async function main() {
   const HOME = c.HOME_ID, LIB = c.LIBRARY_ID, share = 'library-share-0123456789'
   // the library account on the server: the node, shared with every user, seeded
   let lib = c.ensureHomeContext(c.createReplica('user:fos-library'), 1)
-  lib = c.addRow(lib, [HOME], 'plain', 'Standard library', 1, { id: LIB })
+  lib = c.addRow(lib, [HOME], PLAIN_TYPE, 'Standard library', 1, { id: LIB })
   lib = c.setSharing(lib, [HOME, LIB], { id: share, audience: 'users', enabled: true }, 2)
   lib = c.setMemberCapabilitiesAt(lib, [HOME, LIB], 'audience:users', ['read', 'edit', 'rank'], [], 2)
   lib = c.seedStandardLibrary(lib, [HOME, LIB], 3)
@@ -65,7 +72,7 @@ async function main() {
   const trip = c.findTemplateByName(app.state.replica, 'Plan a trip')
   assert(trip, 'the library\'s templates are in the local replica')
   // the template's requirements, beside its pattern rows (what tasks made from it accept)
-  const tripRows = () => (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks ?? []).filter(t => t.kind !== 'pattern')
+  const tripRows = () => (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks ?? []).filter(t => t.type !== PATTERN_TYPE)
   for (let i = 0; i < 40 && tripRows().length < 5; i++) await tick()
   assert.equal(tripRows().length, 5, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
   assert(calls.filter(p => p.endsWith('provide-node')).length >= 7, `the tree was materialized node by node: ${calls.length} requests`)
@@ -74,8 +81,8 @@ async function main() {
   offline = true
   const before = calls.length
   app.goTo([HOME])
-  const task = [HOME, app.addRowAt([], 'task', 'Trip', { templateName: 'Plan a trip' })]
-  const requirements = c.view(app.state.replica, task).tasks.filter(t => t.kind === 'requirement')
+  const task = [HOME, app.addRowAt([], TASK_TYPE, 'Trip', { templateName: 'Plan a trip' })]
+  const requirements = c.view(app.state.replica, task).tasks.filter(t => !!t.requirement)
   assert.equal(requirements.length, 5, 'the template instantiated offline')
   assert.deepEqual(requirements.map(t => t.requirement.capability), ['confirmation', 'allocation', 'allocation', 'task', 'task'])
   assert.equal(calls.length, before, 'nothing was requested while offline')
@@ -104,14 +111,14 @@ async function main() {
 
   const bundlePath = c.libraryPath(fresh.state.replica)
   let edited = c.renameTask(fresh.state.replica, bundlePath, 'lib:trip', 'Travel plan', Date.now())
-  edited = c.addRow(edited, bundlePath, 'template', 'Custom workflow', Date.now(), { id: 'lib:custom' })
-  edited = c.addRow(edited, [...bundlePath, 'lib:custom'], 'requirement', 'Check the result', Date.now(), { id: 'lib:custom:check', requirement: { capability: 'confirmation' } })
+  edited = c.addRow(edited, bundlePath, TEMPLATE_TYPE, 'Custom workflow', Date.now(), { id: 'lib:custom' })
+  edited = c.addRow(edited, [...bundlePath, 'lib:custom'], ALLOCATION_TYPE, 'Check the result', Date.now(), { id: 'lib:custom:check', requirement: { capability: 'confirmation' } })
   edited = c.writeNodeValue(edited, [...bundlePath, 'lib:custom'], 'fos:icon', 'confirm', Date.now())
   fresh.set({ replica: edited })
   assert(!constructor('Plan a trip') && constructor('Travel plan') && constructor('Custom workflow'), 'renames and additions appear without a UI catalog change')
   assert.equal(fresh.libraryConstructors().find(item => item.id === 'lib:custom').icon, 'confirm')
   // A local template with the same name must not shadow the library definition.
-  fresh.applyConstructor([HOME], { kind: 'template', text: 'Custom workflow', done: false })
+  fresh.applyConstructor([HOME], { type: TEMPLATE_TYPE, text: 'Custom workflow', done: false })
   fresh.select(null)
   const search = document.querySelector('.node-search input')
   search.value = 'Custom workflow'; search.dispatchEvent(new window.Event('input', { bubbles: true }))
@@ -125,8 +132,8 @@ async function main() {
   assert.equal(c.headCid(fresh.state.replica), disabledHead, 'disabled library constructors cannot be inserted')
   fresh.setConstructorEnabled(fresh.state.replica.meta.peerId, 'library:lib:custom', true)
 
-  const destination = fresh.applyConstructor([HOME], { kind: 'plain', text: 'Keep this title', done: false })
-  const retained = fresh.applyConstructor(destination, { kind: 'note', text: 'Keep this child', done: false })
+  const destination = fresh.applyConstructor([HOME], { type: PLAIN_TYPE, text: 'Keep this title', done: false })
+  const retained = fresh.applyConstructor(destination, { type: NOTE_TYPE, text: 'Keep this child', done: false })
   fresh.select(null)
   const drop = target => {
     const event = new window.Event('drop', { bubbles: true, cancelable: true })
@@ -135,17 +142,17 @@ async function main() {
   }
   drop(document.querySelector(`.tree .task[data-id="${destination.at(-1)}"]`))
   let targetRow = c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === destination.at(-1))
-  assert.equal(targetRow.kind, 'task'); assert.equal(targetRow.title, 'Keep this title'); assert.equal(targetRow.template.id, 'lib:custom')
+  assert.equal(targetRow.checkable, true); assert.equal(targetRow.title, 'Keep this title'); assert.equal(targetRow.template.id, 'lib:custom')
   assert(c.view(fresh.state.replica, destination).tasks.some(row => row.id === retained.at(-1)), 'drop preserves existing children')
   assert(c.view(fresh.state.replica, destination).tasks.some(row => row.title === 'Check the result'), 'drop copies the library definition, even with a same-named local template')
   fresh.undo()
-  assert.equal(c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === destination.at(-1)).kind, 'plain')
+  assert.equal(c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === destination.at(-1)).type, PLAIN_TYPE)
 
-  const needed = fresh.applyConstructor([HOME], { kind: 'requirement', text: 'A workflow', done: false, extras: { requirement: { capability: 'task' } } })
+  const needed = fresh.applyConstructor([HOME], { type: ALLOCATION_TYPE, text: 'A workflow', done: false, extras: { requirement: { capability: 'task' } } })
   fresh.select([needed.at(-1)])
   assert(document.querySelector('.constructor-chip[aria-label="Custom workflow"]'), 'task requirements suggest library constructors')
   drop(document.querySelector(`.tree .task[data-id="${needed.at(-1)}"]`))
-  assert.equal(c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === needed.at(-1)).kind, 'requirement', 'drop preserves the requirement')
+  assert.equal(c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === needed.at(-1)).requirement?.capability, 'task', 'drop preserves the requirement')
   assert(c.view(fresh.state.replica, needed).tasks.some(row => row.template?.id === 'lib:custom'), 'drop inserts an execution inside the requirement')
   fresh.select(null)
   fresh.addPlaceholder('workflow', 'template:lib:custom', [HOME])
@@ -166,14 +173,14 @@ async function main() {
   assert(!constructor('Custom workflow'), 'removed library constructors leave the menu')
   assert.throws(() => fresh.insertLibraryConstructor('lib:custom'), /unavailable/, 'a stale drag cannot instantiate a deleted definition')
   fresh.select(null)
-  const errand = fresh.applyConstructor([HOME], { kind: 'task', text: 'Errand', done: false })
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', 'Tell the client', Date.now(), { id: 'mail', requirement: { capability: 'mail' } }) })
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', 'fee', Date.now(), { id: 'fee', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' } }) })
+  const errand = fresh.applyConstructor([HOME], { type: TASK_TYPE, text: 'Errand', done: false })
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, ALLOCATION_TYPE, 'Tell the client', Date.now(), { id: 'mail', requirement: { capability: 'mail' } }) })
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, MONEY_TYPE, 'fee', Date.now(), { id: 'fee', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' } }) })
   const parsedPlace = parseRowInput('-at Eiffel Tower')
   assert.deepEqual(parsedPlace.extras.requirement, { capability: 'allocation', resource: 'location', place: 'Eiffel Tower' }, `"-at <place>" is a location requirement: ${JSON.stringify(parsedPlace)}`)
   assert.equal(parseRowInput('at Paris').extras.allocation.location.name, 'Paris', '"at <place>" is a location allocation')
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', parsedPlace.text, Date.now(), { id: 'where', requirement: parsedPlace.extras.requirement }) })
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, 'requirement', 'Somewhere nearby', Date.now(), { id: 'near', requirement: { capability: 'allocation', resource: 'location' } }) })
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, ALLOCATION_TYPE, parsedPlace.text, Date.now(), { id: 'where', requirement: parsedPlace.extras.requirement }) })
+  fresh.set({ replica: c.addRow(fresh.state.replica, errand, ALLOCATION_TYPE, 'Somewhere nearby', Date.now(), { id: 'near', requirement: { capability: 'allocation', resource: 'location' } }) })
   fresh.goTo(errand); await tick()
   const handlers = id => [...document.querySelectorAll(`.tree .task[data-id="${id}"] .manual-handler`)]
   assert.deepEqual(handlers('mail').map(b => b.textContent), ['Sent it myself'])
@@ -182,22 +189,22 @@ async function main() {
   handlers('mail')[0].click(); await tick()
   const req = id => fresh.currentView().tasks.find(t => t.id === id)
   assert.equal(req('mail').requirement.satisfied, true, 'a supply by the person fills a mail requirement')
-  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'mail']).tasks.map(t => [t.kind, t.supply.by]), [['supply', fresh.actorName()]])
+  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'mail']).tasks.map(t => [t.type, t.supply.by]), [[ALLOCATION_TYPE, fresh.actorName()]])
   handlers('fee')[0].click(); await tick()
   assert.equal(req('fee').requirement.satisfied, true, 'a receipt plus supply fills a money requirement')
-  const receipt = c.view(fresh.state.replica, [...errand, 'fee']).tasks.find(t => t.kind === 'allocation')
+  const receipt = c.view(fresh.state.replica, [...errand, 'fee']).tasks.find(t => (!!t.allocation && !t.requirement))
   assert.deepEqual([receipt.allocation.type, receipt.allocation.amount, receipt.allocation.unit, receipt.allocation.by, receipt.allocation.resource], ['account', 20, 'usd', fresh.actorName(), 'fee'])
   document.querySelector('.tree .task[data-id="where"] .manual-place').value = 'Eiffel Tower, Paris'
   handlers('where')[0].click(); await tick()
   assert.equal(req('where').requirement.satisfied, true, 'a named place fills a location requirement')
-  assert.equal(c.view(fresh.state.replica, [...errand, 'where']).tasks.find(t => t.kind === 'allocation').allocation.location.name, 'Eiffel Tower, Paris')
+  assert.equal(c.view(fresh.state.replica, [...errand, 'where']).tasks.find(t => (!!t.allocation && !t.requirement)).allocation.location.name, 'Eiffel Tower, Paris')
   Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition: ok => ok({ coords: { latitude: 48.85837, longitude: 2.294481 } }) }, configurable: true })
   fresh.refresh(); await tick()
   const device = handlers('near').find(b => b.dataset.handler === 'lib:device:location')
   assert(device, 'the device handler shows when the device reports its position')
   device.click(); await tick(); await tick()
   assert.equal(req('near').requirement.satisfied, true, 'the device position fills a location requirement')
-  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'near']).tasks.find(t => t.kind === 'allocation').allocation.location, { lat: 48.85837, lng: 2.29448 })
+  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'near']).tasks.find(t => (!!t.allocation && !t.requirement)).allocation.location, { lat: 48.85837, lng: 2.29448 })
   console.log('PASS: live and bundled library discovery, menu/search, click/drop, typed inputs, undo, library edits, and manual fallbacks')
 }
 main().catch(error => { console.error(error); process.exit(1) })

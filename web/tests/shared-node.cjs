@@ -5,6 +5,8 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
+const PLAIN_TYPE = 'lib:type:plain'
+const REF_TYPE = 'lib:type:ref'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-shared-node-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
@@ -50,8 +52,8 @@ async function main() {
   c.mountUi(document.getElementById('app'), app)
   let bob = c.ensureHomeContext(c.createReplica('user:bob'), 1)
   bob = { ...bob, meta: { ...bob.meta, peerId: 'user:bob', serverPeerId: 'user:bob' } }
-  bob = c.addRow(bob, [HOME], 'plain', 'alice', 2, { id: 'shared-host:alice' })
-  bob = c.addRow(bob, [HOME, 'shared-host:alice'], 'ref', 'Plan the group trip', 3, { id: 'member:trip', refOwner: 'alice', refId: 'trip' })
+  bob = c.addRow(bob, [HOME], PLAIN_TYPE, 'alice', 2, { id: 'shared-host:alice' })
+  bob = c.addRow(bob, [HOME, 'shared-host:alice'], REF_TYPE, 'Plan the group trip', 3, { id: 'member:trip', refOwner: 'alice', refId: 'trip' })
   app.set({ replica: bob, session: { kind: 'user', username: 'bob', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
   const at = [HOME, 'shared-host:alice', 'member:trip']
   app.goTo([HOME, 'shared-host:alice'])
@@ -96,7 +98,7 @@ async function main() {
 
   // a listing without a grant falls back to the market view
   bob = app.state.replica
-  app.set({ replica: c.addRow(bob, [HOME], 'ref', 'A listing', 70, { id: 'listing', refOwner: 'carol', refId: 'job' }) })
+  app.set({ replica: c.addRow(bob, [HOME], REF_TYPE, 'A listing', 70, { id: 'listing', refOwner: 'carol', refId: 'job' }) })
   let market = null; app.openMarket = async (owner, id) => { market = [owner, id] }
   await app.openSharedNode([HOME, 'listing'])
   assert.deepEqual(market, ['carol', 'job'])

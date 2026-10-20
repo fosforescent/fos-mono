@@ -20,7 +20,7 @@ export function contextTools(tree) {
     const node = nodes.get(JSON.stringify(path))
     if (!node) throw new Error('Task outside the attached subtree or unavailable')
     const children = [...nodes.values()].filter(n => n.path.length === path.length + 1 && path.every((p,i) => n.path[i] === p))
-    return { ...node, children: children.map(n => ({ path: n.path, text: n.text, kind: n.kind })), snapshot: true }
+    return { ...node, children: children.map(n => ({ path: n.path, text: n.text, type: n.type })), snapshot: true }
   }
   return { read, search: query => [...nodes.values()].filter(n => n.text.toLowerCase().includes(query.toLowerCase())).slice(0,100) }
 }

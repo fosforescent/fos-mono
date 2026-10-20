@@ -1145,6 +1145,8 @@ export type TaskView = {
   type: string
   /** The left node itself (the pinned version), when the row has one. */
   typeCid?: string
+  /** The type's own name (its description: "Task", "Note", a template's title), for labels. */
+  typeName?: string
   /** True only for tasks (made from the Task type or a template row): rendered with a checkbox. */
   checkable: boolean
   done: boolean
@@ -1274,6 +1276,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     title: formTitle(store, value, definition),
     type,
     ...(typeCid ? { typeCid } : {}),
+    ...(definition?.data.description?.content ? { typeName: definition.data.description.content } : {}),
     checkable: task,
     done: task && !!value.data.todo?.completed,
     createdAt: created,

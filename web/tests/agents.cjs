@@ -2,15 +2,17 @@ const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
+const TASK_TYPE = 'lib:type:task'
+const PLAIN_TYPE = 'lib:type:plain'
 const dir = mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'fos-agent-test-'))
 try {
   buildSync({ stdin: { contents: `export * from './src/agents'; export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs') })
   const { App, createMemoryStorage, localRepository, agentContext, headCid } = require(path.join(dir, 'test.cjs'))
   const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() }); app.scheduleSync = () => {}
-  const parent = app.applyConstructor(app.state.view, { kind: 'plain', text: 'Repository', done: false, peer: 'filesystem' }, false, undefined, '/tmp/project')
-  const child = app.applyConstructor(parent, { kind: 'task', text: 'Implement feature', done: false })
-  app.applyConstructor(child, { kind: 'task', text: 'Add button', done: false })
-  app.applyConstructor(parent, { kind: 'task', text: 'Private sibling', done: false })
+  const parent = app.applyConstructor(app.state.view, { type: PLAIN_TYPE, text: 'Repository', done: false, peer: 'filesystem' }, false, undefined, '/tmp/project')
+  const child = app.applyConstructor(parent, { type: TASK_TYPE, text: 'Implement feature', done: false })
+  app.applyConstructor(child, { type: TASK_TYPE, text: 'Add button', done: false })
+  app.applyConstructor(parent, { type: TASK_TYPE, text: 'Private sibling', done: false })
   assert.equal(localRepository(app.state.replica, child), '/tmp/project')
   const context = agentContext(app.state.replica, child)
   assert.equal(context.nodes[0].text, 'Implement feature')

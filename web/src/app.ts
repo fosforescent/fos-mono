@@ -74,7 +74,7 @@ import {
   setFileReferenceAt,
   fileReferenceAt,
   type FileReference,
-  setRowKind,
+  setRowType,
   applyProposalAt,
   shareHome,
   deleteTask,
@@ -103,7 +103,6 @@ import {
   type NodeView,
   type Replica,
   type RowExtras,
-  type RowKind,
   type Scope,
   type TaskView
 } from '../../shared/sync/index'
@@ -151,6 +150,7 @@ import {
 import { DirectGuest, DirectHost, DirectLink, ManualRelay, isWebRtcAvailable, type ChannelMessage } from './p2p'
 import { inTauri, openExternal, tauriInvoke } from './project'
 import type { ReplicaStorage } from './storage'
+import { TASK_TYPE, PLAIN_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
 
 export type Connection = 'offline' | 'connecting' | 'online' | 'syncing'
 
@@ -791,8 +791,8 @@ export class App {
     this.together(() => {
       if (id) {
         const first = rows[0]!
-        if (first.kind === 'allocation' && first.extras?.allocation && !this.bankFor(at, first.extras.allocation.type)) {
-          this.edit(setRowContentAt(this.state.replica, [...this.state.view, ...at], id, first.kind, first.text, first.extras, this.now()))
+        if (first.extras?.allocation && !this.bankFor(at, first.extras.allocation.type)) {
+          this.edit(setRowContentAt(this.state.replica, [...this.state.view, ...at], id, first.type, first.text, first.extras, this.now()))
           this.resolveUser(first.extras?.user)
           if (first.children?.length) this.addParsedChildren([...at, id], first.children, undefined, true)
         } else this.rewriteRowAt(at, id, first)
@@ -800,7 +800,7 @@ export class App {
       }
       let previous = id
       for (const row of rows) {
-        const created = this.addRowAt(at, row.kind, row.text, { done: row.done, extras: row.extras, templateName: row.templateName, preserveUnbound: true, ...(previous ? { position: { relativeTo: previous, position: 'below' as const } } : {}) })
+        const created = this.addRowAt(at, row.type, row.text, { done: row.done, extras: row.extras, templateName: row.templateName, preserveUnbound: true, ...(previous ? { position: { relativeTo: previous, position: 'below' as const } } : {}) })
         if (row.peer !== undefined) this.setPeerRow([...this.state.view, ...at, created], row.peer)
         if (row.children?.length) this.addParsedChildren([...at, created], row.children, undefined, true)
         previous = created
@@ -814,7 +814,7 @@ export class App {
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
     const template = row?.template && resolveRef(this.state.replica, row.template.id)
     if (template) { this.closeModal(); this.goTo([...template.path, template.row.id]) }
-    else if (row?.kind === 'template') { this.closeModal(); this.goTo(path) }
+    else if (row?.type === TEMPLATE_TYPE) { this.closeModal(); this.goTo(path) }
     else this.notify('info', 'This is a built-in constructor. Use + to create an editable template.')
   }
   async login(username: string, password: string, automatic = false, mergeOffline = false): Promise<void> {
@@ -1195,7 +1195,7 @@ export class App {
       const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), at)
       if (!cid) continue
       if (isPeerReference(content(this.state.replica.store, cid))) { await this.loadPeerNode(at); loaded++ }
-      for (const row of view(this.state.replica, at)?.tasks ?? []) if (row.kind !== 'ref' || row.refPeer) queue.push([...at, row.id])
+      for (const row of view(this.state.replica, at)?.tasks ?? []) if (row.refId === undefined || row.refPeer) queue.push([...at, row.id])
     }
   }
   /** Shared projections sync with their owner's account as `user:<me>`: pulls, and pushes of local edits as proposals there. */
@@ -1329,28 +1329,28 @@ export class App {
   addTask(title: string): void { this.edit(addTask(this.state.replica, this.state.view, title, this.now())) }
 
   /**
-   * Add a row of `kind` under `at` (relative to the view). Comments carry this device as the author; an allocation
+   * Add a row of `type` (a library row type id or a type cid) under `at` (relative to the view). Comments carry this device as the author; an allocation
    * draws from the parent context (`bankFor`); a task naming a template executes it (its requirements are copied
    * underneath); a task requirement naming a template gets that execution as its child right away.
    */
-  addRowAt(at: Scope, kind: RowKind, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string; replica?: Replica; preserveUnbound?: boolean } = {}): string {
+  addRowAt(at: Scope, type: string, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string; replica?: Replica; preserveUnbound?: boolean } = {}): string {
     const author = { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName }
     const id = options.id ?? crypto.randomUUID()
     const { extras, templateName, replica: branch, preserveUnbound, ...rest } = options
     const replica = branch ?? this.state.replica
     let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
-    if (kind === 'allocation') {
+    if (isAllocationType(type) && data.allocation && !data.requirement && !data.supply) {
       const resolved = preserveUnbound && data.allocation && !this.bankFor(at, data.allocation.type, data.user?.username, replica) ? { ...data.allocation, resource: '' } : this.allocationWithBank(at, data.allocation, replica, data.user?.username)
       if (!resolved) return id
       data = { ...data, allocation: resolved }
     }
-    const next = addRow(replica, [...this.state.view, ...at], kind, text, this.now(), { ...rest, ...data, author, id })
+    const next = addRow(replica, [...this.state.view, ...at], type, text, this.now(), { ...rest, ...data, author, id })
     if (!branch) this.edit(next)
     this.resolveUser(data.user)
-    if (templateName && kind === 'task') this.applyTemplate(at, id, templateName, branch)
-    if (templateName && kind === 'requirement' && data.requirement?.capability === 'task') {
+    if (templateName && type === TASK_TYPE) this.applyTemplate(at, id, templateName, branch)
+    if (templateName && data.requirement?.capability === 'task') {
       // "-[ ] `name`": the required task is created at once as an execution of the template
-      const child = this.addRowAt([...at, id], 'task', templateName, { templateName, replica: branch })
+      const child = this.addRowAt([...at, id], TASK_TYPE, templateName, { templateName, replica: branch })
       if (!branch) this.set({ collapsed: this.state.collapsed.filter((c) => c !== id && c !== child) })
     }
     return id
@@ -1370,7 +1370,7 @@ export class App {
       const parentAt = at.slice(0, i - 1)
       const id = at[i - 1] as string
       const row = view(this.state.replica, [...this.state.view, ...parentAt])?.tasks.find((t) => t.id === id)
-      if (row?.kind === 'resource' && row.resource) return row as TaskView & { resource: NonNullable<TaskView['resource']> }
+      if (row?.type === RESOURCE_TYPE && row.resource) return row as TaskView & { resource: NonNullable<TaskView['resource']> }
     }
     return null
   }
@@ -1392,11 +1392,11 @@ export class App {
     const path = [...this.state.view, ...at]
     for (let i = path.length; i > 0; i--) {
       const row = view(replica, path.slice(0, i - 1))?.tasks.find(row => row.id === path[i - 1])
-      if (row?.kind === 'resource' && row.resource && fits(row as Bank)) return row as Bank
+      if (row?.type === RESOURCE_TYPE && row.resource && fits(row as Bank)) return row as Bank
     }
     const all = this.banks(replica)
     const parent = view(replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find(row => row.id === at[at.length - 1])
-    const req = parent?.kind === 'requirement' ? parent.requirement : undefined
+    const req = !!parent?.requirement ? parent.requirement : undefined
     if (req?.capability === 'allocation' && req.resource && (!type || req.resource === type)) {
       const match = all.find(({ row }) => row.resource.type === req.resource && fits(row))
       if (match) return match.row
@@ -1430,7 +1430,7 @@ export class App {
     return { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by }
   }
   /**
-   * A row's text was edited in its raw marker form: re-parse it and rewrite the row in place (kind, text, data),
+   * A row's text was edited in its raw marker form: re-parse it and rewrite the row in place (type, text, data),
    * keeping its id and children. Templates named in the text are applied as for a new row.
    */
   dropBlankRow(parent: Scope, id: string, store: Replica['store']): void {
@@ -1443,20 +1443,22 @@ export class App {
     if ((parsed.children?.length || parsed.peer !== undefined) && !this.groupedEdit) { this.together(() => this.rewriteRowAt(at, id, parsed, draft)); return }
     if (draft && draft.store !== this.state.replica.store) return
     let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
-    if (parsed.kind === 'allocation') {
+    if (parsed.extras?.allocation) {
       const resolved = this.allocationWithBank(at, parsed.extras?.allocation, undefined, parsed.extras?.user?.username)
       if (!resolved) return
       extras = { ...extras, allocation: resolved }
     }
     this.resolveUser(parsed.extras?.user)
     const before = this.rowAt([...at, id])
+    // a reference, or a supply, keeps its type and data: its text is all an edit changes
+    const renameOnly = !!before && parsed.type === before.type && (before.refId !== undefined || (!!before.supply && !before.allocation && !parsed.extras))
     const rebasing = !!draft && draft.head !== headCid(this.state.replica)
     if (rebasing) {
       let branch = createReplica(this.state.replica.meta.peerId)
       importNodes(branch.store, reachableNodes(draft.store, [draft.head]))
       commitRoot(branch.store, draft.head, this.now())
       for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(branch.store, id, name)
-      branch = parsed.kind === 'ref' || parsed.kind === 'supply' ? renameTask(branch, draft.parent, id, parsed.text, this.now()) : setRowContentAt(branch, draft.parent, id, parsed.kind, parsed.text, extras, this.now())
+      branch = renameOnly ? renameTask(branch, draft.parent, id, parsed.text, this.now()) : setRowContentAt(branch, draft.parent, id, parsed.type, parsed.text, extras, this.now())
       if (parsed.peer !== undefined || before?.construction?.handler) branch = this.peerRowReplica(branch, [...draft.parent, id], parsed.peer)
       if (parsed.children?.length) this.addParsedChildren([...at, id], parsed.children, branch)
       const current = this.state.replica
@@ -1466,14 +1468,14 @@ export class App {
       this.edit({ ...current })
       if (merged.newChoiceCids.length) { this.notify('info', 'This row changed in two places. Choose which version to keep.'); return }
     } else {
-      this.edit(parsed.kind === 'ref' || parsed.kind === 'supply' ? renameTask(this.state.replica, [...this.state.view, ...at], id, parsed.text, this.now()) : setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.kind, parsed.text, extras, this.now()))
+      this.edit(renameOnly ? renameTask(this.state.replica, [...this.state.view, ...at], id, parsed.text, this.now()) : setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.type, parsed.text, extras, this.now()))
     }
     if ((parsed.peer !== undefined || before?.construction?.handler) && !rebasing) this.setPeerRow([...this.state.view, ...at, id], parsed.peer)
     if (parsed.children?.length && !rebasing) this.addParsedChildren([...at, id], parsed.children)
-    if (parsed.templateName && parsed.kind === 'task' && before?.template?.name !== parsed.templateName) this.applyTemplate(at, id, parsed.templateName)
-    if (parsed.templateName && parsed.kind === 'requirement' && extras.requirement?.capability === 'task') {
+    if (parsed.templateName && parsed.type === TASK_TYPE && before?.template?.name !== parsed.templateName) this.applyTemplate(at, id, parsed.templateName)
+    if (parsed.templateName && extras.requirement?.capability === 'task') {
       const inside = view(this.state.replica, [...this.state.view, ...at, id])?.tasks ?? []
-      if (!inside.some((t) => t.kind === 'task' && t.template?.name === parsed.templateName)) this.addRowAt([...at, id], 'task', parsed.templateName, { templateName: parsed.templateName })
+      if (!inside.some((t) => t.checkable && t.template?.name === parsed.templateName)) this.addRowAt([...at, id], TASK_TYPE, parsed.templateName, { templateName: parsed.templateName })
     }
   }
   /**
@@ -1499,7 +1501,7 @@ export class App {
       const node = view(replica, path)
       if (!node) return
       for (const row of node.tasks) {
-        if (row.kind === 'resource' && row.resource) out.push({ row: row as TaskView & { resource: NonNullable<TaskView['resource']> }, path })
+        if (row.type === RESOURCE_TYPE && row.resource) out.push({ row: row as TaskView & { resource: NonNullable<TaskView['resource']> }, path })
         if (row.childCount) walk([...path, row.id])
       }
     }
@@ -1815,7 +1817,7 @@ export class App {
       const node = view(this.state.replica, path)
       if (!node) return
       for (const row of node.tasks) {
-        if (row.kind === 'ref' && row.refOwner && row.refId && !out.some((l) => l.owner === row.refOwner && l.aliasId === row.refId)) out.push({ owner: row.refOwner, aliasId: row.refId, title: row.title })
+        if (row.refId !== undefined && row.refOwner && row.refId && !out.some((l) => l.owner === row.refOwner && l.aliasId === row.refId)) out.push({ owner: row.refOwner, aliasId: row.refId, title: row.title })
         if (row.childCount) walk([...path, row.id])
       }
     }
@@ -1893,7 +1895,7 @@ export class App {
       const node = view(this.state.replica, [...this.state.view, ...at])
       if (!node) return
       for (const row of node.tasks) {
-        if (row.kind === 'requirement' && row.requirement?.capability === 'peer' && row.user?.username.toLowerCase() === name.toLowerCase()) out.push({ at, row, task: parent })
+        if (!!row.requirement && row.requirement?.capability === 'peer' && row.user?.username.toLowerCase() === name.toLowerCase()) out.push({ at, row, task: parent })
         if (row.childCount) walk([...at, row.id], row)
       }
     }
@@ -2174,13 +2176,13 @@ export class App {
     document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
     this.set({ templatePicker: { path: [...path] }, modal: 'template', contextMenu: null })
   }
-  changeTemplate(kind: RowKind, templateId?: string): void {
+  changeTemplate(type: string, templateId?: string, extras: Omit<RowExtras, 'store'> = {}): void {
     const path = this.state.templatePicker?.path
     if (!path?.length || path.at(-1) === HOME_ID) return
     this.together(() => {
       let r = this.state.replica
       if (templateId) r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, templateId, this.now())
-      else r = setRowKind(r, path.slice(0, -1), path.at(-1)!, kind, this.now())
+      else r = setRowType(r, path.slice(0, -1), path.at(-1)!, type, this.now(), extras)
       this.edit(r); this.closeModal()
     })
   }
@@ -2189,7 +2191,7 @@ export class App {
     if (!path?.length || path.at(-1) === HOME_ID) return
     const parent = inHome ? homePath(this.state.replica) : path.slice(0, -1), id = newId(), title = name.trim() || 'Untitled template'
     this.together(() => {
-      let r = addRow(this.state.replica, parent, 'template', title, this.now(), { id })
+      let r = addRow(this.state.replica, parent, TEMPLATE_TYPE, title, this.now(), { id })
       if (icon.trim()) r = writeNodeValue(r, [...parent, id], 'fos:icon', icon.trim(), this.now())
       r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, id, this.now())
       this.edit(r); this.closeModal(); this.goTo([...parent, id])
@@ -2203,7 +2205,7 @@ export class App {
     const path = libraryPath(this.state.replica, this.constructorContext())
     if (!path) return []
     return (view(this.state.replica, path)?.tasks ?? [])
-      .filter(row => row.kind === 'template' && row.id !== MANUAL_HANDLERS_ID && row.title.trim())
+      .filter(row => row.type === TEMPLATE_TYPE && row.id !== MANUAL_HANDLERS_ID && row.title.trim())
       .map(row => ({ id: row.id, label: row.title.trim(), path: [...path, row.id], icon: this.templateIcon([...path, row.id]) || 'template' }))
   }
   insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false): Scope {
@@ -2218,8 +2220,8 @@ export class App {
       for (const row of view(this.state.replica, at)?.tasks ?? []) queue.push([...at, row.id])
     }
     const current = replace && path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
-    const title = current && current.kind !== 'requirement' && current.kind !== 'home' ? current.title || template.label : template.label
-    return this.applyConstructor(path, { kind: 'task', text: title, done: false }, replace, undefined, undefined, id)
+    const title = current && !current.requirement && current.type !== HOME_TYPE ? current.title || template.label : template.label
+    return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, id)
   }
   /**
    * Link the shared standard library into Home, to propose changes and vote on them (the fos server is its peer).
@@ -2237,7 +2239,7 @@ export class App {
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   publishCurrentTemplate(market = false): void {
-    if (!this.canApprove() || this.currentRow()?.kind !== 'template') return
+    if (!this.canApprove() || this.currentRow()?.type !== TEMPLATE_TYPE) return
     if (market && (!this.state.session || !this.isOnline('fos'))) { this.notify('error', 'Connect to Fos before publishing to the marketplace.'); return }
     try { this.edit(publishTemplate(this.state.replica, this.state.view.slice(0, -1), this.state.view, this.currentRow()!.title, this.now(), market)); this.notify('info', market ? 'This template version is published to the Fos marketplace after sync.' : 'This template version is advertised by this device in its parent context.') }
     catch (error) { this.notify('error', String(error)) }
@@ -2268,7 +2270,7 @@ export class App {
     if (!source) throw new Error('Template is unbound.')
     this.together(() => {
       const id = newId()
-      let r = addRow(this.state.replica, path, 'task', offer.label, this.now(), { id })
+      let r = addRow(this.state.replica, path, TASK_TYPE, offer.label, this.now(), { id })
       r = instantiateTemplateValue(r, path, id, source, this.now())
       this.edit(r)
     })
@@ -2288,16 +2290,16 @@ export class App {
   addPullConstructor(path = this.constructorContext()): Scope {
     const peer = this.pullPeers()[0]
     if (!peer) throw new Error('Connect a document peer before adding Pull.')
-    return this.applyConstructor(path, { kind: 'requirement', text: `Pull from ${peer.name}`, done: false, extras: { requirement: { capability: 'tool', tool: 'fos.pull', peer: peer.id } } })
+    return this.applyConstructor(path, { type: ALLOCATION_TYPE, text: `Pull from ${peer.name}`, done: false, extras: { requirement: { capability: 'tool', tool: 'fos.pull', peer: peer.id } } })
   }
   /** Palette input uses the same row documents as typed input; no separate palette model. */
   applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string): Scope {
     if (!view(this.state.replica, path)) throw new Error('The destination no longer exists.')
     const template = templateId ? resolveRef(this.state.replica, templateId) : null
-    const templateCid = template?.row.kind === 'template' ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
+    const templateCid = template?.row.type === TEMPLATE_TYPE ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
     if (templateId && !templateCid) throw new Error('This template is unavailable.')
     const current = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
-    replace = replace && !!current && current.kind !== 'home' && current.kind !== 'requirement'
+    replace = replace && !!current && current.type !== HOME_TYPE && !current.requirement
     const parent = replace ? path.slice(0, -1) : path, id = replace ? path.at(-1)! : newId(), target = [...parent, id]
     if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Use owner/repository.')
     if (localDirectory) {
@@ -2308,13 +2310,13 @@ export class App {
     if (allocation?.resource && !this.banks().some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable or has a different resource type.')
     const parentCid = path.length && resolveScope(this.state.replica.store, headCid(this.state.replica), path.slice(0, -1))
     const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1))
-    const suppliedType = templateCid ? (argument && argument.type === templateCid ? templateCid : put(this.state.replica.store, { data: { name: { content: 'fos:type:task' } }, children: [] })) : localDirectory ? capabilityTarget(this.state.replica.store, 'repo') : parsed.peer !== undefined ? capabilityTarget(this.state.replica.store, 'peer') : parsed.kind === 'requirement' && parsed.extras?.requirement && CAPABILITIES.includes(parsed.extras.requirement.capability as Capability) ? capabilityTarget(this.state.replica.store, parsed.extras.requirement.capability as Capability) : parsed.kind === 'allocation' ? put(this.state.replica.store, { data: { name: { content: 'fos:type:allocation' } }, children: [] }) : repo ? capabilityTarget(this.state.replica.store, 'repo') : null
+    const suppliedType = templateCid ? (argument && argument.type === templateCid ? templateCid : put(this.state.replica.store, { data: { name: { content: 'fos:type:task' } }, children: [] })) : localDirectory ? capabilityTarget(this.state.replica.store, 'repo') : parsed.peer !== undefined ? capabilityTarget(this.state.replica.store, 'peer') : parsed.extras?.requirement && CAPABILITIES.includes(parsed.extras.requirement.capability as Capability) ? capabilityTarget(this.state.replica.store, parsed.extras.requirement.capability as Capability) : parsed.extras?.allocation ? put(this.state.replica.store, { data: { name: { content: 'fos:type:allocation' } }, children: [] }) : repo ? capabilityTarget(this.state.replica.store, 'repo') : null
     if (argument && argument.type !== suppliedType) throw new Error('Choose a constructor matching this input type.')
     if (repo && repositoryAt(this.state.replica, target) && repositoryAt(this.state.replica, target) !== repo) throw new Error('Edit the existing repository argument to change its repository.')
     this.together(() => {
       let r = this.state.replica
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
-      r = replace ? setRowContentAt(r, parent, id, parsed.kind, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.kind, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
+      r = replace ? setRowContentAt(r, parent, id, parsed.type, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.type, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
       this.resolveUser(parsed.extras?.user)
       if (templateCid) r = instantiateTemplateValue(r, parent, id, templateCid, this.now())
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
@@ -2335,11 +2337,12 @@ export class App {
     if (repo) { this.repositoryPollAt = 0; void this.refreshRepositories() }
     return target
   }
-  changeCurrentKind(kind: RowKind): void {
+  changeCurrentType(type: string): void {
     const path = this.state.view
-    if (path.length && path.at(-1) !== 'fos:home') this.edit(setRowKind(this.state.replica, path.slice(0, -1), path.at(-1)!, kind, this.now()))
+    if (path.length && path.at(-1) !== 'fos:home') this.edit(setRowType(this.state.replica, path.slice(0, -1), path.at(-1)!, type, this.now()))
   }
-  searchLocalNodes(query: string, kind?: RowKind): Array<{ row: TaskView; path: Scope }> {
+  /** Rows whose title matches `query` (of the row type `type`, when given). */
+  searchLocalNodes(query: string, type?: string): Array<{ row: TaskView; path: Scope }> {
     const found: Array<{ row: TaskView; path: Scope }> = [], visited = new Set<string>()
     const walk = (path: Scope) => {
       if (path.length > 64 || visited.size > 5000) return
@@ -2347,7 +2350,7 @@ export class App {
         if (visited.has(row.id)) continue
         visited.add(row.id)
         const full = [...path, row.id]
-        if ((!kind || row.kind === kind) && row.title.toLowerCase().includes(query.toLowerCase()) && row.kind !== 'ref' && !this.state.view.includes(row.id)) found.push({ row, path: full })
+        if ((!type || row.type === type) && row.title.toLowerCase().includes(query.toLowerCase()) && row.refId === undefined && !this.state.view.includes(row.id)) found.push({ row, path: full })
         if (row.childCount) walk(full)
       }
     }
@@ -2359,9 +2362,9 @@ export class App {
     const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
     if (!req) return true
     const requirement = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1)) : undefined
-    if (req.capability === 'allocation') return target.kind === 'allocation' && allocationMatches(req, target.allocation, { required: requirement?.user ?? null, given: target.user })
-    if (req.capability === 'task') return target.kind === 'task' && target.done
-    if (req.capability === 'search') return target.kind === 'query' && !!target.query?.executedAt
+    if (req.capability === 'allocation') return !!target.allocation && allocationMatches(req, target.allocation, { required: requirement?.user ?? null, given: target.user })
+    if (req.capability === 'task') return target.checkable && target.done
+    if (req.capability === 'search') return target.type === QUERY_TYPE && !!target.query?.executedAt
     return false
   }
   linkNode(id: string, destination = this.state.view): void {
@@ -2404,13 +2407,13 @@ export class App {
     for (const result of report.results.filter(item => item.status !== 'pass')) {
       const id = newId(); r = addTask(r, root, `${result.status === 'fail' ? 'Issue' : 'Blocked verification'}: ${current.find(spec => spec.id === result.id)!.text.split('\n')[0]}`, this.now(), id)
       r = writeNodeValue(r, [...root, id], 'fos:verification-issue', { commit: report.commit, specification: result.id, evidence: result.evidence }, this.now())
-      r = addRow(r, [...root,id], 'note', result.evidence, this.now())
+      r = addRow(r, [...root,id], NOTE_TYPE, result.evidence, this.now())
     }
     this.edit(r)
   }
   async startExecution(path: Scope): Promise<void> {
     const row = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
-    if (row?.kind === 'template') {
+    if (row?.type === TEMPLATE_TYPE) {
       const id = newId(), parent = path.slice(0, -1)
       let r = addTask(this.state.replica, parent, row.title, this.now(), id)
       r = instantiateTemplate(r, parent, id, row.id, this.now())
@@ -2498,8 +2501,8 @@ export class App {
     // a poll resolves its choice on the server (the fos poll handler tallies the responses)
     if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
     if (r.capability === 'allocation' && r.resource === 'points') return true
-    // money goes through the server's payment provider when the fos peer offers payments in this context
-    if (r.capability === 'allocation' && r.resource === 'account') return capabilityPeers(this.state.replica, step.path, 'send-payment').includes('fos')
+    // a request for money (a money row) goes through the server's payment provider when the fos peer offers payments in this context
+    if (step.row?.type === MONEY_TYPE) return capabilityPeers(this.state.replica, step.path, 'send-payment').includes('fos')
     return r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined && capabilityPeers(this.state.replica, step.path, 'calendar').some(p => p.startsWith('integration:'))
   }
   async evaluateAt(path: Scope, triggered = false): Promise<void> {
@@ -2615,8 +2618,8 @@ export class App {
       }
       const trigger = { kind, peer, enabled, created: this.now(), ...(kind === 'timer' ? { due: Date.parse(value ?? '') } : {}), ...(kind === 'cron' ? { expression: value ?? '' } : {}) }
       let path = [...destination]
-      if (newTemplate && view(r, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.kind !== 'template') {
-        const id = newId(); r = addRow(r, destination, 'template', `${kind} workflow`, this.now(), { id }); path = [...destination, id]
+      if (newTemplate && view(r, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.type !== TEMPLATE_TYPE) {
+        const id = newId(); r = addRow(r, destination, TEMPLATE_TYPE, `${kind} workflow`, this.now(), { id }); path = [...destination, id]
       }
       r = setNodeTrigger(r, path, trigger, this.now())
       if (arg) {
@@ -2745,7 +2748,7 @@ export class App {
     const candidate = arg.candidates.find(c => c.cid === sourceId || content(store, c.cid).data.alias?.id === sourceId)
     if (candidate) { this.bindPlaceholder(id, candidate.cid, at); return }
     const source = resolveRef(this.state.replica, sourceId)
-    if (arg.type === 'text' && source && ['plain', 'note', 'comment'].includes(source.row.kind)) {
+    if (arg.type === 'text' && source && [PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE].includes(source.row.type)) {
       const cid = resolveScope(store, headCid(this.state.replica), [...source.path, source.row.id])
       if (cid) {
         this.setArgumentValue(at, id, cid)
@@ -2834,7 +2837,7 @@ export class App {
     try {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
       const poll = r.capability === 'choice' && !!readNodeValue(this.state.replica, [...this.state.view, ...at, req.id], 'fos:poll')
-      const payment = r.capability === 'allocation' && r.resource === 'account' && capabilityPeers(this.state.replica, [...this.state.view, ...at, req.id], 'send-payment').includes('fos')
+      const payment = req.type === MONEY_TYPE && capabilityPeers(this.state.replica, [...this.state.view, ...at, req.id], 'send-payment').includes('fos')
       if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize' || poll || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
         if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
@@ -2855,7 +2858,7 @@ export class App {
       const node = view(this.state.replica, path)
       if (!node) return
       for (const row of node.tasks) {
-        if (row.kind === 'allocation') out.push({ row, path })
+        if (row.allocation && !row.requirement) out.push({ row, path })
         if (row.childCount) walk([...path, row.id])
       }
     }
@@ -2874,7 +2877,8 @@ export class App {
    * A manual fallback from the standard library on an unsatisfied requirement: the person records that they did it
    * by hand. Allocations get a receipt row inside the requirement (its resource is the requirement itself) plus the
    * supply that points at it; a place comes from `input` or, for the device handler, from this device's position;
-   * every other kind is a supply by the person. Works offline, with no peer.
+   * every other requirement gets a supply by the person; a request for money gets a payment (a positive money row).
+   * Works offline, with no peer.
    */
   async applyManualHandler(at: Scope, requirement: TaskView, handler: ManualHandler, input?: string, absolute = false): Promise<void> {
     const req = requirement.requirement
@@ -2902,8 +2906,9 @@ export class App {
       by, ...(req.start !== undefined ? { start: req.start } : {}), ...(req.end !== undefined ? { end: req.end } : {}), ...(location ? { location } : {})
     }
     // a requirement naming a user is filled for that same user object
-    let next = addRow(this.state.replica, [...parent, requirement.id], 'allocation', label, this.now(), { id, allocation, ...(requirement.user ? { user: requirement.user } : {}) })
-    next = addSupply(next, parent, requirement.id, { capability: 'allocation', by, ref: id }, this.now())
+    const money = requirement.type === MONEY_TYPE
+    let next = addRow(this.state.replica, [...parent, requirement.id], money ? MONEY_TYPE : ALLOCATION_TYPE, label, this.now(), { id, allocation, ...(requirement.user ? { user: requirement.user } : {}) })
+    if (!money) next = addSupply(next, parent, requirement.id, { capability: 'allocation', by, ref: id }, this.now())
     this.edit(next)
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirement.id) })
   }
@@ -2919,8 +2924,8 @@ export class App {
   /** A `-?` requirement at `at` holding the query (its text and `market` option), run by the account server. */
   async searchAt(at: Scope, text: string, market: boolean, replacing?: string): Promise<void> {
     if (!text.trim()) return
-    const id = this.addRowAt(at, 'requirement', text, { extras: { requirement: { capability: 'search' } }, ...(replacing ? { position: { relativeTo: replacing, position: 'below' as const } } : {}) })
-    this.addRowAt([...at, id], 'query', text, { extras: { query: market ? { market } : {} } })
+    const id = this.addRowAt(at, ALLOCATION_TYPE, text, { extras: { requirement: { capability: 'search' } }, ...(replacing ? { position: { relativeTo: replacing, position: 'below' as const } } : {}) })
+    this.addRowAt([...at, id], QUERY_TYPE, text, { extras: { query: market ? { market } : {} } })
     if (replacing) this.edit(deleteTask(this.state.replica, [...this.state.view, ...at], replacing, this.now()))
     const req = view(this.state.replica, [...this.state.view, ...at])?.tasks.find(t => t.id === id)
     if (req) await this.askPeerAt(at, req)
@@ -2947,13 +2952,13 @@ export class App {
     // banks) and each supply goes under the requirement it fills, referencing its copy
     const me = session.username, t = this.now(), under = new Map<string, string>()
     const bid = draftBid(this.state.replica, [], t, draft => {
-      if (comment.trim()) draft = addRow(draft, [], 'comment', comment.trim(), t, { author: { id: `user:${me}`, name: me } })
+      if (comment.trim()) draft = addRow(draft, [], COMMENT_TYPE, comment.trim(), t, { author: { id: `user:${me}`, name: me } })
       for (const s of supplies) {
         const found = this.allocations().find(({ row }) => row.id === s.allocationId)
         if (!found?.row.allocation) continue
         const copyId = `${s.allocationId}-${me}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64), supplyId = `${copyId}-supply`
-        draft = addRow(draft, [], 'allocation', found.row.title, t, { id: copyId, allocation: { ...found.row.allocation, by: me } })
-        draft = addRow(draft, [], 'supply', '', t, { id: supplyId, supply: { capability: 'allocation', by: me, at: t, ref: copyId } })
+        draft = addRow(draft, [], ALLOCATION_TYPE, found.row.title, t, { id: copyId, allocation: { ...found.row.allocation, by: me } })
+        draft = addRow(draft, [], ALLOCATION_TYPE, '', t, { id: supplyId, supply: { capability: 'allocation', by: me, at: t, ref: copyId } })
         under.set(supplyId, s.requirementId)
       }
       return draft
@@ -2976,33 +2981,33 @@ export class App {
   }
   /** Workflowy-style Enter: a blank plain row right after `id` (same parent), selected for typing. */
   addRowBelow(at: Scope, id: string): void {
-    const created = this.addRowAt(at, 'plain', '', { position: { relativeTo: id, position: 'below' } })
+    const created = this.addRowAt(at, PLAIN_TYPE, '', { position: { relativeTo: id, position: 'below' } })
     this.set({ selected: [...at, created] })
   }
   /**
    * Ctrl+Shift+Enter: a blank row inside `id` (plain, or a comment from the menu), selected for typing. `seed` starts
    * the row's text with a marker ("-", "$ ", "@money ") so the menu can open a requirement, allocation or bank row.
    */
-  addRowInside(at: Scope, id: string, kind: 'plain' | 'comment' = 'plain', seed = ''): void {
-    const created = this.addRowAt([...at, id], kind, kind === 'comment' ? ' ' : seed)
+  addRowInside(at: Scope, id: string, type: string = PLAIN_TYPE, seed = ''): void {
+    const created = this.addRowAt([...at, id], type, type === COMMENT_TYPE ? ' ' : seed)
     this.set({ selected: [...at, id, created], collapsed: this.state.collapsed.filter((c) => c !== id) })
   }
   /** A row below `id` whose text starts with `seed` (a marker), selected for typing. */
   addRowBelowWith(at: Scope, id: string, seed: string): void {
-    const created = this.addRowAt(at, 'plain', seed, { position: { relativeTo: id, position: 'below' } })
+    const created = this.addRowAt(at, PLAIN_TYPE, seed, { position: { relativeTo: id, position: 'below' } })
     this.set({ selected: [...at, created] })
   }
-  /** The blank row at the top of the view was typed into: a row of the parsed kind becomes the first row here. */
+  /** The blank row at the top of the view was typed into: a row of the parsed type becomes the first row here. */
   private addParsedChildren(at: Scope, children: import('./rows').ParsedInput[], replica?: Replica, preserveUnbound = false): void {
     for (const child of children) {
-      const id = this.addRowAt(at, child.kind, child.text, { done: child.done, extras: child.extras, templateName: child.templateName, replica, preserveUnbound })
+      const id = this.addRowAt(at, child.type, child.text, { done: child.done, extras: child.extras, templateName: child.templateName, replica, preserveUnbound })
       if (child.peer !== undefined) { if (replica) this.peerRowReplica(replica, [...this.state.view, ...at, id], child.peer); else this.setPeerRow([...this.state.view, ...at, id], child.peer) }
       if (view(replica ?? this.state.replica, [...this.state.view, ...at])?.tasks.some(row => row.id === id) && child.children?.length) this.addParsedChildren([...at, id], child.children, replica, preserveUnbound)
     }
   }
   addRowAtTop(parsed: import('./rows').ParsedInput): string | null {
     if ((parsed.children?.length || parsed.peer !== undefined) && !this.groupedEdit) return this.together(() => this.addRowAtTop(parsed))
-    const created = this.addRowAt([], parsed.kind, parsed.text, { done: parsed.done, extras: parsed.extras, templateName: parsed.templateName })
+    const created = this.addRowAt([], parsed.type, parsed.text, { done: parsed.done, extras: parsed.extras, templateName: parsed.templateName })
     if (parsed.peer !== undefined) this.setPeerRow([...this.state.view, created], parsed.peer)
     if (this.currentView()?.tasks.some((t) => t.id === created) && parsed.children?.length) this.addParsedChildren([created], parsed.children)
     return this.currentView()?.tasks.some((t) => t.id === created) ? created : null
@@ -3010,8 +3015,8 @@ export class App {
   setDoneAt(at: Scope, id: string, done: boolean): void {
     this.edit(setTaskDone(this.state.replica, [...this.state.view, ...at], id, done, this.now()))
   }
-  setRowKindAt(at: Scope, id: string, kind: RowKind): void {
-    this.edit(setRowKind(this.state.replica, [...this.state.view, ...at], id, kind, this.now()))
+  setRowTypeAt(at: Scope, id: string, type: string): void {
+    this.edit(setRowType(this.state.replica, [...this.state.view, ...at], id, type, this.now()))
   }
   /** Alt+drag: a reference to `targetId` placed at `position` under `toAt`. */
   addRefAt(toAt: Scope, targetId: string, position?: MovePosition): void {
@@ -3160,7 +3165,7 @@ export class App {
     const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read file.')); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(file) })
     if (this.state.replica.store !== store || !view(this.state.replica, at)) return
     const id = newId()
-    let r = addRow(this.state.replica, at, 'plain', file.name, this.now(), { id })
+    let r = addRow(this.state.replica, at, PLAIN_TYPE, file.name, this.now(), { id })
     r = writeNodeValue(r, [...at, id], 'fos:attachment', { name: file.name, type: file.type, data, size: file.size }, this.now())
     this.edit(r)
   }
@@ -3178,13 +3183,13 @@ export class App {
     if (!view(this.state.replica, at)) throw new Error('The recording location was removed. Voice note could not be added.')
     const stamp = new Date(this.now()).toLocaleString()
     const parentId = crypto.randomUUID()
-    let replica = addRow(this.state.replica, at, 'note', `# ${note.title || 'Voice note'}\n\n_${stamp}_\n\n${note.summary}`, this.now(), { id: parentId })
+    let replica = addRow(this.state.replica, at, NOTE_TYPE, `# ${note.title || 'Voice note'}\n\n_${stamp}_\n\n${note.summary}`, this.now(), { id: parentId })
     for (const cluster of note.clusters) {
       const clusterId = crypto.randomUUID()
-      replica = addRow(replica, [...at, parentId], 'note', `## ${cluster.title}\n\n**${cluster.sentiment}** — ${cluster.summary}`, this.now(), { id: clusterId })
-      for (const point of cluster.points) replica = addRow(replica, [...at, parentId, clusterId], 'plain', point, this.now())
+      replica = addRow(replica, [...at, parentId], NOTE_TYPE, `## ${cluster.title}\n\n**${cluster.sentiment}** — ${cluster.summary}`, this.now(), { id: clusterId })
+      for (const point of cluster.points) replica = addRow(replica, [...at, parentId, clusterId], PLAIN_TYPE, point, this.now())
     }
-    replica = addRow(replica, [...at, parentId], 'note', `## ${sourceLabel}\n\n${note.transcript}`, this.now())
+    replica = addRow(replica, [...at, parentId], NOTE_TYPE, `## ${sourceLabel}\n\n${note.transcript}`, this.now())
     this.edit(replica)
   }
 
@@ -3238,8 +3243,8 @@ export class App {
   deleteTaskAt(at: Scope, taskId: string): void {
     this.edit(deleteTask(this.state.replica, [...this.state.view, ...at], taskId, this.now()))
   }
-  /** A blank/plain row typed with a data prefix (`-` requirement, `?` query, `@calendar` bank, `$ 50` allocation, `` ` `` template) becomes a row of that kind in its place. */
-  convertPlainRowAt(at: Scope, id: string, parsed: { kind: RowKind; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): void {
+  /** A blank/plain row typed with a data prefix (`-` requirement, `?` query, `@calendar` bank, `$ 50` allocation, `` ` `` template) becomes a row of that type in its place. */
+  convertPlainRowAt(at: Scope, id: string, parsed: { type: string; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): void {
     this.rewriteRowAt(at, id, parsed)
   }
   resolveChoiceAt(at: Scope, choiceId: string, pick: number | null): void {
@@ -3639,7 +3644,7 @@ export class App {
     this.together(() => {
       const append = (parent: Scope, rows: import('./rows').ParsedInput[]) => {
         for (const row of rows) {
-          const id = newId(); this.edit(addRow(this.state.replica, parent, row.kind, row.text, this.now(), { id, done: row.done, ...row.extras }))
+          const id = newId(); this.edit(addRow(this.state.replica, parent, row.type, row.text, this.now(), { id, done: row.done, ...row.extras }))
           if (row.peer !== undefined) this.setPeerRow([...parent, id], row.peer)
           if (row.children) append([...parent, id], row.children)
         }
@@ -3652,7 +3657,7 @@ export class App {
     importNodes(r.store, parsed.nodes)
     const imported = content(r.store, parsed.root), id = newId()
     const node = put(r.store, { ...imported, data: { ...imported.data, alias: { id } } })
-    commitRoot(r.store, updateAtScope(r.store, headCid(r), destination, value => ({ ...value, children: [...value.children, rowEdgeAt(r.store, 'plain', node, destination)] })), this.now())
+    commitRoot(r.store, updateAtScope(r.store, headCid(r), destination, value => ({ ...value, children: [...value.children, rowEdgeAt(r.store, PLAIN_TYPE, node, destination)] })), this.now())
     this.edit({ ...r })
   }
   setDeviceName(name: string): void {

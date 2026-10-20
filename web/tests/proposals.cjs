@@ -17,7 +17,7 @@ async function main() {
   r = addTask(r, ['project'], 'Main child', 2, 'main-child')
   const s = r.store, cid = resolveScope(s, headCid(r), ['project']), base = putStripped(s, content(s, cid))
   const leaf = put(s, { data: { alias: { id: 'other-child' }, description: { content: 'Peer child' } }, children: [] })
-  const branch = put(s, { data: { description: { content: 'Peer project' } }, children: [rowEdgeAt(s, 'plain', leaf, [])] })
+  const branch = put(s, { data: { description: { content: 'Peer project' } }, children: [rowEdgeAt(s, 'lib:type:plain', leaf, [])] })
   const proposal = put(s, proposalContent(s, 'other-peer', 'Other proposal', branch, base, 3))
   commitRoot(s, updateAtScope(s, headCid(r), ['project'], node => withProposal(s, makeLink(s, node, 3), 'other-peer', proposal, 'Other proposal'), 'node'), 4)
   a.set({ replica: { ...r } }); a.goTo(['project'])
