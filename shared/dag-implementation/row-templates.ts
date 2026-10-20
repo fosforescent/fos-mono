@@ -19,7 +19,8 @@
  * root (`document-root`: the root of a project, a document or a draft).
  *
  * Never edit it: migrated content must hash the same on every peer. (The seed v3 pinned to, before types had
- * patterns, lives in migration-v3.ts.)
+ * patterns, lives in migration-v3.ts.) Migration v5 gives these types their graph identity (`lib:type:<kind>`) and
+ * drops the markers, which makes all but Note and Comment exactly the library's types.
  */
 
 import type { FosNodeContent, FosPathElem } from '../types'

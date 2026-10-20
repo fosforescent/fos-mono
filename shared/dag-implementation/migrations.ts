@@ -20,6 +20,7 @@ import type { FosContextData, FosNodeContent, FosNodesData, FosPath, FosPathElem
 import { CURRENT_CID_VERSION, cidVersion, hashContentAt, type CidVersion } from './cid'
 import { planTemplateInstructionRows } from './migration-v3'
 import { planTypePatterns } from './migration-v4'
+import { planLibraryIdentities } from './migration-v5'
 
 /** The store a context is loaded into: its primitives already exist there in the current format. */
 export type MigrationEnvironment = {
@@ -34,6 +35,11 @@ export type MigrationTools = {
   pending(cid: string): boolean
   /** A node emitted earlier in this run (already in the target format). */
   read(cid: string): FosNodeContent | undefined
+  /**
+   * Add a node whose edges may still point at input cids (or emitted nodes): it is migrated like an input node that is
+   * already in the target format (its edges are remapped, no step upgrades it again). Returns the cid to put in an edge.
+   */
+  derive(content: FosNodeContent): string
 }
 
 /** A node upgrade with the whole input graph in view; returned edges may point at input cids or emitted nodes. */
@@ -71,6 +77,12 @@ export const MIGRATIONS: Migration[] = [
     to: 4,
     description: 'Types say which rows they accept (pattern edges; the seed’s ordinary types: anything but Home and the store roots), Home is made from the Home type, and every store root is typed (device root or document root) by its root alias’s instruction.',
     plan: planTypePatterns
+  },
+  {
+    from: 4,
+    to: 5,
+    description: 'Row types are told apart by graph identity alone: the legacy markers (instanceKind, behavior builtin:*) become a type’s lib:type:… alias or are dropped from template rows, money allocations are pinned to the Money type, and note and comment rows of the seed types become values of the library’s graph constructors.',
+    plan: planLibraryIdentities
   }
 ]
 
@@ -122,6 +134,7 @@ export function migrateContext(context: FosContextData, target: CidVersion = CUR
   const fromVersions = new Set<CidVersion>()
   const inProgress = new Set<string>()
   const emitted = new Set<string>()
+  const derived = new Map<string, FosNodeContent>()
   const tools: MigrationTools = {
     emit(content) {
       const cid = hashContentAt(content, target)
@@ -130,7 +143,12 @@ export function migrateContext(context: FosContextData, target: CidVersion = CUR
       return cid
     },
     pending: (cid) => inProgress.has(cid),
-    read: (cid) => (emitted.has(cid) ? output[cid] : undefined)
+    read: (cid) => (emitted.has(cid) ? output[cid] : undefined),
+    derive(content) {
+      const cid = hashContentAt(content, target)
+      if (!input[cid]) derived.set(cid, content)
+      return cid
+    }
   }
   const plans = new Map<Migration, NodeUpgrade>()
   const planned = (step: Migration): NodeUpgrade => {
@@ -147,7 +165,7 @@ export function migrateContext(context: FosContextData, target: CidVersion = CUR
     const done = mapping[cid]
     if (done !== undefined) return done
     if (emitted.has(cid)) return cid
-    const content = input[cid]
+    const content = input[cid] ?? derived.get(cid)
     if (!content) throw new MigrationError(`node ${cid} referenced but not present in the context`, cid)
     if (inProgress.has(cid)) throw new MigrationError(`cycle through node ${cid}`, cid)
     inProgress.add(cid)
@@ -155,10 +173,12 @@ export function migrateContext(context: FosContextData, target: CidVersion = CUR
     const version = cidVersion(cid)
     if (version === null) throw new MigrationError(`node ${cid} is not a recognised cid`, cid)
     if (version > target) throw new MigrationError(`node ${cid} is newer (v${version}) than the target format v${target}`, cid)
-    fromVersions.add(version)
+    // a derived node is in the target format already, its edges aside
+    const steps = input[cid] ? stepsBetween(version, target) : []
+    if (input[cid]) fromVersions.add(version)
 
     let upgraded: FosNodeContent = content
-    for (const step of stepsBetween(version, target)) {
+    for (const step of steps) {
       if (step.upgrade) upgraded = step.upgrade(upgraded)
       if (step.plan) upgraded = planned(step)(upgraded, cid)
     }

@@ -108,10 +108,15 @@ export const CID_FORMATS: Record<CidVersion, CidFormat> = {
     version: 4,
     description: 'Same digest as v2. Schema: types carry pattern edges (what rows they accept), Home and store roots are types (see migrations.ts).',
     digest: sha3OrderedDigest
+  },
+  5: {
+    version: 5,
+    description: 'Same digest as v2. Schema: a row type is told apart by its graph identity (lib:type:… alias) alone, with no instanceKind or builtin behavior (see migrations.ts).',
+    digest: sha3OrderedDigest
   }
 }
 
-export const CURRENT_CID_VERSION: CidVersion = 4
+export const CURRENT_CID_VERSION: CidVersion = 5
 
 // --- parsing / formatting ----------------------------------------------------
 

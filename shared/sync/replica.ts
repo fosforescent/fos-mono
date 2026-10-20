@@ -190,10 +190,10 @@ export function loadReplica(input: unknown): Replica {
   }
 }
 
-/** A context stored in an older cid format was migrated by the store: the template cids node sync recorded follow along. */
+/** A context stored in an older cid format was migrated by the store: the template (and pinned grant) cids node sync recorded follow along. */
 function remapNodeSync(store: FosStore, records: NonNullable<ReplicaMeta['nodeSync']>): NonNullable<ReplicaMeta['nodeSync']> {
   if (!store.migration) return records
-  const shape = <T extends { children?: Array<{ template: string }> }>(value: T): T => Array.isArray(value?.children) ? { ...value, children: value.children.map(child => ({ ...child, template: store.remapCid(child.template) })) } : value
+  const shape = <T extends { children?: Array<{ template: string; pinned?: string }> }>(value: T): T => Array.isArray(value?.children) ? { ...value, children: value.children.map(child => ({ ...child, template: store.remapCid(child.template), ...(typeof child.pinned === 'string' ? { pinned: store.remapCid(child.pinned) } : {}) })) } : value
   return Object.fromEntries(Object.entries(records).map(([key, state]) => [key, { ...state, local: shape(state.local), remote: shape(state.remote) }]))
 }
 

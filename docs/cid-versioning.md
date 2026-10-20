@@ -22,7 +22,9 @@ v<N>-<digest>        current formats, e.g. v1-3f9a…   (N selects the algorithm
 | 0       | sha3-256 of `{data: canonical JSON, children: sorted edges}` | read-only; never produced |
 | 1       | same digest, prefixed `v1-`                               | superseded |
 | 2       | edges hashed in order and direction                       | superseded |
-| 3       | same digest as v2; schema: rows are `[template, rowNode]` | current |
+| 3       | same digest as v2; schema: rows are `[template, rowNode]` | superseded |
+| 4       | same digest as v2; schema: types carry pattern rows, Home and store roots are typed | superseded |
+| 5       | same digest as v2; schema: a row type is its graph identity alone | current |
 
 `CID_FORMATS` in `cid.ts` is the registry. `hashContent` always writes the
 current format; `verifyCid(cid, content)` checks a cid with the algorithm of
@@ -87,6 +89,47 @@ and every root alias is typed (a device root when it holds the library or Home,
 else a document root). Steps of one run see each other's emitted nodes through
 `MigrationTools.read`: v3's emitted seed types are upgraded by v4 where edges
 point at them.
+
+v5 changes the schema only (`migration-v5.ts`): a row is `[type, row]` and its type
+is told apart by the type node's alias (`lib:type:…`) alone, so the markers v4
+types and templates carried go. Per node, bottom-up like every step:
+
+* a node with `instanceKind` or `behavior: builtin:<kind>` and no alias (the
+  v3/v4 seed types, alias-less library versions) gets the alias
+  `lib:type:<kind>` and loses the markers; the v4 seed thus becomes the
+  library's types exactly. An unknown kind becomes a version of
+  `lib:type:plain` (its own data and rows kept), `requirement`/`supply`
+  become `lib:type:allocation`;
+* library types with an alias and a `builtin:` behavior lose the behavior
+  (again the library's types exactly); template rows, Home and other nodes
+  with an identity of their own lose `instanceKind`/`builtin:` behavior and
+  keep their alias, so tasks made from a template stay its instances;
+  reference-error stand-ins keep only the cid they wait for;
+* the seed's Note and Comment types, which had no constructor, are replaced by
+  the library's graph-defined ones, and rows pinned to them are rebuilt as
+  values of those constructors (as `constructRowValue` does on edit): the
+  Markdown body in `body`, a comment's author in `person`, its votes and
+  scope as `legacy` metadata, the row's other data, children and bound
+  `{name}` parameters kept;
+* money (allocation rows of the `account` resource, `-$ 50` / `$ 20`) is
+  re-pinned to `lib:type:allocation:money`, which `flowOf` reads by sign
+  (negative = a request, positive = a payment); the separate supply the old
+  payment settlement wrote beside a payment is dropped, since the payment now
+  fills its request alone. Other resources stay `lib:type:allocation`.
+
+The same applies inside pointers (a choice's alternative, a branch, a merge
+base: `[IP, type]`, `[TP, row]`) and history. The step builds rows from frozen
+copies of the library's Note, Comment and Money types
+(`migration-v5-types.json`) and its own copy of the constructor logic, never
+from the build's library or the live helpers, so every peer and build migrates
+the same v4 graph to the same cids. A rebuilt row's edges still point at input
+nodes, so the step adds it with `MigrationTools.derive` (migrated like an input
+node already in the target format). Stored node sync records follow the mapping
+for their templates and pinned grants. A peer still on v4 is refused by node
+exchange ("update the app", `validateNodeShape`) until it updates; its own
+store migrates on its next load, to the same cids. `migration-v5.test.ts`
+replays a device replica written by the release and main builds
+(`fixtures/v4-replica.json`).
 
 v2 did exactly this: v0/v1 sorted the two cids *within* each edge and the
 edges themselves, so `[a, b]` and `[b, a]` hashed the same and child order was

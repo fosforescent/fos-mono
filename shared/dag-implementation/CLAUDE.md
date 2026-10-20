@@ -98,7 +98,7 @@ Add methods:
 - **Tree Traversal**: Parent/child navigation methods
 
 #### Content Addressing
-- **Versioned cids**: `cid.ts` writes `v<N>-<digest>` and verifies legacy bare-hex (v0) rows with their own algorithm; `migrations.ts` holds the ordered format migrations and `migrateContext` rehashes a graph bottom-up. `FosStore` migrates older contexts on load (`store.migration`, `store.remapCid`). See `docs/cid-versioning.md` for how to add a format version.
+- **Versioned cids**: `cid.ts` writes `v<N>-<digest>` and verifies legacy bare-hex (v0) rows with their own algorithm; `migrations.ts` holds the ordered format migrations and `migrateContext` rehashes a graph bottom-up. `FosStore` migrates older contexts on load (`store.migration`, `store.remapCid`). See `docs/cid-versioning.md` for how to add a format version. Schema steps that need the whole graph are `plan`s (`migration-v3.ts`, `migration-v4.ts`, `migration-v5.ts`); v5 turns the retired row-type markers (`instanceKind`, `behavior: builtin:*`) into graph identities and pins to the frozen `migration-v5-types.json`; `migration-v5.test.ts` replays a real-shaped v4 replica (`fixtures/v4-replica.json`).
 - **Deterministic Hashing**: Identical content produces identical CIDs
 - **Integrity Verification**: Content tampering detection
 - **Deduplication**: Automatic elimination of duplicate nodes

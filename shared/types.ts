@@ -171,11 +171,11 @@ export type FosDataContent = {
   disabledCapabilities?: {
     content: string[]
   },
-  /** Historical serialized data only (cid migrations v3/v4 read it). A row's type is its edge's left node. */
+  /** Historical serialized data only (cid migrations v3–v5 read it; v5 removes it). A row's type is its edge's left node. */
   instanceKind?: {
     kind: string
   },
-  /** Historical serialized data only (the frozen seeds of cid migrations v3/v4). Types are told apart by graph identity. */
+  /** Historical serialized data only (the frozen seeds of cid migrations v3/v4; v5 removes `builtin:` ones). Types are told apart by graph identity. */
   behavior?: {
     content: string
   },

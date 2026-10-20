@@ -6,14 +6,14 @@ import type { FosContextData, FosNodeContent, FosNodesData, FosPathElem } from '
 import { addTask, createReplica, headCid, loadReplica, serializeReplica, view } from '../sync/replica'
 import { content, viewNode } from '../sync/graph'
 import { nodeShape, nodeSyncKey } from '../sync/node-sync'
-import { seedRowTypeContent, type RowTypeKind } from './row-templates'
-import { put, readMembers, resolveScope, rowTypeAt } from '../sync/graph'
+import { type RowTypeKind } from './row-templates'
+import { libraryTypeAt, readMembers, resolveScope, rowTypeAt, typeIdOf } from '../sync/graph'
 import { HOME_TYPE, TASK_TYPE } from '../sync/library-types'
 import { rootTypeOf } from '../sync/patterns'
 import { v3SeedRowTypeContent } from './migration-v3'
 
-/** The seed version of a row type (as cid migration v4 pins rows to it), in `store`. */
-const seed = (store: FosStore, kind: RowTypeKind) => put(store, seedRowTypeContent(kind, (c) => put(store, c)))
+/** The build's version of a library row type, in `store`: what migrations v3–v5 pin rows of the seed's types to. */
+const lib = (store: FosStore, kind: RowTypeKind) => libraryTypeAt(store, `lib:type:${kind}`)!
 
 const leaf: FosNodeContent = { data: { description: { content: 'leaf' } }, children: [] }
 
@@ -52,11 +52,11 @@ function downgradeToLegacyAt(context: FosContextData, version: number): { contex
 describe('versioned content ids', () => {
   it('produces prefixed cids in the current format and parses them back', () => {
     const cid = hashContent(leaf)
-    expect(cid).toMatch(/^v4-[0-9a-f]{64}$/)
+    expect(cid).toMatch(/^v5-[0-9a-f]{64}$/)
     expect(parseCid(cid)).toEqual({ version: CURRENT_CID_VERSION, digest: cid.slice(3) })
     expect(isCurrentCid(cid)).toBe(true)
     expect(formatCid(1, 'ab')).toBe('v1-ab')
-    expect(shortCid(cid)).toBe(`v4-${cid.slice(3, 11)}`)
+    expect(shortCid(cid)).toBe(`v5-${cid.slice(3, 11)}`)
   })
 
   it('recognises legacy bare-hex cids as version 0 and verifies them with the v0 algorithm', () => {
@@ -140,7 +140,7 @@ describe('migrations', () => {
     expect(() => migrateContext({ nodes: { [parentCid]: parent }, route: [], rootNodeId: parentCid }, undefined, environment())).toThrow(MigrationError)
     const future = `v2-${'0'.repeat(64)}`
     expect(() => migrateContext({ nodes: { [future]: leaf }, route: [], rootNodeId: future }, 1)).toThrow(/not a recognised|newer/)
-    expect(parseCid(`v5-${'0'.repeat(64)}`)).toBeNull()
+    expect(parseCid(`v6-${'0'.repeat(64)}`)).toBeNull()
   })
 
   it('a store loaded from a legacy context migrates itself and exposes the mapping', () => {
@@ -198,23 +198,23 @@ describe('v2 → v3: rows carry their template as instruction', () => {
 
     const store = new FosStore({ fosCtxData: { fosData: { nodes, route: [], rootNodeId: root }, trellisData: fresh.exportContext([]).trellisData } })
     expect([...store.table.keys()].every(isCurrentCid)).toBe(true)
-    // the frozen seed's types have no graph identity: their rows read as rows of no known type; template instances are tasks
-    const rows = viewNode(store, store.rootNodeId).tasks.map((t) => [t.id, t.checkable, t.template?.name ?? null])
-    expect(rows).toEqual([['t1', false, null], ['p1', false, null], ['tpl', false, null], ['oslo', true, 'Trip'], ['lost', true, 'Gone'], ['old', false, null]])
+    // the seed's types get their graph identity (v5): tasks are tasks again; template instances are tasks
+    const rows = viewNode(store, store.rootNodeId).tasks.map((t) => [t.id, t.type, t.checkable, t.done, t.template?.name ?? null])
+    expect(rows).toEqual([['t1', TASK_TYPE, true, true, null], ['p1', 'lib:type:plain', false, false, null], ['tpl', 'lib:type:template', false, false, null], ['oslo', 'tpl', true, false, 'Trip'], ['lost', 'gone', true, false, 'Gone'], ['old', 'lib:type:plain', false, false, null]])
     const children = content(store, store.rootNodeId).children
     // every row is [template, rowNode]; the instance is pinned to the template version in the current tree, not history
-    // pinned to the seed version of the library's row types, the one every device root ships
-    expect(children[0]![0]).toBe(seed(store, 'task'))
-    expect(children[2]![0]).toBe(seed(store, 'template'))
+    // pinned to the seed's row types, which v5 makes the library's own (the version every device root ships)
+    expect(children[0]![0]).toBe(lib(store, 'task'))
+    expect(children[2]![0]).toBe(lib(store, 'template'))
     expect(children[3]![0]).toBe(children[2]![1])
-    expect(content(store, children[2]![1]).data.instanceKind).toEqual({ kind: 'task' })
+    expect(content(store, children[2]![1]).data).toEqual({ alias: { id: 'tpl' }, description: { content: 'Trip' }, updated: { time: 1 } })
     expect('template' in content(store, children[3]![1]).data).toBe(false)
     // the template row keeps its requirement and (v4) gets the pattern rows of what its tasks accept
-    expect(viewNode(store, children[2]![1]).tasks.map((t) => t.typeCid)).toEqual([seed(store, 'allocation'), ...Array(4).fill(seed(store, 'pattern'))])
+    expect(viewNode(store, children[2]![1]).tasks.map((t) => t.typeCid)).toEqual([lib(store, 'allocation'), ...Array(4).fill(lib(store, 'pattern'))])
     // a template this graph never held is kept as a stand-in with its id and name
-    expect(content(store, children[4]![0]).data).toEqual({ alias: { id: 'gone' }, description: { content: 'Gone' }, instanceKind: { kind: 'task' } })
+    expect(content(store, children[4]![0]).data).toEqual({ alias: { id: 'gone' }, description: { content: 'Gone' } })
     const flipped = content(store, store.remapCid(pointer)).children
-    expect(flipped).toEqual([[p.instructionPointerConstructor.getId(), seed(store, 'task')], [p.targetPointerConstructor.getId(), store.remapCid(done)]])
+    expect(flipped).toEqual([[p.instructionPointerConstructor.getId(), lib(store, 'task')], [p.targetPointerConstructor.getId(), store.remapCid(done)]])
   })
 })
 
@@ -244,14 +244,15 @@ describe('v3 → v4: types say what they accept, Home and store roots are types'
     const store = new FosStore({ fosCtxData: { fosData: { nodes, route: [], rootNodeId: root }, trellisData: fresh.exportContext([]).trellisData } })
     expect([...store.table.keys()].every(isCurrentCid)).toBe(true)
     const r = createReplica('p', store)
-    // the device root is typed, Home is a Home row, the library's types are the v4 seed (pattern rows and all)
-    expect(content(store, rootTypeOf(store)).data.instanceKind).toEqual({ kind: 'device-root' })
-    expect(view(r, [])!.tasks.map((t) => [t.id, t.typeCid])).toEqual([['fos:library', seed(store, 'plain')], ['fos:home', seed(store, 'home')]])
-    expect(rowTypeAt(store, TASK_TYPE)).toBe(seed(store, 'task'))
-    expect(rowTypeAt(store, HOME_TYPE)).toBe(seed(store, 'home'))
+    // the device root is typed, Home is a Home row, the library's types are the v4 seed (pattern rows and all), which v5
+    // makes the library's own
+    expect(typeIdOf(store, rootTypeOf(store))).toBe('lib:type:device-root')
+    expect(view(r, [])!.tasks.map((t) => [t.id, t.typeCid])).toEqual([['fos:library', lib(store, 'plain')], ['fos:home', lib(store, 'home')]])
+    expect(rowTypeAt(store, TASK_TYPE)).toBe(lib(store, 'task'))
+    expect(rowTypeAt(store, HOME_TYPE)).toBe(lib(store, 'home'))
     expect(view(r, ['fos:library', 'lib:types'])!.tasks.map((t) => t.id)).toEqual(['task', 'plain', 'note', 'comment', 'ref', 'query', 'resource', 'allocation', 'template', 'pattern', 'home', 'device-root', 'document-root'].map((k) => `lib:type:${k}`))
     // a template row is a type: its tasks accept what a task does
-    expect(view(r, ['fos:home', 'trip'])!.tasks.map((t) => t.typeCid)).toEqual(Array(4).fill(seed(store, 'pattern')))
+    expect(view(r, ['fos:home', 'trip'])!.tasks.map((t) => t.typeCid)).toEqual(Array(4).fill(lib(store, 'pattern')))
     expect(view(r, ['fos:home'])!.tasks.find((t) => t.id === 'oslo')).toMatchObject({ checkable: true, template: { name: 'Trip' } })
     const homeNode = content(store, resolveScope(store, headCid(r), ['fos:home'])!)
     expect(readMembers(store, homeNode).map((m) => [m.peerId, m.capabilities, m.disabled ?? []])).toEqual([['rev', ['edit'], []], ['both', ['edit'], []]])
@@ -260,6 +261,6 @@ describe('v3 → v4: types say what they accept, Home and store roots are types'
     const docContent = add({ data: {}, children: [[type('task'), add({ data: { alias: { id: 'x' }, description: { content: 'x' }, todo: { completed: false, time: 1 } }, children: [] })]] })
     const docRoot = add({ data: { alias: { id: 'doc' } }, children: [[TP, docContent], [IP, ROOT], [PREV, TERMINAL]] })
     const doc = new FosStore({ fosCtxData: { fosData: { nodes, route: [], rootNodeId: docRoot }, trellisData: fresh.exportContext([]).trellisData } })
-    expect(content(doc, rootTypeOf(doc)).data.instanceKind).toEqual({ kind: 'document-root' })
+    expect(typeIdOf(doc, rootTypeOf(doc))).toBe('lib:type:document-root')
   })
 })
