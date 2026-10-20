@@ -1,13 +1,13 @@
 import type { Request, Response } from 'express'
 import { createHash } from 'node:crypto'
-import { addMemberAt, addRow, addSupply, addTask, configurePoll, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, HOME_ID, loadReplica, serializeReplica, setMemberCapabilitiesAt, setSharing, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
+import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, configurePoll, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, setSharing, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
-import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler } from './hostHandlers'
+import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler, searchHandler } from './hostHandlers'
 
 /** Each scenario gets its own store: a failed run leaves its journal in the store it ran against. */
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
@@ -100,6 +100,26 @@ test('the market effect lists the task, indexes the account, and records the sup
   expect(after.done).toBe(false) // listing a task does not complete it; only its listing requirement is filled
   const supplies = view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.filter(t => t.kind === 'supply')
   expect(supplies.map(s => [s.supply!.capability, s.supply!.by, s.supply!.ref])).toEqual([['market', 'fos', 'logo']])
+  // the listing is the market peer as a member of the task
+  expect(readMembers(h.get().store, content(h.get().store, resolveScope(h.get().store, headCid(h.get()), [HOME_ID, 'logo'])!)).map(m => m.peerId)).toContain(MARKET_PEER)
+})
+
+test('the search effect fills a -? requirement: hits become ref rows under it, then the supply is recorded as the server', async () => {
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['search'] })
+  r = addTask(r, [HOME_ID], 'Logo brief', 2, 'brief')
+  r = addTask(r, [HOME_ID], 'Find designers', 2, 'find')
+  r = addRow(r, [HOME_ID, 'find'], 'requirement', 'logo designers', 2, { id: 'ask', requirement: { capability: 'search' } })
+  r = addRow(r, [HOME_ID, 'find', 'ask'], 'query', 'logo designers', 2, { id: 'q', query: { market: true } })
+  const search = jest.fn(async () => [{ aliasId: 'brief', title: 'Logo brief', owner: null }, { aliasId: 'job', title: 'Logo job', owner: 'alice' }, { aliasId: 'gone', title: 'Gone', owner: null }])
+  const h = host(r, createHandlerRegistry([searchHandler({ search })]))
+  const result = await h.complete([HOME_ID, 'find'], ['ask'])
+  if (!result.body.evaluation) throw new Error(`search failed: ${JSON.stringify(result.body)}`)
+  expect(result.body.evaluation.status).toBe('committed')
+  expect(search).toHaveBeenCalledWith({ id: 1, username: 'owner' }, 'logo designers', true)
+  const rows = view(h.get(), [HOME_ID, 'find', 'ask'])!.tasks
+  expect(rows.filter(t => t.refId !== undefined).map(t => [t.refId, t.refOwner ?? null])).toEqual([['brief', null], ['job', 'alice']])
+  expect(rows.filter(t => t.supply).map(t => [t.supply!.capability, t.supply!.by, t.supply!.ref])).toEqual([['search', 'fos', 'q']])
+  expect(view(h.get(), [HOME_ID, 'find'])!.tasks.find(t => t.id === 'ask')!.requirement!.satisfied).toBe(true)
 })
 
 test('a poll resolves its choice from the responses when the node runs; ties and silence block', async () => {

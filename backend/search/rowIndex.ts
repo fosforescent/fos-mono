@@ -1,11 +1,11 @@
 /**
- * Semantic search over rows. Every row of a user's tree is embedded (title, or
- * the first lines of a note) with Vertex AI text embeddings and kept in the
- * RowEmbeddingModel table (pgvector). Rows whose ref node is listed on the
- * market are searchable by other accounts.
+ * Semantic search over rows. Every row of a user's tree is embedded (its title,
+ * at most 600 characters) with Vertex AI text embeddings and kept in the
+ * RowEmbeddingModel table (pgvector). Rows the market peer is a member of (and
+ * their subtrees) are searchable by other accounts.
  *
  *   indexStore(prisma, user, store, embed)   upsert changed rows, drop vanished ones (after a save)
- *   searchRows(prisma, {userId, query, market, limit}, embed)
+ *   searchRows(prisma, {userId, query, market, limit}, embed)   run by the fos `search` effect (sync/hostHandlers.ts)
  *
  * The embedding function is injected so tests run without Vertex.
  */
@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { formTitle } from '@fosforescent/shared/sync/forms'
-import { LISTING_ARGUMENT, createReplica, marketplaceOffers, namedValueOf, withMainBranchPolicy, content, identityCid, isRowEdge, rootTargetCid, rowKindOf, valueContent, isShippedLibrary, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, isRowOfType, marketGrantsOf, marketplaceOffers, withMainBranchPolicy, content, identityCid, rootTargetCid, rowKindOf, valueContent, isShippedLibrary, type Scope } from '@fosforescent/shared/sync/index'
 
 export type Embed = (texts: string[]) => Promise<number[][]>
 
@@ -21,7 +21,7 @@ export const EMBEDDING_DIM = 768
 
 export type IndexedRow = { aliasId: string; kind: string; title: string; path: Scope; market: boolean; text: string }
 
-/** Rows worth indexing (supplies are not; a note contributes its first 600 characters). */
+/** Rows worth indexing, with the paths they live at and whether the market lists them. */
 export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
   const out: IndexedRow[] = [], seen = new Set<string>()
   const walk = (cid: string, path: Scope, inherited: boolean) => {
@@ -37,12 +37,12 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       const value = valueContent(store, id)
       const aliasId = identity.data.alias?.id
       if (!aliasId) continue
-      const market = inherited || !!namedValueOf(store, id, LISTING_ARGUMENT)
+      // listed where the market peer is a member with `read`; a member entry below overrides what its ancestors grant
+      const grants = marketGrantsOf(store, id)
+      const market = grants ? grants.includes('read') : inherited
       const title = formTitle(store, value).trim()
-      if (kind !== 'supply' && kind !== 'ref' && title) {
-        const text = value.data.presentation?.text?.mediaType === 'text/markdown' || kind === 'note' ? title.slice(0, 600) : title.slice(0, 300)
-        out.push({ aliasId, kind, title: title.split('\n')[0]!.slice(0, 200), path, market, text })
-      }
+      // a reference (its row type) stands for a row indexed where it lives
+      if (title && !isRowOfType(store, edge, 'ref')) out.push({ aliasId, kind, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
       walk(id, [...path, aliasId], market)
     }
   }

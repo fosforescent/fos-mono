@@ -227,10 +227,6 @@ export type FosDataContent = {
     /** Location allocations ("at Paris"): the place, by name and/or coordinates (a device's position). */
     location?: { name?: string; lat?: number; lng?: number }
   },
-  /** On a published handler offer (sync/handlers.ts `publishTemplate`): advertised on the marketplace. Rows are listed through the `fos:listing` node value instead (sync/market.ts). */
-  listing?: {
-    listedAt: number
-  },
   /** A reference row: this node stands for the node whose alias id is `id` (shown by title; follows it on click). */
   ref?: {
     id: string

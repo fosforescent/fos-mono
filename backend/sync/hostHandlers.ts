@@ -1,12 +1,13 @@
 /**
  * The handlers this backend registers (see registry.ts). Each entry is a capability a peer provides on this host;
  * entries with an `effect` execute requirements through the shared evaluator when a `complete` event reaches them,
- * the rest are services reached by their own routes and are only advertised.
+ * the rest (cron, notify) are only advertised.
  */
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addRow, addSupply, beginTaskWork, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
+import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './registry'
+import { formTitle } from '@fosforescent/shared/sync/forms'
 
 export type GitHubIssueDeps = {
   connected(userId: number): Promise<boolean>
@@ -89,7 +90,7 @@ export type MarketDeps = {
 }
 
 /**
- * `-market` requirements under a task: the server lists the task (the `listing` flag on its ref node), indexes the
+ * `-market` requirements under a task: the server lists the task (the market peer becomes its member), indexes the
  * account so other accounts find it, and only then records the supply as its own. The client never writes a supply
  * in the server's name.
  */
@@ -100,9 +101,44 @@ export function marketHandler(deps: MarketDeps): HostHandler {
       const path = ctx.step.path
       if (path.length < 2) throw new Error('Market requirements go under a task; the task is what gets listed.')
       const taskPath = path.slice(0, -1)
-      await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now(), ctx.username))
+      await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now()))
       await deps.index({ id: ctx.userId, username: ctx.username }, ctx.replica().store)
       await ctx.update(addSupply(ctx.replica(), taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: taskPath.at(-1)! }, ctx.now()))
+    }
+  }
+}
+
+export type SearchHit = { aliasId: string; title: string; owner: string | null }
+export type SearchDeps = {
+  /** Semantic search (search/rowIndex.ts `searchRows`): the account's own rows, plus rows the market lists when `market`. */
+  search(user: { id: number; username: string }, query: string, market: boolean): Promise<SearchHit[]>
+}
+
+/**
+ * `-? text` requirements: the server's row search. The query is the requirement's text, or a query row inside it
+ * (its `market` option widens it to listed rows). Hits replace the earlier reference rows under the requirement
+ * (own rows as references, other accounts' as refs that remember the owner) and the supply is recorded as `fos`.
+ */
+export function searchHandler(deps: SearchDeps): HostHandler {
+  return {
+    peerId: 'fos', capability: 'search',
+    async effect(ctx) {
+      const path = ctx.step.path, r = ctx.replica(), cid = resolveScope(r.store, headCid(r), path)!
+      // which rows inside are what is decided by their row types: a query row says what to look for, refs are earlier hits
+      const queryRow = rowsOfType(r.store, cid, 'query')[0]
+      const query = queryRow ? { id: queryRow.id, title: formTitle(r.store, valueContent(r.store, queryRow.cid)), market: !!valueContent(r.store, queryRow.cid).data.query?.market } : null
+      const text = (query?.title || ctx.step.row!.title).trim().slice(0, 1000)
+      if (!text) throw new Error('Say what to search for: "-? text".')
+      const hits = await deps.search({ id: ctx.userId, username: ctx.username }, text, !!query?.market)
+      let next = ctx.replica()
+      for (const ref of rowsOfType(r.store, cid, 'ref')) next = deleteTask(next, path, ref.id, ctx.now())
+      for (const hit of hits) {
+        if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
+        if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
+        else next = addRow(next, path, 'ref', hit.title, ctx.now(), { refId: hit.aliasId, refOwner: hit.owner })
+      }
+      next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'search', by: 'fos', ref: query?.id ?? path.at(-1)! }, ctx.now())
+      await ctx.update(next)
     }
   }
 }
@@ -269,6 +305,7 @@ export type HostHandlerDeps = {
   google: CalendarDeps
   llm: LlmDeps
   market: MarketDeps
+  search: SearchDeps
   points: PointsDeps
   /** Money payments through the account's payment provider (payments/stripe.ts); absent when none is configured. */
   payments?: PaymentDeps
@@ -285,9 +322,8 @@ export type HostHandlerDeps = {
 
 export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
   return [
-    // the server's own services: the row search index (search/routes.ts) is a route; market listing, polls and
-    // fos points run as effects
-    { peerId: 'fos', capability: 'search' },
+    // the server's own services, all effects: row search, market listing, polls, fos points, …
+    searchHandler(deps.search),
     marketHandler(deps.market),
     pollHandler(),
     pointsHandler(deps.points),

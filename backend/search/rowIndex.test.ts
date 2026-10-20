@@ -1,4 +1,4 @@
-import { addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
+import { MARKET_PEER, addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
 import { collectRows, indexStore, searchRows, type Embed } from './rowIndex'
 
 // a deterministic "embedding": bag of letters, so related texts land close together
@@ -73,7 +73,7 @@ test('indexing embeds changed rows only, removes vanished rows; search ranks own
   expect(await indexStore(prisma, { id: 1, username: 'alice' }, alice.store, embed)).toEqual({ embedded: 0, removed: 1 })
 })
 
-test('global search aggregates only explicitly published enabled handler offers; revocation removes them', async () => {
+test('global search aggregates only handlers offered to the market peer; switching the offer off removes them', async () => {
   const { publishTemplate, discoverHandlers, setHandlerEnabledAt } = await import('@fosforescent/shared/sync/index')
   const prisma = fakePrisma()
   let r = addRow(createReplica('alice-device'), [], 'template', 'Design a logo', 1, { id: 'design' })
@@ -85,7 +85,7 @@ test('global search aggregates only explicitly published enabled handler offers;
   const hits = await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)
   expect(hits.map(h => [h.aliasId, h.kind, h.owner])).toEqual([['fos:published:design', 'capability', 'alice']])
   const offer = discoverHandlers(r, []).find(o => o.id === 'fos:published:design')!
-  r = setHandlerEnabledAt(r, [], r.meta.peerId, offer.id, false, 5)
+  r = setHandlerEnabledAt(r, [], MARKET_PEER, offer.id, false, 5) // the market member's offer, switched off
   await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)
   expect(await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)).toEqual([])
 })

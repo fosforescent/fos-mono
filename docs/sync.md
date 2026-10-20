@@ -126,7 +126,7 @@ row         [template, rowNode]          rowNode.data: alias{id}, description{co
                                      capability = task | allocation | search | confirmation | choice | market | mail | peer)
               Allocation  supply    an allocation row with a positive amount and a capability: satisfies a requirement (`ref` names an
                                      allocation/query row)
-              Query       query     + query{market?, executedAt?, count?}        ("?" prefix; results are ref rows under it)
+              Query       query     + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
               Resource    resource  + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
               Allocation  allocation + allocation{resource, type, amount, unit, start?, end?, by?, person?}
                                      ("$ 50" money, ": 1h" time, "# 2 widgets" things, "@bob 2h" a person; optional window
@@ -493,9 +493,10 @@ member reference; the edge stays, `hasCapability` ignores it). Bookkeeping,
 so no version. On the member's side the same rows arrive with the node and
 show as offline while the owner is not online; a row the owner removed before
 the member ever synced is never seen. Services act as resource banks for the
-matching requirement kinds: a `-?` requirement's "Ask fos to search" places a
-query inside it and runs it; a `-market` requirement's "List on the market"
-is a `complete` of that requirement, run by the fos `market` effect (below);
+matching requirement kinds: a `-?` requirement's "Ask fos to search" is a
+`complete` of that requirement, run by the fos `search` effect (below); a
+`-market` requirement's "List on the market" is likewise run by the fos
+`market` effect;
 mail is registered but has no handler yet. Under each peer the panel also lists the `-@name` requirements
 in the viewed subtree assigned to it (computed from the viewer's own rows;
 delivering an assignment into the assignee's replica is not wired yet).
@@ -596,10 +597,11 @@ attached nodes are run (debounced per user).
 
 **Allocation bins (sending rows to another account).** A row whose children
 are requirement and allocation rows is a proposed transaction: what the
-receiver must fill, and what they get. The market proposal route
-(`POST /user/data/market/proposals`) accepts `requirement` rows and lets an
-account propose on any node where it is a member with `edit` as well as on
-listed nodes; the receiver sees the proposal in that node's link panel, named
+receiver must fill, and what they get. "Send to @owner" copies the row with
+everything inside it as a bid (`copyBidRow`) to the market proposal route
+(`POST /user/data/market/proposals`), which takes it on any node where the
+sender is a member with `edit` as well as where the market takes proposals;
+the receiver sees the proposal in that node's link panel, named
 after the sender, and approves it to take the rows in, after which the
 requirements block the bin's task until filled.
 
@@ -615,25 +617,51 @@ there; the invitee opens it like a market result and proposes through the
 market routes, which honour the member grant. A member edge written locally
 would never reach them; the server is the peer that hosts both stores.
 
-**Queries** (`?` prefix) run a semantic search over the account's rows
-(`POST /user/data/search`, pgvector + Vertex `text-embedding-005`, index kept
-by `backend/search/rowIndex.ts` a few seconds after every save) and place the
-hits as reference rows under the query; Refresh replaces them. A query with
-`market: true` includes rows other accounts listed.
+**Search is a handler, not a route.** A `-? text` requirement is filled by
+the fos `search` effect (`searchHandler`, `backend/sync/hostHandlers.ts`) when
+it is completed: a semantic search (pgvector + Vertex `text-embedding-005`,
+index kept by `backend/search/rowIndex.ts` a few seconds after every save)
+over the account's own rows, plus the rows the market lists when the query row
+inside the requirement has `market: true`. The query is that query row's text
+(else the requirement's); the hits replace the earlier reference rows under the
+requirement (another account's as a ref row with `ref.owner`), then the supply
+is recorded as `fos`. The client never searches itself: a query row's Search
+runs the requirement around it (a query on its own is put inside a new `-?`
+requirement first, `App.searchAt`); searching again deletes fos's supply and
+completes the requirement once more. Which rows inside are the query and the old
+hits is decided by their row types (`rowsOfType(…, 'query' | 'ref')`).
 
-**The market.** "List on the market" on a `-market` requirement completes it
-on the account server: the fos `market` effect lists the task (the named node
-value `fos:listing`, `shared/sync/market.ts`; it survives later edits and the
-sync round trip), indexes the account so the listing is searchable at once,
-then records the `market` supply as `fos`. The client writes neither the flag
-nor the supply. Listed rows are searchable by every account; a hit from another account is a ref row with
+**The market is a peer.** A node is listed iff the market peer `fos:market`
+(`MARKET_PEER`, served by the fos server) is a member of it with `read`; with
+`edit` it also takes proposals. The grant reaches the node's subtree like any
+member grant (`marketGrantsAt`; a member entry lower down overrides it), and
+both the index (`market` column) and the market routes read it. Unlisting is
+removing the member (or switching its `read` off); there is no other flag.
+Handlers published to the marketplace ("Publish capability to marketplace",
+`publishTemplate(…, market)`) are typed refs on the market member's `to` side
+(`marketplaceOffers`); switching one off (`setHandlerEnabledAt(…, MARKET_PEER,
+id, false)`) withdraws it, and publishing does not list the context it is
+published in. Policy is per peer and does not travel by node exchange, so the
+listing lives on the server's copy of the node (what indexing and the market
+routes read); a device shows the 🛒 badge only where its own copy has the member.
+
+"List on the market" on a `-market` requirement completes it on the account
+server: the fos `market` effect makes the market a member of the task
+(`setMarketAt`), indexes the account so the listing is searchable at once,
+then records the `market` supply as `fos`. The client writes neither the
+member nor the supply. A hit from another account is a ref row with
 `ref.owner`, which opens the listing (`GET /user/data/market/node`): the
 node's rows and requirements, and the requester's own proposal only (no
-peers, members or other bidders). "Send proposal" posts rows
-(`POST /user/data/market/proposals`): a comment, plus for each allocation
-requirement an allocation row copied from the bidder's bank and a supply
-under the requirement referencing it. The server builds a branch (the node's
-value plus those rows) and records it as a proposal keyed `user:<bidder>` on
+peers, members or other bidders). "Send proposal" sends a **bid**
+(`POST /user/data/market/proposals {owner, aliasId, bid}`): rows the bidder
+built in a draft of its own tree (`draftBid`, shared/sync/market.ts) as
+verified nodes, each with the path it goes under (a comment; for each
+allocation requirement an allocation copied from the bidder's bank and a
+supply under the requirement referencing it). The server knows nothing about
+what the rows are: `applyBid` imports the nodes that verify, refuses rows that
+carry members or proposals, flow records (the allocation row type) attributed
+to anyone but the bidder, reused ids and unknown paths, and appends the rows to
+a branch of the node's value, recorded as a proposal keyed `user:<bidder>` on
 the owner's ref node, exactly like a device's branch-mode proposal; a
 resubmission replaces it. The owner sees every proposal in the link panel
 named after the bidder and approves one (`applyProposalAt`), which merges the

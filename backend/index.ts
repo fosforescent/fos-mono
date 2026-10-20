@@ -35,8 +35,8 @@ import { postContactMessage } from './email/contactMessage'
 import { getSuggest } from './suggest'
 import { getPeerAttachment, deleteAttachment, indexNow, prismaAccountStoreDeps, serverPeerIdFor, withUserLock } from './sync/accountStore'
 import { tokenManager } from './tokenManager'
-import { createSearchHandlers } from './search/routes'
-import { vertexEmbed } from './search/rowIndex'
+import { createMarketHandlers } from './search/routes'
+import { searchRows, vertexEmbed } from './search/rowIndex'
 import { peerInviteHandlers } from './sync/peerInvites'
 import { deviceLoginHandlers } from './auth/deviceLogin'
 import { channelBus, createChannelsRouter, startChannels, stopChannels } from './channels'
@@ -335,17 +335,15 @@ dataRoutes.post('/device-login/:code/approve', deviceLoginHandlers.approve)
 dataRoutes.post('/device-login/:code/deny', deviceLoginHandlers.deny)
 // Voice notes: raw audio in, transcript + hierarchical summary + sentiment clusters out (OpenAI)
 dataRoutes.post('/voice-notes', express.raw({ type: ['audio/*', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/octet-stream'], limit: '25mb' }), createVoiceNoteHandler(voiceDepsFromEnv(), prismaVoiceUsage(prisma)))
-// Semantic search over this account's rows (and market listings), market views and proposals (pgvector, Vertex embeddings)
-const searchHandlers = createSearchHandlers({ prisma, embed: vertexEmbed(), loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, notify: (userId, message) => {
+// The market: listed nodes as bidders see them, and their proposals (search itself is the fos `search` effect)
+const marketHandlers = createMarketHandlers({ loadStore: prismaAccountStoreDeps.loadStore, saveStore: prismaAccountStoreDeps.saveStore, withUserLock, notify: (userId, message) => {
   prismaAccountStoreDeps.notify?.(userId, message)
   // a proposal from another account also reaches the owner's linked phone
   const by = typeof message.byPeerId === 'string' ? message.byPeerId : ''
   if (message.type === 'sync_changed' && by.startsWith('user:')) void integrations.notifyUser(userId, `fos: new proposal from ${by.slice(5)}. Open the app to review it.`)
 } })
-dataRoutes.post('/search', searchHandlers.search)
-dataRoutes.post('/search/reindex', searchHandlers.reindex)
-dataRoutes.get('/market/node', searchHandlers.marketNode)
-dataRoutes.post('/market/proposals', searchHandlers.marketProposal)
+dataRoutes.get('/market/node', marketHandlers.marketNode)
+dataRoutes.post('/market/proposals', marketHandlers.marketProposal)
 dataRoutes.post('/sharing', sharingHandlers.configure)
 dataRoutes.post('/sharing/visit', sharingHandlers.visit)
 dataRoutes.post('/sharing/input', sharingHandlers.submit)
@@ -502,11 +500,14 @@ const mcpPeerDeps = prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (serve
 })
 // What this host can do, derived from the handlers below; every capability advertised to devices comes from here.
 // Effects are reached through `complete` events (sync/events.ts → sync/evaluation.ts), never through routes of their own.
+const searchEmbed = vertexEmbed()
 const registry = createHandlerRegistry(createHostHandlers({
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
   google: { connected: async id => !!await integrationDeps.connections.get(id, 'google'), createEvent: (userId, event) => integrations.createCalendarEvent(userId, event) },
   llm: { complete: (system, user) => voiceDepsFromEnv().complete(system, user, false) },
   market: { index: indexNow },
+  // pgvector over the account's rows, plus rows the market lists (search/rowIndex.ts)
+  search: { search: (user, query, market) => searchRows(prisma, { userId: user.id, query, market, limit: 10 }, searchEmbed) },
   points: {
     // fos points are the account's token balance (tokenManager); a payout is one ledger transaction, debit on the
     // owner and credit on the payee, recorded once per requirement (the handler's key)

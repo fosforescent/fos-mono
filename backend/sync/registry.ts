@@ -7,8 +7,8 @@
  * handler behind it.
  *
  * Handlers with an `effect` run through the shared evaluator (backend/sync/evaluation.ts) when a `complete` event
- * reaches a node whose requirement they handle; handlers without one are services reached by their own routes
- * (search, market, poll) and are advertised only. An effect may answer `'pending'`: its result awaits human review
+ * reaches a node whose requirement they handle (search, market, poll, …: none of them has a route of its own);
+ * handlers without one (cron, notify) are advertised only. An effect may answer `'pending'`: its result awaits human review
  * (a proposal on a return ref) and the evaluation pauses as `awaiting-review` instead of committing.
  */
 import { SERVER_TRANSPORT_CAPABILITIES, type Capability, type EvaluationStep, type HostOffers, type LibraryAddress, type Replica } from '@fosforescent/shared/sync/index'

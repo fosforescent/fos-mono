@@ -2,7 +2,7 @@ import { BUNDLED_LIBRARY as LIBRARY_BUNDLE } from '../../shared/sync/library'
 import { libraryPath, MANUAL_HANDLERS_ID } from '../../shared/sync/library'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
-import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue } from '../../shared/sync/index'
+import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { CAPABILITY_LABEL } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, type NodeMask, type NodeRequest, type NodeProvider } from '../../shared/sync/index'
@@ -115,8 +115,6 @@ import {
   describeDeviceLogin,
   decideDeviceLogin,
   transcribeVoice,
-  searchRows,
-  type SearchHit,
   type VoiceNote,
   getMarketNode,
   getTokenBalance,
@@ -1792,27 +1790,18 @@ export class App {
     return out
   }
   /**
-   * Send a row to another account as a proposed transaction: the row and its requirement, allocation, task and comment
-   * children go as one proposal on the target node (an allocation bin: what they must fill, and what they receive).
-   * The receiver sees it in that node's link panel and approves it to take the rows in.
+   * Send a row to another account as a proposed transaction: a copy of the row with everything inside it goes as one
+   * proposal on the target node (an allocation bin: what they must fill, and what they receive). The receiver sees it
+   * in that node's link panel and approves it to take the rows in.
    */
   async sendRowTo(at: Scope, row: TaskView, owner: string, aliasId: string): Promise<void> {
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account to send rows to other accounts.'); this.openModal('connect'); return }
     if (!this.mayPropose()) { this.notify('error', 'This device does not submit proposals (policy towards fos: add "submit proposals" under "to").'); return }
     const binId = `${row.id}-${session.username}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)
-    const rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }> = [
-      { kind: row.kind === 'task' ? 'task' : row.text?.mediaType === 'text/markdown' ? 'note' : 'plain', text: row.title || 'allocation bin', id: binId }
-    ]
-    for (const child of view(this.state.replica, [...this.state.view, ...at, row.id])?.tasks ?? []) {
-      if (row.form?.fields.some(field => field.path[0] === child.id)) continue
-      if (child.kind === 'requirement' && child.requirement) { const { satisfied: _s, summary: _m, ...requirement } = child.requirement; rows.push({ kind: 'requirement', text: child.title, data: { requirement }, under: binId }) }
-      else if (child.kind === 'allocation' && child.allocation) rows.push({ kind: 'allocation', text: child.title, data: { allocation: child.allocation }, under: binId })
-      else if (child.kind === 'task' || child.kind === 'plain' || child.kind === 'comment' || child.kind === 'note') rows.push({ kind: child.text?.mediaType === 'text/markdown' ? 'note' : child.kind, text: child.title, under: binId })
-    }
     try {
-      await submitMarketProposal(session, owner, aliasId, rows)
-      this.notify('info', `Sent to @${owner} as a proposal with ${rows.length - 1} row${rows.length === 2 ? '' : 's'} inside; they approve it to take it in.`)
+      await submitMarketProposal(session, owner, aliasId, copyBidRow(this.state.replica, [...this.state.view, ...at, row.id], this.now(), binId))
+      this.notify('info', `Sent to @${owner} as a proposal; they approve it to take it in.`)
     } catch (error) {
       this.notify('error', `Could not send: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -2418,11 +2407,11 @@ export class App {
     this.edit(writeNodeValue(this.state.replica, path, 'fos:evaluation', { id: crypto.randomUUID(), status: 'idle', started: this.now(), effects: [] }, this.now()))
   }
   async evaluateCurrent(): Promise<void> { await this.evaluateAt(this.currentRow()?.construction?.name === 'fos:evaluation' ? this.state.view.slice(0, -1) : [...this.state.view]) }
-  /** Requirements the account server's handler registry executes: its own model, the integration peers' repositories and calendar, attached MCP tools. */
+  /** Requirements the account server's handler registry executes: its search, market and model, the integration peers' repositories and calendar, attached MCP tools. */
   private serverHandles(step: import('../../shared/sync/evaluation').EvaluationStep): boolean {
     const r = step.row?.requirement
     if (!r || r.satisfied) return false
-    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail') return true
+    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search') return true
     if (r.capability === 'tool') return r.tool !== 'fos.pull'
     // a poll resolves its choice on the server (the fos poll handler tallies the responses)
     if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
@@ -2739,23 +2728,23 @@ export class App {
   }
   workResults() { return this.state.work ? workAttempts(this.state.replica, this.state.work.path) : [] }
   /**
-   * Hand a requirement to the peer that registered its capability. search: a query row with the requirement's text
-   * is placed inside and run (filling it); market: the task is listed and the listing recorded as the supply.
+   * Hand a requirement to the peer that registered its capability: the account server runs it as an evaluation
+   * effect of that requirement (search: hits as ref rows under it; market: the task listed), recording the supply.
    */
   async askPeerAt(at: Scope, req: TaskView): Promise<void> {
     const r = req.requirement
     if (!r) return
     if (r.capability === 'tool' && r.tool === 'fos.pull') { await this.evaluateAt([...this.state.view, ...at, req.id]); return }
-    if (r.capability === 'search') {
-      const inside = view(this.state.replica, [...this.state.view, ...at, req.id])?.tasks ?? []
-      let query = inside.find((q) => q.kind === 'query')
-      if (!query) {
-        const id = this.addRowAt([...at, req.id], 'query', req.title || 'search', { extras: { query: {} } })
-        query = view(this.state.replica, [...this.state.view, ...at, req.id])?.tasks.find((q) => q.id === id)
+    if (r.capability === 'search' && r.satisfied) {
+      // searching again: the server's earlier fill (its supply) goes, so the requirement runs once more
+      const path = [...this.state.view, ...at, req.id], store = this.state.replica.store, cid = resolveScope(store, headCid(this.state.replica), path)
+      let next = this.state.replica
+      // supplies are flow records (the allocation row type); the server's search fill is the one by fos for search
+      for (const row of cid ? rowsOfType(store, cid, 'allocation') : []) {
+        const s = supplyOf(valueContent(store, row.cid))
+        if (s?.capability === 'search' && s.by === 'fos') next = deleteTask(next, path, row.id, this.now())
       }
-      if (query) await this.runQueryAt([...at, req.id], query)
-      this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
-      return
+      this.edit(next)
     }
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account: its peers handle this.'); this.openModal('connect'); return }
@@ -2764,7 +2753,7 @@ export class App {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
       const poll = r.capability === 'choice' && !!readNodeValue(this.state.replica, [...this.state.view, ...at, req.id], 'fos:poll')
       const payment = r.capability === 'allocation' && r.resource === 'account' && capabilityPeers(this.state.replica, [...this.state.view, ...at, req.id], 'send-payment').includes('fos')
-      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || poll || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
+      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || poll || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
         if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
         await this.evaluateAt([...this.state.view, ...at, req.id])
@@ -2835,34 +2824,23 @@ export class App {
     this.edit(next)
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirement.id) })
   }
-  /** Run a query row: semantic search through the account; results become reference rows under it (replacing the previous ones). */
+  /**
+   * Run a query row. Search is the account server's `search` effect, which fills `-?` requirements: a query inside one
+   * runs that requirement; a query on its own is put inside a new `-?` requirement first (where its hits will go).
+   */
   async runQueryAt(at: Scope, query: TaskView): Promise<void> {
-    const session = this.state.session
-    if (!session) { this.notify('error', 'Connect to your account to run searches.'); this.openModal('connect'); return }
-    try {
-      const { hits } = await searchRows(session, query.title, { market: !!query.query?.market, limit: 10 })
-      this.applyQueryResults(at, query, hits)
-    } catch (error) {
-      this.notify('error', `Search failed: ${error instanceof Error ? error.message : String(error)}`)
-    }
+    const parent = at.length ? view(this.state.replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find(t => t.id === at.at(-1)) : undefined
+    if (parent?.requirement?.capability === 'search') { await this.askPeerAt(at.slice(0, -1), parent); return }
+    await this.searchAt(at, query.title, !!query.query?.market, query.id)
   }
-  applyQueryResults(at: Scope, query: TaskView, hits: SearchHit[]): void {
-    const path = [...this.state.view, ...at, query.id]
-    // drop previous results (reference rows, local or market), keep anything else the user put there
-    const existing = view(this.state.replica, path)?.tasks ?? []
-    let replica = this.state.replica
-    for (const row of existing) if (row.kind === 'ref') replica = deleteTask(replica, path, row.id, this.now())
-    for (const hit of hits) {
-      if (hit.owner === null && hit.aliasId !== query.id && resolveRef(replica, hit.aliasId)) {
-        replica = addRef(replica, path, hit.aliasId, this.now())
-      } else if (hit.owner) {
-        // a row listed on the market by another account: a reference row that remembers the owner (opens the market modal)
-        replica = addRow(replica, path, 'ref', hit.title, this.now(), { refId: hit.aliasId, refOwner: hit.owner })
-      }
-    }
-    replica = setQueryOptionsAt(replica, [...this.state.view, ...at], query.id, { executedAt: this.now(), count: hits.length }, this.now())
-    this.edit(replica)
-    this.notify('info', hits.length ? `${hits.length} result${hits.length === 1 ? '' : 's'}.` : 'No results.')
+  /** A `-?` requirement at `at` holding the query (its text and `market` option), run by the account server. */
+  async searchAt(at: Scope, text: string, market: boolean, replacing?: string): Promise<void> {
+    if (!text.trim()) return
+    const id = this.addRowAt(at, 'requirement', text, { extras: { requirement: { capability: 'search' } }, ...(replacing ? { position: { relativeTo: replacing, position: 'below' as const } } : {}) })
+    this.addRowAt([...at, id], 'query', text, { extras: { query: market ? { market } : {} } })
+    if (replacing) this.edit(deleteTask(this.state.replica, [...this.state.view, ...at], replacing, this.now()))
+    const req = view(this.state.replica, [...this.state.view, ...at])?.tasks.find(t => t.id === id)
+    if (req) await this.askPeerAt(at, req)
   }
   /** Open a listed node of another account (from a market result row): what they show, and this account's proposal. */
   async openMarket(owner: string, aliasId: string, title: string): Promise<void> {
@@ -2882,20 +2860,25 @@ export class App {
     const market = this.state.market
     if (!session || session.kind !== 'user' || !market) return
     if (!this.mayPropose()) { this.notify('error', 'This device does not submit proposals (policy towards fos: add "submit proposals" under "to").'); return }
-    const rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }> = []
-    if (comment.trim()) rows.push({ kind: 'comment', text: comment.trim() })
-    for (const s of supplies) {
-      const found = this.allocations().find(({ row }) => row.id === s.allocationId)
-      if (!found?.row.allocation) continue
-      // the allocation itself travels with the proposal (the owner cannot see our banks); the supply references its copy
-      const copyId = `${s.allocationId}-${session.username}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)
-      rows.push({ kind: 'allocation', text: found.row.title, id: copyId, data: { allocation: { ...found.row.allocation, by: session.username } } })
-      rows.push({ kind: 'supply', text: '', under: s.requirementId, data: { supply: { capability: 'allocation', ref: copyId } } })
-    }
-    if (!rows.length) { this.notify('error', 'Write a comment or supply an allocation first.'); return }
+    // the bid is built here, as rows of this account's own: the allocations travel with it (the owner cannot see our
+    // banks) and each supply goes under the requirement it fills, referencing its copy
+    const me = session.username, t = this.now(), under = new Map<string, string>()
+    const bid = draftBid(this.state.replica, [], t, draft => {
+      if (comment.trim()) draft = addRow(draft, [], 'comment', comment.trim(), t, { author: { id: `user:${me}`, name: me } })
+      for (const s of supplies) {
+        const found = this.allocations().find(({ row }) => row.id === s.allocationId)
+        if (!found?.row.allocation) continue
+        const copyId = `${s.allocationId}-${me}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64), supplyId = `${copyId}-supply`
+        draft = addRow(draft, [], 'allocation', found.row.title, t, { id: copyId, allocation: { ...found.row.allocation, by: me } })
+        draft = addRow(draft, [], 'supply', '', t, { id: supplyId, supply: { capability: 'allocation', by: me, at: t, ref: copyId } })
+        under.set(supplyId, s.requirementId)
+      }
+      return draft
+    }, id => under.has(id) ? [under.get(id)!] : [])
+    if (!bid.rows.length) { this.notify('error', 'Write a comment or supply an allocation first.'); return }
     this.set({ market: { ...market, phase: 'submitting', error: undefined } })
     try {
-      await submitMarketProposal(session, market.owner, market.aliasId, rows)
+      await submitMarketProposal(session, market.owner, market.aliasId, bid)
       const node = await getMarketNode(session, market.owner, market.aliasId)
       this.set({ market: { ...market, node, phase: 'submitted' } })
       this.notify('info', `Proposal sent to ${market.owner}. They see it under “${market.title}”; you only see your own.`)
