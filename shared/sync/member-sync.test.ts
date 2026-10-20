@@ -4,7 +4,7 @@
  */
 import { syncWith, userView } from './test-helpers'
 import { HOME_ID, MARKET_PEER, SERVER_TRANSPORT_CAPABILITIES, content, memberEdgesOf, readMembers, resolveScope, type Scope } from './graph'
-import { addMemberAt, addRow, addTask, createReplica, ensureHomeContext, headCid, removeMemberAt, setMemberCapabilitiesAt, shareHome, view, type Replica } from './replica'
+import { addMemberAt, addRow, addTask, createReplica, ensureHomeContext, headCid, linkLocalStore, removeMemberAt, setMemberCapabilitiesAt, shareHome, view, type Replica } from './replica'
 import { exchangeNode, finishNodeSync, isDirty, nodeSyncPush, planNodeSync, type NodeAuthority, type NodeSyncContext } from './index'
 import { isListed } from './graph'
 import { marketGrantsAt, setMarketAt } from './market'
@@ -137,4 +137,16 @@ test('a member entry arrives unloaded with its node and grants nothing until it 
   phone = round(phone, [...PROJECT, 'fos:peer:user:bob'])
   expect(entry().data.ref).toBeUndefined()
   expect(member(phone, PROJECT, 'user:bob')).toMatchObject({ name: 'Bob', capabilities: ['read'] })
+})
+
+test('a store linked through this machine\'s files stays on this machine', () => {
+  const server = createReplica('server')
+  let project = linkLocalStore(addTask(createReplica('project'), [], 'Work', 1, 'work'), 'home-store', 'Home', 2)
+  project = addMemberAt(project, [], 'user:bob', 'Bob', ['read'], 3)
+  const wire: unknown[] = []
+  project = syncWith(project, server, { wire })
+  expect(membersAt(server, []).map(m => m.peerId)).toEqual(['user:bob'])
+  expect(JSON.stringify(wire)).not.toContain('home-store')
+  expect(membersAt(project, []).map(m => m.peerId).sort()).toEqual(['home-store', 'user:bob'])
+  expect(isDirty(project)).toBe(false)
 })

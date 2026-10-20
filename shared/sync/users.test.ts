@@ -1,12 +1,12 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
-import { addRow, addSupply, addTask, bindUserAt, createReplica, ensureHomeContext, headCid, loadReplica, serializeReplica, setRowContentAt, shareHome, view, type Replica } from './replica'
+import { addRow, addSupply, addTask, bindUserAt, createReplica, ensureHomeContext, headCid, loadReplica, serializeReplica, setRowContentAt, shareHome, view, writeGraphNode, type Replica } from './replica'
 import { content, identityCid, isRefNode, memberEntryId, resolveScope, typeIdOf, valueContent, HOME_ID } from './graph'
 import { syncWith } from './test-helpers'
 import {
-  USER_FIELD, USER_SELF_ATTESTATION, USER_SERVER_ATTESTATION, cacheUser, cachedUser, isUserType, rebindUsers, unverifiedUser, userAttestationPayload,
+  USER_FIELD, USER_SELF_ATTESTATION, USER_SERVER_ATTESTATION, userObjectContent, userType, cacheUser, cachedUser, isUserType, rebindUsers, unverifiedUser, userAttestationPayload,
   userFieldEdge, userOf, usersPath, verifyUser, peerKeyId, publishedKey, publishedKeys, requestVerification, verifiedAt, verifyPublished, verifyRequestId, type UserRecord, type UserTrust
 } from './users'
-import { ALLOCATION_TYPE } from './library-types'
+import { ALLOCATION_TYPE, PLAIN_TYPE } from './library-types'
 
 // an ed25519 key from a fixed seed, as the server makes its identity key (backend/sync/verify.ts)
 const keyFrom = (byte: number) => {
@@ -143,6 +143,17 @@ test('the server publishes its key on its member entry; a device\'s verify handl
   expect(verifyPublished(ensureHomeContext(createReplica('d'), 1), bob, ed25519).ok).toBe(false)
   device = syncWith(device, account)
   expect(publishedKey(device, 'fos')).toBe(server.publicKey)
+})
+
+test('a key an older server left among the people in Home is removed once the key is on the fos member entry', () => {
+  let account = ensureHomeContext(createReplica('user:alice'), 1)
+  account = addRow(account, [HOME_ID], PLAIN_TYPE, 'People', 2, { id: 'fos:users' })
+  const type = userType(account.store, [HOME_ID, 'fos:users'])
+  account = writeGraphNode(account, [HOME_ID, 'fos:users'], userObjectContent(account.store, type, { account: 'fos', username: 'fos', name: 'Fos', publicKey: stranger.publicKey, verification: null }, peerKeyId('fos')), 3, type)
+  expect(publishedKey(account, 'fos')).toBeNull() // the old row is not where keys are read
+  account = ensureHomeContext(account, 4, { keys: { fos: server.publicKey } })
+  expect(resolveScope(account.store, headCid(account), [HOME_ID, 'fos:users', peerKeyId('fos')])).toBeNull()
+  expect(publishedKey(account, 'fos')).toBe(server.publicKey)
 })
 
 test('a verify request names the user in a verify requirement among the people; the filled one holds the attested object', () => {

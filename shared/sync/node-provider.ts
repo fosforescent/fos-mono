@@ -1,7 +1,7 @@
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
-  valueContent, readMembers, memberFor, memberEntryId, isMemberEntryId, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
+  valueContent, readMembers, memberFor, memberEntryId, isMemberEntryId, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, CAPABILITIES, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 
@@ -221,7 +221,8 @@ export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{
   }
   if (!entry && !isHandle(content(r.store, cid))) for (const edge of memberEdgesOf(r.store, cid)) {
     const id = content(r.store, edge[1]).data.alias?.id
-    if (isMemberEntryId(id)) out.push({ id, edge, member: true })
+    // a store reached through this machine's files (granted `local`, `linkLocalStore`) is this machine's link: it never leaves it
+    if (isMemberEntryId(id) && !content(r.store, edge[1]).children.some(e => capabilityOf(r.store, e) === 'local')) out.push({ id, edge, member: true })
   }
   return out
 }
