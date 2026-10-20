@@ -8,6 +8,10 @@ import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
 import { paymentHandler, pointsHandler } from './hostHandlers'
 import { createPaymentSettlement } from './payments'
+import { identityHandler, identityKeyFromSeed } from './identity'
+
+const accounts: Record<string, { id: number; username: string; name?: string }> = { owner: { id: 1, username: 'owner' }, bob: { id: 2, username: 'bob', name: 'Bob' } }
+const identity = identityHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
 import { minorUnits, paymentConfirmationOf } from '../payments/stripe'
 
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
@@ -42,7 +46,7 @@ function rewardedTask() {
 
 test('a money requirement opens one payment with the provider and waits; the confirmation settles it and completes the task', async () => {
   const request = jest.fn(async () => ({ id: 'cs_1', url: 'https://checkout.example/cs_1', status: 'pending' as const }))
-  const h = host(fresh(rewardedTask()), createHandlerRegistry([paymentHandler({ request })]))
+  const h = host(fresh(rewardedTask()), createHandlerRegistry([paymentHandler({ request }, identity)]))
   const first = await h.complete([HOME_ID, 'guide'], [])
   if (!first.body.evaluation) throw new Error(`payment run failed: ${JSON.stringify(first.body)}`)
   expect(first.body.evaluation.status).toBe('awaiting-review')
@@ -60,7 +64,12 @@ test('a money requirement opens one payment with the provider and waits; the con
   const pay = view(h.get(), [HOME_ID, 'guide'])!.tasks.find(t => t.id === 'pay')!
   expect(pay.requirement!.satisfied).toBe(true)
   const rows = view(h.get(), [HOME_ID, 'guide', 'pay'])!.tasks
-  expect(rows.find(t => t.kind === 'allocation')!.allocation).toMatchObject({ resource: 'pay', type: 'account', amount: 20, unit: 'usd', by: 'fos', person: 'bob' })
+  const settledAllocation = rows.find(t => t.kind === 'allocation')!
+  expect(settledAllocation.allocation).toMatchObject({ resource: 'pay', type: 'account', amount: 20, unit: 'usd', by: 'fos' })
+  // the payee is the user object the server attested, bound on the allocation (not a name in its data)
+  expect(settledAllocation.allocation).not.toHaveProperty('person')
+  expect(settledAllocation.user).toMatchObject({ account: '2', username: 'bob', name: 'Bob', verification: { by: 'fos', method: 'ed25519-server' } })
+  expect(identity.verify(settledAllocation.user!)).toBe(true)
   expect(rows.filter(t => t.kind === 'supply').map(t => t.supply!.by)).toEqual(['fos'])
   expect(paymentRecord(h.get(), [HOME_ID, 'guide', 'pay'])).toMatchObject({ status: 'paid', intent: 'pi_1', url: null })
   expect(evaluationRecord(h.get(), [HOME_ID, 'guide'])!.status).toBe('committed')
@@ -76,7 +85,7 @@ test('a money requirement opens one payment with the provider and waits; the con
 test('an expired payment page is recorded as failed and the next run opens a new payment', async () => {
   let n = 0
   const request = jest.fn(async () => ({ id: `cs_${++n}`, url: `https://checkout.example/cs_${n}`, status: 'pending' as const }))
-  const h = host(fresh(rewardedTask()), createHandlerRegistry([paymentHandler({ request })]))
+  const h = host(fresh(rewardedTask()), createHandlerRegistry([paymentHandler({ request }, identity)]))
   await h.complete([HOME_ID, 'guide'], [])
   expect(await h.settlement.settle({ owner: 'owner', path: [HOME_ID, 'guide', 'pay'], id: 'cs_1', failed: 'The payment page expired before it was paid.' })).toBe('failed')
   expect(paymentRecord(h.get(), [HOME_ID, 'guide', 'pay'])).toMatchObject({ status: 'failed', url: null, error: /expired/ })
@@ -91,13 +100,13 @@ test('payments refuse the cases points refuse, and a provider that charges a sav
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['send-payment'] })
   r = addTask(r, [HOME_ID], 'Lonely task', 2, 'lonely')
   r = addRow(r, [HOME_ID, 'lonely'], 'requirement', 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'account', amount: 5, unit: 'usd' } })
-  const nobody = host(fresh(r), createHandlerRegistry([paymentHandler({ request })]))
+  const nobody = host(fresh(r), createHandlerRegistry([paymentHandler({ request }, identity)]))
   expect(String((await nobody.complete([HOME_ID, 'lonely'], ['pay'])).body.error)).toMatch(/No one to pay yet/)
-  const selfPaid = addRow(r, [HOME_ID, 'lonely'], 'requirement', 'reward', 3, { id: 'pay2', requirement: { capability: 'allocation', resource: 'account', amount: 5, unit: 'usd', peer: 'owner' } })
-  const self = host(fresh(selfPaid), createHandlerRegistry([paymentHandler({ request })]))
+  const selfPaid = addRow(r, [HOME_ID, 'lonely'], 'requirement', 'reward', 3, { id: 'pay2', requirement: { capability: 'allocation', resource: 'account', amount: 5, unit: 'usd' }, user: (await identity.resolve('owner'))! })
+  const self = host(fresh(selfPaid), createHandlerRegistry([paymentHandler({ request }, identity)]))
   expect(String((await self.complete([HOME_ID, 'lonely'], ['pay2'])).body.error)).toMatch(/cannot pay themselves/)
   expect(request).not.toHaveBeenCalled()
-  const h = host(fresh(rewardedTask()), createHandlerRegistry([paymentHandler({ request })]))
+  const h = host(fresh(rewardedTask()), createHandlerRegistry([paymentHandler({ request }, identity)]))
   const result = await h.complete([HOME_ID, 'guide'], [])
   if (!result.body.evaluation) throw new Error(`saved-method run failed: ${JSON.stringify(result.body)}`)
   expect(result.body.evaluation.status).toBe('committed')
@@ -112,7 +121,7 @@ test('a points payout is keyed by its requirement so the ledger transfer is neve
   r = addRow(r, [HOME_ID, 'survey'], 'requirement', 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } })
   r = addSupply(r, [HOME_ID, 'survey'], 'q', { capability: 'confirmation', by: 'user:bob' }, 6)
   const transfer = jest.fn(async () => undefined)
-  const h = host(fresh(r), createHandlerRegistry([pointsHandler({ transfer })]))
+  const h = host(fresh(r), createHandlerRegistry([pointsHandler({ transfer }, identity)]))
   const result = await h.complete([HOME_ID, 'survey'], [])
   expect(result.body.evaluation.status).toBe('committed')
   expect(transfer).toHaveBeenCalledWith({ id: 1, username: 'owner' }, 'bob', 5, expect.any(String), `points:owner:${HOME_ID}/survey/pay`)

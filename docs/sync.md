@@ -310,14 +310,15 @@ needs an allocation of that resource and amount inside it; `-? text` needs a
 query inside it to have been run; `- text` needs a confirmation (a signed-in
 person presses Confirm) and `-choice: a | b` a decision; `-market text` and
 `-mail text` are handled by a peer that registered that capability; `-@name
-text` assigns the task to the peer `name`, who confirms it. `taskBlockers`
+text` assigns the task to the user `name` (their user object, see "Users"
+below), who confirms it. `taskBlockers`
 lists the unsatisfied ones; `setTaskDone` refuses while any remain and the UI
 disables the checkbox (`needs n` badge). `requirementSatisfied` first looks for
 a child row of the required kind (a done task, an allocation whose type and
 amount fit, an executed query), then for a **supply** row (`addSupply`): who
 supplied it, when, and for allocations/search optionally a reference
 (`supply.ref`) to an allocation or query row elsewhere by alias id; a `peer`
-supply counts only when `by` is the named peer. A reference it cannot resolve
+supply counts only when `by` is the named user's peer (`user:<username>`). A reference it cannot resolve
 is trusted (it came through a proposal from another account).
 
 **Resource banks** (`@calendar`, `@money`, `@inventory`, `@person <name>`,
@@ -333,7 +334,8 @@ a time row in one node (the library's "Meet up" template). Fos points are the ac
 `-ff N` requirement under a task is a **payout**: when the task runs, the fos
 `points` handler moves N points on the server's ledger from the owner to the
 respondent (the signed-in user whose supplies filled the task's other
-requirements, or the user named with `@` on the row) and records the
+requirements, or the user named with `@` on the row, `-ff 5 thanks @carol`, whose
+attestation the server checks first) and records the
 allocation and supply as `fos` (`backend/sync/hostHandlers.ts`). A `-$ N`
 requirement is likewise a **payment**: the fos `send-payment` handler opens one
 with the account's payment provider (Stripe Checkout, paying the respondent's
@@ -357,7 +359,8 @@ needs no bank, with one it needs that person's bank (`@person bob 40h`).
 overlap). `requirementProgress` reports how much of an amount is covered by
 the allocations inside a requirement and the ones its supplies reference;
 several smaller allocations add up, and `-@name` is filled when that person
-allocates themself inside it. An allocation row is a normal row: type it
+allocates themself inside it (the same user object on both rows, `sameUser`).
+A requirement that names a user counts only allocations for that user. An allocation row is a normal row: type it
 inside the requirement, drop one onto the requirement (a supply referencing
 it; the allocation stays in its bank), Alt+drag a reference, or pick an
 existing one in the requirement's picker. Dropping a template on a
@@ -872,6 +875,46 @@ offline from the shipped library, and the group edits them like any other rows.
 Combinations of capabilities are never new primitives: product = several rows
 in a node, coproduct = submissions on a mutable ref decided by a choice
 handler, exponential = composition through templates.
+
+## Users (`shared/sync/users.ts`, `backend/sync/identity.ts`)
+
+`@name` in a row is never stored as text. It is shorthand for a **user
+object**: a row of the standard library type `lib:type:user` (graph data in
+`.fos/library.json`, read through its form, `formRecord`) with the fields
+`account` (the stable account id), `username`, `name` (display name),
+`publicKey` and `verification` (`lib:type:attestation`: `by`, the verifying
+peer; `method`; `issuedAt`; `attestation`, the signature). A row that names a
+user (`-@bob`, `@bob 2h`, `-ff 5 thanks @carol`, `$ 20 @bob`) binds it as its
+`user` field: a ref, typed by the user type, to the user object node
+(`withUserField`, through `RowExtras.user` in `addRow`/`setRowContentAt`;
+`null` removes it). Code recognises the field by the type of the edge's left
+node (`isUserType`, any pinned version) and the field name; the view projects
+it as `TaskView.user`. The same record makes the same node everywhere, so the
+object travels with the row through node sync like any form field.
+
+**Verification.** The account server is the verifier today. Its `identity`
+handler (registry, no effect) resolves a username to the attested object:
+`GET /user/data/users/:username` for a signed-in account; `GET /identity/key`
+publishes `{ peer: 'fos', alg: 'ed25519', publicKey }`. The attestation is an
+ed25519 signature over `userAttestationPayload` (every field but the
+signature, plus `by`, `method`, `issuedAt`). The key comes from
+`FOS_IDENTITY_SEED`, else is derived from `JWT_SECRET`. Clients check it with
+WebCrypto (`checkUserAttestation` in `web/src/api.ts`; an older webview
+without Ed25519 trusts its own authenticated connection); the server re-checks
+it whenever it acts on an object read from a graph (`payeeOf` for fos points
+and payments), so a tampered, unverified or foreign object is refused there.
+`verifyUser(user, { servers, verify })` is the shared check with the crypto
+injected. Key pairs are the seam: `publicKey` is covered by the server's
+attestation (read from the account profile when it has one) and
+`ed25519-self` verifications are checked against it; a self signature alone
+proves possession of the key, not the account.
+
+**Offline and cache.** Parsing binds an unverified object (`unverifiedUser`,
+username only). The app fetches the attested object once
+(`App.resolveUser`), keeps it in Home under `fos:users` (`cacheUser`, one user
+row each) and rebinds every row that named that username (`rebindUsers`);
+later rows bind the cached object directly (`knownUser`). Offline rows keep
+the unverified object until the next edit online.
 
 ## Limitations / next steps
 

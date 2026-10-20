@@ -147,7 +147,10 @@ export type FosDataContent = {
     start?: number
     end?: number
     options?: string[]
-    /** `peer` requirements: the peer (username or device name) the task is assigned to. */
+    /**
+     * `peer` requirements: a peer id the task is assigned to (a shared host, a device). A user named with `-@name`
+     * is not a string here: the row's `user` field binds their user object (sync/users.ts).
+     */
     peer?: string
     /** `location` requirements ("-at Eiffel Tower 18:00..20:00"): the named place to be at, when the row names one. */
     place?: string
@@ -222,8 +225,6 @@ export type FosDataContent = {
     start?: number
     end?: number
     by?: string
-    /** Person allocations ("@name 2h"): who is allocated. */
-    person?: string
     /** Location allocations ("at Paris"): the place, by name and/or coordinates (a device's position). */
     location?: { name?: string; lat?: number; lng?: number }
   },

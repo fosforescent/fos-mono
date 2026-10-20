@@ -1,4 +1,5 @@
 import { userView } from './test-helpers'
+import { unverifiedUser } from './users'
 import { LIBRARY_ID } from './graph'
 import { listingAt, setMarketAt } from './market'
 import { FosStore } from '../dag-implementation/store'
@@ -912,12 +913,14 @@ describe('allocations: amounts add up, people allocate themselves, rows are rewr
   it('"-@bob" is filled when bob allocates himself inside it ("@bob 2h"), not by someone else', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'review', 1, 't')
-    r = addRow(r, ['t'], 'requirement', 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer', peer: 'bob' } })
-    r = addRow(r, ['t', 'rq'], 'allocation', '', 3, { id: 'a1', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', person: 'ada' } })
+    r = addRow(r, ['t'], 'requirement', 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
+    r = addRow(r, ['t', 'rq'], 'allocation', '', 3, { id: 'a1', allocation: { resource: '', type: 'person', amount: 2, unit: 'h' }, user: unverifiedUser('ada') })
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob'])
-    r = addRow(r, ['t', 'rq'], 'allocation', '', 4, { id: 'a2', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', person: 'bob', start: 1760000000000, end: 1760007200000 } })
+    r = addRow(r, ['t', 'rq'], 'allocation', '', 4, { id: 'a2', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', start: 1760000000000, end: 1760007200000 }, user: unverifiedUser('bob') })
     expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
-    expect(view(r, ['t', 'rq'])!.tasks[1]!.allocation).toMatchObject({ type: 'person', person: 'bob', start: 1760000000000 })
+    const bob = view(r, ['t', 'rq'])!.tasks.find(t => t.id === 'a2')!
+    expect(bob.allocation).toMatchObject({ type: 'person', start: 1760000000000 })
+    expect(bob.user).toMatchObject({ username: 'bob' })
   })
 
   it('setRowContentAt rewrites a row from re-parsed text in place: kind, text and data change, id and children stay', () => {

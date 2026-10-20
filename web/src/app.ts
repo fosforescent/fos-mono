@@ -14,6 +14,8 @@ import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
+import { fetchUser, fetchIdentityKey, checkUserAttestation } from './api'
+import { cacheUser, cachedUser, rebindUsers, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
@@ -338,6 +340,9 @@ export class App {
   private observedHead: string
   private config: AppConfig
   private listeners = new Set<(state: AppState) => void>()
+  /** Usernames whose user objects are being fetched from the account server (`resolveUser`). */
+  private resolvingUsers = new Set<string>()
+  private identityKey: Promise<{ peer: string; publicKey: string }> | null = null
   private syncInFlight = false
   private syncRequested = false
   private debounceTimer: Timer | null = null
@@ -766,6 +771,7 @@ export class App {
         const first = rows[0]!
         if (first.kind === 'allocation' && first.extras?.allocation && !this.bankFor(at, first.extras.allocation.type)) {
           this.edit(setRowContentAt(this.state.replica, [...this.state.view, ...at], id, first.kind, first.text, first.extras, this.now()))
+          this.resolveUser(first.extras?.user)
           if (first.children?.length) this.addParsedChildren([...at, id], first.children, undefined, true)
         } else this.rewriteRowAt(at, id, first)
         rows = rows.slice(1)
@@ -1312,12 +1318,13 @@ export class App {
     const replica = branch ?? this.state.replica
     let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
     if (kind === 'allocation') {
-      const resolved = preserveUnbound && data.allocation && !this.bankFor(at, data.allocation.type, data.allocation.person, replica) ? { ...data.allocation, resource: '' } : this.allocationWithBank(at, data.allocation, replica)
+      const resolved = preserveUnbound && data.allocation && !this.bankFor(at, data.allocation.type, data.user?.username, replica) ? { ...data.allocation, resource: '' } : this.allocationWithBank(at, data.allocation, replica, data.user?.username)
       if (!resolved) return id
       data = { ...data, allocation: resolved }
     }
     const next = addRow(replica, [...this.state.view, ...at], kind, text, this.now(), { ...rest, ...data, author, id })
     if (!branch) this.edit(next)
+    this.resolveUser(data.user)
     if (templateName && kind === 'task') this.applyTemplate(at, id, templateName, branch)
     if (templateName && kind === 'requirement' && data.requirement?.capability === 'task') {
       // "-[ ] `name`": the required task is created at once as an execution of the template
@@ -1382,20 +1389,20 @@ export class App {
    * An allocation with its bank resolved from the parent context (`bankFor`), or null (with a notice) when there is
    * none. A person allocation needs that person's bank only when it holds a window; otherwise it stands on its own.
    */
-  allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined, replica = this.state.replica): NonNullable<RowExtras['allocation']> | null {
+  allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined, replica = this.state.replica, person?: string): NonNullable<RowExtras['allocation']> | null {
     const by = this.state.session?.username ?? this.state.deviceName
     const base = allocation ?? { resource: '', type: 'inventory' as ResourceType, amount: 0, unit: 'unit' }
     const windowed = base.start !== undefined || base.end !== undefined
     if (base.type === 'person' && !windowed) return { ...base, by }
-    const bank = this.bankFor(at, allocation ? base.type : null, base.person, replica)
+    const bank = this.bankFor(at, allocation ? base.type : null, person, replica)
     if (!bank && base.type === 'points') {
       // fos points without a bank row draw from the account's balance (the fos peer is the pool); a payout moves them on the server's ledger when the task runs
       if (this.state.points !== null && base.amount > this.state.points) this.notify('error', `That is more than the ${this.state.points} fos points on the account; the allocation is recorded anyway.`)
       return { ...base, resource: 'fos:points', by }
     }
     if (!bank) {
-      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${base.person ?? 'name'} 40h`, points: '@points Pool 500', location: '@location Places' }
-      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${base.person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
+      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${person ?? 'name'} 40h`, points: '@points Pool 500', location: '@location Places' }
+      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
       return null
     }
     return { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by }
@@ -1415,10 +1422,11 @@ export class App {
     if (draft && draft.store !== this.state.replica.store) return
     let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
     if (parsed.kind === 'allocation') {
-      const resolved = this.allocationWithBank(at, parsed.extras?.allocation)
+      const resolved = this.allocationWithBank(at, parsed.extras?.allocation, undefined, parsed.extras?.user?.username)
       if (!resolved) return
       extras = { ...extras, allocation: resolved }
     }
+    this.resolveUser(parsed.extras?.user)
     const before = this.rowAt([...at, id])
     const rebasing = !!draft && draft.head !== headCid(this.state.replica)
     if (rebasing) {
@@ -1817,14 +1825,34 @@ export class App {
       this.notify('error', `Could not send: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  /** Requirements in the viewed subtree assigned to the peer `name` ("-@name …"), with the task they belong to. */
+  /**
+   * `@name` binds an unverified user object (the username only) until the account server attests it: fetch the
+   * attested object once, check the attestation against the server's key, keep it in the graph (`fos:users`) and
+   * rebind every row that named that username. Offline, rows keep the unverified object; the next edit retries.
+   */
+  private resolveUser(user: UserRecord | null | undefined): void {
+    const session = this.state.session
+    if (!user || user.verification || !session || session.kind !== 'user') return
+    const key = user.username.toLowerCase()
+    // a cached object is what addRow bound already (`knownUser`)
+    if (cachedUser(this.state.replica, user.username) || this.resolvingUsers.has(key)) return
+    this.resolvingUsers.add(key)
+    void (async () => {
+      const verified = await fetchUser(session, user.username)
+      if (!verified) { this.notify('error', `No Fos user is named @${user.username}.`); return }
+      this.identityKey ??= fetchIdentityKey(session.baseUrl)
+      if (await checkUserAttestation(await this.identityKey, verified) === false) { this.notify('error', `The server's verification of @${user.username} does not check out.`); return }
+      this.edit(rebindUsers(cacheUser(this.state.replica, verified, this.now()), verified, this.now()))
+    })().catch(() => { this.identityKey = null }).finally(() => this.resolvingUsers.delete(key))
+  }
+  /** Requirements in the viewed subtree assigned to the user `name` ("-@name …"), with the task they belong to. */
   assignmentsTo(name: string): Array<{ at: Scope; row: TaskView; task: TaskView | null }> {
     const out: Array<{ at: Scope; row: TaskView; task: TaskView | null }> = []
     const walk = (at: Scope, parent: TaskView | null) => {
       const node = view(this.state.replica, [...this.state.view, ...at])
       if (!node) return
       for (const row of node.tasks) {
-        if (row.kind === 'requirement' && row.requirement?.capability === 'peer' && row.requirement.peer === name) out.push({ at, row, task: parent })
+        if (row.kind === 'requirement' && row.requirement?.capability === 'peer' && row.user?.username.toLowerCase() === name.toLowerCase()) out.push({ at, row, task: parent })
         if (row.childCount) walk([...at, row.id], row)
       }
     }
@@ -2246,6 +2274,7 @@ export class App {
       let r = this.state.replica
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
       r = replace ? setRowContentAt(r, parent, id, parsed.kind, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.kind, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
+      this.resolveUser(parsed.extras?.user)
       if (templateCid) r = instantiateTemplateValue(r, parent, id, templateCid, this.now())
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
@@ -2288,7 +2317,8 @@ export class App {
     if (!target || destination.includes(id)) return false
     const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
     if (!req) return true
-    if (req.capability === 'allocation') return target.kind === 'allocation' && allocationMatches(req, target.allocation)
+    const requirement = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1)) : undefined
+    if (req.capability === 'allocation') return target.kind === 'allocation' && allocationMatches(req, target.allocation, { required: requirement?.user ?? null, given: target.user })
     if (req.capability === 'task') return target.kind === 'task' && target.done
     if (req.capability === 'search') return target.kind === 'query' && !!target.query?.executedAt
     return false
@@ -2828,9 +2858,10 @@ export class App {
     const id = newId(), label = req.resource === 'location' ? `at ${location?.name ?? `${location?.lat}, ${location?.lng}`}` : `${handler.label} (${by})`
     const allocation: NonNullable<TaskView['allocation']> = {
       resource: requirement.id, type: req.resource ?? 'inventory', amount: req.amount ?? 1, unit: req.unit ?? (req.resource === 'account' ? 'USD' : req.resource === 'calendar' || req.resource === 'person' ? 'h' : req.resource === 'points' ? 'ff' : req.resource === 'location' ? 'place' : 'unit'),
-      by, ...(req.start !== undefined ? { start: req.start } : {}), ...(req.end !== undefined ? { end: req.end } : {}), ...(req.peer ? { person: req.peer } : {}), ...(location ? { location } : {})
+      by, ...(req.start !== undefined ? { start: req.start } : {}), ...(req.end !== undefined ? { end: req.end } : {}), ...(location ? { location } : {})
     }
-    let next = addRow(this.state.replica, [...parent, requirement.id], 'allocation', label, this.now(), { id, allocation })
+    // a requirement naming a user is filled for that same user object
+    let next = addRow(this.state.replica, [...parent, requirement.id], 'allocation', label, this.now(), { id, allocation, ...(requirement.user ? { user: requirement.user } : {}) })
     next = addSupply(next, parent, requirement.id, { capability: 'allocation', by, ref: id }, this.now())
     this.edit(next)
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirement.id) })

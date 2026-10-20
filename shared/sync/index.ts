@@ -19,6 +19,7 @@ export * from './triggers'
 
 export * from './sharing'
 export * from './payments'
+export * from './users'
 export * from './library'
 export * from './market'
 

@@ -8,6 +8,10 @@ import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
 import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler } from './hostHandlers'
+import { identityHandler, identityKeyFromSeed } from './identity'
+
+const accounts: Record<string, { id: number; username: string; name?: string }> = { bob: { id: 2, username: 'bob', name: 'Bob' }, carol: { id: 3, username: 'carol' } }
+const identity = identityHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
 
 /** Each scenario gets its own store: a failed run leaves its journal in the store it ran against. */
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
@@ -136,12 +140,12 @@ test('a fos-points payout moves points on the ledger to the respondent and recor
   const transfers: unknown[] = []
   const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
   // nobody has answered: nothing to pay
-  const early = host(fresh(r), createHandlerRegistry([pointsHandler({ transfer })]))
+  const early = host(fresh(r), createHandlerRegistry([pointsHandler({ transfer }, identity)]))
   expect(String((await early.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/No one to pay yet/)
   expect(transfer).not.toHaveBeenCalled()
   // bob answers (a supply by his account), then the task runs
   const answered = addSupply(r, [HOME_ID, 'survey'], 'q', { capability: 'choice', by: 'user:bob', choice: 1 }, 6)
-  const h = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer })]))
+  const h = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer }, identity)]))
   const result = await h.complete([HOME_ID, 'survey'], [])
   if (!result.body.evaluation) throw new Error(`payout failed: ${JSON.stringify(result.body)}`)
   expect(result.body.evaluation.status).toBe('committed')
@@ -149,13 +153,40 @@ test('a fos-points payout moves points on the ledger to the respondent and recor
   const pay = view(h.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!
   expect(pay.requirement!.satisfied).toBe(true)
   const rows = view(h.get(), [HOME_ID, 'survey', 'pay'])!.tasks
-  expect(rows.find(t => t.kind === 'allocation')!.allocation).toMatchObject({ resource: 'fos:points', type: 'points', amount: 5, unit: 'ff', by: 'fos', person: 'bob' })
+  const payout = rows.find(t => t.kind === 'allocation')!
+  expect(payout.allocation).toMatchObject({ resource: 'fos:points', type: 'points', amount: 5, unit: 'ff', by: 'fos' })
+  expect(payout.user).toMatchObject({ account: '2', username: 'bob', name: 'Bob' })
+  expect(payout.title).toBe('5 fos points to Bob')
   expect(rows.find(t => t.kind === 'supply')!.supply).toMatchObject({ capability: 'allocation', by: 'fos' })
   expect(view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'survey')!.done).toBe(true)
   // a failing ledger leaves the requirement open and the task unfinished
-  const broke = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer: async () => { throw new Error('Insufficient tokens') } })]))
+  const broke = host(fresh(answered), createHandlerRegistry([pointsHandler({ transfer: async () => { throw new Error('Insufficient tokens') } }, identity)]))
   expect(String((await broke.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/Insufficient tokens/)
   expect(view(broke.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(false)
+})
+
+test('a payout to @name pays the user object the requirement binds, only when this server attested it unchanged', async () => {
+  const carol = (await identity.resolve('carol'))!
+  const named = (user: typeof carol) => {
+    let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['points'] })
+    r = addTask(r, [HOME_ID], 'Thank carol', 2, 'thanks')
+    // "-ff 3 thanks @carol": no respondent needed, the row names the payee
+    return addRow(r, [HOME_ID, 'thanks'], 'requirement', 'thanks', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 3, unit: 'ff' }, user })
+  }
+  const transfers: unknown[] = []
+  const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
+  const h = host(fresh(named(carol)), createHandlerRegistry([pointsHandler({ transfer }, identity)]))
+  const result = await h.complete([HOME_ID, 'thanks'], [])
+  if (!result.body.evaluation) throw new Error(`named payout failed: ${JSON.stringify(result.body)}`)
+  expect(transfers).toEqual([['owner', 'carol', 3]])
+  expect(view(h.get(), [HOME_ID, 'thanks'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(true)
+  // a tampered object (same signature, another username), an unverified one and one signed by another key are refused
+  const forged = identityHandler({ findUser: async username => accounts[username] ?? null }, identityKeyFromSeed(Buffer.alloc(32, 2)))
+  for (const user of [{ ...carol, username: 'bob' }, { ...carol, verification: null }, (await forged.resolve('carol'))!]) {
+    const refused = await host(fresh(named(user)), createHandlerRegistry([pointsHandler({ transfer }, identity)])).complete([HOME_ID, 'thanks'], ['pay'])
+    expect(String(refused.body.error)).toMatch(/not verified by this server/)
+  }
+  expect(transfer).toHaveBeenCalledTimes(1)
 })
 
 test('the mail effect emails the first address in the row with the task as the body, and records the supply as the server', async () => {
