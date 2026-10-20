@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { evaluationRecord, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
+import { evaluationRecord, formTitle, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -72,7 +72,7 @@ test('completing a tool requirement calls the attached server and records the an
   expect(calls).toEqual([[5, 'weather', 'Paris next week']])
   const rq = view(replica(), ['proj', 'trip'])!.tasks.find((t) => t.id === 'rq')!
   expect(rq.requirement?.satisfied).toBe(true)
-  expect(view(replica(), ['proj', 'trip', 'rq'])!.tasks.map((t) => [t.kind, t.title])).toEqual([['note', 'weather(Paris next week) = sunny'], ['supply', 'run by mcp:5']])
+  expect(view(replica(), ['proj', 'trip', 'rq'])!.tasks.map((t) => [t.kind, t.title])).toEqual([['plain', 'weather(Paris next week) = sunny'], ['supply', 'run by mcp:5']])
   expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toEqual(['tool weather']) // rq2 still open
   expect(saved.length).toBeGreaterThan(0)
   // the listener runs what is still open (rq2 explicitly requests weather too)
@@ -149,7 +149,7 @@ test('an explicit handler ref is honored and the return ref addresses the result
   expect(refArguments(store, request, capabilityTarget(store, 'tool'))[0]!.targetCid).toBe(handler)
   const returned = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
   expect(returned).toHaveLength(1)
-  expect(content(store, returned[0]!.targetCid!).data.description!.content).toBe('weather(Paris next week) = sunny')
+  expect(formTitle(store, valueContent(store, returned[0]!.targetCid!))).toBe('weather(Paris next week) = sunny')
 })
 
 test('manual and listener runs share the user lock and reload completed work', async () => {

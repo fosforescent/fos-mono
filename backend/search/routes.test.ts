@@ -85,7 +85,7 @@ test('a bidder submits a proposal on a listed node; bidders see only their own p
   // the bidder's branch holds the comment and the supply under the requirement
   const bobProposal = readProposals(alice.store, content(alice.store, jobCid)).find((p) => p.peerId === 'user:bob')!
   const branch = viewNode(alice.store, bobProposal.contentCid)
-  expect(branch.tasks.map((t) => [t.kind, t.title])).toEqual([['requirement', '1h of design time'], ['comment', 'I can do this Tuesday']])
+  expect(branch.tasks.map((t) => [t.kind, t.title])).toEqual([['requirement', '1h of design time'], ['plain', 'I can do this Tuesday']])
   const reqInBranch = resolveScope(alice.store, bobProposal.contentCid, ['req'])!
   expect(viewNode(alice.store, reqInBranch).tasks.map((t) => t.kind)).toEqual(['supply'])
 
