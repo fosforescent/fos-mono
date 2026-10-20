@@ -111,31 +111,35 @@ All structures use existing primitives. Identity across versions is
 on every edit, its alias id does not.
 
 ```
-row         [template, rowNode]          rowNode.data: alias{id}, description{content}, updated{time}. The template (the instruction)
-                                     says what the row is: a node with data.instanceKind, either a row type (see "Row types" below) or a
-                                     template row the row was made from, pinned by the cid of that version's content. Row types by kind:
-              Task        task      + todo{completed,time}                         (checkbox; "[ ]"/"[x]" prefix in the add bar)
-              Row         plain     the default row: text with links/embeds
-              Note        note      description.content is a markdown body (">" prefix); child rows are variables (key: value,
+row         [type, rowNode]              rowNode.data: alias{id}, description{content}, updated{time}. The type (the left node, the
+                                     instruction) is what the row is, and nothing else is: a row type (see "Row types" below; every
+                                     pinned version shares its graph identity `lib:type:…`) or a template row the row was made from,
+                                     pinned by the cid of that version's content. Library row types and the native data their rows hold:
+              Task        lib:type:task        + todo{completed,time}   (checkbox; "[ ]"/"[x]" prefix in the add bar)
+              Row         lib:type:plain       the default row: text with links/embeds; rows of a type this peer does not know
+                                     render like it
+              Note        lib:type:note        a graph form: a Markdown body field (">" prefix); child rows are variables (key: value,
                                      or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
                                      expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
-              Comment     comment   + comment{authorID,authorName,time}  ("//" prefix or the menu; replies are child comments)
-              Reference   ref       + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
+              Comment     lib:type:comment     a graph form: body, person, texts ("//" prefix or the menu; replies are child comments)
+              Reference   lib:type:ref         + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
                                      copy; `owner` marks a market result (the row lives in another account; click opens the listing)
-              Allocation  requirement  an allocation row with a negative amount: what a task needs ("-" prefix, under a task;
-                                     capability = task | allocation | search | confirmation | choice | market | mail | peer)
-              Allocation  supply    an allocation row with a positive amount and a capability: satisfies a requirement (`ref` names an
-                                     allocation/query row)
-              Query       query     + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
-              Resource    resource  + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
-              Allocation  allocation + allocation{resource, type, amount, unit, start?, end?, by?, person?}
-                                     ("$ 50" money, ": 1h" time, "# 2 widgets" things, "@bob 2h" a person; optional window
-                                     "2026-10-13..2026-10-20" after the amount, start = now / end = forever when absent; drawn from the parent
-                                     context: the bank above, the bank the requirement names, or the type's default pool = first top-level bank)
-              Template    template  + instanceKind{kind: task}: its requirement rows are copied under every task made from it
-                                     ("`name" prefix; "[ ] `name` …" makes the task [Trip's content, taskNode])
+              Allocation  lib:type:allocation  + allocation{resource, type, amount, unit, start?, end?, by?, capability?, …}: a signed
+                                     entry of a resource, read by sign (`flowOf`). Negative = a requirement, what its parent needs ("-"
+                                     prefix; capability = task | allocation | search | confirmation | choice | market | mail | peer | …).
+                                     Positive with a capability = a supply that satisfies a requirement (`ref` names an allocation/query
+                                     row); positive without = an allocation (": 1h" time, "# 2 widgets" things, "@bob 2h" a person;
+                                     optional window "2026-10-13..2026-10-20" after the amount, start = now / end = forever when absent;
+                                     drawn from the parent context: the bank above, the bank the requirement names, or the type's
+                                     default pool = first top-level bank)
+              Money       lib:type:allocation:money  the same entry for money, told apart by sign alone: negative = a request for
+                                     payment ("-$ 50"), positive = a payment ("$ 50"), which fills the request it sits under
+              Query       lib:type:query       + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
+              Resource    lib:type:resource    + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
+              Template    lib:type:template    its rows are copied under every task made from it; the template's content is the
+                                     type of those tasks ("`name" prefix; "[ ] `name` …" makes the task [Trip's content, taskNode])
 reference error  [missing, rowNode]      the row is pinned to a template this peer has not received; `missing` is a stand-in template
-                                     (data.missingTemplate{cid, kind}). Node sync reports it as the row it stands for, asks the peer
+                                     (data.missingTemplate{cid}). Node sync reports it as the row it stands for, asks the peer
                                      for the template (NodeRequest.templates / ProvidedNode.wanted) and pins the row once it arrives
 peer        [PEER, peerRefNode]          peerRefNode.data: peerId{content}          (membership.ts reads the same shape)
 choice      [CHOICE, choiceNode]         an unresolved divergence, replacing the task/node edge it concerns
@@ -177,8 +181,9 @@ and, apart from container data conflicts, symmetric.
 
 A device syncs with a peer one node at a time. For each node it holds a record
 of what both sides last agreed (`meta.nodeSync`, keyed by peer, path and branch
-selections): the node's shallow shape (its data and its children's ids, kinds,
-addresses and pinned templates) and what the peer last provided.
+selections): the node's shallow shape (its data and its children's ids,
+addresses, pinned templates, which are their types, and a `held` flag for a
+reference or a node a third peer holds) and what the peer last provided.
 
 ```
 device → peer   NodeRequest  { peerId, scope, path, linkId, branches?, update?: { base, value }, templates?, templateNodes? }
@@ -303,8 +308,10 @@ an added/changed/removed summary against the proposal's base.
 ## Requirements, resource banks, queries and the market
 
 **Requirements** (`-` prefix, under a task) are what the task needs before it
-can be completed. `-` is a modifier: what follows it names the kind of child
-row that fills the requirement. `-[ ] text` needs a task inside it to be done;
+can be completed. `-` is a modifier: what follows it names the child row that
+fills the requirement (a requirement is a negative allocation entry; money is
+its own row type, `lib:type:allocation:money`, a negative money row a request
+for payment and a positive one a payment). `-[ ] text` needs a task inside it to be done;
 `-$ 50 text` (or `-@account 50`, `-@calendar 1h`, `-@inventory 2 widgets`)
 needs an allocation of that resource and amount inside it; `-? text` needs a
 query inside it to have been run; `- text` needs a confirmation (a signed-in
@@ -314,7 +321,7 @@ text` assigns the task to the user `name` (their user object, see "Users"
 below), who confirms it. `taskBlockers`
 lists the unsatisfied ones; `setTaskDone` refuses while any remain and the UI
 disables the checkbox (`needs n` badge). `requirementSatisfied` first looks for
-a child row of the required kind (a done task, an allocation whose type and
+a child row that fills it (a done task, an allocation whose type and
 amount fit, an executed query), then for a **supply** row (`addSupply`): who
 supplied it, when, and for allocations/search optionally a reference
 (`supply.ref`) to an allocation or query row elsewhere by alias id; a `peer`
@@ -327,7 +334,7 @@ children. Each resource type has a marker: `$` money, `:` time, `#` things,
 `@name` a person, `ff` fos points, `at` a place (`-$`, `-:`, `-#`, `-@name`,
 `-ff`, `-at` for the matching requirements; `-at Eiffel Tower` needs a
 location allocation at that place, by name or by a device's position). A
-place at a time is not its own kind: it is the product of a location row and
+place at a time is not its own type: it is the product of a location row and
 a time row in one node (the library's "Meet up" template). Fos points are the account's token balance
 (`GET /tokens/balance`, shown on the fos row); an `ff` allocation with no
 `@points` bank above draws from that balance (`resource: 'fos:points'`). A
@@ -342,7 +349,8 @@ with the account's payment provider (Stripe Checkout, paying the respondent's
 connected account; `backend/payments/stripe.ts`), records it on the requirement
 as a `fos:payment` value and leaves the evaluation `awaiting-review`; the
 provider's webhook confirms it later, even with every device offline, and the
-server then writes the allocation and supply as `fos` and resumes the
+server then writes the payment (a positive money row under the request, which
+fills it) as `fos` and resumes the
 evaluation (`backend/sync/payments.ts`, `shared/sync/payments.ts`). Running
 the task again while a payment is open does not open a second one; an expired
 page marks the record failed and the next run opens a new payment. Payees set
@@ -413,10 +421,15 @@ is (`.fos/stores.json`, never in the graph; `desktop/src-tauri/src/stores.rs`).
 `fos peers` lists the links.
 
 **Row types.** What every row is made from lives in the standard library's
-"Row types" group (`lib:types`): one template row per kind (`lib:type:task`,
-`lib:type:note`, ...) whose content is the row type a row edge pins. New rows
+"Row types" group (`lib:types`): one template row per type (`lib:type:task`,
+`lib:type:note`, `lib:type:allocation:money`, ...) whose content is the row type a row edge pins. A row
+is told apart by that left node alone (`rowTypeOf`, `isRowOfType`, any pinned
+version, by graph identity); there is no row kind and no `builtin:` behavior
+marker. Rows pinned to the retired alias-less seed types (cid migration v4)
+read as rows of no known type. New rows
 are made from the nearest library row (`fos:library`) above them that has the
-type (`rowTemplate`); with none, making a row is an error. The library is a
+type (`rowTypeAt`; a library seeded before a type existed falls back to the
+build's definition); with none, making a row is an error. The library is a
 row in two places. The **device root ships one**, filled from the client's
 build (`ensureLibraryRow`, `ensureDeviceLibrary`); it is local to that device:
 node exchange of a root leaves it out on both sides (`isShippedLibrary`).
@@ -439,7 +452,7 @@ type (`pattern.type`, e.g. `lib:type:home`) and optionally the versions of it
 that match (`pattern.versions`, pinned cids; none = any version); `pattern.any`
 is the wildcard. Without the wildcard a type accepts what its patterns match;
 with it, everything except what they match. A child is matched by its row type
-(the library type of its kind) and its version (the template its edge pins).
+(its edge's left node's graph identity) and its version (the template its edge pins).
 The seed's ordinary types accept anything but Home and the store roots. A
 template row is the type of the tasks made from it, so a new template gets the
 Task type's pattern rows as its own (`withInstancePatterns`); an instance does
@@ -459,7 +472,7 @@ a **type error**: the parent's edge becomes `[TYPE_ERROR, error]`, the error
 node keeping the parent's edge exactly and naming the rejected children
 (`data.typeError.rejected`); a store root in error keeps its content behind an
 error node as the root alias's target. Reading through it sees the row as it was
-(`identityCid`, `rowKindOf`, …), so the UI shows the same rows, the parent and
+(`identityCid`, `rowTypeOf`, …), so the UI shows the same rows, the parent and
 the rejected children marked red (`TaskView.typeError`, `rejected`). Type errors
 are derived, never edited: every commit re-derives them (`canonicalTypeErrors`,
 memoized per cid), merges compare the rows without them (`withoutTypeErrors`),
@@ -920,8 +933,8 @@ issue by hand", "Enter the location", "Use this device's location"
 (`lib:device:*` rows are device handlers), and so on. Clicking one records
 that the person did it by hand: allocations get a receipt row inside the
 requirement (its resource is the requirement itself) plus the supply pointing
-at it, places come from the typed name or the device's position, every other
-kind is a supply by the person. No peer is involved, so the fallbacks work
+at it (a money request gets the payment row alone), places come from the typed
+name or the device's position, every other requirement gets a supply by the person. No peer is involved, so the fallbacks work
 offline from the shipped library, and the group edits them like any other rows.
 Combinations of capabilities are never new primitives: product = several rows
 in a node, coproduct = submissions on a mutable ref decided by a choice
@@ -1231,10 +1244,9 @@ without credentials; every other route keeps the account origins list. The embed
 shows math and diagram fences as source. The publishing dialog offers "Copy
 embed" for public links.
 
-Not yet: a payment form (a money requirement still shares `lib:type:allocation`
-with every allocation, so it has no type to render by; it needs a payment row type
-in the library and the `-$` constructor minting it, then the visitor-pays path
-through Stripe Checkout); messages to online visitors (the seam: a visitor is
+Not yet: a payment form (money requests are rows of `lib:type:allocation:money`, so
+a page can render them by type; the visitor-pays path through Stripe Checkout is
+not wired); messages to online visitors (the seam: a visitor is
 already a member peer `visitor:<uuid>` with a receipt; a delivery channel keyed by
 that receipt, e.g. a field of the visit answer or a socket, would make them
 addressable like any peer).
@@ -1306,7 +1318,7 @@ interaction view and remain visible in the tree.
 
 The analysis icon opens a read-only grid/graph workspace. Filter by text patterns
 (`*` matches arbitrary text), object type, or task status. Results include counts
-by kind and sums, averages, minima, and maxima for allocations, grouped by resource
+by row type and sums, averages, minima, and maxima for allocations, grouped by resource
 type and unit. Analysis reads at most 2,000 descendants to depth 32, reports when
 the row limit is reached, and does not traverse peer references. Refresh rereads
 the graph; query controls never edit it.
