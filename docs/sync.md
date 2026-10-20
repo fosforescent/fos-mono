@@ -1034,6 +1034,69 @@ or resource transfer. Graph-only evaluations run after all inputs are supplied;
 external integration effects still require their host-side handler. Hosted
 endpoints require deployment of the updated backend.
 
+### Published nodes as pages, and the embed script
+
+Publishing a node publicly gives anyone execute access to it through a service
+trigger: the share link (and its embed) renders that node as a small website
+(`web/src/site.ts`, the one renderer of the share page and the embed) and lets
+visitors answer its holes.
+
+**Rows render by type.** A row is `[type, row]`; the projection
+(`sharedProjection`, `shared/sync/sharing.ts`) carries each row's `type`, the id
+of the library row type its left node is (`rowTypeOfEdge`; every pinned version
+of a library type shares that id), and nothing else to tell rows apart
+(`shared/sync/published-types.ts`). A note (`lib:type:note`) carries its whole
+markdown `body` (up to `SHARED_BODY_LIMIT`, 100,000 characters, and
+`SHARED_TOTAL_BODY`, 1,000,000 per projection; a cut body says `truncated`) and a
+short `title` (`markdownTitle`). A scalar field (`lib:type:text|number|time|peer`)
+carries its name as `title` and its value as `body`; the field a row presents as
+its title (a note's body, per its type's `form.title`) is not repeated, and an
+empty one is declared as an input, rendered as a control of that field's type.
+Anything else reads as its text. Bindings (`{name}`) are not resolved, since
+arguments are never exported. The revision that votes are tied to is still
+computed from the earlier row shape, so existing polls keep their votes.
+
+The page is the node (its markdown, or its title as a heading). Leaf children are
+sections; a child with rows of its own other than fields is a sub-page, linked
+from its parent with breadcrumbs back. Declared inputs render inline at the row
+they belong to (missing bindings on the page itself); poll options, rankings and
+Save follow the page, and only when there is something to answer. The share page
+(`#share=`) hides the app chrome (`#app.shared-site`) and renders math and
+diagrams; markdown goes through marked + DOMPurify everywhere.
+
+**Visitors' answers are submissions.** Each visitor is its own anonymous peer
+(`visitor:<uuid>`, a member of the node, with a signed receipt), or `user:<name>`
+when signed in. On the shared original (not a template execution) their text
+answers are candidate values in the owner's node (`proposeVisitorValues`): a
+missing binding gets that visitor's binding proposal on its ref, empty fields one
+node proposal named `fos:visitor-submission` per visitor (a resubmission replaces
+it). The owner accepts or rejects them like any submission; they are not offered
+to other visitors as poll options and never merge by a merge policy.
+
+**Embedding.** `web/src/embed.ts` builds to `dist/embed.js` (a second Vite build,
+`web/vite.embed.config.ts`, IIFE, about 80 kB) and is served by Cloudflare Pages
+next to the app. `<script src="https://<app>/embed.js" data-fos-share="<share URL>"
+data-fos-api="<server>" async></script>` renders after itself, and any
+`<div data-fos-share=…>` renders inside; each gets a shadow root (styles isolated,
+colors and fonts inherited from the host page). Reading uses
+`GET /public/node/read?owner=&share=&path=[…]` (`credentials: 'omit'`), which
+writes nothing, refuses Fos-user audiences and executions, and is cached for 60
+seconds; a template endpoint reads as its page and Start begins the visitor's
+private execution. A visitor joins (`/public/node/visit`) only when they first
+answer or start; the receipt and execution are remembered in the host site's
+storage. `/public/node/read|visit|input` alone allow every origin through CORS,
+without credentials; every other route keeps the account origins list. The embed
+shows math and diagram fences as source. The publishing dialog offers "Copy
+embed" for public links.
+
+Not yet: a payment form (a money requirement still shares `lib:type:allocation`
+with every allocation, so it has no type to render by; it needs a payment row type
+in the library and the `-$` constructor minting it, then the visitor-pays path
+through Stripe Checkout); messages to online visitors (the seam: a visitor is
+already a member peer `visitor:<uuid>` with a receipt; a delivery channel keyed by
+that receipt, e.g. a field of the visit answer or a socket, would make them
+addressable like any peer).
+
 ### The event grammar: one vocabulary for every transport
 
 Every input surface is an adapter of one grammar (`shared/sync/events.ts`): HTTP,
