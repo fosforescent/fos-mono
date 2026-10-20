@@ -1,4 +1,4 @@
-import type { Capability, NodeView } from '../../shared/sync/index'
+import type { Capability, MarketBid, NodeView } from '../../shared/sync/index'
 
 export type Session = {
   baseUrl: string
@@ -249,22 +249,15 @@ export function organizeCapture(session: Session, input: { text: string; title: 
   return authed(session, 'POST', '/user/data/voice-notes/organize', input)
 }
 
-export type SearchHit = { aliasId: string; title: string; kind: string; score: number; owner: string | null; path?: string[] }
-
-/** Semantic search over this account's rows (and, with `market`, rows other accounts listed). */
-export function searchRows(session: Session, query: string, options: { market?: boolean; limit?: number } = {}): Promise<{ hits: SearchHit[] }> {
-  return authed(session, 'POST', '/user/data/search', { query, market: !!options.market, limit: options.limit ?? 10 })
-}
-
 export type MarketNode = { capability?: boolean; owner: string; aliasId: string; view: NodeView; myProposal: { id: string; status: string } | null }
 
 export function getMarketNode(session: Session, owner: string, aliasId: string): Promise<MarketNode> {
   return authed(session, 'GET', `/user/data/market/node?owner=${encodeURIComponent(owner)}&id=${encodeURIComponent(aliasId)}`)
 }
 
-/** Submit (or replace) this account's proposal on a listed node: rows to add under it (comments, allocation references, supplies). */
-export function submitMarketProposal(session: Session, owner: string, aliasId: string, rows: Array<{ kind: string; text: string; data?: Record<string, unknown>; under?: string; id?: string }>): Promise<{ proposalId: string }> {
-  return authed(session, 'POST', '/user/data/market/proposals', { owner, aliasId, rows })
+/** Submit (or replace) this account's proposal on a node of another account: the rows of a bid it built (shared/sync/market.ts). */
+export function submitMarketProposal(session: Session, owner: string, aliasId: string, bid: MarketBid): Promise<{ proposalId: string }> {
+  return authed(session, 'POST', '/user/data/market/proposals', { owner, aliasId, bid })
 }
 
 /** The account's fos points (its token balance): the default pool for "ff" allocations. */

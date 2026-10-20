@@ -1208,7 +1208,7 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
     query.placeholder = 'Find a capability on the marketplace…'; query.setAttribute('aria-label', 'Search marketplace'); query.required = true
     const submit = button('secondary', 'Search', () => undefined); submit.type = 'submit'; submit.disabled = !app.isOnline('fos')
     form.append(query, submit); form.className = 'marketplace-search'
-    form.onsubmit = event => { event.preventDefault(); const id = app.addRowAt([], 'query', query.value, { extras: { query: { market: true } } }); const row = app.currentView()?.tasks.find(r => r.id === id); if (row) void app.runQueryAt([], row) }
+    form.onsubmit = event => { event.preventDefault(); void app.searchAt([], query.value, true) }
     panel.push(form)
     if (app.currentRow()?.kind === 'template') panel.push(button('secondary small', 'Publish capability to marketplace', () => app.publishCurrentTemplate(true)))
     if (!app.isOnline('fos')) panel.push(div('muted', 'Fos server is offline. Connect to use GitHub and other server integrations.'), button('secondary small', 'Connect Fos server', () => app.goToAccountPeer()))
@@ -2429,7 +2429,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       if (r.capability === 'search') {
         const fos = handler('search')
         if (fos) body.append(stop(button('secondary small', `Ask ${fos.name} to search`, () => void app.askPeerAt(at, task))))
-        else hint('add a ? query inside and run it' + (peers.length ? '' : ' (connect: fos runs searches)'))
+        else hint('connect to your account: fos runs searches')
       }
       if (r.capability === 'market') {
         const fos = handler('market')

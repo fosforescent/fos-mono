@@ -171,7 +171,7 @@ export function createDetachHandler(deps: AccountStoreDeps) {
 
 /**
  * Re-embed a user's rows a little after each save (debounced per user, never on the request path).
- * Row embeddings feed `POST /user/data/search`; a failure here only logs (search degrades, sync does not).
+ * Row embeddings feed the fos `search` effect (sync/hostHandlers.ts); a failure here only logs (search degrades, sync does not).
  */
 const indexTimers = new Map<number, ReturnType<typeof setTimeout>>()
 const indexEmbed = vertexEmbed()

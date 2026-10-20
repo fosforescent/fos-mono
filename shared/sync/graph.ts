@@ -227,6 +227,7 @@ export const LIBRARY_ID = 'fos:library'
 /** The library's Row types group and its rows, one per row kind: what every row is made from. */
 export const ROW_TYPES_ID = 'lib:types'
 export { rowTypeId }
+export type { RowTypeKind }
 
 /** The seed's row types, their pattern rows stored in `store`. */
 export function seedTypes(store: FosStore): FosNodeContent[] {
@@ -257,6 +258,19 @@ export function setRootType(store: FosStore, kind: 'device-root' | 'document-roo
 const rowTypeOf = (kind: RowKind): RowTypeKind => {
   if (kind === 'reference-error') throw new Error('A reference error stands for a missing template; it has no row type.')
   return kind === 'requirement' || kind === 'supply' ? 'allocation' : kind
+}
+
+/**
+ * Is the row `[type, row]` made from the standard library's row type `type` (`lib:type:<type>`)? The left node
+ * decides; every pinned version of the library type shares its definition id, so any of them counts.
+ */
+export function isRowOfType(store: FosStore, edge: FosPathElem, type: RowTypeKind): boolean {
+  const left = plainEdge(store, edge)[0]
+  return store.table.has(left) && definitionId(content(store, left)) === rowTypeId(type)
+}
+/** The child rows of `cid` made from the library row type `type`: their alias ids and identity cids. */
+export function rowsOfType(store: FosStore, cid: string, type: RowTypeKind): Array<{ id: string; cid: string }> {
+  return valueContent(store, cid).children.filter(e => isRowOfType(store, e, type)).map(e => ({ id: content(store, identityCid(store, e)).data.alias?.id ?? '', cid: identityCid(store, e) })).filter(r => r.id)
 }
 
 /**
@@ -1111,7 +1125,7 @@ export type TaskView = {
   query?: NonNullable<FosDataContent['query']>
   resource?: NonNullable<FosDataContent['resource']> & { allocated: number; available: number | null }
   allocation?: NonNullable<FosDataContent['allocation']>
-  /** Link rows: listed on the market. */
+  /** Listed on the market: the market peer is a member of this node (`isListed`). */
   market?: boolean
   createdAt: number
   updatedAt: number
@@ -1156,8 +1170,26 @@ export type NodeView = {
   typeError?: string[]
 }
 
-/** A market listing is a named value on the node (`fos:listing`), like `fos:sharing`: it survives edits and sync. */
-export const LISTING_ARGUMENT = 'fos:listing'
+/**
+ * The market is a peer the fos server serves: a node is listed iff this peer is a member of it with `read` (`edit` =
+ * it takes proposals from the accounts that find it there), and the listing reaches the node's subtree like any
+ * member grant. Unlisting removes the member. Handlers published to the market are typed refs on its `to` side
+ * (sync/handlers.ts `publishTemplate`). Market grants are the market's: they never become other accounts' own.
+ */
+export const MARKET_PEER = 'fos:market'
+/** The market member entry on this node itself (not inherited), or undefined. */
+export function marketMemberOf(store: FosStore, nodeCid: string): MemberRecord | undefined {
+  return readMembers(store, content(store, nodeCid)).find((m) => m.peerId === MARKET_PEER)
+}
+/** What the market member on this node grants, switched-off capabilities removed (null: no market member here). */
+export function marketGrantsOf(store: FosStore, nodeCid: string): Capability[] | null {
+  const m = marketMemberOf(store, nodeCid)
+  return m ? m.capabilities.filter((c) => !m.disabled?.includes(c)) : null
+}
+/** Is the node listed right here (the market is its member with `read`)? */
+export function isListed(store: FosStore, nodeCid: string): boolean {
+  return !!marketGrantsOf(store, nodeCid)?.includes('read')
+}
 /**
  * The JSON value of the named argument ref `name` on the node `nodeCid` (what `readNodeValue` reads, without a
  * replica). Null when the node has no such value.
@@ -1232,7 +1264,7 @@ export function rowView(store: FosStore, nodeCid: string, kind: RowKind, edge?: 
   if (kind === 'query') view.query = value.data.query ?? {}
   if (kind === 'resource' && value.data.resource) { const allocated = allocatedIn(store, nodeCid); view.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === undefined ? null : value.data.resource.capacity - allocated } }
   if (kind === 'allocation' && value.data.allocation) view.allocation = allocationValue(store, nodeCid)
-  if (namedValueOf(store, nodeCid, LISTING_ARGUMENT)) view.market = true
+  if (isListed(store, nodeCid)) view.market = true
   if (typeError?.length) view.typeError = typeError
   return view
 }
@@ -2048,7 +2080,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const childEdges = (value: FosNodeContent) => value.children.filter((edge) => {
     const kind = rowKindOf(store, edge)
     const name = content(store, identityCid(store, edge)).data.name?.content
-    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' || name === LISTING_ARGUMENT || name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
+    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' ||name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
     if (kind) return !(instantiate && (kind === 'supply' || kind === 'pattern'))
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false

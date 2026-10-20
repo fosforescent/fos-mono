@@ -1,6 +1,5 @@
 import { userView } from './test-helpers'
 import { LIBRARY_ID } from './graph'
-import { listingAt, setMarketAt } from './market'
 import { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from './project'
@@ -797,24 +796,11 @@ describe('requirements, supplies, resource banks and market listings', () => {
     expect(userView(r)!.tasks[1]!.blockedBy).toBeUndefined()
   })
 
-  it('listing on the market is a named value on the node that survives edits and round trips; queries carry their options', () => {
+  it('queries carry their options', () => {
     let r = createReplica('d')
-    r = addTask(r, [], 'offer', 1, 'o')
-    r = makeLinkAt(r, ['o'], 2)
-    r = setMarketAt(r, ['o'], true, 3, 'ada@x')
-    expect(userView(r)!.tasks[0]!.market).toBe(true)
-    expect(listingAt(r, ['o'])).toEqual({ listedAt: 3, by: 'ada@x' })
-    expect(userView(setTaskDone(r, [], 'o', true, 3))!.tasks[0]!.market).toBe(true)
-    expect(userView(loadReplica(serializeReplica(r)))!.tasks[0]!.market).toBe(true)
-    r = setMarketAt(r, ['o'], false, 4)
-    expect(userView(r)!.tasks[0]!.market).toBeUndefined()
-    // listing a plain row makes it a link first
-    r = addTask(r, [], 'plain offer', 5, 'p')
-    r = setMarketAt(r, ['p'], true, 6)
-    expect(userView(r)!.tasks[1]).toMatchObject({ isLink: true, market: true })
     r = addRow(r, [], 'query', 'designers near me', 7, { id: 'q', query: {} })
     r = setQueryOptionsAt(r, [], 'q', { market: true, executedAt: 8, count: 3 }, 8)
-    expect(userView(r)!.tasks[2]!.query).toEqual({ market: true, executedAt: 8, count: 3 })
+    expect(userView(r)!.tasks[0]!.query).toEqual({ market: true, executedAt: 8, count: 3 })
   })
 
   it('a requirement is filled by a child row of the kind it names: a done task, an allocation, a run query', () => {
