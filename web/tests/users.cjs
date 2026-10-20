@@ -1,6 +1,6 @@
 /* `@name` resolves through the graph: the app places a `verify` requirement for that name, runs it on the account
    server (a `complete` event; the server's verify handler binds the attested user object), and checks the
-   attestation with its own verify handler against the key the server published in Home (WebCrypto Ed25519). No
+   attestation with its own verify handler against the key the server published on its member entry (WebCrypto Ed25519). No
    user lookup or key route is asked. */
 const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
@@ -52,7 +52,7 @@ async function main() {
   }
   app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}; app.syncNow = async () => {}
-  // the account context as the server ensures it: Home, the fos member's offers and the server's published key
+  // the account context as the server ensures it: Home, the fos member's offers and the key published on that member's entry
   let me = c.ensureHomeContext(c.createReplica('user:me'), 1, { server: ['verify'], keys: { fos: server.publicKey } })
   me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
   me = c.addTask(me, [HOME], 'Review', 2, 'review')
@@ -100,7 +100,7 @@ async function main() {
 
   // the server's key missing from the graph: nothing verifies
   signer = server
-  app.set({ replica: c.deleteTask(app.state.replica, [HOME, 'fos:users'], c.peerKeyId('fos'), 12) })
+  app.set({ replica: c.deleteTask(app.state.replica, [c.memberEntryId('fos')], c.peerKeyId('fos'), 12) })
   app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'no key', { id: 'nokey', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
   await settle()
   assert.match(app.state.notice.text, /does not check out/)

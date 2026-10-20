@@ -18,7 +18,7 @@ import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTr
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
-import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, type UserRecord } from '../../shared/sync/index'
+import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, memberEntryId, isMemberEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
@@ -588,7 +588,7 @@ export class App {
       const found = findRowByAlias(this.state.replica.store, headCid(this.state.replica), alias)
       if (!found) continue
       const root = [...found.path, alias], provider = this.localStoreProvider(held.peer), store = this.state.replica.store
-      for (const path of materializedNodePaths(this.state.replica, root)) {
+      for (const path of materializedNodePaths(this.state.replica, root, held.peer)) {
         if (this.state.replica.store !== store) return
         const plan = planNodeSync(this.state.replica, path, { peer: held.peer, scope: [], remoteRoot: held.scope, localRoot: root, branches: [], push: !pullOnly })
         try {
@@ -1099,8 +1099,17 @@ export class App {
       : transport === 'virtual' ? this.virtualPeers!.requestNode(request) : this.link!.requestNode(request)
     const valid = () => generation === this.authGeneration && session === this.state.session && store === this.state.replica.store && dataSession === this.activeDataSession()?.id && branch === this.currentBranch() && selection === JSON.stringify(this.branchSelections)
     const push = !pullOnly && (transport === 'account' ? this.state.policy.to.includes('autopush') : transport === 'virtual' ? this.virtualCapabilities.includes('edit') : true)
-    const paths = materializedNodePaths(initial, localRoot)
-    for (const path of paths) {
+    // Member entries are children of their node: an entry syncs with a node that syncs (it is policy, small), and this
+    // device's own entries sync with everything in them (what peers left for it, its relay queues). Other rows stay
+    // lazy until they are on screen.
+    const own = memberEntryId(initial.meta.peerId)
+    const onScreen = (path: Scope) => path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
+    const eager = (path: Scope) => path.includes(own) || (isMemberEntryId(path.at(-1)) && onScreen(path.slice(0, -1)))
+    const queue = materializedNodePaths(initial, localRoot, peer), seen = new Set<string>()
+    while (queue.length) {
+      const path = queue.shift()!
+      if (seen.has(JSON.stringify(path))) continue
+      seen.add(JSON.stringify(path))
       if (!valid()) return
       const r = this.state.replica
       if (!resolveScope(r.store, headCid(r), path)) continue
@@ -1119,7 +1128,7 @@ export class App {
         continue
       }
       const plan = planNodeSync(r, path, { peer, scope, remoteRoot, localRoot, branches, push })
-      const visible = path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
+      const visible = onScreen(path) || eager(path)
       if (!visible && !(push && plan.dirty)) continue
       const remote = await send(plan.first)
       if (!valid()) return
@@ -1137,6 +1146,20 @@ export class App {
         if (reply.templates) this.set({ replica: acceptTemplateNodes(this.state.replica, path, reply.templates, this.now()) })
       }
       if (templates.answer) await send(templates.answer)
+      // the entries the peer listed here (arrived unloaded or changed), and what lies in this device's own entries
+      for (const child of finalRemote.children) {
+        if (child.pinned || (child.held && child.address.peerId !== finalRemote.peerId)) continue
+        const next = [...path, child.id]
+        if (isMemberEntryId(child.id) ? visible || child.id === own : eager(next)) queue.push(next)
+      }
+    }
+    // an owner's device attached at Home takes its server's own entry above it (its offers, its published key)
+    const above = transport === 'account' && session?.kind === 'user' ? accountContextAbove(this.state.replica) : []
+    for (const at of above) {
+      if (!valid() || !resolveScope(this.state.replica.store, headCid(this.state.replica), at)) continue
+      const done = await syncNodeTree(this.state.replica, { peer, scope: [], remoteRoot: at, localRoot: at, branches: [], push: false }, send, () => this.now())
+      if (!valid()) return
+      this.set({ replica: done.replica })
     }
   }
 
@@ -1215,7 +1238,7 @@ export class App {
     for (const [key, info] of Object.entries(this.state.replica.meta.sharedNodes ?? {})) {
       const root = JSON.parse(key) as Scope, peer = `user:${info.owner}`
       if (!resolveScope(this.state.replica.store, headCid(this.state.replica), root)) continue
-      for (const path of materializedNodePaths(this.state.replica, root)) {
+      for (const path of materializedNodePaths(this.state.replica, root, peer)) {
         if (!valid()) return
         let r = this.state.replica
         if (!resolveScope(r.store, headCid(r), path)) continue
@@ -3452,6 +3475,8 @@ export class App {
   private async loadPeerNodeOnce(path: Scope): Promise<void> {
     const replica = this.state.replica, cid = resolveScope(replica.store, headCid(replica), path)
     if (!cid || !isPeerReference(content(replica.store, cid))) return
+    // a member entry is no projection of its own: it loads with its node's sync
+    if (isMemberEntryId(path.at(-1))) { await this.syncNow('member entry'); return }
     const ref = content(replica.store, cid).data.ref!, session = this.state.session, generation = this.authGeneration
     const dataSession = this.activeDataSession()?.id, branch = this.currentBranch(), selection = JSON.stringify(this.branchSelections)
     let scope: Scope = [], address = ref.scope ?? [...replica.meta.scope, ...path], provider: NodeProvider | null = null
@@ -4037,7 +4062,7 @@ export class App {
    */
   manualMakeRequest(): void {
     const r = this.state.replica, localRoot = r.meta.localScope ?? []
-    this.manualPlans = materializedNodePaths(r, localRoot).map(path => planNodeSync(r, path, { peer: this.manualPeer, scope: [], remoteRoot: [], localRoot, branches: [], push: true }))
+    this.manualPlans = materializedNodePaths(r, localRoot, this.manualPeer).map(path => planNodeSync(r, path, { peer: this.manualPeer, scope: [], remoteRoot: [], localRoot, branches: [], push: true }))
     const requests = this.manualPlans.map(plan => plan.dirty ? { ...plan.request, update: { base: plan.previousRemote ?? { data: {}, children: [] }, value: plan.local } } : plan.request)
     this.set({ manual: { requestCode: ManualRelay.encodeRequest(requests) } })
   }

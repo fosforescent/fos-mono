@@ -17,7 +17,8 @@ async function main() {
   const request = { peerId: 'client', scope: [], path: [], linkId: 'client-link' }
   const authority = { peerId: 'client', scope: [], capabilities: ['provideNode', 'sync'] }
   let result = c.provideNode(source, request, authority, 6); source = result.replica
-  assert.deepEqual(result.node.children.map(child => child.id), ['parent'])
+  // the rows it may read, and of the node's members only its own entry
+  assert.deepEqual(result.node.children.map(child => child.id), ['parent', 'fos:peer:client'])
   assert(!JSON.stringify(result.node).includes('Secret grandchild body'))
   assert(!JSON.stringify(result.node).includes('Hidden sibling'))
   assert.throws(() => c.provideNode(source, { ...request, path: ['hidden'] }, authority, 7), /denied/)
@@ -55,9 +56,9 @@ async function main() {
     eagerCalls++; const served = c.provideNode(eagerSource, req, authority, 4); eagerSource = served.replica; return served.node
   } }
   const traversal = await c.pullNodeTree(request, eagerPeer)
-  assert.equal(traversal.length, 3)
-  assert.equal(new Set(traversal.map(n => n.remoteLinkId)).size, 3, 'every node has its own receiving ref')
-  assert.equal((await c.pullNodeTree(request, eagerPeer)).length, 3, 'repeated traversal preserves endpoint identities')
+  assert.equal(traversal.length, 4, 'the root, outer, inner and the client member entry')
+  assert.equal(new Set(traversal.map(n => n.remoteLinkId)).size, 4, 'every node has its own receiving ref')
+  assert.equal((await c.pullNodeTree(request, eagerPeer)).length, 4, 'repeated traversal preserves endpoint identities')
   const eagerEndpoint = c.nodeLinkEndpoint(eagerSource, [], 'client')
   eagerSource = c.setNodeLinkMask(eagerSource, [], 'client', eagerEndpoint.remoteId, { children: [] }, 5)
   eagerCalls = 0
