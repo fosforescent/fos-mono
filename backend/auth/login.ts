@@ -50,7 +50,7 @@ export const postLogin = (confirmation: Confirmation) => async (req: Request, re
     if (match) {
       const claims = {
         username: user.user_name,
-        exp: Math.floor(Date.now() / 1000) + (72 * 60 * 60) // 8 hours from now
+        exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) // one week
       }
 
       const token = jwt.sign(claims, JWT_SECRET)

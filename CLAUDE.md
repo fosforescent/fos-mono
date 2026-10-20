@@ -51,7 +51,7 @@ The heart of Fosforescent is a content-addressable graph implementation in `shar
 - **Backend**: Node.js, Express, Prisma, PostgreSQL with pgvector (Vertex embeddings for row search)
 - **Desktop/CLI**: Tauri 2 + Rust, with the TypeScript sync core embedded in QuickJS
 - **Build**: Vite for web, tsc for backend, cargo/tauri for desktop, Docker for the backend image
-- **Testing**: node scripts in `web/tests`, Jest in `backend/` and `shared/`, `node --test` in `desktop/agent-runtime` and `plugins/`
+- **Testing**: node scripts in `web/tests`, Jest in `backend/` and `shared/`, `node --test` in `desktop/agent-runtime`
 - **Infrastructure**: Docker Compose, Terraform on GCP, Cloudflare Pages for the web app
 
 ## Development Commands
@@ -97,9 +97,8 @@ npm run test
 # Shared graph/sync tests
 cd shared && npx jest sync/
 
-# Desktop agent runtime and plugin packaging
+# Desktop agent runtime
 cd desktop/agent-runtime && node --test
-node --test plugins/bridge.test.mjs && python3 plugins/build_test.py
 
 # Rust
 cd desktop/src-tauri && cargo check
