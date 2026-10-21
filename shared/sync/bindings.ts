@@ -2,7 +2,7 @@
 import { discoverHandlers, type HandlerEnvironment } from './handlers'
 import { resolveRequirementOutput } from './destructure'
 import { keyValueOf, splitFrontmatter } from './notes'
-import { formTitle } from './forms'
+import { formText, formTitle } from './forms'
 import type { FosStore } from '../dag-implementation/store'
 import {
   isBranchChoice, selectedBranchValue, type Capability, put, childRows, flowOf, requirementSatisfied, content, identityCid, isChoiceEdge, refTypeCid, refValueCid,
@@ -40,7 +40,7 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
       const value = put(r.store, { data: { description: { content: text } }, children: [] })
       local.set(key, [...(local.get(key) ?? []), { cid: value, type: textType, name }])
     }
-    const frontmatter = splitFrontmatter(formTitle(r.store, valueContent(r.store, cid))).frontmatter
+    const frontmatter = splitFrontmatter(formText(r.store, valueContent(r.store, cid))).frontmatter
     for (const [name, text] of Object.entries(frontmatter)) addText(name, text)
     const childNames = new Set<string>()
     for (const child of childRows(r.store, cid).filter(c => c.type === PLAIN_TYPE)) {
@@ -125,7 +125,7 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
     const name = legacyName ?? parameterName
     const result = resolveBinding(r.store, type, null, candidates, name)
     bindings.push(result)
-    return result.status === 'ready' ? formTitle(r.store, valueContent(r.store, result.cid!)) : placeholder
+    return result.status === 'ready' ? formText(r.store, valueContent(r.store, result.cid!)) : placeholder
   }), bindings }
 }
 

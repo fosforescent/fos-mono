@@ -1,15 +1,16 @@
 import type { Request, Response } from 'express'
 import { createHash } from 'node:crypto'
-import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, configurePoll, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, setSharing, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, TITLED_VALUE, readNodeValue, requestTitle } from '@fosforescent/shared/sync/index'
+import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHandlerRegistry } from './registry'
-import { calendarHandler, llmHandler, mailHandler, mailRequest, marketHandler, pointsHandler, pollHandler, searchHandler } from './hostHandlers'
+import { calendarHandler, llmHandler, titleHandler, mailHandler, mailRequest, marketHandler, pointsHandler, searchHandler } from './hostHandlers'
 import { verifyHandler, identityKeyFromSeed } from './verify'
-import { QUERY_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
+import { QUERY_TYPE, ALLOCATION_TYPE, NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
 import { PLAIN_TYPE } from '@fosforescent/shared/sync/library-types'
 
 const accounts: Record<string, { id: number; username: string; name?: string }> = { bob: { id: 2, username: 'bob', name: 'Bob' }, carol: { id: 3, username: 'carol' } }
@@ -128,32 +129,6 @@ test('the search effect fills a -? requirement: hits become ref rows under it, t
   expect(view(h.get(), [HOME_ID, 'find'])!.tasks.find(t => t.id === 'ask')!.requirement!.satisfied).toBe(true)
 })
 
-test('a poll resolves its choice from the responses when the node runs; ties and silence block', async () => {
-  const share = 'public-link-0123456789'
-  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['poll'] })
-  r = addTask(r, [HOME_ID], 'Dinner', 2, 'dinner')
-  r = addRow(r, [HOME_ID, 'dinner'], ALLOCATION_TYPE, 'Where?', 2, { id: 'where', requirement: { capability: 'choice', options: ['Soup', 'Salad', 'Tacos'] } })
-  r = setSharing(r, [HOME_ID, 'dinner', 'where'], { id: share, audience: 'public', enabled: true }, 3)
-  r = configurePoll(r, [HOME_ID, 'dinner', 'where'], 'rank', 3)
-  const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-  const vote = (replica: Replica, peer: string, ranking: string[]) => {
-    const joined = addMemberAt(replica, [HOME_ID, 'dinner', 'where'], peer, peer, ['read', 'edit', 'rank'], 4)
-    const revision = sharedProjection(joined, [HOME_ID, 'dinner', 'where'], digest, peer).revision
-    return writeParticipation(joined, [HOME_ID, 'dinner', 'where'], { peer, audience: share, revision, updated: 5, approvals: [], ranking, fields: {} }, 5)
-  }
-  const silent = host(fresh(r), createHandlerRegistry([pollHandler()]))
-  expect(String((await silent.complete([HOME_ID, 'dinner'], ['where'])).body.error)).toMatch(/No poll responses yet/)
-  const tied = host(fresh(vote(vote(r, 'visitor:a', ['option:0', 'option:1', 'option:2']), 'visitor:b', ['option:1', 'option:0', 'option:2'])), createHandlerRegistry([pollHandler()]))
-  expect(String((await tied.complete([HOME_ID, 'dinner'], ['where'])).body.error)).toMatch(/tied between/)
-  const decided = host(fresh(vote(vote(vote(r, 'visitor:a', ['option:1', 'option:0', 'option:2']), 'visitor:b', ['option:1', 'option:2', 'option:0']), 'user:carol', ['option:0', 'option:1', 'option:2'])), createHandlerRegistry([pollHandler()]))
-  const result = await decided.complete([HOME_ID, 'dinner'], ['where'])
-  if (!result.body.evaluation) throw new Error(`poll failed: ${JSON.stringify(result.body)}`)
-  expect(result.body.evaluation.status).toBe('committed')
-  const where = view(decided.get(), [HOME_ID, 'dinner'])!.tasks.find(t => t.id === 'where')!
-  expect(where.requirement!.satisfied).toBe(true)
-  expect(view(decided.get(), [HOME_ID, 'dinner', 'where'])!.tasks.filter(t => !!t.supply).map(t => [t.supply!.by, t.supply!.choice])).toEqual([['fos', 1]])
-})
-
 test('a fos-points payout moves points on the ledger to the respondent and records the allocation as the server', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['points'] })
   r = addTask(r, [HOME_ID], 'Answer the survey', 2, 'survey')
@@ -234,4 +209,18 @@ test('the mail effect emails the first address in the row with the task as the b
   const refused = await host(fresh(bad), createHandlerRegistry([mailHandler({ send })])).complete([HOME_ID], ['vague'])
   expect(String(refused.body.error)).toMatch(/Name the recipient/)
   expect(send).toHaveBeenCalledTimes(1)
+})
+
+test('the title effect summarizes the text of the row it is in and records the title as its value', async () => {
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['title'] })
+  r = addRow(r, [HOME_ID], NOTE_TYPE, 'We walked the beds this morning\nand the soil is dry; the tomatoes need stakes.', 2, { id: 'note' })
+  expect(view(r, [HOME_ID])!.tasks.find(t => t.id === 'note')!.title).toBe('We walked the beds this morning')
+  const asked = requestTitle(r, [HOME_ID, 'note'], 3, () => 'one')
+  const complete = jest.fn(async () => '"Garden check: dry soil, tomato stakes."\nmore')
+  const h = host(asked.replica, createHandlerRegistry([titleHandler({ complete })]))
+  const done = await h.complete([HOME_ID, 'note'], ['fos:title:one'])
+  expect(done.body.evaluation.status).toBe('committed')
+  expect(complete).toHaveBeenCalledWith(TITLE_SYSTEM, 'We walked the beds this morning\nand the soil is dry; the tomatoes need stakes.')
+  expect(readNodeValue(h.get(), asked.path, TITLED_VALUE)).toBe('Garden check: dry soil, tomato stakes')
+  expect(view(h.get(), [HOME_ID, 'note'])!.tasks.find(t => t.id === 'fos:title:one')!.requirement!.satisfied).toBe(true)
 })

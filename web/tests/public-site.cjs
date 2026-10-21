@@ -14,7 +14,7 @@ buildSync({ entryPoints: [path.join(web, 'src/embed.ts')], bundle: true, platfor
 const { siteTree, renderSitePage, markdownToSafeHtml, parseShareAddress, publicReadUrl } = require(path.join(dir, 'site.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
-const md = 'lib:type:note'
+const md = 'lib:type:markdown' // rows whose text is Markdown (a note's body row)
 const node = {
   title: 'My post', type: md, body: '# My post\n\nHello **world** <script>alert(1)</script> [site](https://example.com) <img src=x onerror=alert(1)>',
   rows: [
@@ -23,9 +23,9 @@ const node = {
     { id: 'chapter', title: 'Chapter one', depth: 0, type: md, body: '# Chapter one\n\nChapter text', truncated: true },
     { id: 'part', title: 'Part', depth: 1, type: md, body: 'Part text' },
     { id: 'deeper', title: 'Deeper', depth: 1 },
-    { id: 'deepest', title: 'Deepest note', depth: 2, type: md, body: '*deep*' }
+    { id: 'deepest', title: 'Deepest row', depth: 2 }
   ],
-  inputs: [], options: [], poll: null, proposals: [], revision: 'r', audience: 'public', counts: {}, rankings: {}, participants: 0
+  inputs: [], proposals: [], revision: 'r', audience: 'public', counts: {}, rankings: {}, participants: 0
 }
 
 async function main() {
@@ -82,12 +82,13 @@ async function main() {
   assert.equal(target.querySelector('h1').textContent, 'Plain page')
 
   // share links, bare addresses and the read URL
-  const at = { owner: 'host', path: ['fos:home', 'post'], share: 'share-id-0123456789' }
+  // an address is the owner and the node's path; whether it may be visited is the node's membership
+  const at = { owner: 'host', path: ['fos:home', 'post'] }
   const link = `https://app.example/#share=${encodeURIComponent(JSON.stringify(at))}`
   assert.deepEqual(parseShareAddress(link), at)
   assert.deepEqual(parseShareAddress(JSON.stringify(at)), at)
   assert.equal(parseShareAddress('https://app.example/'), null)
-  assert.equal(parseShareAddress(`#share=${encodeURIComponent(JSON.stringify({ ...at, share: 'x' }))}`), null)
+  assert.equal(parseShareAddress(`#share=${encodeURIComponent(JSON.stringify({ ...at, path: [] }))}`), null)
   const read = new URL(publicReadUrl('https://api.example/', at))
   assert.equal(read.origin + read.pathname, 'https://api.example/public/node/read')
   assert.deepEqual(JSON.parse(read.searchParams.get('path')), at.path)
@@ -95,11 +96,11 @@ async function main() {
   // the embed script: a script tag renders after itself, a div renders inside, both in a shadow root, read-only fetch
   const page2 = new JSDOM(`<p>Before</p><script data-fos-share="${link.replace(/"/g, '&quot;')}"></script><div id="div" data-fos-share='${JSON.stringify({ ...at, path: ['other'] })}' data-fos-api="https://other-api.example"></div><div id="bad" data-fos-share="nope"></div><style>p { color: red }</style>`, { url: 'https://blog.example/post', runScripts: 'outside-only' })
   const requests = []
-  const poll = { ...node, title: 'Sign up', type: undefined, body: undefined, rows: [{ id: 'email', title: 'Email', depth: 0, type: 'lib:type:text', body: '' }], inputs: [{ key: '["email"]', path: ['email'], name: 'Email', kind: 'text' }] }
+  const signup = { ...node, title: 'Sign up', type: undefined, body: undefined, rows: [{ id: 'email', title: 'Email', depth: 0, type: 'lib:type:text', body: '' }], inputs: [{ key: '["email"]', path: ['email'], name: 'Email', kind: 'text' }] }
   page2.window.fetch = async (url, init) => {
     requests.push({ url, init })
-    if (init.method === 'POST') return { ok: true, json: async () => url.endsWith('/visit') ? { node: { ...poll, revision: 'joined' }, visitorToken: 'guest-token' } : { node: { ...poll, revision: 'joined', mine: { peer: 'visitor:1', revision: 'joined', approvals: [], ranking: [], fields: JSON.parse(init.body).fields } } } }
-    return { ok: true, json: async () => ({ node: url.includes('other') ? poll : node }) }
+    if (init.method === 'POST') return { ok: true, json: async () => url.endsWith('/visit') ? { node: { ...signup, revision: 'joined' }, visitorToken: 'guest-token' } : { node: { ...signup, revision: 'joined', mine: { peer: 'visitor:1', revision: 'joined', approvals: [], ranking: [], fields: JSON.parse(init.body).fields } } } }
+    return { ok: true, json: async () => ({ node: url.includes('other') ? signup : node }) }
   }
   page2.window.eval(readFileSync(path.join(dir, 'embed.js'), 'utf8'))
   await tick(); await tick()

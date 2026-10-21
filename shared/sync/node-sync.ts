@@ -137,6 +137,14 @@ export function mergeNodeShape(base: NodeShape, next: NodeShape, current: NodeSh
   const order = equal(beforeOrder, nextOrder) ? current.children.map(c => c.id) : nextOrder
   return { data: data as FosDataContent, children: [...new Set([...order, ...children.keys()])].flatMap(id => children.has(id) ? [children.get(id)!] : []) }
 }
+/**
+ * A shape as the peer `selves` holds it: children the provider lists as held by one of `selves` (the rows it pushed
+ * into another account's node, which that account keeps as references to it) are its own rows, not references.
+ */
+export function ownHeldChildren<T extends NodeShape>(shape: T, selves: string[]): T {
+  if (!shape.children.some(child => child.held && selves.includes(child.address?.peerId))) return shape
+  return { ...shape, children: shape.children.map(child => child.held && selves.includes(child.address?.peerId) ? (({ held: _held, ...rest }) => rest)(child) : child) }
+}
 export function sameNodeShape(a: NodeShape, b: NodeShape): boolean {
   return equal(a.data, b.data) && equal(a.children.map(childValue), b.children.map(childValue))
 }
@@ -476,7 +484,7 @@ function withoutMemberWrites(request: NodeRequest, authority: NodeAuthority): No
   return { ...request, update: { base: strip(request.update.base), value: strip(request.update.value) } }
 }
 
-const isBlank = (shape: NodeShape) => !Object.keys(shape.data).length && !shape.children.length
+export const isBlank = (shape: NodeShape) => !Object.keys(shape.data).length && !shape.children.length
 
 /**
  * A node its holder sent blank: no longer available here. It is kept as a reference to that peer, like any node a peer

@@ -1,9 +1,10 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
-import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, configurePoll, content, createReplica, capabilityPeers, readNodeValue, writeLinkedNodeValue, hasCapability, headCid, participation, put, resolveRef, resolveScope, setSharing, sharedProjection, sharing, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharePolicy, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
+void TEMPLATE_TYPE
 import { MONEY_TYPE } from '@fosforescent/shared/sync/library-types'
 const sign = jsonwebtoken.sign ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.sign
 const verify = jsonwebtoken.verify ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.verify
@@ -11,10 +12,13 @@ const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(va
 type Address = SharedAddress
 type Claims = { username?: string; kind?: string }
 type Visitor = Address & { peer: string }
+/** Whoever may not run (or read) a node gets the same answer as for a node that does not exist. */
+const NOT_FOUND = 'Not found.'
 class Failure extends Error { constructor(readonly status: number, message: string) { super(message) } }
+/** A published node's address: its owner and its path there. Whether it may be visited is its membership (`publication`). */
 function address(body: any): Address {
-  if (!body || typeof body.owner !== 'string' || body.owner.length > 128 || !body.owner || typeof body.share !== 'string' || !/^[\w-]{16,128}$/.test(body.share) || !Array.isArray(body.path) || body.path.length > 32 || body.path.some((id: unknown) => typeof id !== 'string' || !id || id.length > 256)) throw new Failure(400, 'Invalid shared-node address.')
-  return { owner: body.owner, share: body.share, path: body.path }
+  if (!body || typeof body.owner !== 'string' || body.owner.length > 128 || !body.owner || !Array.isArray(body.path) || !body.path.length || body.path.length > 32 || body.path.some((id: unknown) => typeof id !== 'string' || !id || id.length > 256)) throw new Failure(400, 'Invalid shared-node address.')
+  return { owner: body.owner, path: body.path }
 }
 function username(req: Request): string | null { const c = (req as Request & { claims?: Claims }).claims; return c?.username && (!c.kind || c.kind === 'user') ? c.username : null }
 async function locks<T>(names: string[], work: () => Promise<T>): Promise<T> {
@@ -33,21 +37,23 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
     try {
       if (typeof token !== 'string' || token.length > 8192) throw Error()
       const claims = verify(token, guestSecret, { algorithms: ['HS256'], audience: 'fos-public-input' }) as Visitor
-      if (claims.owner !== at.owner || claims.share !== at.share || JSON.stringify(claims.path) !== JSON.stringify(at.path) || typeof claims.peer !== 'string' || !claims.peer.startsWith('visitor:')) throw Error()
+      if (claims.owner !== at.owner || JSON.stringify(claims.path) !== JSON.stringify(at.path) || typeof claims.peer !== 'string' || !claims.peer.startsWith('visitor:')) throw Error()
       return { ...at, peer: claims.peer }
-    } catch { throw new Failure(401, 'This guest session is invalid or expired.') }
+    } catch { throw new Failure(404, NOT_FOUND) }
   }
   const load = async (at: Address, account: string | null, peer?: string) => {
     const loaded = await deps.loadStore(at.owner)
     if (!loaded) throw new Failure(404, 'Shared node unavailable.')
-    const r = createReplica(`user:${at.owner}`, loaded.store), policy = sharing(r, at.path)
+    // published = an audience peer is a member that may run (or read) it; a template run is its visitor's own
+    const r = createReplica(`user:${at.owner}`, loaded.store), policy = publication(r, at.path)
     const cid = resolveScope(r.store, headCid(r), at.path)
-    if (!policy?.enabled || policy.id !== at.share || !cid || !hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), 'read')) throw new Failure(404, 'This link is unavailable or has been revoked.')
-    if (policy.audience === 'users' && !account) throw new Failure(401, 'Sign in to a Fos account to visit this node.')
+    if (!policy || !cid) throw new Failure(404, NOT_FOUND)
+    if (policy.audience === 'users' && !account) throw new Failure(404, NOT_FOUND)
     if (policy.execution) {
-      if (policy.execution.peer !== peer) throw new Failure(403, 'This evaluation belongs to another visitor.')
-      const entry = policy.execution.entry, parent = sharing(r, entry.path)
-      if (entry.owner !== at.owner || !parent?.enabled || !parent.template || parent.id !== entry.share) throw new Failure(404, 'This template endpoint has been revoked.')
+      if (policy.execution.peer !== peer) throw new Failure(404, NOT_FOUND)
+      const entry = policy.execution.entry
+      // a run lasts while its endpoint is published to the audience it was started from
+      if (entry.owner !== at.owner || !publication(r, entry.path)?.template || !publishedTo(r, entry.path, policy.audience)) throw new Failure(404, NOT_FOUND)
     }
     return { ...loaded, r, policy, cid }
   }
@@ -56,11 +62,8 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
     res.setHeader?.('Cache-Control', 'no-store')
     try { if (Buffer.byteLength(JSON.stringify(req.body ?? {})) > 65536) throw new Failure(413, 'Input is too large.'); return await handler(req, res) } catch (error) { return res.status(error instanceof Failure ? error.status : 409).json({ error: error instanceof Failure ? error.message : 'The node changed or could not be saved. Refresh and try again.' }) }
   }
-  const participantAccess = (r: Replica, path: Scope, peer: string, cap: 'read' | 'edit' | 'rank') => {
-    const cid = resolveScope(r.store, headCid(r), path)
-    const policy = sharing(r, path)
-    return !!cid && !!policy && hasCapability(r.store, content(r.store, cid), audiencePeer(policy.audience), cap) && hasCapability(r.store, content(r.store, cid), peer, cap)
-  }
+  // what a visitor may do is what it falls under (itself, else its audience) holds; running the node covers its inputs and votes
+  const participantAccess = (r: Replica, path: Scope, peer: string, cap: 'read' | 'edit' | 'rank') => !!publication(r, path) && mayParticipate(r, path, peer, cap)
   const projectField = (field: SharedInput, value: any): Participation['fields'][string] => {
     if (field.kind === 'confirmation') { if (value !== true) throw new Failure(400, 'Confirmation is required.'); return true }
     if (field.kind === 'choice') { if (!Number.isInteger(value) || value < 0 || value >= (field.options?.length ?? 0)) throw new Failure(400, 'Choose a declared option.'); return value }
@@ -73,30 +76,6 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
     return { amount: value.amount, type: field.type!, unit: field.unit!, ...(field.start !== undefined ? { start: field.start } : {}), ...(field.end !== undefined ? { end: field.end } : {}) }
   }
   return {
-    configure: run(async (req, res) => {
-      const owner = username(req), body = req.body ?? {}
-      if (!owner) throw new Failure(403, 'An account owner must configure sharing.')
-      if (!Array.isArray(body.path) || body.path.length > 32 || body.path.some((id: unknown) => typeof id !== 'string' || !id || id.length > 256) || !['public', 'users'].includes(body.audience) || typeof body.enabled !== 'boolean' || (body.poll !== undefined && !['approval', 'rank', null].includes(body.poll))) throw new Failure(400, 'Invalid sharing settings.')
-      return locks([owner], async () => {
-        const loaded = await deps.loadStore(owner)
-        if (!loaded) throw new Failure(404, 'Account unavailable.')
-        let r = createReplica(`user:${owner}`, loaded.store)
-        const cid = resolveScope(r.store, headCid(r), body.path)
-        if (!cid || body.expected !== put(r.store, valueContent(r.store, cid))) throw new Failure(409, 'Sync this node and review its current contents before sharing.')
-        const old = sharing(r, body.path)
-        if (body.template !== undefined && typeof body.template !== 'boolean') throw new Failure(400, 'Invalid template trigger.')
-        if (body.template && view(r, body.path.slice(0, -1))?.tasks.find(t => t.id === body.path.at(-1))?.type !== TEMPLATE_TYPE) throw new Failure(400, 'Triggers require a template.')
-        const policy: SharePolicy = { id: old?.enabled && old.audience === body.audience && !!old.template === !!body.template ? old.id : randomUUID(), audience: body.audience, enabled: body.enabled, ...(body.template ? { template: true } : {}) }
-        // Validate poll before modifying the store.
-        if (body.poll && !capabilityPeers(r, body.path, 'poll').includes('fos')) throw new Failure(409, 'The Fos poll handler is not available in this context.')
-        if (body.poll && view(r, body.path.slice(0, -1))?.tasks.find(t => t.id === body.path.at(-1))?.requirement?.capability !== 'choice') throw new Failure(400, 'A poll needs a choice requirement.')
-        r = setSharing(r, body.path, policy, now())
-        if (body.poll) r = configurePoll(r, body.path, body.poll, now())
-        if (body.poll === null) r = writeNodeValue(r, body.path, 'fos:poll', null, now())
-        await save(loaded.user, r)
-        return res.json({ owner, path: body.path, share: policy.id, policy })
-      })
-    }),
     visit: run(async (req, res) => {
       let at = address(req.body), account = username(req)
       return locks([at.owner, ...(account ? [account] : [])], async () => {
@@ -106,7 +85,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         let r = loaded.r, policy = loaded.policy, token: string | undefined, entryToken: string | undefined, executionAddress: Address | undefined, createdExecution = false
         const beforeJoin = headCid(r)
         if (policy.template) {
-          const entry = { ...at }, key = `fos:execution:${digest([policy.id, guest.peer])}`
+          const entry = { ...at }, key = `fos:execution:${digest([at.path, guest.peer])}`
           if (!account) entryToken = visitorToken(guest)
           executionAddress = readNodeValue<Address>(r, at.path, key) ?? undefined
           if (!executionAddress) {
@@ -116,24 +95,25 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
             const id = randomUUID(), parent = at.path.slice(0, -1)
             r = addTask(r, parent, template.title, now(), id)
             r = instantiateTemplate(r, parent, id, template.id, now())
-            executionAddress = { owner: at.owner, path: [...parent, id], share: randomUUID() }
-            r = setSharing(r, executionAddress.path, { id: executionAddress.share, audience: policy.audience, enabled: true, execution: { peer: guest.peer, entry } }, now())
+            // the visitor's private run: a node whose only visitor is them
+            executionAddress = { owner: at.owner, path: [...parent, id] }
+            r = markExecution(r, executionAddress.path, { peer: guest.peer, entry, audience: policy.audience }, account ?? 'Anonymous guest', now())
             r = writeNodeValue(r, executionAddress.path, 'fos:evaluation', { id: randomUUID(), status: 'idle', started: now(), effects: [] }, now())
             r = writeNodeValue(r, at.path, key, executionAddress, now())
           }
-          at = executionAddress; policy = sharing(r, at.path)!
-          if (!policy?.enabled || policy.id !== at.share || policy.execution?.peer !== guest.peer) throw new Failure(403, 'This evaluation is unavailable.')
+          at = executionAddress; policy = publication(r, at.path)!
+          if (policy?.execution?.peer !== guest.peer) throw new Failure(404, NOT_FOUND)
           guest = { ...at, peer: guest.peer }
         }
         const member = view(r, at.path)!.members.find(m => m.peerId === guest.peer)
         if (!member) {
           if (view(r, at.path)!.members.length >= 1000) throw new Failure(409, 'This node has reached its guest limit.')
-          if ((policy.execution && !createdExecution) || req.body.visitorToken && !executionAddress) throw new Failure(403, 'The host removed this guest. Request a new invitation.')
-          r = addMemberAt(r, at.path, guest.peer, account ?? 'Anonymous guest', ['read', 'edit', 'rank'], now())
+          if ((policy.execution && !createdExecution) || req.body.visitorToken && !executionAddress) throw new Failure(404, NOT_FOUND)
+          r = addMemberAt(r, at.path, guest.peer, account ?? 'Anonymous guest', ['execute'], now())
         }
-        if (!participantAccess(r, at.path, guest.peer, 'read')) throw new Failure(403, 'The host disabled this guest.')
+        if (!participantAccess(r, at.path, guest.peer, 'read')) throw new Failure(404, NOT_FOUND)
         if (!participation(r, at.path, guest.peer)) {
-          let record: Participation = { peer: guest.peer, audience: policy.id, revision: '', updated: now(), approvals: [], ranking: [], fields: {} }
+          let record: Participation = { peer: guest.peer, audience: audiencePeer(policy.audience), revision: '', updated: now(), approvals: [], ranking: [], fields: {} }
           if (account) {
             const loaded = account === at.owner ? { user, store: r.store } : await deps.loadStore(account)
             if (!loaded) throw new Failure(401, 'Guest account unavailable.')
@@ -168,7 +148,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         const { user, r: host, policy } = await load(at, account, account ? `user:${account}` : readVisitor(req.body.visitorToken, at).peer)
         const peer = account ? `user:${account}` : readVisitor(req.body.visitorToken, at).peer
         if ((policy.execution || req.body.interaction === true) && !['idle', 'rolled-back'].includes(evaluationRecord(host, at.path)?.status ?? 'idle')) throw new Failure(409, 'This execution no longer accepts input.')
-        if (!participantAccess(host, at.path, peer, 'read')) throw new Failure(403, 'Join this node before submitting input.')
+        if (!participantAccess(host, at.path, peer, 'read')) throw new Failure(404, NOT_FOUND)
         const node = sharedProjection(host, at.path, digest, peer, req.body.interaction === true), body = req.body
         if (req.body.interaction === true && !policy.execution) {
           const authority = { peerId: peer, scope: at.path, capabilities: [] }
@@ -184,12 +164,11 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           return value as string[]
         }
         const name = account ?? (typeof body.name === 'string' ? body.name.trim().slice(0, 80) : '')
-        if (!account && node.poll && !name) throw new Failure(400, 'Please enter a display name for this poll.')
-        const approvals = strings(body.approvals, [...node.proposals.map(p => p.id), ...(node.poll?.mode === 'approval' ? node.options.map(o => o.id) : [])])
-        const ranking = strings(body.ranking, (node.poll?.mode === 'rank' ? node.options : node.proposals).map(o => o.id))
+        // approvals and rankings are of the node's open proposals; a choice is an input like any other
+        const approvals = strings(body.approvals, node.proposals.map(p => p.id))
+        const ranking = strings(body.ranking, node.proposals.map(o => o.id))
         if (approvals.length && !participantAccess(host, at.path, peer, 'edit')) throw new Failure(403, 'Approval input is disabled for this guest.')
         if (ranking.length && !participantAccess(host, at.path, peer, 'rank')) throw new Failure(403, 'Ranking input is disabled for this guest.')
-        if (node.poll?.mode === 'rank' && ranking.length && ranking.length !== node.options.length) throw new Failure(400, 'Rank each option exactly once.')
         if (!body.fields || typeof body.fields !== 'object' || Array.isArray(body.fields) || Object.keys(body.fields).some(key => !node.inputs.some(f => f.key === key))) throw new Failure(400, 'Only the inputs declared on this node may be submitted.')
         const guestLoaded = account ? account === at.owner ? { user, store: host.store } : await deps.loadStore(account) : null
         if (account && !guestLoaded) throw new Failure(401, 'Guest account unavailable.')
@@ -207,7 +186,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           }
           fields[key] = projectField(field, value)
         }
-        let record: Participation = { peer, name: name || undefined, labels: Object.fromEntries([...node.options.map(o => [o.id, o.label]), ...node.proposals.map(o => [o.id, o.label]), ...node.inputs.map(f => [f.key, f.name])]), audience: policy.id, revision: node.revision, updated: now(), approvals, ranking, fields }
+        let record: Participation = { peer, name: name || undefined, labels: Object.fromEntries([...node.proposals.map(o => [o.id, o.label]), ...node.inputs.map(f => [f.key, f.name])]), audience: audiencePeer(policy.audience), revision: node.revision, updated: now(), approvals, ranking, fields }
         if (guestReplica && guestLoaded) {
           const name = `fos:participation:${digest(at)}`
           guestReplica = writeLinkedNodeValue(guestReplica, [], name, { ...record, host: at, links }, now(), Object.fromEntries(Object.entries(links).map(([key, id]) => [key, { id }])))
@@ -265,12 +244,12 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       const r = createReplica(`user:${at.owner}`, (await deps.loadStore(at.owner))!.store), { peer, links, record } = outcome
       return res.json({ node: { ...sharedProjection(r, at.path, digest, peer, req.body.interaction === true), sources: account ? links : undefined, mine: record, capabilities: ['read', 'edit', 'rank'].filter(c => participantAccess(r, at.path, peer, c as 'read' | 'edit' | 'rank')) } })
     }),
-    /** `GET /public/node/read?owner=&share=&path=[…]`: the public projection for embeds. Nothing is written (no guest joins), so any page may show it. */
+    /** `GET /public/node/read?owner=&path=[…]`: the public projection for embeds. Nothing is written (no guest joins), so any page may show it. */
     read: run(async (req, res) => {
       const q = req.query ?? {}
       let path: unknown
       try { path = typeof q.path === 'string' && q.path.length <= 9000 ? JSON.parse(q.path) : null } catch { path = null }
-      const at = address({ owner: q.owner, share: q.share, path })
+      const at = address({ owner: q.owner, path })
       // a template endpoint reads as its page; a visitor's private execution starts with their first visit
       const { r } = await load(at, null)
       res.setHeader?.('Cache-Control', 'public, max-age=60')

@@ -76,7 +76,7 @@ async function main() {
   const note = app.applyConstructor(target.slice(0, -1), { type: NOTE_TYPE, text: '# Research output\n\n**Rendered result**' })
   await app.startExecution(note)
   await new Promise(resolve => setTimeout(resolve, 50))
-  assert(document.querySelector('.execution-document strong')?.textContent === 'Rendered result')
+  assert(document.querySelector('.execution-document strong')?.textContent === 'Rendered result', 'a note executes as its Markdown body')
   assert(!document.querySelector('.execution-task-actions'))
   app.exitExecution(); assert(document.querySelector('.constructor-grid'))
 
@@ -98,7 +98,7 @@ async function main() {
   assert.equal(document.querySelector('.execution-view h4').textContent, 'Hello Ada & Grace')
   assert(document.querySelector('.execution-rows').textContent.includes('For Ada & Grace; still {missing}'))
   assert(document.querySelector('.execution-rows').textContent.includes('Local Grace'), 'nearest binding wins')
-  assert.equal(document.querySelector('.execution-rows .note-body h1')?.textContent, 'For Ada & Grace')
+  assert(document.querySelector('.execution-rows').textContent.includes('For Ada & Grace'), 'a note title line resolves its bindings')
   assert.equal(document.querySelector('.execution-rows .note-body strong')?.textContent, 'Bound note')
   assert.equal(JSON.stringify(storage.loadReplica()), beforeDisplay, 'substitution preserves stored placeholders')
   app.exitExecution()
@@ -108,24 +108,29 @@ async function main() {
   await app.startExecution(childNote)
   await new Promise(resolve => setTimeout(resolve, 50))
   assert.equal(document.querySelector('.execution-document strong')?.textContent, 'Bound note')
-  assert.equal(app.currentRow().title, '# For {{recipient}}\n\n{body}')
+  assert.equal(app.currentRow().title, 'For {{recipient}}', 'the first line is the title; the rest is the body row')
   assert.equal(app.currentRow().type, NOTE_TYPE, 'a note is a row of the Note type')
   app.exitExecution()
 
   const store = app.state.replica.store, definition = content(store, rowTypeAt(store, NOTE_TYPE, parent))
   const custom = put(store, { ...definition, data: { ...definition.data, alias: { id: 'example:report' }, description: { content: 'An unfamiliar report' } } })
-  app.set({ replica: addConstructedRow(app.state.replica, parent, custom, { text: '**Graph-selected renderer**' }, Date.now(), 'custom-report') })
+  app.set({ replica: addConstructedRow(app.state.replica, parent, custom, { text: 'Report\n**Graph-selected renderer**' }, Date.now(), 'custom-report') })
   await app.startExecution([...parent, 'custom-report'])
   await new Promise(resolve => setTimeout(resolve, 50))
   assert.equal(document.querySelector('.execution-document strong')?.textContent, 'Graph-selected renderer', 'rendering follows graph metadata for unfamiliar definitions')
   app.exitExecution()
 
-  document.querySelector('.peer-tabs [aria-label="Triggers"]').click()
-  for (const label of ['Cron trigger', 'Child evaluation']) assert(!document.querySelector(`.constructor-grid [aria-label="${label}"]`), `${label} is not offered before a provider advertises it`)
+  // triggers are a sub-tab of whoever runs them: the fos server (cron, endpoints) and the standard library (device triggers)
+  const triggers = tab => { document.querySelector(`.peer-tabs [aria-label="${tab}"]`).click(); document.querySelector('.constructor-grid [aria-label="Triggers"]')?.click(); return [...document.querySelectorAll('.constructor-grid button')].map(b => b.getAttribute('aria-label')) }
+  assert(!document.querySelector('.peer-tabs [aria-label="Triggers"]'), 'triggers are not a top-level tab')
+  assert(!triggers('Fos server').includes('Cron trigger'), 'Cron trigger is not offered before a provider advertises it')
+  assert(!triggers('Standard library').includes('Child evaluation'), 'Child evaluation is not offered before a provider advertises it')
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'cron']) // the account server reports its scheduler
   app.setPeerOffers(app.state.replica.meta.peerId, ['task-completion'], true) // this device offers child-evaluation triggers
-  document.querySelector('.peer-tabs [aria-label="Triggers"]').click()
-  for (const label of ['Public template endpoint', 'Fos template endpoint', 'Cron trigger', 'Child evaluation']) assert(document.querySelector(`.constructor-grid [aria-label="${label}"]`), label)
+  const serverTriggers = triggers('Fos server')
+  for (const label of ['Public template endpoint', 'Fos template endpoint', 'Cron trigger']) assert(serverTriggers.includes(label), label)
+  assert(triggers('Standard library').includes('Child evaluation'), 'Child evaluation')
+  document.querySelector('.peer-tabs [aria-label="Standard library"]').click()
 
   const need = [...target.slice(0, -1), 'choose-research']
   app.set({ replica: addRow(app.state.replica, target.slice(0, -1), ALLOCATION_TYPE, 'Choose research', Date.now(), { id: 'choose-research', requirement: { capability: 'choice', options: ['Graphs', 'Biology'] } }) })

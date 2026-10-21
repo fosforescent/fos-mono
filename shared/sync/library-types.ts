@@ -7,7 +7,7 @@
 export const TASK_TYPE = 'lib:type:task'
 /** The plain row: a row that is its text. Rows of a type this peer does not know render like it. */
 export const PLAIN_TYPE = 'lib:type:plain'
-/** A Markdown body (and open child rows). */
+/** A note: one title line, a Markdown body row (`MARKDOWN_TYPE`, its `body` field) and open child rows. */
 export const NOTE_TYPE = 'lib:type:note'
 export const COMMENT_TYPE = 'lib:type:comment'
 /** A reference: a row standing for another row by alias id (`data.ref`). */
@@ -27,6 +27,8 @@ export const HOME_TYPE = 'lib:type:home'
 export const DEVICE_ROOT_TYPE = 'lib:type:device-root'
 export const DOCUMENT_ROOT_TYPE = 'lib:type:document-root'
 export const TEXT_TYPE = 'lib:type:text'
+/** Text rendered as Markdown (math, diagrams) with `{{name}}` bindings: a note's body. */
+export const MARKDOWN_TYPE = 'lib:type:markdown'
 export const NUMBER_TYPE = 'lib:type:number'
 export const TIME_TYPE = 'lib:type:time'
 export const PEER_TYPE = 'lib:type:peer'

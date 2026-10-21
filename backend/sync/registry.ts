@@ -7,7 +7,7 @@
  * handler behind it.
  *
  * Handlers with an `effect` run through the shared evaluator (backend/sync/evaluation.ts) when a `complete` event
- * reaches a node whose requirement they handle (search, market, poll, verify, organize, …: none of them has a route of its own);
+ * reaches a node whose requirement they handle (search, market, verify, organize, …: none of them has a route of its own);
  * handlers without one (cron, notify) are advertised only. An effect may answer `'pending'`: its result awaits human review
  * (a proposal on a return ref) and the evaluation pauses as `awaiting-review` instead of committing.
  */

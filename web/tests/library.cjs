@@ -21,14 +21,13 @@ const { parseRowInput } = c
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {
-  const HOME = c.HOME_ID, LIB = c.LIBRARY_ID, share = 'library-share-0123456789'
+  const HOME = c.HOME_ID, LIB = c.LIBRARY_ID
   // the library account on the server: the node, shared with every user, seeded
   let lib = c.ensureHomeContext(c.createReplica('user:fos-library'), 1)
   lib = c.addRow(lib, [HOME], PLAIN_TYPE, 'Standard library', 1, { id: LIB })
-  lib = c.setSharing(lib, [HOME, LIB], { id: share, audience: 'users', enabled: true }, 2)
-  lib = c.setMemberCapabilitiesAt(lib, [HOME, LIB], 'audience:users', ['read', 'edit', 'rank'], [], 2)
+  lib = c.addMemberAt(lib, [HOME, LIB], 'audience:users', 'Fos users', ['read', 'edit', 'rank'], 2)
   lib = c.seedStandardLibrary(lib, [HOME, LIB], 3)
-  const address = { owner: 'fos-library', path: [HOME, LIB], share, title: 'Standard library' }
+  const address = { owner: 'fos-library', path: [HOME, LIB], title: 'Standard library' }
   let now = 100, offline = false
   const calls = []
   globalThis.fetch = async (url, init) => {
@@ -66,27 +65,27 @@ async function main() {
 
   // opening pulls the projection through the users audience (no explicit membership) and the whole tree follows
   row.querySelector('.ref-link').click()
-  for (let i = 0; i < 40 && !c.findTemplateByName(app.state.replica, 'Plan a trip'); i++) await tick()
+  for (let i = 0; i < 40 && !c.findTemplateByName(app.state.replica, 'Meet up'); i++) await tick()
   assert(app.isPeerNode([HOME, LIB]), 'the reference became a live projection')
   assert.deepEqual(app.state.view, [HOME, LIB])
-  const trip = c.findTemplateByName(app.state.replica, 'Plan a trip')
+  const trip = c.findTemplateByName(app.state.replica, 'Meet up')
   assert(trip, 'the library\'s templates are in the local replica')
   // the template's requirements, beside its pattern rows (what tasks made from it accept)
   const tripRows = () => (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks ?? []).filter(t => t.type !== PATTERN_TYPE)
-  for (let i = 0; i < 40 && tripRows().length < 5; i++) await tick()
-  assert.equal(tripRows().length, 5, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
+  for (let i = 0; i < 40 && tripRows().length < 2; i++) await tick()
+  assert.equal(tripRows().length, 2, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
   assert(calls.filter(p => p.endsWith('provide-node')).length >= 7, `the tree was materialized node by node: ${calls.length} requests`)
 
   // offline: a task made from a library template gets the template's requirements, with no request to the server
   offline = true
   const before = calls.length
   app.goTo([HOME])
-  const task = [HOME, app.addRowAt([], TASK_TYPE, 'Trip', { templateName: 'Plan a trip' })]
+  const task = [HOME, app.addRowAt([], TASK_TYPE, 'Meeting', { templateName: 'Meet up' })]
   const requirements = c.view(app.state.replica, task).tasks.filter(t => !!t.requirement)
-  assert.equal(requirements.length, 5, 'the template instantiated offline')
-  assert.deepEqual(requirements.map(t => t.requirement.capability), ['confirmation', 'allocation', 'allocation', 'task', 'task'])
+  assert.equal(requirements.length, 2, 'the template instantiated offline')
+  assert.deepEqual(requirements.map(t => t.requirement.capability), tripRows().map(t => t.requirement.capability))
   assert.equal(calls.length, before, 'nothing was requested while offline')
-  assert(app.libraryConstructors().some(item => item.id === 'lib:trip'), 'the menu reads the live library projection')
+  assert(app.libraryConstructors().some(item => item.id === 'lib:meet'), 'the menu reads the live library projection')
 
   // The library's manual fallbacks: a device that never synced has them from its build. Doing a thing by hand
   // records the supply (and a receipt for money or a place) as the person; no peer is involved.
@@ -99,23 +98,24 @@ async function main() {
   const libraryTab = () => document.querySelector('.peer-tabs [aria-label="Standard library"]')
   const constructor = label => document.querySelector(`.constructor-palette [aria-label="${label}"]`)
   libraryTab().click()
-  assert(constructor('Plan a trip') && constructor('Invoice'), 'the menu discovers bundled library templates offline')
+  assert(!constructor('Plan a trip'), 'Plan a trip is not in the library')
+  assert(constructor('Meet up') && constructor('Invoice'), 'the menu discovers bundled library templates offline')
   assert(!constructor('Manual handlers'), 'the fallback-handler group is not an executable workflow')
   const initialHead = c.headCid(fresh.state.replica)
-  constructor('Plan a trip').click()
-  const fromMenu = c.view(fresh.state.replica, [HOME]).tasks.find(row => row.template?.id === 'lib:trip')
+  constructor('Meet up').click()
+  const fromMenu = c.view(fresh.state.replica, [HOME]).tasks.find(row => row.template?.id === 'lib:meet')
   assert(fromMenu, 'click instantiates the selected library definition by identity')
-  assert.equal(c.view(fresh.state.replica, [HOME, fromMenu.id]).tasks.length, 5)
+  assert.equal(c.view(fresh.state.replica, [HOME, fromMenu.id]).tasks.length, 2)
   fresh.undo()
   assert.equal(c.headCid(fresh.state.replica), initialHead, 'one undo removes the whole instantiation')
 
   const bundlePath = c.libraryPath(fresh.state.replica)
-  let edited = c.renameTask(fresh.state.replica, bundlePath, 'lib:trip', 'Travel plan', Date.now())
+  let edited = c.renameTask(fresh.state.replica, bundlePath, 'lib:meet', 'Get together', Date.now())
   edited = c.addRow(edited, bundlePath, TEMPLATE_TYPE, 'Custom workflow', Date.now(), { id: 'lib:custom' })
   edited = c.addRow(edited, [...bundlePath, 'lib:custom'], ALLOCATION_TYPE, 'Check the result', Date.now(), { id: 'lib:custom:check', requirement: { capability: 'confirmation' } })
   edited = c.writeNodeValue(edited, [...bundlePath, 'lib:custom'], 'fos:icon', 'confirm', Date.now())
   fresh.set({ replica: edited })
-  assert(!constructor('Plan a trip') && constructor('Travel plan') && constructor('Custom workflow'), 'renames and additions appear without a UI catalog change')
+  assert(!constructor('Meet up') && constructor('Get together') && constructor('Custom workflow'), 'renames and additions appear without a UI catalog change')
   assert.equal(fresh.libraryConstructors().find(item => item.id === 'lib:custom').icon, 'confirm')
   // A local template with the same name must not shadow the library definition.
   fresh.applyConstructor([HOME], { type: TEMPLATE_TYPE, text: 'Custom workflow', done: false })

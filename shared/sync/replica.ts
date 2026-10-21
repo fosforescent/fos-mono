@@ -11,7 +11,7 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
 import { FosStore } from '../dag-implementation/store'
 import { UnsupportedDataVersionError } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
-import { constructForm, formFields, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
+import { constructForm, formFields, formText, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
 import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
@@ -318,7 +318,7 @@ function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string)
  * Double-brace legacy substitutions remain references to the surrounding context.
  */
 function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeContent {
-  const text = node.data.presentation?.text?.interpolate ? formTitle(store, node) : node.data.description?.content ?? ''
+  const text = node.data.presentation?.headline ? formText(store, node) : node.data.description?.content ?? ''
   const names = [...new Set(Array.from(text.matchAll(/(?<![\\{@])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
   const type = store.primitive.documentField.getId(), children = [...node.children]
   for (const name of names) {
@@ -394,7 +394,7 @@ export function addTypedRow(replica: Replica, at: Scope, type: string, text: str
 
 /** Rows of these types may start blank (Enter / "Add comment" create one to type into; flow entries describe themselves). */
 const BLANK_TYPES = [PLAIN_TYPE, COMMENT_TYPE, REF_TYPE]
-/** Text with a presentation (a note's Markdown body) keeps its leading whitespace; titles are trimmed. */
+/** Text a type presents as text (Markdown) keeps its leading whitespace; titles are trimmed. */
 const rowBody = (store: FosStore, type: string, text: string) => content(store, type).data.form?.text ? text.replace(/\s+$/, '') : text.trim()
 
 /**
@@ -446,7 +446,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const node = valueContent(replica.store, identityCid(replica.store, edge))
     const kept = keptRowType(replica.store, edge, type)
     const template = kept ?? resolveRowType(replica.store, type, at)
-    const body = node.data.scalar?.type === 'text' || node.data.presentation?.text ? text : rowBody(replica.store, template, text)
+    const body = node.data.scalar?.type === 'text' || node.data.presentation?.headline ? text : rowBody(replica.store, template, text)
     if (content(replica.store, template).data.form) {
       const constructed = node.data.presentation || node.data.scalar
         ? withTextParameters(replica.store, setFormTitle(replica.store, node, body, now))
@@ -490,7 +490,7 @@ export function setRowType(replica: Replica, at: Scope, aliasId: string, type: s
     if (kept && kept === rowTypeOf(replica.store, edge)) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
     const template = resolveRowType(replica.store, type, at)
-    const next = content(replica.store, template).data.form ? constructRowValue(replica, template, aliasId, formTitle(replica.store, node), {}, now, node) : convertRow(replica.store, node, type, now, extras)
+    const next = content(replica.store, template).data.form ? constructRowValue(replica, template, aliasId, formText(replica.store, node), {}, now, node) : convertRow(replica.store, node, type, now, extras)
     const converted = withChildValue(replica.store, edge, next, now)
     return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdgeAt(replica.store, template, identityCid(replica.store, converted), at))
   })
@@ -515,6 +515,7 @@ export function addSupply(replica: Replica, at: Scope, requirementId: string, su
     confirmation: `confirmed by ${supply.by}`,
     choice: `chose option ${(supply.choice ?? 0) + 1}`,
     search: 'search results',
+    title: `titled by ${supply.by}`,
     allocation: 'allocation',
     task: 'task done',
     market: `listed on the market by ${supply.by}`,
@@ -681,7 +682,7 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
     // a note's body and a pre-constructor comment (migrated on edit) are rewritten through their type
     if (edge && (valueContent(replica.store, identityCid(replica.store, edge)).data.comment || isRowOfType(replica.store, edge, NOTE_TYPE))) return setRowContentAt(replica, at, taskId, isRowOfType(replica.store, edge, NOTE_TYPE) ? NOTE_TYPE : COMMENT_TYPE, title, {}, now)
   return updateTask(replica, at, taskId, now, (task) => {
-      if (task.data.presentation || task.data.scalar) return withTextParameters(replica.store, setFormTitle(replica.store, task, task.data.presentation?.text ? title : trimmed, now))
+      if (task.data.presentation || task.data.scalar) return withTextParameters(replica.store, setFormTitle(replica.store, task, task.data.presentation?.headline ? title : trimmed, now))
     if (task.data.description?.content === trimmed) return null
     return withTextParameters(replica.store, { ...task, data: { ...task.data, description: { content: trimmed } } })
   })

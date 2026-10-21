@@ -22,7 +22,8 @@ async function main() {
   const replicas = { host, alice: c.createReplica('user:alice'), bob: c.createReplica('user:bob') }
   const h = c.createSharingHandlers({ loadStore: async name => replicas[name] ? { user: { id: name === 'host' ? 1 : name === 'alice' ? 2 : 3, username: name }, store: replicas[name].store } : null, saveStore: async (user, store) => { replicas[user.username] = c.createReplica('user:' + user.username, store) }, now: () => 100 }, 'test-secret')
   const call = async (action, body, account) => { const result = { status: 200 }; const res = { setHeader() {}, status(n) { result.status = n; return this }, json(value) { result.body = value; return this } }; await h[action]({ body, ...(account ? { claims: { kind: 'user', username: account } } : {}) }, res); return result }
-  const configure = async audience => call('configure', { path: ['form'], expected: c.put(replicas.host.store, c.valueContent(replicas.host.store, c.resolveScope(replicas.host.store, c.headCid(replicas.host), ['form']))), audience, enabled: true, template: true, poll: null }, 'host')
+  // publishing the template is the owner's member edge: the audience may run it (execute)
+  const configure = async audience => { replicas.host = c.publish(replicas.host, ['form'], audience, 3); return { status: 200 } }
   // Hosted interaction is the event grammar: one service behind HTTP, MCP and the WebSocket. The host evaluates
   // `complete` through its own driver (here: graph-only, no external handlers).
   const hostDeps = { loadStore: async name => replicas[name] ? { user: { id: 1, username: name }, store: replicas[name].store } : null, saveStore: async (user, store) => { replicas[user.username] = c.createReplica('user:' + user.username, store) }, now: () => 100 }
@@ -65,13 +66,13 @@ async function main() {
   replicas.host = c.removeMemberAt(replicas.host, ['peer-task'], 'peer:reader', 4)
   await assert.rejects(interact(reader, [], { kind: 'read', path: [] }), /access/)
   const configured = await configure('public'); assert.equal(configured.status, 200)
-  const at = { owner: 'host', path: ['form'], share: configured.body.share }
+  const at = { owner: 'host', path: ['form'] }
   const [a, b] = await Promise.all([call('visit', at), call('visit', at)])
   assert.equal(a.status, 200); assert.equal(b.status, 200)
   assert.notDeepEqual(a.body.address, b.body.address)
   assert(!JSON.stringify(a.body).includes('Private sibling secret'))
-  assert.equal((await call('visit', a.body.address)).status, 403, 'private URL alone grants no access')
-  assert.equal((await call('visit', { ...a.body.address, visitorToken: b.body.visitorToken })).status, 401)
+  assert.equal((await call('visit', a.body.address)).status, 404, 'private URL alone grants no access')
+  assert.equal((await call('visit', { ...a.body.address, visitorToken: b.body.visitorToken })).status, 404)
   const again = await call('visit', { ...at, visitorToken: a.body.entryToken })
   assert.deepEqual(again.body.address, a.body.address, 'returning browser resumes one instance')
   assert.equal((await call('visit', { ...a.body.address, visitorToken: a.body.visitorToken })).status, 200)
@@ -83,15 +84,16 @@ async function main() {
   assert.equal(submitted.status, 200, JSON.stringify(submitted.body))
   assert.equal(submitted.body.node.execution.status, 'committed')
   assert.equal(c.executionInputs(replicas.host, b.body.address.path).length, 5)
-  assert.equal(c.sharedInputs(replicas.host, ['form']).length, 2, 'template remains unchanged')
+  assert.equal(c.sharedInputs(replicas.host, ['form']).length, 3, 'template remains unchanged (its text slot, choice and allocation)')
   replicas.host = c.removeMemberAt(replicas.host, b.body.address.path, b.body.node.mine.peer, 101)
-  assert.equal((await call('visit', { ...at, visitorToken: b.body.entryToken })).status, 403, 'entry cannot reattach a revoked visitor')
-  const users = await configure('users'), userAt = { ...at, share: users.body.share }
-  assert.equal((await call('visit', userAt)).status, 401)
+  assert.equal((await call('visit', { ...at, visitorToken: b.body.entryToken })).status, 404, 'entry cannot reattach a revoked visitor')
+  replicas.host = c.unpublish(replicas.host, ['form'], 'public', 102)
+  await configure('users'); const userAt = { ...at }
+  assert.equal((await call('visit', userAt)).status, 404)
   const alice = await call('visit', userAt, 'alice'), aliceAgain = await call('visit', userAt, 'alice')
   assert.deepEqual(alice.body.address, aliceAgain.body.address)
-  assert.equal((await call('visit', alice.body.address, 'bob')).status, 403)
-  assert.equal((await call('visit', { ...a.body.address, visitorToken: a.body.visitorToken })).status, 404, 'reconfigured endpoint revokes old instances')
+  assert.equal((await call('visit', alice.body.address, 'bob')).status, 404)
+  assert.equal((await call('visit', { ...a.body.address, visitorToken: a.body.visitorToken })).status, 404, 'an endpoint no longer published to its audience revokes its runs')
   console.log('PASS: hosted interaction through the event grammar, template instances, browser/account identity, private link isolation, declared inputs, completion and revocation')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => rmSync(dir, { recursive: true, force: true }))

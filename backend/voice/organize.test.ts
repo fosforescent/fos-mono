@@ -125,7 +125,10 @@ test('the organize handler fills a requirement in the target with ONE fos submis
   const hiring = view(accepted, target)!.tasks.find(t => t.title === 'Hiring')!
   expect(rows(accepted, [...target, hiring.id])).toEqual(['one designer'])
   expect(rows(accepted, target)).toContain('must stay inside')
-  expect(rows(accepted, target)).toContain('## Voice note: Kickoff\n\n_2026-10-20 09:30 UTC_\n\nkickoff transcript')
+  // the capture is a note: its label is the title line, the stamp and transcript its body row
+  expect(rows(accepted, target)).toContain('Voice note: Kickoff')
+  const capture = view(accepted, target)!.tasks.find(t => t.title === 'Voice note: Kickoff')!
+  expect(view(accepted, [...target, capture.id])!.tasks.find(t => t.scalar)!.title).toBe('## Voice note: Kickoff\n\n_2026-10-20 09:30 UTC_\n\nkickoff transcript')
   expect(rows(accepted, [HOME_ID, 'unrelated'])).toEqual([])
   expect(view(accepted, target)!.proposals).toEqual([])
   const rejected = rejectProposalAt(copy, target, submissions[0]!.id, 99)
@@ -174,7 +177,9 @@ test('texted messages go through the same handler: a pending fos submission in H
   expect(rows(accepted, [HOME_ID, 'groceries'])).toEqual(['milk', 'eggs'])
   const hardware = view(accepted, [HOME_ID])!.tasks.find(t => t.title === 'Hardware store')!
   expect(rows(accepted, [HOME_ID, hardware.id])).toEqual(['hinges'])
-  expect(rows(accepted, [HOME_ID]).at(-1)).toBe('## Text message (sms): Errands\n\n_2026-10-20 09:30 UTC_\n\nneed eggs, and hinges from the hardware store')
+  expect(rows(accepted, [HOME_ID]).at(-1)).toBe('Text message (sms): Errands')
+  const message = view(accepted, [HOME_ID])!.tasks.at(-1)!
+  expect(view(accepted, [HOME_ID, message.id])!.tasks.find(t => t.scalar)!.title).toBe('## Text message (sms): Errands\n\n_2026-10-20 09:30 UTC_\n\nneed eggs, and hinges from the hardware store')
   // the model failing: the requirement goes again and the text lands in Home as a plain row
   await inbound({ source: 'sms', id: 'm2', from: '+1', replyTo: '+1', text: 'fail please', timestamp: 't' })
   expect(rows(h.get(), [HOME_ID])).toContain('fail please')

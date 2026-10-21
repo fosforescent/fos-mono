@@ -2,17 +2,14 @@ import { iconSvg } from './icons'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { parseShareAddress, renderSitePage, siteAnswers, SITE_CSS, type SiteAnswers } from './site'
 import type { App } from './app'
-import { configureSharing, sharedRequest, type ShareAddress } from './api'
-import { sharing, readNodeValue, participants, resolveScope, headCid, valueContent, put, isDirty, scopeBranches, resolveRef, type Poll, type SharedInput, type SharedNode } from '../../shared/sync/index'
+import { sharedRequest, type ShareAddress } from './api'
+import { participants, publishedUrl, readNodeValue, resolveRef, isDirty, type SharedInput, type SharedNode } from '../../shared/sync/index'
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag); el.textContent = text; return el
 }
 function button(text: string, run: () => void): HTMLButtonElement {
   const el = element('button', text); el.type = 'button'; el.onclick = run; return el
-}
-function label(text: string, input: HTMLElement): HTMLLabelElement {
-  const el = element('label', text); el.append(input); return el
 }
 export function shareUrl(address: ShareAddress): string {
   const url = new URL(location.href)
@@ -33,52 +30,32 @@ function ensureSiteStyle(): void {
   siteStyle = document.createElement('style'); siteStyle.textContent = SITE_CSS; document.head.append(siteStyle)
 }
 
-/** Publishing configuration opened by the audience's Add peer constructor. */
+/**
+ * The link the account server made for this node (its `url` handler's row in the server's member entry), shown on
+ * the audience's peer row with its embed, and what visitors entered. Who may visit is that peer's switches: visiting
+ * serves the node's execute view to whoever may run it, and 404 to anyone else.
+ */
 export function sharingControls(app: App, audience: 'public' | 'users', templateTrigger = false): HTMLElement {
   const box = element('div'); box.className = 'sharing-controls'
-  const state = app.state, policy = sharing(state.replica, state.view), poll = readNodeValue<Poll>(state.replica, state.view, 'fos:poll')
-  const mode = element('select'); mode.append(new Option('No poll', ''), new Option('Approval poll', 'approval'), new Option('Ranking poll', 'rank')); mode.value = poll?.mode ?? ''
-  mode.disabled = app.currentRow()?.requirement?.capability !== 'choice' || !app.capabilityAvailable('poll')
-  box.append(label('Choice handler ', mode))
-  if (mode.disabled) box.append(element('p', 'To create a poll, use a choice requirement, for example: -choice: Monday | Tuesday'))
-  if (templateTrigger) box.append(element('p', 'Each visitor gets a private execution of this template. Returning visitors resume their execution.'))
-  const endpoint = element('textarea'); endpoint.readOnly = true; endpoint.setAttribute('aria-label', 'Trigger endpoint'); endpoint.hidden = !templateTrigger
-  if (templateTrigger) box.append(endpoint)
+  const state = app.state, url = publishedUrl(state.replica, state.view), session = state.session?.kind === 'user' ? state.session : null
   const status = element('p'); status.setAttribute('role', 'status')
-  const output = element('input'); output.readOnly = true; output.setAttribute('aria-label', 'Shareable URL')
-  if (policy?.enabled && state.session?.kind === 'user') output.value = shareUrl({ owner: state.session.username, path: app.currentScope(), share: policy.id })
-  const copy = button('Copy link', () => { output.select(); void navigator.clipboard.writeText(output.value).catch(() => { status.textContent = 'Select and copy the URL above.' }) }); copy.disabled = !output.value
-  // a public, non-template link can also be shown inside another site (the read-only embed records no visitors)
-  const embed = element('textarea'); embed.readOnly = true; embed.className = 'embed-snippet'; embed.setAttribute('aria-label', 'Embed snippet')
-  const copyEmbed = button('Copy embed', () => { embed.select(); Promise.resolve(navigator.clipboard?.writeText(embed.value)).catch(() => { status.textContent = 'Select and copy the snippet above.' }) })
-  const showEmbed = () => {
-    embed.value = audience === 'public' && output.value && state.session ? embedSnippet(output.value, state.session.baseUrl) : ''
-    embed.hidden = copyEmbed.hidden = !embed.value
+  if (url) {
+    const output = element('input'); output.readOnly = true; output.setAttribute('aria-label', 'Shareable URL'); output.value = url
+    const copy = button('Copy link', () => { output.select(); void navigator.clipboard.writeText(output.value).catch(() => { status.textContent = 'Select and copy the URL above.' }) })
+    box.append(output, copy)
+    // a public, non-template page can also be shown inside another site (the read-only embed records no visitors)
+    if (audience === 'public' && !templateTrigger && session) {
+      const embed = element('textarea'); embed.readOnly = true; embed.className = 'embed-snippet'; embed.setAttribute('aria-label', 'Embed snippet'); embed.value = embedSnippet(url, session.baseUrl)
+      box.append(embed, button('Copy embed', () => { embed.select(); Promise.resolve(navigator.clipboard?.writeText(embed.value)).catch(() => { status.textContent = 'Select and copy the snippet above.' }) }))
+    }
+    if (templateTrigger && session) {
+      const address = sharedAddress(new URL(url).hash)
+      const endpoint = element('textarea'); endpoint.readOnly = true; endpoint.setAttribute('aria-label', 'Trigger endpoint')
+      endpoint.value = JSON.stringify({ method: 'POST', url: `${session.baseUrl.replace(/\/$/, '')}/${audience === 'public' ? 'public/node' : 'user/data/sharing'}/visit`, body: address }, null, 2)
+      box.append(endpoint)
+    }
   }
-  showEmbed()
-  const path = [...state.view], scope = app.currentScope(), session = state.session
-  const save = async (enabled: boolean) => {
-    publish.disabled = revoke.disabled = true
-    try {
-      if (!session || session.kind !== 'user' || !app.isOnline('fos')) throw new Error('Connect your account to share this node.')
-      if (Object.keys(scopeBranches(state.replica.store, headCid(state.replica), path)).length || state.replica.meta.branch) throw new Error('Sharing nodes inside branch choices is not supported yet.')
-      document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
-      await app.syncNow('before sharing')
-      if (app.state.session !== session || JSON.stringify(app.state.view) !== JSON.stringify(path) || JSON.stringify(app.currentScope()) !== JSON.stringify(scope)) throw new Error('The account or selected node changed. Try again.')
-      const r = app.state.replica, cid = resolveScope(r.store, headCid(r), path)
-      if (!cid || isDirty(r) || !app.isOnline('fos')) throw new Error('Finish syncing this node before sharing it.')
-      const address = await configureSharing(session, { path: app.currentScope(), expected: put(r.store, valueContent(r.store, cid)), audience, enabled, template: templateTrigger, poll: (mode.value || null) as Poll['mode'] | null })
-      if (templateTrigger) endpoint.value = enabled ? JSON.stringify({ method: 'POST', url: `${session.baseUrl.replace(/\/$/, '')}/${audience === 'public' ? 'public/node' : 'user/data/sharing'}/visit`, body: { owner: address.owner, path: address.path, share: address.share } }, null, 2) : ''
-      output.value = enabled ? shareUrl(address) : ''; copy.disabled = !enabled; showEmbed()
-      status.textContent = enabled ? 'Link ready. Visitors can submit input; “Apply poll result” on the choice resolves it from their responses.' : 'Link revoked.'
-      await app.syncNow('sharing changed')
-    } catch (error) { status.textContent = error instanceof Error ? error.message : String(error) }
-    finally { publish.disabled = revoke.disabled = false }
-  }
-  const publish = button(policy?.enabled ? 'Update publication' : 'Publish node', () => void save(true))
-  const revoke = button('Revoke link', () => void save(false)); revoke.disabled = !policy?.enabled
-  publish.disabled = state.session?.kind !== 'user' || !app.isOnline('fos')
-  box.append(publish, revoke, output, copy, embed, copyEmbed, status)
+  box.append(status)
   const records = participants(state.replica, state.view)
   if (records.length) {
     const results = element('details'); results.append(element('summary', `Guest input (${records.length})`))

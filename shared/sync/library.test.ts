@@ -4,21 +4,21 @@ import { HOME_ID, SERVER_TRANSPORT_CAPABILITIES, commitRoot, content, hasCapabil
 import { exchangeNode } from './node-sync'
 import { addMemberAt, addRow, createReplica, ensureHomeContext, headCid, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { nodeAuthorityAt } from './node-context'
-import { setSharing, sharedProjection, writeParticipation } from './sharing'
+import { sharedProjection, writeParticipation } from './sharing'
 import { DEFAULT_MERGE_POLICY, LIBRARY_VERSION, STANDARD_LIBRARY, applyMergePolicy, ensureLibraryLink, ensureDeviceLibrary, exportLibraryRows, exportProvidedLibrary, libraryPath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
 import { LIBRARY_ID, nestScope } from './graph'
 import { PLAIN_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from './library-types'
 import { REF_TYPE } from './library-types'
 
-const share = 'library-share-0123456789', address = { owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], share, title: 'Standard library' }
+const share = 'audience:users', address = { owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], title: 'Standard library' }
 const revision = (value: unknown) => JSON.stringify(value).length.toString(36)
 
 function library(): { r: Replica; path: Scope } {
   let r = ensureHomeContext(createReplica('user:fos-library'), 1)
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Standard library', 1, { id: LIBRARY_ID })
   const path = [HOME_ID, LIBRARY_ID]
-  r = setSharing(r, path, { id: share, audience: 'users', enabled: true }, 2)
-  r = setMemberCapabilitiesAt(r, path, 'audience:users', ['read', 'edit', 'rank'], [], 2)
+  // published to every Fos user, who read, propose, approve and rank
+  r = addMemberAt(r, path, 'audience:users', 'Fos users', ['read', 'edit', 'rank'], 2)
   r = setMergePolicy(r, path, DEFAULT_MERGE_POLICY, 2)
   return { r: seedStandardLibrary(r, path, 3), path }
 }
@@ -42,14 +42,15 @@ test('seeding adds the standard templates once and records the version', () => {
   const rows = view(r, path)!.tasks
   expect(rows.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(STANDARD_LIBRARY.filter(s => s.type === TEMPLATE_TYPE).map(s => s.text))
   // a template's own pattern rows (what tasks made from it accept) are rows too; its requirements are the rest
-  expect(view(r, [...path, 'lib:trip'])!.tasks.filter(t => t.type !== PATTERN_TYPE).map(t => t.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
+  expect(view(r, [...path, 'lib:meet'])!.tasks.filter(t => t.type !== PATTERN_TYPE)).toHaveLength(2)
+  expect(rows.some(t => t.id === 'lib:trip')).toBe(false)
   expect(libraryInfo(r, path)).toMatchObject({ version: LIBRARY_VERSION })
-  expect(libraryInfo(r, path)!.seeded).toContain('lib:trip:budget')
+  expect(libraryInfo(r, path)!.seeded).toContain('lib:meet:when')
   const again = seedStandardLibrary(r, path, 9)
   expect(headCid(again)).toBe(headCid(r))
   // a row the group removed is not reseeded: the seed list remembers what it already added
   const trimmed = seedStandardLibrary(addRow(r, path, PLAIN_TYPE, 'keep', 10), path, 11)
-  expect(view(trimmed, path)!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(11)
+  expect(view(trimmed, path)!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(10)
 })
 
 test('people who contribute link the shared library into Home, carrying its address; nobody gets one by default', () => {
@@ -113,8 +114,9 @@ test('the library exports as rows that seed an identical copy: every root ships 
   const { r: lib, path } = library()
   const rows = exportLibraryRows(lib, path)
   expect(rows.map(row => [row.id, row.type])).toEqual(STANDARD_LIBRARY.map(row => [row.id, row.type]))
-  expect(rows.find(row => row.id === 'lib:trip')!.children!.map(c => c.requirement?.capability)).toEqual(['confirmation', 'allocation', 'allocation', 'task', 'task'])
-  expect(rows.find(row => row.id === 'lib:readme')!.text).toMatch(/^# Standard library/)
+  expect(rows.find(row => row.id === 'lib:meet')!.children!).toHaveLength(2)
+  // the readme is a note: its title line, and its body as a row of its own
+  expect(rows.find(row => row.id === 'lib:readme')!.text).toBe('Standard library')
   // a new root ships the library: its row is there from the start, filled from the build's bundle
   let device = ensureHomeContext(createReplica('user:device'), 1)
   expect(view(device, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
@@ -127,7 +129,7 @@ test('the library exports as rows that seed an identical copy: every root ships 
   expect(libraryPath(device)).toEqual([LIBRARY_ID])
   // a build made without a server ships the compiled .fos graph
   const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: LIBRARY_VERSION, rows: [] }, 2)
-  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(11)
+  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(10)
   // contributing links the shared library into Home: under Home it is the one rows see; the shipped one stays in the root
   const linked = ensureLibraryLink(device, address, 10).replica
   expect(libraryLink(linked)).toEqual([HOME_ID, LIBRARY_ID])
@@ -149,7 +151,7 @@ test('the nodes the fos CLI pulls through the account export as the same bundle 
   const bundle = exportProvidedLibrary({ address, nodes: pulled }, 99)
   expect(bundle.address).toEqual(address)
   expect(bundle.rows).toEqual(exportLibraryRows(lib, path))
-  expect(bundle.rows.filter(row => row.type === TEMPLATE_TYPE)).toHaveLength(11)
+  expect(bundle.rows.filter(row => row.type === TEMPLATE_TYPE)).toHaveLength(10)
   expect(exportProvidedLibrary({ address, nodes: [] }, 1)).toEqual({ address, version: LIBRARY_VERSION, rows: [] })
 })
 

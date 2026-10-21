@@ -273,7 +273,8 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       access = permitted(r, cid, authority, access)
       if (!access) throw new NodeAccessError('Node access denied.')
     }
-    const heldByRequester = isPeerReference(content(r.store, cid)) && content(r.store, cid).data.ref?.peer === request.peerId && !!request.update
+    // a row the requester added holds its content on the requester's side: it is served blank, and its update fills it
+    const heldByRequester = isPeerReference(content(r.store, cid)) && content(r.store, cid).data.ref?.peer === request.peerId
     if (isHandle(content(r.store, cid)) && !heldByRequester) throw new NodeAccessError('Reference targets require their own attachment.')
     const mask = nodeLinkMaskAt(r, path, authority.peerId)
     restrictFields(mask)

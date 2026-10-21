@@ -335,9 +335,6 @@ export function evaluateOnServer(session: Session, path: string[], expected: str
 
 export type ShareAddress = import('../../shared/sync/sharing').SharedAddress
 export type GuestResult = { node: import('../../shared/sync/sharing').SharedNode; visitorToken?: string; entryToken?: string; address?: ShareAddress }
-export function configureSharing(session: Session, body: { path: string[]; expected: string; audience: 'public' | 'users'; enabled: boolean; template?: boolean; poll: 'approval' | 'rank' | null }): Promise<ShareAddress> {
-  return authed(session, 'POST', '/user/data/sharing', body)
-}
 export async function sharedRequest(baseUrl: string, session: Session | null, action: 'visit' | 'input', body: unknown): Promise<GuestResult> {
   if (session?.kind === 'user') return authed(session, 'POST', `/user/data/sharing/${action}`, body)
   const response = await fetch(`${baseUrl}/public/node/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })

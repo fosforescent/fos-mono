@@ -62,12 +62,17 @@ async function main() {
   assert(document.querySelector('.peer-crumb').textContent.includes('Claude Code'))
   assert.equal(document.querySelector('.peer-tabs [aria-label="This device"]').getAttribute('aria-selected'), 'true', 'the device tab stays selected inside its sub-peer')
   assert(!document.querySelector('.constructor-grid [aria-label="Open Claude Code CLI"]') && !document.querySelector('.constructor-grid [aria-label="Run Claude Code…"]'), 'no SDK run or dialog launcher')
-  const panelButton = label => [...document.querySelectorAll('.node-context button')].find(b => b.textContent === label)
+  // launching makes the agent's row on this node: its grants, Launch, and the sessions it runs
+  document.querySelector('.constructor-grid [aria-label="Launch Claude Code on this task"]').click(); await tick()
+  let agentName = 'Claude Code'
+  const agentRow = () => [...document.querySelectorAll('.tree .constructor-body')].find(b => b.textContent.includes(`@{${agentName}}`))
+  assert(agentRow(), 'the launch constructor makes the agent row')
+  const panelButton = label => [...agentRow().querySelectorAll('button')].find(b => b.textContent === label)
   assert(panelButton('Launch Claude Code on this task').disabled, 'nothing granted: the launch is off')
   assert(document.querySelector('.constructor-grid [aria-label="Plan the group trip"]'), 'child masks apply to the agent peer')
 
   // grants toggles; read turns the agent green and enables the launch
-  const toggles = [...document.querySelectorAll('.peer-grants input')]
+  const toggles = [...agentRow().querySelectorAll('.peer-grants input')]
   assert.deepEqual(toggles.map(t => t.getAttribute('aria-label')), ['Claude Code: read', 'Claude Code: write', 'Claude Code: execute'])
   toggles[0].checked = true; toggles[0].dispatchEvent(new window.Event('change')); await tick()
   assert.deepEqual(app.peerGrants('agent-cli:claude'), ['read'])
@@ -94,9 +99,9 @@ async function main() {
   assert(work.items.some(item => item.title === 'Plan the group trip'), 'the open task is outstanding work for the agent')
   // the running session shows on the panel and can be stopped
   app.refresh(); await tick()
-  assert(document.querySelector('.node-context').textContent.includes('session running in a terminal'))
+  assert(agentRow().textContent.includes('session running in a terminal'))
   panelButton('Stop sessions').click(); await wait(1200)
-  assert(!document.querySelector('.node-context').textContent.includes('session running in a terminal'))
+  assert(!agentRow().textContent.includes('session running in a terminal'))
 
   // VS Code: the Claude Code tab link carries the prompt
   panelButton('Open in VS Code').click(); await tick()
@@ -106,17 +111,18 @@ async function main() {
   // Claude Desktop: its own icon and panel; Open starts a chat with the prompt
   document.querySelector('.peer-crumb .link').click(); await tick()
   document.querySelector('.constructor-grid button.sub-peer[aria-label="Claude Desktop"]').click(); await tick()
+  document.querySelector('.constructor-grid [aria-label="Open in Claude Desktop"]').click(); await tick()
+  agentName = 'Claude Desktop'
   panelButton('Open in Claude Desktop').click(); await tick()
   const desktop = invokes.filter(i => i.command === 'open_agent_link').at(-1)
   assert(desktop.args.url.startsWith('claude://claude.ai/new?q=') && decodeURIComponent(desktop.args.url).includes('Plan the group trip'))
   assert(panelButton('Connect to Claude Desktop…').disabled, 'connecting needs a grant and a signed-in account')
 
-  // dragging the agent into a row gives a row with a select of its actions
+  // dragging the agent into a row gives its row there, with its grants and launch once that node is open
   app.applyConstructor(trip, { type: PLAIN_TYPE, text: 'Claude Code', done: false, peer: 'agent-cli:claude' })
   app.goTo(trip); await tick()
-  const select = document.querySelector('.tasks select[aria-label="Claude Code action"]')
-  assert(select, 'the dropped sub-peer row has an action select')
-  assert([...select.options].some(o => o.textContent === 'Launch Claude Code on this task'))
+  agentName = 'Claude Code'
+  assert(panelButton('Launch Claude Code on this task'), 'the dropped sub-peer row launches the agent here')
 
   // the agents disappear when the CLI and the app do
   clis = { claude: null, codex: null }

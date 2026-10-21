@@ -23,7 +23,7 @@
  */
 import { FosStore } from '../dag-implementation/store'
 import { commitRoot, content, importNodes, libraryTypeAt, makeLink, nestScope, newId, proposalContent, put, reachableNodes, readProposals, resolveScope, rootTargetCid, rowsOfType, submissionAdditions, updateAtScope, valueContent, withProposal, type Scope, type SubmissionAddition, type TaskView } from './graph'
-import { formTitle } from './forms'
+import { formText } from './forms'
 import { addRow, addTypedRow, createReplica, headCid, view, type Replica } from './replica'
 import type { Change } from './events'
 
@@ -283,7 +283,7 @@ export function organizeRequestAt(replica: Replica, path: Scope): { label: strin
   if (!row || !cid || row.requirement?.capability !== 'organize') return null
   // the capture is the requirement's row made from the note type (the edge's left node), not any row inside it
   const note = rowsOfType(replica.store, cid, NOTE_TYPE)[0]
-  const text = note ? formTitle(replica.store, valueContent(replica.store, note.cid)).trim() : ''
+  const text = note ? formText(replica.store, valueContent(replica.store, note.cid)).trim() : ''
   return text ? { label: row.title, text } : null
 }
 

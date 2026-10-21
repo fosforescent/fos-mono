@@ -20,7 +20,7 @@ test('advertised capabilities are exactly transport facts plus registered handle
 test('availability follows the handler, and every advertised capability is a known one', async () => {
   const registry = createHandlerRegistry([
     { peerId: 'integration:github', capability: 'repo', available: async id => id === 1 },
-    { peerId: 'fos', capability: 'poll' }
+    { peerId: 'fos', capability: 'search' }
   ])
   expect(await registry.active('integration:github', 1)).toBe(true)
   expect(await registry.active('integration:github', 2)).toBe(false)
