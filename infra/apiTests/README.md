@@ -4,20 +4,18 @@ This directory contains API tests for the Fosforescent backend. The tests are or
 
 - **Postman Collections** (`.json`) - Import into Postman
 - **REST Client Files** (`.http`) - Use with VS Code REST Client extension or similar tools
-- **Test Scripts** (`.js`) - Automated test scripts
+- **Test Scripts** (`.cjs`) - Automated test scripts
 
 ## Test Collections
 
 ### Authentication Flow
 - `auth-flow.postman_collection.json` - Postman collection for authentication
 - `auth-flow.http` - REST client file for authentication tests
-- `auth-flow.test.js` - Automated test script
+- `auth-flow.test.cjs` - Automated test script
 
 ### WebSocket Testing
 - `websocket-flow.http` - REST client file with WebSocket connection instructions
-- `websocket-flow.test.js` - Automated WebSocket connection tests
-- `mcp-protocol.test.js` - MCP (Model Context Protocol) specific tests
-- `temporal-mcp.test.js` - Temporal MCP server tests for long-running tasks
+- `websocket-flow.test.cjs` - Automated WebSocket connection tests
 
 ## Setup
 
@@ -57,8 +55,6 @@ TEST_EMAIL=test@fosforescent.com
 npm run test:api        # Run auth flow tests
 npm run test:api:auth   # Same as above
 npm run test:api:ws     # Run WebSocket connection tests
-npm run test:api:mcp    # Run MCP protocol tests
-npm run test:api:temporal # Run Temporal MCP server tests
 npm run test:api:all    # Run all API tests
 ```
 
@@ -72,9 +68,6 @@ Manual WebSocket testing:
 ```bash
 # Test normal WebSocket (replace TOKEN with actual JWT)
 wscat -c "ws://localhost:4000/TOKEN"
-
-# Test MCP WebSocket
-wscat -c "ws://localhost:4000/mcp"
 ```
 
 ## Test Scenarios
@@ -93,27 +86,9 @@ wscat -c "ws://localhost:4000/mcp"
 3. Basic message sending and receiving
 4. Connection cleanup and close handling
 
-### MCP Protocol Testing
-1. WebSocket connection to MCP endpoint
-2. MCP protocol initialization
-3. Resource listing and management
-4. Tool discovery and invocation
-5. Prompt template listing
-6. Error handling and protocol compliance
-
-### Temporal MCP Server Testing
-1. Long-running task submission and management
-2. Task status monitoring and progress tracking
-3. Workflow type discovery and configuration
-4. Task cancellation and retry mechanisms
-5. Webhook notification system testing
-6. Resource access for task metrics and monitoring
-7. Interactive prompt templates for task management
-
 ### Protected Endpoints
 1. Get user data
 2. Update user profile
-3. Test API token management
 
 ## Test Data
 Tests use dynamic usernames with timestamps to avoid conflicts:

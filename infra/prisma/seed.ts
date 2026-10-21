@@ -266,35 +266,6 @@ async function main() {
     }
   }
 
-  console.log('Setting up token pricing...')
-
-  const pricingData = [
-    { serverId: mcpServers[0].id, toolName: 'read_file', pricePerUseTokens: 1 },
-    { serverId: mcpServers[0].id, toolName: 'write_file', pricePerUseTokens: 2 },
-    { serverId: mcpServers[0].id, toolName: 'list_directory', pricePerUseTokens: 1 },
-    { serverId: mcpServers[1].id, toolName: 'web_search', pricePerUseTokens: 5 },
-    { serverId: mcpServers[1].id, toolName: 'get_webpage_content', pricePerUseTokens: 3 },
-    { serverId: mcpServers[2].id, toolName: 'execute_query', pricePerUseTokens: 10 },
-    { serverId: mcpServers[3].id, toolName: 'analyze_text', pricePerUseTokens: 8 },
-    { serverId: mcpServers[3].id, toolName: 'translate_text', pricePerUseTokens: 6 }
-  ]
-
-  for (const pricing of pricingData) {
-    await prisma.mCPToolPricingModel.upsert({
-      where: {
-        serverId_toolName: {
-          serverId: pricing.serverId,
-          toolName: pricing.toolName
-        }
-      },
-      update: {
-        pricePerUseTokens: pricing.pricePerUseTokens,
-        isEnabled: true
-      },
-      create: pricing
-    })
-  }
-
   console.log('Setting up initial token balances...')
 
   for (const user of users) {
@@ -342,7 +313,6 @@ async function main() {
   console.log('Seed data created successfully!')
   console.log(`Created ${users.length} users`)
   console.log(`Ensured ${mcpServers.length} MCP servers`)
-  console.log(`Configured ${pricingData.length} tool pricing entries`)
 }
 
 async function createUser(email: string, password: string, displayName: string, role: 'admin' | 'user') {

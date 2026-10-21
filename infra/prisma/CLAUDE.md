@@ -20,7 +20,8 @@ Database schema definition, migrations, and seed data management for the Fosfore
 
 #### Seed Data
 - **Initial Users**: Default user accounts for development
-- **Example Workflows**: Sample graph nodes and relationships
+- **Example Graphs**: Sample graph nodes (groups, workspaces)
+- **MCP Servers**: Sample MCP servers, tools and user access
 - **Configuration Data**: System configuration and defaults
 - **Test Data**: Development and testing datasets
 
@@ -75,7 +76,18 @@ Database schema definition, migrations, and seed data management for the Fosfore
 #### Graph System
 - **FosNodeModel**: Content-addressable graph nodes with JSON data
 - **FosNodeUserAccessLinkModel**: User access permissions for nodes
-- **NodeVectorModel**: Vector embeddings for semantic search
+- **RowEmbeddingModel**: pgvector row embeddings (768 dims) for row and market search
+
+#### Integrations and Peers
+- **IntegrationConnectionModel**: OAuth connections of integration peers
+- **MCPServerModel**, **MCPToolModel**, **UserMCPServerAccessModel**: MCP servers the MCP peers read (`backend/integrations/mcpPeers.ts`)
+
+#### Tokens and Usage
+- **UserTokenBalanceModel**, **TokenTransactionModel**, **TokenPurchaseModel**: token ledger and purchases
+- **StripePayoutModel**, **PlatformFee**: payouts and platform fees
+- **VoiceUsageModel**: voice/media transcription spend
+
+The tool-market, API-token, prompt, voice-note and app tables were dropped in `migrations/20261021120000_drop_mcp_registry`.
 
 #### Subscription System
 - **Stripe Integration**: Customer IDs, session IDs, subscription status

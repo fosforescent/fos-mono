@@ -24,7 +24,7 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 - `apiTests/` - API integration tests for backend endpoints
 - `auth-flow.http` - REST client file for manual API testing
 - `auth-flow.postman_collection.json` - Postman collection
-- `auth-flow.test.js` - Automated Node.js test script
+- `auth-flow.test.cjs`, `websocket-flow.test.cjs` - Automated Node.js test scripts
 
 ### Terraform Infrastructure
 - `terraform/` - Infrastructure as Code for cloud deployment
@@ -47,7 +47,7 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 
 ### Internal Dependencies
 - `../backend/` - Backend service and Dockerfile
-- `../prisma/` - Database schema and initialization
+- `prisma/` - Database schema, migrations and seed
 - `../shared/` - Shared types and utilities
 
 ## Data Inputs/Outputs
@@ -88,7 +88,7 @@ Only a `dev` environment exists in GCP today and it serves the live site: Cloud 
 ### Service Profiles
 - `db-only` - PostgreSQL only
 - `backend` - backend and database
-- `full` - backend, database, Temporal
+- `full` - backend and database (same as `backend` since Temporal was removed)
 
 The web app is not containerized: run it with `npm run dev:web` (or `npm test` in `web/` for its regression suite).
 

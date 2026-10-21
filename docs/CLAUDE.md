@@ -2,11 +2,16 @@
 
 ## Directory Summary
 
-Project documentation including **language design specification**, architecture analysis, system processes, and implementation roadmaps for the Fosforescent workflow system.
+Project documentation: the design of the system as built (`sync.md`), the **language design specification** and its implementation roadmap, and operational guides for the Fosforescent workflow system.
 
 ## Key Documents
 
-### Language & Implementation (Start Here!)
+### The System as Built (Start Here!)
+- **`sync.md`** - Current system design: node providers and node exchange, the replica, merge and CHOICE nodes, mutable references, requirements, resource banks, queries and the market, the `fos` binary, the server, the standard library, relay, users, triggers, published pages
+- **`cid-versioning.md`** - The data version carried by every cid (`FOS_DATA_VERSION`, also the standard library's version); older data is refused, not migrated
+- **`project-agent-workflow.md`** - Phone to desktop project workflow (the standard library's project agent workflow and coding-agent requests)
+
+### Language Design (largely unimplemented)
 - **`language-design.md`** - Complete language specification covering:
   - Dependent types and patterns-as-types
   - Modal types and actor-provided modalities
@@ -22,95 +27,16 @@ Project documentation including **language design specification**, architecture 
   - File changes required
   - Testing checklist
 
-### System Architecture
-- **`state.md`** - Sources of truth and data relationships
-- **`processes.md`** - System processes and data transformations
-- **`events.md`** - Event definitions and trigger conditions
-- **`groups-architecture.md`** - Group/collaboration system design
+- **`planning/`** - Working notes on the language and on slices of work: core graph semantics, categorical foundations, equality and binding, functions and abstraction, the language implementation plan, the carrot dinner example, the project work loop, the ref/template consolidation
+
+### Operations
+- **`mobile-release.md`** - iOS and Android release builds (GitHub Actions workflows over the Tauri app)
+
+### Other
+- **`middleguy/`** - Early sketch of a broker between clients and service providers (sequence diagram)
 
 ### Dependencies
 - **Markdown**: Documentation format
-- **Project Codebase**: Source code analysis for documentation generation
-- **Architecture Patterns**: Domain-driven design and architectural principles
-
-### Data Inputs
-
-#### Codebase Analysis
-- **Source Code**: Analysis of existing code structure and patterns
-- **Directory Structure**: Current project organization and file layout
-- **Dependencies**: External libraries and internal module relationships
-- **Data Flow**: How data moves through the system
-
-#### System Design
-- **Architecture Decisions**: Current and proposed system architecture
-- **Design Patterns**: Architectural patterns and best practices
-- **Integration Points**: External service integrations and APIs
-- **Performance Considerations**: System performance and optimization
-
-### Data Outputs
-
-#### Documentation Files
-- **state.md**: Sources of truth and data relationships
-- **processes.md**: System processes and data transformations
-- **events.md**: Event definitions and trigger conditions
-- **architecture.md**: Proposed domain-driven refactoring plan
-
-#### Analysis Results
-- **Current State**: Documentation of existing system architecture
-- **Problem Areas**: Identified issues with current organization
-- **Proposed Solutions**: Detailed refactoring recommendations
-- **Migration Strategy**: Step-by-step implementation plan
-
-### Events Handled
-- **Documentation Updates**: Changes to system documentation
-- **Architecture Analysis**: System design review and analysis
-- **Refactoring Planning**: Architecture improvement planning
-- **Knowledge Transfer**: Team education and onboarding
-
-### Data Transformations
-- **Code Analysis → Documentation**: Source code converted to human-readable documentation
-- **System Behavior → Process Documentation**: Runtime behavior documented as process flows
-- **Architecture Vision → Implementation Plan**: High-level design converted to actionable steps
-- **Current State → Future State**: Gap analysis and migration planning
-
-### Documentation Categories
-
-#### System Analysis
-- **State Management**: How data flows and is stored across the system
-- **Process Documentation**: End-to-end process flows and transformations
-- **Event Catalog**: Comprehensive event definitions and conditions
-- **Dependency Mapping**: Service and module interdependencies
-
-#### Architecture Documentation
-- **Current Architecture**: Analysis of existing system structure
-- **Proposed Refactoring**: Domain-driven design recommendations
-- **Migration Strategy**: Implementation roadmap and phases
-- **Best Practices**: Architectural principles and patterns
-
-#### Technical Specifications
-- **API Documentation**: Service interfaces and contracts
-- **Data Models**: Database schemas and data structures
-- **Integration Guides**: External service integration documentation
-- **Development Guidelines**: Coding standards and practices
-
-### Refactoring Proposals
-
-#### Domain-Driven Design
-- **Bounded Contexts**: Clear domain boundaries and responsibilities
-- **Event-Driven Architecture**: Decoupled communication patterns
-- **Hexagonal Architecture**: Separation of business logic and infrastructure
-- **Microservices**: Service decomposition and modularity
-
-#### Implementation Strategy
-- **Phase 1**: Event system foundation
-- **Phase 2-6**: Domain-by-domain refactoring
-- **Phase 7**: Frontend reorganization
-- **Benefits**: Improved testability, maintainability, scalability
-
-### Quality Assurance
-- **Architecture Review**: Design validation and feedback
-- **Documentation Standards**: Consistent documentation format
-- **Version Control**: Documentation change tracking
-- **Stakeholder Review**: Team validation and approval
+- **Project Codebase**: Source code the documents describe
 
 ## TODOs

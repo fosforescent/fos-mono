@@ -17,16 +17,7 @@ The core language combines several advanced concepts:
 - **Partial Evaluation**: Expressions that can't be satisfied become service endpoints (holes)
 - **HoTT Foundations**: Variable binding uses equality types with reflexivity proofs
 
-See `docs/language-design.md` for the full language specification and `docs/implementation-roadmap.md` for the implementation plan.
-
-### Current Development Priority
-
-The primary goal is to implement the evaluation mechanism that allows:
-1. Creating tasks as typed expressions (`Task<"description">`)
-2. Partial evaluation that creates "holes" for unsatisfied subexpressions
-3. Running the system as a service that exposes endpoints for holes
-4. Actors registering to handle effects and provide modalities
-5. Events fulfilling holes and continuing evaluation
+See `docs/language-design.md` for the full language specification and `docs/implementation-roadmap.md` for the implementation plan; most of that plan is not implemented. What runs today is the sync core (`shared/sync/`, `docs/sync.md`): rows, mutable refs, requirements and handlers, pattern-typed accept rules, and evaluation as a step/effect journal (`shared/sync/evaluation.ts`, `backend/sync/evaluation.ts`).
 
 ## Architecture
 
@@ -35,8 +26,7 @@ The primary goal is to implement the evaluation mechanism that allows:
 - **shared/**: Core graph implementation and type definitions shared between web, desktop and backend
 - **shared/sync/**: Offline/online sync on the FosStore graph (identity-keyed three-way merge, CHOICE nodes for divergences, peer-link protocol); see `docs/sync.md`
 - **web/**: Vanilla-TS task UI used by the browser and wrapped by the Tauri desktop/mobile app; offline-first via localStorage replica
-- **prisma/**: Database schema and migrations
-- **infra/**: Infrastructure configuration including Terraform, Docker Compose, Prisma schema and API smoke tests
+- **infra/**: Infrastructure configuration including Terraform, Docker Compose, the Prisma schema and migrations (`infra/prisma/`) and API smoke tests
 - **desktop/**: Tauri shell = the `fos` binary: GUI mode and a Rust CLI/REPL mode over the same `.fos/` state (`fos <dir>` = project context, `fos` = home/account context); see `desktop/CLAUDE.md` and `docs/sync.md`
 - **docs/**: Documentation and architecture guides
 
@@ -109,7 +99,7 @@ cd desktop/src-tauri && cargo check
 - `web/`: Vite SPA; `tsc && vite build`. The same build runs in the browser and inside the Tauri webview.
 - `backend/`: `tsc`; `Dockerfile` builds the image deployed to Cloud Run (`.github/workflows/deploy-backend.yml`).
 - `desktop/`: `tauri build`; its hooks run `npm run build:core` first, bundling `shared/sync/embed.ts` into the gitignored `src-tauri/js/fos-core.js` the binary embeds (run it by hand before a bare `cargo` build or test).
-- Docker Compose (`infra/`): PostgreSQL (pgvector), Temporal and the backend.
+- Docker Compose (`infra/`): PostgreSQL (pgvector) and the backend.
 
 ## Database Schema
 
@@ -118,6 +108,8 @@ PostgreSQL via Prisma (`infra/prisma/schema.prisma`):
 - **FosNodeModel**: Content-addressable graph nodes
 - **RowEmbeddingModel**: pgvector row embeddings (768-dimensional Vertex `text-embedding-005`) for semantic and market search
 - **IntegrationConnectionModel**, **PeerInviteModel**: OAuth connections and peer invite tokens
+- **MCPServerModel**, **MCPToolModel**, **UserMCPServerAccessModel**: MCP servers that MCP peers run tools on
+- **UserTokenBalanceModel**, **TokenTransactionModel**, **TokenPurchaseModel**: fos points ledger
 - Email and authentication event tracking
 
 ## Testing Strategy
@@ -139,6 +131,8 @@ PostgreSQL via Prisma (`infra/prisma/schema.prisma`):
 
 **Read these before making significant changes to the core system:**
 
+- `docs/sync.md` - The system as built: store, rows, refs, merge, peers, the event grammar, handlers and evaluation
+
 - `docs/language-design.md` - Complete language specification including:
   - Type system (dependent types, patterns as types, modal types)
   - Evaluation model (partial evaluation, holes, continuations)
@@ -151,9 +145,6 @@ PostgreSQL via Prisma (`infra/prisma/schema.prisma`):
   - File changes required for each phase
   - Code examples and interfaces
   - Testing checklist
-
-- `shared/design.md` - Original design notes on messaging and events
-- `shared/runtime.md` - Runtime design notes
 
 ## Directory CLAUDE.md Files
 
@@ -176,6 +167,7 @@ Each major directory in this monorepo contains its own `CLAUDE.md` file with det
 
 ### Directory CLAUDE.md Locations:
 
+- `backend/CLAUDE.md` - Backend server, sync host and handlers
 - `backend/auth/CLAUDE.md` - Authentication system
 - `backend/email/CLAUDE.md` - Email system
 - `backend/subscription/CLAUDE.md` - Payment and subscriptions
@@ -184,10 +176,9 @@ Each major directory in this monorepo contains its own `CLAUDE.md` file with det
 - `web/CLAUDE.md` - Web UI (browser and Tauri webview)
 - `desktop/CLAUDE.md` - Tauri shell, `fos` CLI/REPL, agent runtime
 - `infra/prisma/CLAUDE.md` - Database schema and management
+- `shared/CLAUDE.md` - Shared package overview
 - `shared/dag-implementation/CLAUDE.md` - Core graph system
-- `shared/evaluation/CLAUDE.md` - Expression evaluation
 - `shared/sync/CLAUDE.md` - Offline/online sync core
-- `shared/mock/CLAUDE.md` - Example workflows and test data
 - `infra/CLAUDE.md` - Infrastructure, Docker, deployment
 
 ## Dev Tips

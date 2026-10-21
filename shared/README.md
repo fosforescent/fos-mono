@@ -21,12 +21,12 @@ Fosforescent aims to be a new way to organize cooperative work and resources. It
 
 - ✅ Basic graph data structure implementation
 - ✅ Node content addressing via cryptographic hashing
-- 🔄 Visual editor
+- ✅ Offline/online sync between devices and the account server (`sync/`: three-way merge, node-by-node exchange; see `docs/sync.md`)
+- 🔄 Visual editor (`web/`)
 - 🔄 Primitive node types and operations
-- 🔄 First iteration of store mechanism
-- ❌ Distributed node synchronization
-- ❌ Resource allocation system
-- ❌ Collaborative features
+- 🔄 Resource allocation (allocation rows, requirements and supplies)
+- 🔄 Collaborative features (members, proposals, votes, published pages)
+- ❌ DHT-based distribution
 
 ## Use Cases
 

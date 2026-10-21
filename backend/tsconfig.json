@@ -4,7 +4,6 @@
       "jest",
       "node"
     ],
-    "jsx": "react-jsx",
     "target": "esnext",
     "lib": [
       "dom",
@@ -32,16 +31,12 @@
         "./*"
       ]
     },
-    "strictNullChecks": true,
-    "plugins": [{ "name": "typescript-plugin-css-modules" }]
+    "strictNullChecks": true
   },
   "include": [
     "*.ts",
     "**/*.ts",
-    "declarations.d.ts",
     "../shared/dag-implementation/store.ts",
-    "../shared/dag-implementation/channel.ts",
-    "../shared/dag-implementation/context.ts",
     "../shared/dag-types.ts",
     "../shared/defaults.ts",
     "../shared/utils.ts"
@@ -50,7 +45,6 @@
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "**/*.spec.ts",
-    "vite.config.mts"
+    "**/*.spec.ts"
   ]
 }

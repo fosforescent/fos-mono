@@ -2,13 +2,11 @@
 //!   POST /mcp         MCP (JSON-RPC) for local agents: the shared fos_read/fos_search/fos_propose/… tools over the event grammar
 //!   (replication to other devices goes through the account's node-provider protocol; the directory serves no
 //!   sync protocol of its own)
-//!   POST /p2p/offer, GET /p2p/offer/:id, POST|GET /p2p/answer/:id   WebRTC offer/answer relay
 //!   GET  /status, GET /events?since=N (long-poll for "changed")
 
 use crate::workspace::Workspace;
 use crate::mcp_transport::{Sessions, response_body};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::io::Read;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -19,12 +17,11 @@ pub struct Shared {
     changes: Mutex<u64>,
     sessions: Mutex<Sessions>,
     changed: Condvar,
-    offers: Mutex<HashMap<String, (String, Option<String>, Instant)>>,
 }
 
 impl Shared {
     pub fn new(workspace: Workspace) -> Arc<Shared> {
-        Arc::new(Shared { workspace: Mutex::new(workspace), changes: Mutex::new(0), sessions: Mutex::new(Sessions::default()), changed: Condvar::new(), offers: Mutex::new(HashMap::new()) })
+        Arc::new(Shared { workspace: Mutex::new(workspace), changes: Mutex::new(0), sessions: Mutex::new(Sessions::default()), changed: Condvar::new() })
     }
 
     pub fn notify_changed(&self) {
@@ -52,10 +49,6 @@ fn read_body(request: &mut Request) -> Value {
 }
 
 /// MCP for local agents: the shared fos_* vocabulary (shared/sync/mcp-adapter.ts) over the event grammar, as the directory's owner.
-pub fn handle_mcp(shared: &Shared, req: &Value) -> Option<Value> {
-    handle_mcp_session(shared, req, None)
-}
-
 fn handle_mcp_session(shared: &Shared, req: &Value, session: Option<&str>) -> Option<Value> {
     let waiting = req["method"] == "tools/call" && req["params"]["name"] == "fos_await_task";
     let timeout = Duration::from_millis(req["params"]["arguments"]["timeoutMs"].as_u64().unwrap_or(25000).min(30000));
@@ -110,7 +103,7 @@ fn route(shared: &Shared, request: &mut Request) -> Response<std::io::Cursor<Vec
         return json_response(204, &json!({}));
     }
     match (method, path.as_str()) {
-        (Method::Get, "/") => json_response(200, &json!({ "fos": true, "endpoints": ["/status", "/mcp", "/p2p/offer", "/events"] })),
+        (Method::Get, "/") => json_response(200, &json!({ "fos": true, "endpoints": ["/status", "/mcp", "/events"] })),
         (Method::Get, "/status") => json_response(200, &shared.workspace.lock().unwrap().status()),
         (Method::Post, "/mcp") => {
             let body = read_body(request);
@@ -133,43 +126,6 @@ fn route(shared: &Shared, request: &mut Request) -> Response<std::io::Cursor<Vec
                     },
                     None => json_response(202, &json!({})),
                 }
-            }
-        }
-        (Method::Post, "/p2p/offer") => {
-            let body = read_body(request);
-            let code = body.get("code").and_then(|c| c.as_str()).unwrap_or("");
-            if !code.starts_with("fosp2p.") {
-                return json_response(400, &json!({ "error": "offer code required" }));
-            }
-            let id: String = uuid::Uuid::new_v4().to_string().chars().take(6).collect();
-            let mut offers = shared.offers.lock().unwrap();
-            offers.retain(|_, (_, _, at)| at.elapsed() < Duration::from_secs(600));
-            offers.insert(id.clone(), (code.to_string(), None, Instant::now()));
-            json_response(200, &json!({ "id": id }))
-        }
-        (Method::Get, p) if p.starts_with("/p2p/offer/") => {
-            let id = &p["/p2p/offer/".len()..];
-            match shared.offers.lock().unwrap().get(id) {
-                Some((offer, _, _)) => json_response(200, &json!({ "code": offer })),
-                None => json_response(404, &json!({ "error": "no such offer" })),
-            }
-        }
-        (Method::Post, p) if p.starts_with("/p2p/answer/") => {
-            let id = p["/p2p/answer/".len()..].to_string();
-            let body = read_body(request);
-            let code = body.get("code").and_then(|c| c.as_str()).map(String::from);
-            let mut offers = shared.offers.lock().unwrap();
-            match (offers.get_mut(&id), code) {
-                (Some(entry), Some(code)) => { entry.1 = Some(code); json_response(200, &json!({ "ok": true })) }
-                (None, _) => json_response(404, &json!({ "error": "no such offer" })),
-                (_, None) => json_response(400, &json!({ "error": "answer code required" })),
-            }
-        }
-        (Method::Get, p) if p.starts_with("/p2p/answer/") => {
-            let id = &p["/p2p/answer/".len()..];
-            match shared.offers.lock().unwrap().get(id) {
-                Some((_, answer, _)) => json_response(200, &json!({ "code": answer })),
-                None => json_response(404, &json!({ "error": "no such offer" })),
             }
         }
         (Method::Get, "/events") => {
@@ -202,7 +158,7 @@ mod tests {
         let reader = shared.clone();
         let path = vec![inbox];
         let read_path = path.clone();
-        let waiting = std::thread::spawn(move || handle_mcp(&reader, &json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fos_await_task","arguments":{"path":read_path,"timeoutMs":2000}}})).unwrap());
+        let waiting = std::thread::spawn(move || handle_mcp_session(&reader, &json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fos_await_task","arguments":{"path":read_path,"timeoutMs":2000}}}), None).unwrap());
         std::thread::sleep(Duration::from_millis(100));
         shared.workspace.try_lock().expect("await must release the workspace lock").add_task(&path, "[ ] New work").unwrap();
         shared.notify_changed();

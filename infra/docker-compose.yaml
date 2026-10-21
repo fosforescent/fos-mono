@@ -24,77 +24,6 @@ services:
       - backend
       - full
 
-  temporal:
-    image: temporalio/auto-setup:1.22.4
-    container_name: temporal
-    depends_on:
-      postgres:
-        condition: service_healthy
-      backend:
-        condition: service_started
-    environment:
-      - DB=postgresql
-      - DB_PORT=5432
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=temporal
-      - POSTGRES_PWD=temporal
-      - POSTGRES_DB=temporal
-      - POSTGRES_SEEDS=postgres
-      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
-    ports:
-      - "7233:7233" # gRPC port
-      - "8233:8233" # HTTP API port
-    volumes:
-      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
-    healthcheck:
-      test: ["CMD", "tctl", "--address", "temporal:7233", "workflow", "list"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - backend
-      - full
-
-  # Temporal UI
-  temporal-ui:
-    image: temporalio/ui:2.21.3
-    container_name: temporal-ui
-    depends_on:
-      temporal:
-        condition: service_healthy
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CORS_ORIGINS=http://localhost:3000,http://localhost:8080
-    ports:
-      - "8080:8080"
-    profiles:
-      - backend
-      - full
-
-  # Temporal Worker (for executing workflows)
-  temporal-worker:
-    build:
-      context: ../
-      dockerfile: backend/Dockerfile.temporal-worker
-    container_name: temporal-worker
-    depends_on:
-      temporal:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    restart: on-failure:5
-    env_file:
-      - ../.env
-    environment:
-      - TEMPORAL_SERVER_HOST=temporal:7233
-      - NODE_ENV=development
-    volumes:
-      - ../backend:/app
-      - /app/node_modules
-    profiles:
-      - backend
-      - full
-
   # Fosforescent backend (using Dockerfile)
   backend:
     build:
@@ -114,7 +43,6 @@ services:
       - POSTMARK_API_TOKEN=${POSTMARK_API_TOKEN}
       - EMAIL_WEBHOOK_PASSWORD=${EMAIL_WEBHOOK_PASSWORD}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TEMPORAL_SERVER_HOST=temporal:7233
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "${BACKEND_PORT:-4000}:80"
@@ -128,7 +56,6 @@ services:
 
 volumes:
   postgres_data:
-  temporal_data:
 
 # Networks (optional, for custom networking)
 networks:

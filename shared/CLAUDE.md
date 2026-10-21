@@ -6,9 +6,8 @@ The `shared/` directory contains the **core language implementation** for Fosfor
 
 **Key Design Documents:**
 - `../docs/language-design.md` - Full language specification
-- `../docs/implementation-roadmap.md` - Implementation phases and checklist
-- `./design.md` - Original design notes
-- `./runtime.md` - Runtime architecture notes
+- `../docs/implementation-roadmap.md` - Implementation phases and checklist (largely unimplemented)
+- `../docs/sync.md` - The system as built: refs, rows, merge, node exchange, evaluation, handlers
 
 ## Language Overview
 
@@ -61,25 +60,26 @@ shared/
 │   ├── node.ts            # FosNode - immutable content-addressed nodes
 │   ├── store.ts           # FosStore - graph storage and queries
 │   ├── primitive-node.ts  # Built-in primitive types and constructors
-│   ├── cid.ts             # content ids in the data version (../version.ts); no migrations
-│   └── channel.ts         # Communication channels (stub)
+│   ├── node-data.ts       # Node data helpers
+│   └── cid.ts             # content ids in the data version (../version.ts); no migrations
 │
-├── sync/                  # Refs, rows, merge, protocol, evaluation, triggers (docs/sync.md)
+├── sync/                  # Everything above the store (docs/sync.md, sync/CLAUDE.md)
+│   ├── graph.ts, refs.ts  # Mutable refs, rows, row types, commitRoot
+│   ├── replica.ts         # Device replica and edit operations
+│   ├── merge.ts, branches.ts       # Three-way merge, CHOICE nodes, branches
+│   ├── node-provider.ts, node-sync.ts  # Node exchange protocol
+│   ├── patterns.ts        # What a type accepts; type errors
+│   ├── events.ts          # The event grammar every transport adapts to
+│   ├── evaluation.ts, bindings.ts, handlers.ts, triggers.ts  # Evaluation, handler offers, triggers
+│   ├── library.ts, forms.ts, sharing.ts, market.ts, …        # Standard library, constructors, publishing, market
+│   └── embed.ts           # Replica API bundled into the fos binary (QuickJS)
 │
-├── evaluation/            # Evaluation and interpretation
-│   ├── interpreter.ts     # FosInterpreter - expression evaluation
-│   ├── string-client.ts   # String-based client interface
-│   └── state-machines.ts  # XState machines (legacy)
-│
-├── mock/                  # Example workflows and test data
-│   └── example-workflows.ts
-│
+├── library-compiler.ts   # Compiles the portable .fos library graph (library.generated.json)
+├── version.ts            # FOS_DATA_VERSION (cid prefix and library version)
 ├── types.ts              # Core type definitions
 ├── dag-types.ts          # Interface definitions
 ├── utils.ts              # Utility functions
-├── defaults.ts           # Default values
-├── design.md             # Design notes
-└── runtime.md            # Runtime notes
+└── defaults.ts           # Default values
 ```
 
 ## Current Implementation Status
@@ -88,26 +88,20 @@ shared/
 - Content-addressable nodes (FosNode)
 - Graph storage and querying (FosStore)
 - Pattern matching (matchPattern, query, queryTriple)
-- Basic interpreter (createTask, spawn, setName)
 - Primitive node types (~100+ types)
 - Mutable aliases with version history
-
-### Partially Implemented ⚠️
-- Channel communication (skeleton only)
-- Context/effect handling (mostly commented out)
+- Type checking as pattern matching (`sync/patterns.ts`: `acceptsChild`, `rejectedChildren`; rows holding what their type rejects are wrapped as `[TYPE_ERROR, error]`, `canonicalTypeErrors` on every `commitRoot`)
+- Evaluation and effects through handlers (`sync/evaluation.ts`, `sync/handlers.ts`, `sync/bindings.ts`; the backend driver is `backend/sync/evaluation.ts`)
 
 ### Not Yet Implemented ❌
-- Type checking as pattern matching
-- Hole creation and management
-- Modal type system
-- Actor registry
-- Effect emission and handling
-- Service layer (endpoint generation)
-- Scope management with HoTT binding
+- The language-design primitives (TYPE, PI, SIGMA, EQ, REFL, HOLE, BOX, …)
+- Holes as a separate construct (`hole.ts`), modal types, actor registry
+- Scope management with HoTT binding (`scope.ts`)
+- Interpreter: `IFosInterpreter` in `dag-types.ts` is an interface with no implementation
 
 ## Implementation Priorities
 
-Based on `docs/implementation-roadmap.md`:
+Based on `docs/implementation-roadmap.md` (roadmap items; none of the files below exist yet):
 
 ### Phase 1: Core Type Primitives
 Add to `primitive-node.ts`:
@@ -173,7 +167,7 @@ interface IStore {
 }
 ```
 
-### IFosInterpreter (dag-types.ts)
+### IFosInterpreter (dag-types.ts, not implemented)
 ```typescript
 interface IFosInterpreter {
   createTask(desc, deps?): IFosInterpreter[]
@@ -208,10 +202,10 @@ FosPath = FosPathElem[]  // Array of [instr, target] edges
 
 ```bash
 # Run shared module tests
-npm run test -- shared/
+cd shared && npx jest sync/
 
 # Run specific test file
-npm run test -- shared/dag-implementation/__tests__/store.test.ts
+cd shared && npx jest dag-implementation/cid.test.ts
 ```
 
 ## TODOs
@@ -226,10 +220,7 @@ npm run test -- shared/dag-implementation/__tests__/store.test.ts
 
 ### Medium Priority
 - [ ] Implement FosService class
-- [ ] Add evaluatePartial to interpreter
 - [ ] Connect holes to REST endpoints
 
 ### Lower Priority
-- [ ] Implement channel communication
-- [ ] Add WebSocket event handling
 - [ ] Performance optimization for large graphs
