@@ -10,21 +10,37 @@ function setup() {
   r = addTask(r, [], 'Project specification', 1, 'project')
   r = addTask(r, ['project'], 'UI details', 1, 'ui')
   r = addMemberAt(r, ['project'], 'agent', 'Coding agent', ['read', 'edit'], 2)
-  let saves = 0
+  let saves = 0, rejectSave = false
   const evaluate = jest.fn(async () => ({ status: 'committed' }))
-  const handler = createEventService({ loadStore: async username => username === 'owner' ? { user: { id: 1, username }, store: r.store } : null, saveStore: async (_user, store) => { saves++; r = { ...r, store } }, now: () => 50 }, evaluate).mcp
+  const handler = createEventService({ loadStore: async username => username === 'owner' ? { user: { id: 1, username }, store: r.store } : null, saveStore: async (_user, store) => { if (rejectSave) throw new Error('Save failed'); saves++; r = { ...r, store } }, now: () => 50 }, evaluate).mcp
   async function rpc(method: string, params?: unknown, extra: any = {}) {
     let status = 200, body: any
-    const res = { setHeader() {}, status(n: number) { status = n; return res }, json(v: unknown) { body = v; return res }, end() { return res } } as unknown as Response
+    const headers: Record<string, string> = {}
+    const res = { setHeader(k: string, v: string) { headers[k] = v }, status(n: number) { status = n; return res }, json(v: unknown) { body = v; return res }, end(v?: unknown) { if (v !== undefined) body = v; return res } } as unknown as Response
     await handler({ method: 'POST', headers: {}, query: {}, claims: { username: 'owner', kind: 'peer', peerId: 'agent', scope: ['project'] }, body: { jsonrpc: '2.0', id: 0, method, params }, ...extra } as Request, res)
-    return { status, body }
+    return { status, body, headers }
   }
   const call = async (name: string, args: unknown = {}, extra?: any) => {
     const result = await rpc('tools/call', { name, arguments: args }, extra)
     return result.body?.result?.isError ? { error: result.body.result.content[0].text } : JSON.parse(result.body.result.content[0].text)
   }
-  return { rpc, call, get: () => r, set: (value: Replica) => { r = value }, saves: () => saves, evaluate }
+  return { rpc, call, get: () => r, set: (value: Replica) => { r = value }, saves: () => saves, evaluate, failSave: (fail: boolean) => { rejectSave = fail } }
 }
+
+test('hosted await releases the account lock, sees new work, and stops after execute revocation', async () => {
+  const s = setup()
+  s.set(setMemberCapabilitiesAt(s.get(), ['project'], 'agent', ['read', 'execute'], [], 3))
+  const waiting = s.call('fos_await_task', { path: ['ui'], timeoutMs: 2000 })
+  await new Promise(resolve => setTimeout(resolve, 25))
+  expect((await s.call('fos_read')).title).toBe('Project specification')
+  s.set(addTask(s.get(), ['project', 'ui'], 'New work', 4, 'new'))
+  expect(await waiting).toMatchObject({ status: 'task', task: { path: ['ui', 'new'], title: 'New work' } })
+  s.set(setTaskDone(s.get(), ['project', 'ui'], 'new', true, 5))
+  const revoked = s.call('fos_await_task', { path: ['ui'], timeoutMs: 2000 })
+  await new Promise(resolve => setTimeout(resolve, 25))
+  s.set(setMemberCapabilitiesAt(s.get(), ['project'], 'agent', ['read'], [], 6))
+  expect((await revoked).error).toMatch(/execute/)
+})
 test('MCP initialization handles id zero, notifications and scoped navigation', async () => {
   const s = setup()
   expect((await s.rpc('initialize', {})).body).toMatchObject({ id: 0, result: { protocolVersion: '2025-03-26' } })
@@ -187,4 +203,38 @@ test('a peer granted execute lists the open work in its scope, its own first, an
   s.set(setMemberCapabilitiesAt(s.get(), ['project'], 'agent', ['read'], [], 8))
   expect((await s.rpc('tools/list')).body.result.tools.map((t: any) => t.name)).not.toContain('fos_outstanding')
   expect((await s.call('fos_outstanding')).error).toMatch(/unavailable/)
+})
+
+
+test('hosted sessions race for exclusive claims and emit tool-list changes; failed durable submissions retain ownership', async () => {
+  const s = setup()
+  s.set(setMemberCapabilitiesAt(s.get(), ['project'], 'agent', ['read', 'edit', 'execute'], [], 3))
+  const sessions = await Promise.all([s.rpc('initialize'), s.rpc('initialize')])
+  const a = sessions[0].headers['Mcp-Session-Id'], b = sessions[1].headers['Mcp-Session-Id']
+  expect(a).toBeTruthy(); expect(b).not.toBe(a)
+  expect(sessions[0].body.result.capabilities.tools.listChanged).toBe(true)
+  const connection = (id: string, events = false) => ({ headers: { 'mcp-session-id': id, ...(events ? { accept: 'application/json, text/event-stream' } : {}) } })
+  const read = await s.call('fos_read', { path: ['ui'] }, connection(a))
+  const args = { path: ['ui'], expected: read.revision }
+  const results = await Promise.all([s.call('fos_claim_task', args, connection(a)), s.call('fos_claim_task', args, connection(b))])
+  expect(results.filter(r => r.status === 'claimed')).toHaveLength(1)
+  expect(results.filter(r => /already claimed/.test(r.error))).toHaveLength(1)
+  const winner = results[0].status === 'claimed' ? a : b
+  const claimId = results.find(r => r.claim)?.claim.id
+  const tools = (await s.rpc('tools/list', {}, connection(winner))).body.result.tools.map((t: any) => t.name)
+  expect(tools).toContain('fos_task_submit'); expect(tools).not.toContain('fos_propose')
+  const task = await s.call('fos_task_read', { claimId }, connection(winner))
+  s.failSave(true)
+  const submission = { claimId, expected: task.revision, changes: [{ path: [], operation: 'add_note', text: 'Done and tested' }] }
+  expect((await s.call('fos_task_submit', submission, connection(winner))).error).toBe('Save failed')
+  s.failSave(false)
+  expect((await s.call('fos_task_status', {}, connection(winner))).claim.id).toBe(claimId)
+  expect((await s.call('fos_task_read', { claimId }, connection(winner))).revision).toBe(task.revision)
+  const response = await s.rpc('tools/call', { name: 'fos_task_submit', arguments: submission }, connection(winner, true))
+  expect(response.headers['Content-Type']).toBe('text/event-stream')
+  const messages = response.body.split('\n').filter((line: string) => line.startsWith('data: ')).map((line: string) => JSON.parse(line.slice(6)))
+  expect(messages[0].method).toBe('notifications/tools/list_changed')
+  expect(JSON.parse(messages[1].result.content[0].text).releasedClaimId).toBe(claimId)
+  expect((await s.rpc('tools/list', {}, connection(winner))).body.result.tools.some((t: any) => t.name === 'fos_claim_task')).toBe(true)
+  expect((await s.rpc('tools/list', {}, connection('invented'))).status).toBe(404)
 })

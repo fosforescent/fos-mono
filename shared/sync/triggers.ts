@@ -1,20 +1,61 @@
 /** Triggers are named arguments on nodes, supplied by a device or the Home server peer. */
 import { evaluationRecord, readNodeValue, writeNodeValue } from './evaluation'
 import { addTask, headCid, instantiateTemplate, view, type Replica } from './replica'
-import { capabilityTarget, newId, resolveScope, valueContent, type Scope } from './graph'
+import { capabilityTarget, newId, resolveScope, valueContent, content, isBranchChoice, readChoice, refBranches, put, withBranches, type Scope } from './graph'
 import { TEMPLATE_TYPE } from './library-types'
-export type TriggerKind = 'timer' | 'cron' | 'task-completion' | 'request' | 'response'
+import { argumentRefs } from './bindings'
+import { bindRefInputs } from './refs'
+export type TriggerKind = 'timer' | 'cron' | 'task-completion' | 'request' | 'response' | 'ref-change'
 /** What a `response` trigger waits for: the evaluation request this peer left on another peer's node. */
 export type AwaitedResponse = { request: string; node: Scope; requestedAt: number }
-export type NodeTrigger = { kind: TriggerKind; peer: string; enabled: boolean; created: number; due?: number; expression?: string; response?: AwaitedResponse }
+export type NodeTrigger = { kind: TriggerKind; peer: string; enabled: boolean; created: number; due?: number; expression?: string; response?: AwaitedResponse; watch?: { path: Scope; branch: string; baseline: string; argument?: string } }
 export type TriggerState = { occurrence: string; status: 'running' | 'finished' | 'failed'; error?: string; target: Scope; requestTime?: number; requestIds?: string[] }
 export const TRIGGER_ARGUMENT = 'fos:trigger'
+export const TRIGGER_TEMPLATE_ARGUMENT = 'fos:trigger-template'
 export const TRIGGER_STATE_ARGUMENT = 'fos:trigger-state'
 export function nodeTrigger(r: Replica, path: Scope): NodeTrigger | null {
   const t = readNodeValue<NodeTrigger>(r, path, TRIGGER_ARGUMENT)
-  return t && ['timer', 'cron', 'task-completion', 'request', 'response'].includes(t.kind) && typeof t.peer === 'string' && typeof t.created === 'number' ? t : null
+  return t && ['timer', 'cron', 'task-completion', 'request', 'response', 'ref-change'].includes(t.kind) && typeof t.peer === 'string' && typeof t.created === 'number' ? t : null
 }
 export const triggerState = (r: Replica, path: Scope) => readNodeValue<TriggerState>(r, path, TRIGGER_STATE_ARGUMENT)
+
+/** Bind trigger declarations carried by a template's graph data. Whole placeholders
+ * preserve native values (for example a node path), rather than stringifying them. */
+export function bindTemplateTriggers(r: Replica, path: Scope, bindings: Record<string, unknown>, now: number): Replica {
+  let count = 0
+  const walk = (at: Scope) => {
+    if (at.length - path.length > 32 || ++count > 5000) throw new Error('Template trigger tree is too large.')
+    const declaration = readNodeValue<NodeTrigger>(r, at, TRIGGER_TEMPLATE_ARGUMENT)
+    if (declaration) {
+      const trigger = bindRefInputs(declaration, bindings) as NodeTrigger
+      trigger.created = now
+      if (trigger.watch) {
+        if (!Array.isArray(trigger.watch.path) || !trigger.watch.path.length || typeof trigger.watch.branch !== 'string') throw new Error('Bind the trigger to a node path and branch.')
+        trigger.watch.baseline = watchedRefValue(r, trigger.watch.path, trigger.watch.branch, trigger.watch.argument) ?? ''
+      }
+      r = setNodeTrigger(r, at, trigger, now)
+    }
+    for (const row of view(r, at)?.tasks ?? []) if (!row.refId) walk([...at, row.id])
+  }
+  walk(path)
+  return r
+}
+
+/** Observe a specific branch without changing the branch displayed by this device. */
+export function watchedRefValue(r: Replica, path: Scope, branch: string, argument?: string): string | null {
+  const target = resolveScope(r.store, headCid(r), path)
+  if (!target) return null
+  const node = content(r.store, target), names = isBranchChoice(r.store, node) ? readChoice(r.store, target).options.map(o => o.peerId) : refBranches(r.store, node)?.names
+  if (names && !names.includes(branch)) return null
+  return withBranches(r.store, { [path.at(-1)!]: branch }, () => {
+    const cid = resolveScope(r.store, headCid(r), path)
+    if (cid && argument) {
+      const ref = argumentRefs(r.store, cid).find(a => a.name === argument)
+      return put(r.store, ref ? valueContent(r.store, ref.cid) : { data: {}, children: [] })
+    }
+    return cid ? put(r.store, valueContent(r.store, cid)) : null
+  })
+}
 
 /** Numeric five-field UTC cron; lists, ranges and steps. Day-of-month/day-of-week use cron's OR rule. */
 export function cronMatches(expression: string, now: number): boolean {
@@ -39,15 +80,31 @@ export function cronMatches(expression: string, now: number): boolean {
   return !!(matches[0] && matches[1] && matches[3] && day)
 }
 export function setNodeTrigger(r: Replica, path: Scope, trigger: NodeTrigger, now: number): Replica {
+  if (!['timer', 'cron', 'task-completion', 'request', 'response', 'ref-change'].includes(trigger.kind) || typeof trigger.peer !== 'string' || !trigger.peer.trim()) throw new Error('Choose a trigger capability and executor peer.')
   // A continuation waits on the node that made the request; every other trigger instantiates a template.
   if (trigger.kind !== 'response' && (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.type !== TEMPLATE_TYPE)) throw new Error('Triggers require a template.')
   if (trigger.kind === 'response' && (!trigger.response || typeof trigger.response.request !== 'string' || !Array.isArray(trigger.response.node))) throw new Error('A response trigger names the request it waits for.')
   if (trigger.kind === 'cron') cronMatches(trigger.expression ?? '', now)
   if (trigger.kind === 'timer' && (!Number.isFinite(trigger.due) || trigger.due! < now)) throw new Error('Choose a future time.')
+  if (trigger.kind === 'ref-change') {
+    const w = trigger.watch
+    if (!w || !Array.isArray(w.path) || !w.path.every(id => typeof id === 'string') || !w.path.length || !w.branch || !w.baseline) throw new Error('Choose a reference and branch to watch.')
+    // The trigger and its instantiated tasks must be outside the watched subtree, otherwise its own claim refires it.
+    const parent = path.slice(0, -1)
+    if (w.path.length <= parent.length && w.path.every((id, i) => parent[i] === id)) throw new Error('Place the trigger outside the watched node.')
+    if (w.argument !== undefined && (typeof w.argument !== 'string' || !w.argument)) throw new Error('The watched argument must have a name.')
+    if (!watchedRefValue(r, w.path, w.branch, w.argument)) throw new Error('The watched node is unavailable.')
+  }
   return writeNodeValue(r, path, TRIGGER_ARGUMENT, trigger, now, { type: capabilityTarget(r.store, trigger.kind), peer: trigger.peer })
 }
 export function triggerOccurrence(r: Replica, path: Scope, t: NodeTrigger, now: number): string | null {
   if (!t.enabled) return null
+  if (t.kind === 'ref-change') {
+    if (!t.watch) return null
+    const value = watchedRefValue(r, t.watch.path, t.watch.branch, t.watch.argument)
+    const consumed = triggerState(r, path)?.occurrence.startsWith(`ref-change:${t.created}:`)
+    return value && (value !== t.watch.baseline || consumed) ? `ref-change:${t.created}:${value}` : null
+  }
   if (t.kind === 'timer') return t.due !== undefined && now >= t.due ? `timer:${t.created}:${t.due}` : null
   if (t.kind === 'cron') return cronMatches(t.expression ?? '', now) ? `cron:${t.created}:${Math.floor(now / 60000)}` : null
   if (t.kind === 'response') {

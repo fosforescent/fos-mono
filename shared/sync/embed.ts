@@ -262,16 +262,22 @@ export const api = {
     set(handle, writeGraphNode(r, JSON.parse(atJson), { data: input.data, children: input.children }, now, cid ? valueCidOf(r.store, cid) : undefined))
   },
   /** One MCP message (JSON-RPC) through the event grammar as this directory's owner. Returns {response, changed}. */
-  mcp(handle: string, messageJson: string, peerId: string, now: number): string {
+  mcp(handle: string, messageJson: string, peerId: string, now: number, sessionId?: string): string {
     let changed = false
-    const response = handleMcp(JSON.parse(messageJson), { owner: true, serverName: 'fos', dispatch: (event: FosEvent) => {
-      const dispatched = dispatchEvent(get(handle), event, { peerId, owner: true, scope: [] }, now)
+    const previousRoot = get(handle).store.rootNodeId
+    const response = handleMcp(JSON.parse(messageJson), { owner: true, serverName: 'fos', toolListChanges: true, dispatch: (event: FosEvent) => {
+      const dispatched = dispatchEvent(get(handle), event, { peerId, owner: true, scope: [], sessionId }, now)
       if (dispatched.changed) { set(handle, dispatched.replica); changed = true }
       if (dispatched.evaluate) throw new Error('Evaluation is not available through the local server yet; run it from the app.')
       return dispatched.result
     } })
     if (response instanceof Promise) throw new Error('unexpected asynchronous dispatch')
-    return JSON.stringify({ response, changed })
+    return JSON.stringify({ response, changed, previousRoot })
+  },
+  rollbackMcp(handle: string, previousRoot: string): void {
+    const r = get(handle)
+    if (!r.store.table.has(previousRoot)) throw new Error('Unknown MCP checkpoint.')
+    r.store.rootNodeId = previousRoot
   }
 }
 

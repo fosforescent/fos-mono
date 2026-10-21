@@ -1,4 +1,7 @@
+import { workClaims, saveWorkClaims } from '../../shared/sync/work-claims'
 import { BUNDLED_LIBRARY as LIBRARY_BUNDLE } from '../../shared/sync/library'
+import { runProjectWorkflows, queueAgentEffect } from './project-workflow'
+import { AGENT_TOOL } from '../../shared/sync/project-workflow'
 import { libraryPath, MANUAL_HANDLERS_ID } from '../../shared/sync/library'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
@@ -348,6 +351,7 @@ export class App {
   private repositoryPollAt = 0
   private repositoryBusy = false
   private projectSwitching = false
+  get workflowReady(): boolean { return !this.projectSwitching && !this.evaluating }
   private groupedEdit = false
   private observedHead: string
   private config: AppConfig
@@ -443,7 +447,7 @@ export class App {
   autoAcceptCaptures = false
   setAutoAcceptCaptures(on: boolean): void { this.autoAcceptCaptures = on; this.savePrefs(); this.set({}) }
 
-  private now(): number {
+  now(): number {
     return this.config.now ? this.config.now() : Date.now()
   }
 
@@ -679,7 +683,7 @@ export class App {
   start(): void {
     void this.probeLocalAgents()
     if (!this.triggerTimer) {
-      this.triggerTimer = setInterval(() => void this.runTriggers(), 1000)
+      this.triggerTimer = setInterval(() => { void this.runTriggers(); void runProjectWorkflows(this).catch(error => this.notify('error', String(error))) }, 1000)
       window.addEventListener('pagehide', () => { if (this.triggerTimer) clearInterval(this.triggerTimer); this.triggerTimer = null })
     }
     window.addEventListener('online', () => this.reconnect('network back'))
@@ -2103,44 +2107,13 @@ export class App {
     try {
       for (const { path, repo } of found) {
         const previous = this.repositories.get(repo)
-        const beforeCid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
-        const beforeOptions = beforeCid && isBranchChoice(this.state.replica.store, content(this.state.replica.store, beforeCid)) ? readChoice(this.state.replica.store, beforeCid).options : []
         const snapshot = await readRepository(session, repo, previous?.pulls.filter(p => p.state === 'open').map(p => p.number) ?? [])
         if (generation !== this.authGeneration || session !== this.state.session) return
         if (repositoryAt(this.state.replica, path) !== repo || !this.hasRepositoryPeer(path)) continue
-        let next = this.state.replica
-        const id = path.at(-1)
-        if (id) {
-          let cid = resolveScope(next.store, headCid(next), path)!
-          const priorSelection = isBranchChoice(next.store, content(next.store, cid)) ? branchSelection(next.store, cid) : snapshot.defaultBranch
-          for (const branch of snapshot.branches) {
-            cid = resolveScope(next.store, headCid(next), path)!
-            const names = isBranchChoice(next.store, content(next.store, cid)) ? readChoice(next.store, cid).options.map(o => o.peerId) : [snapshot.defaultBranch]
-            if (names.includes(branch.name)) continue
-            selectBranch(next.store, id, snapshot.defaultBranch)
-            next = createBranch(next, path, branch.name, this.now(), snapshot.defaultBranch)
-          }
-          selectBranch(next.store, id, priorSelection)
-          this.branchSelections[id] = priorSelection
-        }
-        for (const pull of snapshot.pulls) {
-          if (pull.state !== 'merged' || previous?.pulls.find(p => p.number === pull.number)?.state !== 'open' || pull.headRepo.toLowerCase() !== repo.toLowerCase() || !path.length) continue
-          const cid = resolveScope(next.store, headCid(next), path)!
-          if (!isBranchChoice(next.store, content(next.store, cid))) continue
-          const names = readChoice(next.store, cid).options.map(o => o.peerId)
-          if (!names.includes(pull.head) || !names.includes(pull.base)) continue
-          const selected = branchSelection(next.store, cid)
-          const proposed = beforeOptions.find(o => o.peerId === pull.head)
-          if (!proposed) continue
-          next = mergeBranch(next, path, pull.head, pull.base, this.now(), proposed)
-          selectBranch(next.store, path.at(-1)!, selected)
-        }
         snapshot.pulls.push(...(previous?.pulls ?? []).filter(p => p.state !== 'open' && !snapshot.pulls.some(current => current.number === p.number)).slice(-100))
         this.repositories.set(repo, snapshot)
-        const changed = next !== this.state.replica
-        this.set({ replica: next })
+        this.set({ replica: this.state.replica })
         this.savePrefs()
-        if (changed) this.scheduleSync()
       }
     } catch (error) { this.notify('error', `Repository sync: ${error instanceof Error ? error.message : String(error)}`) }
     finally { this.repositoryBusy = false }
@@ -2172,18 +2145,13 @@ export class App {
   async decideRepoPull(pull: RepositoryPull, decision: 'merge' | 'close'): Promise<void> {
     const session = this.state.session, info = this.repositoryInfo(), path = [...this.state.view], generation = this.authGeneration
     if (!session || !info || !this.canPushRepository(path)) return
-    const reviewedCid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
-    const reviewed = reviewedCid && isBranchChoice(this.state.replica.store, content(this.state.replica.store, reviewedCid)) ? readChoice(this.state.replica.store, reviewedCid).options.find(o => o.peerId === pull.head) : undefined
     try {
       await decideRepositoryPull(session, info.repo, pull.number, decision, pull.sha)
       if (generation !== this.authGeneration || session !== this.state.session || repositoryAt(this.state.replica, path) !== info.repo || !this.canPushRepository(path)) return
-      if (decision === 'merge' && reviewed && pull.headRepo.toLowerCase() === info.repo.toLowerCase()) {
-        this.edit(mergeBranch(this.state.replica, path, pull.head, pull.base, this.now(), reviewed))
-        this.branchSelections[path.at(-1)!] = pull.base
-      }
       if (info.snapshot) this.repositories.set(info.repo, { ...info.snapshot, pulls: info.snapshot.pulls.map(p => p.number === pull.number ? { ...p, state: decision === 'merge' ? 'merged' : 'closed' } : p) })
       this.savePrefs()
       this.notify('info', `GitHub PR #${pull.number} ${decision === 'merge' ? 'merged' : 'closed'}.`)
+      await this.syncNow('repository decision', true)
       await this.refreshRepositories(true)
     } catch (error) { this.notify('error', String(error)) }
   }
@@ -2490,9 +2458,31 @@ export class App {
    * One event of the grammar against this device's replica (the desktop loopback endpoints and local agents). The
    * principal comes from the transport; owners' evaluations run through this app's own evaluator.
    */
-  async dispatchLocalEvent(principal: Principal, event: FosEvent): Promise<unknown> {
-    const dispatched = dispatchEvent(this.state.replica, event, principal, this.now())
-    if (dispatched.changed) { this.edit(dispatched.replica); this.scheduleSync(); await this.config.storage.flush?.() }
+  private localEventQueue: Promise<unknown> = Promise.resolve()
+  dispatchLocalEvent(principal: Principal, event: FosEvent, branch?: string): Promise<unknown> {
+    const pending = this.localEventQueue.catch(() => undefined).then(() => this.dispatchLocalEventNow(principal, event, branch))
+    this.localEventQueue = pending
+    return pending
+  }
+  private async dispatchLocalEventNow(principal: Principal, event: FosEvent, branch?: string): Promise<unknown> {
+    const r = this.state.replica, before = r.store.rootNodeId, beforeClaims = workClaims(r, this.now())
+    const dispatched = withBranches(r.store, branch && principal.scope.length ? { [principal.scope.at(-1)!]: branch } : {}, () => dispatchEvent(r, event, principal, this.now()))
+    if (dispatched.changed) {
+      const after = r.store.rootNodeId, afterClaims = workClaims(dispatched.replica, this.now())
+      try { this.edit(dispatched.replica); await this.config.storage.flush?.() }
+      catch (error) {
+        if (this.state.replica.store === r.store) {
+          if (r.store.rootNodeId === after) r.store.rootNodeId = before
+          else {
+            // Preserve UI edits made during the flush, but never release or acquire a lease on a failed save.
+            const changedIds = new Set([...beforeClaims, ...afterClaims].filter(c => JSON.stringify(beforeClaims.find(b => b.id === c.id)) !== JSON.stringify(afterClaims.find(a => a.id === c.id))).map(c => c.id))
+            if (changedIds.size) saveWorkClaims(this.state.replica, [...workClaims(this.state.replica, this.now()).filter(c => !changedIds.has(c.id)), ...beforeClaims.filter(c => changedIds.has(c.id))], this.now())
+          }
+          this.set({ replica: { ...this.state.replica } })
+        }
+        throw error
+      }
+    }
     if (dispatched.evaluate) {
       if (this.evaluating) throw new Error('Evaluation is running.')
       const path = dispatched.evaluate.path
@@ -2549,6 +2539,16 @@ export class App {
   }
   exitExecution(): void { this.execution = null; this.refresh() }
   evaluating = false
+  /** Workflow claims must reach durable storage before a desktop process can start. */
+  async saveWorkflowReplica(replica: Replica): Promise<void> {
+    this.set({ replica }); await this.config.storage.flush?.(); this.scheduleSync()
+  }
+  /** A second window must not launch a request already claimed in shared durable storage. */
+  workflowClaimAvailable(path: Scope): boolean {
+    const saved = loadReplica(this.config.storage.loadReplica())
+    const job = readNodeValue<{ status: string }>(saved, path, 'fos:workflow-job')
+    return job?.status === 'queued'
+  }
   evaluationStatus(path = this.state.view) { return evaluationRecord(this.state.replica, path) }
   addEvaluationConstructor(path: Scope): void {
     if (evaluationRecord(this.state.replica, path)) return
@@ -2560,7 +2560,7 @@ export class App {
     const r = step.row?.requirement
     if (!r || r.satisfied) return false
     if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize') return true
-    if (r.capability === 'tool') return r.tool !== 'fos.pull'
+    if (r.capability === 'tool') return !['fos.pull', AGENT_TOOL].includes(r.tool ?? '')
     // a poll resolves its choice on the server (the fos poll handler tallies the responses)
     if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
     if (r.capability === 'allocation' && r.resource === 'points') return true
@@ -2576,6 +2576,7 @@ export class App {
     const valid = () => { if (this.state.replica.store !== store || generation !== this.authGeneration) throw new Error('The data session changed during evaluation.') }
     try {
       const localPull = (step: import('../../shared/sync/evaluation').EvaluationStep) => step.row?.requirement?.tool === 'fos.pull'
+      const workflowEffect = (step: import('../../shared/sync/evaluation').EvaluationStep) => [AGENT_TOOL].includes(step.row?.requirement?.tool ?? '')
       const shared = this.sharedNodeAt(path)
       if (shared) {
         // another account's node: their host evaluates it for us (with the `execute` grant), then we pull the result
@@ -2591,6 +2592,7 @@ export class App {
         return
       }
       const needsServer = evaluationSteps(this.state.replica, path).some(step => this.serverHandles(step))
+      if (needsServer && evaluationSteps(this.state.replica, path).some(workflowEffect)) throw new Error('Run the coding-agent request separately from server integration effects.')
       if (needsServer && evaluationSteps(this.state.replica, path).some(localPull)) throw new Error('Evaluate local Pull separately from server integration effects.')
       if (needsServer) {
         if (!this.isOnline('fos') || this.state.session?.kind !== 'user' || this.virtualIdentity) throw new Error('Connect to the account server to evaluate integration effects.')
@@ -2613,9 +2615,14 @@ export class App {
       const record = await evaluateNode(path, {
         get: () => { valid(); return this.state.replica },
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
-        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: localPull,
+        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: step => localPull(step) || workflowEffect(step),
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
-        effect: async step => {
+        effect: async (step, operation) => {
+          if (workflowEffect(step)) {
+            await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, step.path, operation, this.now()))
+            this.notify('info', 'Execution queued for the configured desktop. Track its status in the project workflow.')
+            return 'pending'
+          }
           if (!localPull(step)) throw new Error('No local handler for this constructor.')
           if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
           await this.syncNow('evaluate pull', true); valid()

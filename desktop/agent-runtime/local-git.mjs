@@ -5,7 +5,7 @@ import { join, resolve, basename, dirname } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 const execute = promisify(execFile)
-const git = async (cwd, args) => (await execute('git', ['-C', cwd, ...args], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 })).stdout.trim()
+const git = async (cwd, args) => (await execute('git', ['-C', cwd, ...args], { windowsHide: true, timeout: 120000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }, maxBuffer: 4 * 1024 * 1024 })).stdout.trim()
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 async function specDirectory(cwd, create = false) {
   const root = await realpath(cwd), dir = join(root, '.fos', 'specifications')
@@ -16,6 +16,27 @@ async function specDirectory(cwd, create = false) {
 export async function localGit(request) {
   const inputPath = resolve(request.cwd)
   const cwd = await git(basename(inputPath) === '.git' ? dirname(inputPath) : inputPath, ['rev-parse', '--show-toplevel'])
+  if (request.action === 'agent-worktree') {
+    if (!/^[a-zA-Z0-9-]{1,80}$/.test(request.id ?? '') || !/^[\w.-]+\/[\w.-]+$/.test(request.repo ?? '')) throw new Error('Invalid agent request or repository.')
+    await git(cwd, ['check-ref-format', '--branch', request.branch])
+    if (request.branch.startsWith('-')) throw new Error('Invalid branch.')
+    const remote = await git(cwd, ['config', '--get', 'remote.origin.url'])
+    const match = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)
+    if (!match || match[1].toLowerCase() !== request.repo.toLowerCase()) throw new Error('The local origin does not match the configured GitHub repository.')
+    const root = await realpath(cwd), parent = join(root, '.fos', 'agent-worktrees')
+    for (const path of [join(root, '.fos'), parent]) {
+      try { if ((await lstat(path)).isSymbolicLink()) throw new Error('Agent worktree directories cannot be symlinks.') } catch (error) { if (error.code !== 'ENOENT') throw error }
+    }
+    await mkdir(parent, { recursive: true })
+    await writeFile(join(parent, '.gitignore'), '*\n', { flag: 'wx' }).catch(error => { if (error.code !== 'EEXIST') throw error })
+    const directory = join(parent, request.id)
+    // A lost launch response never reuses a working directory that an agent may already be changing.
+    try { await lstat(directory); throw new Error('This request already has a worktree. Review it before retrying.') } catch (error) { if (error.code !== 'ENOENT') throw error }
+    await git(cwd, ['fetch', 'origin', `refs/heads/${request.branch}`])
+    const sha = await git(cwd, ['rev-parse', 'FETCH_HEAD'])
+    await git(cwd, ['worktree', 'add', '-b', `fos-agent/${request.id}`, directory, sha])
+    return { cwd: directory, head: sha, branch: request.branch }
+  }
   const branch = await git(cwd, ['branch', '--show-current']), head = await git(cwd, ['rev-parse', 'HEAD']).catch(() => '')
   const dir = await specDirectory(cwd)
   const names = (await readdir(dir).catch(error => { if (error.code === 'ENOENT') return []; throw error })).filter(name => name.endsWith('.json')).sort()

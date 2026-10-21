@@ -5,6 +5,7 @@ import type { FosStore } from '../dag-implementation/store'
 import { branchEdge, isBranchChoice, readMembers, CAPABILITIES, MARKET_PEER, capabilityTarget, content, identityCid, isMemberEdge, marketMemberOf, memberHandlers, put, refNodeContent, refTypeCid, resolveScope, isRowEdge, isRowOfType, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
 import { addMemberAt, setHandlerOffersAt, headCid, type Replica } from './replica'
 import { marketGrantsAt } from './market'
+import { refProperties } from './refs'
 
 export type HandlerEnvironment = { isPeerActive?: (peerId: string) => boolean }
 export type HandlerOffer = { id: string; cid: string; type: string; peerId: string; label: string; capability?: Capability; enabled: boolean; active: boolean; legacy: boolean }
@@ -17,11 +18,7 @@ export function contextMemberRefs(r: Replica, path: Scope): Map<string, string> 
       const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
       if (!cid) continue
       // resolveScope preserves branch constructors at the final path component.
-      const node = content(r.store, policyIdentity(r.store, cid))
-      for (const edge of node.children.filter(e => isMemberEdge(r.store, e))) {
-        const peer = content(r.store, edge[1]).data.peerId?.content
-        if (peer) peers.set(peer, edge[1])
-      }
+      for (const ref of refProperties(r.store, policyIdentity(r.store, cid), 'members')) if (ref.peer) peers.set(ref.peer, ref.cid)
     }
     return peers
   })

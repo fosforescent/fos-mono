@@ -31,6 +31,8 @@ mod commands;
 mod core;
 #[cfg(desktop)]
 mod local_server;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod mcp_transport;
 #[cfg(desktop)]
 mod project;
 mod stores;

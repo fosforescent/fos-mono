@@ -1,6 +1,21 @@
 import { userView } from './test-helpers'
 import { addTask, addRow, createReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
 import { TEMPLATE_TYPE } from './library-types'
+import { bindTemplateTriggers, TRIGGER_TEMPLATE_ARGUMENT } from './triggers'
+import { readNodeValue } from './evaluation'
+
+test('any graph template can declare and rebind a trigger without workflow-specific code', () => {
+  let r = addTask(createReplica('device'), [], 'Observed node', 1, 'source')
+  r = addRow(r, [], TEMPLATE_TYPE, 'User-defined continuation', 2, { id: 'template' })
+  const declaration = { kind: 'ref-change', peer: '{{executor}}', enabled: true, created: 0, watch: { path: '{{input}}', branch: '{{branch}}', argument: 'user-event' } }
+  r = writeNodeValue(r, ['template'], TRIGGER_TEMPLATE_ARGUMENT, declaration, 3)
+  r = bindTemplateTriggers(r, ['template'], { executor: 'first-peer', input: ['source'], branch: 'main' }, 4)
+  expect(nodeTrigger(r, ['template'])).toMatchObject({ peer: 'first-peer', watch: { path: ['source'], argument: 'user-event' } })
+  r = bindTemplateTriggers(r, ['template'], { executor: 'second-peer', input: ['source'], branch: 'main' }, 5)
+  expect(nodeTrigger(r, ['template'])?.peer).toBe('second-peer')
+  expect(readNodeValue(r, ['template'], TRIGGER_TEMPLATE_ARGUMENT)).toEqual(declaration)
+  expect(() => bindTemplateTriggers(r, ['template'], {}, 6)).toThrow(/Missing binding/)
+})
 
 test('UTC cron validates fields and handles ranges, steps and day OR semantics', () => {
   const now = Date.UTC(2026, 9, 14, 9, 15)

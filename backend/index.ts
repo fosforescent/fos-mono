@@ -9,6 +9,7 @@ import { createSystemAccount, libraryOwner } from './library'
 import { sendPlainEmail } from './email/email'
 import { createHandlerRegistry } from './sync/registry'
 import { createHostHandlers } from './sync/hostHandlers'
+import { repositoryLoadHandler } from './sync/repository'
 import { identityKeyFromEnv, verifyHandler } from './sync/verify'
 import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
@@ -525,7 +526,7 @@ const verify = verifyHandler({
     return { id: user.id, username: user.user_name, name: text(profile.displayName) ?? text(profile.name), publicKey: text(profile.publicKey) }
   }
 }, identityKeyFromEnv())
-const registry = createHandlerRegistry(createHostHandlers({
+const registry = createHandlerRegistry([...createHostHandlers({
   verify,
   // captures organized into a node: one provider instance per capture, metered under the voice budget
   organize: organizeHandler(() => voiceDepsFromEnv(), voiceUsage),
@@ -561,7 +562,10 @@ const registry = createHandlerRegistry(createHostHandlers({
   connected: async (id, provider) => { const c = await integrationDeps.connections.get(id, provider); return !!c && (provider !== 'phone' || c.metadata.verified === true) },
   sms: !!smsAdapter?.configured(),
   cron: process.env.FOS_ENABLE_CRON === 'true'
-}))
+}), repositoryLoadHandler({
+  connected: async id => !!await integrationDeps.connections.get(id, 'github'),
+  snapshot: (userId, repo, tracked, branch) => integrations.repositorySnapshot(userId, repo, tracked, branch)
+})])
 prismaAccountStoreDeps.registry = registry
 integrationDeps.offers = id => registry.offers(`integration:${id}`)
 const integrations = createIntegrationHandlers(integrationDeps)

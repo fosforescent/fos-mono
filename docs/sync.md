@@ -1269,17 +1269,81 @@ keeping the other entries and a `.bak` of the old file. A phone user adding a
 task row to a node the agent is attached to makes it outstanding work for the
 agent on its next `fos_outstanding`, hosted or local (after sync).
 
+`fos_await_task({"path": [], "timeoutMs": 25000})` keeps one MCP request open until
+there is outstanding work below that node. Paths and optional `branches` are relative
+to the connection's attachment. It returns `{status: "task", task, revision, truncated}`,
+using the same ordering as `fos_outstanding` (assigned to the caller first, then
+depth-first tree order). Tasks and unmet requirements count; completed subtrees and
+template definitions do not. Blocked tasks retain their `blockedBy` information.
+Discovery skips claimed work (including overlapping ancestor/descendant tasks), but
+multiple agents can still receive the same unclaimed task before one claims it.
+
+The default wait is 25 seconds, the maximum is 30 seconds, and `timeoutMs: 0` checks
+immediately. An empty result is `{status: "timeout", task: null, revision, truncated}`;
+the agent can call again. A truncated scan is reported explicitly. Hosted, desktop
+loopback, and `fos serve`/`fos run` endpoints support it. Waits release store locks and
+do not block other requests; the graph and current access are checked roughly once
+per second. The `execute` grant is required, just as for `fos_outstanding`, and masks
+and branch selections apply on every check. Re-read a returned task before editing
+or evaluating it. Hosted disconnects and desktop endpoint shutdown cancel waits.
+
 Both endpoints speak the shared MCP vocabulary (see "The event grammar"): the
 agent is an invited peer at the selected node, so it reads what its grants and
 field masks allow, and its `fos_propose` changes become pending proposals for the
 owner's existing approval workflow; agents cannot merge them. Proposals require
-the revision returned by a read. The protocol is stateless MCP over HTTP with
-JSON responses.
+the revision returned by a read. The protocol is Streamable HTTP MCP. Initialization issues an `Mcp-Session-Id`;
+clients should send it on subsequent requests. Distinct sessions can work as the same
+peer without sharing a claim. Legacy clients without session headers share their
+credential/endpoint identity. Normal replies are JSON. Claim and submission responses
+use SSE to deliver `notifications/tools/list_changed` before the JSON-RPC result
+when the client accepts `text/event-stream`, as required by the
+[MCP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 
 Desktop connections require the window to remain open and stop on account changes.
 Hosted connections use a scoped peer credential, never the owner's login token.
 Credentials are kept in memory, outside the graph. Disconnecting removes the peer;
 removing its grants also prevents further node access.
+
+### Claiming work through MCP
+
+1. Discover work with `fos_await_task` or `fos_outstanding`, then call
+   `fos_claim_task({path: task.path, expected: task.revision, branches?})`.
+   Claiming requires both `execute` and `edit`. If another agent wins, discover again.
+2. A successful claim returns `claim.id`, `claim.expiresAt`, and `toolsChanged: true`.
+   The tool list changes to `fos_task_read`, `fos_task_search`, `fos_task_submit`,
+   `fos_task_input`, `fos_task_evaluate`, `fos_task_renew`, `fos_task_release`, and
+   `fos_task_status`, filtered by the current grants. These are task-scoped versions
+   of the existing event tools, not new domain handlers. All task paths start at
+   `[]`, the claimed node; ancestor context and sibling nodes are outside that scope.
+   Read project context before claiming. Branch selections along the task path are pinned.
+3. Every task operation requires the returned `claimId`. A stale, expired, or another
+   session's claim ID fails; it never falls back to a broader attachment. General
+   tools are rejected during a claim even when a client cached the previous list.
+4. Renew with `fos_task_renew({claimId})` before the 15-minute expiry while working.
+   `fos_task_release({claimId})` abandons work explicitly. Expiry also makes work
+   available again after a disconnected worker.
+5. Read `[]` with `fos_task_read`, then submit with
+   `fos_task_submit({claimId, expected: taskRead.revision, changes: [...]})`.
+   Changes are relative to the task, including `complete` at `[]` for the task itself.
+   Peers create an ordinary proposal on that node; the directory owner applies its
+   changes directly. A successfully persisted submission releases the claim and
+   restores the general tools. Invalid, stale, or failed saves retain it. Submission
+   does not bypass approval: a proposed completion still awaits review.
+
+The server advertises MCP's
+[tool-list change capability](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+Clients that handle these notifications refresh automatically. JSON-only clients
+must request `tools/list` after a claim, submission, release, or expired-claim error.
+Only this Fos server's tools change; shell/browser tools from the agent's other
+servers remain under that client's control.
+
+Leases are runtime records in the ordinary `fos:work-claims` graph ref, with no new
+row type or task-specific workflow template. A host serializes claim decisions and
+persists the submission and release together. Use one coordinating account server,
+desktop endpoint host, or CLI process for competing workers. Independent offline
+replicas/processes are not a distributed lock service; syncing their lease records
+cannot guarantee exclusive acquisition during a partition. Lease expiry is checked
+on requests; there is no background notification stream for an idle client's expiry.
 
 ### Template triggers and execution
 

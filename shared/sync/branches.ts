@@ -2,6 +2,10 @@
 import { mergeRequestEdge, branchEdge, readProposal, readProposals, valueContent, commitRoot, content, findAliasEdge, identityCid, isBranchChoice, putBranches, readChoice, resolveScope, selectBranch, updateAtScope, withIdentity, type Scope, type ChoiceOption } from './graph'
 import { headCid, type Replica } from './replica'
 import { mergeNodes } from './merge'
+import { writeNodeValue } from './evaluation'
+
+/** Ordinary named ref recording the source last merged into this branch. */
+export const BRANCH_MERGE_ARGUMENT = 'fos:branch-merge'
 
 export function createBranch(r: Replica, at: Scope, name: string, now: number, baseName = 'main'): Replica {
   if (!name.trim() || name.length > 200) throw new Error('A branch name is required (at most 200 characters).')
@@ -36,7 +40,7 @@ export function mergeBranch(r: Replica, at: Scope, source: string, target: strin
   const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [store.primitive.choiceTarget.getId(), nextChoice] : edge) }))
   commitRoot(store, next, now)
   selectBranch(store, record.id, target)
-  return { ...r }
+  return writeNodeValue({ ...r }, at, BRANCH_MERGE_ARGUMENT, { source, target, value: identityCid(store, from) }, now)
 }
 
 /** Copy a proposed branch into a named editable alternative without changing the proposal or main. */

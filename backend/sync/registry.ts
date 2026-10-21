@@ -45,6 +45,8 @@ export type HostHandler = {
    * the replica after it: graph-only handlers such as the relay, which moves messages into their recipients' queues.
    */
   submission?(replica: Replica, path: Scope, now: number): Replica
+  /** Refresh a loaded node from a connected service. Called after access checks, under the account lock. */
+  load?(ctx: { userId: number; replica: Replica; path: Scope; branches: Array<{ scope: Scope; name: string }>; now: number }): Promise<Replica>
   /**
    * The peer's public key (raw ed25519, base64) when it signs what it hands out (the `verify` handler's attestations):
    * published in every account's Home through `hostOffers().keys`, so devices check signatures against graph data.
@@ -80,6 +82,11 @@ export function createHandlerRegistry(handlers: HostHandler[]) {
     /** Every handler that reacts to a submission, run on the node it landed at (see `HostHandler.submission`). */
     afterSubmission(replica: Replica, path: Scope, now: number): Replica {
       for (const h of handlers) if (h.submission) replica = h.submission(replica, path, now)
+      return replica
+    },
+    async onLoad(ctx: Parameters<NonNullable<HostHandler['load']>>[0]): Promise<Replica> {
+      let replica = ctx.replica
+      for (const handler of handlers) if (handler.load) replica = await handler.load({ ...ctx, replica })
       return replica
     },
     /** Handlers that can execute this step as an effect. */

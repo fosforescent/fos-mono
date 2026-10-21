@@ -117,6 +117,11 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
   return {
     createIssue,
     createCalendarEvent,
+    async repositorySnapshot(userId: number, name: string, tracked: number[], branch?: string) {
+      const token = await accessToken(userId, providerById('github') as Provider)
+      if (!token) throw new Error('GitHub is not connected.')
+      return githubRepository(deps.fetch, token, name).snapshot(tracked, branch)
+    },
     /** Every peer, with whether the server can run its flow and whether this account is connected. */
     async list(req: Request, res: Response): Promise<Response> {
       const userId = await deps.userId(req)
@@ -211,6 +216,7 @@ export function createIntegrationHandlers(deps: IntegrationDeps) {
       const body = (req.body ?? {}) as Record<string, unknown>
       try {
         const repo = githubRepository(deps.fetch, token, String(body.repo ?? ''))
+        if (body.action === 'deployment') return res.json(await repo.deployment(String(body.branch ?? ''), String(body.environment ?? '')))
         if (body.action === 'branch') { await repo.createBranch(String(body.name ?? ''), String(body.from ?? '')); return res.json({ ok: true }) }
         if (body.action === 'propose') return res.json(await repo.propose(String(body.head ?? ''), String(body.base ?? ''), String(body.title ?? '')))
         if (body.action === 'merge' || body.action === 'close') {

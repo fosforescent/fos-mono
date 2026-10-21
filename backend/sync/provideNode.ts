@@ -65,16 +65,24 @@ export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user
           }
           r = request.branches?.length ? exchangeNodeContext(r, request, authority, now, (target, input) => hydrate(target, input)).replica : hydrate(r, request).replica
         }
-        const served = exchangeNode(r, request, authority, now)
+        let served = exchangeNode(r, request, authority, now)
+        // A normal owner read refreshes connected services after the exchange has validated access.
+        // Previewing a proposal or submitting a write never executes a load handler.
+        if (authority.owner && !request.update && !request.proposal && deps.registry) {
+          try {
+            const refreshed = await deps.registry.onLoad({ userId: loaded.user.id, replica: served.replica, path: [...request.scope, ...request.path], branches: request.branches ?? [], now })
+            if (refreshed !== served.replica) served = exchangeNode(refreshed, request, authority, now)
+          } catch (error) { console.error('node load handlers failed:', error) }
+        }
         // a submission came in: the handlers that react to one run on that node (the relay moves messages into queues).
         // The answer stays what was exchanged; the writer sees their effect on its next sync.
         if (request.update && deps.registry) {
           try { deps.registry.afterSubmission(served.replica, [...request.scope, ...request.path], now) }
           catch (error) { console.error('submission handlers failed:', error) }
         }
-        if (loaded.store.rootNodeId !== before) {
-          await deps.saveStore(loaded.user, loaded.store)
-          if (request.update) deps.notify?.(loaded.user.id, { type: 'sync_changed', peerId: request.peerId })
+        if (served.replica.store.rootNodeId !== before) {
+          await deps.saveStore(loaded.user, served.replica.store)
+          deps.notify?.(loaded.user.id, { type: 'sync_changed', peerId: request.peerId })
         }
         return { ...served.node, presence: deps.onlinePeers?.(loaded.user.id) ?? [] }
       })

@@ -1,4 +1,6 @@
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
+import { configureWorkflowDialog, requestProjectCoding, workflowStatus } from './project-workflow'
+import { projectWorkflow, workflowPath } from '../../shared/sync/project-workflow'
 import { openAnalysis } from './analysis'
 import { connectNodeAgent, hostedMcpConnection, localMcpEndpoint, mcpConfig } from './node-agent'
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack, renderFileReference } from './filesystem'
@@ -485,9 +487,12 @@ function renderRepository(el: HTMLElement, state: AppState, app: App): void {
   const task = id ? viewAt(state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id) : null
   const info = app.repositoryInfo()
   const items: HTMLElement[] = []
+  const workflow = workflowStatus(app); if (workflow) items.push(workflow)
   if (info) {
     const row = div('row', '')
     row.append(span('', `GitHub · ${info.repo}`), button('secondary small', 'Refresh branches and PRs', () => void app.refreshRepositories(true)))
+    row.append(button('secondary small', 'Configure agent workflow', () => configureWorkflowDialog(app, [...path])))
+    if (projectWorkflow(state.replica, path)) row.append(button('primary small', 'Request coding agent', () => void requestProjectCoding(app, [...path])), button('secondary small', 'Workflow status', () => app.goTo(workflowPath(path))))
     if (!state.integrations.some(i => i.id === 'github' && i.connected)) row.append(button('secondary small', 'Connect GitHub', () => void app.connectIntegration('github')))
     if (id && !app.contextPeers(path).some(p => p.repository?.repo === info.repo.toLowerCase())) row.append(button('secondary small', 'Attach repository peer', () => app.bindNodeRepository(path.slice(0, -1), id, info.repo, true)))
     if (info.snapshot && !info.snapshot.canPush) row.append(span('muted', 'Read-only on GitHub · diffs are available below'))

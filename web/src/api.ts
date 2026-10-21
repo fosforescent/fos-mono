@@ -319,6 +319,9 @@ export function decideRepositoryPull(session: Session, repo: string, number: num
 export function createRepositoryBranch(session: Session, repo: string, name: string, from: string): Promise<{ ok: true }> {
   return authed(session, 'POST', '/user/integrations/repo', { action: 'branch', repo, name, from })
 }
+export function readRepositoryDeployment(session: Session, repo: string, branch: string, environment: string): Promise<{ sha: string; ready: boolean }> {
+  return authed(session, 'POST', '/user/integrations/repo', { action: 'deployment', repo, branch, environment })
+}
 
 /** One event of the grammar (shared/sync/events.ts) for the account; owners address a node with `scope`. */
 export function sendEvent<T = unknown>(session: Session, event: import('../../shared/sync/events').FosEvent, scope: string[] = [], owner?: string): Promise<T> {

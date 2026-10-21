@@ -4,7 +4,8 @@
  * lock. `complete` hands the authorized request to the evaluation service, which runs the handler registry.
  */
 import type { Request, Response } from 'express'
-import { createReplica, dispatchEvent, ensureHomeContext, ensureInviteRequest, EventError, handleMcp, headCid, inheritedNodeGrants, parseEvent, pathOf, MCP_PROTOCOL_VERSIONS, type Capability, type EvaluateRequest, type FosEvent, type Principal, type Scope } from '@fosforescent/shared/sync/index'
+import { createHash, randomUUID } from 'node:crypto'
+import { createReplica, dispatchEvent, ensureHomeContext, ensureInviteRequest, EventError, handleMcp, waitMcp, headCid, inheritedNodeGrants, parseEvent, pathOf, MCP_PROTOCOL_VERSIONS, type Capability, type EvaluateRequest, type FosEvent, type Principal, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, serverPeerIdFor, type AccountStoreDeps } from './accountStore'
 
 type Claims = { username?: string; kind?: string; peerId?: string; scope?: string[]; name?: string; exp?: number }
@@ -36,6 +37,8 @@ export function principalOf(claims: Claims | undefined, ownerScope?: unknown, ow
 }
 
 export function createEventService(deps: AccountStoreDeps, evaluate?: Evaluate) {
+  const waiting = new Map<string, number>()
+  const sessions = new Map<string, { identity: string; seen: number }>()
   /** Dispatch one event for a principal: load, dispatch, save, notify; then let the host evaluate if asked. */
   async function handle(principal: Principal & { username: string }, event: FosEvent): Promise<unknown> {
     // An invite names another account: it must exist before the owner's store records the membership.
@@ -44,9 +47,11 @@ export function createEventService(deps: AccountStoreDeps, evaluate?: Evaluate) 
       const loaded = await deps.loadStore(principal.username)
       if (!loaded) throw new EventError('Account unavailable.')
       const r = createReplica(serverPeerIdFor(loaded.user.username), loaded.store)
+      const before = r.store.rootNodeId
       const dispatched = dispatchEvent(r, event, principal, deps.now?.() ?? Date.now())
       if (dispatched.changed) {
-        await deps.saveStore(loaded.user, dispatched.replica.store)
+        try { await deps.saveStore(loaded.user, dispatched.replica.store) }
+        catch (error) { r.store.rootNodeId = before; throw error }
         deps.notify?.(loaded.user.id, { type: 'sync_changed', scope: principal.scope, byPeerId: principal.owner ? 'fos:event' : principal.peerId })
       }
       return dispatched
@@ -108,6 +113,20 @@ export function createEventService(deps: AccountStoreDeps, evaluate?: Evaluate) 
         if (claimsOf(req)?.kind !== 'peer') { try { scope = JSON.parse(String(req.query.scope ?? 'null')) } catch { scope = null } }
         principal = principalOf(claimsOf(req), scope, claimsOf(req)?.kind !== 'peer' && typeof req.query.owner === 'string' ? req.query.owner : undefined)
       } catch (error) { return res.status(errorStatus(error)).json({ error: message(error) }) }
+      // A session distinguishes workers sharing a credential; it never replaces credential authority.
+      const identity = createHash('sha256').update(JSON.stringify([principal.username, principal.peerId, principal.owner, principal.scope, req.headers.authorization ?? ''])).digest('hex')
+      const sessionHeader = req.headers['mcp-session-id'], now = Date.now()
+      for (const [id, session] of sessions) if (now - session.seen >= 86400000) sessions.delete(id)
+      if (sessionHeader !== undefined) {
+        if (typeof sessionHeader !== 'string' || sessions.get(sessionHeader)?.identity !== identity) return res.status(404).json({ error: 'MCP session unavailable. Initialize a new session.' })
+        sessions.get(sessionHeader)!.seen = now
+        principal.sessionId = sessionHeader
+      } else if (req.body?.method === 'initialize') {
+        if (sessions.size >= 4096) return res.status(429).json({ error: 'Too many MCP sessions.' })
+        principal.sessionId = randomUUID()
+        sessions.set(principal.sessionId, { identity, seen: now })
+      } else principal.sessionId = identity // older stateless clients share their credential's identity
+      if (req.body?.method === 'initialize') res.setHeader('Mcp-Session-Id', principal.sessionId)
       // a peer sees the tools its grants on the attachment allow (nothing when everything was switched off)
       let capabilities: Capability[] | undefined
       if (!principal.owner) {
@@ -119,8 +138,28 @@ export function createEventService(deps: AccountStoreDeps, evaluate?: Evaluate) 
           })
         } catch { capabilities = [] }
       }
-      const result = await handleMcp(req.body, { owner: principal.owner, capabilities, dispatch: event => handle(principal, event), serverName: 'Fos project tree' })
-      return result === null ? res.status(202).end() : res.json(result)
+      const longPoll = req.body?.method === 'tools/call' && req.body?.params?.name === 'fos_await_task'
+      if (longPoll && (waiting.get(principal.username) ?? 0) >= 16) return res.status(429).json({ error: 'Too many pending task waits.' })
+      if (longPoll) waiting.set(principal.username, (waiting.get(principal.username) ?? 0) + 1)
+      const controller = new AbortController(), closed = () => controller.abort()
+      res.on?.('close', closed)
+      try {
+        const result = await handleMcp(req.body, { owner: principal.owner, capabilities, toolListChanges: true, wait: ms => waitMcp(ms, controller.signal), dispatch: event => {
+          if (controller.signal.aborted) throw new EventError('MCP request cancelled.')
+          if (claimsOf(req)?.exp && claimsOf(req)!.exp! * 1000 <= Date.now()) throw new EventAuthError(401, 'Credential expired.')
+          return handle(principal, event)
+        }, serverName: 'Fos project tree' })
+        if (controller.signal.aborted) return
+        if (result && (result as any).result?._meta?.['fos/toolsChanged'] && String(req.headers.accept ?? '').includes('text/event-stream')) {
+          res.setHeader('Content-Type', 'text/event-stream')
+          const notification = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' }
+          return res.end(`event: message\ndata: ${JSON.stringify(notification)}\n\nevent: message\ndata: ${JSON.stringify(result)}\n\n`)
+        }
+        return result === null ? res.status(202).end() : res.json(result)
+      } finally {
+        res.off?.('close', closed)
+        if (longPoll) { const count = (waiting.get(principal.username) ?? 1) - 1; if (count) waiting.set(principal.username, count); else waiting.delete(principal.username) }
+      }
     },
     /** WebSocket `{type:'event', id, event, scope?}` → `{type:'event_result', id, result|error}` (see ws.ts). */
     async socket(claims: Claims, body: any): Promise<unknown> {

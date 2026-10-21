@@ -121,7 +121,8 @@ async function main() {
   assert(!app.state.replica.store.table.has(content), 'the submission\'s content stays with the account until it is asked for')
   assert.equal(box.value, '', 'the box clears once filed')
   assert.equal(app.state.voice, null)
-  assert.match(app.state.notice.text, /Pasted text organized: 3 rows and the original as a note, waiting for you in Branches/)
+  // The named result binding now syncs, including the exact four rows reported by the organizer.
+  assert.match(app.state.notice.text, /Pasted text organized: 4 rows and the original as a note, waiting for you in Branches/)
 
   // accepting: one local edit, the submitted rows referenced where the account holds them (not loaded), one undo takes it all back
   requests.length = 0
@@ -165,7 +166,7 @@ async function main() {
   assert.deepEqual(requests[1].request, { label: 'Voice note', text: 'the tomatoes need stakes and we should start a compost bin' })
   assert.equal(ids([HOME, 'garden']).length, beforeVoice + 3, 'accepted on the device: the group, the row and the transcript note')
   assert.equal(ids([HOME, 'garden', 'tomatoes']).length, 2)
-  assert.match(app.state.notice.text, /Voice note organized: 3 rows added here/)
+  assert.match(app.state.notice.text, /Voice note organized: 4 rows added here/)
   assert.equal(app.state.voice, null)
   app.undo()
   assert.equal(ids([HOME, 'garden']).length, beforeVoice, 'still one undo for the whole capture')

@@ -49,7 +49,7 @@ test('seeding adds the standard templates once and records the version', () => {
   expect(headCid(again)).toBe(headCid(r))
   // a row the group removed is not reseeded: the seed list remembers what it already added
   const trimmed = seedStandardLibrary(addRow(r, path, PLAIN_TYPE, 'keep', 10), path, 11)
-  expect(view(trimmed, path)!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(9)
+  expect(view(trimmed, path)!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(11)
 })
 
 test('people who contribute link the shared library into Home, carrying its address; nobody gets one by default', () => {
@@ -127,7 +127,7 @@ test('the library exports as rows that seed an identical copy: every root ships 
   expect(libraryPath(device)).toEqual([LIBRARY_ID])
   // a build made without a server ships the compiled .fos graph
   const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: LIBRARY_VERSION, rows: [] }, 2)
-  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(9)
+  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(11)
   // contributing links the shared library into Home: under Home it is the one rows see; the shipped one stays in the root
   const linked = ensureLibraryLink(device, address, 10).replica
   expect(libraryLink(linked)).toEqual([HOME_ID, LIBRARY_ID])
@@ -149,7 +149,7 @@ test('the nodes the fos CLI pulls through the account export as the same bundle 
   const bundle = exportProvidedLibrary({ address, nodes: pulled }, 99)
   expect(bundle.address).toEqual(address)
   expect(bundle.rows).toEqual(exportLibraryRows(lib, path))
-  expect(bundle.rows.filter(row => row.type === TEMPLATE_TYPE)).toHaveLength(9)
+  expect(bundle.rows.filter(row => row.type === TEMPLATE_TYPE)).toHaveLength(11)
   expect(exportProvidedLibrary({ address, nodes: [] }, 1)).toEqual({ address, version: LIBRARY_VERSION, rows: [] })
 })
 

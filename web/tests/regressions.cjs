@@ -599,6 +599,9 @@ async function main() {
   }
   await repoApp.refreshRepositories(true)
   assert(repoCalls.length, 'a repository on an otherwise empty row is discovered')
+  assert.equal(repoApp.currentView().tasks[0].branches, undefined, 'displaying a GitHub snapshot does not mutate Fos branches on the client')
+  // Branches arrive through node exchange from the server's GitHub load handler.
+  repoApp.set({ replica: sync.createBranch(repoApp.state.replica, [repoProject], 'feature', 99, 'trunk') })
   assert.deepEqual(repoApp.currentView().tasks[0].branches.names.sort(), ['feature', 'trunk'])
   repoApp.selectNodeBranch([], repoProject, 'feature')
   await repoApp.refreshRepositories(true)
@@ -641,7 +644,10 @@ async function main() {
   globalThis.fetch = async (_url, init) => { const body = JSON.parse(init.body); repoCalls.push(body); return reply(body.action === 'propose' ? remotePull : { ok: true }) }
   await repoApp.proposeRepoMerge([repoProject], 'trunk')
   assert.equal(repoCalls.at(-1).action, 'propose')
+  let decisionSync = false
+  repoApp.syncNow = async () => { decisionSync = true }
   await repoApp.decideRepoPull(remotePull, 'close')
+  assert(decisionSync, 'a GitHub decision pulls the server-mediated Fos result')
   assert.equal(repoCalls.at(-1).action, 'close')
   assert.equal(repoCalls.at(-1).sha, 'reviewed-sha')
   permissions([], ['repo'])

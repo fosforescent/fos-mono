@@ -35,13 +35,14 @@ import {
   proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, requirementSatisfied,
   requirementSummary, resolveScope, rootTargetCid, isTaskRow, isAllocationRow, isRowOfType,
   selectedBranchValue, updateAtScope, valueContent, viewNode, withBranches, withProposal, type Scope,
-  nestScope, libraryTypeAt,
+  nestScope, libraryTypeAt, scopeBranches, newId, taskBlockers,
 } from './graph'
 import { addMemberAt, addRow, addTypedRow, applyProposalAt, createReplica, headCid, rejectProposalAt, renameTask, setTaskDone, type Replica } from './replica'
 import { createBranch } from './branches'
 import { executionInput, executionSnapshot } from './execution-access'
 import { capabilityPeers } from './bindings'
 import { writeNodeValue } from './evaluation'
+import { workClaims, saveWorkClaims, workOverlaps, within, WORK_LEASE_MS, type WorkClaim } from './work-claims'
 
 /** The named value a peer's evaluation request carries inside its proposal. */
 export const EVALUATION_REQUEST = 'fos:evaluation-request'
@@ -55,6 +56,8 @@ export type Principal = {
   /** The attachment: every event path is relative to it and cannot leave it. */
   scope: Scope
   name?: string
+  /** Transport-issued identity; distinct connections may act as the same peer. */
+  sessionId?: string
 }
 
 export type EventBranch = { path: Scope; name: string }
@@ -65,7 +68,7 @@ export type EventBranch = { path: Scope; name: string }
  */
 export type Change = { path: Scope; operation: 'add_row' | 'add_task' | 'add_note' | 'add_plain' | 'rename' | 'complete'; text?: string; done?: boolean; id?: string; type?: string }
 const ADDS: Array<Change['operation']> = ['add_row', 'add_task', 'add_note', 'add_plain']
-export type FosEvent =
+export type FosEvent = (
   | { kind: 'read'; path?: Scope; branches?: EventBranch[]; offset?: number }
   | { kind: 'search'; path?: Scope; query: string; offset?: number; branches?: EventBranch[] }
   | { kind: 'outstanding'; path?: Scope; offset?: number; branches?: EventBranch[] }
@@ -75,8 +78,10 @@ export type FosEvent =
   | { kind: 'complete'; path?: Scope; expected: string; branches?: EventBranch[]; selections?: Record<string, string>; recover?: boolean }
   | { kind: 'decide'; path?: Scope; proposalId: string; decision: 'approve' | 'reject' }
   | { kind: 'invite'; path?: Scope; user: string }
+  | { kind: 'work'; operation: 'status' | 'claim' | 'renew' | 'release'; path?: Scope; branches?: EventBranch[]; expected?: string; claimId?: string }
+) & { /** Adapter-only context, never accepted from the event API. */ mcp?: boolean; workClaim?: string }
 export type EventKind = FosEvent['kind']
-export const EVENT_KINDS: EventKind[] = ['read', 'search', 'outstanding', 'submit', 'branch', 'input', 'complete', 'decide', 'invite']
+export const EVENT_KINDS: EventKind[] = ['read', 'search', 'outstanding', 'submit', 'branch', 'input', 'complete', 'decide', 'invite', 'work']
 
 /** What the host must still do after a dispatch: run its evaluator for `complete` (effects are host-side). */
 export type EvaluateRequest = { path: Scope; branches: Record<string, string>; expected: string; recover?: boolean }
@@ -122,6 +127,13 @@ export function parseEvent(input: unknown): FosEvent {
   if (!EVENT_KINDS.includes(kind)) throw new EventError(`Unknown event kind: ${String(raw.kind)}.`)
   const path = pathOf(raw.path), branches = branchesOf(raw.branches)
   switch (kind) {
+    case 'work': {
+      if (!['status', 'claim', 'renew', 'release'].includes(String(raw.operation))) throw new EventError('Invalid work operation.')
+      const operation = raw.operation as 'status' | 'claim' | 'renew' | 'release'
+      if (operation !== 'claim' && (path.length || branches?.length)) throw new EventError('Only claiming work accepts a path or branches.')
+      if (['renew', 'release'].includes(operation) && (typeof raw.claimId !== 'string' || !raw.claimId)) throw new EventError('A claimId is required.')
+      return { kind, operation, path, branches, ...(operation === 'claim' ? { expected: expectedOf(raw.expected) } : {}), ...(typeof raw.claimId === 'string' ? { claimId: raw.claimId } : {}) }
+    }
     case 'read': return { kind, path, branches, offset: offsetOf(raw.offset) }
     case 'search': return { kind, path, branches, query: textOf(raw.query, 200), offset: offsetOf(raw.offset, 5000) }
     case 'outstanding': return { kind, path, branches, offset: offsetOf(raw.offset, 1000) }
@@ -187,37 +199,73 @@ const bookkeeping = new Set(['alias', 'ref', 'versionControl', 'disabledCapabili
  * leave proposals.
  */
 export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal, now: number): Dispatched {
+  const before = r.store.rootNodeId
+  try { return dispatch(r, event, principal, now) }
+  catch (error) { r.store.rootNodeId = before; throw error }
+}
+function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number): Dispatched {
   const store = r.store, root = rootTargetCid(store), owner = principal.owner
-  const canonical = contextScope(store, root, principal.scope)
+  let canonical = contextScope(store, root, principal.scope)
+  const attachment = [...canonical], session = principal.sessionId ?? principal.peerId
+  const claims = workClaims(r, now)
+  const active = claims.find(c => c.peerId === principal.peerId && c.session === session && JSON.stringify(c.attachment) === JSON.stringify(attachment))
+  let nextClaims: WorkClaim[] | undefined
+  const managing = event.kind === 'work'
+  if (event.workClaim && (!active || active.id !== event.workClaim)) throw new EventError('Task claim expired or unavailable. List tools and claim work again.')
+  if (event.mcp && active && !managing && !event.workClaim) throw new EventError('A task is claimed. List tools and use the task-specific tools until submission or release.')
+  const scoped = event.workClaim ? active : undefined
+  let inherited: { cid: string; read: boolean; edit: boolean; execute: boolean } | undefined
   let attached = resolveScope(store, root, canonical)
   if (!attached) throw new EventError('Attachment no longer exists.')
   const permission = (cid: string, capability: 'read' | 'edit' | 'execute') => {
     if (owner) return true
     const identity = content(store, selectedIdentity(store, cid))
+    if (inherited?.cid === cid && !readMembers(store, identity).some(m => m.peerId === principal.peerId)) return inherited[capability]
     // edit and execute both include reading what they change or run
     return hasCapability(store, identity, principal.peerId, capability) || (capability === 'read' && (hasCapability(store, identity, principal.peerId, 'edit') || hasCapability(store, identity, principal.peerId, 'execute')))
   }
   if (!permission(attached, 'read')) throw new EventError('Peer no longer has read access to this attachment.')
   const path = event.path ?? []
   // Branch selections live only for this synchronous operation; they never change other clients' selection.
-  const branches: Record<string, string> = Object.create(null)
+  const branches: Record<string, string> = { ...(active && (scoped || managing) ? active.branches : {}) }
   for (const s of ('branches' in event && event.branches) || []) withBranches(store, branches, () => {
     const target = descend(store, attached!, s.path), info = branchInfo(store, target)
     if (!info?.names.includes(s.name)) throw new EventError('Branch not found.')
-    branches[content(store, target).data.alias!.id] = s.name
+    const id = content(store, target).data.alias!.id
+    if (scoped && active!.branches[id] !== s.name) throw new EventError('Task tools cannot change branches.')
+    branches[id] = s.name
   })
-  return withBranches(store, branches, () => {
+  const outcome = withBranches(store, branches, (): Dispatched => {
     attached = resolveScope(store, root, canonical)!
     if (!permission(attached, 'read')) throw new EventError('Peer has no access to this branch.')
     const resolve = (relative: Scope) => {
       let cid = attached!
-      for (const id of relative) {
+      for (const [index, id] of relative.entries()) {
+        const mask = owner ? null : nodeLinkMaskAt(r, [...canonical, ...relative.slice(0, index)], principal.peerId)
+        if (mask?.children && !mask.children.includes(id)) throw new EventError('Peer has no access to this child.')
         cid = descend(store, cid, [id])
         // Explicit child restrictions override the attachment's grant.
         const member = readMembers(store, content(store, selectedIdentity(store, cid))).some(m => m.peerId === principal.peerId)
         if (member && !permission(cid, 'read')) throw new EventError('Peer has no access to this child.')
       }
       return cid
+    }
+    if (scoped) {
+      const selected = scopeBranches(store, root, scoped.path)
+      if (Object.entries(scoped.branches).some(([id, name]) => selected[id] !== name)) throw new EventError('The claimed branch is no longer available. Release the task claim.')
+      const relative = scoped.path.slice(attachment.length)
+      const target = resolve(relative)
+      const grants = { read: permission(attached!, 'read'), edit: permission(attached!, 'edit'), execute: permission(attached!, 'execute') }
+      for (let i = 1; i <= relative.length; i++) {
+        const child = resolve(relative.slice(0, i))
+        if (readMembers(store, content(store, selectedIdentity(store, child))).some(m => m.peerId === principal.peerId)) {
+          for (const cap of ['read', 'edit', 'execute'] as const) grants[cap] = permission(child, cap)
+        }
+      }
+      if (!grants.execute) throw new EventError('The execute capability for this task was revoked.')
+      inherited = { cid: target, ...grants }
+      attached = target
+      canonical = [...scoped.path]
     }
     const absolute = (relative: Scope) => [...canonical, ...relative]
     const editable = permission(attached, 'edit')
@@ -228,6 +276,45 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
     const cid = resolve(path), node = viewNode(store, cid)
     const unchanged = (result: unknown): Dispatched => ({ replica: r, changed: false, result })
 
+    if (event.kind === 'work') {
+      if (event.operation === 'status') return unchanged({ claim: active ?? null, toolsChanged: true })
+      if (event.operation === 'release') {
+        if (!active || active.id !== event.claimId) throw new EventError('Task claim expired or unavailable.')
+        nextClaims = claims.filter(c => c.id !== active.id)
+        return unchanged({ status: 'released', claimId: active.id, toolsChanged: true })
+      }
+      if (!permission(attached, 'execute') || !editable) throw new EventError('Claiming work requires execute and edit capabilities.')
+      if (event.operation === 'renew') {
+        if (!active || active.id !== event.claimId) throw new EventError('Task claim expired or unavailable.')
+        const relative = active.path.slice(attachment.length)
+        for (let i = 1; i <= relative.length; i++) {
+          const child = resolve(relative.slice(0, i))
+          if (readMembers(store, content(store, selectedIdentity(store, child))).some(m => m.peerId === principal.peerId)
+            && (!permission(child, 'execute') || !permission(child, 'edit'))) throw new EventError('Task capabilities were revoked.')
+        }
+        const renewed = { ...active, expiresAt: now + WORK_LEASE_MS }
+        nextClaims = claims.map(c => c.id === active.id ? renewed : c)
+        return unchanged({ status: 'claimed', claim: renewed })
+      }
+      if (active) throw new EventError('Submit or release the current task before claiming another.')
+      if (!path.length) throw new EventError('Choose an outstanding child task within the attachment.')
+      for (let i = 1; i <= path.length; i++) {
+        const child = resolve(path.slice(0, i))
+        if (readMembers(store, content(store, selectedIdentity(store, child))).some(m => m.peerId === principal.peerId)
+          && (!permission(child, 'execute') || !permission(child, 'edit'))) throw new EventError('Claiming this child requires execute and edit capabilities.')
+        const parent = resolve(path.slice(0, i - 1)), edge = findAliasEdge(store, valueContent(store, parent), path[i - 1])?.edge
+        if (edge && (isRowOfType(store, edge, TEMPLATE_TYPE) || (isTaskRow(store, edge) && viewNode(store, child).done))) throw new EventError('Task is no longer outstanding.')
+        if (i === path.length && (!edge || !(isTaskRow(store, edge) || (isAllocationRow(store, edge) && !requirementSatisfied(store, child))))) throw new EventError('Choose an outstanding task or unmet requirement.')
+      }
+      if (event.expected !== cid) throw new EventError('Task changed. Read it again before claiming.')
+      if (event.branches?.some(b => !within(path, b.path))) throw new EventError('Claim branch selections must be on the path to the task.')
+      const selected = scopeBranches(store, root, absolute(path))
+      if (claims.some(c => workOverlaps(c, absolute(path), selected))) throw new EventError('This task or an overlapping subtree is already claimed.')
+      if (claims.length >= 256) throw new EventError('Too many active work claims.')
+      const claim: WorkClaim = { id: newId(), peerId: principal.peerId, session, attachment, path: absolute(path), branches: selected, expiresAt: now + WORK_LEASE_MS }
+      nextClaims = [...claims, claim]
+      return unchanged({ status: 'claimed', claim, task: describe(path), toolsChanged: true, instructions: 'List tools now. Task tool paths start at []; pass claimId on every call. Submit with fos_task_submit to release the claim. Renew before expiresAt.' })
+    }
     if (event.kind === 'read') {
       const offset = event.offset ?? 0
       const visible = node.tasks.filter(row => { try { resolve([...path, row.id]); return true } catch { return false } })
@@ -265,6 +352,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       return unchanged({ matches, nextOffset: stack.length && visited < 5000 ? visited : null, truncated: stack.length > 0, scanned: visited })
     }
     if (event.kind === 'outstanding') {
+      if (!permission(attached, 'execute')) throw new EventError('The execute capability is required to discover outstanding work.')
       // A row is [type, row]: its type (the left node) says whether it is work. Tasks are rows made from the library's
       // Task type (any pinned version, all of which share its id) or from a template row; requirements are rows made
       // from its Allocation type that ask for something (a supply or a plain allocation is always satisfied); a template's
@@ -290,7 +378,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
           const demand = requirement ? demandOf(value) : undefined
           // assigned to this peer: bound as a member on the row itself, or named by the requirement
           const assigned = readMembers(store, content(store, selectedIdentity(store, current))).some(m => m.peerId === principal.peerId) || (!!demand?.peer && [principal.peerId, principal.name].includes(demand.peer))
-          open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: requirementSummary(demand) } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
+          if (!claims.some(c => workOverlaps(c, absolute(at), { ...branches, ...scopeBranches(store, root, absolute(at)) }))) open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: requirementSummary(demand) } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
         }
         if (at.length < 32) {
           const rows = viewNode(store, current).tasks.filter(row => !mask?.children || mask.children.includes(row.id))
@@ -300,6 +388,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       const ordered = [...open.filter(item => item.assigned), ...open.filter(item => !item.assigned)]
       return unchanged({ revision: attached, items: ordered.slice(offset, offset + 100), nextOffset: offset + 100 < ordered.length ? offset + 100 : null, truncated: stack.length > 0, scanned: visited })
     }
+    if (!scoped && ['complete', 'input', 'branch', 'decide'].includes(event.kind) && claims.some(c => workOverlaps(c, absolute(path), scopeBranches(store, root, absolute(path))))) throw new EventError('This operation overlaps claimed work. Use its task tools or wait for release.')
     if (event.kind === 'complete') {
       if (event.expected !== put(store, valueContent(store, cid))) throw new EventError('The node changed. Read and review it before evaluating.')
       if (owner || permission(cid, 'execute')) return { replica: r, changed: false, result: { status: 'evaluating' }, evaluate: { path: absolute(path), branches: { ...branches, ...(event.selections ?? {}) }, expected: event.expected, ...(event.recover ? { recover: true } : {}) } }
@@ -351,6 +440,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       return { replica: next, changed: true, result: { created: event.name, path } }
     }
     // submit
+    if (!scoped && event.changes.some(change => claims.some(c => workOverlaps(c, absolute(change.path), { ...branches, ...scopeBranches(store, root, absolute(change.path)) })))) throw new EventError('Changes overlap claimed work. Use its task submission or wait for release.')
     if (path.length) throw new EventError('Submissions attach at []. Put relative paths in changes[].path.')
     if (!editable) throw new EventError('Peer cannot propose edits on this attachment.')
     const apply = (draft: Replica, draftStore: FosStore, base: Scope): Replica => {
@@ -386,7 +476,13 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
             draft = { ...draft }
           } else draft = renameTask(draft, target.slice(0, -1), target.at(-1)!, text, now)
         } else if (change.operation === 'complete' && typeof change.done === 'boolean') {
-          if (!at.length) throw new EventError('Completion requires a child path.')
+          if (!at.length) {
+            if (!scoped || !valueContent(store, source).data.todo) throw new EventError('Completion requires a task path.')
+            const targetCid = resolveScope(draftStore, headCid(draft), base)!
+            if (change.done && taskBlockers(draftStore, targetCid).length) throw new EventError('Task has unmet requirements.')
+            commitRoot(draftStore, updateAtScope(draftStore, headCid(draft), base, value => ({ ...value, data: { ...value.data, todo: { completed: change.done!, time: value.data.todo?.time ?? now } } })), now)
+            draft = { ...draft }; continue
+          }
           if (!valueContent(store, source).data.todo) throw new EventError('Only tasks have a completion state.')
           const before = headCid(draft)
           draft = setTaskDone(draft, target.slice(0, -1), target.at(-1)!, change.done, now)
@@ -399,6 +495,7 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
       // The owner's submission is applied to the live replica: an edit, not a proposal.
       const before = headCid(r)
       const next = apply(r, store, canonical)
+      if (scoped && headCid(next) === before) throw new EventError('No changes to submit.')
       return { replica: next, changed: headCid(next) !== before, result: { status: 'applied' } }
     }
     const proposalName = event.name ? textOf(event.name, 100) : `${principal.name ?? principal.peerId} ${new Date(now).toISOString()}`
@@ -417,4 +514,10 @@ export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal,
     commitRoot(store, next, now)
     return { replica: { ...r }, changed: true, result: { proposalId: proposal, name: proposalName, status: 'awaiting-review' } }
   })
+  if (scoped && event.kind === 'submit' && outcome.changed) {
+    nextClaims = claims.filter(c => c.id !== scoped.id)
+    outcome.result = { ...(outcome.result as object), releasedClaimId: scoped.id, toolsChanged: true }
+  }
+  if (nextClaims) { outcome.replica = saveWorkClaims(outcome.replica, nextClaims, now); outcome.changed = true }
+  return outcome
 }
