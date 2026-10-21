@@ -2,6 +2,11 @@
 
 This document outlines the concrete implementation steps to realize the language design described in [language-design.md](./language-design.md).
 
+> **Status (2026-10-21):** none of the phases below is implemented as written. The files it plans to modify
+> (`shared/evaluation/`, the FosExpression layer) and the early `dag-implementation` prototypes (`actor.ts`,
+> `modality.ts`, …) have been removed; recover them from git history if needed. The running system is the sync
+> core described in [sync.md](./sync.md), where evaluation is `shared/sync/evaluation.ts`.
+
 ---
 
 ## Overview

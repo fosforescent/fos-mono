@@ -7,8 +7,6 @@ const customJestConfig = {
   moduleFileExtensions: ['js', 'jsx', 'ts', 'tsx'],
   moduleDirectories: ['node_modules', 'src' ],
   moduleNameMapper: {
-    '\\.(less|scss)$': 'identity-obj-proxy',
-    '\\.(css)$': 'jest-css-modules',
     "@/(.*)": "<rootDir>/$1",
   },
   transform: {

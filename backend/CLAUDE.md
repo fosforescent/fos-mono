@@ -10,8 +10,8 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `auth/` - Authentication system (JWT, registration, login, password reset)
 - `subscription/` - Stripe payment and subscription handling
 - `email/` - Email service integration (Postmark)
-- `mcp/` - Model Context Protocol server and client implementations
-- `voice/voiceNotes.ts` - `POST /user/data/voice-notes` (raw audio body ≤ 25 MB): transcription, hierarchical summary (chunks → summaries → summary), sentiment/topic clusters as JSON. Provider: **Gemini on Vertex AI** by default (`geminiVoiceDeps`, model `VOICE_GEMINI_MODEL` = gemini-2.5-flash, location `VERTEX_LOCATION`/`GCP_REGION`; auth is the Cloud Run service account's `roles/aiplatform.user`, locally application-default credentials); `VOICE_PROVIDER=openai` switches to OpenAI (`OPENAI_API_KEY`). Spend is metered from token counts (`VOICE_PRICE_TEXT_IN/AUDIO_IN/OUT` USD per 1M tokens) and recorded per user as `TokenTransactionModel` debits (description `Voice note …`, `metadata.usd`; `ToolUseModel` is unusable because its `toolUseId` is a foreign key to a bid session); users without an active subscription (`subscription_status` active/trialing/past_due, or admins) get `VOICE_FREE_BUDGET_USD` (default 1.00) in total, then 402. Deps are injectable (`createVoiceNoteHandler(deps, usage)`), tests mock them
+- `mcp/` - `mcpClient.ts` + `mcpTypes.ts`: the MCP client the MCP peers use (`integrations/mcpPeers.ts`)
+- `voice/voiceNotes.ts` - `POST /user/data/voice-notes` (raw audio body ≤ 25 MB): transcription, hierarchical summary (chunks → summaries → summary), sentiment/topic clusters as JSON. Provider: **Gemini on Vertex AI** by default (`geminiVoiceDeps`, model `VOICE_GEMINI_MODEL` = gemini-2.5-flash, location `VERTEX_LOCATION`/`GCP_REGION`; auth is the Cloud Run service account's `roles/aiplatform.user`, locally application-default credentials); `VOICE_PROVIDER=openai` switches to OpenAI (`OPENAI_API_KEY`). Spend is metered from token counts (`VOICE_PRICE_TEXT_IN/AUDIO_IN/OUT` USD per 1M tokens) and recorded per user as `TokenTransactionModel` debits (description `Voice note …`, `metadata.usd`); users without an active subscription (`subscription_status` active/trialing/past_due, or admins) get `VOICE_FREE_BUDGET_USD` (default 1.00) in total, then 402. Deps are injectable (`createVoiceNoteHandler(deps, usage)`), tests mock them
 - `search/rowIndex.ts` + `search/routes.ts` - semantic search over rows and the market. `indexStore` embeds every row of a user's store (Vertex `text-embedding-005`, 768 dims, table `RowEmbeddingModel` with a pgvector column written through raw SQL; hash-based upsert, vanished rows deleted) and runs debounced after each `saveStore` in `sync/accountStore.ts` (`ROW_INDEX_DELAY_MS`, `ROW_INDEX_DISABLED=true` to turn off); a row's `market` column is whether the market peer `fos:market` is a member there with `read` (inherited down the tree, `marketGrantsOf`); reference rows (their row type) are skipped; each row's type id is stored in the table's `kind` column (`IndexedRow.type`, `SearchHit.type`; `capability` for published handlers). Search has no route: `searchRows` is called only by the fos `search` effect (`searchHandler` in `sync/hostHandlers.ts`). Market routes (user JWT, `createMarketHandlers`): `GET /user/data/market/node?owner=&id=` (a node the market lists, or one the requester is a member of, with proposals filtered to the requester's own), `POST /user/data/market/proposals {owner, aliasId, bid}` (a bid of rows the client built, `shared/sync/market.ts` `applyBid`, recorded as a proposal `user:<name>` on the owner's node under the owner's lock; rows are told apart only by their type). Proposals are taken where the market member has `edit` or the requester is a member with `edit` (`hasCapability`). Design: `docs/sync.md`, "Requirements, resource banks, queries and the market"
 - `integrations/` - integration peers: `providers.ts` (registry: OAuth GitHub/Google/Discord, platform Stripe, the phone channel), `secrets.ts` (AES-GCM token storage under `INTEGRATION_SECRET`, signed OAuth state, phone codes), `routes.ts` (`GET /user/integrations`, `:provider/start`, public `/integrations/:provider/callback`, `DELETE :provider`, `phone` + `phone/verify`; `createIssue` (GitHub) and `createCalendarEvent` (Google) are the functions the registry effects call, there are no routes per handler; `notifyUser` texts a linked phone; `prismaIntegrationDeps`), `store.ts` (a user's tree as a replica for edits: `editTree`, `walkRows`), `mcpPeers.ts` (MCP servers as peers: `GET /user/data/mcp-peers`, `attach` makes a server a member `mcp:<id>` advertising `tool`; `mcpToolHandler` is the registry effect that runs `-tool` requirements on `complete` (binding in `prepare`, call in `effect`); `runOpenToolRequests` listens after saves when `MCP_LISTEN=true` via `afterSaveHooks`). Tests: `routes.test.ts`, `mcpPeers.test.ts` (dependency-injected, no network). Model: `IntegrationConnectionModel`.
 - `voice/organize.ts` - organizing a capture into one node's subtree is the fos `organize` effect, not a route (plan format, validation and application in `shared/sync/organize.ts`). `organizeHandler(model, usage)` fills an `organize` requirement placed in the target (`requestOrganize`: its text the label, its `lib:type:note` row the capture ≤ 100k chars) when a `complete` event reaches it: `prepare` refuses a missing capture or a non-paying account over the voice budget before the evaluation opens; the effect builds the outline from the account's own store (`captureOutline`, the target's subtree, `fos:` rows skipped), makes one model call (`organizeCapture`: `ORGANIZE_SYSTEM`, JSON, retried once on invalid JSON, validated against the outline: unknown parents → the target, rows name a standard-library row type of `ORGANIZE_TYPES`), submits the plan with the capture kept as a note (stamp in UTC) as ONE submission by `fos` on the target (`proposeOrganizePlan`: a proposal on the target's mutable ref whose content is the plan applied to a draft of its value; no row is written into main), writes `{rows, under, captureId, title, proposal, name, additions}` as the requirement's `fos:organized` value and records the supply. The owner accepts it on a device as one local edit (web `App.acceptSubmission`, shared `acceptSubmissionRows`; the device's next node sync makes the server fill the accepted rows from the submission and close it, `node-sync.ts`) or rejects it with the ordinary `decide`; nothing lands in main before. One provider instance per capture (`model()`), spend recorded as voice usage (`recordSafely`). `createAccountOrganizer(storeDeps, runNode)` does the same for an account without a device (texts): places the requirement in Home under the account lock, runs it through `evaluationService.runNode`, then removes the request (null on any failure); the submission waits in Home for a device to accept it. `voice-notes?transcript=only` returns just the transcript (the client then organizes it); audio types are folded by `mediaTypeOf` (iOS `audio/mp4`, `audio/x-m4a`, `audio/aac`, …). Tests: `voice/organize.test.ts` (fake model through the event route and evaluation)
@@ -28,23 +28,19 @@ The backend directory contains the Node.js/Express API server that provides the 
 - `sync/accountStore.ts` - loading and saving an account's store (`dbToStore`/`storeToDb`, one request at a time per account `withUserLock`, `AccountStoreDeps`), where a device attaches (`GET/DELETE /user/data/peer-sync/attachment`), re-indexing and `afterSaveHooks` after a save, nudging other devices over WebSocket (`sendToUser` in `promptNotifications.ts`). The `/user/data/peer-sync/*` prefix is the namespace peer credentials may use; sync itself is node exchange (`provideNode.ts`)
 
 ### Graph System Integration
-- `embedding.ts` - embeddings for the MCP server registry (same Vertex model and pgvector layout as `search/rowIndex.ts`)
 - `userDirectory.ts` - `GET /groups/search/name|email`: find Fos accounts for the web's peer search
 - Integration with `shared/dag-implementation/` for graph operations
 - `prismaClient.ts` - Database client configuration
 
-### API Token & Billing
-- `apiTokens.ts` - API token management for external access
-- `tokenManager.ts` - Token balance and usage tracking
-- `toolBidManager.ts` - Tool bidding system for cost optimization
-- `toolUsage.ts` - Tool usage tracking and billing
+### Token Billing
+- `tokenManager.ts` - Token balance and transaction ledger
+- `tokens.ts` - `/tokens/balance`, `/tokens/transactions`, `/tokens/purchase` (Stripe checkout), purchases
 
 ### Security & Middleware
-- `adminAuth.ts` - Admin authentication middleware
-- `apiTokenAuth.ts` - API token authentication
 - `verifyJwt.ts` - JWT verification utilities
+- `requestUser.ts` - `getUserId`: the account id of a JWT-authenticated request, from its claims
 - `maxRequests.ts` - Rate limiting middleware
-- `utils/validation.ts` - Parameter validation utilities for type safety
+- `promptNotifications.ts` - each user's open WebSockets: `sendToUser`, presence (`onlinePeersOf`)
 
 ## Dependencies
 
@@ -59,7 +55,7 @@ The backend directory contains the Node.js/Express API server that provides the 
 
 ### Internal Dependencies
 - `shared/` - Core graph types and implementations
-- `prisma/` - Database schema and client
+- `../infra/prisma/` - Database schema and migrations; `prismaClient.ts` - the client
 
 ## Data Inputs/Outputs
 
@@ -68,7 +64,7 @@ The backend directory contains the Node.js/Express API server that provides the 
 - Webhook events from Stripe
 - Email webhook events from Postmark
 - Database queries via Prisma
-- AI model responses from OpenAI
+- AI model responses from Vertex AI (optionally OpenAI)
 
 ### Output Destinations
 - JSON API responses
@@ -82,8 +78,7 @@ The backend directory contains the Node.js/Express API server that provides the 
 - Graph node creation and updates
 - Search queries with vector similarity
 - Subscription management and billing
-- Tool execution and cost tracking
-- Admin operations and user management
+- Effects run through `complete` events (handler registry)
 
 ## Data Transformations
 - Password hashing with bcrypt
@@ -110,10 +105,10 @@ The backend directory contains the Node.js/Express API server that provides the 
 ### Environment Variables
 - `DATABASE_URL` - PostgreSQL connection string
 - `JWT_SECRET` - Secret for JWT token signing
-- `FOS_IDENTITY_SEED` - optional 32-byte seed (hex or base64) of the ed25519 key that attests user objects (`sync/identity.ts`); derived from `JWT_SECRET` when absent
+- `FOS_IDENTITY_SEED` - optional 32-byte seed (hex or base64) of the ed25519 key that attests user objects (`sync/verify.ts`); derived from `JWT_SECRET` when absent
 - `STRIPE_TOKEN` - Stripe API key
 - `STRIPE_WEBHOOK_SECRET` - Stripe webhook verification
-- `OPENAI_API_KEY` - OpenAI API access for embeddings
+- `OPENAI_API_KEY` - the optional OpenAI voice provider (`VOICE_PROVIDER=openai`)
 - `POSTMARK_API_TOKEN` - Email service token
 - `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `DISCORD_TOKEN`, `CHANNELS_ECHO` - chat channels (optional; adapters without credentials stay off)
 - `GCP_PROJECT_ID`, `VERTEX_LOCATION`, `EMBEDDING_MODEL` - Vertex embeddings for row search (service account on Cloud Run; locally `GOOGLE_APPLICATION_CREDENTIALS` must point at a valid credential)
@@ -141,7 +136,6 @@ The backend directory contains the Node.js/Express API server that provides the 
 
 ### Completed Recently
 - [x] Fixed all TypeScript compilation errors (100+ → 0)
-- [x] Implemented parameter validation utility pattern
 - [x] Fixed Express middleware type compatibility
 - [x] Added missing database schema fields for Stripe integration
 ## Graph evaluation and cron

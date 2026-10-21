@@ -2,7 +2,7 @@
 
 /**
  * WebSocket Connection Test Script
- * Tests both normal WebSocket and MCP WebSocket connections
+ * Tests WebSocket connections
  * Run with: node websocket-flow.test.js
  */
 
@@ -253,100 +253,6 @@ test('Normal WebSocket: Connection URL format validation', async () => {
   expect(ws.readyState).toBe(WebSocket.OPEN);
   
   ws.close();
-});
-
-// MCP WebSocket Tests
-test('MCP WebSocket: Connection to /mcp endpoint', async () => {
-  try {
-    const ws = await connectWebSocket(`${config.wsUrl}/mcp`);
-    expect(ws.readyState).toBe(WebSocket.OPEN);
-    
-    // Test MCP initialization message
-    const initMessage = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2024-11-05',
-        capabilities: {
-          resources: { subscribe: true },
-          tools: {},
-          prompts: {}
-        },
-        clientInfo: {
-          name: 'test-client',
-          version: '1.0.0'
-        }
-      }
-    };
-    
-    const responsePromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('MCP init response timeout'));
-      }, 5000);
-      
-      ws.on('message', (data) => {
-        clearTimeout(timeout);
-        try {
-          const response = JSON.parse(data.toString());
-          resolve(response);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-    
-    ws.send(JSON.stringify(initMessage));
-    
-    try {
-      const response = await responsePromise;
-      console.log('   MCP Init Response:', JSON.stringify(response, null, 2));
-      expect(response).toHaveProperty('jsonrpc');
-      expect(response).toHaveProperty('id');
-    } catch (error) {
-      console.log('   MCP response error:', error.message);
-      // MCP might not be fully implemented yet, so we just verify connection works
-    }
-    
-    ws.close();
-  } catch (error) {
-    if (error.message.includes('timeout')) {
-      console.log('   MCP endpoint not accessible (may not be implemented yet)');
-    } else {
-      throw error;
-    }
-  }
-});
-
-test('MCP WebSocket: Protocol version negotiation', async () => {
-  try {
-    const ws = await connectWebSocket(`${config.wsUrl}/mcp`);
-    
-    // Test with different protocol version
-    const initMessage = {
-      jsonrpc: '2.0',
-      id: 2,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: {
-          name: 'test-client',
-          version: '1.0.0'
-        }
-      }
-    };
-    
-    ws.send(JSON.stringify(initMessage));
-    
-    // Wait for response or timeout
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    ws.close();
-    console.log('   MCP protocol test completed');
-  } catch (error) {
-    console.log('   MCP protocol test skipped:', error.message);
-  }
 });
 
 test('WebSocket: Connection cleanup and error handling', async () => {

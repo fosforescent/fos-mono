@@ -43,7 +43,6 @@ cd shared && npx jest sync/
 ## TODOs
 - [x] User-controlled task ordering (order-sensitive cids + order-preserving merge)
 - [ ] Prune root-alias history in the stored replica
-- [ ] Unify with `FosExpression.merge`/`resolveConflict` and `FosNode.addTodo`
 
 ## Node evaluation and triggers
 - `bindings.ts` accepts a runtime `isPeerActive` predicate. Recursive binding resolution checks explicit and inherited handlers; connectivity is not stored as a permanent grant. `capabilityPeers` distinguishes handler offers from permissions granted to peers.
@@ -72,7 +71,7 @@ Requirement destructuring (`destructure.ts`) uses named typed refs whose existin
 
 ## Graph-defined comments and notes (2026-10-19)
 
-- `.fos/library.json` is the portable library graph exported from the CLI tree. `scripts/compile-library.cjs` validates its CIDs and compiles `shared/sync/library.generated.json` before web/shared/backend builds and desktop core builds. Its `version` is the data version (`FOS_DATA_VERSION`, `shared/version.ts`, the same as the cid prefix): the compiler refuses a source in another version and `library.ts` (`LIBRARY_VERSION`) refuses a stale compiled bundle. No network or TypeScript definition fallback. `legacy-row-types.ts` reads old discriminators only; the graph source rejects `instanceKind`.
+- `.fos/library.json` is the portable library graph exported from the CLI tree. `scripts/compile-library.cjs` validates its CIDs and compiles `shared/sync/library.generated.json` before web/shared/backend builds and desktop core builds. Its `version` is the data version (`FOS_DATA_VERSION`, `shared/version.ts`, the same as the cid prefix): the compiler refuses a source in another version and `library.ts` (`LIBRARY_VERSION`) refuses a stale compiled bundle. No network or TypeScript definition fallback. The graph source rejects `instanceKind`.
 - `forms.ts` expands parameter rows into ordinary mutable refs, validates scalar inputs, and projects title/attribution from named fields. `addConstructedRow` accepts any graph definition; its rows carry that type. List entries carry explicit positions. Native leaves currently cover text, peer, number and time.
 - Comment creation and edits use these definitions. Scalar editors preserve literal row markers. Fields travel through ordinary node-by-node sync, and copying preserves fresh mutable refs. Library exports include both instruction and target dependencies.
 - Legacy comments remain readable and migrate when edited; existing replies and authorship survive. `legacy-comment.ts` preserves old votes and scope as graph fields. Rows constructed from a definition are rows of that type. `ui.ts` recursively builds controls from the pinned definition parameter rows (labels, native scalar controls, products and repeat controls).

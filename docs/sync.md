@@ -871,9 +871,7 @@ shows as "removed".
 `[serve]` in the config), the directory exposes on localhost (or the LAN):
 `/mcp`, the shared MCP vocabulary (`fos_read`, `fos_search`, `fos_propose`,
 `fos_input`, `fos_evaluate`, `fos_create_branch`, `fos_decide`; see "The event
-grammar") as the directory's owner, for local agents;
-`/p2p/offer|answer`, a relay for WebRTC offer/answer codes so two devices can
-bootstrap a direct connection without internet signalling; `/status`; and
+grammar") as the directory's owner, for local agents; `/status`; and
 `/events?since=N`, a long-poll for change notifications.
 
 ## Attachment and presence

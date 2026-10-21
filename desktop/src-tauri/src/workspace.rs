@@ -158,10 +158,6 @@ impl Workspace {
     }
 
     /// One MCP message (JSON-RPC) through the shared event grammar, as this directory's owner. Saves when the graph changed.
-    pub fn mcp(&self, message: &Value) -> Result<(Option<Value>, bool), String> {
-        self.mcp_for_session(message, None)
-    }
-
     pub fn mcp_for_session(&self, message: &Value, session: Option<&str>) -> Result<(Option<Value>, bool), String> {
         let out = self.core.call_json("mcp", &[json!(HANDLE), json!(message.to_string()), json!(self.device.peer_id), json!(now_ms()), json!(session)]).map_err(|e| e.to_string())?;
         let changed = out.get("changed").and_then(|c| c.as_bool()).unwrap_or(false);

@@ -233,7 +233,7 @@ pub fn cmd_run(ws: Workspace, serve_only: bool, port: Option<u16>, host: Option<
     let host = host.map(String::from).or_else(|| ws.project.config.serve.host.clone()).unwrap_or_else(|| "127.0.0.1".to_string());
     let shared = Shared::new(ws);
     let url = local_server::serve(shared.clone(), &host, port)?;
-    out(&format!("serving {}  (/mcp for agents, /p2p relay, /events)   Ctrl-C to stop", url));
+    out(&format!("serving {}  (/mcp for agents, /events)   Ctrl-C to stop", url));
     loop {
         std::thread::sleep(Duration::from_secs(2));
         let mut ws = shared.workspace.lock().unwrap();

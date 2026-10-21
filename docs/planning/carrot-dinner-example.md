@@ -223,4 +223,3 @@ function evaluate(
 - `core-graph-semantics.md` - Graph structure and primitives
 - `categorical-foundations.md` - Variables as projections
 - `equality-and-binding.md` - How binding produces proofs
-- `shared/mock/example-workflows.ts` - Original lasagna example

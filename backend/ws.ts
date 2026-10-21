@@ -17,13 +17,6 @@ export const attachWs = (server: any, event?: (claims: any, body: any) => Promis
     server.on('upgrade', (request: any, socket: any, head: any) => {
 
 
-    // Other WebSocket servers (the MCP endpoint at /mcp) share this HTTP server and
-    // handle their own upgrades; only /ws/{jwt} (or /{jwt}) belongs to this one.
-    const upgradePath: string = (request.url || '').split('?')[0]
-    if (upgradePath.startsWith('/mcp')) {
-      return;
-    }
-
     try {
         const token = request.url?.split('/')[2];
 

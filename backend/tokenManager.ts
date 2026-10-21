@@ -259,16 +259,6 @@ export class TokenManager {
     const transactions = await prisma.tokenTransactionModel.findMany({
       where,
       include: {
-        toolUse: {
-          select: {
-            toolName: true,
-            server: {
-              select: {
-                name: true
-              }
-            }
-          }
-        },
         tokenPurchase: {
           select: {
             tokenAmount: true,
@@ -438,60 +428,6 @@ export class TokenManager {
         status: 'completed',
         processedAt: new Date()
       }
-    })
-  }
-
-  /**
-   * Get token pricing for a specific tool
-   */
-  async getToolPricing(serverId: number, toolName: string): Promise<number> {
-    const pricing = await prisma.mCPToolPricingModel.findFirst({
-      where: {
-        serverId,
-        toolName,
-        isEnabled: true
-      }
-    })
-
-    return pricing?.pricePerUseTokens || 0
-  }
-
-  /**
-   * Set token pricing for a tool
-   */
-  async setToolPricing(
-    serverId: number,
-    toolName: string,
-    pricePerUseTokens: number,
-    isEnabled: boolean = true
-  ): Promise<void> {
-    await prisma.mCPToolPricingModel.upsert({
-      where: {
-        serverId_toolName: {
-          serverId,
-          toolName
-        }
-      },
-      update: {
-        pricePerUseTokens,
-        isEnabled
-      },
-      create: {
-        serverId,
-        toolName,
-        pricePerUseTokens,
-        isEnabled
-      }
-    })
-  }
-
-  /**
-   * Get all tool pricing for a server
-   */
-  async getServerToolPricing(serverId: number) {
-    return await prisma.mCPToolPricingModel.findMany({
-      where: { serverId },
-      orderBy: { toolName: 'asc' }
     })
   }
 }

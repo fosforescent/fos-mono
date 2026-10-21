@@ -2,7 +2,7 @@
 
 ## Directory Summary
 
-Core graph implementation providing content-addressable storage, immutable nodes, and expression evaluation for the Fosforescent distributed workflow system.
+Core graph implementation providing content-addressable storage and immutable nodes for the Fosforescent distributed workflow system. Evaluation lives above the store, in `shared/sync/evaluation.ts` (driven by `backend/sync/evaluation.ts` on the server).
 
 **Key Design Documents:**
 - `../../docs/language-design.md` - Full language specification
@@ -28,7 +28,7 @@ Add methods:
 - `inferType(expr): FosNode`
 - `validateTypeAnnotation(node): { valid, error? }`
 
-### Phase 3: New Files
+### Phase 3: New Files (roadmap, none exist yet)
 - `scope.ts` - FosScope class with HoTT binding
 - `hole.ts` - HoleManager class
 - `modality.ts` - ModalityManager class
@@ -59,7 +59,6 @@ Add methods:
 - **Content-Addressable IDs**: SHA3-256 hashes as unique node identifiers
 - **Immutable Nodes**: New node instances for each modification
 - **Serialized Context**: JSON-exportable graph state for persistence
-- **Expression Trees**: Traversable computation graphs
 
 #### Node Relationships
 - **Parent-Child Links**: Hierarchical graph structure
@@ -70,7 +69,6 @@ Add methods:
 - **Node Creation**: Automatic hashing and storage in content table
 - **Node Mutation**: Version updates with timestamp tracking
 - **Graph Updates**: Context synchronization and callback triggers
-- **Expression Evaluation**: Recursive node computation
 - **Cache Management**: Automatic node instance caching
 
 ### Data Transformations
@@ -79,7 +77,6 @@ Add methods:
 - **Graph Serialization**: FosStore instance → JSON context data
 - **Graph Deserialization**: JSON context → Reconstructed FosStore with node relationships
 - **Route Resolution**: FosPath arrays → Target node instances
-- **Expression Building**: Node relationships → Executable expression trees
 - **Diff Generation**: Store states → JSON patch operations for incremental sync
 
 ### Core Components
@@ -130,6 +127,5 @@ Add methods:
 - [ ] Create actor.ts with ActorRegistry class
 
 ### Lower Priority
-- [ ] Implement full channel.ts communication
 - [ ] Add distributed peer synchronization
 - [ ] Performance optimization for large graphs

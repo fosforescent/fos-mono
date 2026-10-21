@@ -8,22 +8,6 @@ build-backend:
 	node --version
 	cd .. && npm run build:backend
 
-# Build temporal worker container
-build-temporal-worker:
-	bash -c 'set -a && source ../.env && set +a && docker compose build temporal-worker'
-
-# Build temporal worker with no cache
-build-temporal-worker-clean:
-	bash -c 'set -a && source ../.env && set +a && docker compose build temporal-worker --no-cache'
-
-# Restart temporal worker
-restart-temporal-worker:
-	bash -c 'set -a && source ../.env && set +a && docker compose restart temporal-worker'
-
-# Show temporal worker logs
-logs-temporal-worker:
-	docker compose logs -f temporal-worker
-
 run-dev:
 	cd .. && npm run dev
 

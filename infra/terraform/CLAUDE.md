@@ -213,7 +213,6 @@ Terraform-based infrastructure as code for deploying and managing the Fosforesce
 - [ ] Implement Cloud Armor for DDoS protection
 - [ ] Set up Cloud CDN (optional, if not using Cloudflare)
 - [ ] Configure Budget Alerts for cost management
-- [ ] Migrate Qdrant to GCP (currently external)
 - [ ] Set up multi-region failover (prod environment)
 - [ ] Implement automated database backups testing
 - [ ] Configure Cloud Logging exports for long-term storage
