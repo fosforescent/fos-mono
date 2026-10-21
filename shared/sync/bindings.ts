@@ -10,6 +10,7 @@ import {
 } from './graph'
 import { PLAIN_TYPE, isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
+import { refProperties } from './refs'
 
 export type BindingEnvironment = HandlerEnvironment
 
@@ -22,11 +23,7 @@ export type BindingResolution = {
   problems: string[]
 }
 export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
-  return valueContent(store, cid).children.flatMap(edge => {
-    const id = identityCid(store, edge), ref = content(store, id), type = refTypeCid(store, ref)
-    return type && ref.data.alias?.id && edge[0] === type
-      ? [{ cid: id, type, name: ref.data.name?.content ?? ref.data.alias?.id }] : []
-  })
+  return refProperties(store, cid, 'arguments').map(ref => ({ cid: ref.cid, type: ref.type!, name: ref.name }))
 }
 
 /** Only explicitly passed arguments and advertised peer handlers enter the context. */

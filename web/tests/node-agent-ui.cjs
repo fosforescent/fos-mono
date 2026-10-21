@@ -51,7 +51,7 @@ async function main() {
   assert(document.querySelector('.node-context textarea[aria-label="MCP configuration"]').value.includes('http://127.0.0.1:1234/mcp'))
   pending.push({ id: 'list', message: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })
   for (let i = 0; i < 30 && !replies.length; i++) await new Promise(resolve => setTimeout(resolve, 50))
-  assert.deepEqual(replies[0].response.result.tools.map(t => t.name).sort(), ['fos_read', 'fos_search'], 'read exposes the reading tools only')
+  assert.deepEqual(replies[0].response.result.tools.map(t => t.name).sort(), ['fos_read', 'fos_search', 'fos_task_status'], 'read exposes the reading tools only')
   replies = []
   pending.push({ id: 'read', message: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'fos_read', arguments: {} } } })
   for (let i = 0; i < 30 && !replies.length; i++) await new Promise(resolve => setTimeout(resolve, 50))
@@ -69,6 +69,50 @@ async function main() {
   pending.push({ id: 'list2', message: { jsonrpc: '2.0', id: 4, method: 'tools/list' } })
   for (let i = 0; i < 30 && !replies.length; i++) await new Promise(resolve => setTimeout(resolve, 50))
   assert(replies[0].response.result.tools.some(t => t.name === 'fos_propose') && replies[0].response.result.tools.some(t => t.name === 'fos_decide'))
+  toggle('execute').checked = true; toggle('execute').dispatchEvent(new window.Event('change')); await tick()
+  replies = []
+  pending.push({ id: 'await', message: { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'fos_await_task', arguments: { timeoutMs: 5000 } } } })
+  await new Promise(resolve => setTimeout(resolve, 400))
+  pending.push({ id: 'parallel-read', message: { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'fos_read', arguments: {} } } })
+  for (let i = 0; i < 30 && !replies.some(r => r.requestId === 'parallel-read'); i++) await new Promise(resolve => setTimeout(resolve, 50))
+  assert(replies.some(r => r.requestId === 'parallel-read'), 'a pending await must not block subsequent desktop MCP requests')
+  assert(!replies.some(r => r.requestId === 'await'))
+  app.set({ replica: c.addTask(app.state.replica, [id], 'Arrived while waiting', 10, 'new-task') })
+  for (let i = 0; i < 35 && !replies.some(r => r.requestId === 'await'); i++) await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(JSON.parse(replies.find(r => r.requestId === 'await').response.result.content[0].text).task.title, 'Arrived while waiting')
+  // Separate MCP sessions on one endpoint claim different tasks; their tool lists follow the claim.
+  async function rpc(requestId, method, params, sessionId = 'worker-a') {
+    pending.push({ id: requestId, sessionId, message: { jsonrpc: '2.0', id: requestId, method, params } })
+    for (let i = 0; i < 40 && !replies.some(r => r.requestId === requestId); i++) await new Promise(resolve => setTimeout(resolve, 50))
+    const response = replies.find(r => r.requestId === requestId)?.response
+    assert(response, `missing response for ${requestId}`)
+    return response.result
+  }
+  const tool = async (id, name, args, sessionId) => {
+    const result = await rpc(id, 'tools/call', { name, arguments: args }, sessionId)
+    return result.isError ? { error: result.content[0].text } : JSON.parse(result.content[0].text)
+  }
+  const beforeClaim = await tool('claim-read', 'fos_read', { path: ['new-task'] })
+  const claimed = await tool('claim', 'fos_claim_task', { path: ['new-task'], expected: beforeClaim.revision })
+  assert.equal(claimed.status, 'claimed')
+  const taskTools = await rpc('claimed-tools', 'tools/list')
+  assert(taskTools.tools.some(t => t.name === 'fos_task_submit') && !taskTools.tools.some(t => t.name === 'fos_read'))
+  const conflict = await tool('competing-claim', 'fos_claim_task', { path: ['new-task'], expected: beforeClaim.revision }, 'worker-b')
+  assert.match(conflict.error, /already claimed/)
+  const taskRead = await tool('task-read', 'fos_task_read', { claimId: claimed.claim.id })
+  assert.equal(taskRead.title, 'Arrived while waiting')
+  const originalFlush = storage.flush
+  storage.flush = async () => { throw new Error('Disk unavailable') }
+  const failed = await tool('failed-task-submit', 'fos_task_submit', { claimId: claimed.claim.id, expected: taskRead.revision, changes: [{ path: [], operation: 'add_note', text: 'Tested result' }] })
+  assert.equal(failed.error, 'Disk unavailable')
+  storage.flush = originalFlush
+  assert.equal((await tool('still-claimed', 'fos_task_status', {})).claim.id, claimed.claim.id)
+  assert.equal((await tool('still-original', 'fos_task_read', { claimId: claimed.claim.id })).revision, taskRead.revision)
+  const submitted = await tool('task-submit', 'fos_task_submit', { claimId: claimed.claim.id, expected: taskRead.revision, changes: [{ path: [], operation: 'add_note', text: 'Tested result' }] })
+  assert.equal(submitted.status, 'awaiting-review')
+  assert.equal(submitted.releasedClaimId, claimed.claim.id)
+  assert((await rpc('restored-tools', 'tools/list')).tools.some(t => t.name === 'fos_await_task'))
+  toggle('execute').checked = false; toggle('execute').dispatchEvent(new window.Event('change')); await tick()
   for (const label of ['read', 'write']) { toggle(label).checked = false; toggle(label).dispatchEvent(new window.Event('change')); await tick() }
   for (let i = 0; i < 30 && stopped < 1; i++) await new Promise(resolve => setTimeout(resolve, 50))
   assert.equal(stopped, 1, 'with nothing granted the endpoint stops')

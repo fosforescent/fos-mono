@@ -4,7 +4,7 @@
  * opens a session the user can watch: the CLI in a new terminal, connected to this node's MCP as that peer (its Read /
  * Write / Execute grants here decide the tools), or the Claude Code VS Code tab / a Claude Desktop chat with the prompt.
  */
-import { argumentRefs, capabilityTarget, content, headCid, refValueCid, resolveScope, view, type Replica, type Scope } from '../../shared/sync/index'
+import { argumentRefs, capabilityTarget, content, headCid, refValueCid, resolveScope, resolveText, view, type Replica, type Scope } from '../../shared/sync/index'
 import { inTauri, tauriInvoke } from './project'
 import { connectNodeAgent, startPeerMcp } from './node-agent'
 import { detachSelf } from './api'
@@ -38,7 +38,7 @@ export function agentContext(r: Replica, at: Scope) {
     if (relative.length > 64 || nodes.length >= 5000) throw new Error('Task subtree is too large; launch from a smaller task.')
     const node = view(r, path)
     if (!node) throw new Error('Task is no longer available.')
-    nodes.push({ path: relative, text: node.name ?? '', type, done: node.done })
+    nodes.push({ path: relative, text: resolveText(r, path, node.name ?? '').text, type, done: node.done })
     for (const row of node.tasks) {
       // Linked values can point outside this subtree; do not disclose their targets.
       if (row.refId !== undefined || !!row.supply || row.construction) continue
@@ -83,7 +83,7 @@ export async function stopAgent(app: App, launch: Launch): Promise<void> {
  * agent peer, so it reads notes and rows on demand, lists outstanding work (execute), and proposes results (write).
  * Feature verification (`verify`) instead hands it a read-only snapshot of the subtree.
  */
-export async function launchAgent(app: App, provider: AgentProvider, options: { scope?: Scope; cwd?: string; prompt?: string; verify?: boolean; chrome?: boolean } = {}): Promise<void> {
+export async function launchAgent(app: App, provider: AgentProvider, options: { scope?: Scope; cwd?: string; prompt?: string; verify?: boolean; chrome?: boolean; branch?: string; throwErrors?: boolean } = {}): Promise<void> {
   const name = AGENT_CLI_NAME[provider], scope = [...(options.scope ?? app.state.view)], store = app.state.replica.store
   try {
     if (!inTauri()) throw new Error('Agents launch from the desktop app.')
@@ -91,7 +91,7 @@ export async function launchAgent(app: App, provider: AgentProvider, options: { 
     let mcp: Awaited<ReturnType<typeof startPeerMcp>> | undefined
     const request: Record<string, unknown> = { provider, cwd, prompt: options.prompt ?? agentPrompt(app, scope), ...(options.chrome ? { chrome: true } : {}) }
     if (options.verify) Object.assign(request, { verify: true, context: agentContext(app.state.replica, scope) })
-    else { mcp = await startPeerMcp(app, agentPeerId(provider), scope, name); request.mcp = { url: mcp.url, token: mcp.token } }
+    else { mcp = await startPeerMcp(app, agentPeerId(provider), scope, name, options.branch); request.mcp = { url: mcp.url, token: mcp.token } }
     let id: string | null | undefined
     try { id = await tauriInvoke<string>('agent_start', { request }) } catch (error) { await mcp?.stop(); throw error }
     if (!id) { await mcp?.stop(); throw new Error('Desktop app required.') }
@@ -99,13 +99,13 @@ export async function launchAgent(app: App, provider: AgentProvider, options: { 
     launches.set(app, [...(launches.get(app) ?? []), launch])
     app.notify('info', `${name} opened in a new terminal. Approve its tools there; close the terminal to end the session.`)
     app.refresh()
-    void watch(app, launch, store)
-  } catch (error) { app.notify('error', String(error instanceof Error ? error.message : error)) }
+    void watch(app, launch, store, app.state.session)
+  } catch (error) { if (options.throwErrors) throw error; app.notify('error', String(error instanceof Error ? error.message : error)) }
 }
-async function watch(app: App, launch: Launch, store: Replica['store']) {
+async function watch(app: App, launch: Launch, store: Replica['store'], session: App['state']['session']) {
   try {
     for (;;) {
-      if (app.state.replica.store !== store) { await stopAgent(app, launch); break }
+      if (app.state.replica.store !== store || app.state.session !== session) { await stopAgent(app, launch); break }
       const poll = await tauriInvoke<{ finished: boolean; events: Array<{ type: string; message?: string }> }>('agent_poll', { id: launch.id })
       for (const event of poll?.events ?? []) if (event.type === 'error' && event.message) app.notify('error', `${AGENT_CLI_NAME[launch.provider]}: ${event.message}`)
       if (!poll || poll.finished) break

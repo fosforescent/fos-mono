@@ -1696,8 +1696,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'verify' | 'organize'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'verify', 'organize']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'ref-change' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'verify' | 'organize'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'ref-change', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'verify', 'organize']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1724,7 +1724,7 @@ export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'r
  * reports the derived list in every sync/node response (`capabilities`) and devices record it on their fos member.
  */
 export const SERVER_TRANSPORT_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'peer', 'persist', 'provideNode', 'sync']
-export const CLIENT_CAPABILITIES: Capability[] = ['provideNode', 'sync', 'timer', 'task-completion', 'request']
+export const CLIENT_CAPABILITIES: Capability[] = ['provideNode', 'sync', 'timer', 'task-completion', 'ref-change', 'request']
 /** What a host (the account server) currently offers: its own services and, per integration peer id, that peer's handlers. */
 export type HostOffers = {
   server?: Capability[]
@@ -1742,7 +1742,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'edit (propose and decide proposals)', execute: 'run evaluations', autopush: 'autopush',
   direct: 'direct connect', local: 'this machine (files)', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
   calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response', verify: 'verify users', organize: 'organize captures'
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'ref-change': 'on reference change', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response', verify: 'verify users', organize: 'organize captures'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1881,7 +1881,7 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'notify': return p.notifyCapability.getId()
     case 'rank': case 'local':
     case 'poll': case 'peer': case 'persist': case 'provideNode': case 'sync':
-    case 'timer': case 'cron': case 'task-completion': case 'request': case 'response': case 'points': case 'execute': case 'verify': case 'organize':
+    case 'timer': case 'cron': case 'task-completion': case 'ref-change': case 'request': case 'response': case 'points': case 'execute': case 'verify': case 'organize':
       return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
   }
 }
@@ -2221,12 +2221,13 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const { instantiate = false } = options
   const ids = new Map<string, string>()
   const owned = new Set<string>()
-  const childEdges = (value: FosNodeContent) => value.children.filter((edge) => {
+  const definitions = new Set<string>()
+  const childEdges = (value: FosNodeContent, definition = false) => value.children.filter((edge) => {
     const type = rowTypeIdOf(store, edge)
     const name = content(store, identityCid(store, edge)).data.name?.content
     if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' ||name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
-    if (isRowEdge(store, edge)) return !(instantiate && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
+    if (isRowEdge(store, edge)) return !(instantiate && !definition && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
     return isRefNode(store, content(store, identityCid(store, edge)))
   })
@@ -2243,7 +2244,12 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     }
     // Typed refs are slots, not ownership of their bound value.
     if (refTypeCid(store, identity)) return
-    for (const edge of childEdges(stripLink(store, identity))) collect(identityCid(store, edge))
+    for (const edge of childEdges(stripLink(store, identity), definitions.has(cid))) {
+      const child = identityCid(store, edge)
+      // Nested templates remain definitions when their containing workflow is instantiated.
+      if (rowTypeIdOf(store, edge) === TEMPLATE_TYPE) definitions.add(child)
+      collect(child)
+    }
   }
   collect(nodeCid)
   const copied = new Map<string, string>()
@@ -2274,7 +2280,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...(data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {}) }
     // Typed arguments keep defaults, including ref-to-ref defaults. They get a fresh identity.
     const target = refValueCid(store, identity)
-    const children = type ? [] : childEdges(value).map(copyEdge)
+    const children = type ? [] : childEdges(value, definitions.has(cid)).map(copyEdge)
     if (!type && isHandle(identity) && target) children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target])
     let bound = target && owned.has(target) ? copy(target) : target
     const alternatives = type && refBranches(store, identity)

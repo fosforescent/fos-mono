@@ -1,7 +1,33 @@
 import { githubRepository } from './repository'
 import type { IntegrationDeps } from './routes'
 
+test('deployment gate checks the newest deployment status for the exact main commit and environment', async () => {
+  let state = 'pending'
+  const sha = 'b'.repeat(40)
+  const { api, calls } = fixture(path => {
+    if (path === '/git/ref/heads/main') return { object: { sha } }
+    if (path.startsWith('/deployments?')) return [{ id: 2, sha, environment: 'production' }, { id: 1, sha: 'a'.repeat(40), environment: 'production' }]
+    if (path === '/deployments/2/statuses?per_page=1') return [{ state }]
+    throw new Error(`Unexpected ${path}`)
+  })
+  expect(await api.deployment('main', 'production')).toEqual({ sha, ready: false })
+  state = 'success'; expect(await api.deployment('main', 'production')).toEqual({ sha, ready: true })
+  state = 'failure'; expect(await api.deployment('main', 'production')).toEqual({ sha, ready: false })
+  expect(calls.some(call => call.path.includes(`sha=${sha}&environment=production`))).toBe(true)
+})
+
 const pr = { number: 7, title: 'Feature', html_url: 'https://github.com/acme/project/pull/7', state: 'open', merged_at: null, head: { ref: 'feature', sha: 'a'.repeat(40), repo: { full_name: 'acme/project' } }, base: { ref: 'main' } }
+test('loading one branch preserves other open approvals and finds its already-merged PR', async () => {
+  const { api, calls } = fixture(path => {
+    if (!path) return { default_branch: 'main' }
+    if (path.startsWith('/branches')) return []
+    if (path.startsWith('/pulls?state=open')) return [{ ...pr, number: 8 }]
+    if (path.startsWith('/pulls?state=all')) return [{ ...pr, state: 'closed', merged_at: '2026-10-20' }]
+    throw new Error(`Unexpected ${path}`)
+  })
+  expect((await api.snapshot([], 'feature')).pulls.map(p => [p.number, p.state])).toEqual([[8, 'open'], [7, 'merged']])
+  expect(calls.some(c => c.path.includes('head=acme%3Afeature'))).toBe(true)
+})
 function fixture(answer: (path: string, init: Parameters<IntegrationDeps['fetch']>[1]) => unknown) {
   const calls: Array<{ path: string; method: string; body?: string }> = []
   const fetch: IntegrationDeps['fetch'] = async (url, init) => {

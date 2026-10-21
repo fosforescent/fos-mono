@@ -2,12 +2,12 @@ import { exchangeNodeContext } from './node-context'
 import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
 import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
-import { content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
+import { content, valueContent, identityCid, refTypeCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
   isMemberEntryId, isMemberEdge, memberEdgesOf, memberEntryId, makeLink, isRefNode, MEMBER_ENTRY_PREFIX, SERVER_MEMBER, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
-import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError, exchangedChildren, memberEntryVisible, unloadedMemberEdge, decidingMember, MEMBER_ENTRY_FIELDS,
+import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError, exchangedChildren, memberEntryVisible, unloadedMemberEdge, decidingMember, MEMBER_ENTRY_FIELDS, argumentChild, validArgumentChild, exchangedValueEdge, unloadedArgumentEdge,
   type NodeBranch, type NodeRequest, type NodeShape, type NodeChild, type ProvidedNode, type NodeAuthority } from './node-provider'
 
 export type NodeSyncState = { local: NodeShape; remote: NodeShape & Pick<ProvidedNode, 'proposals' | 'grants'> }
@@ -15,7 +15,7 @@ const forbidden = new Set(['alias', 'ref', 'versionControl', 'disabledCapabiliti
 const empty = (): NodeShape => ({ data: {}, children: [] })
 // Key order is not content: jsonb storage and object spreads reorder keys of the same value.
 const equal = sameValue
-const childValue = (child?: NodeChild) => child && { id: child.id, template: child.template, ...(child.pinned ? { pinned: child.pinned } : {}), ...(child.held ? { held: true, address: child.address } : {}) }
+const childValue = (child?: NodeChild) => child && { id: child.id, template: child.template, ...(child.argument ? { argument: child.argument } : {}), ...(child.pinned ? { pinned: child.pinned } : {}), ...(child.held ? { held: true, address: child.address } : {}) }
 export const nodeSyncKey = (peer: string, path: Scope, branches?: NodeBranch[]): string => JSON.stringify(branches?.length ? [peer, path, [...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : [peer, path])
 /** Data fields a shape at `path` may carry: a member entry's also say who it is and what is switched off. */
 const shapeField = (path: Scope | undefined, key: string) => !forbidden.has(key) || (isMemberEntryId(path?.at(-1)) && MEMBER_ENTRY_FIELDS.has(key))
@@ -28,7 +28,7 @@ export function validateNodeShape(shape: NodeShape, at?: Scope): void {
   const entry = isMemberEntryId(at?.at(-1)) ? at!.at(-1)! : null
   if (!shape || !shape.data || typeof shape.data !== 'object' || Array.isArray(shape.data) || !Array.isArray(shape.children) || shape.children.length > 10000 ||
     Object.keys(shape.data).some(key => !shapeField(at, key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || (c.held !== undefined && c.held !== true) || !isCid(c.template) ||
-      (c.pinned !== undefined && (!entry || !isCid(c.pinned))) ||
+      !validArgumentChild(c) || (c.pinned !== undefined && (!entry || !isCid(c.pinned))) ||
       !c.address || typeof c.address.peerId !== 'string' || !Array.isArray(c.address.scope) || c.address.scope.length > 64 || c.address.scope.some(id => typeof id !== 'string' || !id || id === '.' || id === '..')) ||
     (entry && shape.data.peerId !== undefined && shape.data.peerId?.content !== entry.slice(MEMBER_ENTRY_PREFIX.length)) ||
     (entry && shape.data.disabledCapabilities !== undefined && (!Array.isArray(shape.data.disabledCapabilities?.content) || shape.data.disabledCapabilities.content.some(c => typeof c !== 'string'))) ||
@@ -46,9 +46,10 @@ export function nodeShape(r: Replica, path: Scope, root = headCid(r)): NodeShape
     const child = content(r.store, identityCid(r.store, edge))
     const ref = isPeerReference(child) ? child.data.ref : undefined
     // a reference error is the row it stands for, pinned to the template it waits for; a member entry's template is MEMBER
-    const template = member ? edge[0] : pinnedTemplateOf(r.store, edge)!
+    const argument = argumentChild(r, edge)
+    const template = member || argument ? edge[0] : pinnedTemplateOf(r.store, edge)!
     const held = isPeerReference(child) ? !!child.data.ref?.held : isHandle(child)
-    children.push({ id, ...(held ? { held: true as const } : {}), address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) }, template })
+    children.push({ id, ...(argument ? { argument } : {}), ...(held ? { held: true as const } : {}), address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) }, template })
   }
   return { data: Object.fromEntries(Object.entries(value.data).filter(([key]) => shapeField(path, key))) as FosDataContent, children }
 }
@@ -88,7 +89,7 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
   const s = r.store, id = path.at(-1)!, cid = resolveScope(s, headCid(r), path)
   if (!resolveScope(s, headCid(r), path.slice(0, -1))) throw new NodeAccessError('Node no longer exists.')
   const before = cid && !isPeerReference(content(s, cid)) ? content(s, cid) : { data: {}, children: [] }
-  const rows = new Map(before.children.filter(e => isRowEdge(s, e)).map(e => [content(s, identityCid(s, e)).data.alias?.id, e]))
+  const rows = new Map(before.children.filter(e => exchangedValueEdge(r, e)).map(e => [content(s, identityCid(s, e)).data.alias?.id, e]))
   const grantTypes = [s.primitive.capabilityNode.getId(), s.primitive.acceptsNode.getId()]
   const children = shape.children.map(child => {
     if (child.pinned) {
@@ -96,6 +97,7 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
       return [child.template, child.pinned] as [string, string]
     }
     const edge = rows.get(child.id)
+    if (child.argument) return installArgumentChild(r, child, edge)
     if (edge) return !missingTemplateOf(s, edge) && pinnedTemplateOf(s, edge) === child.template ? edge : pinnedRowEdge(s, identityCid(s, edge), child.template)
     return restored.has(child.id) ? pinnedRowEdge(s, restored.get(child.id)!, child.template) : unloadedRowEdge(s, child)
   })
@@ -140,16 +142,24 @@ export function sameNodeShape(a: NodeShape, b: NodeShape): boolean {
 }
 
 /** Preserve existing child bodies and local metadata when replacing a shallow value. */
+function installArgumentChild(r: Replica, child: NodeChild, edge?: [string, string]): [string, string] {
+  if (!edge) return unloadedArgumentEdge(r.store, child)
+  const prior = content(r.store, identityCid(r.store, edge)), target = refValueCid(r.store, prior)
+  if (child.argument!.bound && !target) return unloadedArgumentEdge(r.store, child)
+  const { name: _name, ref: _ref, ...data } = prior.data
+  return [child.template, put(r.store, refNodeContent(r.store, { ...data, ...(child.argument!.name !== undefined ? { name: { content: child.argument!.name! } } : {}), ...(child.argument!.bound && prior.data.ref ? { ref: prior.data.ref } : {}) }, child.argument!.bound ? target : null, bookkeepingOf(r.store, prior), child.template))]
+}
 export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now: number, restored = new Map<string, string>()): Replica {
   if (isMemberEntryId(path.at(-1))) return installMemberEntry(r, path, shape, now, restored)
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new NodeAccessError('Node no longer exists.')
   const before = content(r.store, cid), held = isPeerReference(before)
   const value = held ? { data: {}, children: [] } : valueContent(r.store, cid)
-  const existing = new Map(value.children.filter(e => isRowEdge(r.store, e)).map(e => [content(r.store, identityCid(r.store, e)).data.alias?.id, e]))
+  const existing = new Map(value.children.filter(e => exchangedValueEdge(r, e)).map(e => [content(r.store, identityCid(r.store, e)).data.alias?.id, e]))
   const members = shape.children.filter(child => isMemberChild(r.store, child))
   const children = shape.children.filter(child => !isMemberChild(r.store, child) && !child.pinned).map(child => {
     const edge = existing.get(child.id)
+    if (child.argument) return installArgumentChild(r, child, edge)
     if (edge) {
       const same = !missingTemplateOf(r.store, edge) && pinnedTemplateOf(r.store, edge) === child.template
       return same ? edge : pinnedRowEdge(r.store, identityCid(r.store, edge), child.template)
@@ -157,10 +167,10 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
     if (restored.has(child.id)) return pinnedRowEdge(r.store, restored.get(child.id)!, child.template)
     return unloadedRowEdge(r.store, child)
   })
-  const next = { data: { ...Object.fromEntries(Object.entries(value.data).filter(([key]) => forbidden.has(key))), ...shape.data }, children: [...value.children.filter(e => !isRowEdge(r.store, e) || isShippedLibrary(r.store, path, e)), ...children] }
+  const next = { data: { ...Object.fromEntries(Object.entries(value.data).filter(([key]) => forbidden.has(key))), ...shape.data }, children: [...value.children.filter(e => !exchangedValueEdge(r, e) || isShippedLibrary(r.store, path, e)), ...children] }
   const root = held
     // a node its holder sent blank before (a reference with history) gets its content as the version after that reference
-    ? updateAtScope(r.store, headCid(r), path, () => refNodeContent(r.store, { alias: before.data.alias }, put(r.store, next), heldHistory(r.store, before, cid)), 'replace')
+    ? updateAtScope(r.store, headCid(r), path, () => refNodeContent(r.store, { alias: before.data.alias, ...(refTypeCid(r.store, before) && before.data.name ? { name: before.data.name } : {}) }, put(r.store, next), heldHistory(r.store, before, cid), refTypeCid(r.store, before)), 'replace')
     : updateAtScope(r.store, headCid(r), path, () => next)
   if (root !== headCid(r)) commitRoot(r.store, root, now)
   return installMembers({ ...r }, path, members, now)
@@ -168,6 +178,7 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
 
 /** A row its peer holds and this side has not loaded: a reference to its address, loaded when the UI opens it. */
 export function unloadedRowEdge(store: Replica['store'], child: NodeChild): FosNodeContent['children'][number] {
+  if (child.argument) return unloadedArgumentEdge(store, child)
   const stub = put(store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
   return pinnedRowEdge(store, stub, child.template)
 }
@@ -277,14 +288,14 @@ function exchangeNodeOnMain(r: Replica, input: NodeRequest, authority: NodeAutho
 export function missingTemplatesAt(r: Replica, path: Scope): string[] {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid || isHandle(content(r.store, cid))) return []
-  return [...new Set(valueContent(r.store, cid).children.flatMap(edge => missingTemplateOf(r.store, edge)?.cid ?? []))]
+  return [...new Set(valueContent(r.store, cid).children.flatMap(edge => argumentChild(r, edge) && !r.store.table.has(edge[0]) ? edge[0] : missingTemplateOf(r.store, edge)?.cid ?? []))]
 }
 
 /** Content of the templates a peer asked for (`ProvidedNode.wanted`), limited to those the rows at `path` are pinned to. */
 export function templateNodesAt(r: Replica, path: Scope, wanted: string[]): FosNodesData | null {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid || isHandle(content(r.store, cid))) return null
-  const pinned = new Set(valueContent(r.store, cid).children.flatMap(edge => missingTemplateOf(r.store, edge) ? [] : rowTypeOf(r.store, edge) ?? []))
+  const pinned = new Set(valueContent(r.store, cid).children.flatMap(edge => argumentChild(r, edge) ? edge[0] : missingTemplateOf(r.store, edge) ? [] : rowTypeOf(r.store, edge) ?? []))
   const ask = wanted.filter(t => pinned.has(t) && r.store.table.has(t))
   return ask.length ? reachableNodes(r.store, ask) : null
 }
@@ -335,7 +346,7 @@ export function materializedNodePaths(r: Replica, at: Scope, peer?: string | nul
     const path = queue.pop()!, cid = resolveScope(r.store, headCid(r), path)
     if (!cid || isHandle(content(r.store, cid))) continue
     paths.push(path)
-    for (const child of nodeShape(r, path).children) if (!child.held && !child.pinned && (!peer || !isMemberEntryId(child.id) || memberEntryListed(r, path, peer, child.id))) queue.push([...path, child.id])
+    for (const child of nodeShape(r, path).children) if (!child.held && !child.pinned && child.argument?.bound !== false && (!peer || !isMemberEntryId(child.id) || memberEntryListed(r, path, peer, child.id))) queue.push([...path, child.id])
   }
   return paths.sort((a, b) => a.length - b.length)
 }
@@ -714,7 +725,7 @@ export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => n
     // a child here is pushed (or pulled into); one only the peer has is pulled; one a third peer holds is left alone
     // (the peer lists a child it has not received yet as a reference to this device; reference rows are not nodes)
     for (const child of accepted.children) {
-      if (child.pinned) continue
+      if (child.pinned || child.argument?.bound === false) continue
       const cid = resolveScope(r.store, headCid(r), [...path, child.id]), node = cid ? content(r.store, cid) : null
       if (node && (isPeerReference(node) ? node.data.ref?.peer === accepted.peerId : !isHandle(node))) queue.push({ path: [...path, child.id], held: !!child.held && child.address.peerId === r.meta.peerId })
     }

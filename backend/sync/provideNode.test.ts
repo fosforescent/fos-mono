@@ -11,6 +11,8 @@ import { createNodeProvider } from './provideNode'
 import type { AccountStoreDeps } from './accountStore'
 import { createHandlerRegistry } from './registry'
 import { relayHandler } from './hostHandlers'
+import { repositoryLoadHandler } from './repository'
+import { bindRepository, createBranch, selectBranch, type RepositorySnapshot } from '@fosforescent/shared/sync/index'
 import { collectRows } from '../search/rowIndex'
 
 type Sent = { status: number; body: unknown }
@@ -71,6 +73,27 @@ async function sync(handler: Handler, replica: Replica, claims: Claims = { usern
 const homeTitles = (store: FosStore) => view(createReplica('server', store), [HOME_ID])?.tasks.map((t) => t.title) ?? []
 
 describe('node provider', () => {
+  it('refreshes GitHub on an authorized node load, persists the Fos merge and notifies other devices', async () => {
+    const { deps, stores, notifications } = makeDeps()
+    let server = bindRepository(addTask(ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0), [HOME_ID], 'Project', 1, 'project'), [HOME_ID, 'project'], 'acme/project', 2)
+    server = createBranch(server, [HOME_ID, 'project'], 'feature', 3)
+    server = addTask(server, [HOME_ID, 'project'], 'Phone note', 4, 'note')
+    selectBranch(server.store, 'project', 'main')
+    stores.set(7, server.store)
+    const snapshot: RepositorySnapshot = { repo: 'acme/project', defaultBranch: 'main', canPush: true, branches: [], pulls: [{ number: 1, title: 'PR', url: 'https://github.com/acme/project/pull/1', head: 'feature', base: 'main', headRepo: 'acme/project', sha: 'a'.repeat(40), state: 'merged' }] }
+    const fetch = jest.fn(async () => snapshot)
+    deps.registry = createHandlerRegistry([repositoryLoadHandler({ connected: async () => true, snapshot: fetch })])
+    const handler = createNodeProvider(deps), request = { peerId: 'phone', scope: [], path: [HOME_ID, 'project'], linkId: 'project-phone' }
+    expect((await ask(handler, request, { username: 'alice', kind: 'peer', peerId: 'stranger', scope: [] })).status).toBe(403)
+    expect(fetch).not.toHaveBeenCalled()
+    const result = await ask(handler, request, { username: 'alice' })
+    expect(result.status).toBe(200)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect((result.body as ProvidedNode).children.some(child => child.id === 'note')).toBe(true)
+    expect(view(createReplica('user:alice', stores.get(7)!), [HOME_ID, 'project', 'note'])?.name).toBe('Phone note')
+    expect(notifications.some(n => n.message.type === 'sync_changed')).toBe(true)
+  })
+
   it('rechecks a scoped credential against current membership on every request', async () => {
     const { deps, stores } = makeDeps()
     let server = addTask(createReplica('server'), [], 'Shared', 1, 'shared')

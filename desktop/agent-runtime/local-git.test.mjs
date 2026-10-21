@@ -6,6 +6,27 @@ import {join} from 'node:path'
 import {execFileSync} from 'node:child_process'
 import {localGit} from './local-git.mjs'
 import {cliArguments} from './cli.mjs'
+test('agent worktree uses the requested remote branch and preserves a dirty desktop checkout', async () => {
+ const cwd=await mkdtemp(join(tmpdir(),'fos-agent-worktree-'))
+ const git=(...args)=>execFileSync('git',['-C',cwd,...args],{encoding:'utf8',windowsHide:true,stdio:['ignore','pipe','pipe']}).trim()
+ try {
+  git('init','-b','main');git('config','user.email','test@example.invalid');git('config','user.name','Test')
+  await writeFile(join(cwd,'README'),'main');git('add','.');git('commit','-m','initial')
+  git('switch','-c','phone-feature');await writeFile(join(cwd,'README'),'feature');git('commit','-am','feature');git('switch','main')
+  git('remote','add','origin','https://github.com/acme/project.git')
+  git('config',`url.${cwd.replaceAll('\\','/')}/.insteadOf`,'https://github.com/acme/project.git')
+  await writeFile(join(cwd,'README'),'uncommitted desktop edit')
+  const before=git('status','--porcelain'), head=git('rev-parse','HEAD')
+  const request={cwd,action:'agent-worktree',repo:'acme/project',branch:'phone-feature',id:'job-1'}
+  const result=await localGit(request)
+  assert.equal(await readFile(join(result.cwd,'README'),'utf8'),'feature')
+  assert.equal(await readFile(join(cwd,'README'),'utf8'),'uncommitted desktop edit')
+  assert.equal(git('branch','--show-current'),'main');assert.equal(git('rev-parse','HEAD'),head);assert.equal(git('status','--porcelain'),before)
+  await assert.rejects(localGit(request),/already has a worktree/)
+  await assert.rejects(localGit({...request,id:'job-2',repo:'different/repo'}),/does not match/)
+  await assert.rejects(localGit({...request,id:'../escape'}),/Invalid agent request/)
+ } finally { await rm(cwd,{recursive:true,force:true}) }
+})
 test('CLI uses scoped MCP and ordinary approvals',()=>{
  const context={url:'http://127.0.0.1:123/mcp',config:'C:/path with spaces/mcp.json'}
  assert.deepEqual(cliArguments('claude',context,{chrome:true}),['--permission-mode','default','--mcp-config',context.config,'--chrome'])

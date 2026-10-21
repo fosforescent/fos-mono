@@ -1,3 +1,5 @@
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod mcp_transport;
 // The loopback MCP endpoint for local agents runs a tiny HTTP server, a desktop-only dependency: the mobile apps
 // (GUI only, agents connect from desktops) carry a stub so the web app's commands still resolve.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
