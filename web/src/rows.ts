@@ -262,6 +262,8 @@ export function rawRowText(task: TaskView): string {
   if (isAllocationType(task.type)) return task.requirement ? rawRequirementText(task) : rawAllocationText(task)
   switch (task.type) {
     case QUERY_TYPE: return `? ${task.title}`
+    // a note's text is its title line; its body is a row of its own
+    case NOTE_TYPE: return `> ${task.title}`
     case TEMPLATE_TYPE: return `\`${task.title}`
     case RESOURCE_TYPE: {
       const r = task.resource

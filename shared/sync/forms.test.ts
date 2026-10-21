@@ -1,37 +1,47 @@
 import { addConstructedRow, addRow, createReplica, headCid, loadReplica, moveNode, renameTask, serializeReplica, setRowContentAt, view } from './replica'
 import { content, formValueAt, isRefNode, put, reachableNodes, importNodes, resolveScope, rowTypeAt, valueContent, copyRowContent, commitRoot } from './index'
-import { constructForm, formTitle } from './forms'
+import { constructForm, formText, formTitle } from './forms'
 import { mergeNodes } from './merge'
 import { syncWith } from './test-helpers'
 import { argumentRefs, resolveText } from './bindings'
 import { addRefAt } from './replica'
-import { PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE } from './library-types'
+import { PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, MARKDOWN_TYPE } from './library-types'
 import type { FosNodeContent } from '../types'
 
 /** A row type of the kind older builds wrote: no graph identity, only the retired markers. */
 const retiredType = (name: string, kind: string): FosNodeContent => ({ data: { description: { content: name }, instanceKind: { kind }, behavior: { content: `builtin:${kind}` } }, children: [] })
 
-test('notes are graph products with a text body, bindings, and ordinary child rows', () => {
+test('notes are a title line plus a Markdown body row, bindings, and ordinary child rows', () => {
   let r = createReplica('a')
   const type = rowTypeAt(r.store, NOTE_TYPE)
   const definition = content(r.store, type)
   expect(definition.data.behavior).toBeUndefined()
   expect(definition.data.instanceKind).toBeUndefined()
-  expect(definition.data.form).toMatchObject({ title: ['body'], text: { mediaType: 'text/markdown', interpolate: true } })
+  expect(definition.data.form).toEqual({ open: true, headline: ['body'] })
+  // the body field's type is the library's Markdown text
+  expect(content(r.store, rowTypeAt(r.store, MARKDOWN_TYPE)).data.form).toEqual({ primitive: 'text', text: { mediaType: 'text/markdown', interpolate: true } })
   r = addRefAt(r, [], 'name', r.store.primitive.documentField.getId(), 1, put(r.store, { data: { description: { content: 'Ada' } }, children: [] }), 'name')
-  r = addRow(r, [], NOTE_TYPE, '# Hello {name}', 2, { id: 'document' })
+  r = addRow(r, [], NOTE_TYPE, '# Hello {name}\n\nDear {name}, $x^2$.', 2, { id: 'document' })
   r = addRow(r, ['document'], NOTE_TYPE, 'Child document', 3, { id: 'child' })
   const node = () => valueContent(r.store, resolveScope(r.store, headCid(r), ['document'])!)
-  expect(node().data.description).toBeUndefined()
-  expect(formValueAt(r.store, node(), ['body'])?.data.scalar).toEqual({ type: 'text', value: '# Hello {name}' })
-  expect(view(r, [])!.tasks.find(row => row.id === 'document')).toMatchObject({ type: NOTE_TYPE, text: { mediaType: 'text/markdown' } })
-  expect(resolveText(r, ['document'], formTitle(r.store, node())).text).toBe('# Hello Ada')
+  expect(node().data.description).toEqual({ content: 'Hello {name}' })
+  // more than one line: the whole text is the body, the title is the truncation handler's (title.ts)
+  expect(formValueAt(r.store, node(), ['body'])?.data.scalar).toEqual({ type: 'text', value: '# Hello {name}\n\nDear {name}, $x^2$.' })
+  expect(view(r, [])!.tasks.find(row => row.id === 'document')).toMatchObject({ type: NOTE_TYPE, title: 'Hello {name}', headline: ['body'] })
+  expect(view(r, [])!.tasks.find(row => row.id === 'document')!.text).toBeUndefined()
+  expect(view(r, ['document'])!.tasks.find(row => row.id === 'document/field/body')).toMatchObject({ type: MARKDOWN_TYPE, scalar: 'text', title: '# Hello {name}\n\nDear {name}, $x^2$.', text: { mediaType: 'text/markdown' } })
+  expect(resolveText(r, ['document'], formText(r.store, node())).text).toBe('# Hello Ada\n\nDear Ada, $x^2$.')
   const body = node().children[0]!
-  r = setRowContentAt(r, [], 'document', NOTE_TYPE, '  ## Updated {name}\n\n{extra}', {}, 4)
+  // one line renames the note; more lines replace its body, the body row keeping its identity
+  r = setRowContentAt(r, [], 'document', NOTE_TYPE, 'Renamed {name}', {}, 4)
+  expect(node().data.description).toEqual({ content: 'Renamed {name}' })
+  expect(formText(r.store, node())).toBe('# Hello {name}\n\nDear {name}, $x^2$.')
+  r = setRowContentAt(r, [], 'document', NOTE_TYPE, '  ## Updated {name}\n\n{extra}', {}, 5)
   expect(content(r.store, node().children[0]![1]).data.alias).toEqual(content(r.store, body[1]).data.alias)
   expect(argumentRefs(r.store, resolveScope(r.store, headCid(r), ['document'])!).map(arg => arg.name)).toEqual(['name', 'extra'])
   r = loadReplica(serializeReplica(r))
-  expect(formTitle(r.store, node())).toBe('  ## Updated {name}\n\n{extra}')
+  expect(node().data.description).toEqual({ content: 'Updated {name}' })
+  expect(formText(r.store, node())).toBe('  ## Updated {name}\n\n{extra}')
   expect(view(r, ['document'])!.tasks.some(row => row.id === 'child')).toBe(true)
 })
 
@@ -57,7 +67,7 @@ test('a graph note inherits shared context after node exchange and supports remo
   a = syncWith(a, server)
   b = syncWith(b, server)
   const row = () => view(b, [])!.tasks.find(row => row.id === 'document')!
-  expect(row()).toMatchObject({ type: NOTE_TYPE, title: '# Hello {name}', text: { mediaType: 'text/markdown' } })
+  expect(row()).toMatchObject({ type: NOTE_TYPE, title: '# Hello {name}', headline: ['body'] })
   expect(resolveText(b, ['document'], row().title).text).toBe('# Hello Ada')
   b = renameTask(b, [], 'document', '## Welcome {name}', 10)
   b = syncWith(b, server, { now: 11 })

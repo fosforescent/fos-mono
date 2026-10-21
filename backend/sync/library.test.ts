@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { HOME_ID, LIBRARY_ID, addRow, commitRoot, createReplica, ensureLibraryLink, nestScope, ensureHomeContext, headCid, importNodes, libraryLink, makeLink, mergePolicy, proposalContent, put, reachableNodes, resolveScope, sharing, updateAtScope, valueContent, view, withProposal, type Replica, type Scope } from '@fosforescent/shared/sync/index'
+import { HOME_ID, LIBRARY_ID, addRow, commitRoot, createReplica, ensureLibraryLink, nestScope, ensureHomeContext, headCid, importNodes, libraryLink, makeLink, mergePolicy, proposalContent, put, reachableNodes, resolveScope, publication, updateAtScope, valueContent, view, withProposal, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -42,11 +42,10 @@ test('the library account, node, sharing, policy and templates come to exist onc
   const h = host(), registry = createHandlerRegistry([{ peerId: 'fos', capability: 'search' }])
   const address = await ensureStandardLibrary(h.deps, 'fos-library', registry)
   expect(address).toMatchObject({ owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], title: 'Standard library' })
-  expect(address.share).toMatch(/^[\w-]{16,128}$/)
   const lib = h.get('fos-library')
   const node = view(lib, address.path)!
   expect(node.tasks.filter(t => t.type === TEMPLATE_TYPE).length).toBeGreaterThanOrEqual(6)
-  expect(sharing(lib, address.path)).toMatchObject({ audience: 'users', enabled: true, id: address.share })
+  expect(publication(lib, address.path)).toEqual({ audience: 'users', template: false })
   expect(node.members.find(m => m.peerId === 'audience:users')!.capabilities).toEqual(expect.arrayContaining([...LIBRARY_GRANTS]))
   expect(mergePolicy(lib, address.path)).toEqual({ approvals: 2 })
   const saved = h.saves.length
@@ -77,7 +76,7 @@ test('members vote on a proposed change through the shared view and the library 
     await handlers[action]({ body, claims: { username: account, kind: 'user' } } as unknown as Request, res)
     return { status, body: result }
   }
-  const at = { owner: address.owner, path: address.path, share: address.share }
+  const at = { owner: address.owner, path: address.path }
   const bob = await call('visit', at, 'bob')
   expect(bob.status).toBe(200)
   expect(bob.body.node.proposals.map((p: { id: string }) => p.id)).toEqual([`proposal:${cid}`])

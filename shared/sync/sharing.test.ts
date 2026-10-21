@@ -1,38 +1,41 @@
 import { createHash } from 'node:crypto'
-import { addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
+import { ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
 import { content, put, readProposals, resolveScope, rowTypeAt, valueContent } from './graph'
 import { formValueAt } from './forms'
-import { markdownTitle, proposeVisitorValues, setSharing, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
-import { PLAIN_TYPE, NOTE_TYPE } from './library-types'
+import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, syncPublishedUrls, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
+import { HOME_ID } from './graph'
+import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE, TEXT_TYPE } from './library-types'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
-test('a published note carries its whole markdown body and text presentation, keyed off the row type', () => {
+test('a published note is its title line and its whole markdown body row, keyed off the row types', () => {
   let r = createReplica('user:host')
-  r = addRow(r, [], NOTE_TYPE, '# Hello world\n\nThe **body** of a post.', 1, { id: 'post' })
+  r = addRow(r, [], NOTE_TYPE, '# Hello world\n\nThe **body** of a post, with $e^{i\\pi} + 1 = 0$.', 1, { id: 'post' })
   r = addRow(r, ['post'], NOTE_TYPE, '## Section\n\n' + 'x'.repeat(9000), 2, { id: 'long' })
   r = addRow(r, ['post'], PLAIN_TYPE, 'A plain row', 3, { id: 'plain' })
-  r = addRow(r, ['post', 'plain'], NOTE_TYPE, 'Nested *note*', 4, { id: 'nested' })
-  r = addRow(r, ['post'], NOTE_TYPE, 'y'.repeat(SHARED_BODY_LIMIT + 10), 5, { id: 'huge' })
-  r = setSharing(r, ['post'], { id: 'public-link-0123456789', audience: 'public', enabled: true }, 6)
+  r = addRow(r, ['post', 'plain'], NOTE_TYPE, 'Nested note', 4, { id: 'nested' })
+  r = addRow(r, ['post'], NOTE_TYPE, 'Huge\n' + 'y'.repeat(SHARED_BODY_LIMIT + 10), 5, { id: 'huge' })
+  r = publish(r, ['post'], 'public', 6)
   let hashed: any
   const node = sharedProjection(r, ['post'], value => { hashed = value; return digest(value) })
-  expect(node).toMatchObject({ title: 'Hello world', type: 'lib:type:note', body: '# Hello world\n\nThe **body** of a post.' })
-  expect(node.truncated).toBeUndefined()
-  // the notes' body fields are their bodies, not rows of the page
-  expect(node.rows.map(row => row.id)).toEqual(['long', 'plain', 'nested', 'huge'])
+  expect(node).toMatchObject({ title: 'Hello world', type: NOTE_TYPE })
+  expect(node.body).toBeUndefined()
+  // each note's body is a Markdown row of its own; an empty body is left out
+  expect(node.rows.map(row => row.id)).toEqual(['post/field/body', 'long', 'long/field/body', 'plain', 'nested', 'huge', 'huge/field/body'])
   const rows = Object.fromEntries(node.rows.map(row => [row.id, row]))
-  // bodies are no longer cut at 8000 characters; the short title is the first heading
-  expect(rows.long).toMatchObject({ title: 'Section', depth: 0, type: 'lib:type:note' })
-  expect(rows.long!.body).toHaveLength('## Section\n\n'.length + 9000)
+  expect(rows['post/field/body']).toEqual({ id: 'post/field/body', depth: 0, title: '', type: MARKDOWN_TYPE, body: '# Hello world\n\nThe **body** of a post, with $e^{i\\pi} + 1 = 0$.' })
+  // bodies are not cut at 8000 characters
+  expect(rows.long).toEqual({ id: 'long', title: 'Section', depth: 0, type: NOTE_TYPE })
+  expect(rows['long/field/body']!.body).toHaveLength('## Section\n\n'.length + 9000)
   expect(rows.plain).toEqual({ id: 'plain', title: 'A plain row', depth: 0, type: 'lib:type:plain' })
-  expect(rows.nested).toMatchObject({ title: 'Nested note', depth: 1, body: 'Nested *note*' })
-  expect(rows.huge!.body).toHaveLength(SHARED_BODY_LIMIT)
-  expect(rows.huge!.truncated).toBe(true)
+  expect(rows.nested).toMatchObject({ title: 'Nested note', depth: 1 })
+  expect(rows['huge/field/body']!.body).toHaveLength(SHARED_BODY_LIMIT)
+  expect(rows['huge/field/body']!.truncated).toBe(true)
   expect(node.rows.every(row => !('kind' in row))).toBe(true)
   // the revision is computed from the earlier row shape, so votes cast before bodies were published stay valid
-  expect(hashed.rows.find((row: any) => row.id === 'long')).toEqual({ id: 'long', title: ('## Section\n\n' + 'x'.repeat(9000)).slice(0, 8000), type: NOTE_TYPE, depth: 0 })
+  expect(hashed.rows.find((row: any) => row.id === 'long')).toEqual({ id: 'long', title: 'Section', type: NOTE_TYPE, depth: 0 })
 })
+
 
 test('markdown titles drop heading and inline markup', () => {
   expect(markdownTitle('\n\nIntro line\n# The *real* title')).toBe('The real title')
@@ -43,13 +46,12 @@ test('markdown titles drop heading and inline markup', () => {
 test('empty fields of a published row are inputs of their type; each visitor submits candidates as its own peer', () => {
   let r = createReplica('user:host')
   // a product type over the library's text type: its title field is presented by the row, the other is asked for
-  const note = content(r.store, rowTypeAt(r.store, NOTE_TYPE))
-  const text = note.children.find(([, cid]) => content(r.store, cid).data.parameter)![0]
+  const text = rowTypeAt(r.store, TEXT_TYPE)
   const field = (name: string) => put(r.store, { data: { parameter: { name } }, children: [] })
   const type = put(r.store, { data: { form: { title: ['label'] } }, children: [[text, field('label')], [text, field('email')]] })
   r = addRow(r, [], PLAIN_TYPE, 'Sign up', 1, { id: 'page' })
   r = addConstructedRow(r, ['page'], type, { label: 'Your details' }, 2, 'details')
-  r = setSharing(r, ['page'], { id: 'public-link-0123456789', audience: 'public', enabled: true }, 3)
+  r = publish(r, ['page'], 'public', 3)
   const node = sharedProjection(r, ['page'], value => JSON.stringify(value).length.toString())
   expect(node.rows).toEqual([
     { id: 'details', title: 'Your details', depth: 0 },
@@ -69,4 +71,39 @@ test('empty fields of a published row are inputs of their type; each visitor sub
   const details = valueContent(r.store, resolveScope(r.store, headCid(r), ['page', 'details'])!)
   expect(formValueAt(r.store, details, ['email'])!.data.scalar!.value).toBe('a2@example.test')
   expect(view(r, ['page'])).toBeTruthy()
+})
+
+test('publishing is membership: the audience peer may run the node (execute only), and unpublishing removes it', () => {
+  let r = createReplica('user:host')
+  r = addRow(r, [], PLAIN_TYPE, 'Page', 1, { id: 'page' })
+  expect(publication(r, ['page'])).toBeNull()
+  r = publish(r, ['page'], 'public', 2)
+  expect(view(r, ['page'])!.members.find(m => m.peerId === 'audience:public')!.capabilities).toEqual(['execute'])
+  expect(publication(r, ['page'])).toEqual({ audience: 'public', template: false })
+  // the served page is the execute view: peer rows are not on it
+  r = addRow(r, ['page'], PLAIN_TYPE, 'Shown', 3, { id: 'shown' })
+  expect(sharedProjection(r, ['page'], value => JSON.stringify(value).length.toString()).rows.map(row => row.id)).toEqual(['shown'])
+  r = unpublish(r, ['page'], 'public', 4)
+  expect(publication(r, ['page'])).toBeNull()
+  expect(() => sharedProjection(r, ['page'], () => 'x')).toThrow()
+})
+
+test('the url handler keeps a published node\'s link as a row in the server\'s member entry above it', () => {
+  let r = ensureHomeContext(createReplica('user:host'), 1)
+  r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Page', 2, { id: 'page' })
+  expect(syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example', 3)).toBe(r)
+  r = publish(r, [HOME_ID, 'page'], 'public', 4)
+  r = syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example/', 5)
+  const url = publishedUrl(r, [HOME_ID, 'page'])!
+  expect(url.startsWith('https://app.example/#share=')).toBe(true)
+  expect(JSON.parse(decodeURIComponent(url.slice(url.indexOf('#share=') + 7)))).toEqual({ owner: 'host', path: [HOME_ID, 'page'] })
+  expect(syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example', 6)).toBe(r)
+  r = syncPublishedUrls(unpublish(r, [HOME_ID, 'page'], 'public', 7), [HOME_ID, 'page'], 'https://app.example', 8)
+  expect(publishedUrl(r, [HOME_ID, 'page'])).toBeNull()
+})
+
+test('a capability this build does not know is kept, as one with no handler here yet', () => {
+  let r = ensureHomeContext(createReplica('user:host'), 1)
+  r = setMemberCapabilitiesAt(r, [], 'fos', [], [], 2, ['search', 'teleport' as never])
+  expect(view(r, [])!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(['search', 'teleport']))
 })

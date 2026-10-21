@@ -14,7 +14,7 @@ const PLAIN_TYPE = 'lib:type:plain'
 const COMMENT_TYPE = 'lib:type:comment'
 const ALLOCATION_TYPE = 'lib:type:allocation'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
-  const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm', 'poll']
+  const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function main() {
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
@@ -25,12 +25,17 @@ async function main() {
   document.querySelector('.peer-tabs [aria-label="Fos server"]').click(); await tick()
   const github = document.querySelector('.constructor-grid button.sub-peer[aria-label="GitHub"]')
   assert(github && !github.getAttribute('aria-disabled')?.includes('true'), 'server integrations are sub-peer icons in the server grid; offline users can inspect them')
-  assert(document.querySelector('.node-context').textContent.includes('Fos server is offline'))
-  assert([...document.querySelectorAll('.node-context button')].some(b => b.textContent === 'Connect Fos server'))
+  // the panel is constructors only: no text, fields or buttons beside the grid
+  assert(document.querySelector('.node-context').hidden && !document.querySelector('.node-context').childElementCount, 'the panel holds only constructors')
+  assert(document.querySelector('.peer-tabs [aria-label="Fos server"]').classList.contains('peer-status-offline'))
   github.click(); await tick()
   assert(document.querySelector('.peer-crumb').textContent.includes('GitHub'), 'opening a sub-peer shows where we are')
   assert(document.querySelector('.peer-tabs [aria-label="Fos server"]').getAttribute('aria-selected') === 'true')
-  assert(document.querySelectorAll('.peer-grants input').length === 3, 'a peer has read / write / execute toggles')
+  // its constructor makes its row here: read / write / execute toggles and Complete (connect)
+  document.querySelector('.constructor-grid [aria-label="Connect GitHub"]').click(); await tick()
+  assert(document.querySelectorAll('.tree .constructor-body .peer-grants input').length === 3, 'a peer row has read / write / execute toggles')
+  assert([...document.querySelectorAll('.tree .constructor-body button')].some(b => b.textContent === 'Complete'), 'and a Complete button')
+  a.undo(); await tick()
   document.querySelector('.peer-tabs [aria-label="This device"]').click(); await tick()
   assert(!document.querySelector('.peer-crumb'), 'local controls do not depend on the server menu')
   const savedFetch = globalThis.fetch
@@ -46,7 +51,10 @@ async function main() {
     lookup = { url, init }; return { ok: true, json: async () => ({ users: [{ user_name: 'directory-owner' }, { user_name: 'alice' }] }) }
   }
   const savedSync = a.syncNow; a.syncNow = async () => {}
-  const userSearch = document.querySelector('[aria-label="Search Fos users"]')
+  // sharing with a Fos user is a row: its search box is in the row
+  assert(!document.querySelector('[aria-label="Search Fos users"]'), 'no user search in the panel')
+  document.querySelector('.constructor-grid [aria-label="Share with a Fos user"]').click(); await tick()
+  const userSearch = document.querySelector('.tree .constructor-body [aria-label="Search Fos users"]')
   userSearch.value = 'ali ce'
   userSearch.closest('form').dispatchEvent(new window.Event('submit', { cancelable: true })); await tick()
   assert(lookup.url.endsWith('/groups/search/name?name=ali%20ce'))
@@ -57,6 +65,7 @@ async function main() {
   assert(invite, 'the invite went to the account server')
   assert.deepEqual(JSON.parse(invite.init.body).event, { kind: 'invite', path: [], user: 'alice' })
   assert(!view(a.state.replica, a.state.view).members.some(m => m.peerId === 'user:alice'), 'the client writes no member edge of its own')
+  a.undo(); await tick()
   a.syncNow = savedSync
   // the grant the server recorded arrives with the next sync
   a.set({ replica: addMemberAt(a.state.replica, a.state.view, 'user:alice', 'alice', ['edit'], 1) }); a.refresh(); await tick()
@@ -109,7 +118,7 @@ async function main() {
   assert(!document.querySelector('.view-switch'))
   a.goToAccountPeer(); await tick()
   assert.equal(a.currentRow().construction.peerId, 'fos')
-  assert(document.querySelector('.node-input-options .alternative-picker'), 'edit text has its own option picker')
+  assert(document.querySelector('.node-choices .alternative-picker'), 'the title row has the branch picker')
   assert.equal(document.querySelector('[data-region="status"]').textContent, 'Offline', 'status badge contains just connection state')
   assert.equal(a.state.modal, null)
   assert(document.querySelector('.account-form .login'))
@@ -175,9 +184,25 @@ async function main() {
   a.rewriteRowAt([], bodyId, { type: PLAIN_TYPE, text: 'Later comment', done: false })
   a.goTo(commentParent)
   a.select(null); await tick()
-  assert(!document.querySelector(`.task[data-id="${first}"] .alternative-picker`))
+  assert(!document.querySelector(`.task[data-id="${first}"] .row-choices.has-choices`), 'a row without choices shows its caret only on hover')
+  assert(!document.querySelector(`.task[data-id="${first}"] .more`), 'no ⋯ button')
+  // press and hold the zoom dot: the row's menu, without zooming
+  const dot = document.querySelector(`.task[data-id="${first}"] .zoom-dot`)
+  const viewBefore = JSON.stringify(a.state.view)
+  dot.dispatchEvent(new window.Event('pointerdown')); await new Promise(resolve => setTimeout(resolve, 550))
+  assert.equal(a.state.contextMenu?.kind, 'task', 'holding the zoom dot opens the row menu')
+  dot.dispatchEvent(new window.Event('pointerup')); document.querySelector(`.task[data-id="${first}"] .zoom-dot`)?.click()
+  assert.equal(JSON.stringify(a.state.view), viewBefore, 'the hold does not also zoom')
+  a.closeContextMenu()
+  // Ctrl+Shift+C copies the selected row as a link
+  let linkCopied = null
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { linkCopied = text } } })
+  a.select([first]); await tick()
+  document.querySelector(`.task[data-id="${first}"] textarea.edit`).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'C', ctrlKey: true, shiftKey: true, bubbles: true })); await tick()
+  assert.equal(linkCopied, `fos-ref:${encodeURIComponent(first)}`)
+  a.select(null); await tick()
   a.openContextMenu({ kind: 'task', at: [], task: a.rowAt([first]) })
-  assert.deepEqual([...document.querySelectorAll('.context-menu button')].map(b => b.textContent.replace('Shift+Enter','')), ['Change template', 'Add choice', 'Link'])
+  assert.deepEqual([...document.querySelectorAll('.context-menu button')].map(b => b.textContent.replace('Shift+Enter','').replace('Ctrl+Shift+C', '')), ['Change template', 'Add choice', 'Copy link'])
   a.closeContextMenu()
   const click = (id, props = {}) => document.querySelector(`.task[data-id="${id}"] .title`).dispatchEvent(new window.MouseEvent('click', { bubbles: true, ...props }))
   click(first, { ctrlKey: true }); click(second, { shiftKey: true }); await tick()
@@ -223,13 +248,13 @@ async function main() {
   assert(!document.querySelector('[aria-label="Add trigger workflow"]'), 'triggers use the common constructor menu')
   a.openTemplatePicker([HOME_ID, first]); a.createLinkedTemplate('Editable constructor', '', true)
   const definition = a.state.view.at(-1)
-  a.goTo([HOME_ID, first]); assert.equal(document.querySelector('.node-text').readOnly, true)
+  a.goTo([HOME_ID, first]); assert.equal(document.querySelector('.node-title-input').readOnly, true)
   a.openTemplatePicker([HOME_ID, first]); document.querySelector('[aria-label="Edit template"]').click()
   assert.equal(a.state.view.at(-1), definition)
   // Context controls survive navigation; Home remains a fixed icon.
   a.goTo([])
   assert(document.querySelector('.crumb[aria-label="Home"] svg'))
-  assert(document.querySelector('.node-text').readOnly)
+  assert(!document.querySelector('.node-title-input'), 'the device root has no row to edit in the title')
   a.editCurrentText('Do not rename', { store: a.state.replica.store, head: headCid(a.state.replica), path: [HOME_ID] })
   assert.notEqual(a.currentRow().title, 'Do not rename')
   const context = document.querySelector('[data-accordion="context"]')
@@ -283,22 +308,20 @@ async function main() {
   window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event('close')) }
   a.goTo([])
   document.querySelector('[aria-label="This device"]').click()
+  // a resource constructor seeds the blank row with its marker: the row is what gets typed, there is no dialog
   document.querySelector('.constructor-grid [aria-label="Resource bank"]').click()
-  let dialog = document.querySelector('.constructor-dialog')
-  dialog.querySelector('[aria-label="Constructor type"]').value = 'account'
-  dialog.querySelector('[aria-label="Constructor type"]').dispatchEvent(new window.Event('change'))
-  dialog.querySelector('[aria-label="Amount"]').value = '50'
-  dialog.querySelector('[aria-label="Constructor label"]').value = 'Travel budget'
-  dialog.querySelector('form').dispatchEvent(new window.Event('submit', { cancelable: true }))
+  assert(!document.querySelector('.constructor-dialog'), 'no parameter dialog')
+  const ghost = document.querySelector('.tree .task.ghost textarea.edit')
+  assert.equal(ghost.value, '@money ')
+  ghost.value = '@money Travel budget 50'; ghost.dispatchEvent(new window.Event('input'))
+  ghost.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   const budget = a.currentView().tasks.find(t => t.title === 'Travel budget')
   assert.equal(budget.resource.capacity, 50); assert.equal(budget.resource.type, 'account')
-  const target = a.addRowAt([], PLAIN_TYPE, 'Spend'), nested = a.addRowAt([target], PLAIN_TYPE, 'Keep this child')
+  const target = a.addRowAt([], PLAIN_TYPE, '10 Spend'), nested = a.addRowAt([target], PLAIN_TYPE, 'Keep this child')
   const paletteDrop = (el, kind) => { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: { types: ['application/x-fos-constructor'], getData: type => type === 'application/x-fos-constructor' ? kind : '' } }); el.dispatchEvent(event) }
+  // dropped on a row, its text is re-read with the marker: "$ 10 Spend", drawn from the bank above
   paletteDrop(document.querySelector(`[data-id="${target}"]`), 'account')
-  dialog = document.querySelector('.constructor-dialog')
-  dialog.querySelector('[aria-label="Amount"]').value = '10'
-  dialog.querySelector('[aria-label="Source bank"]').value = budget.id
-  dialog.querySelector('form').dispatchEvent(new window.Event('submit', { cancelable: true }))
+  assert(!document.querySelector('.constructor-dialog'))
   assert.equal(a.rowAt([target]).allocation.amount, 10)
   assert.equal(a.rowAt([target]).allocation.resource, budget.id)
   assert(view(a.state.replica, [HOME_ID, target]).tasks.some(t => t.id === nested))
@@ -311,18 +334,18 @@ async function main() {
   a.goTo(repo)
   assert.equal(a.repositoryInfo().repo, 'fosforescent/fos-mono')
   assert(document.querySelector('[aria-label="Repository actions"]'))
-  const peerTab = document.querySelector('.peer-tabs [aria-label="Add peer"]')
-  assert.equal(peerTab.draggable, true)
-  peerTab.click()
-  assert.equal(document.querySelector('.peer-tabs [aria-label="Add peer"]').getAttribute('aria-selected'), 'true')
-  assert(document.querySelector('.peer-tabs [aria-label="Add peer"] svg[data-icon="user-plus"]'))
-  const peerActions = [...document.querySelectorAll('button')]
-  assert(peerActions.some(b => b.textContent.startsWith('Direct device connection')))
-  assert(peerActions.some(b => b.textContent.startsWith('Join with an invite code')))
-  assert.equal(peerActions.find(b => b.textContent.startsWith('Create virtual peer')).disabled, !a.canSpawnVirtualPeer())
-  peerActions.find(b => b.textContent.startsWith('Direct device connection')).click()
+  assert(!document.querySelector('.peer-tabs [aria-label="Add peer"]'), 'connecting peers is under the device and server tabs')
+  assert.deepEqual([...document.querySelectorAll('.peer-tabs [role="tab"]')].slice(0, 3).map(b => b.getAttribute('aria-label')), ['Standard library', 'Fos server', 'This device'])
+  document.querySelector('.peer-tabs [aria-label="This device"]').click()
+  assert(document.querySelector('.constructor-grid [aria-label="Peer"]')?.draggable, 'the Peer constructor is on the device grid')
+  // connections are rows: the constructor makes the row, its Complete connects
+  for (const label of ['Virtual peer', 'Direct connection', 'Join with an invite code', 'Node link']) assert(document.querySelector(`.constructor-grid [aria-label="${label}"]`), label)
+  document.querySelector('.constructor-grid [aria-label="Direct connection"]').click(); await tick()
+  const direct = a.currentView().tasks.find(t => t.construction?.handler === 'direct')
+  assert(direct, 'the constructor made a @{direct} row')
+  ;[...document.querySelectorAll(`.task[data-id="${direct.id}"] .constructor-body button`)].find(b => b.textContent === 'Complete').click()
   assert.equal(a.state.modal, 'direct')
-  a.closeModal()
+  a.closeModal(); a.undo(); await tick()
   document.querySelector('.peer-tabs [aria-label="This device"]').click()
   a.addPlaceholder('connection', 'peer')
   const peerArg = a.placeholders().find(p => p.name === 'connection')

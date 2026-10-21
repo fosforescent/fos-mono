@@ -1,7 +1,7 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
-import { constructForm, formTitle } from './forms'
+import { constructForm, formText, formTitle } from './forms'
 import {
   demandOf, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
@@ -64,7 +64,9 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     active.add(cid)
     sources.add(cid)
     const identity = content(store, cid), value = valueContent(store, cid)
-    const rendered = resolveText(r, at, formTitle(store, value) || '(untitled)')
+    // a note reads as one block: its title line and its body (whose row is then not listed again)
+    const rendered = resolveText(r, at, formText(store, value) || '(untitled)')
+    const headline = value.data.presentation?.headline?.[0]
     for (const binding of rendered.bindings) { binding.problems.forEach(p => blockers.add(p)); binding.sources.forEach(cid => sources.add(cid)) }
     lines.push(`${'  '.repeat(depth)}${label}: ${rendered.text}`)
     const ref = identity.data.ref
@@ -90,6 +92,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
       if (content(store, child).data.name?.content?.startsWith('fos:')) continue
+      if (headline && content(store, child).data.name?.content === headline) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (isAllocationRow(store, edge) && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue
       emit(child, typeLabel(edge), depth + 1, external, ancestorNotes, [...at, content(store, child).data.alias!.id])
@@ -127,10 +130,10 @@ export function workAttempts(r: Replica, requestPath: Scope) {
     const snapshot = slots(r, cid, r.store.primitive.descriptionField.getId())[0]?.targetCid
     if (!snapshot) return []
     const saved = valueContent(r.store, snapshot)
-    const systemEdge = saved.children.find((edge) => valueContent(r.store, identityCid(r.store, edge)).data.presentation?.text?.mediaType === 'text/markdown' || isRowOfType(r.store, edge, NOTE_TYPE))
-    const system = systemEdge ? formTitle(r.store, valueContent(r.store, identityCid(r.store, systemEdge))) : ''
+    const systemEdge = saved.children.find((edge) => isRowOfType(r.store, edge, NOTE_TYPE))
+    const system = systemEdge ? formText(r.store, valueContent(r.store, identityCid(r.store, systemEdge))) : ''
     return [{ path, resultPath: [...path, result.id], resultCid: result.targetCid,
-      context: formTitle(r.store, saved), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
+      context: formText(r.store, saved), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
   })
 }
 
@@ -174,7 +177,7 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (current.blockers.length) throw new Error(current.blockers.join('\n'))
   if (attempt.context !== current.prompt) throw new Error('The task context changed. Run a new attempt before accepting.')
   const generating = nodeAt(r, requestPath).value.data.name?.content === 'fos:generate-subtasks'
-  const subtasks = generating ? formTitle(r.store, valueContent(r.store, proposal.contentCid)).split('\n').flatMap(line => {
+  const subtasks = generating ? formText(r.store, valueContent(r.store, proposal.contentCid)).split('\n').flatMap(line => {
     const match = line.match(/^\s*(?:[-*]\s+)?\[ \]\s+(.+)$/)
     return match ? [match[1]!.trim()] : []
   }) : []

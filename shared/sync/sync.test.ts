@@ -575,7 +575,8 @@ describe('row types', () => {
     r = addRow(r, ['c'], COMMENT_TYPE, 'reply', 6, { id: 'c2' })
     const v = userView(r)!
     expect(v.tasks.map((t) => [t.id, t.type, t.checkable])).toEqual([['p', PLAIN_TYPE, false], ['t', TASK_TYPE, true], ['n', NOTE_TYPE, false], ['c', COMMENT_TYPE, false]])
-    expect(v.tasks.find((t) => t.id === 'n')!.title).toBe('# Title\n\nbody with {{who}}')
+    expect(v.tasks.find((t) => t.id === 'n')!.title).toBe('Title')
+    expect(view(r, ['n'])!.tasks.find((t) => t.id === 'n/field/body')!.title).toBe('# Title\n\nbody with {{who}}')
     expect(v.tasks.find((t) => t.id === 'c')!.author).toMatchObject({ name: 'Ada' })
     expect(view(r, ['c'])!.tasks.map((t) => t.type)).toEqual([TEXT_TYPE, 'lib:type:person', 'lib:type:list-text', COMMENT_TYPE])
     expect(view(r, ['c'])!.tasks.slice(0, 3).map(t => t.id)).toEqual(['c/field/body', 'c/field/person', 'c/field/texts'])

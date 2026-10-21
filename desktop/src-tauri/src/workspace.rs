@@ -241,9 +241,9 @@ impl Workspace {
         let alias = link["refId"].as_str().unwrap_or("fos:library").to_string();
         let located = client::locate_shared(&session, &owner, &alias)?;
         let scope = located["path"].clone();
-        let share = located["share"].as_str().or_else(|| link["address"]["share"].as_str()).unwrap_or("").to_string();
         let title = link["title"].as_str().or_else(|| located["title"].as_str()).unwrap_or("Standard library").to_string();
-        let address = json!({ "owner": owner, "path": scope, "share": share, "title": title });
+        // a published node's address is its owner and path (who may visit is its membership)
+        let address = json!({ "owner": owner, "path": scope, "title": title });
         // breadth first, like the app's whole-tree pull; references to other nodes are not followed
         let mut queue: Vec<Vec<String>> = vec![vec![]];
         let mut nodes = Vec::new();

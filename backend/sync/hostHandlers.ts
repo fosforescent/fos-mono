@@ -5,7 +5,8 @@
  */
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, sharing, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
+import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, publication, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, TITLED_VALUE, syncPublishedUrls, titleRequestAt, truncateTitle, writeNodeValue } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './registry'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 import type { VerifyHandler } from './verify'
@@ -87,6 +88,26 @@ export function llmHandler(deps: LlmDeps): HostHandler {
   }
 }
 
+/**
+ * `title` requirements (shared/sync/title-request.ts): a short title for the text of the row the requirement is in,
+ * from the server's model. The device's own handler truncates; this one summarizes. The title is the requirement's
+ * `TITLED_VALUE`; the asker sets it as the row's title and removes the request.
+ */
+export function titleHandler(deps: LlmDeps): HostHandler {
+  return {
+    peerId: 'fos', capability: 'title',
+    async effect(ctx) {
+      const path = ctx.step.path, request = titleRequestAt(ctx.replica(), path)
+      if (!request) throw new Error('There is no text to title here.')
+      const answer = (await deps.complete(TITLE_SYSTEM, request.text.slice(0, 8000))).trim().split(/\r?\n/)[0]!.replace(/^["'\s]+|["'.\s]+$/g, '')
+      const title = truncateTitle(answer, 120) || truncateTitle(request.text)
+      let next = writeNodeValue(ctx.replica(), path, TITLED_VALUE, title, ctx.now())
+      next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'title', by: 'fos' }, ctx.now())
+      await ctx.update(next)
+    }
+  }
+}
+
 export type MarketDeps = {
   /** Index the account's rows now, so the listing is searchable by other accounts before it is recorded as supplied. */
   index(user: { id: number; username: string }, store: FosStore): Promise<void>
@@ -147,35 +168,6 @@ export function searchHandler(deps: SearchDeps): HostHandler {
 }
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-/** A `choice` requirement with a poll configured on it (`fos:poll`, sync/sharing.ts `configurePoll`). */
-export const pollConfigured = (step: EvaluationStep, r: Replica) => step.row?.requirement?.capability === 'choice' && !!readNodeValue(r, step.path, 'fos:poll')
-
-/**
- * Polls as the choice handler: a `choice` requirement with a poll configured is resolved by the tally when the node
- * runs. Rank polls take the top Borda score, approval polls the most approvals; a tie blocks until more responses
- * come in or the owner decides by hand. Approvals on pending submissions stay what they are, input the owner sees
- * when deciding them.
- */
-export function pollHandler(): HostHandler {
-  return {
-    peerId: 'fos', capability: 'poll',
-    handles: pollConfigured,
-    async effect(ctx) {
-      const r = ctx.replica(), path = ctx.step.path
-      if (!sharing(r, path)?.enabled) throw new Error('Publish this choice as a poll first (its share link is off).')
-      const node = sharedProjection(r, path, digest)
-      if (!node.poll) throw new Error('No poll is configured on this choice.')
-      if (!node.participants) throw new Error('No poll responses yet.')
-      const scores = node.options.map((option, index) => ({ index, label: option.label, score: (node.poll!.mode === 'rank' ? node.rankings : node.counts)[option.id] ?? 0 }))
-      const best = Math.max(...scores.map(s => s.score))
-      if (best <= 0) throw new Error('No poll responses yet.')
-      const winners = scores.filter(s => s.score === best)
-      if (winners.length > 1) throw new Error(`The poll is tied between ${winners.map(w => `“${w.label}”`).join(' and ')}; wait for more responses or decide by hand.`)
-      await ctx.update(addSupply(r, path.slice(0, -1), path.at(-1)!, { capability: 'choice', by: 'fos', choice: winners[0]!.index }, ctx.now()))
-    }
-  }
-}
-
 export type PointsDeps = {
   /**
    * Move fos points between accounts on the server's ledger; throws when the payer cannot cover it or the payee is
@@ -331,6 +323,8 @@ export type HostHandlerDeps = {
   sms: boolean
   /** The cron runner is enabled on this instance (FOS_ENABLE_CRON). */
   cron: boolean
+  /** Where the web app lives: the base of the URLs the `url` handler makes for published nodes. */
+  webUrl: string
   /** The server's user attestation (sync/verify.ts): fills `verify` requirements with attested user objects; payees are checked against it. */
   verify: VerifyHandler
 }
@@ -340,6 +334,15 @@ export type HostHandlerDeps = {
  * queue of its addressee when the account knows that peer there (a member), and left alone otherwise. The same
  * handler any device can run; here it runs as `fos` after every submission a node exchange brings in.
  */
+/**
+ * The fos `url` handler: a node an audience may run (or read) gets its share page's URL as a row in the server's
+ * member entry above it (`syncPublishedUrls`), after every write that reaches it; a node no longer published loses
+ * it. Visiting that URL serves the node's execute view to whoever may run it, and 404 to anyone else.
+ */
+export function publicUrlHandler(webUrl: string): HostHandler {
+  return { peerId: 'fos', capability: 'url', submission: (replica, path, now) => syncPublishedUrls(replica, path, webUrl, now) }
+}
+
 export function relayHandler(): HostHandler {
   return { peerId: 'fos', capability: 'relay', submission: (replica, path, now) => relayAfterSubmission(replica, path, 'fos', now) }
 }
@@ -349,13 +352,14 @@ export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
     // the server's own services, all effects: row search, market listing, polls, fos points, …
     searchHandler(deps.search),
     relayHandler(),
+    publicUrlHandler(deps.webUrl),
     marketHandler(deps.market),
-    pollHandler(),
     deps.verify,
     pointsHandler(deps.points, deps.verify),
     ...(deps.payments ? [paymentHandler(deps.payments, deps.verify)] : []),
     mailHandler(deps.mail),
     llmHandler(deps.llm),
+    titleHandler(deps.llm),
     ...(deps.cron ? [{ peerId: 'fos', capability: 'cron' as const }] : []),
     githubRepoHandler(deps.github),
     calendarHandler(deps.google),

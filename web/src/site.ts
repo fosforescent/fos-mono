@@ -4,10 +4,10 @@
  * its own (other than its fields) is a sub-page linked from it. Each row renders by its type, the library row type
  * its edge is made from (`row.type`): a note as markdown, a scalar field as its value or, when the visitor is asked
  * for it, an input of that field's type; anything else as text. Declared inputs render inline at the row they belong
- * to; poll options, rankings and the submit button follow the page.
+ * to; votes on proposals and the submit button follow the page.
  */
 import type { Participation, SharedAddress as ShareAddress, SharedInput, SharedNode } from '../../shared/sync/sharing'
-import { FIELD_TYPES, NOTE_TYPE, NUMBER_TYPE, TIME_TYPE } from '../../shared/sync/published-types'
+import { FIELD_TYPES, MARKDOWN_TYPE, NUMBER_TYPE, TIME_TYPE } from '../../shared/sync/published-types'
 
 export type SitePage = { id: string; path: string[]; title: string; type?: string; body?: string; truncated?: true; children: SitePage[] }
 /** What the visitor has entered so far; the caller keeps it across sub-page navigation. */
@@ -39,16 +39,18 @@ export function parseShareAddress(value: string): ShareAddress | null {
   if (!hash.startsWith('#share=') || hash.length > 24000) return null
   try {
     const at = JSON.parse(decodeURIComponent(hash.slice(7))) as ShareAddress
-    return typeof at.owner === 'string' && !!at.owner && at.owner.length <= 128 && typeof at.share === 'string' && /^[\w-]{16,128}$/.test(at.share) && Array.isArray(at.path) && at.path.length <= 32 && at.path.every(id => typeof id === 'string' && !!id && id.length <= 256) ? { owner: at.owner, path: at.path, share: at.share } : null
+    return typeof at.owner === 'string' && !!at.owner && at.owner.length <= 128 && Array.isArray(at.path) && !!at.path.length && at.path.length <= 32 && at.path.every(id => typeof id === 'string' && !!id && id.length <= 256) ? { owner: at.owner, path: at.path } : null
   } catch { return null }
 }
 /** The public, read-only projection of a published node (no visitor is recorded). */
 export function publicReadUrl(api: string, at: ShareAddress): string {
-  return `${api.replace(/\/$/, '')}/public/node/read?${new URLSearchParams({ owner: at.owner, share: at.share, path: JSON.stringify(at.path) })}`
+  return `${api.replace(/\/$/, '')}/public/node/read?${new URLSearchParams({ owner: at.owner, path: JSON.stringify(at.path) })}`
 }
 
 const isField = (page: SitePage) => !!page.type && FIELD_TYPES.includes(page.type)
-const isSubPage = (page: SitePage) => page.children.some(child => !isField(child))
+/** A note's Markdown body row reads as part of the note, like a field. */
+const isMarkdown = (page: SitePage) => page.type === MARKDOWN_TYPE
+const isSubPage = (page: SitePage) => page.children.some(child => !isField(child) && child.type !== MARKDOWN_TYPE)
 
 /** Rows arrive in depth-first order with their depth; rebuild the tree. */
 export function siteTree(node: SharedNode): SitePage {
@@ -94,7 +96,7 @@ function el<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, classN
 /** The visitor's answers, starting from what they submitted for this revision. */
 export function siteAnswers(node: SharedNode): SiteAnswers {
   const mine: Participation | null | undefined = node.mine, current = mine?.revision === node.revision
-  const rankOptions = node.poll?.mode === 'rank' ? node.options : node.proposals
+  const rankOptions = node.proposals
   const fields: SiteAnswers['fields'] = Object.create(null)
   for (const field of node.inputs) {
     const previous = mine?.fields[field.key]
@@ -136,7 +138,7 @@ function fieldControl(doc: Document, field: SharedInput, row: SitePage | null, a
 }
 
 async function body(doc: Document, page: SitePage, options: SiteOptions, heading: 'h1' | 'p'): Promise<HTMLElement | null> {
-  if (page.type === NOTE_TYPE && page.body !== undefined) {
+  if (isMarkdown(page) && page.body !== undefined) {
     const html = el(doc, 'div', 'fos-site-markdown'); html.innerHTML = await options.markdown(page.body)
     if (page.truncated) html.append(el(doc, 'p', 'fos-site-note', 'This text is longer than a published page shows.'))
     return html
@@ -209,14 +211,13 @@ function answerControls(doc: Document, node: SharedNode, answers: SiteAnswers, i
     const start = button('Start', 'button'); start.onclick = () => { start.disabled = true; void interact.start!().finally(() => { start.disabled = false }) }
     return [start]
   }
-  const choices = [...(node.poll?.mode === 'approval' ? node.options : []), ...node.proposals]
-  const rankOptions = node.poll?.mode === 'rank' ? node.options : node.proposals
+  const choices = node.proposals, rankOptions = node.proposals
   const ranks = rankOptions.length && node.capabilities?.includes('rank')
   if (!node.execution && !node.inputs.length && !choices.length && !ranks) return parts
   const label = (text: string, input: HTMLElement) => { const l = el(doc, 'label', '', text); l.append(input); return l }
-  const name = el(doc, 'input'); name.maxLength = 80; name.setAttribute('autocomplete', 'nickname'); name.value = answers.name; name.required = !interact.signedIn && !!node.poll
+  const name = el(doc, 'input'); name.maxLength = 80; name.setAttribute('autocomplete', 'nickname'); name.value = answers.name; name.required = false
   name.oninput = () => { answers.name = name.value }
-  if (!interact.signedIn) parts.push(label(node.poll ? 'Your display name (visible to the host) ' : 'Display name (optional) ', name))
+  if (!interact.signedIn) parts.push(label('Display name (optional) ', name))
   for (const option of choices) {
     const check = el(doc, 'input'); check.type = 'checkbox'; check.checked = answers.approvals.has(option.id); check.disabled = !!node.capabilities && !node.capabilities.includes('edit')
     check.onchange = () => { if (check.checked) answers.approvals.add(option.id); else answers.approvals.delete(option.id) }

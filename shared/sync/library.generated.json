@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
-  "rootNodeId": "v0.0.1-ce15220f6462f5ad4d857859dbe2aa9f0f274d8b66990f4c6a8abc605e1fe8ea",
+  "rootNodeId": "v0.0.1-5bcc588a9a1319cecf1ed217ed24078a9511b65fe42d537438f9c71f2e17dc88",
   "nodes": {
     "v0.0.1-002007cd31ad23201225eca0596e1df02c14500b9437a896384e13f4474ebb36": {
       "children": [],
@@ -66,14 +66,6 @@
       }
     },
     "v0.0.1-02c4bba15be6e3e9664e7cc1f005ac3686e3ae41995a950065b227eb0249f107": {
-      "data": {
-        "alias": {
-          "id": "lib:type:allocation:money"
-        },
-        "description": {
-          "content": "Money"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -91,7 +83,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-976d9efb488d49fb3cddbde16a03c140618632f0c2a1253ed54bc12b76d5ba88"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation:money"
+        },
+        "description": {
+          "content": "Money"
+        }
+      }
     },
     "v0.0.1-0303269250fdb9a7a18e36e1aa050c3ae2cd1f3994f0792e00cff87582ac61e9": {
       "children": [],
@@ -135,45 +135,6 @@
         }
       }
     },
-    "v0.0.1-06989a196ed387209ea6119d6456a54b433960ce5c73f2778b741c53136fc9e9": {
-      "data": {
-        "alias": {
-          "id": "lib:contact"
-        },
-        "description": {
-          "content": "Contact form"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-65bbebf3bce645a10e7559c6a0658b39302bc388513afcee706dee3367a26fa7"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-a1d539ea3c1634834ec065662b682cb5fb22b798c58837a010c72fc704e05537"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-a1e20115002f9c13078d5e9769e7d65f0b5b51c06cbb354946d9f3239202bef6"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-3f90199ddf5b74ed3c0e81b5129fe2eee44a7785076d33125d1186b53e96182b"
-        ],
-        [
-          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
-          "v0.0.1-abaee62994a768c26e8c5e4df9cea1688d0b854f8f2439948e636f1b1fe54a45"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-81cf3e3b16ff90e6b8c7580ea2836e916540063ca102eae4080f63a438df2a9f"
-        ]
-      ]
-    },
     "v0.0.1-06d52951ff2f95a515556a2d8c817eeae3181fb45f890fd01ddd4160c40887e4": {
       "children": [],
       "data": {
@@ -202,6 +163,29 @@
         }
       }
     },
+    "v0.0.1-09b038d816b3360da05285452e0f3744af8bd4eed70f0d4fe35a33a7daf2aa4c": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-d821de81795b817c094cf6fe10594b55a519fa38720c8b5c71634a52e3f57f05"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:icon:lib:research"
+        },
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
+        }
+      }
+    },
     "v0.0.1-0a238bc79f0bb7a7bd97d0cca30900b1c3a6bed3297ea9543bc34b5cd644a60f": {
       "children": [],
       "data": {
@@ -223,17 +207,21 @@
         }
       }
     },
-    "v0.0.1-0a9edd2fe1efa0cafdd803507295c97933f77b03238ab93d2f49229cedd7239f": {
+    "v0.0.1-0db024855a6acc139f0c28e1bd7b3232624ca2be8b3af0b2dc494d046def61a5": {
       "children": [],
       "data": {
         "alias": {
-          "id": "lib:trip:accepts:any"
+          "id": "lib:type:markdown"
         },
         "description": {
-          "content": "Any row"
+          "content": "Markdown"
         },
-        "pattern": {
-          "any": true
+        "form": {
+          "primitive": "text",
+          "text": {
+            "interpolate": true,
+            "mediaType": "text/markdown"
+          }
         }
       }
     },
@@ -289,27 +277,19 @@
       }
     },
     "v0.0.1-0f743e3ce90627fc4a1fa1e2d791f0642a25a8222706191ee62cad089c297c14": {
-      "data": {
-        "alias": {
-          "id": "lib:type:task"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-b11064dcbf44687e2c7d6e49dc9bbac71fc34a71669799af036b87e45d2b65c8"
         ]
-      ]
-    },
-    "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf": {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:plain"
-        },
-        "description": {
-          "content": "Row"
+          "id": "lib:type:task"
         }
-      },
+      }
+    },
+    "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf": {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -327,17 +307,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-9c071f4dd9c127ac9f528c830db8b2e9969399215cf35f27c4039700608fe661"
         ]
-      ]
-    },
-    "v0.0.1-10b3e7acc31e35a42882ef9d2847c61bfaf0925a353559f2ef54adddb8079a65": {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:device-root"
+          "id": "lib:type:plain"
         },
         "description": {
-          "content": "Device root"
+          "content": "Row"
         }
-      },
+      }
+    },
+    "v0.0.1-10b3e7acc31e35a42882ef9d2847c61bfaf0925a353559f2ef54adddb8079a65": {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -351,26 +331,13 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-d4eda83de7a582747e9c04cd556a691ec3d950af65bca133c10623ddc9436009"
         ]
-      ]
-    },
-    "v0.0.1-10cf4496b69dc4a1c44822bfd1a7b40568af1095688341e24b41589d0b3ea5b4": {
-      "children": [],
+      ],
       "data": {
         "alias": {
-          "id": "lib:trip:where"
-        },
-        "allocation": {
-          "amount": -1,
-          "capability": "confirmation",
-          "resource": "",
-          "type": "inventory",
-          "unit": "unit"
+          "id": "lib:type:device-root"
         },
         "description": {
-          "content": "Destination agreed"
-        },
-        "updated": {
-          "time": 1792453618404
+          "content": "Device root"
         }
       }
     },
@@ -445,57 +412,7 @@
         }
       }
     },
-    "v0.0.1-15a7dce1a52719f6121cd9e1e7470d3cf984f667c0a3a81644108c62b72465f7": {
-      "data": {
-        "alias": {
-          "id": "lib:type:note"
-        },
-        "description": {
-          "content": "Note"
-        },
-        "form": {
-          "open": true,
-          "text": {
-            "interpolate": true,
-            "mediaType": "text/markdown"
-          },
-          "title": [
-            "body"
-          ]
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-d1d34e21876ae037b589d7e7b4c3f240d757c82f314bc455d6168b615af55b4c"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-9de94784e84bb0846259b389cc9a68d78ba446df9a6afe2b2076c24200cc8e02"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-ed19fee45e9ae7b197c878b8a37dcfb54b1df832cc30e4d74f2545e8b3bb8f7c"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-9067eff533973d5db56d4ba6a1addf02807982560b6af47d4303caa8883231aa"
-        ],
-        [
-          "v0.0.1-9a6c58b45aebed4f784b80afa8ca7498b0e3c8537264cf46cd65fdd690eecc6a",
-          "v0.0.1-fe00acc51210e413b48464ecc6b1ea06e6a6ab91b49a44d1273e81a661e5b76d"
-        ]
-      ]
-    },
     "v0.0.1-15e43573497c990c66d5ceec7b3e3e10b758dc8a550957e2bba47a258aab31f3": {
-      "data": {
-        "alias": {
-          "id": "lib:type:resource"
-        },
-        "description": {
-          "content": "Resource"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -513,7 +430,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-dc87d9c4963e31e5dc24c7ab6cb7927fa4bebc76b8eaff652805f554d5c7367e"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource"
+        },
+        "description": {
+          "content": "Resource"
+        }
+      }
     },
     "v0.0.1-166b87551d2488e06e52f175b9fb74ea189a2d30ebab2247b2be78a7377e234a": {
       "children": [],
@@ -543,17 +468,146 @@
         }
       }
     },
-    "v0.0.1-1b39b7f3c63e6698edfd4f7db43fa32fb794e88ef5237ae5822cf21561e93265": {
-      "children": [],
+    "v0.0.1-18c638c4687f6e580bf65472df9a6769453ddacb9f92726bc64d405512e2d644": {
+      "children": [
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-0f743e3ce90627fc4a1fa1e2d791f0642a25a8222706191ee62cad089c297c14"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-281e31a8885b33f0e5467076099333174b1961772b383f6de670fbdd94d1fc5e"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-5d80f67c2cfeaa34bff824834b28f1b343c1b0409a567a1c60f6dc07e51dc342"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-78cdc10e6e75032a736bce34cd8be1c6ae813176521367af3f03115b6bd99968"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-dce54486d5ddaafb0b95172b00e7ceba2e33ada80e0ee81368db41da43bc2526"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-a894b115288f92940e08d74f0888468f786cded2be8bd81fd21cc8f57f29ccc7"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-e6db583217ec829962c4177ae7f5befad3f1655895a80f7c809317d112d1c9bf"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-d03bfa8b76d365be1a422ea0049b242c3756e29ae13a3c73fa380c67611a17fb"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-d3309bd90ebc51dc9999161bd0a431a4c675f1ba99d5e5de315d380db0e7d76b"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-f057dd11abe2242cdc1cf0b6f21519145726728d6600ed450ed3e3b6c2c0d587"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-bc4114e247e99d32f4fff213a891fa9079df799b2661766684705c4a809821b6"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-cba4dc5a2960cf5889575f9c650ba2f6cdc3281bf5655a591dd1708160168876"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-b9273856bd1327b129b1be2c64bd8f41ba65446184d83505132195b50efae07c"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-885904d8ffe91f6f54018fae294f0baf92f47cd878e8b9a755ce354a784ef3ce"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-9aaf1bc581f4f7f067bd2cf6d5044eefad7d94bdb371eb2bb122d09dbf09b0ab"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-25ebd8a54d688f8465d83fecd94a26b9c56e4e4972007eb4702fe0140bfda425"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-c1c34694333f282685e55a7a9d56a6e0f0d9b83a9b8192bd4ff47db4b251380e"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-43a288fa66329c5af77e0a19cb4f1d3e87f74616b2fb112e4035b75a26acf2f1"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-5d3e4d0d078ada96f641176c4543e1e68a69c18b45350604752c33e486cf1ca4"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-5077d8e9af2c54bde44a98d4cff2601b53b59fb64a970118c7933bf79022ffd1"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-e569a81dd0f105bbf7a3e2a5756d3e43b3a2a60282ccaf0453e7796a904a987f"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-b493b0b7aeb954a3dd83eaf98ef37bc1c6c1cbf5a63d40a11595f26746ae79ea"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-9902fbd0c6800f460d0a5008170cb31a5d94b5b3d2a294205e7fe3629be5364e"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-4425e5f063b3d0299e0e271128afdc41b835160b0893cd1599776bf24e3f7bab"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-edb875362b0c4ed0aa5b5ce9f97afc1636637511d377dc621488dc261c46ba72"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-2619ad5bde02c8947f5a72b01e7272acc0268bedca24cf1a512ba344e567398e"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-893dbb8979982622c661815a12297142cb710a1dfeeb3a0982b0426565c7de10"
+        ]
+      ],
       "data": {
         "alias": {
-          "id": "lib:trip:accepts:lib:type:device-root"
+          "id": "lib:types"
         },
         "description": {
-          "content": "lib:type:device-root"
+          "content": "Row types"
+        }
+      }
+    },
+    "v0.0.1-191d354cc3a873cbd46f044a31437926ad9123cf02ce61020359fcf19296ab40": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-df8ca7539fbefd2622db5f5a9083294fd2cbffd59d60060129706f58d9040da5"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:icon:lib:contact"
         },
-        "pattern": {
-          "type": "lib:type:device-root"
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
         }
       }
     },
@@ -662,33 +716,18 @@
         }
       }
     },
-    "v0.0.1-25052dfdb6208ef9fc6307a5a90167afdfc6afa1f62ed9f71e5c72446491ada0": {
-      "data": {
-        "alias": {
-          "id": "lib:readme"
-        },
-        "created": {
-          "time": 1792453618404
-        },
-        "updated": {
-          "time": 1792453618404
-        },
-        "presentation": {
-          "title": [
-            "body"
-          ],
-          "text": {
-            "interpolate": true,
-            "mediaType": "text/markdown"
-          }
-        }
-      },
+    "v0.0.1-25ebd8a54d688f8465d83fecd94a26b9c56e4e4972007eb4702fe0140bfda425": {
       "children": [
         [
-          "v0.0.1-9a6c58b45aebed4f784b80afa8ca7498b0e3c8537264cf46cd65fdd690eecc6a",
-          "v0.0.1-a0032d5a19b596305dc8031f63bc7b9822511c17564ba5cc97df09fd98c2ec56"
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-0db024855a6acc139f0c28e1bd7b3232624ca2be8b3af0b2dc494d046def61a5"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:markdown"
+        }
+      }
     },
     "v0.0.1-2619ad5bde02c8947f5a72b01e7272acc0268bedca24cf1a512ba344e567398e": {
       "children": [
@@ -760,17 +799,17 @@
       }
     },
     "v0.0.1-281e31a8885b33f0e5467076099333174b1961772b383f6de670fbdd94d1fc5e": {
-      "data": {
-        "alias": {
-          "id": "lib:type:plain"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:plain"
+        }
+      }
     },
     "v0.0.1-2bb83e1c5b76673e34d89ac1c410cc6a8cb6c8f7d50e11aa9eaa6728d7b72ea6": {
       "children": [],
@@ -787,14 +826,6 @@
       }
     },
     "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453": {
-      "data": {
-        "alias": {
-          "id": "lib:type:template"
-        },
-        "description": {
-          "content": "Template"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -812,7 +843,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-d0283b4a06d576f8ec74b4dc2ff44aba349ad4289ff53e27e5d4c57985b987f5"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:template"
+        },
+        "description": {
+          "content": "Template"
+        }
+      }
     },
     "v0.0.1-2cbac4e0f7439f507429a0008ae14bd850af74b14fd9d25140cc5c3378abe177": {
       "children": [],
@@ -851,62 +890,7 @@
         }
       }
     },
-    "v0.0.1-2cff1443ea631e6017e99b9fb2757ac325d24dce78284d5ff3d044885bb2ff06": {
-      "data": {
-        "alias": {
-          "id": "lib:invoice"
-        },
-        "description": {
-          "content": "Invoice"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-23b9f82f6f6aba42c77c9f074e007b56a50868b3194e177bb8edcde5e3dcc5c8"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-599e92f862adf5adbf77d68ae9b67385da8b1056ca88da26e411bb5e2f5efc08"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-81e2ff466068b340ef509d2dfc934c34b6cd2da1e7ab7a2c7739cfe5e5713c22"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-2bb83e1c5b76673e34d89ac1c410cc6a8cb6c8f7d50e11aa9eaa6728d7b72ea6"
-        ],
-        [
-          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
-          "v0.0.1-1d670bc91035dad0123617d417682f705c0849f6acaba9967498e80d90783613"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-33d7d3d2d47134086c5b066a4319546232ad441767792abdf276686eb52691c6"
-        ],
-        [
-          "v0.0.1-02c4bba15be6e3e9664e7cc1f005ac3686e3ae41995a950065b227eb0249f107",
-          "v0.0.1-8869208e8e075f152bc6530a216968543c8b71171ee3e568ca26b1bf69b7b82d"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-fd6870894b2a12253f4142031bb79687152799e92001e2a3a38a7ac064241863"
-        ]
-      ]
-    },
     "v0.0.1-2d7d1bb73739794e9f2dba143cfa5bc023372a51597f9c0e8d513f1c25e17fc5": {
-      "data": {
-        "alias": {
-          "id": "lib:type:home"
-        },
-        "description": {
-          "content": "Home"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -924,7 +908,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-aa046f75c9ddd2aff0f225a7d0958b50f0ea4f6a85deed8da9586df86960496a"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:home"
+        },
+        "description": {
+          "content": "Home"
+        }
+      }
     },
     "v0.0.1-2df22398fcdb01de984461f149e45bf9527cdde39123a006893bb1797fb6d179": {
       "children": [],
@@ -954,27 +946,6 @@
         }
       }
     },
-    "v0.0.1-2f0c8638ad160cb4a5fc9214698715cfeb91bf4bcf5aa6e3598bf67d90595cd6": {
-      "children": [],
-      "data": {
-        "alias": {
-          "id": "lib:trip:transport"
-        },
-        "allocation": {
-          "amount": -1,
-          "capability": "task",
-          "resource": "",
-          "type": "inventory",
-          "unit": "unit"
-        },
-        "description": {
-          "content": "Book transport"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      }
-    },
     "v0.0.1-2f8edda5b90ee084bbe7002d759ee0185a09853877e34316db3fd0556c4a78fd": {
       "children": [],
       "data": {
@@ -986,6 +957,45 @@
         },
         "pattern": {
           "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v0.0.1-30250b284f264c4add832551ca25dbb73d96d545c85ef7e9a38731f37ba27ca6": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-6dd60b80e2901502e94d3c3043e3fb802e5ddada290ed262fc904ab1f6885897"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-07af6c4fce0b88d1bd5b7847a6510915a76bf0d591263388f27c374709985eaa"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-bd9e0fa9e448ba45449d9a28fec71d87151992a5665053e2ca5238aa08d21df8"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-002007cd31ad23201225eca0596e1df02c14500b9437a896384e13f4474ebb36"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-74b01a3fc21b840ae0c3aa83288996837703ad96a9ead7a51111fe2f954506d2"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-48cb6f26cb259e7a7c3af721defa3242dd5b49890c4a92bff1e9eb903115b61e"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:project-coding-request"
+        },
+        "description": {
+          "content": "Request project coding agent"
+        },
+        "updated": {
+          "time": 0
         }
       }
     },
@@ -1040,122 +1050,6 @@
         }
       }
     },
-    "v0.0.1-321f7048a710e3bd9563946aa4aecabd1d418639eef0a60d8db64a005f82e7e2": {
-      "children": [
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-0f743e3ce90627fc4a1fa1e2d791f0642a25a8222706191ee62cad089c297c14"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-281e31a8885b33f0e5467076099333174b1961772b383f6de670fbdd94d1fc5e"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-885924620157f2bb148840ab018938596f91a74d19710c5cc2012d7da48df276"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-78cdc10e6e75032a736bce34cd8be1c6ae813176521367af3f03115b6bd99968"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-dce54486d5ddaafb0b95172b00e7ceba2e33ada80e0ee81368db41da43bc2526"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-a894b115288f92940e08d74f0888468f786cded2be8bd81fd21cc8f57f29ccc7"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-e6db583217ec829962c4177ae7f5befad3f1655895a80f7c809317d112d1c9bf"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-d03bfa8b76d365be1a422ea0049b242c3756e29ae13a3c73fa380c67611a17fb"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-d3309bd90ebc51dc9999161bd0a431a4c675f1ba99d5e5de315d380db0e7d76b"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-f057dd11abe2242cdc1cf0b6f21519145726728d6600ed450ed3e3b6c2c0d587"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-bc4114e247e99d32f4fff213a891fa9079df799b2661766684705c4a809821b6"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-cba4dc5a2960cf5889575f9c650ba2f6cdc3281bf5655a591dd1708160168876"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-b9273856bd1327b129b1be2c64bd8f41ba65446184d83505132195b50efae07c"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-885904d8ffe91f6f54018fae294f0baf92f47cd878e8b9a755ce354a784ef3ce"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-9aaf1bc581f4f7f067bd2cf6d5044eefad7d94bdb371eb2bb122d09dbf09b0ab"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-c1c34694333f282685e55a7a9d56a6e0f0d9b83a9b8192bd4ff47db4b251380e"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-43a288fa66329c5af77e0a19cb4f1d3e87f74616b2fb112e4035b75a26acf2f1"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-5d3e4d0d078ada96f641176c4543e1e68a69c18b45350604752c33e486cf1ca4"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-5077d8e9af2c54bde44a98d4cff2601b53b59fb64a970118c7933bf79022ffd1"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-e569a81dd0f105bbf7a3e2a5756d3e43b3a2a60282ccaf0453e7796a904a987f"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-b493b0b7aeb954a3dd83eaf98ef37bc1c6c1cbf5a63d40a11595f26746ae79ea"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-9902fbd0c6800f460d0a5008170cb31a5d94b5b3d2a294205e7fe3629be5364e"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-4425e5f063b3d0299e0e271128afdc41b835160b0893cd1599776bf24e3f7bab"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-edb875362b0c4ed0aa5b5ce9f97afc1636637511d377dc621488dc261c46ba72"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-2619ad5bde02c8947f5a72b01e7272acc0268bedca24cf1a512ba344e567398e"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-893dbb8979982622c661815a12297142cb710a1dfeeb3a0982b0426565c7de10"
-        ]
-      ],
-      "data": {
-        "alias": {
-          "id": "lib:types"
-        },
-        "description": {
-          "content": "Row types"
-        }
-      }
-    },
     "v0.0.1-325bf1afc7175ae4147f56fdaecccbc21ccc495d1c41a24c776743e3fb69e150": {
       "children": [],
       "data": {
@@ -1206,6 +1100,7 @@
       }
     },
     "v0.0.1-366806c4d016f59166b9693024d59aa488049f3b92e7bc4811231c883c1ec5a4": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:file-reference:accepts:lib:type:home"
@@ -1216,8 +1111,7 @@
         "pattern": {
           "type": "lib:type:home"
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-38b71b2af77d0a9f82497296a106130bd8c4bf14036a65bd7a9b81242cde9af9": {
       "children": [
@@ -1253,6 +1147,29 @@
         },
         "pattern": {
           "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v0.0.1-39d23cd45718411b271746227a937b8d6d2cc932d9270298d5dca3c8a4cfe2d1": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-eebd39e8372119971ee888e665a0df52cc60acb8548b5590cf280a3c4e8d95a5"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:icon:lib:meet"
+        },
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
         }
       }
     },
@@ -1312,6 +1229,14 @@
         }
       }
     },
+    "v0.0.1-3bdd5c0591e9940d5269db7a3b55c0521eb32a698a8a33dfa5a8101a482a01d9": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"code\""
+        }
+      }
+    },
     "v0.0.1-3de21f09a71f05d2cea3bee6220d53ac153faa00d5fff47f3a0cf6c5bb01515b": {
       "children": [],
       "data": {
@@ -1327,14 +1252,6 @@
       }
     },
     "v0.0.1-3ecfb0d97c5f9538fc9060ae7868ee0d7167e4e399054f99e3b6b447acc8f87d": {
-      "data": {
-        "alias": {
-          "id": "lib:type:query"
-        },
-        "description": {
-          "content": "Query"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -1352,7 +1269,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-406dd734d44d523642cb40e727b36d3d198ee9b0e7a2e2eb9ff339b07dc3c444"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:query"
+        },
+        "description": {
+          "content": "Query"
+        }
+      }
     },
     "v0.0.1-3f90199ddf5b74ed3c0e81b5129fe2eee44a7785076d33125d1186b53e96182b": {
       "children": [],
@@ -1465,6 +1390,7 @@
       }
     },
     "v0.0.1-47c4c1aba919bcfe6b5b6dd816d6d27eacc63e649a675a56e90b045be81e024f": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:allocation:money:accepts:lib:type:device-root"
@@ -1475,14 +1401,28 @@
         "pattern": {
           "type": "lib:type:device-root"
         }
-      },
-      "children": []
+      }
     },
-    "v0.0.1-485a96a1039c36405018fdd61ea9fee772e090b02483fd30374498efa08adf36": {
-      "children": [],
+    "v0.0.1-48cb6f26cb259e7a7c3af721defa3242dd5b49890c4a92bff1e9eb903115b61e": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-3bdd5c0591e9940d5269db7a3b55c0521eb32a698a8a33dfa5a8101a482a01d9"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
       "data": {
-        "description": {
-          "content": "{\"version\":\"0.0.1\",\"seeded\":[\"lib:type:task\",\"lib:type:plain\",\"lib:type:note\",\"lib:type:note:body\",\"lib:type:comment\",\"lib:parameter:body:text\",\"lib:parameter:person:author\",\"lib:parameter:texts:texts\",\"lib:type:ref\",\"lib:type:query\",\"lib:type:resource\",\"lib:type:allocation\",\"lib:type:allocation:money\",\"lib:type:template\",\"lib:type:pattern\",\"lib:type:home\",\"lib:type:device-root\",\"lib:type:document-root\",\"lib:type:text\",\"lib:type:peer\",\"lib:type:number\",\"lib:type:time\",\"lib:type:person\",\"lib:parameter:id:id\",\"lib:parameter:name:name\",\"lib:type:list-text\",\"lib:parameter:item:item\",\"lib:type:relay-message\",\"lib:type:relay-queue\",\"lib:type:relay-ack\",\"lib:type:file-reference\",\"lib:parameter:path:text\",\"lib:parameter:sha256:text\",\"lib:parameter:size:number\",\"lib:type:attestation\",\"lib:parameter:attestation:by\",\"lib:parameter:attestation:method\",\"lib:parameter:attestation:issuedAt\",\"lib:parameter:attestation:attestation\",\"lib:type:user\",\"lib:parameter:user:account\",\"lib:parameter:user:username\",\"lib:parameter:user:name\",\"lib:parameter:user:publicKey\",\"lib:parameter:user:verification\",\"lib:readme\",\"lib:readme/field/body\",\"lib:trip\",\"lib:trip:where\",\"lib:trip:when\",\"lib:trip:budget\",\"lib:trip:transport\",\"lib:trip:lodging\",\"lib:invoice\",\"lib:invoice:contact\",\"lib:invoice:entries\",\"lib:invoice:amount\",\"lib:invoice:send\",\"lib:poll\",\"lib:poll:choice\",\"lib:paid-task\",\"lib:paid-task:delivered\",\"lib:paid-task:reward\",\"lib:contact\",\"lib:contact:message\",\"lib:contact:received\",\"lib:research\",\"lib:research:question\",\"lib:research:sources\",\"lib:research:summary\",\"lib:meet\",\"lib:meet:where\",\"lib:meet:when\",\"lib:relay\",\"lib:manual\",\"lib:manual:payment\",\"lib:manual:points\",\"lib:manual:time\",\"lib:manual:things\",\"lib:manual:location\",\"lib:device:location\",\"lib:manual:mail\",\"lib:manual:repo\",\"lib:manual:llm\",\"lib:manual:search\",\"lib:manual:tool\",\"lib:manual:market\"],\"source\":\"bundle\"}"
+        "alias": {
+          "id": "fos:icon:lib:project-coding-request"
+        },
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
         }
       }
     },
@@ -1515,6 +1455,7 @@
       }
     },
     "v0.0.1-4be86acd3e247397901c15d1ec9621bfd9375c62f173cda8b37b872848a953e7": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:parameter:sha256:text"
@@ -1525,10 +1466,10 @@
         "parameter": {
           "name": "sha256"
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-4cb70ad19857a1a82ac3388ce5a01123302271a157fbc4797170118570b5bbaa": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:file-reference:accepts:any"
@@ -1539,10 +1480,10 @@
         "pattern": {
           "any": true
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-4d3660d4be2debf053fa8f1f94f122e248f3badcacaa6ea48807405de9ce06b0": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:file-reference:accepts:lib:type:device-root"
@@ -1553,8 +1494,7 @@
         "pattern": {
           "type": "lib:type:device-root"
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-4f96cf64bbe0e471590bc6ad0c5240ba468f38b53a20b8e8f6cfbf2e2afab54c": {
       "children": [],
@@ -1612,6 +1552,7 @@
       }
     },
     "v0.0.1-57327c7875d169dd7ecb949a0cf28275d272fcadd25173a56a234c7551fe199f": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:file-reference:accepts:lib:type:document-root"
@@ -1622,8 +1563,7 @@
         "pattern": {
           "type": "lib:type:document-root"
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-585a2b9be63c5d36b9be9174c72cd74b1c0c98bf109269be2805f4b98a80de54": {
       "children": [],
@@ -1700,6 +1640,93 @@
         }
       }
     },
+    "v0.0.1-5a277290b98c3bfcfefb7c4eeef725dc83bce86c55e0a3b48ef895266635daa4": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-9ee15c0e98c202371034784fb10bfe597eedde3f545a7b2f169fdcf2ba3f3bd4"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:icon:lib:paid-task"
+        },
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
+        }
+      }
+    },
+    "v0.0.1-5bcc588a9a1319cecf1ed217ed24078a9511b65fe42d537438f9c71f2e17dc88": {
+      "children": [
+        [
+          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
+          "v0.0.1-18c638c4687f6e580bf65472df9a6769453ddacb9f92726bc64d405512e2d644"
+        ],
+        [
+          "v0.0.1-62d5a6f0f025d870dc901bed6bb773d37cf8f54a2f1019fc2ba850aeefae199e",
+          "v0.0.1-ab9e9fc5756e41634d49e5aea8e465e6fe75a99f98d270fd5e235bb204b247e6"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-e8c942c799fd50fe6820f7479fda6c8bec0dfdaeedbd90c8c1cb642d818dbb44"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-a273c142cb47d9d9b6dfd5ef3282debaf4476dd601e53835a7caf47e805e6219"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-c9b05b06d1916c549fb85326483ab6ea85bd356df1d15729784e49833ecc1bd2"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-c45346dde600ae4e00a67c0f00821b4a1b1102101c84acd188ad1908e82c3c47"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-5f26cac7432c6fd4db5f956aa98d38d8162831bed35a050450bc819d52d10a85"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-c440cd99820731e7a0972f0cc8fbcc0779927dbd296ceac1ea46d5d1e7959d8e"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-f42ff54cf3df33f6c805358cee71e79df30c22249335d516af323cabd77d7563"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-b9eca29b34c7fa6c95016be9467d5542ab5e084d715e92a5c448bc96f5d4583b"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-b20e83e16663111f5f372e7f224118fc9c98e9ec02bdbfb216fe9669c3206c54"
+        ],
+        [
+          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+          "v0.0.1-30250b284f264c4add832551ca25dbb73d96d545c85ef7e9a38731f37ba27ca6"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-843abc7771863137d6cdf011188966359c928809f3b08e676f511d1480ed6008"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:library"
+        },
+        "description": {
+          "content": "Standard library"
+        }
+      }
+    },
     "v0.0.1-5d3e4d0d078ada96f641176c4543e1e68a69c18b45350604752c33e486cf1ca4": {
       "children": [
         [
@@ -1710,6 +1737,19 @@
       "data": {
         "alias": {
           "id": "lib:type:time"
+        }
+      }
+    },
+    "v0.0.1-5d80f67c2cfeaa34bff824834b28f1b343c1b0409a567a1c60f6dc07e51dc342": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-62d5a6f0f025d870dc901bed6bb773d37cf8f54a2f1019fc2ba850aeefae199e"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:note"
         }
       }
     },
@@ -1727,6 +1767,53 @@
             "text"
           ],
           "name": "body"
+        }
+      }
+    },
+    "v0.0.1-5f26cac7432c6fd4db5f956aa98d38d8162831bed35a050450bc819d52d10a85": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-fc2cac6ea5a0dfc34b16ea8f2d6fd3a7541b22aa55ef06a39a3dd0a81c52bbd3"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-bc66919d32daee5bc8565478bb766219cbac7214bf9ccc0bc1178e71011531c9"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-ddc7350c8ff0afdb8df72c80f4f00c0254db08d322a04481d6f890c1d4d9420d"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-9f68698ee9d72eea248a9bd7b589d991cfc3d8a1f51fe5da9f4f616738ca5b87"
+        ],
+        [
+          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
+          "v0.0.1-3497178a65650cab2874da5266259c306d2b940e247350e43c45f663f144f00e"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-acf58dd59b326f59af838c9487200983cb88e18716b00fed68436e94ef382156"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-d5cd8e51fb5b848256694d62cf50490759b2f5ceedafc1ba39ad4103428c76c7"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-09b038d816b3360da05285452e0f3744af8bd4eed70f0d4fe35a33a7daf2aa4c"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:research"
+        },
+        "description": {
+          "content": "Research note"
+        },
+        "updated": {
+          "time": 1792453618404
         }
       }
     },
@@ -1771,6 +1858,67 @@
         },
         "updated": {
           "time": 1792453618404
+        }
+      }
+    },
+    "v0.0.1-628867b7193bd38b539e3d2287faf2364d42b933f65b038323a5c94b609651b0": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-7d8b71c137d1b5b19a305eac1c38f338da19e00ae72de9b93c6580bbe1b5d22d"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:icon:lib:invoice"
+        },
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
+        }
+      }
+    },
+    "v0.0.1-62d5a6f0f025d870dc901bed6bb773d37cf8f54a2f1019fc2ba850aeefae199e": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-d1d34e21876ae037b589d7e7b4c3f240d757c82f314bc455d6168b615af55b4c"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-9de94784e84bb0846259b389cc9a68d78ba446df9a6afe2b2076c24200cc8e02"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-ed19fee45e9ae7b197c878b8a37dcfb54b1df832cc30e4d74f2545e8b3bb8f7c"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-9067eff533973d5db56d4ba6a1addf02807982560b6af47d4303caa8883231aa"
+        ],
+        [
+          "v0.0.1-0db024855a6acc139f0c28e1bd7b3232624ca2be8b3af0b2dc494d046def61a5",
+          "v0.0.1-fe00acc51210e413b48464ecc6b1ea06e6a6ab91b49a44d1273e81a661e5b76d"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:note"
+        },
+        "description": {
+          "content": "Note"
+        },
+        "form": {
+          "headline": [
+            "body"
+          ],
+          "open": true
         }
       }
     },
@@ -1885,6 +2033,14 @@
         },
         "pattern": {
           "type": "lib:type:home"
+        }
+      }
+    },
+    "v0.0.1-683c4f2be40100875f211a31c01ef97a939263e322ca89f556f5abc1a400fc0e": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"poll\""
         }
       }
     },
@@ -2051,30 +2207,6 @@
       }
     },
     "v0.0.1-752265890f30a52ac79df1bcd1743d6af56620e2edb2ec598668ab4abcf9ca98": {
-      "data": {
-        "alias": {
-          "id": "lib:type:comment"
-        },
-        "description": {
-          "content": "Comment"
-        },
-        "form": {
-          "attribution": {
-            "id": [
-              "person",
-              "id"
-            ],
-            "name": [
-              "person",
-              "name"
-            ]
-          },
-          "open": true,
-          "title": [
-            "body"
-          ]
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -2104,7 +2236,31 @@
           "v0.0.1-9811aedee9ca866f47794908ad0d50c872be27545167ddeaea5d643ef4594a8b",
           "v0.0.1-692f425a657a913e1191018f12e116308edb00df94de124b92eaa2bf4db7f67f"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:comment"
+        },
+        "description": {
+          "content": "Comment"
+        },
+        "form": {
+          "attribution": {
+            "id": [
+              "person",
+              "id"
+            ],
+            "name": [
+              "person",
+              "name"
+            ]
+          },
+          "open": true,
+          "title": [
+            "body"
+          ]
+        }
+      }
     },
     "v0.0.1-7544a088e15187572df033ded8bd570d116783e6b35d254f6715e3f9d7e85a79": {
       "children": [],
@@ -2128,11 +2284,6 @@
       }
     },
     "v0.0.1-772b31b827d7ff52705d53e2fb15629b83e20a33e42bf6cc98d9fac096ee182d": {
-      "data": {
-        "description": {
-          "content": "Note"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -2150,7 +2301,12 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-9067eff533973d5db56d4ba6a1addf02807982560b6af47d4303caa8883231aa"
         ]
-      ]
+      ],
+      "data": {
+        "description": {
+          "content": "Note"
+        }
+      }
     },
     "v0.0.1-78cdc10e6e75032a736bce34cd8be1c6ae813176521367af3f03115b6bd99968": {
       "children": [
@@ -2180,14 +2336,23 @@
       }
     },
     "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25": {
+      "children": [],
       "data": {
         "description": {
           "content": "Target Constructor Node"
         }
-      },
-      "children": []
+      }
+    },
+    "v0.0.1-7d8b71c137d1b5b19a305eac1c38f338da19e00ae72de9b93c6580bbe1b5d22d": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"invoice\""
+        }
+      }
     },
     "v0.0.1-7f4fac043e27c70909418028e6e8e32401963c5c8dd1d0e22d051e357eb2708a": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:parameter:size:number"
@@ -2198,8 +2363,7 @@
         "parameter": {
           "name": "size"
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-7fee2b34224cac01d87fa62e88727a8c3688e5ec9b534eaa8636d9e14d798f2f": {
       "children": [
@@ -2259,17 +2423,47 @@
         }
       }
     },
-    "v0.0.1-820ec191d3e151a8e56191597c49b3aa7626bb0890bd4d5c167d803d0571fbb8": {
+    "v0.0.1-837577714bfc88865ad8c7ae4a716e3809bc452ccf1417c3132b55af358ad2c8": {
       "children": [],
       "data": {
         "alias": {
-          "id": "lib:trip:accepts:lib:type:home"
+          "id": "lib:readme/field/body"
         },
-        "description": {
-          "content": "lib:type:home"
+        "created": {
+          "time": 1792453618404
         },
-        "pattern": {
-          "type": "lib:type:home"
+        "name": {
+          "content": "body"
+        },
+        "scalar": {
+          "type": "text",
+          "value": "Templates every Fos account can use, offline: write `` [ ] `Invoice` `` in any node to start one. Edit them here to propose a change; members vote on proposals and the library merges what enough of them approve."
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v0.0.1-843abc7771863137d6cdf011188966359c928809f3b08e676f511d1480ed6008": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-d32685212ab9947014a8f25b139d7bc9ffbead7c90d6abeabce4d5c35419fc8c"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:library:fos:library"
+        },
+        "name": {
+          "content": "fos:library"
+        },
+        "updated": {
+          "time": 2
         }
       }
     },
@@ -2287,40 +2481,21 @@
         }
       }
     },
-    "v0.0.1-85ab142b0b7e6ff425116553424b2ebefa5e3302d45478246ec91c52e20bb708": {
-      "data": {
-        "alias": {
-          "id": "lib:poll"
-        },
-        "description": {
-          "content": "Group decision"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
+    "v0.0.1-85e4a0c9209d345e38bdb1026d9833636113baf7569417d676011615576ac3b3": {
       "children": [
         [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-435793485b3a432c9be102b4a61e1939d715e2b3e38337e822271474e03e31d1"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-f5cbc57f159f1a3513022dc7f719dfe01f588ab6d9f048e181a0c4fda85628c2"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-569c3a4c0f17514492ad9c93ff5ab37b4fb7697af177a5daabd75fb767aee886"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-b63cb1de9443f017ffdbfd1e935d67fe842438caff43a6dc035c3eff5b7e5016"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-6499921a0df0b8a17cad8a75c069c0ddc4e0b4e73893bf499a404bb6ca625760"
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-837577714bfc88865ad8c7ae4a716e3809bc452ccf1417c3132b55af358ad2c8"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:readme/field/body"
+        },
+        "name": {
+          "content": "body"
+        }
+      }
     },
     "v0.0.1-86283532c767e8270022eec991af01ec81e8cda23b78214baed603fdd17012b6": {
       "children": [],
@@ -2337,19 +2512,6 @@
       }
     },
     "v0.0.1-86550884d1ea8fb759b3c410cde066992e8bafc767e4e1b62b5d06923e785971": {
-      "data": {
-        "alias": {
-          "id": "lib:type:file-reference"
-        },
-        "description": {
-          "content": "File reference"
-        },
-        "form": {
-          "title": [
-            "path"
-          ]
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -2379,7 +2541,20 @@
           "v0.0.1-adc11ff2432f29c486325fe037fc55c711a8acb0afdeb44c7448606f5b652084",
           "v0.0.1-7f4fac043e27c70909418028e6e8e32401963c5c8dd1d0e22d051e357eb2708a"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:file-reference"
+        },
+        "description": {
+          "content": "File reference"
+        },
+        "form": {
+          "title": [
+            "path"
+          ]
+        }
+      }
     },
     "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda": {
       "children": [],
@@ -2390,28 +2565,15 @@
       }
     },
     "v0.0.1-885904d8ffe91f6f54018fae294f0baf92f47cd878e8b9a755ce354a784ef3ce": {
-      "data": {
-        "alias": {
-          "id": "lib:type:document-root"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-f2a7579b85c226c55e211c3050c8e1f025b34937cee34314c31bf86be5bb41e0"
         ]
-      ]
-    },
-    "v0.0.1-885924620157f2bb148840ab018938596f91a74d19710c5cc2012d7da48df276": {
-      "children": [
-        [
-          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.1-15a7dce1a52719f6121cd9e1e7470d3cf984f667c0a3a81644108c62b72465f7"
-        ]
       ],
       "data": {
         "alias": {
-          "id": "lib:type:note"
+          "id": "lib:type:document-root"
         }
       }
     },
@@ -2430,27 +2592,6 @@
         },
         "description": {
           "content": "Amount due"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      }
-    },
-    "v0.0.1-886968b879e414126d69c2e513cdd46da6bb903bfa2f6b6e0784393d712f4609": {
-      "children": [],
-      "data": {
-        "alias": {
-          "id": "lib:trip:budget"
-        },
-        "allocation": {
-          "amount": -200,
-          "capability": "allocation",
-          "resource": "",
-          "type": "account",
-          "unit": "usd"
-        },
-        "description": {
-          "content": "Budget per person"
         },
         "updated": {
           "time": 1792453618404
@@ -2498,18 +2639,6 @@
       }
     },
     "v0.0.1-8b442a824d7e1f1e9b21bbca075aa2b5dfff75889e2a5429d726d5b47b3066d3": {
-      "data": {
-        "alias": {
-          "id": "lib:type:relay-message"
-        },
-        "description": {
-          "content": "Message"
-        },
-        "form": {
-          "open": true,
-          "primitive": "peer"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -2527,7 +2656,19 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-86283532c767e8270022eec991af01ec81e8cda23b78214baed603fdd17012b6"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:relay-message"
+        },
+        "description": {
+          "content": "Message"
+        },
+        "form": {
+          "open": true,
+          "primitive": "peer"
+        }
+      }
     },
     "v0.0.1-8b4f80aa15281d0008d7d49a562a5fe4ed225d3d3c1a4bf1fa5811c1eab0bcad": {
       "children": [],
@@ -2628,6 +2769,14 @@
         }
       }
     },
+    "v0.0.1-915ccf8082639ad58ac764d617e250603e62221a2c10b4dcfd659ce62c737b7a": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"relay\""
+        }
+      }
+    },
     "v0.0.1-92fe64976e813eae3c8643d8961d848e115fa12745b72bbc6b0aa0975c25907f": {
       "children": [],
       "data": {
@@ -2635,26 +2784,6 @@
           "content": "production"
         }
       }
-    },
-    "v0.0.1-93348e69957e11cd991328a649d06df5dcdcb496abd8fb73cd3801b6963c9245": {
-      "data": {
-        "alias": {
-          "id": "lib:relay"
-        },
-        "description": {
-          "content": "Relay"
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-b31bdf01dd67860e56f06e8cdeb8a9f1aac461a54d6a48a1c256db6c9ba37b8d"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-851748804461fb5c1a5ee43ded92a836216128f8fe5b1a6b30f6c34e9d46e372"
-        ]
-      ]
     },
     "v0.0.1-937bce673894d0a3bec8f3f223bc32a1162675f3bc1411d8b5b00bd52a801573": {
       "children": [],
@@ -2684,28 +2813,8 @@
         }
       }
     },
-    "v0.0.1-9722fab4e3f542f787bda9e52406ffe7b693ea27e700cb51dd7066c7d4a3f7ea": {
-      "children": [],
-      "data": {
-        "alias": {
-          "id": "lib:trip:when"
-        },
-        "allocation": {
-          "amount": -2,
-          "capability": "allocation",
-          "resource": "",
-          "type": "calendar",
-          "unit": "d"
-        },
-        "description": {
-          "content": "Travel dates"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      }
-    },
     "v0.0.1-976d9efb488d49fb3cddbde16a03c140618632f0c2a1253ed54bc12b76d5ba88": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:allocation:money:accepts:lib:type:document-root"
@@ -2716,8 +2825,7 @@
         "pattern": {
           "type": "lib:type:document-root"
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-9811aedee9ca866f47794908ad0d50c872be27545167ddeaea5d643ef4594a8b": {
       "children": [
@@ -2739,17 +2847,17 @@
       }
     },
     "v0.0.1-9902fbd0c6800f460d0a5008170cb31a5d94b5b3d2a294205e7fe3629be5364e": {
-      "data": {
-        "alias": {
-          "id": "lib:type:relay-queue"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-aacc2c0ecec89e24fcef2ad7bcb59c9dd3fd768de8f5798251f83c9891e20c95"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:relay-queue"
+        }
+      }
     },
     "v0.0.1-99d397d2d3b522b2df7c5293df22a08de119b55bbeff1ab2e2b4f868e4cac3c5": {
       "children": [],
@@ -2836,20 +2944,6 @@
         }
       }
     },
-    "v0.0.1-9cd59c730732789c6027f0f70d3887a4c14f97c029f8aa0f61a465209b320907": {
-      "children": [],
-      "data": {
-        "alias": {
-          "id": "lib:trip:accepts:lib:type:document-root"
-        },
-        "description": {
-          "content": "lib:type:document-root"
-        },
-        "pattern": {
-          "type": "lib:type:document-root"
-        }
-      }
-    },
     "v0.0.1-9de8b5de428aed0ff21455547afa0380837a51a6e7808f07d2885512236f6787": {
       "children": [],
       "data": {
@@ -2899,6 +2993,14 @@
         }
       }
     },
+    "v0.0.1-9ee15c0e98c202371034784fb10bfe597eedde3f545a7b2f169fdcf2ba3f3bd4": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"paid\""
+        }
+      }
+    },
     "v0.0.1-9f68698ee9d72eea248a9bd7b589d991cfc3d8a1f51fe5da9f4f616738ca5b87": {
       "children": [],
       "data": {
@@ -2912,22 +3014,6 @@
           "type": "lib:type:document-root"
         }
       }
-    },
-    "v0.0.1-a0032d5a19b596305dc8031f63bc7b9822511c17564ba5cc97df09fd98c2ec56": {
-      "data": {
-        "alias": {
-          "id": "lib:readme/field/body"
-        },
-        "name": {
-          "content": "body"
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.1-f86eb003231f15616583ddafda2d46edaf2bb2f67a15c0e2ed2a39bd9d31372a"
-        ]
-      ]
     },
     "v0.0.1-a1d539ea3c1634834ec065662b682cb5fb22b798c58837a010c72fc704e05537": {
       "children": [],
@@ -2971,44 +3057,44 @@
         }
       }
     },
-    "v0.0.1-a3f6f76f132b953e689eec310ed1dca3278ebc191c665a84de5a9b7d7e91e954": {
+    "v0.0.1-a273c142cb47d9d9b6dfd5ef3282debaf4476dd601e53835a7caf47e805e6219": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-435793485b3a432c9be102b4a61e1939d715e2b3e38337e822271474e03e31d1"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-f5cbc57f159f1a3513022dc7f719dfe01f588ab6d9f048e181a0c4fda85628c2"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-569c3a4c0f17514492ad9c93ff5ab37b4fb7697af177a5daabd75fb767aee886"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-b63cb1de9443f017ffdbfd1e935d67fe842438caff43a6dc035c3eff5b7e5016"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-6499921a0df0b8a17cad8a75c069c0ddc4e0b4e73893bf499a404bb6ca625760"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-e2aa3add408ceec3958d89e56b5f4b9d6e65777c0e8a2714ac83c43b391cf4b8"
+        ]
+      ],
       "data": {
         "alias": {
-          "id": "lib:meet"
+          "id": "lib:poll"
         },
         "description": {
-          "content": "Meet up"
+          "content": "Group decision"
         },
         "updated": {
           "time": 1792453618404
         }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-6f9ea58be37900a4bd8ab046fcd0034fa4bc2fc7f2c1d9eb592db94989010b07"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-eaf799035f0c83077a775f824f43a8789c1b7cbccbccf24e41906d006b95f772"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-ba1c4c2f4c2a2778a9a0372d1098240b503c8a5a295cdc1a51cd168b2b1f490b"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-03e6bdf9f591a9778b836d8da56964b85914a8db7f28fa62183a3074f96ce057"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-cf4b0d1d5fffffbf9a810399b46bd432b8fda9b1b93d7ef726b793757adc9b1e"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-9de8b5de428aed0ff21455547afa0380837a51a6e7808f07d2885512236f6787"
-        ]
-      ]
+      }
     },
     "v0.0.1-a520325ee898ef1a05ca20eca71367f4daf3dfac40468edb0ff1aa0e7a5f430d": {
       "children": [],
@@ -3033,48 +3119,13 @@
       }
     },
     "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:pattern"
         },
         "description": {
           "content": "Pattern"
-        }
-      },
-      "children": []
-    },
-    "v0.0.1-a7f3b8afed04b82e5423a2a56f6bd8280fc8c6a035737e775bbd6b230e39731b": {
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-6dd60b80e2901502e94d3c3043e3fb802e5ddada290ed262fc904ab1f6885897"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-07af6c4fce0b88d1bd5b7847a6510915a76bf0d591263388f27c374709985eaa"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-bd9e0fa9e448ba45449d9a28fec71d87151992a5665053e2ca5238aa08d21df8"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-002007cd31ad23201225eca0596e1df02c14500b9437a896384e13f4474ebb36"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-74b01a3fc21b840ae0c3aa83288996837703ad96a9ead7a51111fe2f954506d2"
-        ]
-      ],
-      "data": {
-        "alias": {
-          "id": "lib:project-coding-request"
-        },
-        "description": {
-          "content": "Request project coding agent"
-        },
-        "updated": {
-          "time": 0
         }
       }
     },
@@ -3093,17 +3144,17 @@
       }
     },
     "v0.0.1-a894b115288f92940e08d74f0888468f786cded2be8bd81fd21cc8f57f29ccc7": {
-      "data": {
-        "alias": {
-          "id": "lib:type:query"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-3ecfb0d97c5f9538fc9060ae7868ee0d7167e4e399054f99e3b6b447acc8f87d"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:query"
+        }
+      }
     },
     "v0.0.1-a9ba8f366d4ab1415eb151e5735f6d1ae5a34c64ae10851bc71edd20bd9b77fa": {
       "children": [],
@@ -3134,18 +3185,6 @@
       }
     },
     "v0.0.1-aacc2c0ecec89e24fcef2ad7bcb59c9dd3fd768de8f5798251f83c9891e20c95": {
-      "data": {
-        "alias": {
-          "id": "lib:type:relay-queue"
-        },
-        "description": {
-          "content": "Queue"
-        },
-        "form": {
-          "open": true,
-          "primitive": "peer"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -3163,7 +3202,19 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-d49858db5fb3f03f569bbd2ad410aaad34885378bba04b901f5f7f5e9966a038"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:relay-queue"
+        },
+        "description": {
+          "content": "Queue"
+        },
+        "form": {
+          "open": true,
+          "primitive": "peer"
+        }
+      }
     },
     "v0.0.1-ab1c5ffa7c2b123cf312574f63be702c117b237252c3edf18bf6940c947e838d": {
       "children": [],
@@ -3187,6 +3238,33 @@
         }
       }
     },
+    "v0.0.1-ab9e9fc5756e41634d49e5aea8e465e6fe75a99f98d270fd5e235bb204b247e6": {
+      "children": [
+        [
+          "v0.0.1-0db024855a6acc139f0c28e1bd7b3232624ca2be8b3af0b2dc494d046def61a5",
+          "v0.0.1-85e4a0c9209d345e38bdb1026d9833636113baf7569417d676011615576ac3b3"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:readme"
+        },
+        "created": {
+          "time": 1792453618404
+        },
+        "description": {
+          "content": "Standard library"
+        },
+        "presentation": {
+          "headline": [
+            "body"
+          ]
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
     "v0.0.1-abaee62994a768c26e8c5e4df9cea1688d0b854f8f2439948e636f1b1fe54a45": {
       "children": [],
       "data": {
@@ -3202,6 +3280,7 @@
       }
     },
     "v0.0.1-abb2f5474978fa6cb64ff7e29d64497ca7079111454d25ae10934e80be397379": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:allocation:money:accepts:any"
@@ -3212,8 +3291,7 @@
         "pattern": {
           "any": true
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-ac1d4daec3e7af6ee720c48d6ba7de44bc03dd6de8b832aab6917c74120cb4a2": {
       "children": [],
@@ -3285,7 +3363,35 @@
         }
       }
     },
-    "v0.0.1-afd1952d765863c3ad705541dc51667a876aac174bc4bb38b0792a1e84717bdd": {
+    "v0.0.1-b11064dcbf44687e2c7d6e49dc9bbac71fc34a71669799af036b87e45d2b65c8": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-69dfe53f7f65e68f2e524e3df43c6de3403cece34d9afe4d693ab429338090f7"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-be5d5203416c17a0b6382ebec38ba4f27426ea8ea3018b9a8c6c0f0af1b33402"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-17ff77638c803511773bf23da19ce692193a90b22c828690ebe66f2dbecfc982"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-325bf1afc7175ae4147f56fdaecccbc21ccc495d1c41a24c776743e3fb69e150"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:task"
+        },
+        "description": {
+          "content": "Task"
+        }
+      }
+    },
+    "v0.0.1-b20e83e16663111f5f372e7f224118fc9c98e9ec02bdbfb216fe9669c3206c54": {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -3338,6 +3444,10 @@
         [
           "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
           "v0.0.1-bc1792e60849edab9e97bce534090f94bdabe8a1c91f2894d131a99b6046959e"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-d8808ea5c2d934d96e5f657191f3609ba4c8e1cc1f79429f8977735c3d39213f"
         ]
       ],
       "data": {
@@ -3351,57 +3461,6 @@
           "time": 0
         }
       }
-    },
-    "v0.0.1-b07dd0d934aaff838698dcc38fcd2f46000dc4aa73e5d5537f1f9061f9ce8578": {
-      "children": [
-        [
-          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.1-485a96a1039c36405018fdd61ea9fee772e090b02483fd30374498efa08adf36"
-        ],
-        [
-          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
-          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
-        ]
-      ],
-      "data": {
-        "alias": {
-          "id": "fos:library:fos:library"
-        },
-        "name": {
-          "content": "fos:library"
-        },
-        "updated": {
-          "time": 1792534023128
-        }
-      }
-    },
-    "v0.0.1-b11064dcbf44687e2c7d6e49dc9bbac71fc34a71669799af036b87e45d2b65c8": {
-      "data": {
-        "alias": {
-          "id": "lib:type:task"
-        },
-        "description": {
-          "content": "Task"
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-69dfe53f7f65e68f2e524e3df43c6de3403cece34d9afe4d693ab429338090f7"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-be5d5203416c17a0b6382ebec38ba4f27426ea8ea3018b9a8c6c0f0af1b33402"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-17ff77638c803511773bf23da19ce692193a90b22c828690ebe66f2dbecfc982"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-325bf1afc7175ae4147f56fdaecccbc21ccc495d1c41a24c776743e3fb69e150"
-        ]
-      ]
     },
     "v0.0.1-b31bdf01dd67860e56f06e8cdeb8a9f1aac461a54d6a48a1c256db6c9ba37b8d": {
       "children": [],
@@ -3469,17 +3528,17 @@
       }
     },
     "v0.0.1-b493b0b7aeb954a3dd83eaf98ef37bc1c6c1cbf5a63d40a11595f26746ae79ea": {
-      "data": {
-        "alias": {
-          "id": "lib:type:relay-message"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-8b442a824d7e1f1e9b21bbca075aa2b5dfff75889e2a5429d726d5b47b3066d3"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:relay-message"
+        }
+      }
     },
     "v0.0.1-b4a6d7553bbc8cf4629f5273f78610dc1e9dbc32bce708f50faa2dcf7c1d0457": {
       "children": [],
@@ -3530,70 +3589,20 @@
         }
       }
     },
-    "v0.0.1-b7bfcd91e11f9369e1ce5d58716cdcbce4895b168ad2e85863295fa42d1dd5a4": {
-      "data": {
-        "alias": {
-          "id": "lib:paid-task"
-        },
-        "description": {
-          "content": "Paid task"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-6dc2264afb02cb2b482c1701a5ea2dd6bb176d0024b7c742a200a33aa2c57ff7"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-166b87551d2488e06e52f175b9fb74ea189a2d30ebab2247b2be78a7377e234a"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-447bb5febb332a3a0dc2ed5271a00315042a474716e4e145975da1945e51cd53"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-012b6a9a696cec5659255d53d9e5303083470d5b0e97238f1e02f3ade6951bad"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-90cf89ff8d65ef17245a8041d07e32e31df44a5f98030b724709ef905185b2f2"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-1d3d0248406038ecb66e63280300b340bc4625aa27b75b04141b1250ad5ad0ad"
-        ]
-      ]
-    },
     "v0.0.1-b9273856bd1327b129b1be2c64bd8f41ba65446184d83505132195b50efae07c": {
-      "data": {
-        "alias": {
-          "id": "lib:type:device-root"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-10b3e7acc31e35a42882ef9d2847c61bfaf0925a353559f2ef54adddb8079a65"
         ]
-      ]
-    },
-    "v0.0.1-b9eca29b34c7fa6c95016be9467d5542ab5e084d715e92a5c448bc96f5d4583b": {
+      ],
       "data": {
         "alias": {
-          "id": "lib:manual"
-        },
-        "description": {
-          "content": "Manual handlers"
-        },
-        "updated": {
-          "time": 1792453618404
+          "id": "lib:type:device-root"
         }
-      },
+      }
+    },
+    "v0.0.1-b9eca29b34c7fa6c95016be9467d5542ab5e084d715e92a5c448bc96f5d4583b": {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -3663,7 +3672,18 @@
           "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
           "v0.0.1-00e691362a2387050e30b7b4525b38f5259f674a1c7875fc4dafda5400683ce2"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:manual"
+        },
+        "description": {
+          "content": "Manual handlers"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
     },
     "v0.0.1-ba1c4c2f4c2a2778a9a0372d1098240b503c8a5a295cdc1a51cd168b2b1f490b": {
       "children": [],
@@ -3676,6 +3696,37 @@
         },
         "pattern": {
           "type": "lib:type:device-root"
+        }
+      }
+    },
+    "v0.0.1-baeb34a5c5c407aa8c019fe780001bc87054be3f023bf7eb5e61ba38cc463d1a": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-915ccf8082639ad58ac764d617e250603e62221a2c10b4dcfd659ce62c737b7a"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:icon:lib:relay"
+        },
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
+        }
+      }
+    },
+    "v0.0.1-bbe7a842124aba000194432ced485d2abd7a937a6f9f22c2caf7d11a22b76737": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"workflow\""
         }
       }
     },
@@ -3719,17 +3770,17 @@
       }
     },
     "v0.0.1-bc4114e247e99d32f4fff213a891fa9079df799b2661766684705c4a809821b6": {
-      "data": {
-        "alias": {
-          "id": "lib:type:pattern"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:pattern"
+        }
+      }
     },
     "v0.0.1-bc66919d32daee5bc8565478bb766219cbac7214bf9ccc0bc1178e71011531c9": {
       "children": [],
@@ -3809,6 +3860,92 @@
         }
       }
     },
+    "v0.0.1-c440cd99820731e7a0972f0cc8fbcc0779927dbd296ceac1ea46d5d1e7959d8e": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-6f9ea58be37900a4bd8ab046fcd0034fa4bc2fc7f2c1d9eb592db94989010b07"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-eaf799035f0c83077a775f824f43a8789c1b7cbccbccf24e41906d006b95f772"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-ba1c4c2f4c2a2778a9a0372d1098240b503c8a5a295cdc1a51cd168b2b1f490b"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-03e6bdf9f591a9778b836d8da56964b85914a8db7f28fa62183a3074f96ce057"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-cf4b0d1d5fffffbf9a810399b46bd432b8fda9b1b93d7ef726b793757adc9b1e"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-9de8b5de428aed0ff21455547afa0380837a51a6e7808f07d2885512236f6787"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-39d23cd45718411b271746227a937b8d6d2cc932d9270298d5dca3c8a4cfe2d1"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:meet"
+        },
+        "description": {
+          "content": "Meet up"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
+    "v0.0.1-c45346dde600ae4e00a67c0f00821b4a1b1102101c84acd188ad1908e82c3c47": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-65bbebf3bce645a10e7559c6a0658b39302bc388513afcee706dee3367a26fa7"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-a1d539ea3c1634834ec065662b682cb5fb22b798c58837a010c72fc704e05537"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-a1e20115002f9c13078d5e9769e7d65f0b5b51c06cbb354946d9f3239202bef6"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-3f90199ddf5b74ed3c0e81b5129fe2eee44a7785076d33125d1186b53e96182b"
+        ],
+        [
+          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
+          "v0.0.1-abaee62994a768c26e8c5e4df9cea1688d0b854f8f2439948e636f1b1fe54a45"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-81cf3e3b16ff90e6b8c7580ea2836e916540063ca102eae4080f63a438df2a9f"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-191d354cc3a873cbd46f044a31437926ad9123cf02ce61020359fcf19296ab40"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:contact"
+        },
+        "description": {
+          "content": "Contact form"
+        },
+        "updated": {
+          "time": 1792453618404
+        }
+      }
+    },
     "v0.0.1-c5a50739b075df05d62404d5de48c480fbfa52d0d3cc49c9d5af2b0a6d336270": {
       "children": [],
       "data": {
@@ -3818,6 +3955,7 @@
       }
     },
     "v0.0.1-c61a1d5fec53d9220400aa555d2a6f9c8387fd35c4bf038fe2e678b28f93f4ff": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:allocation:money:accepts:lib:type:home"
@@ -3828,8 +3966,7 @@
         "pattern": {
           "type": "lib:type:home"
         }
-      },
-      "children": []
+      }
     },
     "v0.0.1-c86c20f74af8b52eec0d32e3ff18c36b3a4e8eb74fd5665c2737def9570b6726": {
       "children": [],
@@ -3866,18 +4003,61 @@
         }
       }
     },
-    "v0.0.1-cba4dc5a2960cf5889575f9c650ba2f6cdc3281bf5655a591dd1708160168876": {
+    "v0.0.1-c9b05b06d1916c549fb85326483ab6ea85bd356df1d15729784e49833ecc1bd2": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-6dc2264afb02cb2b482c1701a5ea2dd6bb176d0024b7c742a200a33aa2c57ff7"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-166b87551d2488e06e52f175b9fb74ea189a2d30ebab2247b2be78a7377e234a"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-447bb5febb332a3a0dc2ed5271a00315042a474716e4e145975da1945e51cd53"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-012b6a9a696cec5659255d53d9e5303083470d5b0e97238f1e02f3ade6951bad"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-90cf89ff8d65ef17245a8041d07e32e31df44a5f98030b724709ef905185b2f2"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-1d3d0248406038ecb66e63280300b340bc4625aa27b75b04141b1250ad5ad0ad"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-5a277290b98c3bfcfefb7c4eeef725dc83bce86c55e0a3b48ef895266635daa4"
+        ]
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:home"
+          "id": "lib:paid-task"
+        },
+        "description": {
+          "content": "Paid task"
+        },
+        "updated": {
+          "time": 1792453618404
         }
-      },
+      }
+    },
+    "v0.0.1-cba4dc5a2960cf5889575f9c650ba2f6cdc3281bf5655a591dd1708160168876": {
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-2d7d1bb73739794e9f2dba143cfa5bc023372a51597f9c0e8d513f1c25e17fc5"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:home"
+        }
+      }
     },
     "v0.0.1-cd42767fcaffa4f5a562918bab93d9ad2729e1293d64a4b9ecd8a12bb356fa91": {
       "children": [],
@@ -3890,74 +4070,6 @@
         },
         "pattern": {
           "type": "lib:type:home"
-        }
-      }
-    },
-    "v0.0.1-ce15220f6462f5ad4d857859dbe2aa9f0f274d8b66990f4c6a8abc605e1fe8ea": {
-      "children": [
-        [
-          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
-          "v0.0.1-321f7048a710e3bd9563946aa4aecabd1d418639eef0a60d8db64a005f82e7e2"
-        ],
-        [
-          "v0.0.1-15a7dce1a52719f6121cd9e1e7470d3cf984f667c0a3a81644108c62b72465f7",
-          "v0.0.1-25052dfdb6208ef9fc6307a5a90167afdfc6afa1f62ed9f71e5c72446491ada0"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-e846dd0383772ad62038dd2477583d1c9873625bc8256c8806a32024be71e83e"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-2cff1443ea631e6017e99b9fb2757ac325d24dce78284d5ff3d044885bb2ff06"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-85ab142b0b7e6ff425116553424b2ebefa5e3302d45478246ec91c52e20bb708"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-b7bfcd91e11f9369e1ce5d58716cdcbce4895b168ad2e85863295fa42d1dd5a4"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-06989a196ed387209ea6119d6456a54b433960ce5c73f2778b741c53136fc9e9"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-f693e32f76284074fc2b8f84fbe2e885a78624272a6b7581ff7363742271d173"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-a3f6f76f132b953e689eec310ed1dca3278ebc191c665a84de5a9b7d7e91e954"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-93348e69957e11cd991328a649d06df5dcdcb496abd8fb73cd3801b6963c9245"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-b9eca29b34c7fa6c95016be9467d5542ab5e084d715e92a5c448bc96f5d4583b"
-        ],
-        [
-          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.1-b07dd0d934aaff838698dcc38fcd2f46000dc4aa73e5d5537f1f9061f9ce8578"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-afd1952d765863c3ad705541dc51667a876aac174bc4bb38b0792a1e84717bdd"
-        ],
-        [
-          "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-          "v0.0.1-a7f3b8afed04b82e5423a2a56f6bd8280fc8c6a035737e775bbd6b230e39731b"
-        ]
-      ],
-      "data": {
-        "alias": {
-          "id": "fos:library"
-        },
-        "description": {
-          "content": "Standard library"
         }
       }
     },
@@ -3997,17 +4109,17 @@
       }
     },
     "v0.0.1-d03bfa8b76d365be1a422ea0049b242c3756e29ae13a3c73fa380c67611a17fb": {
-      "data": {
-        "alias": {
-          "id": "lib:type:allocation"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation"
+        }
+      }
     },
     "v0.0.1-d1d34e21876ae037b589d7e7b4c3f240d757c82f314bc455d6168b615af55b4c": {
       "children": [],
@@ -4020,6 +4132,14 @@
         },
         "pattern": {
           "any": true
+        }
+      }
+    },
+    "v0.0.1-d32685212ab9947014a8f25b139d7bc9ffbead7c90d6abeabce4d5c35419fc8c": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "{\"version\":\"0.0.1\",\"seeded\":[\"lib:type:task\",\"lib:type:plain\",\"lib:type:note\",\"lib:type:note:body\",\"lib:type:comment\",\"lib:parameter:body:text\",\"lib:parameter:person:author\",\"lib:parameter:texts:texts\",\"lib:type:ref\",\"lib:type:query\",\"lib:type:resource\",\"lib:type:allocation\",\"lib:type:allocation:money\",\"lib:type:template\",\"lib:type:pattern\",\"lib:type:home\",\"lib:type:device-root\",\"lib:type:document-root\",\"lib:type:text\",\"lib:type:markdown\",\"lib:type:peer\",\"lib:type:number\",\"lib:type:time\",\"lib:type:person\",\"lib:parameter:id:id\",\"lib:parameter:name:name\",\"lib:type:list-text\",\"lib:parameter:item:item\",\"lib:type:relay-message\",\"lib:type:relay-queue\",\"lib:type:relay-ack\",\"lib:type:file-reference\",\"lib:parameter:path:text\",\"lib:parameter:sha256:text\",\"lib:parameter:size:number\",\"lib:type:attestation\",\"lib:parameter:attestation:by\",\"lib:parameter:attestation:method\",\"lib:parameter:attestation:issuedAt\",\"lib:parameter:attestation:attestation\",\"lib:type:user\",\"lib:parameter:user:account\",\"lib:parameter:user:username\",\"lib:parameter:user:name\",\"lib:parameter:user:publicKey\",\"lib:parameter:user:verification\",\"lib:readme\",\"lib:readme/field/body\",\"lib:invoice\",\"lib:invoice:contact\",\"lib:invoice:entries\",\"lib:invoice:amount\",\"lib:invoice:send\",\"lib:poll\",\"lib:poll:choice\",\"lib:paid-task\",\"lib:paid-task:delivered\",\"lib:paid-task:reward\",\"lib:contact\",\"lib:contact:message\",\"lib:contact:received\",\"lib:research\",\"lib:research:question\",\"lib:research:sources\",\"lib:research:summary\",\"lib:meet\",\"lib:meet:where\",\"lib:meet:when\",\"lib:relay\",\"lib:manual\",\"lib:manual:payment\",\"lib:manual:points\",\"lib:manual:time\",\"lib:manual:things\",\"lib:manual:location\",\"lib:device:location\",\"lib:manual:mail\",\"lib:manual:repo\",\"lib:manual:llm\",\"lib:manual:search\",\"lib:manual:tool\",\"lib:manual:market\",\"lib:project-agent-workflow\",\"lib:project-agent-workflow:after-merge\",\"lib:project-agent-workflow:verify\",\"lib:project-coding-request\",\"lib:project-coding-request:execute\"],\"source\":\"bundle\"}"
         }
       }
     },
@@ -4099,6 +4219,37 @@
         }
       }
     },
+    "v0.0.1-d821de81795b817c094cf6fe10594b55a519fa38720c8b5c71634a52e3f57f05": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"research\""
+        }
+      }
+    },
+    "v0.0.1-d8808ea5c2d934d96e5f657191f3609ba4c8e1cc1f79429f8977735c3d39213f": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-bbe7a842124aba000194432ced485d2abd7a937a6f9f22c2caf7d11a22b76737"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "fos:icon:lib:project-agent-workflow"
+        },
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
+        }
+      }
+    },
     "v0.0.1-d9ea10a5c5e44f8e43100c999452b6f3e5f698e32179640ef94a8a124ceccad8": {
       "children": [],
       "data": {
@@ -4156,17 +4307,17 @@
       }
     },
     "v0.0.1-dce54486d5ddaafb0b95172b00e7ceba2e33ada80e0ee81368db41da43bc2526": {
-      "data": {
-        "alias": {
-          "id": "lib:type:ref"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-f46938b4e92bb36f2b36aed3f4339485810c5f62fd576574415eb2347c852ab4"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref"
+        }
+      }
     },
     "v0.0.1-ddc7350c8ff0afdb8df72c80f4f00c0254db08d322a04481d6f890c1d4d9420d": {
       "children": [],
@@ -4203,7 +4354,16 @@
         }
       }
     },
+    "v0.0.1-df8ca7539fbefd2622db5f5a9083294fd2cbffd59d60060129706f58d9040da5": {
+      "children": [],
+      "data": {
+        "description": {
+          "content": "\"contact\""
+        }
+      }
+    },
     "v0.0.1-dfbde8b7a29e05e2df10d903209252a9434fb28fa02625d06696c459c44b62be": {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:parameter:path:text"
@@ -4213,28 +4373,6 @@
         },
         "parameter": {
           "name": "path"
-        }
-      },
-      "children": []
-    },
-    "v0.0.1-e0112b40af9eb557a11565f5448ce0c479cf9d928f0eaae44c820a1a0f397112": {
-      "children": [],
-      "data": {
-        "alias": {
-          "id": "lib:trip:lodging"
-        },
-        "allocation": {
-          "amount": -1,
-          "capability": "task",
-          "resource": "",
-          "type": "inventory",
-          "unit": "unit"
-        },
-        "description": {
-          "content": "Book lodging"
-        },
-        "updated": {
-          "time": 1792453618404
         }
       }
     },
@@ -4260,15 +4398,30 @@
         }
       }
     },
-    "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2": {
+    "v0.0.1-e2aa3add408ceec3958d89e56b5f4b9d6e65777c0e8a2714ac83c43b391cf4b8": {
+      "children": [
+        [
+          "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.1-683c4f2be40100875f211a31c01ef97a939263e322ca89f556f5abc1a400fc0e"
+        ],
+        [
+          "v0.0.1-91161ff26728d2aeec7e078d18995a177c9b6b4638d2edf640cfc4265d309446",
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda"
+        ]
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:allocation"
+          "id": "fos:icon:lib:poll"
         },
-        "description": {
-          "content": "Allocation"
+        "name": {
+          "content": "fos:icon"
+        },
+        "updated": {
+          "time": 3
         }
-      },
+      }
+    },
+    "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2": {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4286,7 +4439,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-140a0918977105ee10f37bdeb85bf14cd5940c9ad440b8ccd30ea120495ec0de"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:allocation"
+        },
+        "description": {
+          "content": "Allocation"
+        }
+      }
     },
     "v0.0.1-e569a81dd0f105bbf7a3e2a5756d3e43b3a2a60282ccaf0453e7796a904a987f": {
       "children": [
@@ -4302,17 +4463,17 @@
       }
     },
     "v0.0.1-e6db583217ec829962c4177ae7f5befad3f1655895a80f7c809317d112d1c9bf": {
-      "data": {
-        "alias": {
-          "id": "lib:type:resource"
-        }
-      },
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-15e43573497c990c66d5ceec7b3e3e10b758dc8a550957e2bba47a258aab31f3"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:resource"
+        }
+      }
     },
     "v0.0.1-e7ee7c2b558f8079c75bd5b9f58d4dddd380a262bcc8d0f8897e5372bea7b52a": {
       "children": [],
@@ -4328,56 +4489,56 @@
         }
       }
     },
-    "v0.0.1-e846dd0383772ad62038dd2477583d1c9873625bc8256c8806a32024be71e83e": {
+    "v0.0.1-e8c942c799fd50fe6820f7479fda6c8bec0dfdaeedbd90c8c1cb642d818dbb44": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-23b9f82f6f6aba42c77c9f074e007b56a50868b3194e177bb8edcde5e3dcc5c8"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-599e92f862adf5adbf77d68ae9b67385da8b1056ca88da26e411bb5e2f5efc08"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-81e2ff466068b340ef509d2dfc934c34b6cd2da1e7ab7a2c7739cfe5e5713c22"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-2bb83e1c5b76673e34d89ac1c410cc6a8cb6c8f7d50e11aa9eaa6728d7b72ea6"
+        ],
+        [
+          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
+          "v0.0.1-1d670bc91035dad0123617d417682f705c0849f6acaba9967498e80d90783613"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-33d7d3d2d47134086c5b066a4319546232ad441767792abdf276686eb52691c6"
+        ],
+        [
+          "v0.0.1-02c4bba15be6e3e9664e7cc1f005ac3686e3ae41995a950065b227eb0249f107",
+          "v0.0.1-8869208e8e075f152bc6530a216968543c8b71171ee3e568ca26b1bf69b7b82d"
+        ],
+        [
+          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
+          "v0.0.1-fd6870894b2a12253f4142031bb79687152799e92001e2a3a38a7ac064241863"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-628867b7193bd38b539e3d2287faf2364d42b933f65b038323a5c94b609651b0"
+        ]
+      ],
       "data": {
         "alias": {
-          "id": "lib:trip"
+          "id": "lib:invoice"
         },
         "description": {
-          "content": "Plan a trip"
+          "content": "Invoice"
         },
         "updated": {
           "time": 1792453618404
         }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-0a9edd2fe1efa0cafdd803507295c97933f77b03238ab93d2f49229cedd7239f"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-820ec191d3e151a8e56191597c49b3aa7626bb0890bd4d5c167d803d0571fbb8"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-1b39b7f3c63e6698edfd4f7db43fa32fb794e88ef5237ae5822cf21561e93265"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-9cd59c730732789c6027f0f70d3887a4c14f97c029f8aa0f61a465209b320907"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-10cf4496b69dc4a1c44822bfd1a7b40568af1095688341e24b41589d0b3ea5b4"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-9722fab4e3f542f787bda9e52406ffe7b693ea27e700cb51dd7066c7d4a3f7ea"
-        ],
-        [
-          "v0.0.1-02c4bba15be6e3e9664e7cc1f005ac3686e3ae41995a950065b227eb0249f107",
-          "v0.0.1-886968b879e414126d69c2e513cdd46da6bb903bfa2f6b6e0784393d712f4609"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-2f0c8638ad160cb4a5fc9214698715cfeb91bf4bcf5aa6e3598bf67d90595cd6"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-e0112b40af9eb557a11565f5448ce0c479cf9d928f0eaae44c820a1a0f397112"
-        ]
-      ]
+      }
     },
     "v0.0.1-eaf799035f0c83077a775f824f43a8789c1b7cbccbccf24e41906d006b95f772": {
       "children": [],
@@ -4448,18 +4609,26 @@
         }
       }
     },
-    "v0.0.1-f057dd11abe2242cdc1cf0b6f21519145726728d6600ed450ed3e3b6c2c0d587": {
+    "v0.0.1-eebd39e8372119971ee888e665a0df52cc60acb8548b5590cf280a3c4e8d95a5": {
+      "children": [],
       "data": {
-        "alias": {
-          "id": "lib:type:template"
+        "description": {
+          "content": "\"meet\""
         }
-      },
+      }
+    },
+    "v0.0.1-f057dd11abe2242cdc1cf0b6f21519145726728d6600ed450ed3e3b6c2c0d587": {
       "children": [
         [
           "v0.0.1-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:template"
+        }
+      }
     },
     "v0.0.1-f09114ac65e6cac4ef77204f0156c98249dc9800680a05e357bf206f11f13603": {
       "children": [
@@ -4503,14 +4672,6 @@
       }
     },
     "v0.0.1-f2a7579b85c226c55e211c3050c8e1f025b34937cee34314c31bf86be5bb41e0": {
-      "data": {
-        "alias": {
-          "id": "lib:type:document-root"
-        },
-        "description": {
-          "content": "Document"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4528,17 +4689,41 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-4a65c3822e13efe7f5331ee70e31f6fb8b6b1c23e2d014f3919b7580d0d432ad"
         ]
-      ]
-    },
-    "v0.0.1-f46938b4e92bb36f2b36aed3f4339485810c5f62fd576574415eb2347c852ab4": {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:ref"
+          "id": "lib:type:document-root"
         },
         "description": {
-          "content": "Reference"
+          "content": "Document"
         }
-      },
+      }
+    },
+    "v0.0.1-f42ff54cf3df33f6c805358cee71e79df30c22249335d516af323cabd77d7563": {
+      "children": [
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-b31bdf01dd67860e56f06e8cdeb8a9f1aac461a54d6a48a1c256db6c9ba37b8d"
+        ],
+        [
+          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
+          "v0.0.1-851748804461fb5c1a5ee43ded92a836216128f8fe5b1a6b30f6c34e9d46e372"
+        ],
+        [
+          "v0.0.1-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.1-baeb34a5c5c407aa8c019fe780001bc87054be3f023bf7eb5e61ba38cc463d1a"
+        ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:relay"
+        },
+        "description": {
+          "content": "Relay"
+        }
+      }
+    },
+    "v0.0.1-f46938b4e92bb36f2b36aed3f4339485810c5f62fd576574415eb2347c852ab4": {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4556,7 +4741,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-3a94a5130078ffcc4ce1d75eae170971e7059d4280ce4bc11972377b161eb51c"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:ref"
+        },
+        "description": {
+          "content": "Reference"
+        }
+      }
     },
     "v0.0.1-f5cbc57f159f1a3513022dc7f719dfe01f588ab6d9f048e181a0c4fda85628c2": {
       "children": [],
@@ -4571,70 +4764,6 @@
           "type": "lib:type:home"
         }
       }
-    },
-    "v0.0.1-f693e32f76284074fc2b8f84fbe2e885a78624272a6b7581ff7363742271d173": {
-      "data": {
-        "alias": {
-          "id": "lib:research"
-        },
-        "description": {
-          "content": "Research note"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
-      "children": [
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-fc2cac6ea5a0dfc34b16ea8f2d6fd3a7541b22aa55ef06a39a3dd0a81c52bbd3"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-bc66919d32daee5bc8565478bb766219cbac7214bf9ccc0bc1178e71011531c9"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-ddc7350c8ff0afdb8df72c80f4f00c0254db08d322a04481d6f890c1d4d9420d"
-        ],
-        [
-          "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
-          "v0.0.1-9f68698ee9d72eea248a9bd7b589d991cfc3d8a1f51fe5da9f4f616738ca5b87"
-        ],
-        [
-          "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
-          "v0.0.1-3497178a65650cab2874da5266259c306d2b940e247350e43c45f663f144f00e"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-acf58dd59b326f59af838c9487200983cb88e18716b00fed68436e94ef382156"
-        ],
-        [
-          "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-          "v0.0.1-d5cd8e51fb5b848256694d62cf50490759b2f5ceedafc1ba39ad4103428c76c7"
-        ]
-      ]
-    },
-    "v0.0.1-f86eb003231f15616583ddafda2d46edaf2bb2f67a15c0e2ed2a39bd9d31372a": {
-      "data": {
-        "alias": {
-          "id": "lib:readme/field/body"
-        },
-        "created": {
-          "time": 1792453618404
-        },
-        "updated": {
-          "time": 1792453618404
-        },
-        "scalar": {
-          "type": "text",
-          "value": "# Standard library\n\nTemplates every Fos account can use, offline: write `` [ ] `Plan a trip` `` in any node to start one. Edit them here to propose a change; members vote on proposals and the library merges what enough of them approve."
-        },
-        "name": {
-          "content": "body"
-        }
-      },
-      "children": []
     },
     "v0.0.1-fabe1e83876cd373d1d3bec91bcf0091204fc6a04a75fd7557ff08349ad18d4d": {
       "children": [],
@@ -4743,14 +4872,6 @@
   },
   "types": [
     {
-      "data": {
-        "alias": {
-          "id": "lib:type:task"
-        },
-        "description": {
-          "content": "Task"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4768,17 +4889,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-325bf1afc7175ae4147f56fdaecccbc21ccc495d1c41a24c776743e3fb69e150"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:plain"
+          "id": "lib:type:task"
         },
         "description": {
-          "content": "Row"
+          "content": "Task"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4796,27 +4917,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-9c071f4dd9c127ac9f528c830db8b2e9969399215cf35f27c4039700608fe661"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:note"
+          "id": "lib:type:plain"
         },
         "description": {
-          "content": "Note"
-        },
-        "form": {
-          "open": true,
-          "text": {
-            "interpolate": true,
-            "mediaType": "text/markdown"
-          },
-          "title": [
-            "body"
-          ]
+          "content": "Row"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4835,36 +4946,26 @@
           "v0.0.1-9067eff533973d5db56d4ba6a1addf02807982560b6af47d4303caa8883231aa"
         ],
         [
-          "v0.0.1-9a6c58b45aebed4f784b80afa8ca7498b0e3c8537264cf46cd65fdd690eecc6a",
+          "v0.0.1-0db024855a6acc139f0c28e1bd7b3232624ca2be8b3af0b2dc494d046def61a5",
           "v0.0.1-fe00acc51210e413b48464ecc6b1ea06e6a6ab91b49a44d1273e81a661e5b76d"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:comment"
+          "id": "lib:type:note"
         },
         "description": {
-          "content": "Comment"
+          "content": "Note"
         },
         "form": {
-          "attribution": {
-            "id": [
-              "person",
-              "id"
-            ],
-            "name": [
-              "person",
-              "name"
-            ]
-          },
-          "open": true,
-          "title": [
+          "headline": [
             "body"
-          ]
+          ],
+          "open": true
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4894,17 +4995,33 @@
           "v0.0.1-9811aedee9ca866f47794908ad0d50c872be27545167ddeaea5d643ef4594a8b",
           "v0.0.1-692f425a657a913e1191018f12e116308edb00df94de124b92eaa2bf4db7f67f"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:ref"
+          "id": "lib:type:comment"
         },
         "description": {
-          "content": "Reference"
+          "content": "Comment"
+        },
+        "form": {
+          "attribution": {
+            "id": [
+              "person",
+              "id"
+            ],
+            "name": [
+              "person",
+              "name"
+            ]
+          },
+          "open": true,
+          "title": [
+            "body"
+          ]
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4922,17 +5039,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-3a94a5130078ffcc4ce1d75eae170971e7059d4280ce4bc11972377b161eb51c"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:query"
+          "id": "lib:type:ref"
         },
         "description": {
-          "content": "Query"
+          "content": "Reference"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4950,17 +5067,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-406dd734d44d523642cb40e727b36d3d198ee9b0e7a2e2eb9ff339b07dc3c444"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:resource"
+          "id": "lib:type:query"
         },
         "description": {
-          "content": "Resource"
+          "content": "Query"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -4978,17 +5095,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-dc87d9c4963e31e5dc24c7ab6cb7927fa4bebc76b8eaff652805f554d5c7367e"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:allocation"
+          "id": "lib:type:resource"
         },
         "description": {
-          "content": "Allocation"
+          "content": "Resource"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5006,17 +5123,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-140a0918977105ee10f37bdeb85bf14cd5940c9ad440b8ccd30ea120495ec0de"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:allocation:money"
+          "id": "lib:type:allocation"
         },
         "description": {
-          "content": "Money"
+          "content": "Allocation"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5034,17 +5151,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-976d9efb488d49fb3cddbde16a03c140618632f0c2a1253ed54bc12b76d5ba88"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:template"
+          "id": "lib:type:allocation:money"
         },
         "description": {
-          "content": "Template"
+          "content": "Money"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5062,9 +5179,18 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-d0283b4a06d576f8ec74b4dc2ff44aba349ad4289ff53e27e5d4c57985b987f5"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:template"
+        },
+        "description": {
+          "content": "Template"
+        }
+      }
     },
     {
+      "children": [],
       "data": {
         "alias": {
           "id": "lib:type:pattern"
@@ -5072,18 +5198,9 @@
         "description": {
           "content": "Pattern"
         }
-      },
-      "children": []
+      }
     },
     {
-      "data": {
-        "alias": {
-          "id": "lib:type:home"
-        },
-        "description": {
-          "content": "Home"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5101,17 +5218,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-aa046f75c9ddd2aff0f225a7d0958b50f0ea4f6a85deed8da9586df86960496a"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:device-root"
+          "id": "lib:type:home"
         },
         "description": {
-          "content": "Device root"
+          "content": "Home"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5125,17 +5242,17 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-d4eda83de7a582747e9c04cd556a691ec3d950af65bca133c10623ddc9436009"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:document-root"
+          "id": "lib:type:device-root"
         },
         "description": {
-          "content": "Document"
+          "content": "Device root"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5153,7 +5270,15 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-4a65c3822e13efe7f5331ee70e31f6fb8b6b1c23e2d014f3919b7580d0d432ad"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:document-root"
+        },
+        "description": {
+          "content": "Document"
+        }
+      }
     },
     {
       "children": [],
@@ -5166,6 +5291,24 @@
         },
         "form": {
           "primitive": "text"
+        }
+      }
+    },
+    {
+      "children": [],
+      "data": {
+        "alias": {
+          "id": "lib:type:markdown"
+        },
+        "description": {
+          "content": "Markdown"
+        },
+        "form": {
+          "primitive": "text",
+          "text": {
+            "interpolate": true,
+            "mediaType": "text/markdown"
+          }
         }
       }
     },
@@ -5256,18 +5399,6 @@
       }
     },
     {
-      "data": {
-        "alias": {
-          "id": "lib:type:relay-message"
-        },
-        "description": {
-          "content": "Message"
-        },
-        "form": {
-          "open": true,
-          "primitive": "peer"
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5285,21 +5416,21 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-86283532c767e8270022eec991af01ec81e8cda23b78214baed603fdd17012b6"
         ]
-      ]
-    },
-    {
+      ],
       "data": {
         "alias": {
-          "id": "lib:type:relay-queue"
+          "id": "lib:type:relay-message"
         },
         "description": {
-          "content": "Queue"
+          "content": "Message"
         },
         "form": {
           "open": true,
           "primitive": "peer"
         }
-      },
+      }
+    },
+    {
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5317,7 +5448,19 @@
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
           "v0.0.1-d49858db5fb3f03f569bbd2ad410aaad34885378bba04b901f5f7f5e9966a038"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:relay-queue"
+        },
+        "description": {
+          "content": "Queue"
+        },
+        "form": {
+          "open": true,
+          "primitive": "peer"
+        }
+      }
     },
     {
       "children": [],
@@ -5334,19 +5477,6 @@
       }
     },
     {
-      "data": {
-        "alias": {
-          "id": "lib:type:file-reference"
-        },
-        "description": {
-          "content": "File reference"
-        },
-        "form": {
-          "title": [
-            "path"
-          ]
-        }
-      },
       "children": [
         [
           "v0.0.1-a71da6f006cbd7f6d3a2f63541730dc1be57f849c2639ab4200918095245de97",
@@ -5376,7 +5506,20 @@
           "v0.0.1-adc11ff2432f29c486325fe037fc55c711a8acb0afdeb44c7448606f5b652084",
           "v0.0.1-7f4fac043e27c70909418028e6e8e32401963c5c8dd1d0e22d051e357eb2708a"
         ]
-      ]
+      ],
+      "data": {
+        "alias": {
+          "id": "lib:type:file-reference"
+        },
+        "description": {
+          "content": "File reference"
+        },
+        "form": {
+          "title": [
+            "path"
+          ]
+        }
+      }
     },
     {
       "children": [
@@ -5456,7 +5599,7 @@
       "text": "Row types",
       "graph": {
         "template": "v0.0.1-107de8b83c62bd9759af42641ef5f7806ab7a2855b3835038540be733ab400cf",
-        "cid": "v0.0.1-321f7048a710e3bd9563946aa4aecabd1d418639eef0a60d8db64a005f82e7e2"
+        "cid": "v0.0.1-18c638c4687f6e580bf65472df9a6769453ddacb9f92726bc64d405512e2d644"
       },
       "children": [
         {
@@ -5483,15 +5626,15 @@
           "text": "Note",
           "graph": {
             "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-            "cid": "v0.0.1-885924620157f2bb148840ab018938596f91a74d19710c5cc2012d7da48df276"
+            "cid": "v0.0.1-5d80f67c2cfeaa34bff824834b28f1b343c1b0409a567a1c60f6dc07e51dc342"
           },
           "children": [
             {
               "id": "lib:type:note:body",
-              "type": "lib:type:text",
+              "type": "lib:type:markdown",
               "text": "Body",
               "graph": {
-                "template": "v0.0.1-9a6c58b45aebed4f784b80afa8ca7498b0e3c8537264cf46cd65fdd690eecc6a",
+                "template": "v0.0.1-0db024855a6acc139f0c28e1bd7b3232624ca2be8b3af0b2dc494d046def61a5",
                 "cid": "v0.0.1-fe00acc51210e413b48464ecc6b1ea06e6a6ab91b49a44d1273e81a661e5b76d"
               }
             }
@@ -5632,6 +5775,15 @@
           "graph": {
             "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
             "cid": "v0.0.1-9aaf1bc581f4f7f067bd2cf6d5044eefad7d94bdb371eb2bb122d09dbf09b0ab"
+          }
+        },
+        {
+          "id": "lib:type:markdown",
+          "type": "lib:type:template",
+          "text": "Markdown",
+          "graph": {
+            "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
+            "cid": "v0.0.1-25ebd8a54d688f8465d83fecd94a26b9c56e4e4972007eb4702fe0140bfda425"
           }
         },
         {
@@ -5883,75 +6035,19 @@
     {
       "id": "lib:readme",
       "type": "lib:type:note",
-      "text": "",
+      "text": "Standard library",
       "graph": {
-        "template": "v0.0.1-15a7dce1a52719f6121cd9e1e7470d3cf984f667c0a3a81644108c62b72465f7",
-        "cid": "v0.0.1-25052dfdb6208ef9fc6307a5a90167afdfc6afa1f62ed9f71e5c72446491ada0"
+        "template": "v0.0.1-62d5a6f0f025d870dc901bed6bb773d37cf8f54a2f1019fc2ba850aeefae199e",
+        "cid": "v0.0.1-ab9e9fc5756e41634d49e5aea8e465e6fe75a99f98d270fd5e235bb204b247e6"
       },
       "children": [
         {
           "id": "lib:readme/field/body",
-          "type": "lib:type:text",
+          "type": "lib:type:markdown",
           "text": "",
           "graph": {
-            "template": "v0.0.1-9a6c58b45aebed4f784b80afa8ca7498b0e3c8537264cf46cd65fdd690eecc6a",
-            "cid": "v0.0.1-a0032d5a19b596305dc8031f63bc7b9822511c17564ba5cc97df09fd98c2ec56"
-          }
-        }
-      ]
-    },
-    {
-      "id": "lib:trip",
-      "type": "lib:type:template",
-      "text": "Plan a trip",
-      "graph": {
-        "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-e846dd0383772ad62038dd2477583d1c9873625bc8256c8806a32024be71e83e"
-      },
-      "children": [
-        {
-          "id": "lib:trip:where",
-          "type": "lib:type:allocation",
-          "text": "Destination agreed",
-          "graph": {
-            "template": "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-            "cid": "v0.0.1-10cf4496b69dc4a1c44822bfd1a7b40568af1095688341e24b41589d0b3ea5b4"
-          }
-        },
-        {
-          "id": "lib:trip:when",
-          "type": "lib:type:allocation",
-          "text": "Travel dates",
-          "graph": {
-            "template": "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-            "cid": "v0.0.1-9722fab4e3f542f787bda9e52406ffe7b693ea27e700cb51dd7066c7d4a3f7ea"
-          }
-        },
-        {
-          "id": "lib:trip:budget",
-          "type": "lib:type:allocation:money",
-          "text": "Budget per person",
-          "graph": {
-            "template": "v0.0.1-02c4bba15be6e3e9664e7cc1f005ac3686e3ae41995a950065b227eb0249f107",
-            "cid": "v0.0.1-886968b879e414126d69c2e513cdd46da6bb903bfa2f6b6e0784393d712f4609"
-          }
-        },
-        {
-          "id": "lib:trip:transport",
-          "type": "lib:type:allocation",
-          "text": "Book transport",
-          "graph": {
-            "template": "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-            "cid": "v0.0.1-2f0c8638ad160cb4a5fc9214698715cfeb91bf4bcf5aa6e3598bf67d90595cd6"
-          }
-        },
-        {
-          "id": "lib:trip:lodging",
-          "type": "lib:type:allocation",
-          "text": "Book lodging",
-          "graph": {
-            "template": "v0.0.1-e439609e880c9d0c1e4664a741abe4faed7774f178c9664155e851e44272c4b2",
-            "cid": "v0.0.1-e0112b40af9eb557a11565f5448ce0c479cf9d928f0eaae44c820a1a0f397112"
+            "template": "v0.0.1-0db024855a6acc139f0c28e1bd7b3232624ca2be8b3af0b2dc494d046def61a5",
+            "cid": "v0.0.1-85e4a0c9209d345e38bdb1026d9833636113baf7569417d676011615576ac3b3"
           }
         }
       ]
@@ -5962,7 +6058,7 @@
       "text": "Invoice",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-2cff1443ea631e6017e99b9fb2757ac325d24dce78284d5ff3d044885bb2ff06"
+        "cid": "v0.0.1-e8c942c799fd50fe6820f7479fda6c8bec0dfdaeedbd90c8c1cb642d818dbb44"
       },
       "children": [
         {
@@ -6009,7 +6105,7 @@
       "text": "Group decision",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-85ab142b0b7e6ff425116553424b2ebefa5e3302d45478246ec91c52e20bb708"
+        "cid": "v0.0.1-a273c142cb47d9d9b6dfd5ef3282debaf4476dd601e53835a7caf47e805e6219"
       },
       "children": [
         {
@@ -6029,7 +6125,7 @@
       "text": "Paid task",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-b7bfcd91e11f9369e1ce5d58716cdcbce4895b168ad2e85863295fa42d1dd5a4"
+        "cid": "v0.0.1-c9b05b06d1916c549fb85326483ab6ea85bd356df1d15729784e49833ecc1bd2"
       },
       "children": [
         {
@@ -6058,7 +6154,7 @@
       "text": "Contact form",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-06989a196ed387209ea6119d6456a54b433960ce5c73f2778b741c53136fc9e9"
+        "cid": "v0.0.1-c45346dde600ae4e00a67c0f00821b4a1b1102101c84acd188ad1908e82c3c47"
       },
       "children": [
         {
@@ -6087,7 +6183,7 @@
       "text": "Research note",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-f693e32f76284074fc2b8f84fbe2e885a78624272a6b7581ff7363742271d173"
+        "cid": "v0.0.1-5f26cac7432c6fd4db5f956aa98d38d8162831bed35a050450bc819d52d10a85"
       },
       "children": [
         {
@@ -6125,7 +6221,7 @@
       "text": "Meet up",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-a3f6f76f132b953e689eec310ed1dca3278ebc191c665a84de5a9b7d7e91e954"
+        "cid": "v0.0.1-c440cd99820731e7a0972f0cc8fbcc0779927dbd296ceac1ea46d5d1e7959d8e"
       },
       "children": [
         {
@@ -6154,7 +6250,7 @@
       "text": "Relay",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-93348e69957e11cd991328a649d06df5dcdcb496abd8fb73cd3801b6963c9245"
+        "cid": "v0.0.1-f42ff54cf3df33f6c805358cee71e79df30c22249335d516af323cabd77d7563"
       }
     },
     {
@@ -6282,7 +6378,7 @@
       "text": "Project agent workflow",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-afd1952d765863c3ad705541dc51667a876aac174bc4bb38b0792a1e84717bdd"
+        "cid": "v0.0.1-b20e83e16663111f5f372e7f224118fc9c98e9ec02bdbfb216fe9669c3206c54"
       },
       "children": [
         {
@@ -6313,7 +6409,7 @@
       "text": "Request project coding agent",
       "graph": {
         "template": "v0.0.1-2c1a4b1462da070dbd23f6f608251fa7857b686456252226448136e156485453",
-        "cid": "v0.0.1-a7f3b8afed04b82e5423a2a56f6bd8280fc8c6a035737e775bbd6b230e39731b"
+        "cid": "v0.0.1-30250b284f264c4add832551ca25dbb73d96d545c85ef7e9a38731f37ba27ca6"
       },
       "children": [
         {

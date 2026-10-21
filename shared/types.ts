@@ -24,6 +24,11 @@ export type FosDataContent = {
     repeat?: boolean;
     open?: boolean;
     title?: string[];
+    /**
+     * The row's own text is a one-line title (its description); what follows the first line is the field at this path
+     * (a note's markdown body), an ordinary row of the node.
+     */
+    headline?: string[];
     text?: TextPresentation;
     attribution?: { id: string[]; name: string[] };
   };
@@ -31,7 +36,7 @@ export type FosDataContent = {
   parameter?: { name: string; from?: string[] };
   scalar?: { type: 'text' | 'number' | 'peer' | 'time'; value: string | number };
   /** Presentation is a projection of fields, not a second copy of their values. */
-  presentation?: { title?: string[]; text?: TextPresentation; attribution?: { id: string[]; name: string[] }; sequence?: boolean };
+  presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean };
   created?: { time: number };
   position?: { value: number };
   versionControl?: {
@@ -140,7 +145,7 @@ export type FosDataContent = {
    * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
    */
   requirement?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize' | 'title'
     resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount?: number
     unit?: string
@@ -161,7 +166,7 @@ export type FosDataContent = {
   },
   /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
   supply?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
+    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize' | 'title'
     by: string
     at: number
     ref?: string

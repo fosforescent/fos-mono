@@ -365,7 +365,17 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .device-settings > button { justify-self: start; }
 .context-peers .task { padding-left: 0; display: flex; align-items: flex-start; gap: 6px; }
 .context-peers .peer-body { min-width: 0; }
-.node-text { width: 100%; min-height: 6rem; resize: vertical; font: inherit; color: inherit; background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: .6rem; }
+/* the current node's own row in the title area: the row editor at title size, as wide as its text */
+.node-title-row { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; }
+.node-title-row .title.editing { flex: 0 1 auto; }
+.node-title-row textarea.edit.node-title-input { field-sizing: content; min-width: 8ch; max-width: 100%; font: inherit; font-size: inherit; letter-spacing: inherit; line-height: inherit; padding: 2px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; resize: none; overflow: hidden; }
+.node-title-row textarea.edit.node-title-input:hover { border-color: var(--line); }
+.node-title-row textarea.edit.node-title-input:focus { border-color: var(--accent); background: var(--bg); }
+.node-title-row textarea.edit.node-title-input[readonly] { border-color: transparent; background: transparent; }
+.node-title-row.done textarea.edit.node-title-input { text-decoration: line-through; color: var(--muted); }
+.node-title-check input { width: 20px; height: 20px; }
+.node-title-after { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: normal; letter-spacing: normal; }
+.node-title-after .combo-trigger { font-size: 13px; }
 .node-actions { align-items: center; gap: 8px 12px; }
 .node-actions[hidden], .node-actions:empty { display: none; }
 .node-actions > .node-tabs { flex: 0 0 auto; }
@@ -471,8 +481,12 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .tree .task.nested-choice .choice { margin: 6px 0; }
 .tree .task:focus { outline: none; }
 .tree .task.selected { background: var(--selected-bg); }
-.tree .task .more { margin-left: auto; opacity: 0.45; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; }
-.tree .task:hover .more, .tree .task.selected .more { opacity: 1; }
+.tree .task .row-choices { margin-left: auto; flex: 0 0 auto; opacity: 0; }
+.tree .task .row-choices.has-choices, .tree .task:hover .row-choices, .tree .task.selected .row-choices, .tree .task .row-choices:focus-within { opacity: 1; }
+.tree .task .row-choices .combo-trigger { font-size: 12px; padding: 2px 6px; }
+/* a typed row's type, raised at its left: the eager side of the row */
+.task .type-chip { flex: 0 0 auto; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--raised); color: var(--fg); box-shadow: 0 1px 0 var(--line-strong), 0 2px 4px rgba(0, 0, 0, 0.18); white-space: nowrap; }
+.node-choices { flex: 0 0 auto; margin-left: auto; align-self: flex-start; font-size: 13px; }
 .task.multi-selected { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .task.plain .title { font-weight: 500; }
 .task input.edit, .task textarea.edit { flex: 1; border: none; background: transparent; outline: none; font: inherit; color: inherit; padding: 0; margin: 0; min-width: 0; max-width: 100%; }
@@ -718,14 +732,14 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
   .tree .task .row-meta { justify-content: flex-end; flex-wrap: wrap; }
   .tree .task .row-meta:has(.kind-badge, .blocked-badge, .alloc-tag, .market-badge) { order: 10; flex-basis: 100%; }
   .tree .task .row-meta:empty, .tree .task .row-meta:not(:has(:not(.op-icon))) { display: none; }
-  .tree .task .more { margin-left: auto; }
+  .tree .task .row-choices { margin-left: auto; }
   .tree .task.has-constructor { flex-wrap: wrap; }
   .tree .task.has-constructor > .constructor-body { flex-basis: 100%; order: 1; }
   .context-menu { top: auto !important; right: 8px !important; bottom: 8px; left: 8px; max-height: 70dvh; min-width: 0; }
   button, .context-menu .menu-item { min-height: 44px; }
-  button.icon, .tree .task .zoom-dot, .tree .task .toggle, .tree .task .more { min-height: 0; }
+  button.icon, .tree .task .zoom-dot, .tree .task .toggle, .tree .task .row-choices { min-height: 0; }
   button.icon { min-width: 44px; }
-  .tree .task .zoom-dot, .tree .task .toggle, .tree .task .more { min-width: 0; }
+  .tree .task .zoom-dot, .tree .task .toggle, .tree .task .row-choices { min-width: 0; }
   .node-actions button, .node-context button, .node-values button, .device-settings button { min-height: 44px; }
   .node-actions > .node-tabs button { width: 44px; height: 44px; min-width: 0; }
   .node-action-body > button { min-height: 44px; }
@@ -842,3 +856,5 @@ dialog.timeblock-dialog { width: min(1080px, 96vw); max-width: none; padding: 0;
 .node-form-field { display: flex; flex-direction: column; gap: 3px; margin: 5px 0; }
 .node-form-field input, .node-form-field textarea { width: 100%; min-width: 0; font: inherit; }
 .node-form-field textarea { resize: vertical; }
+/* an empty input a row needs (a trigger's schedule): the unmet requirement's red */
+input.unmet-input { border-color: var(--danger, #d33); box-shadow: 0 0 0 1px var(--danger, #d33); }

@@ -8,7 +8,7 @@ import { executionInput, executionSnapshot } from '../../shared/sync/execution-a
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { CAPABILITY_LABEL, MARKET_PEER } from '../../shared/sync/graph'
-import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
+import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
 import { ORGANIZED_VALUE, ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
@@ -17,10 +17,11 @@ import { microphoneError, recordedType, recordingMimeType, recordingUnsupported 
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
-import { cronMatches, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
+import { cronMatches, missingSchedule, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
+import { requestTitle, TITLED_VALUE, truncateTitle } from '../../shared/sync/index'
 import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, memberEntryId, isMemberEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
@@ -358,6 +359,34 @@ export class App {
   private listeners = new Set<(state: AppState) => void>()
   /** Usernames whose user objects are being fetched from the account server (`resolveUser`). */
   private resolvingUsers = new Set<string>()
+  private titling = new Set<string>()
+  /**
+   * A headline row (a note) made or rewritten from several lines is titled at once by the `title` handler every
+   * peer runs (`truncateTitle`). Where the account server offers `title` (its model), it is asked too: a `title`
+   * requirement in the row (`requestTitle`) runs there (`runOnServer`), and its summary replaces the title unless the
+   * title was edited meanwhile; the request is then removed. Offline, or with the server's handler switched off, the
+   * truncated title stays.
+   */
+  titleFromText(path: Scope): void {
+    const row = () => view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+    const session = this.state.session, key = JSON.stringify(path)
+    if (!row()?.headline || !session || session.kind !== 'user' || this.virtualIdentity || !this.isOnline('fos') || !this.capabilityAvailable('title', path) || this.titling.has(key)) return
+    this.titling.add(key)
+    void (async () => {
+      const store = this.state.replica.store, before = row()!.title
+      const asked = requestTitle(this.state.replica, path, this.now())
+      this.edit(asked.replica)
+      let failure: string | null = null
+      try { await this.runOnServer(asked.path) } catch (error) { failure = error instanceof Error ? error.message : String(error) }
+      if (this.state.replica.store !== store) return
+      const titled = failure ? null : readNodeValue<string>(this.state.replica, asked.path, TITLED_VALUE)
+      let next = this.state.replica
+      if (resolveScope(next.store, headCid(next), asked.path)) next = deleteTask(next, path, asked.path.at(-1)!, this.now())
+      if (titled && row()?.title === before) next = renameTask(next, path.slice(0, -1), path.at(-1)!, truncateTitle(titled, 120), this.now())
+      this.edit(next)
+      if (failure) this.notify('error', `Could not title the note: ${failure}`)
+    })().catch(error => this.notify('error', error instanceof Error ? error.message : String(error))).finally(() => this.titling.delete(key))
+  }
   /**
    * The device's verify handlers, by the peer that attested: a user object the fos server attested is checked
    * against the key that server publishes on its member entry (`fos:key:fos` under `fos:peer:fos` on the root, graph data that node exchange brought here).
@@ -1248,18 +1277,23 @@ export class App {
         if (!resolveScope(r.store, headCid(r), path)) continue
         const remotePath = path.slice(root.length)
         const state = r.meta.nodeSync?.[nodeSyncKey(peer, path)]
-        const local = nodeShape(r, path), baseline = state?.local ?? local
-        const dirty = !pullOnly && !sameNodeShape(local, baseline)
+        const local = nodeShape(r, path)
+        let baseline = state?.local ?? local
         const request = nodeSyncRequest(r, path, peer, info.scope, remotePath)
         try {
-          let remote = await requestPeerNode(session, request, info.owner)
+          // rows this account pushed come back held by it (`user:<me>`): they are its own rows
+          const selves = [`user:${session.username}`, r.meta.peerId]
+          let remote = ownHeldChildren(await requestPeerNode(session, request, info.owner), selves)
           if (!valid()) return
           validateNodeShape(remote)
           if (remote.peerId !== peer || remote.remoteLinkId !== request.linkId) throw new Error('Node response does not match its attachment.')
+          // a row added here and never synced: the owner holds it blank, so all of it is this round's change
+          if (!state && isBlankShape(remote)) baseline = remote
+          const dirty = !pullOnly && !sameNodeShape(local, baseline)
           r = establishNodeSync(this.state.replica, path, request, remote, this.now())
           const outgoingBase = outgoingNodeShape(r, path, peer, baseline), outgoing = outgoingNodeShape(r, path, peer, local)
           if (dirty && !sameNodeShape(outgoingBase, outgoing)) {
-            remote = await requestPeerNode(session, { ...request, update: { base: remote, value: mergeNodeShape(outgoingBase, outgoing, remote) } }, info.owner)
+            remote = ownHeldChildren(await requestPeerNode(session, { ...request, update: { base: remote, value: mergeNodeShape(outgoingBase, outgoing, remote) } }, info.owner), selves)
             if (!valid()) return
             validateNodeShape(remote)
           }
@@ -1377,6 +1411,7 @@ export class App {
     }
     const next = addRow(replica, [...this.state.view, ...at], type, text, this.now(), { ...rest, ...data, author, id })
     if (!branch) this.edit(next)
+    if (!branch && text.trim().includes('\n')) this.titleFromText([...this.state.view, ...at, id])
     this.resolveUser(data.user)
     if (templateName && type === TASK_TYPE) this.applyTemplate(at, id, templateName, branch)
     if (templateName && data.requirement?.capability === 'task') {
@@ -1500,6 +1535,7 @@ export class App {
       if (merged.newChoiceCids.length) { this.notify('info', 'This row changed in two places. Choose which version to keep.'); return }
     } else {
       this.edit(renameOnly ? renameTask(this.state.replica, [...this.state.view, ...at], id, parsed.text, this.now()) : setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.type, parsed.text, extras, this.now()))
+      if (parsed.text.includes('\n')) this.titleFromText([...this.state.view, ...at, id])
     }
     if ((parsed.peer !== undefined || before?.construction?.handler) && !rebasing) this.setPeerRow([...this.state.view, ...at, id], parsed.peer)
     if (parsed.children?.length && !rebasing) this.addParsedChildren([...at, id], parsed.children)
@@ -1600,6 +1636,10 @@ export class App {
       peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false, ...(p.startsWith('user:') ? { fosUser: p.slice(5) } : {}) })
     }
     peers.push({ id: me, name: this.state.deviceName, online: true, capabilities: [], disabled: [], accepts: CLIENT_CAPABILITIES, isAccount: false, member: false })
+    // the other `.fos` stores on this machine (Home's, other projects') are this device's, not peers of their own
+    for (const p of peers) if (!p.parent && p.id !== me && p.capabilities.includes('local')) p.parent = 'device'
+    // audiences (anyone, every Fos user) are reached through the server
+    for (const p of peers) if (!p.parent && p.id.startsWith('audience:')) p.parent = 'server'
     for (const p of peers) if (!p.parent && (p.integration || p.mcp || p.repository || p.fosUser)) p.parent = 'server'
     for (const p of peers) {
       const member = members.get(p.name === 'fos' ? 'fos' : p.id)
@@ -2170,7 +2210,7 @@ export class App {
   editCurrentText(text: string, draft: { store: Replica['store']; head: string; path: Scope }): void {
     if (draft.store !== this.state.replica.store || !draft.path.length || draft.path.at(-1) === HOME_ID) return
     const parent = draft.path.slice(0, -1), id = draft.path.at(-1)!
-    if (headCid(this.state.replica) === draft.head) { this.edit(renameTask(this.state.replica, parent, id, text, this.now())); return }
+    if (headCid(this.state.replica) === draft.head) { this.edit(renameTask(this.state.replica, parent, id, text, this.now())); if (text.includes('\n')) this.titleFromText(draft.path); return }
     const branch = createReplica(this.state.replica.meta.peerId)
     importNodes(branch.store, reachableNodes(draft.store, [draft.head])); commitRoot(branch.store, draft.head, this.now())
     for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(branch.store, id, name)
@@ -2180,6 +2220,38 @@ export class App {
     const merged = mergeNodes(current.store, draft.head, headCid(current), headCid(next), { ours: 'Incoming edit', theirs: this.state.deviceName })
     commitRoot(current.store, merged.cid, this.now()); this.edit({ ...current })
     if (merged.newChoiceCids.length) this.notify('info', 'This text changed in two places. Choose which version to keep.')
+  }
+  /**
+   * The title area's editor: the current node's own row re-parsed from its marker text, as `rewriteRowAt` does for a
+   * row in the view (same type: only its text, and its done state for a task; another marker: the row in place).
+   */
+  rewriteCurrentRow(parsed: import('./rows').ParsedInput, draft: { store: Replica['store']; head: string; path: Scope }): void {
+    if (draft.store !== this.state.replica.store || !draft.path.length || draft.path.at(-1) === HOME_ID) return
+    const before = this.currentRow(), parent = draft.path.slice(0, -1), id = draft.path.at(-1)!
+    if (!before) return
+    this.together(() => {
+      if (parsed.type === before.type && !parsed.extras && !parsed.children?.length && parsed.peer === undefined) {
+        if (parsed.text !== before.title) this.editCurrentText(parsed.text, draft)
+        if (before.checkable && parsed.done !== before.done) this.edit(setTaskDone(this.state.replica, parent, id, parsed.done, this.now()))
+        return
+      }
+      let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
+      if (parsed.extras?.allocation) {
+        const resolved = this.allocationWithBank([], parsed.extras.allocation, undefined, parsed.extras.user?.username)
+        if (!resolved) return
+        extras = { ...extras, allocation: resolved }
+      }
+      this.resolveUser(parsed.extras?.user)
+      this.edit(setRowContentAt(this.state.replica, parent, id, parsed.type, parsed.text, extras, this.now()))
+      if (parsed.peer !== undefined || before.construction?.handler) this.setPeerRow(draft.path, parsed.peer)
+      if (parsed.children?.length) this.addParsedChildren([], parsed.children)
+    })
+  }
+  /** Mark the current node's own row (a task) done or open. */
+  setCurrentDone(done: boolean): void {
+    const path = this.state.view
+    if (!path.length || !this.currentRow()?.checkable) return
+    this.edit(setTaskDone(this.state.replica, path.slice(0, -1), path.at(-1)!, done, this.now()))
   }
   destructure(path: Scope, name: string, amount?: number): void {
     try { this.edit(destructureRequirement(this.state.replica, path, name, amount, this.now())) }
@@ -2561,8 +2633,6 @@ export class App {
     if (!r || r.satisfied) return false
     if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize') return true
     if (r.capability === 'tool') return !['fos.pull', AGENT_TOOL].includes(r.tool ?? '')
-    // a poll resolves its choice on the server (the fos poll handler tallies the responses)
-    if (r.capability === 'choice') return !!readNodeValue(this.state.replica, step.path, 'fos:poll')
     if (r.capability === 'allocation' && r.resource === 'points') return true
     // a request for money (a money row) goes through the server's payment provider when the fos peer offers payments in this context
     if (step.row?.type === MONEY_TYPE) return capabilityPeers(this.state.replica, step.path, 'send-payment').includes('fos')
@@ -2672,8 +2742,10 @@ export class App {
     try {
       const peer = kind === 'cron' ? 'fos' : this.state.replica.meta.peerId
       if (!this.triggerKinds(destination).includes(kind)) throw new Error('The trigger provider is not active.')
-      if (kind === 'cron') cronMatches(value ?? '', this.now())
-      if (kind === 'timer' && (!Number.isFinite(Date.parse(value ?? '')) || Date.parse(value!) < this.now())) throw new Error('Choose a future time.')
+      // no schedule yet: the trigger is made paused and its node asks for one (`missingSchedule`)
+      if (kind === 'cron' && value) cronMatches(value, this.now())
+      if (kind === 'timer' && value && (!Number.isFinite(Date.parse(value)) || Date.parse(value) < this.now())) throw new Error('Choose a future time.')
+      if ((kind === 'cron' || kind === 'timer') && !value) enabled = false
       const source = this.state.replica, parentCid = destination.length && resolveScope(source.store, headCid(source), destination.slice(0, -1))
       const arg = newTemplate && parentCid && argumentRefs(source.store, parentCid).find(a => content(source.store, a.cid).data.alias?.id === destination.at(-1))
       if (arg && arg.type !== capabilityTarget(source.store, kind)) throw new Error('Choose a trigger matching this input type.')
@@ -2686,7 +2758,7 @@ export class App {
         if (!member) r = addMemberAt(r, home, peer, this.state.deviceName, [], this.now())
         r = setMemberCapabilitiesAt(r, home, peer, member?.capabilities ?? [], member?.disabled ?? [], this.now(), [...new Set([...(member?.accepts ?? []), 'timer', 'task-completion', 'request'] as Capability[])])
       }
-      const trigger = { kind, peer, enabled, created: this.now(), ...(kind === 'timer' ? { due: Date.parse(value ?? '') } : {}), ...(kind === 'cron' ? { expression: value ?? '' } : {}) }
+      const trigger = { kind, peer, enabled, created: this.now(), ...(kind === 'timer' && value ? { due: Date.parse(value) } : {}), ...(kind === 'cron' && value ? { expression: value } : {}) }
       let path = [...destination]
       if (newTemplate && view(r, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.type !== TEMPLATE_TYPE) {
         const id = newId(); r = addRow(r, destination, TEMPLATE_TYPE, `${kind} workflow`, this.now(), { id }); path = [...destination, id]
@@ -2704,6 +2776,8 @@ export class App {
   toggleTrigger(): void {
     const trigger = this.currentTrigger()
     if (!trigger) return
+    const missing = missingSchedule(trigger)
+    if (missing && !trigger.enabled) { this.notify('error', `Set its schedule (${missing}) before enabling the trigger.`); return }
     this.edit(writeNodeValue(this.state.replica, this.state.view, 'fos:trigger', { ...trigger, enabled: !trigger.enabled }, this.now()))
   }
   async runTriggers(): Promise<void> {
@@ -2906,9 +2980,8 @@ export class App {
     const task = this.rowAt(at)
     try {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
-      const poll = r.capability === 'choice' && !!readNodeValue(this.state.replica, [...this.state.view, ...at, req.id], 'fos:poll')
       const payment = req.type === MONEY_TYPE && capabilityPeers(this.state.replica, [...this.state.view, ...at, req.id], 'send-payment').includes('fos')
-      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize' || poll || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
+      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize' || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
         if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
         // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
         await this.evaluateAt([...this.state.view, ...at, req.id])

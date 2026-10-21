@@ -560,7 +560,7 @@ The fos account server registers what it can actually do with every device in
 each node-provider response (`ProvidedNode.capabilities`): the transport facts
 (`SERVER_TRANSPORT_CAPABILITIES`: http, ws, relay, peer, persist, provideNode,
 sync) plus the services its handler registry has (`backend/sync/registry.ts`,
-today search, market, poll, points, verify, organize, llm and cron when enabled). Devices record the
+today search, market, points, verify, organize, title, llm and cron when enabled). Devices record the
 reported list on their own fos member (`App.recordServerOffers`), so a
 capability no handler backs is never offered in the palette. The context panel under the tree lists the banks in scope
 and the peers of the viewed node: `fos` with what it registered, the node's
@@ -964,7 +964,7 @@ startup by `backend/library.ts`). At startup `ensureStandardLibrary` makes sure
 the account's Home holds the `fos:library` row "Standard library", shares it
 with the `users` audience granting read, edit and rank, gives it a
 **merge policy** (`fos:merge-policy`, default two approvals) and seeds the
-standard templates (`STANDARD_LIBRARY`: Plan a trip, Invoice, Group decision,
+standard templates (`STANDARD_LIBRARY`: Invoice, Group decision,
 Paid task, Contact form, Research note; `fos:library` records the seed version so
 later versions add only what is missing and rows the group removed stay removed).
 The registry then carries the address. Accounts do not get the library
@@ -984,7 +984,7 @@ explicit members.
 **Offline.** The web app opens the reference as a live projection
 (`openSharedNode`) on the first online sync and pulls the whole tree
 (`materializeSharedTree`), so `findTemplateByName` finds the library's templates
-in the local replica and `` [ ] `Plan a trip` `` instantiates them offline;
+in the local replica and `` [ ] `Invoice` `` instantiates them offline;
 `syncSharedNodes` keeps the copy current and pushes local edits as the member's
 proposal on the owner's node.
 
@@ -1005,7 +1005,7 @@ run build` when the CLI is on PATH (`FOS_BIN` overrides, `FOS_LIBRARY_PULL=0`
 skips) and otherwise keeps the committed `web/src/library.json`. The device
 root ships that copy as its library row (`ensureDeviceLibrary`, falling back to
 the in-code `STANDARD_LIBRARY` when the file is empty). The export also
-records the library's address (owner, path and share id, from
+records the library's address (owner and path, from
 `peer-sync/locate`), which the "Contribute" action links into Home. Without a
 library linked in Home, `fos library export` finds it by the library account
 (`--owner`, default `fos-library`).
@@ -1366,10 +1366,27 @@ endpoints require deployment of the updated backend.
 
 ### Published nodes as pages, and the embed script
 
-Publishing a node publicly gives anyone execute access to it through a service
-trigger: the share link (and its embed) renders that node as a small website
-(`web/src/site.ts`, the one renderer of the share page and the embed) and lets
-visitors answer its holes.
+**Publishing is membership.** A node is published to an audience when that
+audience's peer is a member of it that may run it (`execute`; or read it): the
+world (`audience:public`) or every Fos user (`audience:users`, the group every
+`user:*` falls under); a person or a group is the same with their own peer. The
+owner does it on their device as an ordinary member edge (the audience's row,
+`@{public}` / `@{users}`, a peer row like any other with its Read / Write / Execute
+switches; there is no publish button), and it syncs like any edit: there is no
+publishing route and no share id. Visiting a node serves its execute view to
+whoever may run it and 404 to anyone else (no permission reads as no node). The
+link is made by the account server's `url` handler: after a write reaches a
+published node it keeps the node's URL as a row (`fos:url:<id>`) in the server's
+member entry above it, removed once the node is no longer published
+(`syncPublishedUrls`, read with `publishedUrl`). An address is the owner and the
+node's path; the link (and its embed) renders the node's execute view as a small website (`web/src/site.ts`, the
+one renderer of the share page and the embed), without its peer rows, and lets
+visitors answer its holes (`shared/sync/sharing.ts`: `publication`, `publish`,
+`unpublish`, `servedTo`, `mayParticipate`; a visitor's input and votes need both
+the visitor and its audience to allow them). A published template is an endpoint:
+each visitor who starts it gets a private execution, a node whose only visitor is
+them (`markExecution`, `fos:execution`), valid while the endpoint stays published to
+that audience.
 
 **Rows render by type.** A row is `[type, row]`; the projection
 (`sharedProjection`, `shared/sync/sharing.ts`) carries each row's `type`, the id
@@ -1383,14 +1400,14 @@ carries its name as `title` and its value as `body`; the field a row presents as
 its title (a note's body, per its type's `form.title`) is not repeated, and an
 empty one is declared as an input, rendered as a control of that field's type.
 Anything else reads as its text. Bindings (`{name}`) are not resolved, since
-arguments are never exported. The revision that votes are tied to is still
-computed from the earlier row shape, so existing polls keep their votes.
+arguments are never exported.
 
 The page is the node (its markdown, or its title as a heading). Leaf children are
 sections; a child with rows of its own other than fields is a sub-page, linked
 from its parent with breadcrumbs back. Declared inputs render inline at the row
-they belong to (missing bindings on the page itself); poll options, rankings and
-Save follow the page, and only when there is something to answer. The share page
+they belong to (missing bindings on the page itself; a choice requirement is a
+choice input); approvals and rankings of open proposals and Save follow the page,
+and only when there is something to answer. The share page
 (`#share=`) hides the app chrome (`#app.shared-site`) and renders math and
 diagrams; markdown goes through marked + DOMPurify everywhere.
 
@@ -1401,7 +1418,7 @@ answers are candidate values in the owner's node (`proposeVisitorValues`): a
 missing binding gets that visitor's binding proposal on its ref, empty fields one
 node proposal named `fos:visitor-submission` per visitor (a resubmission replaces
 it). The owner accepts or rejects them like any submission; they are not offered
-to other visitors as poll options and never merge by a merge policy.
+to other visitors to vote on and never merge by a merge policy.
 
 **Embedding.** `web/src/embed.ts` builds to `dist/embed.js` (a second Vite build,
 `web/vite.embed.config.ts`, IIFE, about 80 kB) and is served by Cloudflare Pages
@@ -1409,15 +1426,15 @@ next to the app. `<script src="https://<app>/embed.js" data-fos-share="<share UR
 data-fos-api="<server>" async></script>` renders after itself, and any
 `<div data-fos-share=…>` renders inside; each gets a shadow root (styles isolated,
 colors and fonts inherited from the host page). Reading uses
-`GET /public/node/read?owner=&share=&path=[…]` (`credentials: 'omit'`), which
+`GET /public/node/read?owner=&path=[…]` (`credentials: 'omit'`), which
 writes nothing, refuses Fos-user audiences and executions, and is cached for 60
 seconds; a template endpoint reads as its page and Start begins the visitor's
 private execution. A visitor joins (`/public/node/visit`) only when they first
 answer or start; the receipt and execution are remembered in the host site's
 storage. `/public/node/read|visit|input` alone allow every origin through CORS,
 without credentials; every other route keeps the account origins list. The embed
-shows math and diagram fences as source. The publishing dialog offers "Copy
-embed" for public links.
+shows math and diagram fences as source. The public audience's row offers "Copy
+embed".
 
 Not yet: a payment form (money requests are rows of `lib:type:allocation:money`, so
 a page can render them by type; the visitor-pays path through Stripe Checkout is
@@ -1460,12 +1477,12 @@ When the last declared input of a template execution arrives, the host evaluates
 the execution through its registry (`backend/sync/sharing.ts` → `runNode`), so a
 survey answer can pay out fos points or run any other effect the owner configured.
 
-**Polls resolve choices.** A `choice` requirement published with a poll
-(`fos:poll`, approval or rank) is resolved by the fos `poll` handler when the node
-runs ("Apply poll result" on the row): rank polls take the top Borda score,
-approval polls the most approvals; a tie or no responses blocks. Approvals and
-rankings on pending proposals are input the owner decides with; the tally never
-merges a proposal by itself.
+**Choices are inputs.** A published `choice` requirement is a choice input each
+visitor answers (their answer is their participation record); deciding it from
+the answers is a handler's job, composed in the standard library, not a built-in
+poll. Approvals and rankings of pending proposals are input the owner decides
+with (or a merge policy, for the standard library); the tally never merges a
+proposal by itself.
 
 **Evaluation requests.** A peer that may edit but does not own the node cannot run
 effects. Its `complete` becomes a proposal on the node named `evaluate <path>`,

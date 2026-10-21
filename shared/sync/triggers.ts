@@ -79,13 +79,24 @@ export function cronMatches(expression: string, now: number): boolean {
   const day = fields[2] !== '*' && fields[4] !== '*' ? matches[2] || matches[4] : matches[2] && matches[4]
   return !!(matches[0] && matches[1] && matches[3] && day)
 }
+/**
+ * What a timer or cron trigger still needs before it can run: its schedule (a time, a cron expression), made empty
+ * and filled on its node. Null when nothing is missing. A trigger with a missing schedule never fires and cannot be
+ * enabled; its row reads as an unmet requirement.
+ */
+export function missingSchedule(t: NodeTrigger | null | undefined): string | null {
+  if (t?.kind === 'timer' && t.due === undefined) return 'a time'
+  if (t?.kind === 'cron' && !t.expression?.trim()) return 'a cron expression'
+  return null
+}
 export function setNodeTrigger(r: Replica, path: Scope, trigger: NodeTrigger, now: number): Replica {
   if (!['timer', 'cron', 'task-completion', 'request', 'response', 'ref-change'].includes(trigger.kind) || typeof trigger.peer !== 'string' || !trigger.peer.trim()) throw new Error('Choose a trigger capability and executor peer.')
   // A continuation waits on the node that made the request; every other trigger instantiates a template.
   if (trigger.kind !== 'response' && (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.type !== TEMPLATE_TYPE)) throw new Error('Triggers require a template.')
   if (trigger.kind === 'response' && (!trigger.response || typeof trigger.response.request !== 'string' || !Array.isArray(trigger.response.node))) throw new Error('A response trigger names the request it waits for.')
-  if (trigger.kind === 'cron') cronMatches(trigger.expression ?? '', now)
-  if (trigger.kind === 'timer' && (!Number.isFinite(trigger.due) || trigger.due! < now)) throw new Error('Choose a future time.')
+  if (missingSchedule(trigger) && trigger.enabled) throw new Error(`Set its schedule (${missingSchedule(trigger)}) before enabling the trigger.`)
+  if (trigger.kind === 'cron' && !missingSchedule(trigger)) cronMatches(trigger.expression ?? '', now)
+  if (trigger.kind === 'timer' && !missingSchedule(trigger) && (!Number.isFinite(trigger.due) || trigger.due! < now)) throw new Error('Choose a future time.')
   if (trigger.kind === 'ref-change') {
     const w = trigger.watch
     if (!w || !Array.isArray(w.path) || !w.path.every(id => typeof id === 'string') || !w.path.length || !w.branch || !w.baseline) throw new Error('Choose a reference and branch to watch.')
@@ -98,7 +109,7 @@ export function setNodeTrigger(r: Replica, path: Scope, trigger: NodeTrigger, no
   return writeNodeValue(r, path, TRIGGER_ARGUMENT, trigger, now, { type: capabilityTarget(r.store, trigger.kind), peer: trigger.peer })
 }
 export function triggerOccurrence(r: Replica, path: Scope, t: NodeTrigger, now: number): string | null {
-  if (!t.enabled) return null
+  if (!t.enabled || missingSchedule(t)) return null
   if (t.kind === 'ref-change') {
     if (!t.watch) return null
     const value = watchedRefValue(r, t.watch.path, t.watch.branch, t.watch.argument)

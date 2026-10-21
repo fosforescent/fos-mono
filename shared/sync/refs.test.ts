@@ -52,7 +52,7 @@ test('template instantiation shares deep copying, remaps internal refs and creat
   expect(first.id).not.toBe(second.id)
   expect(view(r, ['one'])!.tasks[1]!.refId).toBe('one')
   const children = view(r, ['one', first.id])!.tasks
-  const doc = children.find((t) => t.text?.mediaType === 'text/markdown')!
+  const doc = children.find((t) => t.type === NOTE_TYPE)!
   expect(children.find((t) => t.refId !== undefined)!.refId).toBe(doc.id)
   const req = children.find((t) => !!t.requirement)!
   expect(req.requirement!.satisfied).toBe(false)

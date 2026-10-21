@@ -1,6 +1,6 @@
 import { nodeRelay } from './nodeRelay'
 import type { Request, Response } from 'express'
-import { createReplica, ensureHomeContext, type Replica, exchangeNode, findRowByAlias, nodeAuthorityAt, parseNodeRequest, rootTargetCid, viewNode, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, acceptTemplateNodes, exchangeNodeContext, resolveScope, sharing, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
+import { createReplica, ensureHomeContext, type Replica, exchangeNode, findRowByAlias, nodeAuthorityAt, parseNodeRequest, rootTargetCid, viewNode, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, acceptTemplateNodes, exchangeNodeContext, resolveScope, publication, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
 import type { HandlerRegistry } from './registry'
 import { withUserLock, serverPeerIdFor, type AccountStoreDeps } from './accountStore'
 
@@ -100,7 +100,7 @@ export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user
 /**
  * GET /user/data/peer-sync/locate?owner=&id= — where a node another account shared with this user lives in that
  * account (its path, which is the attachment scope for provide-node and events), what they may do there, its title,
- * and its share id when it is published (what the shared view opens). 403 when nothing was granted at or above it.
+ * and the audience it is published to, if any (what the shared view opens). 403 when nothing was granted at or above it.
  */
 export function createNodeLocator(deps: AccountStoreDeps) {
   return async (req: Request, res: Response): Promise<Response> => {
@@ -117,8 +117,8 @@ export function createNodeLocator(deps: AccountStoreDeps) {
     try {
       const grants = owner === claims.username ? ['read', 'edit', 'execute'] : nodeAuthorityAt(r, path, { peerId: serverPeerIdFor(claims.username), scope: path, capabilities: [] })
       res.setHeader('Cache-Control', 'no-store')
-      const share = sharing(r, path)
-      return res.json({ owner, aliasId, path, title: viewNode(loaded.store, found.row.id ? resolveScopeOrThrow(loaded.store, path) : rootTargetCid(loaded.store)).name, grants, ...(share?.enabled ? { share: share.id } : {}) })
+      const published = publication(r, path)
+      return res.json({ owner, aliasId, path, title: viewNode(loaded.store, found.row.id ? resolveScopeOrThrow(loaded.store, path) : rootTargetCid(loaded.store)).name, grants, ...(published ? { published: published.audience } : {}) })
     } catch (error) {
       if (error instanceof NodeAccessError) return res.status(403).json({ error: 'This node is not shared with you.' })
       throw error

@@ -88,7 +88,7 @@ async function main() {
   document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
   assert.equal(JSON.stringify(serializeReplica(controller.state.replica)), graphBefore, 'file navigation never edits the hosting graph node')
   filesystemBack(controller); await tick()
-  assert(root.querySelector('.node-title').textContent.includes('Workspace'), 'parent navigation restores the graph workspace')
+  assert(root.querySelector('.node-title-input').value.includes('Workspace'), 'parent navigation restores the graph workspace')
   controller.logout()
   console.log('PASS: filesystem projections refresh, remain outside the replica, and isolate nodes/accounts and late responses')
 }

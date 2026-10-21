@@ -4,7 +4,7 @@
  * imports the import-free library-types, so the standalone embed script can use it.
  */
 import { NUMBER_TYPE, PEER_TYPE, TEXT_TYPE, TIME_TYPE } from './library-types'
-export { NOTE_TYPE, NUMBER_TYPE, PEER_TYPE, PLAIN_TYPE, TEXT_TYPE, TIME_TYPE } from './library-types'
+export { MARKDOWN_TYPE, NOTE_TYPE, NUMBER_TYPE, PEER_TYPE, PLAIN_TYPE, TEXT_TYPE, TIME_TYPE } from './library-types'
 /** Scalar field types: the fields of a row's product, asked of visitors when empty. */
 export const FIELD_TYPES: readonly string[] = [TEXT_TYPE, NUMBER_TYPE, TIME_TYPE, PEER_TYPE]
 /** The name of the proposal holding one visitor's candidate field values (one per visitor, replaced on resubmit). */

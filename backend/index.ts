@@ -358,7 +358,6 @@ const marketHandlers = createMarketHandlers({ loadStore: prismaAccountStoreDeps.
 } })
 dataRoutes.get('/market/node', marketHandlers.marketNode)
 dataRoutes.post('/market/proposals', marketHandlers.marketProposal)
-dataRoutes.post('/sharing', sharingHandlers.configure)
 dataRoutes.post('/sharing/visit', sharingHandlers.visit)
 dataRoutes.post('/sharing/input', sharingHandlers.submit)
 dataRoutes.post('/peer-invite', peerInviteHandlers.createInvite)
@@ -528,6 +527,7 @@ const verify = verifyHandler({
 }, identityKeyFromEnv())
 const registry = createHandlerRegistry([...createHostHandlers({
   verify,
+  webUrl: (process.env.WEB_URL ?? process.env.FRONTEND_URL ?? 'https://fosforescent.com').replace(/\/$/, ''),
   // captures organized into a node: one provider instance per capture, metered under the voice budget
   organize: organizeHandler(() => voiceDepsFromEnv(), voiceUsage),
   github: { connected: async id => !!await integrationDeps.connections.get(id, 'github'), createIssue: (userId, input) => integrations.createIssue(userId, input) },
@@ -655,7 +655,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   void startChannels()
   // The standard library: its system account, node, sharing and seed templates; then every owner sync references it.
   ensureStandardLibrary({ ...prismaAccountStoreDeps, createAccount: createSystemAccount }, libraryOwner(), registry)
-    .then(address => { registry.library = address; console.log(`[library] @${address.owner} shares ${address.title} (${address.share})`) })
+    .then(address => { registry.library = address; console.log(`[library] @${address.owner} shares ${address.title}`) })
     .catch(error => console.error('[library] unavailable:', error instanceof Error ? error.message : error))
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);

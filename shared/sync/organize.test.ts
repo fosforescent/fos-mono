@@ -81,7 +81,7 @@ test('applying places rows under existing rows and new groups, never outside the
   const compost = view(r, [HOME_ID])!.tasks.find(t => t.title === 'Compost')!
   expect(titles(r, [HOME_ID, compost.id])).toEqual(['buy a bin'])
   expect(titles(r, [HOME_ID, 'trip'])).toEqual(['We should leave early.'])
-  expect(view(r, [HOME_ID, 'trip'])!.tasks.find(row => !row.scalar)!.text?.mediaType).toBe('text/markdown')
+  expect(view(r, [HOME_ID, 'trip'])!.tasks.find(row => !row.scalar)!.headline).toEqual(['body'])
   // a row is [type, row]: the left node is the library row type the plan named
   const edgeOf = (at: string[], id: string) => findEdge(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), at)!), 'a:' + id)!
   const note = view(r, [HOME_ID, 'trip'])!.tasks.find(row => !row.scalar)!
@@ -91,10 +91,12 @@ test('applying places rows under existing rows and new groups, never outside the
   expect(titles(r, ['elsewhere'])).toEqual([]) // a parent outside the target is the target
   expect(titles(r, [HOME_ID])).toContain('not outside')
   const capture = view(r, [HOME_ID])!.tasks.find(t => t.id === applied.captureId)!
-  expect(capture.title).toBe('## Voice note: Garden\n\n_today_\n\nraw transcript words')
+  // the capture is a note: its whole text is the body, titled from its heading
+  expect(capture.title).toBe('Voice note: Garden')
+  expect(view(r, [HOME_ID, applied.captureId])!.tasks.find(t => t.scalar)!.title).toBe('## Voice note: Garden\n\n_today_\n\nraw transcript words')
   // an empty plan still keeps the capture
   const empty = await applyOrganizePlan(r, [HOME_ID, 'garden'], { title: '', items: [] }, { label: 'Pasted text', stamp: 's', text: 'kept' }, 11, ids)
-  expect(view(empty.replica, [HOME_ID, 'garden'])!.tasks.map(t => t.title)).toContain('## Pasted text\n\n_s_\n\nkept')
+  expect(view(empty.replica, [HOME_ID, 'garden'])!.tasks.map(t => t.title)).toContain('Pasted text')
 })
 
 test('a row that moved out of the target while the model worked takes nothing outside', async () => {
@@ -120,7 +122,7 @@ test('the same plan as one submission of the event grammar: added rows take ids 
   const compost = view(r, [HOME_ID])!.tasks.find(t => t.title === 'Compost')!
   expect(titles(r, [HOME_ID, compost.id])).toEqual(['buy a bin'])
   expect(titles(r, [HOME_ID, 'garden', 'tomatoes'])).toEqual(['Stake them', 'water daily'])
-  expect(titles(r, [HOME_ID]).some(t => t.startsWith('## Text message'))).toBe(true)
+  expect(titles(r, [HOME_ID]).some(t => t.startsWith('Text message'))).toBe(true)
   // ids are only for added rows, and only further rows go inside rows added by the same submission
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: ['a'], operation: 'rename', text: 't', id: 'x' }] })).toThrow(/Only added rows/)
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: [], operation: 'add_row', text: 't' }] })).toThrow(/row type/)
@@ -195,7 +197,7 @@ test('organizing is one submission by fos on the target: main is unchanged, acce
   expect(view(again.replica, at)!.proposals.map(p => p.name)).toEqual(['Voice note: Garden plans', 'Voice note: Garden plans (2)'])
   const copy = loadReplica(serializeReplica(again.replica)) // replicas share their store: decide on separate copies
   const accepted = applyProposalAt(again.replica, at, submitted.proposalCid, 'user:alice', 12)
-  expect(titles(accepted, at)).toEqual(['Tomatoes', 'Compost', '## Voice note: Garden plans'])
+  expect(titles(accepted, at)).toEqual(['Tomatoes', 'Compost', 'Voice note: Garden plans'])
   expect(titles(accepted, [...at, compost])).toEqual(['buy a bin'])
   expect(titles(accepted, [...at, 'tomatoes'])).toEqual(['Stake them', 'water daily'])
   expect(view(accepted, at)!.proposals.map(p => p.name)).toEqual(['Voice note: Garden plans (2)'])
@@ -237,7 +239,7 @@ test('a device gets only the submission\'s top: rows load when opened, accepting
   expect(device.store.table.has(compostCid)).toBe(false)
   // the device's sync pushes the edited nodes; the account fills the rows from the submission and closes it
   device = syncWith(device, server, { now: 13 })
-  expect(titles(server, at)).toEqual(['Tomatoes', 'Compost', '## Voice note: Garden plans'])
+  expect(titles(server, at)).toEqual(['Tomatoes', 'Compost', 'Voice note: Garden plans'])
   expect(titles(server, [...at, compost])).toEqual(['buy a bin'])
   expect(titles(server, [...at, 'tomatoes'])).toEqual(['water daily'])
   expect(view(server, at)!.proposals).toEqual([])

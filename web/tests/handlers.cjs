@@ -37,16 +37,17 @@ try {
   assert(app.handlerOffers().find(o => o.id === offer.id).enabled)
   // Server services are advertised only when the account server reports a handler for them: a fresh device knows the
   // transport facts, nothing else, so the palette has no "Ask fos" and no cron trigger until the server says so.
-  // the palette renders the selected peer tab only: 'Ask fos' lives under the Fos server tab, cron under Triggers
+  // the palette renders the selected peer tab only: 'Ask fos' lives under the Fos server tab, cron under its Triggers sub-tab
   const palette = (tab) => { document.querySelector(`.peer-tabs [aria-label="${tab}"]`).click(); return [...document.querySelectorAll('.constructor-palette button')].map(b => b.getAttribute('aria-label')) }
+  const serverTriggers = () => { palette('Fos server'); document.querySelector('.constructor-grid [aria-label="Triggers"]').click(); return [...document.querySelectorAll('.constructor-palette button')].map(b => b.getAttribute('aria-label')) }
   const fosOffers = () => app.handlerOffers().filter(o => o.peerId === 'fos').map(o => o.capability).sort()
   assert.deepEqual(fosOffers(), [...SERVER_TRANSPORT_CAPABILITIES].sort(), 'a new device records only transport facts for fos')
   for (const cap of ['llm', 'search', 'market', 'send-payment', 'mail']) assert(!app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === cap), `${cap} is not offered without a handler`)
-  assert(!palette('Fos server').includes('Ask fos') && !palette('Triggers').includes('Cron trigger'))
+  assert(!palette('Fos server').includes('Ask fos') && !serverTriggers().includes('Cron trigger'))
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'llm', 'search', 'cron'])
   assert(app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'llm'), 'reported offers are recorded on the fos member')
   assert(!app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'market'), 'unreported services stay absent')
-  assert(palette('Fos server').includes('Ask fos') && palette('Triggers').includes('Cron trigger'), 'the palette follows the advertised offers')
+  assert(palette('Fos server').includes('Ask fos') && serverTriggers().includes('Cron trigger'), 'the palette follows the advertised offers')
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'search'])
   assert(!app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'llm'), 'a narrower report withdraws the offer')
   console.log('PASS: template publication, shared constructor discovery, instantiation, peer toggles, and server offers derived from the host registry')

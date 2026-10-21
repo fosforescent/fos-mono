@@ -37,18 +37,21 @@ async function main() {
   const grid = () => document.querySelector('.constructor-grid')
   document.querySelector('.children-toolbar .constructors-toggle').click(); await tick()
   document.querySelector('.peer-tabs [aria-label="This device"]').click(); await tick()
-  assert(![...document.querySelectorAll('.node-context button')].some(b => b.textContent === 'Connect to agent'), 'no separate agent connection row')
+  assert(![...document.querySelectorAll('button')].some(b => b.textContent === 'Connect to agent'), 'no separate agent connection row')
   const local = grid().querySelector('button.sub-peer[aria-label="Local MCP server"]')
   assert(local && local.classList.contains('peer-status-disabled'), 'the local MCP server is a grey sub-peer of the device until granted')
   local.click(); await tick()
-  assert(document.querySelector('.node-context').textContent.includes('accepts no connections'), 'all toggles off: disabled')
+  // its constructor makes its row on this node, which holds the grants and the configuration
+  grid().querySelector('[aria-label="Local MCP server"]').click(); await tick()
+  const row = () => document.querySelector('.tree .constructor-body')
+  assert(row().textContent.includes('accepts no connections'), 'all toggles off: disabled')
   assert.equal(stopped, 0)
 
   // read on: the endpoint starts and serves fos_read / fos_search only; the member peer is mcp:local
   const toggle = label => document.querySelector(`.peer-grants input[aria-label="Local MCP server: ${label}"]`)
   toggle('read').checked = true; toggle('read').dispatchEvent(new window.Event('change')); await tick(); await tick()
   assert(c.contextMembers(app.state.replica, [id]).some(m => m.peerId === 'mcp:local' && m.capabilities.includes('read')))
-  assert(document.querySelector('.node-context textarea[aria-label="MCP configuration"]').value.includes('http://127.0.0.1:1234/mcp'))
+  assert(row().querySelector('textarea[aria-label="MCP configuration"]').value.includes('http://127.0.0.1:1234/mcp'))
   pending.push({ id: 'list', message: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })
   for (let i = 0; i < 30 && !replies.length; i++) await new Promise(resolve => setTimeout(resolve, 50))
   assert.deepEqual(replies[0].response.result.tools.map(t => t.name).sort(), ['fos_read', 'fos_search', 'fos_task_status'], 'read exposes the reading tools only')
@@ -116,7 +119,7 @@ async function main() {
   for (const label of ['read', 'write']) { toggle(label).checked = false; toggle(label).dispatchEvent(new window.Event('change')); await tick() }
   for (let i = 0; i < 30 && stopped < 1; i++) await new Promise(resolve => setTimeout(resolve, 50))
   assert.equal(stopped, 1, 'with nothing granted the endpoint stops')
-  assert(document.querySelector('.node-context').textContent.includes('accepts no connections'))
+  assert(row().textContent.includes('accepts no connections'))
 
   // the hosted MCP server: a scoped credential whose capabilities are the grants
   app.set({ session: { kind: 'user', username: 'alice', jwt: 'owner-token', baseUrl: 'http://localhost' }, connection: 'online' })
@@ -132,13 +135,15 @@ async function main() {
   document.querySelector('.peer-tabs [aria-label="Fos server"]').click(); await tick()
   const hostedIcon = grid().querySelector('button.sub-peer[aria-label="Fos MCP server"]')
   assert(hostedIcon, 'the hosted MCP server is a sub-peer of the server'); hostedIcon.click(); await tick()
+  grid().querySelector('[aria-label="Fos MCP server"]').click(); await tick()
+  const hostedRow = () => [...document.querySelectorAll('.tree .constructor-body')].find(b => b.querySelector('[aria-label^="Fos MCP server:"]'))
   const hosted = label => document.querySelector(`.peer-grants input[aria-label="Fos MCP server: ${label}"]`)
   hosted('read').checked = true; hosted('read').dispatchEvent(new window.Event('change')); await tick()
   hosted('execute').checked = true; hosted('execute').dispatchEvent(new window.Event('change')); await tick()
-  const create = [...document.querySelectorAll('.node-context button')].find(b => b.textContent === 'Create credential')
+  const create = [...hostedRow().querySelectorAll('button')].find(b => b.textContent === 'Create credential')
   assert(create && !create.disabled); create.click()
-  for (let i = 0; i < 30 && !document.querySelector('.node-context textarea[aria-label="MCP configuration"]'); i++) await new Promise(resolve => setTimeout(resolve, 50))
-  const config = document.querySelector('.node-context textarea[aria-label="MCP configuration"]').value
+  for (let i = 0; i < 30 && !hostedRow()?.querySelector('textarea[aria-label="MCP configuration"]'); i++) await new Promise(resolve => setTimeout(resolve, 50))
+  const config = hostedRow().querySelector('textarea[aria-label="MCP configuration"]').value
   assert(config.includes('scoped-agent-token') && config.includes('/peer-sync/mcp'))
   assert.deepEqual(JSON.parse(calls.find(call => call.url.endsWith('/peer-invite')).init.body).scope, [id])
   assert.deepEqual(JSON.parse(calls.find(call => call.url.endsWith('/7/approve')).init.body).capabilities.sort(), ['execute', 'read'], 'the credential carries exactly the grants')

@@ -6,6 +6,7 @@
 import type { FosNodeContent, FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import { content, identityCid, isPeerReference, put, refNodeContent, valueContent, withChildValue } from './graph'
+import { truncateTitle } from './title'
 
 export type FormInput = string | number | FormInput[] | { [key: string]: FormInput }
 
@@ -25,6 +26,15 @@ export function formFields(store: FosStore, template: string): Array<{ type: str
   })
 }
 
+/**
+ * A headline row's text: one line is its title as typed; more lines are its body, titled by the `title` capability's
+ * handler that runs everywhere (`truncateTitle`; the server's model can replace it, title-request.ts).
+ */
+export function splitHeadline(text: string): { title: string; body: string } {
+  const whole = text.replace(/\s+$/, '')
+  return whole.includes('\n') ? { title: truncateTitle(whole), body: whole } : { title: whole.trim(), body: '' }
+}
+
 /** Expand a graph definition; caller inputs are values, never executable JS. */
 export function constructForm(store: FosStore, template: string, id: string, input: FormInput | undefined, now: number, depth = 0): FosNodeContent {
   if (depth > 64) throw new Error('Constructor nesting exceeds 64 levels.')
@@ -38,7 +48,12 @@ export function constructForm(store: FosStore, template: string, id: string, inp
     data.scalar = { type: form.primitive, value: value as string | number }
     return { data, children: [] }
   }
-  data.presentation = { ...(form.title ? { title: form.title } : {}), ...(form.text ? { text: form.text } : {}), ...(form.attribution ? { attribution: form.attribution } : {}), ...(form.repeat ? { sequence: true } : {}) }
+  data.presentation = { ...(form.title ? { title: form.title } : {}), ...(form.headline ? { headline: form.headline } : {}), ...(form.attribution ? { attribution: form.attribution } : {}), ...(form.repeat ? { sequence: true } : {}) }
+  if (form.headline && input && typeof input === 'object' && !Array.isArray(input) && typeof input.text === 'string') {
+    const { title, body } = splitHeadline(input.text)
+    data.description = { content: title }
+    input = { ...input, text: body }
+  }
   const fields = formFields(store, template)
   if (new Set(fields.map(field => field.name)).size !== fields.length) throw new Error('Constructor parameter names must be unique.')
   if (form.repeat && fields.length !== 1) throw new Error('A repeated template needs one parameter row.')
@@ -102,6 +117,15 @@ export function formTitle(store: FosStore, node: FosNodeContent, definition?: Fo
   return scalar ? String(scalar.value) : node.data.description?.content ?? node.data.name?.content ?? node.data.parameter?.name ?? ''
 }
 
+/** A row's whole text: a headline row's body (its title when it has none), else its title. */
+export function formText(store: FosStore, node: FosNodeContent, definition?: FosNodeContent): string {
+  const headline = definition?.data.form?.headline ?? node.data.presentation?.headline
+  const title = formTitle(store, node, definition)
+  if (!headline) return title
+  const body = formValueAt(store, node, headline)?.data.scalar?.value
+  return body === undefined || body === '' ? title : String(body)
+}
+
 /** Record UI order in list entries so ordering is explicit graph data. */
 export function positionFormRows(store: FosStore, node: FosNodeContent, now: number): FosNodeContent {
   if (!node.data.presentation?.sequence) return node
@@ -111,9 +135,21 @@ export function positionFormRows(store: FosStore, node: FosNodeContent, now: num
   }) }
 }
 
-/** Rewrite just the projected leaf, preserving all other refs and their identities. */
+/**
+ * Rewrite just the projected leaf, preserving all other refs and their identities. A headline row keeps its first
+ * line as its description; when the text has more lines they replace its body field.
+ */
 export function setFormTitle(store: FosStore, node: FosNodeContent, text: string, now: number): FosNodeContent {
-  const path = node.data.presentation?.title ?? []
+  const headline = node.data.presentation?.headline
+  if (headline) {
+    const { title, body } = splitHeadline(text)
+    const titled = { ...node, data: { ...node.data, description: { content: title }, updated: { time: now } } }
+    return text.includes('\n') ? setFieldText(store, titled, headline, body, now) : titled
+  }
+  return setFieldText(store, node, node.data.presentation?.title ?? [], text, now)
+}
+
+function setFieldText(store: FosStore, node: FosNodeContent, path: string[], text: string, now: number): FosNodeContent {
   const rewrite = (value: FosNodeContent, names: string[]): FosNodeContent => {
     if (!names.length) {
       if (!value.data.scalar) throw new Error('This constructor has no editable scalar title.')

@@ -235,7 +235,7 @@ export function ensureLibraryLink(r: Replica, address: LibraryAddress, now: numb
   if (!view(r, home)) return { replica: r, path: home, added: false }
   r = addRow(r, home, REF_TYPE, address.title, now, { id: LIBRARY_ID, refOwner: address.owner, refId: address.path.at(-1) ?? LIBRARY_ID })
   const path = [...home, LIBRARY_ID]
-  r = writeNodeValue(r, path, 'fos:shared-link', { owner: address.owner, path: address.path, share: address.share }, now)
+  r = writeNodeValue(r, path, 'fos:shared-link', { owner: address.owner, path: address.path }, now)
   return { replica: r, path, added: true }
 }
 

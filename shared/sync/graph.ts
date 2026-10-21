@@ -7,7 +7,7 @@
  *                                                  node (target) holds its own state. A template is a graph definition:
  *                                                  a row type (Task, Row, Note, Comment, Reference, Query, Resource, Allocation,
  *                                                  Template) from the Row types this root installed from the standard library,
- *                                                  or a template row ("Plan a trip"); pinned by the cid of the version used.
+ *                                                  or a template row ("Invoice"); pinned by the cid of the version used.
  *   task        edge [Task, taskNode]             taskNode.data: alias{id}, description, todo{completed,time}, updated
  *   reference error  edge [missing, rowNode]      the row is pinned to a template this peer has not received yet
  *
@@ -212,7 +212,7 @@ export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'po
  * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
  * peer that registered that capability, or a `peer` (the named peer confirms the assignment).
  */
-export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize'
+export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize' | 'title'
 /** Capabilities a peer can register with (shown as resource banks in the context panel). */
 export const PEER_CAPABILITIES: CapabilityKind[] = ['search', 'market', 'mail', 'llm', 'repo', 'tool']
 
@@ -487,7 +487,7 @@ export function pinnedRowEdge(store: FosStore, cid: string, template: string): F
   return rowEdge(store, cid, store.table.has(template) ? template : referenceErrorTemplate(store, template))
 }
 
-/** The same row made from another template (e.g. a task instantiating "Plan a trip"). */
+/** The same row made from another template (e.g. a task instantiating "Invoice"). */
 export function withRowTemplate(store: FosStore, edge: FosPathElem, templateCid: string): FosPathElem {
   edge = plainEdge(store, edge)
   if (isChoiceEdge(store, edge)) {
@@ -980,6 +980,7 @@ export const SERVER_MEMBER = 'fos'
 /** Replace a member's offers (ACCEPTS edges) when they differ from `offers`, keeping its grants and switches. */
 export function withMemberOffers(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, consumes: Capability[], offers: Capability[]): FosNodeContent {
   const member = readMembers(store, value).find(m => m.peerId === peerId)
+  // a peer may offer a capability this build has no name for: it is kept, as one with no handler here yet
   const wanted = [...new Set(offers)].sort()
   if (member && JSON.stringify([...(member.accepts ?? [])].sort()) === JSON.stringify(wanted)) return value
   return withMember(store, value, peerId, member?.name ?? name, member?.capabilities ?? consumes, member?.disabled ?? [], wanted)
@@ -1130,6 +1131,8 @@ export type TaskView = {
   /** Native leaf editor chosen by the graph constructor. */
   scalar?: NonNullable<FosDataContent['scalar']>['type'];
   form?: FormElement;
+  /** A headline row (a note): its text is one title line; the field at this path is its body, shown as a row of its own. */
+  headline?: string[];
   text?: import('../types').TextPresentation;
   /** The row holds children its type does not accept (a type error, sync/patterns.ts): their alias ids. */
   typeError?: string[]
@@ -1292,8 +1295,10 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     isLink: isLink(store, identity)
   }
   if (definition?.data.form && !definition.data.form.primitive && !held) view.form = formElements(store, typeCid!, value)
-  const text = definition?.data.form?.text ?? value.data.presentation?.text
+  const text = definition?.data.form?.text
   if (text) view.text = text
+  const headline = definition?.data.form?.headline ?? value.data.presentation?.headline
+  if (headline && !held) view.headline = headline
   if (value.data.scalar) view.scalar = value.data.scalar.type
   if (held) { view.refPeer = identity.data.ref!.peer; view.title = identity.data.description?.content ?? 'Peer-held node' }
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
@@ -1377,6 +1382,7 @@ export function requirementSummary(req: NonNullable<FosDataContent['requirement'
     case 'tool': return req.tool ? `tool ${req.tool}` : 'tool'
     case 'verify': return user ? `verify @${user.username}` : 'verify'
     case 'organize': return 'organize'
+    case 'title': return 'title'
   }
 }
 
@@ -1490,7 +1496,7 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
       case 'tool': return !!s.by
       // filled by the verifier, which binds the attested user object as the requirement's user field
       case 'verify': return !!s.by && !!named?.verification
-      case 'organize': return !!s.by
+      case 'organize': case 'title': return !!s.by
       case 'peer': return !!s.by && (!req.peer || s.by === req.peer) && (!named || s.by === userPeerId(named) || s.by === named.username)
       case 'allocation': {
         if (!s.ref) return false
@@ -1696,8 +1702,8 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'ref-change' | 'request' | 'rank' | 'poll' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'verify' | 'organize'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'ref-change', 'request', 'rank', 'poll', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'verify', 'organize']
+export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'ref-change' | 'request' | 'rank' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'verify' | 'organize' | 'title' | 'url'
+export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'ref-change', 'request', 'rank', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'verify', 'organize', 'title', 'url']
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1720,7 +1726,7 @@ export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'r
 /**
  * What is true of the fos account server without any handler: reachable over http and ws, a relay for peers that
  * cannot connect directly, a peer connection broker, durable storage, and the node-provider protocol. Services
- * (search, market, llm, poll, cron, …) are advertised only when the server's handler registry has them; the server
+ * (search, market, llm, cron, …) are advertised only when the server's handler registry has them; the server
  * reports the derived list in every sync/node response (`capabilities`) and devices record it on their fos member.
  */
 export const SERVER_TRANSPORT_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'peer', 'persist', 'provideNode', 'sync']
@@ -1742,7 +1748,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   read: 'read', 'read-requests': 'read requests', edit: 'edit (propose and decide proposals)', execute: 'run evaluations', autopush: 'autopush',
   direct: 'direct connect', local: 'this machine (files)', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
   calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'ref-change': 'on reference change', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', poll: 'poll', peer: 'peer connection', persist: 'persist storage', response: 'on response', verify: 'verify users', organize: 'organize captures'
+  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'ref-change': 'on reference change', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', peer: 'peer connection', persist: 'persist storage', response: 'on response', verify: 'verify users', organize: 'organize captures', title: 'titles from text', url: 'links to published nodes'
 }
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
@@ -1880,15 +1886,21 @@ export function capabilityTarget(store: FosStore, capability: Capability): strin
     case 'request-payment': return p.requestPaymentCapability.getId()
     case 'notify': return p.notifyCapability.getId()
     case 'rank': case 'local':
-    case 'poll': case 'peer': case 'persist': case 'provideNode': case 'sync':
-    case 'timer': case 'cron': case 'task-completion': case 'ref-change': case 'request': case 'response': case 'points': case 'execute': case 'verify': case 'organize':
+    case 'peer': case 'persist': case 'provideNode': case 'sync':
+    case 'timer': case 'cron': case 'task-completion': case 'ref-change': case 'request': case 'response': case 'points': case 'execute': case 'verify': case 'organize': case 'title': case 'url':
+    // a capability this build has no name for (a newer peer offers it): a capability with no handler here yet
+    default:
       return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
   }
 }
 
 function capabilityOfTarget(store: FosStore, target: string): Capability | null {
   const type = refTypeCid(store, content(store, target)) ?? target
-  return CAPABILITIES.find((c) => type === capabilityTarget(store, c)) ?? null
+  const known = CAPABILITIES.find((c) => type === capabilityTarget(store, c))
+  if (known) return known
+  // one this build does not know is still the capability it names (no handler for it here yet)
+  const name = store.table.has(type) ? content(store, type).data.name?.content : undefined
+  return name?.startsWith('fos:capability:') ? name.slice('fos:capability:'.length) as Capability : null
 }
 
 /** The capability a [CAPABILITY, x] edge grants (the `to` direction), or null for any other edge. */

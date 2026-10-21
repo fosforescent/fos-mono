@@ -177,7 +177,8 @@ async function main() {
   const count = rows([HOME, 'garden']).length
   assert.equal(await app.organizeText('remember the hose', [HOME, 'garden']), true)
   assert.equal(rows([HOME, 'garden']).length, count + 1)
-  assert(rows([HOME, 'garden']).at(-1).endsWith('remember the hose'))
+  const kept = c.view(app.state.replica, [HOME, 'garden']).tasks.at(-1)
+  assert(c.view(app.state.replica, [HOME, 'garden', kept.id]).tasks.find(t => t.scalar).title.endsWith('remember the hose'), 'the capture is the note body')
   assert(!c.view(app.state.replica, [HOME, 'garden']).tasks.some(t => t.requirement && t.requirement.capability === 'organize'), 'the failed request is removed too')
   assert.match(app.state.notice.text, /unorganized: organizing failed: model down/)
   failOrganize = false
@@ -189,7 +190,7 @@ async function main() {
     target.dispatchEvent(event)
     return event
   }
-  const nodeText = document.querySelector('.node-text')
+  const nodeText = document.querySelector('.node-title-input')
   const prose = ('We walked the beds this morning and the soil is dry. ' .repeat(25) + '\n').repeat(2)
   assert(paste(nodeText, prose).defaultPrevented)
   assert.equal(document.querySelector('.node-input .capture-text').value, prose)
