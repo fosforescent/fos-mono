@@ -42,6 +42,7 @@ import { createBranch } from './branches'
 import { executionInput, executionSnapshot } from './execution-access'
 import { capabilityPeers } from './bindings'
 import { writeExecutionRequest } from './evaluation'
+import { acceptSubmission, type Attester } from './approvals'
 import { rowWithLeft } from './row-values'
 import { isExecuteLeft } from './capabilities'
 import { readGraphValue } from './node-values'
@@ -210,12 +211,14 @@ const bookkeeping = new Set(['alias', 'ref', 'versionControl', 'disabledCapabili
  * load and save, and runs `evaluate` when returned. Owners act directly; peers read what their grants allow and
  * leave proposals.
  */
-export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal, now: number): Dispatched {
+/** `attester`: who attests the approvals this host records for others (the fos server's `approve` handler). */
+export type DispatchOptions = { attester?: Attester | null }
+export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal, now: number, options: DispatchOptions = {}): Dispatched {
   const before = r.store.rootNodeId
-  try { return dispatch(r, event, principal, now) }
+  try { return dispatch(r, event, principal, now, options) }
   catch (error) { r.store.rootNodeId = before; throw error }
 }
-function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number): Dispatched {
+function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number, options: DispatchOptions): Dispatched {
   const store = r.store, root = rootTargetCid(store), owner = principal.owner
   let canonical = contextScope(store, root, principal.scope)
   const attachment = [...canonical], session = principal.sessionId ?? principal.peerId
@@ -426,8 +429,12 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
     if (event.kind === 'decide') {
       // deciding a submission is how edit is exercised on a node with several peers
       if (!permission(cid, 'edit')) throw new EventError('The edit capability is required on this node.')
-      const next = event.decision === 'approve' ? applyProposalAt(r, absolute(path), event.proposalId, principal.peerId, now) : rejectProposalAt(r, absolute(path), event.proposalId, now)
-      return { replica: next, changed: headCid(next) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } }
+      if (event.decision === 'reject') { const next = rejectProposalAt(r, absolute(path), event.proposalId, now); return { replica: next, changed: headCid(next) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } } }
+      // approving is the one way a submission is accepted: the approval is recorded (the owner's as this store's,
+      // another member's attested), and the submission applies once the node's merge rule holds
+      const approver = owner ? r.meta.peerId : principal.peerId
+      const accepted = acceptSubmission(r, absolute(path), event.proposalId, approver, now, approver !== r.meta.peerId && options.attester ? { attester: options.attester } : {})
+      return { replica: accepted.replica, changed: true, result: { decision: event.decision, proposalId: accepted.proposal, merged: accepted.merged, missing: accepted.missing } }
     }
     if (event.kind === 'invite') {
       if (!owner) throw new EventError('Only the account owner invites users to a node.')

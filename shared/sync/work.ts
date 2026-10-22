@@ -10,11 +10,12 @@ import {
 } from './graph'
 import { ALLOCATION_TYPE, NOTE_TYPE, PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
 import { executionRequest } from './evaluation'
+import { acceptSubmission } from './approvals'
 /** The library's work templates (applied to a task by the shared copier). */
 export const PLANNING_TEMPLATE = 'lib:implement-and-verify'
 export const SUBTASKS_TEMPLATE = 'lib:generate-subtasks'
 import {
-  addRefAt, addRow, addTask, addSupply, applyProposalAt, headCid, instantiateTemplate,
+  addRefAt, addRow, addTask, addSupply, setRefValueAt, headCid, instantiateTemplate,
   proposeRefAt, rejectProposalAt, view, type Replica
 } from './replica'
 
@@ -161,8 +162,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   r = addRefAt(r, path, newId(), store.primitive.descriptionField.getId(), now, snapshot)
   const handlerId = newId()
   r = addRefAt(r, path, handlerId, type, now)
-  const binding = proposeRefAt(r, [...path, handlerId], put(store, refNodeContent(store, {}, handler, [])), r.meta.peerId, now)
-  r = applyProposalAt(binding.replica, [...path, handlerId], binding.proposalCid, r.meta.peerId, now)
+  r = setRefValueAt(r, [...path, handlerId], put(store, refNodeContent(store, {}, handler, [])), now)
   r = addRefAt(r, path, resultId, store.primitive.documentField.getId(), now)
   return { replica: r, path, resultPath: [...path, resultId], prompt: current.prompt, system: WORK_SYSTEM }
 }
@@ -188,7 +188,9 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
     return match ? [match[1]!.trim()] : []
   }) : []
   if (generating && !subtasks.length) throw new Error('The answer contains no unchecked Markdown tasks. Reject it and request a new result.')
-  r = applyProposalAt(r, resultPath, proposalCid, r.meta.peerId, now)
+  const accepted = acceptSubmission(r, resultPath, proposalCid, r.meta.peerId, now)
+  if (!accepted.merged) throw new Error(`Waiting for approval by ${accepted.missing.join(', ')}.`)
+  r = accepted.replica
   if (refValueCid(r.store, content(r.store, nodeAt(r, resultPath).cid)) !== proposal.contentCid) throw new Error('The return ref changed. Review the current proposal again.')
   const result = content(r.store, proposal.contentCid)
   if (!result.data.alias?.id) throw new Error('Result has no identity.')

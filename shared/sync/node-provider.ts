@@ -1,3 +1,4 @@
+import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, isRefNode, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
@@ -315,7 +316,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const proposals: ProposalView[] = readProposals(r.store, content(r.store, cid))
       .filter(p => authority.owner || grants.includes('edit') || p.peerId === authority.peerId)
       // the owner sees what each submission is called and which rows it adds (ids only: the rows load when opened)
-      .map(p => ({ id: p.cid, peerId: p.peerId, name: authority.owner ? p.name || 'Proposed node changes' : 'Proposed node changes', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] },
+      .map(p => ({ id: p.cid, peerId: p.peerId, name: authority.owner || p.peerId === authority.peerId ? p.name : '', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] }, approvals: approvalsOf(r.store, p.cid),
         ...(authority.owner && p.status === 'open' ? { additions: submissionAdditions(r.store, p.baseCid, p.contentCid) } : {}) }))
     const existing = linkAt(r, path, authority.peerId, request.linkId)
     if (existing && content(r.store, existing.cid).data.ref?.id && content(r.store, existing.cid).data.ref?.id !== request.linkId) throw new NodeAccessError('Node link endpoint mismatch.')

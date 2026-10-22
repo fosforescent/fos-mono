@@ -40,6 +40,8 @@ export type HostHandler = {
    * the replica after it: graph-only handlers such as the relay, which moves messages into their recipients' queues.
    */
   submission?(replica: Replica, path: Scope, now: number): Replica
+  /** The `approve` capability's handler: who attests the approvals this host records for the accounts it serves, in `replica`. */
+  attester?(replica: Replica): import('@fosforescent/shared/sync/approvals').Attester | null
   /** Refresh a loaded node from a connected service. Called after access checks, under the account lock. */
   load?(ctx: { userId: number; replica: Replica; path: Scope; branches: Array<{ scope: Scope; name: string }>; now: number }): Promise<Replica>
   /**

@@ -957,19 +957,7 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     if (isValueSubmission(store, proposal)) {
       // a peer's main submission must be of the value as it is; named ones (a source's options) stay choosable after another is bound
       if (!proposal.name && proposal.baseCid !== refBindingBaseCid(store, value)) return value
-      const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
-      const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
-      const type = edge && rowTypeOf(store, edge)
-      if (!type || !refValueCompatible(store, type, proposal.contentCid)) throw new Error('The submitted value has an incompatible ref type.')
-      const previous = refValueCid(store, value)
-      let target = proposal.contentCid
-      if (previous && previous !== target) {
-        const inherited = Object.values(scopeBranches(store, headCid(replica), at.slice(0, -1))).at(-1) ?? replica.meta.branch ?? 'main'
-        target = putRefValueBranches(store, value, [previous, target], inherited, target, type)
-        selectBranch(store, value.data.alias!.id, readChoice(store, target).defaultName!)
-      }
-      const next = refNodeContent(store, { ...value.data, updated: { time: now } }, target, bookkeepingOf(store, value))
-      return removeProposalByCid(store, withPrev(store, next, put(store, value)), proposalCid)
+      return removeProposalByCid(store, boundRefValue(replica, at, value, proposal.contentCid, now), proposalCid)
     }
     const mergedCid = proposal.baseCid === main
       ? proposal.contentCid
@@ -978,6 +966,36 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     const relinked = relinkContent(store, value, linkCid, content(store, mergedCid), now)
     return removeProposalByCid(store, relinked, proposalCid)
   })
+}
+
+/**
+ * The row ref `value` (at `at`) holding `target` as its value: checked against the row's pattern, the previous value
+ * kept as an alternative (concurrent handlers stay choosable), the old version its history.
+ */
+function boundRefValue(replica: Replica, at: Scope, value: FosNodeContent, target: string, now: number): FosNodeContent {
+  const store = replica.store
+  const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
+  const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
+  const type = edge && rowTypeOf(store, edge)
+  if (!type || !refValueCompatible(store, type, target)) throw new Error('The submitted value has an incompatible ref type.')
+  const previous = refValueCid(store, value)
+  let bound = target
+  if (previous && previous !== target) {
+    const inherited = Object.values(scopeBranches(store, headCid(replica), at.slice(0, -1))).at(-1) ?? replica.meta.branch ?? 'main'
+    bound = putRefValueBranches(store, value, [previous, target], inherited, target, type)
+    selectBranch(store, value.data.alias!.id, readChoice(store, bound).defaultName!)
+  }
+  const next = refNodeContent(store, { ...value.data, updated: { time: now } }, bound, bookkeepingOf(store, value))
+  return withPrev(store, next, put(store, value))
+}
+/** The owner's write of a row ref's value (no submission: it is this store's own edit). */
+export function setRefValueAt(replica: Replica, at: Scope, target: string, now: number): Replica {
+  const store = replica.store, cid = resolveScope(store, headCid(replica), at)
+  if (!cid || !store.table.has(target)) throw new Error('ref or value not found')
+  const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
+  const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
+  if (!isRefNode(store, content(store, cid)) || !(edge && isRowEdge(store, edge))) throw new Error('expected a row ref')
+  return editNode(replica, at, now, value => boundRefValue(replica, at, value, target, now))
 }
 
 /** Owner side: remove a device from the node at `at` (its PEER and MEMBER edges). */

@@ -30,6 +30,8 @@ import { executionTime, writeExecutionTime, writeHandlerResult } from '../../sha
 import { recordVerificationIssue, recordVerificationReport, verificationReport, verificationTask } from '../../shared/sync/specifications'
 import { workflowJob } from '../../shared/sync/project-workflow'
 import { bindLocalRepository, localRepositoryHere } from '../../shared/sync/repository'
+import { acceptSubmission } from '../../shared/sync/approvals'
+import { setRefValueAt } from '../../shared/sync/replica'
 import { setTemplateIcon, templateIconAt } from '../../shared/sync/replica'
 import { consume, consumption } from '../../shared/sync/execution-access'
 import { addAttachment, attachmentAt } from '../../shared/sync/replica'
@@ -2146,15 +2148,14 @@ export class App {
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   /**
-   * Approve the pull request `branch` on the node at `path`: an `approve` requirement there, run by the account
-   * server's approve handler (the approval is signed into the branch; the group's merge rule then merges it).
+   * Approve the pull request `branch` on the node at `path`: accepting it like any submission (this account's approval,
+   * attested by its server for the others; the group's merge rule then merges it).
    */
   async approvePullRequest(path: Scope, branch: string): Promise<void> {
-    const id = `fos:approve:${branch}`
-    let r = this.state.replica
-    if (resolveScope(r.store, headCid(r), [...path, id])) r = deleteTask(r, path, id, this.now())
-    this.edit(addRow(r, path, ALLOCATION_TYPE, branch, this.now(), { id, requirement: { capability: 'approve' } }))
-    await this.evaluateAt([...path, id])
+    if (JSON.stringify(path) !== JSON.stringify(this.state.view)) this.goTo(path)
+    const proposal = this.currentView()?.proposals.find(p => p.name === branch && p.status === 'open')
+    if (!proposal) { this.notify('error', 'That pull request is no longer open.'); return }
+    await this.decideProposal(proposal.id, 'approve')
   }
   async createNodeBranch(at: Scope, id: string, name: string, absolute = false): Promise<void> {
     if (this.evaluating || this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
@@ -2512,8 +2513,7 @@ export class App {
     if (offer.type !== this.state.replica.store.primitive.templateField.getId()) {
       const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
       if (cid && matchesGraph(r.store, offer.type, cid)) {
-        const submission = proposeRefAt(r, path, offer.cid, r.meta.peerId, this.now())
-        this.edit(applyProposalAt(submission.replica, path, submission.proposalCid, r.meta.peerId, this.now()))
+        this.edit(setRefValueAt(r, path, offer.cid, this.now()))
       } else if (refSubmissions(r.store, offer.cid).some(value => primitiveValue(r.store, value))) this.edit(addRefCall(r, path, offer.cid, this.now()))
       else this.edit(addRefAt(r, path, newId(), offer.type, this.now(), offer.cid, offer.label))
       return
@@ -2590,8 +2590,7 @@ export class App {
           value = put(r.store, { data: {}, children: constructor.children.map(([left]) => [left, value]) })
         }
         if (!matchesGraph(r.store, argument.type, value)) throw new Error('Choose a constructor matching this input pattern.')
-        const proposed = proposeRefAt(r, path, value, r.meta.peerId, this.now())
-        r = applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now())
+        r = setRefValueAt(r, path, value, this.now())
         for (const [cid, node] of r.store.table) if (!live.store.table.has(cid)) live.store.table.set(cid, node)
         live.store.rootNodeId = r.store.rootNodeId
         r = { ...r, store: live.store }
@@ -2951,8 +2950,7 @@ export class App {
       if (id) r = addRow(r, destination, TEMPLATE_TYPE, offer.definition.label, this.now(), { id })
       r = setNodeTrigger(r, path, trigger, this.now())
       if (arg) {
-        const proposed = proposeRefAt(r, destination, resolveScope(r.store, headCid(r), path)!, r.meta.peerId, this.now())
-        r = applyProposalAt(proposed.replica, destination, proposed.proposalCid, r.meta.peerId, this.now())
+        r = setRefValueAt(r, destination, resolveScope(r.store, headCid(r), path)!, this.now())
       }
       this.edit(r)
       this.notify('info', trigger.enabled ? 'Observer configured.' : 'Observer created paused. Fill its inputs, then enable it.')
@@ -3019,8 +3017,7 @@ export class App {
   }
   private setArgumentValue(at: Scope, id: string, value: string): void {
     const r = this.state.replica, path = [...this.state.view, ...at, id]
-    const proposed = proposeRefAt(r, path, value, r.meta.peerId, this.now())
-    const next = applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now())
+    const next = setRefValueAt(r, path, value, this.now())
     const cid = resolveScope(next.store, headCid(next), path)
     const branches = cid && refBranches(next.store, content(next.store, cid))
     if (branches) this.branchSelections[branches.id] = branches.selected
@@ -3205,7 +3202,7 @@ export class App {
     this.edit(assignRefAt(r, path, alias, text ? put(r.store, { data: { description: { content: text } }, children: [] }) : null, this.now()))
   }
   chooseRowInput(path: Scope, alias: string, proposal: string): void {
-    this.edit(applyProposalAt(this.state.replica, [...path, alias], proposal, this.state.replica.meta.peerId, this.now()))
+    this.acceptHere([...path, alias], proposal)
   }
   async askPeerAt(at: Scope, req: TaskView): Promise<void> {
     const r = req.requirement
@@ -3754,8 +3751,8 @@ export class App {
     }
     if (session) {
       try {
-        await decideProposal(session, this.currentScope(), proposalId, decision)
-        this.notify('info', decision === 'approve' ? 'Proposal merged.' : 'Proposal rejected.')
+        const result = await decideProposal(session, this.currentScope(), proposalId, decision) as { merged?: boolean; missing?: string[] } | undefined
+        this.notify('info', decision === 'reject' ? 'Proposal rejected.' : result?.merged === false ? `Approved. Waiting for approval by: ${(result.missing ?? []).join(', ')}.` : 'Proposal merged.')
         await this.syncNow('proposal decided')
       } catch (error) {
         this.notify('error', error instanceof Error ? error.message : String(error))
@@ -3764,10 +3761,16 @@ export class App {
     }
     // No account: decide locally (e.g. a direct-connect host owning the node).
     const at = this.state.view
-    const next = decision === 'approve'
-      ? applyProposalAt(this.state.replica, at, proposalId, this.state.replica.meta.peerId, this.now())
-      : rejectProposalAt(this.state.replica, at, proposalId, this.now())
-    this.edit(next)
+    if (decision === 'approve') this.acceptHere(at, proposalId)
+    else this.edit(rejectProposalAt(this.state.replica, at, proposalId, this.now()))
+  }
+  /** Accept a submission held here: this device's approval, applied once the node's merge rule holds. */
+  private acceptHere(at: Scope, proposalId: string, approver = this.state.replica.meta.peerId): void {
+    try {
+      const accepted = acceptSubmission(this.state.replica, at, proposalId, approver, this.now())
+      this.edit(accepted.replica)
+      if (!accepted.merged) this.notify('info', `Approved. Waiting for approval by: ${accepted.missing.join(', ')}.`)
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   resolveChoice(choiceId: string, pick: number | null): void {
     this.edit(resolve(this.state.replica, this.state.view, choiceId, pick, this.now()))
@@ -4257,7 +4260,7 @@ export class App {
           const at = [...peer.scope, ...scope]
           if (!withBranches(this.state.replica.store, peer.branches ?? {}, () => view(this.state.replica, at)?.proposals.some((p) => p.id === proposalId && p.status === 'open'))) throw new Error('Proposal no longer available.')
           if (this.virtualPeers?.guest) { await this.virtualPeers.decide(at, proposalId, decision); await this.syncNow('nested virtual decision'); return }
-          this.edit(withBranches(this.state.replica.store, peer.branches ?? {}, () => decision === 'approve' ? applyProposalAt(this.state.replica, at, proposalId, peer.id, this.now()) : rejectProposalAt(this.state.replica, at, proposalId, this.now())))
+          this.edit(withBranches(this.state.replica.store, peer.branches ?? {}, () => decision === 'approve' ? acceptSubmission(this.state.replica, at, proposalId, peer.id, this.now()).replica : rejectProposalAt(this.state.replica, at, proposalId, this.now())))
         },
         grants: (peer) => this.virtualGrants(peer),
         welcome: (capabilities, hostName, session) => {

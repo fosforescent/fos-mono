@@ -5,7 +5,7 @@
  * handler result; what an agent requirement asks is that row's request.
  */
 import { executionOrigin, executionRequest, handlerResult, writeExecutionOrigin, writeHandlerResult } from './evaluation'
-import { addTask, headCid, instantiateTemplate, resolveRef, proposeRefAt, applyProposalAt, view, type Replica } from './replica'
+import { addTask, headCid, instantiateTemplate, resolveRef, setRefValueAt, view, type Replica } from './replica'
 import { ensureDeviceLibrary, BUNDLED_LIBRARY } from './library'
 import { argumentRefs, resolveText } from './bindings'
 import { repositoryAt } from './repository'
@@ -98,8 +98,7 @@ export function configureProjectWorkflow(r: Replica, config: ProjectWorkflow, no
     const cid = resolveScope(r.store, headCid(r), path)!, arg = argumentRefs(r.store, cid).find(a => a.name === name)
     if (!arg) throw new Error(`The workflow template is missing ${name}.`)
     const at = [...path, content(r.store, arg.cid).data.alias!.id]
-    const proposed = proposeRefAt(r, at, put(r.store, { data: { description: { content: value } }, children: [] }), r.meta.peerId, now)
-    r = applyProposalAt(proposed.replica, at, proposed.proposalCid, r.meta.peerId, now)
+    r = setRefValueAt(r, at, put(r.store, { data: { description: { content: value } }, children: [] }), now)
   }
   r = bindTemplateTriggers(r, path, { project: config.project, desktop: config.device, 'main-branch': config.main }, now)
   return writeExecutionOrigin(r, path, config, now)

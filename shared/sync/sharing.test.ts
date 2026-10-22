@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
+import { addMemberAt, ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
 import { content, put, readProposals, resolveScope, rowTypeAt, valueContent } from './graph'
 import { formValueAt } from './forms'
 import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, writePageBase, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
@@ -58,7 +58,9 @@ test('empty fields of a published row are inputs of their type; each visitor sub
     { id: 'details/field/email', title: 'email', depth: 1, type: 'lib:type:text', body: '' }
   ])
   expect(node.inputs).toEqual([{ key: JSON.stringify(['details', 'details/field/email']), path: ['details', 'details/field/email'], name: 'email', kind: 'text' }])
-  // two visitors: two submissions; a resubmission replaces only its own
+  // two visitors (a visit admits each as a member that may run the node): two submissions; a resubmission replaces only its own
+  r = addMemberAt(r, ['page'], 'visitor:a', 'A', ['execute'], 4)
+  r = addMemberAt(r, ['page'], 'visitor:b', 'B', ['execute'], 4)
   r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', 'details/field/email'], value: 'a@example.test' }], 4)
   r = proposeVisitorValues(r, ['page'], 'visitor:b', [{ path: ['details', 'details/field/email'], value: 'b@example.test' }], 5)
   r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', 'details/field/email'], value: 'a2@example.test' }], 6)

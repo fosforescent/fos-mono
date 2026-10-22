@@ -48,7 +48,8 @@ export function createEventService(deps: AccountStoreDeps, evaluate?: Evaluate) 
       if (!loaded) throw new EventError('Account unavailable.')
       const r = createReplica(serverPeerIdFor(loaded.user.username), loaded.store)
       const before = r.store.rootNodeId
-      const dispatched = dispatchEvent(r, event, principal, deps.now?.() ?? Date.now())
+      const attester = deps.runtime?.handlers.map(h => h.attester?.(r)).find(Boolean) ?? null
+      const dispatched = dispatchEvent(r, event, principal, deps.now?.() ?? Date.now(), { attester })
       if (dispatched.changed) {
         try { await deps.saveStore(loaded.user, dispatched.replica.store) }
         catch (error) { r.store.rootNodeId = before; throw error }

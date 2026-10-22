@@ -1302,6 +1302,8 @@ export type ProposalView = {
   summary: { added: string[]; changed: string[]; removed: string[] }
   /** The rows it adds, by node (`submissionAdditions`), when the provider sent them: enough to accept them without their content. */
   additions?: SubmissionAddition[]
+  /** Who has approved it so far (its approval rows), with the attester's signature where there is one. */
+  approvals?: Array<{ approver: string; signature?: { key: string; value: string } }>
 }
 
 export type NodeView = {

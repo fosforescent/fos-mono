@@ -1,5 +1,5 @@
 import { standardHostRef } from '../sync/host-runtime'
-import { sameCapabilityType, primitiveRef, instructionPrimitives } from '@fosforescent/shared/sync/index'
+import { sameCapabilityType, primitiveRef, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
 /**
  * MCP peers: an MCP server the account has access to attaches to a node as a member (`mcp:<server id>`),
  * advertises `tool` (and read/edit) there, and runs its tools for "-tool <name> …" requirements under that
@@ -91,8 +91,7 @@ function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServer
     // Pin the advertised ref, not only its terminal value.
     handlerCid = candidates[0]!.cid
     replica = addRefAt(replica, scope, bindingId, capabilityTarget(store, 'tool'), now)
-    const proposed = proposeRefAt(replica, bindingPath, handlerCid, replica.meta.peerId, now)
-    replica = applyProposalAt(proposed.replica, bindingPath, proposed.proposalCid, replica.meta.peerId, now)
+    replica = setRefValueAt(replica, bindingPath, handlerCid, now)
   }
   if (!matchesGraph(store, capabilityTarget(store, 'tool'), handlerCid)) return { error: 'bound handler is not a tool handler' }
   const resolved = resolveBinding(store, capabilityTarget(store, 'tool'), handlerCid, contextBindings(replica, scope))
@@ -122,8 +121,9 @@ async function executeTool(deps: McpPeerDeps, replica: Replica, bound: BoundTool
   const store = replica.store, scope = [...at, req.id], resultId = newId()
   replica = addRow(replica, scope, NOTE_TYPE, text.slice(0, 20_000) || '(empty result)', now, { id: resultId })
   const resultCid = resolveScope(store, headCid(replica), [...scope, resultId])!
+  // the tool's answer is its peer's submission to the return ref; the host accepts it
   const returned = proposeRefAt(replica, [...scope, bound.returnId], resultCid, bound.peerId, now)
-  replica = applyProposalAt(returned.replica, [...scope, bound.returnId], returned.proposalCid, replica.meta.peerId, now)
+  replica = acceptSubmission(returned.replica, [...scope, bound.returnId], returned.proposalCid, replica.meta.peerId, now).replica
   replica = addSupply(replica, at, req.id, { capability: 'tool', by: bound.peerId, ref: resultId }, now)
   return { replica, text }
 }

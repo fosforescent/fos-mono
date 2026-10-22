@@ -36,6 +36,7 @@ import {
   type Replica,
   type Scope
 } from './index'
+import { acceptSubmission } from './approvals'
 import { sharedAddressAt } from './sharing'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
@@ -201,7 +202,7 @@ export const api = {
     set(handle, moveNode(get(handle), parse<Scope>(fromJson, []), id, parse<Scope>(toJson, []), JSON.parse(positionJson), now))
   },
   resolveChoice(handle: string, atJson: string, choiceId: string, pick: number, now: number): void { set(handle, resolve(get(handle), parse<Scope>(atJson, []), choiceId, pick < 0 ? null : pick, now)) },
-  applyProposal(handle: string, atJson: string, proposalId: string, approver: string, now: number): void { set(handle, applyProposalAt(get(handle), parse<Scope>(atJson, []), proposalId, approver, now)) },
+  applyProposal(handle: string, atJson: string, proposalId: string, approver: string, now: number): void { set(handle, acceptSubmission(get(handle), parse<Scope>(atJson, []), proposalId, approver, now).replica) },
   rejectProposal(handle: string, atJson: string, proposalId: string, now: number): void { set(handle, rejectProposalAt(get(handle), parse<Scope>(atJson, []), proposalId, now)) },
   reattach(handle: string, scopeJson: string): void {
     set(handle, reattach(get(handle), parse<Scope>(scopeJson, [])))

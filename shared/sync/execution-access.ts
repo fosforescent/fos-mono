@@ -13,7 +13,8 @@ export function consumption(r: Replica, path: Scope): Consumption | null {
 export function consume(r: Replica, path: Scope, record: Consumption, now: number): Replica {
   return writeHandlerResult(r, path, record, now)
 }
-import { proposeRefAt, applyProposalAt, addRow, addSupply, headCid, type Replica } from './replica'
+import { proposeRefAt, addRow, addSupply, headCid, type Replica } from './replica'
+import { acceptSubmission } from './approvals'
 import { put, type ResourceType, type Scope } from './graph'
 import { ALLOCATION_TYPE, MONEY_TYPE } from './library-types'
 import { compileRow } from './ref-compiler'
@@ -40,13 +41,14 @@ export function executionInput(r: Replica, path: Scope, body: any, peer: string,
     const resolved = resolveRefExpression(r, target.slice(0, -1), value, access)
     const location = resolved.locations[0]
     if (resolved.status !== 'ready' || !location || location.store !== r.store) throw new Error('The supplied ref is unavailable in this graph.')
+    // the visitor's value is its submission; the host accepts it (its approval, under the node's rule)
     const proposal = proposeRefAt(r, target, location.cid, peer, now)
-    return applyProposalAt(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now)
+    return acceptSubmission(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now).replica
   }
   if (field.kind === 'text') {
     if (typeof value !== 'string' || value.length > 8000) throw new Error('Text must be at most 8000 characters.')
     const proposal = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now)
-    return applyProposalAt(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now)
+    return acceptSubmission(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now).replica
   }
   if (field.kind === 'confirmation' || field.kind === 'choice') {
     if (field.kind === 'confirmation' ? value !== true : !Number.isInteger(value) || value < 0 || value >= (field.options?.length ?? 0)) throw new Error('Invalid requirement response.')

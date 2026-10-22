@@ -1,134 +1,166 @@
 /**
- * Approvals and merge rules: how a pull request (a peer's `branch:<name>` submission, node-sync.ts) becomes main.
+ * Accepting a submission. Every submission to a mutable ref (a node's edits, a branch's pull request, a value for a
+ * ref, an evaluation request, a visitor's input, a library update) is accepted the same way: whoever accepts it
+ * approves it (`acceptSubmission`), and it is applied once the approvals its node's merge rule asks for are there.
  *
- * - An approval is a row of the `approve` capability in the submission's content, named for its approver
- *   (`fos:approval:<approver>`). Its value says who approved what: the subject (the content without its approval
- *   rows, so approvals do not change what they approve), who attests it and when, and a signature over that payload.
- *   The fos server's `approve` handler signs with its identity key for now; a peer's own keypair later (p2p).
- * - A group's merge rule is a row of the `approveMerge` capability on its node: a pattern of approval rows, one per
- *   peer whose approval it takes. Without one, the default: every member that may edit there, and the owner, has
- *   approved (the proposer's submission is its own approval).
- * - A submission whose verified approvals match the rule is applied to main (`applyProposalAt`).
+ * - An approval is a row of the submission (beside who sent it, its content and its base): its left the `approve`
+ *   capability, its right the approver (a reference to the approver's member entry, with their peer). A submission
+ *   node never travels (peers see it summarized, `ProposalView`), so every approval in it was recorded by the store
+ *   holding the node, for an approver it authenticated: those are what its rule counts. When a peer attests an
+ *   approval (the fos server, for the accounts it serves), it has a row whose left is the attester's published key
+ *   (its key row on its member entry, content-addressed) and whose right is the signature over what was approved (the
+ *   approver and the content), so that anyone else can check it (`verifyApproval`; one that cannot be checked is no
+ *   approval there).
+ * - The merge rule is the node's `approveMerge` row: a pattern of approvals, one per peer whose approval it takes.
+ *   Without one, the standard library's default: an approval by any peer that may change the node directly (the owner,
+ *   this store's peer, or a member that may edit there) other than the proposer, whose submission is its approval.
+ * Approvals belong to the submission, not its content: a new content is a new submission, and its approvals are gone.
  */
+import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
-import { capabilityTarget, content, put, putStripped, readMembers, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, commitRoot, proposalContent, withProposal, MARKET_PEER, type ProposalRecord, type Scope } from './graph'
+import { hashContent } from '../dag-implementation/cid'
+import { capabilityTarget, commitRoot, content, memberEntryId, memberEdgesOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
 import { applyProposalAt, headCid, type Replica } from './replica'
-import { constructNodeValue, readGraphValue } from './node-values'
 import { plainEdge } from './patterns'
-import type { SignatureCheck } from './users'
+import { isUserType, readUser, type SignatureCheck } from './users'
+import { rowWithLeft } from './row-values'
 
-export const APPROVE = 'approve'
-export const APPROVE_MERGE = 'approveMerge'
-export const APPROVAL_PREFIX = 'fos:approval:'
-export const MERGE_RULE_ID = 'fos:approve-merge'
-export const approvalId = (approver: string): string => `${APPROVAL_PREFIX}${approver}`
+export type Approval = { approver: string; signature?: { key: string; value: string } }
+/** Who attests approvals and how: a peer with a published key (the fos server for now; peers' own keys later). */
+export type Attester = { key: string; sign(payload: string): string }
 
-export type Approval = { approver: string; subject: string; by: string; issuedAt: number; attestation: string }
-/** Who signs approvals and how: the fos server's identity key for now (`by` = its peer id). */
-export type ApprovalSigner = { by: string; sign(payload: string): string }
+const approveLeft = (store: FosStore) => capabilityTarget(store, 'approve')
+const approveMergeLeft = (store: FosStore) => capabilityTarget(store, 'approveMerge')
+/** An approval's identity among the submission's rows: whose it is (approving again replaces it). */
+const approvalId = (approver: string) => hashContent({ data: { peerId: { content: approver }, description: { content: 'approval' } }, children: [] })
 
-/** What an approval signs: approver, subject, attester and time. */
-export function approvalPayload(a: Omit<Approval, 'attestation'>): string {
-  return JSON.stringify(['fos-approve/1', a.approver, a.subject, a.by, a.issuedAt])
+/** What an approval attests: who approved which content. */
+export function approvalPayload(approver: string, contentCid: string): string {
+  return JSON.stringify(['fos-approve/2', approver, contentCid])
 }
 
-const isApprovalRow = (store: Replica['store'], edge: FosPathElem): boolean => plainEdge(store, edge)[0] === capabilityTarget(store, APPROVE)
-
-/** What approvals of `contentCid` approve: the content without its approval rows. */
-export function approvalSubject(store: Replica['store'], contentCid: string): string {
-  const value = valueContent(store, contentCid)
-  return putStripped(store, { ...value, children: value.children.filter(edge => !isApprovalRow(store, edge)) })
+/** The approver an approval node names. */
+function approverOf(store: FosStore, node: string): string | null {
+  return store.table.get(node)?.data.peerId?.content ?? null
 }
 
-/** The approvals `contentCid` holds, as written (not yet verified). */
-export function readApprovals(store: Replica['store'], contentCid: string): Approval[] {
-  const out: Approval[] = []
-  for (const edge of valueContent(store, contentCid).children) {
-    if (!isApprovalRow(store, edge)) continue
-    const target = refValueCid(store, content(store, plainEdge(store, edge)[1]))
-    const value = target ? readGraphValue(store, target) as Partial<Approval> | undefined : undefined
-    if (value && typeof value.approver === 'string' && typeof value.subject === 'string' && typeof value.by === 'string' && typeof value.issuedAt === 'number' && typeof value.attestation === 'string')
-      out.push({ approver: value.approver, subject: value.subject, by: value.by, issuedAt: value.issuedAt, attestation: value.attestation })
+/** The approvals the submission `proposalCid` holds, as written (not yet verified). */
+export function approvalsOf(store: FosStore, proposalCid: string): Approval[] {
+  const left = approveLeft(store)
+  return content(store, proposalCid).children.flatMap(([key, node]) => {
+    if (key !== left) return []
+    const approver = approverOf(store, node)
+    if (!approver) return []
+    const sig = content(store, node).children[0]
+    return [{ approver, ...(sig ? { signature: { key: sig[0], value: content(store, sig[1]).data.description?.content ?? '' } } : {}) }]
+  })
+}
+
+/** The submission `proposalCid` with `approver`'s approval (signed by `attester` when given), in place of an earlier one of theirs. */
+function withApproval(store: FosStore, proposalCid: string, approver: string, attester?: Attester): string {
+  const proposal = readProposal(store, proposalCid)
+  if (!proposal) throw new Error('That submission is gone.')
+  const signature: FosPathElem[] = attester ? [[attester.key, put(store, { data: { description: { content: attester.sign(approvalPayload(approver, proposal.contentCid)) } }, children: [] })]] : []
+  const node = put(store, { data: { alias: { id: approvalId(approver) }, peerId: { content: approver }, ref: { id: memberEntryId(approver) } }, children: signature })
+  const left = approveLeft(store), submission = content(store, proposalCid)
+  const others = submission.children.filter(([key, n]) => !(key === left && approverOf(store, n) === approver))
+  return put(store, { ...submission, children: [...others, [left, node]] })
+}
+
+/** The key nodes this graph's members publish (the key row on each entry, by its node's cid), with their keys. */
+function publishedKeyNodes(r: Replica): Map<string, string> {
+  const keys = new Map<string, string>()
+  for (const member of memberEdgesOf(r.store, headCid(r))) {
+    const peerId = content(r.store, member[1]).data.peerId?.content
+    for (const edge of content(r.store, member[1]).children) {
+      const plain = plainEdge(r.store, edge)
+      if (!isUserType(r.store, plain[0])) continue
+      const user = readUser(r.store, plain[0], valueContent(r.store, plain[1]))
+      if (user && user.username === peerId && user.publicKey) keys.set(plain[1], user.publicKey)
+    }
   }
-  return out
+  return keys
 }
 
-/** `contentCid` with `approval` as its approver's approval row (replacing an earlier one of theirs). */
-export function withApproval(store: Replica['store'], contentCid: string, approval: Approval): string {
-  const id = approvalId(approval.approver), value = valueContent(store, contentCid)
-  const target = constructNodeValue(store, approval, id).cid
-  const row: FosPathElem = [capabilityTarget(store, APPROVE), put(store, refNodeContent(store, { alias: { id }, name: { content: id } }, target))]
-  const others = value.children.filter(edge => !(isApprovalRow(store, edge) && content(store, plainEdge(store, edge)[1]).data.alias?.id === id))
-  return put(store, { ...value, children: [...others, row] })
+/** Whether an attested approval of the submission checks: signed over its content by a key this graph's members publish. */
+export function verifyApproval(r: Replica, contentCid: string, approval: Approval, check: SignatureCheck): boolean {
+  const key = approval.signature && publishedKeyNodes(r).get(approval.signature.key)
+  if (!key) return false
+  try { return check(approvalPayload(approval.approver, contentCid), approval.signature!.value, key) } catch { return false }
 }
 
-/** The approvers whose approvals of `contentCid` check: its subject, an attester whose key is in `keys`, a valid signature. */
-export function verifiedApprovers(store: Replica['store'], contentCid: string, keys: Record<string, string>, check: SignatureCheck): string[] {
-  const subject = approvalSubject(store, contentCid)
-  return readApprovals(store, contentCid).filter(a => {
-    if (a.subject !== subject || !keys[a.by]) return false
-    try { return check(approvalPayload(a), a.attestation, keys[a.by]!) } catch { return false }
-  }).map(a => a.approver)
+/** A pattern of approvals: one approval row per peer. */
+function approvalPattern(store: FosStore, approvers: string[]): string {
+  const left = approveLeft(store)
+  return put(store, { data: {}, children: approvers.map(p => [left, put(store, { data: { peerId: { content: p }, ref: { id: memberEntryId(p) } }, children: [] })] as FosPathElem) })
 }
 
-/** The open submission named `name` on the node at `at`. */
-export function openSubmission(r: Replica, at: Scope, name: string): ProposalRecord {
+/** The group's merge rule at `at`, its approveMerge row's pattern of approvals; null when the default holds. */
+export function mergeRule(r: Replica, at: Scope): string | null {
   const cid = resolveScope(r.store, headCid(r), at)
-  const found = cid && readProposals(r.store, content(r.store, cid)).find(p => p.name === name && p.status === 'open')
-  if (!found) throw new Error(`No open submission ${name} here.`)
-  return found
+  const row = cid ? rowWithLeft(r.store, cid, approveMergeLeft(r.store)) : null
+  return row ? refValueCid(r.store, content(r.store, row.ref)) : null
 }
 
-/** Approve the submission `name` at `at` as `approver`: its content gets their signed approval row. */
-export function approveSubmission(r: Replica, at: Scope, name: string, approver: string, signer: ApprovalSigner, now: number): Replica {
-  const store = r.store, submission = openSubmission(r, at, name)
-  const unsigned = { approver, subject: approvalSubject(store, submission.contentCid), by: signer.by, issuedAt: now }
-  const value = withApproval(store, submission.contentCid, { ...unsigned, attestation: signer.sign(approvalPayload(unsigned)) })
-  const proposal = put(store, proposalContent(store, submission.peerId, submission.name, value, submission.baseCid, now))
-  commitRoot(store, updateAtScope(store, headCid(r), at, node => withProposal(store, node, submission.peerId, proposal, submission.name), 'node'), now)
-  return { ...r }
-}
-
-/** The group's merge rule at `at`: the approvers its `approveMerge` row's pattern names, or null (the default rule). */
-export function mergeRule(r: Replica, at: Scope): string[] | null {
-  const cid = resolveScope(r.store, headCid(r), at)
-  if (!cid) return null
-  const type = capabilityTarget(r.store, APPROVE_MERGE)
-  const row = valueContent(r.store, cid).children.map(edge => plainEdge(r.store, edge)).find(edge => edge[0] === type)
-  const pattern = row && refValueCid(r.store, content(r.store, row[1]))
-  if (!pattern) return null
-  return content(r.store, pattern).children.filter(edge => isApprovalRow(r.store, edge))
-    .map(edge => content(r.store, plainEdge(r.store, edge)[1]).data.alias?.id ?? '')
-    .filter(id => id.startsWith(APPROVAL_PREFIX)).map(id => id.slice(APPROVAL_PREFIX.length))
-}
-
-/** Set the group's merge rule at `at`: approval of each of `approvers` (a pattern of their approval rows). */
+/** Set the group's merge rule at `at`: the approval of each of `approvers` (the approveMerge capability's handler there is that pattern). */
 export function setMergeRule(r: Replica, at: Scope, approvers: string[], now: number): Replica {
-  const store = r.store, type = capabilityTarget(store, APPROVE_MERGE), approve = capabilityTarget(store, APPROVE)
-  const pattern = put(store, { data: {}, children: approvers.map(p => [approve, put(store, refNodeContent(store, { alias: { id: approvalId(p) }, name: { content: approvalId(p) } }, null))] as FosPathElem) })
-  const row: FosPathElem = [type, put(store, refNodeContent(store, { alias: { id: MERGE_RULE_ID }, name: { content: MERGE_RULE_ID } }, pattern))]
-  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: [...value.children.filter(edge => plainEdge(store, edge)[0] !== type), row] })), now)
+  const store = r.store, left = approveMergeLeft(store), pattern = approvalPattern(store, approvers)
+  const row: FosPathElem = [left, put(store, refNodeContent(store, { alias: { id: left } }, pattern))]
+  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: [...value.children.filter(edge => plainEdge(store, edge)[0] !== left), row] })), now)
   return { ...r }
 }
 
-/** The default rule: the owner and every member that may edit at `at`, but the proposer (its submission is its approval). */
+/** Who may approve under the default rule (one of them suffices): the owner and every member that may edit at `at`, but the proposer. */
 export function defaultApprovers(r: Replica, at: Scope, proposer: string): string[] {
   const cid = resolveScope(r.store, headCid(r), at)
-  const members = cid ? readMembers(r.store, content(r.store, cid)) : []
-  const editors = members.filter(m => m.capabilities.includes('edit') && !m.disabled?.includes('edit') && m.peerId !== 'fos' && m.peerId !== MARKET_PEER).map(m => m.peerId)
+  const editors = (cid ? readMembers(r.store, content(r.store, cid)) : [])
+    .filter(m => m.capabilities.includes('edit') && !m.disabled?.includes('edit') && m.peerId !== SERVER_MEMBER && m.peerId !== MARKET_PEER).map(m => m.peerId)
   return [...new Set([r.meta.peerId, ...editors])].filter(p => p !== proposer)
 }
 
-/** Who still has to approve the submission `name` at `at` under the group's rule. */
-export function missingApprovals(r: Replica, at: Scope, name: string, keys: Record<string, string>, check: SignatureCheck): string[] {
-  const submission = openSubmission(r, at, name)
-  const approved = new Set(verifiedApprovers(r.store, submission.contentCid, keys, check))
-  return (mergeRule(r, at) ?? defaultApprovers(r, at, submission.peerId)).filter(p => !approved.has(p))
+/**
+ * Whose approval the rule at `at` still waits for on the submission `proposalCid`: under a pattern, each approver it
+ * names that has not approved; under the default, the eligible approvers until one of them has.
+ */
+export function missingApprovals(r: Replica, at: Scope, proposalCid: string): string[] {
+  const proposal = readProposal(r.store, proposalCid)
+  if (!proposal) return []
+  const approved = new Set(approvalsOf(r.store, proposalCid).map(a => a.approver))
+  const pattern = mergeRule(r, at)
+  if (pattern) return approvalsOf(r.store, pattern).map(a => a.approver).filter(p => !approved.has(p))
+  const eligible = defaultApprovers(r, at, proposal.peerId)
+  return eligible.some(p => approved.has(p)) ? [] : eligible
 }
 
-/** Apply the submission `name` at `at` to main when the group's rule is met; else nothing changes. */
-export function mergeIfApproved(r: Replica, at: Scope, name: string, keys: Record<string, string>, check: SignatureCheck, now: number): { replica: Replica; merged: boolean; missing: string[] } {
-  const missing = missingApprovals(r, at, name, keys, check)
-  if (missing.length) return { replica: r, merged: false, missing }
-  return { replica: applyProposalAt(r, at, openSubmission(r, at, name).cid, r.meta.peerId, now), merged: true, missing }
+/** The open submission at `at` from `peerId` carrying the branch `name` (its main one for ''). */
+export function openSubmission(r: Replica, at: Scope, name: string, peerId?: string): ProposalRecord {
+  const cid = resolveScope(r.store, headCid(r), at)
+  const found = cid && readProposals(r.store, content(r.store, cid)).find(p => p.name === name && p.status === 'open' && (!peerId || p.peerId === peerId))
+  if (!found) throw new Error(`No open submission ${name || 'main'} here.`)
+  return found
+}
+
+/**
+ * Accept the submission `proposalCid` at `at` as `approver`: their approval is added to it (attested by `attester`
+ * when given), and it is applied once the node's merge rule holds. Answers what is still missing when it does not.
+ */
+export function acceptSubmission(r: Replica, at: Scope, proposalCid: string, approver: string, now: number, options: { attester?: Attester } = {}): { replica: Replica; merged: boolean; missing: string[]; proposal: string } {
+  const store = r.store, cid = resolveScope(store, headCid(r), at)
+  const record = readProposal(store, proposalCid)
+  if (!cid || !record || record.status !== 'open' || !readProposals(store, content(store, cid)).some(p => p.cid === proposalCid)) throw new Error('That submission is no longer open here.')
+  const approved = withApproval(store, proposalCid, approver, options.attester)
+  commitRoot(store, updateAtScope(store, headCid(r), at, node => withProposal(store, node, record.peerId, approved, record.name), 'node'), now)
+  r = { ...r }
+  const missing = missingApprovals(r, at, approved)
+  if (missing.length) return { replica: r, merged: false, missing, proposal: approved }
+  return { replica: applyProposalAt(r, at, approved, approver, now), merged: true, missing, proposal: approved }
+}
+
+/** The key row a peer publishes on its member entry of this graph's root (its node's cid), for attesting approvals. */
+export function attesterKey(r: Replica, peerId: string): string | null {
+  for (const [node] of publishedKeyNodes(r)) {
+    const entry = memberEdgesOf(r.store, headCid(r)).find(m => content(r.store, m[1]).data.peerId?.content === peerId)
+    if (entry && content(r.store, entry[1]).children.some(edge => plainEdge(r.store, edge)[1] === node)) return node
+  }
+  return null
 }
