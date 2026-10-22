@@ -1,6 +1,6 @@
 {
   "nodes": {
-    "v0.0.3-73ad061ebbda106af2dc5237441aacc8f334a8c9dd5669ff248fe07a3c7a2262": {
+    "v0.0.3-c0eda3d7d6580aba87dfcf11d34667df409bec7564301a324c65fc2ce234d9a9": {
       "data": {
         "description": {
           "content": "Standard library"
@@ -165,7 +165,7 @@
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-1f006f9e8874ffa1b1f5e2de8ffbc53195138be7bf926310de6b78742be1294c"
+          "v0.0.3-4e96fece0388be8caffe448324ffafd2b710ea6d0f7d1cc7f1449288b4dbce21"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
@@ -5528,7 +5528,7 @@
       },
       "children": []
     },
-    "v0.0.3-1f006f9e8874ffa1b1f5e2de8ffbc53195138be7bf926310de6b78742be1294c": {
+    "v0.0.3-4e96fece0388be8caffe448324ffafd2b710ea6d0f7d1cc7f1449288b4dbce21": {
       "data": {
         "alias": {
           "id": "lib:manual"
@@ -5583,7 +5583,7 @@
         ],
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-b52b524cfbf3a9e2bfd563d4ace3bd9022b04fd20389d704b108e6562e3f3abf"
+          "v0.0.3-176d3e874b8f55f6d33b596e1fdebfa8341f7a148115414106642eb2d38405b0"
         ],
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
@@ -5737,7 +5737,7 @@
       },
       "children": []
     },
-    "v0.0.3-b52b524cfbf3a9e2bfd563d4ace3bd9022b04fd20389d704b108e6562e3f3abf": {
+    "v0.0.3-176d3e874b8f55f6d33b596e1fdebfa8341f7a148115414106642eb2d38405b0": {
       "data": {
         "alias": {
           "id": "lib:device:location"
@@ -5754,6 +5754,32 @@
         },
         "updated": {
           "time": 1792453618404
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-b1e67687359faaf5727463d40662ed07aa8dc5d2ec5b0acdf8f350574bec6c61",
+          "v0.0.3-1b3cdb984ada1ae13c8210699c834ddcfb534ba17d21615d39260e56d23c7f4f"
+        ]
+      ]
+    },
+    "v0.0.3-1b3cdb984ada1ae13c8210699c834ddcfb534ba17d21615d39260e56d23c7f4f": {
+      "data": {
+        "primitive": {
+          "implementation": "device:location",
+          "host": "device",
+          "access": "execute"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-b1e67687359faaf5727463d40662ed07aa8dc5d2ec5b0acdf8f350574bec6c61": {
+      "data": {
+        "name": {
+          "content": "fos:constructor:primitive"
+        },
+        "description": {
+          "content": "Host primitive"
         }
       },
       "children": []
@@ -8367,6 +8393,6 @@
       ]
     }
   },
-  "rootNodeId": "v0.0.3-73ad061ebbda106af2dc5237441aacc8f334a8c9dd5669ff248fe07a3c7a2262",
+  "rootNodeId": "v0.0.3-c0eda3d7d6580aba87dfcf11d34667df409bec7564301a324c65fc2ce234d9a9",
   "version": "0.0.3"
 }

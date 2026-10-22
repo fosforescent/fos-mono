@@ -17,6 +17,7 @@ import { headCid } from './replica'
 import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
+import { primitiveValue } from './primitives'
 import { isBookkeepingEdge, refNodeContent, valueCidOf } from './graph'
 
 /** The library row holding the manual fallback handlers (`manualHandlers`). */
@@ -49,6 +50,7 @@ export function exportLocalLibrary(r: Replica, at: Scope | null = libraryPath(r)
 }
 
 /** A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it fills. */
+/** `device`: the device runs it (its row names a native implementation, a primitive this device provides). */
 export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean }
 
 /**
@@ -67,7 +69,9 @@ export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
   return (view(r, [...path, MANUAL_HANDLERS_ID])?.tasks ?? []).flatMap(row => {
     const req = row.requirement
     if (!req || !row.title.trim()) return []
-    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: row.id.startsWith('lib:device:') }]
+    const cid = resolveScope(r.store, headCid(r), [...path, MANUAL_HANDLERS_ID, row.id])
+    const device = !!cid && !!primitiveValue(r.store, valueCidOf(r.store, cid))
+    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device }]
   })
 }
 
