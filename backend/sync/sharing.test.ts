@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
-import { HOME_ID, addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, approvalsOf, handlerResult, sharedLinkAt, addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -58,9 +58,10 @@ test('authenticated state lives in guest account, with only declared projection 
   expect(JSON.stringify(record)).not.toContain('private-child-secret')
   expect(JSON.stringify(record)).not.toContain('guest-secret')
   expect(JSON.stringify(saved.body)).not.toContain('private-child-secret')
-  const arg = argumentRefs(s.replicas.guest.store, headCid(s.replicas.guest)).find(a => a.name?.startsWith('fos:participation:'))!
-  expect(content(s.replicas.guest.store, arg.cid).data.alias?.id).toBe(record.account?.ref)
-  expect(readNodeValue(s.replicas.guest, [], arg.name!)).toMatchObject({ links: { 'comment-slot': 'source' } })
+  // the guest's copy is on its link row to the node, which the host's record names
+  const link = sharedLinkAt(s.replicas.guest, at)!
+  expect(link.at(-1)).toBe(record.account?.ref)
+  expect(handlerResult(s.replicas.guest, link)).toMatchObject({ host: at, links: { 'comment-slot': 'source' } })
 })
 test('unpublishing, removed visitors, stale versions, and unexpected fields reject input', async () => {
   const s = setup(), visit = await s.call('visit', at)
@@ -100,7 +101,7 @@ test('there is no configure route: publishing is a member edge the owner writes 
   expect(Object.keys(createSharingHandlers({ loadStore: async () => null, saveStore: async () => {} }, 'x')).sort()).toEqual(['read', 'submit', 'visit'])
 })
 
-test('approving a proposed edit is input the owner decides with (the tally never merges or removes the proposal)', async () => {
+test("a visitor's approval is an approval row of the submission; it merges only under the node's rule, and unchecking withdraws it", async () => {
   const s = setup(), r = s.replicas.host, store = r.store
   const cid = resolveScope(store, headCid(r), ['poll'])!
   const base = putStripped(store, content(store, cid))
@@ -109,11 +110,21 @@ test('approving a proposed edit is input the owner decides with (the tally never
   commitRoot(store, updateAtScope(store, headCid(r), ['poll'], value => withProposal(store, value, 'editor', proposal, 'Editor proposal'), 'node'), 6)
   const visit = await s.call('visit', at)
   expect(visit.body.node.proposals).toHaveLength(1)
-  const saved = await s.call('submit', input(visit.body, { approvals: [`proposal:${proposal}`], ranking: [`proposal:${proposal}`] }))
+  const id = visit.body.node.proposals[0].id
+  const saved = await s.call('submit', input(visit.body, { approvals: [id], ranking: [id] }))
   expect(saved.status).toBe(200)
-  expect(saved.body.node.counts[`proposal:${proposal}`]).toBe(1)
+  // the id stays while approvals arrive; the count is the submission's approval rows
+  expect(saved.body.node.proposals.map((p: { id: string }) => p.id)).toEqual([id])
+  expect(saved.body.node.counts[id]).toBe(1)
+  expect(saved.body.node.mine.approvals).toEqual([id])
+  const open = () => readProposals(s.replicas.host.store, content(s.replicas.host.store, resolveScope(s.replicas.host.store, headCid(s.replicas.host), ['poll'])!)).filter(p => p.status === 'open')
+  expect(approvalsOf(s.replicas.host.store, open()[0]!.cid).map(a => a.approver)).toEqual([saved.body.node.mine.peer])
+  // a visitor is no approver under the default rule (the owner and the members that may edit are): nothing merged
   expect(view(s.replicas.host, [])!.tasks.find(t => t.id === 'poll')!.title).toBe('Lunch?')
-  expect(view(s.replicas.host, ['poll'])!.proposals[0].status).toBe('open')
+  expect(open()).toHaveLength(1)
+  const withdrawn = await s.call('submit', input(saved.body, { visitorToken: visit.body.visitorToken, approvals: [], ranking: [id] }))
+  expect(withdrawn.body.node.counts[id]).toBe(0)
+  expect(approvalsOf(s.replicas.host.store, open()[0]!.cid)).toEqual([])
 })
 test('allocation links expose only requested fields and reject mismatching sources', async () => {
   const s = setup('users')

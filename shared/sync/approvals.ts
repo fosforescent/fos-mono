@@ -67,6 +67,24 @@ function withApproval(store: FosStore, proposalCid: string, approver: string, at
   return put(store, { ...submission, children: [...others, [left, node]] })
 }
 
+/** A submission's identity apart from its approvals: the same however many have approved it. */
+export function submissionKey(store: FosStore, proposalCid: string): string {
+  const left = approveLeft(store), node = content(store, proposalCid)
+  return hashContent({ ...node, children: node.children.filter(([key]) => key !== left) })
+}
+
+/** Withdraw `approver`'s approval of the submission `proposalCid` at `at` (nothing when they have none there). */
+export function withdrawApproval(r: Replica, at: Scope, proposalCid: string, approver: string, now: number): Replica {
+  const store = r.store, record = readProposal(store, proposalCid)
+  if (!record) return r
+  const left = approveLeft(store), node = content(store, proposalCid)
+  const kept = node.children.filter(([key, n]) => !(key === left && approverOf(store, n) === approver))
+  if (kept.length === node.children.length) return r
+  const next = put(store, { ...node, children: kept })
+  commitRoot(store, updateAtScope(store, headCid(r), at, value => withProposal(store, value, record.peerId, next, record.name), 'node'), now)
+  return { ...r }
+}
+
 /** The key nodes this graph's members publish (the key row on each entry, by its node's cid), with their keys. */
 function publishedKeyNodes(r: Replica): Map<string, string> {
   const keys = new Map<string, string>()

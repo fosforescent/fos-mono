@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
-import { setRefValueAt, visitorExecution, consume, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { setRefValueAt, visitorExecution, consume, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, sharedLinkAt, sharedProposalCid, writeParticipation, handlerResult, writeHandlerResult, acceptSubmission, approvalsOf, withdrawApproval, argumentRefs, content, createReplica, readNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 void TEMPLATE_TYPE
@@ -118,10 +118,12 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
             const loaded = account === at.owner ? { user, store: r.store } : await deps.loadStore(account)
             if (!loaded) throw new Failure(401, 'Guest account unavailable.')
             let own = createReplica(`user:${account}`, loaded.store)
-            const name = `fos:participation:${digest(at)}`
-            if (!readNodeValue(own, [], name)) own = writeNodeValue(own, [], name, { ...record, host: at, links: {} }, now())
-            const ref = argumentRefs(own.store, headCid(own)).find(a => a.name === name)!
-            record.account = { owner: account, ref: content(own.store, ref.cid).data.alias!.id }
+            // the guest's own copy: the sharing handler's result on its link row to the node
+            if (account !== at.owner) own = ensureHomeContext(own, now(), deps.runtime?.hostOffers())
+            const link = ensureSharedLink(own, at, sharedProjection(r, at.path, digest, guest.peer).title, now())
+            own = link.replica
+            if (!handlerResult(own, link.path)) own = writeHandlerResult(own, link.path, { ...record, host: at, links: {} }, now())
+            record.account = { owner: account, ref: link.path.at(-1)! }
             if (account !== at.owner) await save(loaded.user, own)
           }
           r = writeParticipation(r, at.path, record, now())
@@ -138,7 +140,8 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           if (headCid(context) !== before) await save(own.user, context)
         }
         if (account === at.owner) node = sharedProjection(r, at.path, digest, guest.peer, req.body.interaction === true)
-        const sources = own ? readNodeValue<{ links?: Record<string, string> }>(createReplica(`user:${account}`, own.store), [], `fos:participation:${digest(at)}`)?.links : undefined
+        const guestContext = own ? createReplica(`user:${account}`, own.store) : null, link = guestContext && sharedLinkAt(guestContext, at)
+        const sources = guestContext && link ? handlerResult<{ links?: Record<string, string> }>(guestContext, link)?.links : undefined
         return res.json({ node: { ...node, sources, mine: participation(r, at.path, guest.peer), capabilities: ['read', 'edit', 'rank'].filter(c => participantAccess(r, at.path, guest.peer, c as 'read' | 'edit' | 'rank')) }, ...(token ? { visitorToken: token } : {}), ...(executionAddress ? { address: executionAddress } : {}), ...(entryToken ? { entryToken } : {}) })
       })
     }),
@@ -188,14 +191,24 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         }
         let record: Participation = { peer, name: name || undefined, labels: Object.fromEntries([...node.proposals.map(o => [o.id, o.label]), ...node.inputs.map(f => [f.key, f.name])]), audience: audiencePeer(policy.audience), revision: node.revision, updated: now(), approvals, ranking, fields }
         if (guestReplica && guestLoaded) {
-          const name = `fos:participation:${digest(at)}`
-          guestReplica = writeLinkedNodeValue(guestReplica, [], name, { ...record, host: at, links }, now(), Object.fromEntries(Object.entries(links).map(([key, id]) => [key, { id }])))
-          const ref = argumentRefs(guestReplica.store, headCid(guestReplica)).find(a => a.name === name)!
-          record = { ...record, account: { owner: account!, ref: content(guestReplica.store, ref.cid).data.alias!.id } }
+          if (account !== at.owner) guestReplica = ensureHomeContext(guestReplica, now(), deps.runtime?.hostOffers())
+          const link = ensureSharedLink(guestReplica, at, node.title, now())
+          guestReplica = writeHandlerResult(link.replica, link.path, { ...record, host: at, links }, now())
+          record = { ...record, account: { owner: account!, ref: link.path.at(-1)! } }
           // Guest intent is persisted first; host failure leaves retryable intent, not a fake receipt.
           if (account !== at.owner) await save(guestLoaded.user, guestReplica)
         }
         let r = writeParticipation(host, at.path, record, now())
+        // a visitor's approvals are approvals like any member's: rows of the submissions (attested by this server), the
+        // submission merging once the node's rule holds; unchecking one withdraws it
+        const attester = deps.runtime?.handlers.map(h => h.attester?.(r)).find(Boolean) ?? null
+        for (const option of node.proposals) {
+          const cid = sharedProposalCid(r, at.path, option.id)
+          if (!cid) continue
+          const approved = approvals.includes(option.id), has = approvalsOf(r.store, cid).some(a => a.approver === peer)
+          if (approved && !has) r = acceptSubmission(r, at.path, cid, peer, now(), attester ? { attester } : {}).replica
+          else if (!approved && has) r = withdrawApproval(r, at.path, cid, peer, now())
+        }
         if (policy.execution || req.body.interaction === true) {
           const journal = evaluationRecord(r, at.path)
           if (journal && !['idle', 'rolled-back'].includes(journal.status)) throw new Failure(409, 'This execution no longer accepts input.')
