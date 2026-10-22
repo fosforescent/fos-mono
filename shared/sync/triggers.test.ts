@@ -135,10 +135,11 @@ test('a response trigger continues the requester when the asked peer commits or 
   b = installTestObservers(setMemberCapabilitiesAt(addMemberAt(b, [], 'device-b', 'B', [], 6), [], 'device-b', [], [], 6, ['request']))
   const asked = dispatchEvent(b, { kind: 'complete', path: ['flights'], expected: put(b.store, valueContent(b.store, resolveScope(b.store, headCid(b), ['flights'])!)) }, { peerId: 'device-a', owner: false, scope: [] }, 6)
   const proposalId = (asked.result as { proposalId: string }).proposalId
-  expect(userView(asked.replica)!.proposals.some(p => p.id === proposalId && p.name === 'evaluate flights')).toBe(true)
+  const request = (asked.result as { request: string }).request
+  expect(userView(asked.replica)!.proposals.some(p => p.id === proposalId && p.name === request)).toBe(true)
   const refused = rejectProposalAt(asked.replica, [], proposalId, 7)
-  const waiting = requestContinuation(refused, ['trip'], { request: 'evaluate flights', node: ['flights'], requestedAt: 5 }, 8)
-  expect(triggerOccurrence(waiting, ['trip'], nodeTrigger(waiting, ['trip'])!, 9)).toBe('response:evaluate flights:rejected')
+  const waiting = requestContinuation(refused, ['trip'], { request, node: ['flights'], requestedAt: 5 }, 8)
+  expect(triggerOccurrence(waiting, ['trip'], nodeTrigger(waiting, ['trip'])!, 9)).toBe(`response:${request}:rejected`)
 })
 
 function createReplica(id: string) { return installTestObservers(bareReplica(id), [id, 'first-peer', 'second-peer', 'fos']) }

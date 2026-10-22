@@ -62,7 +62,7 @@ async function main() {
   replicas.host = c.setMemberCapabilitiesAt(c.addMemberAt(replicas.host, ['peer-task'], 'user:host-laptop', 'Laptop', [], 3), ['peer-task'], 'user:host-laptop', [], [], 3, ['request'])
   const requested = await interact({ ...reader, peerId: 'peer:editor' }, [], { kind: 'complete', path: [], expected: (await interact({ ...reader, peerId: 'peer:editor' }, [], { kind: 'read', path: [] })).valueRevision })
   assert.equal(requested.status, 'requested', 'an editor\'s completion becomes an evaluation request for the owner\'s rules')
-  assert(c.view(replicas.host, ['peer-task']).proposals.some(p => p.peerId === 'peer:editor' && p.name === 'evaluate []'))
+  assert(c.view(replicas.host, ['peer-task']).proposals.some(p => p.peerId === 'peer:editor' && p.status === 'open'))
   replicas.host = c.removeMemberAt(replicas.host, ['peer-task'], 'peer:reader', 4)
   await assert.rejects(interact(reader, [], { kind: 'read', path: [] }), /access/)
   const configured = await configure('public'); assert.equal(configured.status, 200)

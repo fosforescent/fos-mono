@@ -109,7 +109,7 @@ test("a peer's evaluation becomes a request the owner's rules decide on; owner-o
   s.set(setMemberCapabilitiesAt(addMemberAt(s.get(), ['project'], 'owner-device', 'Laptop', [], 5), ['project'], 'owner-device', [], [], 5, ['request']))
   const requested = await s.call('fos_evaluate', { path: ['ui'], expected: (await s.call('fos_read', { path: ['ui'] })).valueRevision })
   expect(requested.status).toBe('requested')
-  expect(view(s.get(), ['project'])!.proposals.some(p => p.peerId === 'agent' && p.name === 'evaluate ui')).toBe(true)
+  expect(view(s.get(), ['project'])!.proposals.some(p => p.peerId === 'agent' && p.name === requested.request)).toBe(true)
   expect((await s.call('fos_evaluate', { path: ['ui'], expected: (await s.call('fos_read', { path: ['ui'] })).valueRevision })).error).toMatch(/already requested/)
   expect(s.evaluate).not.toHaveBeenCalled()
   const owner = { claims: { username: 'owner' }, query: { scope: '["project"]' } }

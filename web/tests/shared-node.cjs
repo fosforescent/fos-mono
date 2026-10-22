@@ -77,7 +77,7 @@ async function main() {
   app.set({ replica: c.renameTask(app.state.replica, at, 'flights', 'Book flights early', 50) })
   await app.syncSharedNodes(false)
   const trip = c.view(alice, [HOME, 'trip'])
-  assert.deepEqual(trip.proposals.map(p => [p.peerId, p.name, p.status]), [['user:bob', 'node-sync', 'open']], 'the edit is a proposal on the owner\'s node')
+  assert.deepEqual(trip.proposals.map(p => [p.peerId, p.name, p.status]), [['user:bob', '', 'open']], 'the edit is a proposal on the owner\'s node')
   assert.equal(c.view(alice, [HOME, 'trip', 'flights']).name, 'Book flights', 'main content is untouched until alice decides')
 
   // Run: alice's host evaluates the node for bob (execute); the request names her and the node's path in her account

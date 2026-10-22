@@ -2143,6 +2143,13 @@ export function proposalContent(store: FosStore, peerId: string, name: string, c
   return { data: { updated: { time: timestamp }, ...(status === 'rejected' ? { proposal: { status } } : {}) }, children }
 }
 
+/**
+ * Whether a submission is a candidate whole value for a ref (a binding: a handler's answer, a pattern's or solve's
+ * option) rather than changed content of a node: its base is the ref node it was made against, which content never is.
+ */
+export function isValueSubmission(store: FosStore, proposal: Pick<ProposalRecord, 'baseCid'>): boolean {
+  return store.table.has(proposal.baseCid) && isRefNode(store, content(store, proposal.baseCid))
+}
 export function readProposal(store: FosStore, cid: string): ProposalRecord | null {
   if (!store.table.has(cid)) return null
   const value = content(store, cid), p = store.primitive

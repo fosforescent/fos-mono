@@ -10,7 +10,7 @@ import type { FosPathElem } from '../types'
 import { LIBRARY_ID, content, identityCid, isBranchChoice, isChoiceEdge, isRefNode, isRowEdge, put, readChoice, refValueCid, resolveScope, valueContent, type Scope } from './graph'
 import { headCid, proposeRefAt, type Replica } from './replica'
 import { matchesGraph } from './structural'
-import { bindingSubmissionName, isPlaceholder, patternRows } from './pattern-bindings'
+import { isPlaceholder, patternRows } from './pattern-bindings'
 
 /** Placeholder alias id → the value cid it is bound to. */
 export type Substitution = ReadonlyMap<string, string>
@@ -131,7 +131,7 @@ export function solveAt(replica: Replica, at: Scope, peerId: string, now: number
   for (const solution of solutions) {
     for (const [alias, value] of solution.bindings) {
       const below = refPath(store, rowCid, alias)
-      if (below) next = proposeRefAt(next, [...at, ...below], value, peerId, now, bindingSubmissionName(`solve:${solution.source.join('/')}`)).replica
+      if (below) next = proposeRefAt(next, [...at, ...below], value, peerId, now, solution.source.join('/')).replica
     }
   }
   return { replica: next, solutions }

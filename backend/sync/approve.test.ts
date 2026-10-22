@@ -63,7 +63,7 @@ test('an approve requirement signs the approval into the branch, and the default
   r = makeLinkAt(r, PROJECT, 2)
   r = addMemberAt(r, PROJECT, 'bob', 'Bob', ['edit'], 2)
   r = pullRequested(r)
-  expect(readProposals(r.store, content(r.store, resolveScope(r.store, headCid(r), PROJECT)!)).map(p => p.name)).toEqual(['branch:try'])
+  expect(readProposals(r.store, content(r.store, resolveScope(r.store, headCid(r), PROJECT)!)).map(p => p.name)).toEqual(['try'])
   r = addRow(r, PROJECT, ALLOCATION_TYPE, 'try', 7, { id: 'ok', requirement: { capability: 'approve' } })
   h.set(r)
   const path = [...PROJECT, 'ok']
@@ -74,7 +74,7 @@ test('an approve requirement signs the approval into the branch, and the default
   r = h.get()
   // alice was the one approval the default rule asked for: the branch is main now, the submission closed
   expect(view(r, PROJECT)!.tasks.find(t => t.id === 'f')!.title).toBe('first, better')
-  expect(() => openSubmission(r, PROJECT, 'branch:try')).toThrow()
+  expect(() => openSubmission(r, PROJECT, 'try')).toThrow()
   expect(view(r, PROJECT)!.tasks.find(t => t.id === 'ok')!.requirement).toMatchObject({ capability: 'approve', satisfied: true })
 })
 
@@ -95,6 +95,6 @@ test('an approval the rule does not complete stays on the open branch, verifiabl
   expect(done.body.evaluation?.status).toBe('committed')
   r = h.get()
   expect(view(r, PROJECT)!.tasks.find(t => t.id === 'f')!.title).toBe('first')
-  const submission = openSubmission(r, PROJECT, 'branch:try')
+  const submission = openSubmission(r, PROJECT, 'try')
   expect(verifiedApprovers(r.store, submission.contentCid, { fos: key.publicKey }, verifyEd25519)).toEqual(['user:alice'])
 })

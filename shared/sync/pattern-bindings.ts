@@ -12,12 +12,11 @@ import {
   withPrev, withProposal, withRowTemplate, type Scope
 } from './graph'
 import { headCid, type Replica } from './replica'
+import { isValueSubmission } from './graph'
 import { refValueCompatible } from './scoped-refs'
 import { PATTERN_TYPE } from './library-types'
 
 /** Submissions to a right ref are `binding` proposals; a `binding:<source>` name keeps one option per source. */
-export function isBindingSubmission(name: string): boolean { return name === 'binding' || name.startsWith('binding:') }
-export function bindingSubmissionName(source: string): string { return `binding:${source}` }
 
 /**
  * The rows a pattern position counts: everything but bookkeeping, the ref constructor's own pointers and placement
@@ -35,7 +34,7 @@ export function isPlaceholder(store: FosStore, node: FosNodeContent): boolean {
 
 /** `ref` with `value` submitted by `peerId` from `source` (replacing that source's earlier submission). */
 export function submitToRef(store: FosStore, ref: FosNodeContent, value: string, peerId: string, source: string, now: number): FosNodeContent {
-  const name = bindingSubmissionName(source)
+  const name = source
   const proposal = put(store, proposalContent(store, peerId, name, value, refBindingBaseCid(store, ref), now))
   return withProposal(store, ref, peerId, proposal, name)
 }
@@ -99,8 +98,8 @@ export function patternBindings(store: FosStore, pattern: string): PatternBindin
     for (const [, right] of patternRows(store, content(store, cid))) {
       const ref = content(store, right)
       if (isRefNode(store, ref) && ref.data.alias) {
-        const options = readProposals(store, ref).filter(p => p.status === 'open' && isBindingSubmission(p.name))
-          .map(p => ({ proposal: p.cid, value: p.contentCid, source: p.name.slice('binding:'.length) || p.peerId, peerId: p.peerId }))
+        const options = readProposals(store, ref).filter(p => p.status === 'open' && isValueSubmission(store, p))
+          .map(p => ({ proposal: p.cid, value: p.contentCid, source: p.name || p.peerId, peerId: p.peerId }))
         out.push({ alias: ref.data.alias.id, name: ref.data.name?.content ?? ref.data.alias.id, value: refValueCid(store, ref), options })
       } else walk(right, depth + 1)
     }

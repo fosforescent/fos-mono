@@ -2,7 +2,7 @@ import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { STANDARD_CAPABILITY_PATTERNS, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, bindingSubmissionName, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
+import { STANDARD_CAPABILITY_PATTERNS, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { capabilityOfTarget } from '../../shared/sync/graph'
 import { workClaims, saveWorkClaims } from '../../shared/sync/work-claims'
@@ -457,7 +457,7 @@ export class App {
       r = this.state.replica
       if (!resolveScope(r.store, headCid(r), [...at, response.alias])) r = assignRefAt(r, at, response.alias, null, this.now())
       const body = put(r.store, { data: { description: { content: answer.body } }, children: [] })
-      this.set({ replica: proposeRefAt(r, [...at, response.alias], body, r.meta.peerId, this.now(), bindingSubmissionName('fetch')).replica })
+      this.set({ replica: proposeRefAt(r, [...at, response.alias], body, r.meta.peerId, this.now(), 'fetch').replica })
     },
     solve: async ({ step }) => {
       const { replica, solutions } = solveAt(this.state.replica, step.path, this.state.replica.meta.peerId, this.now())

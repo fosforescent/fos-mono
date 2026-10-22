@@ -18,7 +18,7 @@ import { plainEdge } from './patterns'
 import { FIELD_TYPES, MARKDOWN_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
 import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
-import { memberEntryId, newId, SERVER_MEMBER, aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
+import { isRowEdge, memberEntryId, newId, SERVER_MEMBER, aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
 
 export type Audience = 'public' | 'users'
 export const AUDIENCES: readonly Audience[] = ['public', 'users']
@@ -305,7 +305,11 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   const own = edgeAt(path)
   walk(path, 0, own && store.table.has(plainEdge(store, own)[0]) ? content(store, plainEdge(store, own)[0]).data.form?.title : undefined)
   // visitors' own submissions are the owner's to review, not options other visitors vote on
-  const proposals = node.proposals.filter(p => p.status === 'open' && p.name !== VISITOR_SUBMISSION).slice(0, 100).map(p => ({ id: `proposal:${p.id}`, label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
+  // what a visitor submits (a member who may run the node but not edit it) is the owner's to review, not an option other visitors vote on
+  const identity = content(r.store, resolveScope(r.store, headCid(r), path)!)
+  // visitors are explicit members (a visit adds them); a peer the audience covers implicitly is no visitor
+  const visitorInput = (peer: string) => readMembers(r.store, identity).some(m => m.peerId === peer) && !hasCapability(r.store, identity, peer, 'edit')
+  const proposals = node.proposals.filter(p => p.status === 'open' && !visitorInput(p.peerId)).slice(0, 100).map(p => ({ id: `proposal:${p.id}`, label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
   const inputs = ((policy.execution || interactive) ? executionInputs(r, path) : [...sharedInputs(r, path), ...fields].slice(0, 32)).filter(field => { const at = [...path, ...(field.path ?? [field.key])]; return visible(at) && textVisible(at) })
   const key = revision({ audience: policy.audience, title: current?.title ?? node.name, rows: hashed, inputs, proposals })
   const counts: Record<string, number> = {}, rankings: Record<string, number> = {}
@@ -341,7 +345,6 @@ export function subPeerRowAt(r: Replica, owner: string, now: number): { replica:
   return { replica: r, path: hostPath }
 }
 
-export const inviteRequestName = (title: string) => `invite: ${title}`
 
 /**
  * Another account made this one a member of a node: the request lands as a *proposal* by that account on its sub-peer
@@ -350,14 +353,18 @@ export const inviteRequestName = (title: string) => `invite: ${title}`
  * submission like any other.
  */
 export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, title: string, now: number): { replica: Replica; path: Scope; proposalCid: string | null } {
-  const peer = `user:${owner}`, name = inviteRequestName(title || owner)
+  const peer = `user:${owner}`, name = title || owner
   const sub = subPeerRowAt(r, owner, now)
   r = sub.replica
   const hostPath = sub.path
   if (linkRowOf(r, hostPath, owner, aliasId)) return { replica: r, path: hostPath, proposalCid: null }
   const store = r.store, root = headCid(r), hostCid = resolveScope(store, root, hostPath)!
   const identity = content(store, hostCid)
-  const pending = readProposals(store, identity).find(p => p.peerId === peer && p.name === name && p.status === 'open')
+  // the open request from that account that adds a reference to this node of theirs
+  const pending = readProposals(store, identity).find(p => p.peerId === peer && p.status === 'open' && valueContent(store, p.contentCid).children.some(edge => {
+    const ref = content(store, identityCid(store, edge)).data.ref
+    return isRowEdge(store, edge) && ref?.owner === owner && ref.id === aliasId
+  }))
   if (pending) return { replica: r, path: hostPath, proposalCid: pending.cid }
   // the proposal's content: the row's current value plus the ref, built in a scratch store rooted at that value
   const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()

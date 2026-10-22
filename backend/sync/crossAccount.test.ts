@@ -54,7 +54,7 @@ test('a user locates and pulls a node another account shared with them, inside t
   expect(pushed.status).toBe(200)
   const trip = view(s.replicas.alice!, [HOME_ID, 'trip'])!
   expect(view(s.replicas.alice!, [HOME_ID])!.tasks.find(t => t.id === 'trip')!.title).toBe('Plan the group trip')
-  expect(trip.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:bob', 'node-sync', 'open']])
+  expect(trip.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:bob', '', 'open']])
 })
 
 test('events on another account\'s node run as user:<me>: read and submit with edit, complete only with execute', async () => {

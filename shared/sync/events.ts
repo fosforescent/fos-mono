@@ -41,11 +41,23 @@ import { addMemberAt, addRow, addTypedRow, applyProposalAt, createReplica, headC
 import { createBranch } from './branches'
 import { executionInput, executionSnapshot } from './execution-access'
 import { capabilityPeers } from './bindings'
-import { writeNodeValue } from './evaluation'
+import { writeExecutionRequest } from './evaluation'
+import { rowWithLeft } from './row-values'
+import { isExecuteLeft } from './capabilities'
+import { readGraphValue } from './node-values'
 import { workClaims, saveWorkClaims, workOverlaps, within, WORK_LEASE_MS, type WorkClaim } from './work-claims'
 
 /** The named value a peer's evaluation request carries inside its proposal. */
-export const EVALUATION_REQUEST = 'fos:evaluation-request'
+/** A peer's request that a node be run (on another peer's node): the execute row's request in the submission it sends. */
+export type EvaluationRequest = { id: string; peer: string; expected: string; time: number }
+/** The evaluation request the submitted content `contentCid` makes of its node at `path`, if it is one. */
+export function submittedRequest(store: FosStore, contentCid: string, path: Scope): EvaluationRequest | null {
+  const node = resolveScope(store, contentCid, path)
+  const row = node ? rowWithLeft(store, node, isExecuteLeft) : null
+  const state = row ? readGraphValue(store, row.ref) as { request?: EvaluationRequest } | undefined : undefined
+  const request = state?.request
+  return request && typeof request.id === 'string' && typeof request.peer === 'string' ? request : null
+}
 import { nodeLinkMaskAt } from './node-provider'
 
 /** Who is acting. Supplied by the transport (JWT claims, a loopback token, a linked phone), never by the event. */
@@ -396,19 +408,20 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
       // request is a proposal on the node, which the owner's `request` trigger evaluates or the owner reviews.
       if (!editable) throw new EventError('Peer cannot request evaluation of this attachment.')
       if (!capabilityPeers(r, absolute(path), 'request').length) throw new EventError('No peer accepts evaluation requests in this context.')
-      const requestName = `evaluate ${path.length ? path.join('/') : '[]'}`
+      // the request: a submission whose node at `path` asks to be run (its execute row's request), named by its id
+      const request = newId()
       const identity = content(store, selectedIdentity(store, attached!))
-      if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.name === requestName && p.status === 'open')) throw new EventError('This evaluation is already requested.')
+      if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.status === 'open' && submittedRequest(store, p.contentCid, path))) throw new EventError('This evaluation is already requested.')
       const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
       importNodes(draftStore, reachableNodes(store, [base]))
       commitRoot(draftStore, base, now)
       nestScope(draftStore, { store, root, at: canonical })
-      const draft = writeNodeValue(createReplica(principal.peerId, draftStore), path, EVALUATION_REQUEST, { peer: principal.peerId, expected: event.expected, time: now }, now)
+      const draft = writeExecutionRequest(createReplica(principal.peerId, draftStore), path, { id: request, peer: principal.peerId, expected: event.expected, time: now } satisfies EvaluationRequest, now)
       importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
-      const proposal = put(store, proposalContent(store, principal.peerId, requestName, headCid(draft), base, now))
-      const next = updateAtScope(store, root, canonical, current => withProposal(store, makeLink(store, current, now), principal.peerId, proposal, requestName), 'node')
+      const proposal = put(store, proposalContent(store, principal.peerId, request, headCid(draft), base, now))
+      const next = updateAtScope(store, root, canonical, current => withProposal(store, makeLink(store, current, now), principal.peerId, proposal, request), 'node')
       commitRoot(store, next, now)
-      return { replica: { ...r }, changed: true, result: { status: 'requested', proposalId: proposal, request: requestName, node: absolute(path) } }
+      return { replica: { ...r }, changed: true, result: { status: 'requested', proposalId: proposal, request, node: absolute(path) } }
     }
     if (event.kind === 'decide') {
       // deciding a submission is how edit is exercised on a node with several peers

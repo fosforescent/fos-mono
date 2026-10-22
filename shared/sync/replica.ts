@@ -20,7 +20,7 @@ import { constructForm, formFields, formText, formTitle, formValueAt, positionFo
 import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
-import { memberEntryId, homeIdOf } from './graph'
+import { memberEntryId, homeIdOf, isValueSubmission } from './graph'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
@@ -930,7 +930,7 @@ export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: strin
 /** Submit a value (which can itself be a ref) through the ordinary proposal format. */
 /** Submit `targetCid` to the row ref at `at`. `name` keeps one submission per source (`binding:<source>`, as patterns and
  * solve use); the default replaces this peer's earlier submission. */
-export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, peerId: string, now: number, name = 'binding'): { replica: Replica; proposalCid: string } {
+export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, peerId: string, now: number, name = ''): { replica: Replica; proposalCid: string } {
   const store = replica.store
   const cid = resolveScope(store, headCid(replica), at)
   if (!cid || !store.table.has(targetCid)) throw new Error('ref or proposed value not found')
@@ -954,9 +954,9 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     if (!proposal || proposal.status !== 'open' || !readProposals(store, value).some((p) => p.cid === proposalCid)) return value
     const main = putStripped(store, value)
     // A submission to a right ref accepts a whole value; concurrent handlers stay alternatives.
-    if (proposal.name === 'binding' || proposal.name.startsWith('binding:')) {
-      // options from named sources (patterns, solve) stay choosable after another one is bound
-      if (proposal.name === 'binding' && proposal.baseCid !== refBindingBaseCid(store, value)) return value
+    if (isValueSubmission(store, proposal)) {
+      // a peer's main submission must be of the value as it is; named ones (a source's options) stay choosable after another is bound
+      if (!proposal.name && proposal.baseCid !== refBindingBaseCid(store, value)) return value
       const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
       const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
       const type = edge && rowTypeOf(store, edge)

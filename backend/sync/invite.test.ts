@@ -45,7 +45,7 @@ test('inviting a Fos user records the member grant and delivers the node into th
   const hostView = view(s.replicas.bob!, [HOME_ID, host.id])!
   expect(hostView.members.map(m => [m.peerId, m.capabilities])).toEqual([['user:alice', []]])
   expect(hostView.tasks).toHaveLength(0)
-  expect(hostView.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:alice', 'invite: Plan the group trip', 'open']])
+  expect(hostView.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:alice', 'Plan the group trip', 'open']])
   expect(s.notified).toEqual([1, 2])
   // inviting again is idempotent on both sides
   const again = await s.send([HOME_ID, 'trip'], { kind: 'invite', path: [], user: 'bob' })

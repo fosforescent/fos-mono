@@ -8,4 +8,5 @@ export { MARKDOWN_TYPE, NOTE_TYPE, NUMBER_TYPE, PEER_TYPE, PLAIN_TYPE, TEXT_TYPE
 /** Scalar field types: the fields of a row's product, asked of visitors when empty. */
 export const FIELD_TYPES: readonly string[] = [TEXT_TYPE, NUMBER_TYPE, TIME_TYPE, PEER_TYPE]
 /** The name of the proposal holding one visitor's candidate field values (one per visitor, replaced on resubmit). */
-export const VISITOR_SUBMISSION = 'fos:visitor-submission'
+/** The label of a visitor's submission of values for a published node's empty fields (its branch's name). */
+export const VISITOR_SUBMISSION = 'Visitor input'

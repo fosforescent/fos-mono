@@ -262,10 +262,6 @@ function allowedToEdit(r: Replica, path: Scope, authority: NodeAuthority): boole
   return allowed
 }
 
-/** The submission a proposing peer's branch `name` is (a pull request): `branch:<name>`. */
-export function branchSubmissionName(name: string): string { return `branch:${name}` }
-/** The branch a submission is, when it is one (`branch:<name>`). */
-export function submittedBranch(name: string): string | null { return name.startsWith('branch:') ? name.slice('branch:'.length) : null }
 
 /** Same request on HTTP, RTC, and virtual channels. Authorization is rechecked on
  * every node; the transport must serialize load/modify/save. */
@@ -473,8 +469,8 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   const main = content(r.store, attachment), base = putStripped(r.store, main)
   // The proposer's submission (open or rejected) is what it is served, rebased onto main as it is now, so it sees what
   // changed on main and keeps its own rows. Only a submission with different content reopens a rejected one.
-  // a named branch is its own submission (a pull request); everything else is the peer's one `node-sync` submission
-  const name = request.submission ? branchSubmissionName(request.submission) : 'node-sync'
+  // a named branch is its own submission (a pull request), named after it; everything else is the peer's main one
+  const name = request.submission ?? ''
   const existing = readProposals(r.store, main).find(p => p.peerId === authority.peerId && p.name === name)
   if (!existing && !request.update) return provideNode(r, request, authority, now)
   // Work on an isolated store so errors cannot mutate main or its pending value.

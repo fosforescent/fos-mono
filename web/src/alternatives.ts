@@ -1,5 +1,5 @@
 import type { App } from './app'
-import { view, viewNode, readProposal, headCid, submittedBranch, HOME_ID, type Scope, type TaskView } from '../../shared/sync/index'
+import { view, viewNode, readProposal, headCid, HOME_ID, type Scope, type TaskView } from '../../shared/sync/index'
 const selected = new WeakMap<App, { path: string; id: string }>()
 import { combobox, type ComboOption } from './combobox'
 import { iconSvg } from './icons'
@@ -28,7 +28,7 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
   const draft = { store: app.state.replica.store, head: headCid(app.state.replica), path: [...path] }
   const proposals = () => app.readsRequests() ? (JSON.stringify(path) === JSON.stringify(app.state.view) ? app.currentView()?.proposals : view(app.state.replica, path)?.proposals) ?? [] : []
   // a pull request (a peer's `branch:<name>` submission) is labelled by its branch
-  const proposalLabel = (p: ReturnType<typeof proposals>[number]) => `${submittedBranch(p.name) ?? (p.name || p.peerId)} · ${p.peerId}${p.status === 'rejected' ? ' (rejected)' : ''}`
+  const proposalLabel = (p: ReturnType<typeof proposals>[number]) => `${p.name || p.peerId} · ${p.peerId}${p.status === 'rejected' ? ' (rejected)' : ''}`
   // on a row a peer holds, marking a branch for merge sends it there as a pull request
   const held = !!row?.branches && !!app.pullRequestTarget(path)
   const requestLabel = (name: string) => held ? `Pull request: ${name}` : `Request merge: ${name}`
@@ -42,7 +42,8 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
       else app.refresh()
     } })),
     ...proposals().map(p => {
-      const branch = submittedBranch(p.name)
+      // a peer's named branch is a pull request; its main submission is its edits
+      const branch = p.name || null
       return { label: proposalLabel(p), group: 'Branches', accessory: { label: branch ? `Pull request from ${p.peerId}` : 'Merge requested by ' + p.peerId, pressed: p.status === 'open', disabled: true, ...(branch && p.status === 'open' ? { tone: 'pending' as const } : {}), run: () => {} }, selected: active?.id === p.id, run: () => showProposal(app, path, p.id) }
     }),
 
@@ -59,7 +60,7 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
   box.classList.add('alternative-picker')
   box.querySelector('button')!.disabled = !!app.state.voice || !!app.state.work?.busy
   // looking into a pull request: approve it beside the picker (the server signs the approval; the group's rule merges)
-  const pulled = active && active.status === 'open' ? submittedBranch(active.name) : null
+  const pulled = active && active.status === 'open' && active.name ? active.name : null
   if (!pulled) return box
   const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'icon approve-pull-request'
   approve.innerHTML = iconSvg('pull-request') ?? 'PR'; approve.title = `Approve ${active!.peerId}'s pull request “${pulled}”`; approve.setAttribute('aria-label', approve.title)
