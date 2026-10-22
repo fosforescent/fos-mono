@@ -119,7 +119,8 @@ test('failed calls retain their binding, retries cannot silently switch to a nea
   let recovered = replica()
   const scope = ['proj', 'trip', 'rq']
   expect(evaluationRecord(recovered, scope)?.status).toBe('needs-recovery')
-  for (const row of view(recovered, scope)!.tasks.filter(t => t.id.startsWith('rollback:'))) recovered = setTaskDone(recovered, scope, row.id, true, 20)
+  // the journal names the rows asking for a manual rollback
+  for (const task of evaluationRecord(recovered, scope)!.effects.flatMap(e => e.task ? [e.task] : [])) recovered = setTaskDone(recovered, scope, task, true, 20)
   recoverEvaluation(recovered, scope, 21)
   expect((await run(['proj', 'trip'], 'rq')).json.evaluation.status).toBe('committed')
   expect(invoked).toEqual([5, 5]) // the pinned provider, not the nearer one attached later

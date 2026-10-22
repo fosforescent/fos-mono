@@ -7,7 +7,7 @@
  */
 import { nodeLinkMaskAt } from './node-provider'
 import { argumentRefs, capabilityPeers } from './bindings'
-import { readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
+import { evaluationRecord, readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
 import { addMemberAt, createReplica, deleteTask, homePath, addRow, proposeRefAt, renameTask, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
@@ -324,7 +324,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     if (mayParticipate(r, path, p.peer, 'edit')) for (const id of p.approvals) counts[id] = (counts[id] ?? 0) + 1
     if (mayParticipate(r, path, p.peer, 'rank')) p.ranking.forEach((id, i) => { rankings[id] = (rankings[id] ?? 0) + p.ranking.length - i })
   }
-  return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), ...page, title: page.title || 'Shared node', ...(policy.template ? { template: true as const } : {}), rows, inputs, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
+  return { ...((policy.execution || interactive) ? { execution: evaluationRecord(r, path) ?? { status: 'idle' } } : {}), ...page, title: page.title || 'Shared node', ...(policy.template ? { template: true as const } : {}), rows, inputs, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
 }
 
 /** The sub-peer row for another account below this one's Home (their peer id is its member), created on demand. */

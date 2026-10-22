@@ -8,15 +8,18 @@ import { TEMPLATE_TYPE } from './library-types'
 import { compileInstructions } from './ref-compiler'
 import { instructionPrimitives } from './primitives'
 import { receivedRef } from './parameters'
+import { readRowValue, writeRowValue } from './row-values'
+import { executeLeft, isExecuteLeft } from './capabilities'
 import { findRowByAlias, commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
-export const EVALUATION_ARGUMENT = 'fos:evaluation'
 const EVALUATION_BUDGET_MS = 120000
 export type EvaluationRecord = {
   id: string; status: 'idle' | 'opening' | 'running' | 'committing' | 'committed' | 'awaiting-review' | 'rolled-back' | 'needs-recovery'
-  started: number; error?: string; effects: Array<{ path: Scope; title: string; status: 'attempting' | 'applied' | 'pending-review' | 'reverted' | 'manual' }>
+  /** `task`: the row asking someone to roll the effect back by hand, once there is one. */
+  started: number; error?: string; effects: Array<{ path: Scope; title: string; status: 'attempting' | 'applied' | 'pending-review' | 'reverted' | 'manual'; task?: string }>
 }
+
 
 /** Runtime state is a typed mutable ref, not a new row kind or a separate database. */
 export function readNodeValue<T>(r: Replica, path: Scope, name: string): T | null {
@@ -55,8 +58,12 @@ export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, valu
   return { ...r }
 }
 
+/** Write the journal into the node's execute row (made when the node has none). */
+export function writeEvaluationRecord(r: Replica, path: Scope, record: EvaluationRecord, now: number): Replica {
+  return writeRowValue(r, path, executeLeft(r.store), record, now)
+}
 export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | null {
-  const record = readNodeValue<EvaluationRecord>(r, path, EVALUATION_ARGUMENT)
+  const record = readRowValue<EvaluationRecord>(r, path, isExecuteLeft)
   return record && typeof record.id === 'string' && Array.isArray(record.effects) && typeof record.status === 'string' ? record : null
 }
 
@@ -90,6 +97,8 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     if (row && (row.refId !== undefined || row.supply)) return
     const cid = resolveScope(r.store, headCid(r), at)
     if (depth > 0 && cid && content(r.store, cid).data.name?.content.startsWith('fos:')) return
+    // the execute row is the evaluator's own: its journal, not a step
+    if (depth > 0 && row?.typeCid && isExecuteLeft(r.store, row.typeCid)) return
     // A handler's attempt records (pinned prompts, return slots) are bookkeeping, never steps.
     if (depth > 0 && cid && isAttempt(r, cid)) return
     if (depth > 0 && cid && argumentRefs(r.store, cid).some(a => a.name === 'fos:trigger')) return
@@ -162,7 +171,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   const children = new Map(steps.map(step => [JSON.stringify(step.path), executionShape(step)]))
   const applied = new Set<string>()
   const record: EvaluationRecord = { id: newId(), status: 'opening', started: driver.now(), effects: [] }
-  const save = () => driver.save(writeNodeValue(driver.get(), path, EVALUATION_ARGUMENT, record, driver.now()))
+  const save = () => driver.save(writeEvaluationRecord(driver.get(), path, record, driver.now()))
   const fresh = (step: EvaluationStep): EvaluationStep => ({ path: step.path, row: step.path.length ? view(driver.get(), step.path.slice(0, -1))?.tasks.find(t => t.id === step.path.at(-1)) ?? null : null })
   const check = (step: EvaluationStep) => {
     if (driver.now() - record.started > EVALUATION_BUDGET_MS) throw new Error('Evaluation exceeded two minutes. Review its effects before retrying.')
@@ -220,7 +229,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       if (!view(r, step.path.slice(0, -1))?.tasks.find(t => t.id === step.path.at(-1))?.done) throw new Error('A task still has unfulfilled requirements.')
     }
     record.status = 'committed'
-    r = writeNodeValue(r, path, EVALUATION_ARGUMENT, record, driver.now())
+    r = writeEvaluationRecord(r, path, record, driver.now())
     published = { before: headCid(live), after: headCid(r) }
     importNodes(live.store, reachableNodes(r.store, [headCid(r)]))
     commitRoot(live.store, headCid(r), driver.now())
@@ -238,15 +247,16 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
         await driver.rollback(fresh({ path: effect.path, row: null }), `${record.id}:${JSON.stringify(effect.path)}`)
         effect.status = 'reverted'
       } catch {
-        effect.status = 'manual'
-        await driver.save(addTask(driver.get(), path, `Manually roll back or verify: ${effect.title} (evaluation ${record.id})`, driver.now(), `rollback:${record.id}:${record.effects.indexOf(effect)}`))
+        effect.status = 'manual'; effect.task = newId()
+        await driver.save(addTask(driver.get(), path, `Manually roll back or verify: ${effect.title} (evaluation ${record.id})`, driver.now(), effect.task))
       }
     }
     for (const step of [...opened].reverse()) {
       try { await driver.abort?.(fresh(step), record.id) }
       catch {
-        record.effects.push({ path: step.path, title: `Release transaction for ${step.row?.title ?? 'node'}`, status: 'manual' })
-        await driver.save(addTask(driver.get(), path, `Manually release transaction for ${step.row?.title ?? 'node'} (${record.id})`, driver.now(), `rollback:${record.id}:${record.effects.length - 1}`))
+        const task = newId()
+        record.effects.push({ path: step.path, title: `Release transaction for ${step.row?.title ?? 'node'}`, status: 'manual', task })
+        await driver.save(addTask(driver.get(), path, `Manually release transaction for ${step.row?.title ?? 'node'} (${record.id})`, driver.now(), task))
       }
     }
     record.status = record.effects.some(e => e.status === 'manual') ? 'needs-recovery' : 'rolled-back'
@@ -299,12 +309,11 @@ export function recoverEvaluation(r: Replica, path: Scope, now: number): Replica
   const record = evaluationRecord(r, path)
   if (!record || ['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(record.status)) return r
   if (['opening', 'running', 'committing'].includes(record.status) && now - record.started < EVALUATION_BUDGET_MS + 60000) throw new Error('This evaluation may still be running. Wait three minutes from its start before recovering an interrupted run.')
-  for (const [index, effect] of record.effects.entries()) {
+  for (const effect of record.effects) {
     if (effect.status === 'reverted') continue
-    const id = `rollback:${record.id}:${index}`
-    if (!view(r, path)?.tasks.some(t => t.id === id)) r = addTask(r, path, `Manually roll back or verify: ${effect.title} (evaluation ${record.id})`, now, id)
+    if (!effect.task || !view(r, path)?.tasks.some(t => t.id === effect.task)) { effect.task = effect.task ?? newId(); r = addTask(r, path, `Manually roll back or verify: ${effect.title} (evaluation ${record.id})`, now, effect.task) }
     effect.status = 'manual'
   }
-  const pending = record.effects.some((effect, index) => effect.status === 'manual' && !view(r, path)?.tasks.find(t => t.id === `rollback:${record.id}:${index}`)?.done)
-  return writeNodeValue(r, path, EVALUATION_ARGUMENT, { ...record, status: pending ? 'needs-recovery' : 'rolled-back' }, now)
+  const pending = record.effects.some(effect => effect.status === 'manual' && !view(r, path)?.tasks.find(t => t.id === effect.task)?.done)
+  return writeEvaluationRecord(r, path, { ...record, status: pending ? 'needs-recovery' : 'rolled-back' }, now)
 }

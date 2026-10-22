@@ -44,6 +44,13 @@ export function capabilityName(store: FosStore, cid: string): string | null {
   return name?.startsWith('fos:capability:') ? name.slice('fos:capability:'.length) : null
 }
 
+/**
+ * The evaluator is the `execute` capability's handler: a node's execute row (a row whose left is that capability)
+ * holds its journal as the row's value. This is the one place the evaluator names what it implements.
+ */
+export function executeLeft(store: FosStore): string { return capabilityPattern(store, 'execute') }
+export function isExecuteLeft(store: FosStore, left: string | null | undefined): boolean { return sameCapabilityType(store, left, executeLeft(store)) }
+
 /** Old primitive markers and their library pattern are the same type at the wire boundary. */
 export function sameCapabilityType(store: FosStore, a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false

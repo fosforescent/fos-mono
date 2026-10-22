@@ -44,7 +44,7 @@ import { readGraphValue } from './node-values'
 import { allocationValue } from './destructure'
 import { standardRequirementSatisfied } from './standard-requirements'
 
-import { capabilityPattern, capabilityName, sameCapabilityType } from './capabilities'
+import { capabilityPattern, capabilityName, sameCapabilityType, isExecuteLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { libraryNames, type LibraryNames } from '../library-names'
 import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, MONEY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
@@ -1200,7 +1200,8 @@ export type TaskView = {
   typeError?: string[]
   /** This row is one of those its parent's type does not accept. */
   rejected?: boolean
-  construction?: { name?: string; peerId?: string; handler?: string }
+  /** `evaluation`: the node's execute row, whose value is the evaluator's journal. */
+  construction?: { name?: string; peerId?: string; handler?: string; evaluation?: true }
 
   branches?: { selected: string; names: string[]; mergeRequests?: string[] }
   id: string
@@ -1367,6 +1368,8 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity
   if (sameCapabilityType(store, typeCid, capabilityTarget(store, 'peer')) && constructor.data.name) view.construction = { handler: constructor.data.name.content }
   if (constructor.data.name?.content.startsWith('fos:setting:')) view.construction = { name: constructor.data.name.content }
+  // a node's execute row: the evaluator's journal of it
+  if (edge && isExecuteLeft(store, plainEdge(store, edge)[0])) { view.construction = { evaluation: true }; view.title = 'Evaluation' }
   if (held || type === REF_TYPE) { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   const attribution = formAttribution(store, value, definition)
   if (attribution) view.author = attribution
@@ -1674,13 +1677,14 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
       const child = content(store, identityCid(store, edge))
       const peerId = (isMemberEdge(store, edge) || isPeerEdge(store, edge)) ? child.data.peerId?.content : undefined
       const name = isRefNode(store, child) ? child.data.name?.content : undefined
-      if ((!peerId && (!name?.startsWith('fos:setting:') && name !== 'fos:evaluation')) || !child.data.alias?.id) continue
+      const evaluation = isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])
+      if ((!peerId && !evaluation && !name?.startsWith('fos:setting:')) || !child.data.alias?.id) continue
       if (seen.has(peerId ?? child.data.alias.id)) continue
       seen.add(peerId ?? child.data.alias.id)
       const existing = view.tasks.find(row => row.id === child.data.alias!.id)
       const row = existing ?? rowView(store, identityCid(store, edge))
-      row.title = name === 'fos:evaluation' ? 'Evaluation' : peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name!
-      row.construction = { ...(name ? { name } : {}), ...(peerId ? { peerId } : {}) }
+      row.title = evaluation ? 'Evaluation' : peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name!
+      row.construction = evaluation ? { evaluation: true } : { ...(name ? { name } : {}), ...(peerId ? { peerId } : {}) }
       if (!existing) view.tasks.push(row)
     }
   }
@@ -2261,7 +2265,9 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const childEdges = (value: FosNodeContent, definition = false) => value.children.filter((edge) => {
     const type = rowTypeIdOf(store, edge)
     const name = content(store, identityCid(store, edge)).data.name?.content
-    if (name === 'fos:evaluation' || name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' ||name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
+    // an execute row's value is the evaluator's journal of this node: state, not part of what is copied
+    if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return false
+    if (name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' ||name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
     if (isRowEdge(store, edge)) return !(instantiate && !definition && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false

@@ -25,7 +25,7 @@ import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
 import { triggerOffers as discoverTriggerOffers, triggerObservation, missingSchedule, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
-import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
+import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeEvaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
 import { requestTitle, TITLED_VALUE, truncateTitle } from '../../shared/sync/index'
@@ -2756,7 +2756,7 @@ export class App {
     if (active) this.toggleExecutionTimer(active.notes)
     if (abort) {
       const record = this.evaluationStatus(path)
-      if (record && record.status !== 'committed') this.edit(writeNodeValue(this.state.replica, path, 'fos:evaluation', { ...record, status: 'rolled-back', error: 'Aborted by user' }, this.now()))
+      if (record && record.status !== 'committed') this.edit(writeEvaluationRecord(this.state.replica, path, { ...record, status: 'rolled-back', error: 'Aborted by user' }, this.now()))
       this.exitExecution()
     } else await this.evaluateAt(path)
   }
@@ -2783,9 +2783,9 @@ export class App {
   evaluationStatus(path = this.state.view) { return evaluationRecord(this.state.replica, path) }
   addEvaluationConstructor(path: Scope): void {
     if (evaluationRecord(this.state.replica, path)) return
-    this.edit(writeNodeValue(this.state.replica, path, 'fos:evaluation', { id: crypto.randomUUID(), status: 'idle', started: this.now(), effects: [] }, this.now()))
+    this.edit(writeEvaluationRecord(this.state.replica, path, { id: crypto.randomUUID(), status: 'idle', started: this.now(), effects: [] }, this.now()))
   }
-  async evaluateCurrent(): Promise<void> { await this.evaluateAt(this.currentRow()?.construction?.name === 'fos:evaluation' ? this.state.view.slice(0, -1) : [...this.state.view]) }
+  async evaluateCurrent(): Promise<void> { await this.evaluateAt(this.currentRow()?.construction?.evaluation ? this.state.view.slice(0, -1) : [...this.state.view]) }
   /** Requirements the account server executes through scoped ref declarations: its search, market and model, the integration peers' repositories and calendar, attached MCP tools. */
   private serverHandles(step: import('../../shared/sync/evaluation').EvaluationStep): boolean {
     if (step.row?.requirement?.satisfied) return false

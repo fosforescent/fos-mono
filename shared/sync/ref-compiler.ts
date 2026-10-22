@@ -1,4 +1,5 @@
 /** Compile accessible ref values to immutable graph data, retaining unresolved identities. */
+import { isExecuteLeft } from './capabilities'
 import type { FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import { content, findAliasEdge, identityCid, isBranchChoice, isMemberEdge, isProposalEdge, isRowEdge, put, putBranches, readChoice, isRefNode, refValueCid, resolveScope, selectedBranchValue, valueContent, type Scope } from './graph'
@@ -79,6 +80,7 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         if (edge[0] === store.primitive.previousVersion.getId() || isProposalEdge(store, edge) || isMemberEdge(store, edge)) continue
         const child = store.table.get(edge[1])
         if (child?.data.name?.content.startsWith('fos:') && isRefNode(store, child)) continue
+        if (isRowEdge(store, edge) && isExecuteLeft(store, edge[0])) continue
         const childPath = isRowEdge(store, edge) ? [...path, child?.data.alias?.id ?? edge[1]] : path
         // Constructor identities are immutable graph nodes too, and may contain refs.
         const instruction = walk(store, edge[0], path, role, depth + 1)

@@ -1,6 +1,6 @@
 import { installTestObservers } from './test-helpers'
 import { userView } from './test-helpers'
-import { addTask, addRow, createReplica as bareReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica as bareLoadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
+import { addTask, addRow, createReplica as bareReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica as bareLoadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, writeEvaluationRecord, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
 import { TEMPLATE_TYPE } from './library-types'
 import { bindTemplateTriggers, TRIGGER_TEMPLATE_ARGUMENT } from './triggers'
 import { readNodeValue } from './evaluation'
@@ -100,10 +100,10 @@ test('child evaluation creates a fresh template instance for each completed pare
   r = setNodeTrigger(r, ['parent', 'child'], { kind: 'task-completion', peer: 'device', enabled: true, created: 1 }, 1)
   const targets: string[][] = []
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async (path: string[]) => { targets.push(path) } }
-  r = writeNodeValue(r, ['parent'], 'fos:evaluation', { id: 'one', status: 'committed', started: 2, effects: [] }, 3)
+  r = writeEvaluationRecord(r, ['parent'], { id: 'one', status: 'committed', started: 2, effects: [] }, 3)
   await runNodeTriggers(driver); await runNodeTriggers(driver)
   expect(targets).toHaveLength(1)
-  r = writeNodeValue(r, ['parent'], 'fos:evaluation', { id: 'two', status: 'committed', started: 4, effects: [] }, 5)
+  r = writeEvaluationRecord(r, ['parent'], { id: 'two', status: 'committed', started: 4, effects: [] }, 5)
   await runNodeTriggers(driver)
   expect(targets).toHaveLength(2)
   expect(targets[0]).not.toEqual(targets[1])
@@ -118,7 +118,7 @@ test('a response trigger continues the requester when the asked peer commits or 
   expect(nodeTrigger(r, ['trip'])).toMatchObject({ kind: 'response', peer: 'device-a', enabled: true })
   expect(triggerOccurrence(r, ['trip'], nodeTrigger(r, ['trip'])!, 6)).toBeNull()
   // B's answer: a committed evaluation of the requested node after the request
-  const answered = writeNodeValue(r, ['flights'], 'fos:evaluation', { id: 'run-1', status: 'committed', started: 7, effects: [] }, 7)
+  const answered = writeEvaluationRecord(r, ['flights'], { id: 'run-1', status: 'committed', started: 7, effects: [] }, 7)
   expect(triggerOccurrence(answered, ['trip'], nodeTrigger(answered, ['trip'])!, 8)).toBe('response:evaluate flights:run-1')
   let runs: string[][] = []
   await runNodeTriggers({ get: () => answered, save: async () => {}, now: () => 9, available: (peer, kind) => peer === 'device-a' && kind === 'response', evaluate: async path => { runs.push(path) } })

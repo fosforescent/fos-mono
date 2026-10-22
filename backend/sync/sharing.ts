@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
-import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 void TEMPLATE_TYPE
@@ -99,7 +99,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
             // the visitor's private run: a node whose only visitor is them
             executionAddress = { owner: at.owner, path: [...parent, id] }
             r = markExecution(r, executionAddress.path, { peer: guest.peer, entry, audience: policy.audience }, account ?? 'Anonymous guest', now())
-            r = writeNodeValue(r, executionAddress.path, 'fos:evaluation', { id: randomUUID(), status: 'idle', started: now(), effects: [] }, now())
+            r = writeEvaluationRecord(r, executionAddress.path, { id: randomUUID(), status: 'idle', started: now(), effects: [] }, now())
             r = writeNodeValue(r, at.path, key, executionAddress, now())
           }
           at = executionAddress; policy = publication(r, at.path)!
@@ -243,7 +243,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         } catch (error) {
           await withUserLock(`user:${at.owner}`, async () => {
             const loaded = (await deps.loadStore(at.owner))!, r = createReplica(`user:${at.owner}`, loaded.store)
-            if ((evaluationRecord(r, at.path)?.status ?? 'idle') === 'idle') await save(loaded.user, writeNodeValue(r, at.path, 'fos:evaluation', { ...(evaluationRecord(r, at.path) ?? { id: randomUUID(), status: 'idle', started: now(), effects: [] }), error: error instanceof Error ? error.message : 'Execution needs another handler.' }, now()))
+            if ((evaluationRecord(r, at.path)?.status ?? 'idle') === 'idle') await save(loaded.user, writeEvaluationRecord(r, at.path, { ...(evaluationRecord(r, at.path) ?? { id: randomUUID(), status: 'idle', started: now(), effects: [] }), error: error instanceof Error ? error.message : 'Execution needs another handler.' }, now()))
           })
         }
       }

@@ -1268,7 +1268,7 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
 }
 function constructorBody(task: TaskView, state: AppState, app: App, path: Scope = state.view): HTMLElement {
   const box = div('title constructor-body', ''), key = settingKeyFromName(task.construction?.name)
-  if (task.construction?.name === 'fos:evaluation') {
+  if (task.construction?.evaluation) {
     const parent = path.slice(0, -1), record = app.evaluationStatus(parent)
     box.append(span('constructor-label', 'Evaluation'))
     const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'awaiting-review': 'Awaiting review', 'needs-recovery': 'Needs recovery' }
@@ -1511,7 +1511,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const header = div('node-header', '')
     const heading = document.createElement('h1'); heading.className = 'node-title'
     const toolbar = div('node-toolbar', '')
-    const run = button('evaluate', '', () => { input.dispatchEvent(new window.Event('commit-edit')); void app.startExecution(app.currentRow()?.construction?.name === 'fos:evaluation' ? app.state.view.slice(0, -1) : [...app.state.view]) })
+    const run = button('evaluate', '', () => { input.dispatchEvent(new window.Event('commit-edit')); void app.startExecution(app.currentRow()?.construction?.evaluation ? app.state.view.slice(0, -1) : [...app.state.view]) })
     run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
     const editToggle = iconButton('✎', 'Input / edit', () => { workspace(app).input = !workspace(app).input; app.refresh() })
     editToggle.classList.add('input-toggle')

@@ -4,6 +4,7 @@
  * a pattern with the nodes in its scope and submits each solution's values to the placeholders as options
  * (pattern-bindings.ts), so the refs list them; nothing is bound until one is chosen.
  */
+import { isExecuteLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { LIBRARY_ID, content, identityCid, isBranchChoice, isChoiceEdge, isRefNode, isRowEdge, put, readChoice, refValueCid, resolveScope, valueContent, type Scope } from './graph'
@@ -103,7 +104,7 @@ export function solveAt(replica: Replica, at: Scope, peerId: string, now: number
   const rows = patternRows(store, valueContent(store, rowCid)).filter(edge => {
     if (!isRowEdge(store, edge)) return false
     const identity = content(store, identityCid(store, edge))
-    return !identity.data.name?.content.startsWith('fos:') && !valueContent(store, identityCid(store, edge)).data.supply
+    return !identity.data.name?.content.startsWith('fos:') && !isExecuteLeft(store, edge[0]) && !valueContent(store, identityCid(store, edge)).data.supply
   })
   const pattern = put(store, { data: {}, children: rows })
   if (!hasPlaceholder(store, pattern)) throw new Error('Add a placeholder (a ref with no value) to solve for.')
@@ -115,7 +116,7 @@ export function solveAt(replica: Replica, at: Scope, peerId: string, now: number
       if (!isRowEdge(store, edge) || ++visited > limit) continue
       const child = identityCid(store, edge), node = content(store, child), id = node.data.alias?.id
       // the standard library and named system records (settings, evaluation records) are not data to solve over
-      if (!id || id === skip || id === LIBRARY_ID || node.data.name?.content.startsWith('fos:')) continue
+      if (!id || id === skip || id === LIBRARY_ID || node.data.name?.content.startsWith('fos:') || isExecuteLeft(store, edge[0])) continue
       const bindings = unify(store, pattern, child)
       if (bindings?.size) solutions.push({ source: [...path, id], bindings })
       visit(child, [...path, id])

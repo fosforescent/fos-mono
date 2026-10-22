@@ -70,11 +70,11 @@ export const ORGANIZE_LIMITS = {
   captureChars: 100_000,
 }
 
-type Rows = Pick<TaskView, 'id' | 'title' | 'childCount'> & Partial<Pick<TaskView, 'refId' | 'refOwner' | 'refPeer' | 'missingTemplate' | 'rejected' | 'scalar'>>
+type Rows = Pick<TaskView, 'id' | 'title' | 'childCount'> & Partial<Pick<TaskView, 'refId' | 'refOwner' | 'refPeer' | 'missingTemplate' | 'rejected' | 'scalar' | 'construction'>>
 
 /** Rows a capture may be placed into: content the owner edits here, not system rows, a row's own fields (scalar leaves), reference rows standing for other nodes or rows not received yet. A row that is a mutable ref of its own (every row node sync brought to the account is one) is content like any other. */
 export function organizableRow(row: Rows): boolean {
-  return !row.id.startsWith('fos:') && !row.scalar && !row.refId && !row.refOwner && !row.refPeer && !row.missingTemplate && !row.rejected
+  return !row.id.startsWith('fos:') && !row.construction?.evaluation && !row.scalar && !row.refId && !row.refOwner && !row.refPeer && !row.missingTemplate && !row.rejected
 }
 
 /** A row's title as one short line (notes project their whole Markdown body). */
