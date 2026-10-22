@@ -19,9 +19,10 @@
  * Verified objects are cached in the user's graph (`fos:users` in Home, one user row each); a row typed offline
  * binds an unverified object (username only) that the client replaces once it resolves.
  */
+import { hashContent } from '../dag-implementation/cid'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
-import { content, identityCid, isLibraryType, libraryTypeAt, memberEdgesOf, memberEntryId, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
+import { content, identityCid, isLibraryType, isRowEdge, newId, libraryTypeAt, memberEdgesOf, memberEntryId, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
 import { constructForm, formRecord, type FormInput } from './forms'
 import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
@@ -31,8 +32,8 @@ import { ALLOCATION_TYPE } from './library-types'
 export const USER_TYPE_ID = 'lib:type:user'
 /** The field of a row that names a user (`-@bob`, `@bob 2h`, `-ff 5 reward @bob`). */
 export const USER_FIELD = 'user'
-/** The Home row caching verified user objects. */
-export const USERS_ID = 'fos:users'
+/** The library row type of the row in Home keeping the people this account verified (their user objects). */
+export const PEOPLE_TYPE = 'lib:type:people'
 export const USER_SERVER_ATTESTATION = 'ed25519-server'
 export const USER_SELF_ATTESTATION = 'ed25519-self'
 
@@ -71,7 +72,8 @@ function userInput(user: UserRecord): FormInput {
   return { account: user.account, username: user.username, name: user.name, publicKey: user.publicKey, verification: user.verification ?? { by: '', method: '', issuedAt: 0, attestation: '' } }
 }
 
-export const userObjectId = (user: Pick<UserRecord, 'username'>): string => `fos:user:${user.username}`
+/** A user object's identity: the content address of the username, so devices that keep the same person make the same row. */
+export const userObjectId = (user: Pick<UserRecord, 'username'>): string => hashContent({ data: { description: { content: user.username.toLowerCase() } }, children: [] })
 
 /**
  * The user object node: the same record makes the same node (and cid) everywhere. Like every form field's value it
@@ -104,7 +106,9 @@ export function withUserField(store: FosStore, node: FosNodeContent, user: UserR
   if (!user) return existing ? { ...node, children: node.children.filter(e => e !== existing) } : node
   const value = put(store, userObjectContent(store, typeCid, user))
   if (existing && plainEdge(store, existing)[0] === typeCid && valueCidOf(store, identityCid(store, plainEdge(store, existing))) === value) return node
-  const ref = put(store, refNodeContent(store, { alias: { id: `${node.data.alias?.id ?? 'row'}/field/${USER_FIELD}` }, name: { content: USER_FIELD } }, value))
+  // a replaced field keeps its identity; a new one is the row's user field
+  const id = (existing && content(store, identityCid(store, plainEdge(store, existing))).data.alias?.id) || `${node.data.alias?.id ?? 'row'}/field/${USER_FIELD}`
+  const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: USER_FIELD } }, value))
   const edge: FosPathElem = [typeCid, ref]
   return { ...node, children: existing ? node.children.map(e => e === existing ? edge : e) : [...node.children, edge] }
 }
@@ -140,33 +144,48 @@ export function verifyUser(user: UserRecord, trust: UserTrust): { ok: true; by: 
 // ---------------------------------------------------------------------------
 // The replica's cache of verified user objects
 
-export function usersPath(r: Replica): Scope {
-  return [...homePath(r), USERS_ID]
+/** The People row in Home (the row of the People type), if there is one. */
+export function usersPath(r: Replica): Scope | null {
+  const home = homePath(r), cid = resolveScope(r.store, headCid(r), home)
+  const row = cid ? valueContent(r.store, cid).children.map(edge => plainEdge(r.store, edge)).find(edge => isLibraryType(r.store, edge[0], PEOPLE_TYPE)) : undefined
+  const id = row ? content(r.store, identityCid(r.store, row)).data.alias?.id : undefined
+  return id ? [...home, id] : null
 }
-
-/** The cached verified user object for `username`, if this graph has one. */
-export function cachedUser(r: Replica, username: string): UserRecord | null {
-  const cid = resolveScope(r.store, headCid(r), usersPath(r))
+/** The People row, made when Home has none. */
+function ensureUsersPath(r: Replica, now: number): { replica: Replica; path: Scope } {
+  const found = usersPath(r)
+  if (found) return { replica: r, path: found }
+  const id = newId(), home = homePath(r)
+  return { replica: addRow(r, home, PEOPLE_TYPE, 'People', now, { id }), path: [...home, id] }
+}
+/** The row of the cached user object for `username` in People, if there is one. */
+function cachedUserRow(r: Replica, username: string): { id: string; user: UserRecord } | null {
+  const path = usersPath(r), cid = path && resolveScope(r.store, headCid(r), path)
   if (!cid) return null
   const wanted = username.toLowerCase()
   for (const edge of valueContent(r.store, cid).children) {
     const e = plainEdge(r.store, edge)
-    // a peer's published key (`fos:key:…`) sits among the people but is no one `@name` binds
-    if (!isUserType(r.store, e[0]) || content(r.store, identityCid(r.store, e)).data.alias?.id?.startsWith(PEER_KEY_PREFIX)) continue
-    const user = readUser(r.store, e[0], valueContent(r.store, identityCid(r.store, e)))
-    if (user?.username.toLowerCase() === wanted) return user
+    if (!isUserType(r.store, e[0])) continue
+    const node = valueContent(r.store, identityCid(r.store, e)), user = readUser(r.store, e[0], node)
+    const id = content(r.store, identityCid(r.store, e)).data.alias?.id
+    if (user?.username.toLowerCase() === wanted && id) return { id, user }
   }
   return null
+}
+
+/** The cached verified user object for `username`, if this graph has one. */
+export function cachedUser(r: Replica, username: string): UserRecord | null {
+  return cachedUserRow(r, username)?.user ?? null
 }
 
 /** Keep a verified user object in the graph (replacing an older one for the same username). */
 export function cacheUser(r: Replica, user: UserRecord, now: number): Replica {
   if (!user.verification) return r
-  const path = usersPath(r)
-  if (!resolveScope(r.store, headCid(r), path)) r = addRow(r, path.slice(0, -1), PLAIN_TYPE, 'People', now, { id: USERS_ID })
-  const existing = cachedUser(r, user.username)
-  if (existing && JSON.stringify(existing) === JSON.stringify(user)) return r
-  if (existing) r = deleteTask(r, path, userObjectId(existing), now)
+  const people = ensureUsersPath(r, now), path = people.path
+  r = people.replica
+  const existing = cachedUserRow(r, user.username)
+  if (existing && JSON.stringify(existing.user) === JSON.stringify(user)) return r
+  if (existing) r = deleteTask(r, path, existing.id, now)
   const type = userType(r.store, path)
   return writeGraphNode(r, path, userObjectContent(r.store, type, user), now, type)
 }
@@ -183,7 +202,7 @@ export function rebindUsers(r: Replica, user: UserRecord, now: number): Replica 
     if (depth > 64) return
     for (const row of view(r, at)?.tasks ?? []) {
       const path = [...at, row.id]
-      if (row.user && !row.user.verification && row.user.username.toLowerCase() === user.username.toLowerCase() && path.join('/') !== usersPath(r).join('/')) paths.push(path)
+      if (row.user && !row.user.verification && row.user.username.toLowerCase() === user.username.toLowerCase() && path.join('/') !== usersPath(r)?.join('/')) paths.push(path)
       if (row.childCount) walk(path, depth + 1)
     }
   }
@@ -195,9 +214,19 @@ export function rebindUsers(r: Replica, user: UserRecord, now: number): Replica 
 // ---------------------------------------------------------------------------
 // Verifiers' keys as graph data
 
-/** The row holding the key a peer (the fos server: `fos`) publishes, under its member entry: `fos:key:<peer id>`. */
-export const PEER_KEY_PREFIX = 'fos:key:'
-export const peerKeyId = (peerId: string): string => `${PEER_KEY_PREFIX}${peerId}`
+/** The row holding the key a peer (the fos server: `fos`) publishes on its member entry: a user object for that peer. */
+export const peerKeyId = (peerId: string): string => userObjectId({ username: peerId })
+/** The key row on the member entry at `entry` (the user object whose username is the entry's own peer), if there is one. */
+function keyRowAt(r: Replica, entry: Scope, peerId: string): string | null {
+  const cid = resolveScope(r.store, headCid(r), entry)
+  for (const edge of cid ? content(r.store, cid).children : []) {
+    const plain = plainEdge(r.store, edge)
+    if (!isRowEdge(r.store, plain) || !isUserType(r.store, plain[0])) continue
+    const user = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
+    if (user?.username === peerId) return content(r.store, identityCid(r.store, plain)).data.alias?.id ?? null
+  }
+  return null
+}
 
 /**
  * Publish `peerId`'s public key on its member entry on the store root (`fos:peer:<peer id>`): a row of the user type
@@ -207,10 +236,10 @@ export const peerKeyId = (peerId: string): string => `${PEER_KEY_PREFIX}${peerId
  * unchanged or when `peerId` is no member of the root. A key an older server left in Home (`fos:users`) is removed.
  */
 export function publishPeerKey(r: Replica, peerId: string, publicKey: string, now: number): Replica {
-  const users = usersPath(r), id = peerKeyId(peerId), entry = [memberEntryId(peerId)]
-  if (homePath(r).length && resolveScope(r.store, headCid(r), [...users, id])) r = deleteTask(r, users, id, now)
+  const id = peerKeyId(peerId), entry = [memberEntryId(peerId)]
   if (!resolveScope(r.store, headCid(r), entry) || publishedKey(r, peerId) === publicKey) return r
-  if (resolveScope(r.store, headCid(r), [...entry, id])) r = deleteTask(r, entry, id, now)
+  const existing = keyRowAt(r, entry, peerId)
+  if (existing) r = deleteTask(r, entry, existing, now)
   const type = userType(r.store, entry)
   const peer: UserRecord = { account: peerId, username: peerId, name: peerId === 'fos' ? 'Fos' : peerId, publicKey, verification: null }
   return writeGraphNode(r, entry, userObjectContent(r.store, type, peer, id), now, type)
@@ -222,10 +251,10 @@ export function publishedKeys(r: Replica): Record<string, string> {
   for (const member of memberEdgesOf(r.store, headCid(r))) {
     const peerId = content(r.store, member[1]).data.peerId?.content
     if (!peerId) continue
-    // a key row is a row of the user type (the edge's left node) named for the entry's own peer; nothing else is read
+    // a key row is a row of the user type (the edge's left node) whose user is the entry's own peer; nothing else is read
     for (const edge of content(r.store, member[1]).children) {
       const plain = plainEdge(r.store, edge)
-      if (!isUserType(r.store, plain[0]) || content(r.store, identityCid(r.store, plain)).data.alias?.id !== peerKeyId(peerId)) continue
+      if (!isUserType(r.store, plain[0])) continue
       const peer = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
       if (peer?.username === peerId && peer.publicKey) out[peerId] = peer.publicKey
     }
@@ -252,20 +281,26 @@ export function verifyPublished(r: Replica, user: UserRecord, check: SignatureCh
 // ---------------------------------------------------------------------------
 // Verify requirements: how `@name` becomes an attested user object
 
-/** The verify requirement for `username`, kept in the users row (`fos:users`) while the verifier fills it. */
-export const verifyRequestId = (username: string): string => `fos:verify:${username.toLowerCase()}`
+/** The verify requirement asking about `username` in People, if one is open. */
+export function verifyRequestAt(r: Replica, username: string): Scope | null {
+  const path = usersPath(r), wanted = username.trim().replace(/^@/, '').toLowerCase()
+  const row = path ? (view(r, path)?.tasks ?? []).find(t => t.requirement?.capability === 'verify' && t.user?.username.toLowerCase() === wanted) : undefined
+  return path && row ? [...path, row.id] : null
+}
 
 /**
- * Ask for `@username` to be verified: a `verify` requirement under `fos:users` whose text names the user. Evaluated
- * by the account server (its `verify` handler), it comes back with the attested object bound as its `user` field and
- * the verifier's supply. Answers the requirement's path.
+ * Ask for `@username` to be verified: a `verify` requirement in People whose `user` field is the user as typed (its
+ * username). Evaluated by the account server (its `verify` handler), it comes back with the attested object bound as
+ * its `user` field and the verifier's supply. Answers the requirement's path.
  */
 export function requestVerification(r: Replica, username: string, now: number): { replica: Replica; path: Scope } {
-  const path = usersPath(r), name = username.trim().replace(/^@/, '')
-  if (!resolveScope(r.store, headCid(r), path)) r = addRow(r, path.slice(0, -1), PLAIN_TYPE, 'People', now, { id: USERS_ID })
-  const id = verifyRequestId(name)
-  if (resolveScope(r.store, headCid(r), [...path, id])) r = deleteTask(r, path, id, now)
-  r = addRow(r, path, ALLOCATION_TYPE, `@${name}`, now, { id, requirement: { capability: 'verify' } })
+  const name = username.trim().replace(/^@/, '')
+  const people = ensureUsersPath(r, now), path = people.path
+  r = people.replica
+  const open = verifyRequestAt(r, name)
+  if (open) r = deleteTask(r, path, open.at(-1)!, now)
+  const id = newId()
+  r = addRow(r, path, ALLOCATION_TYPE, `@${name}`, now, { id, requirement: { capability: 'verify' }, user: unverifiedUser(name) })
   return { replica: r, path: [...path, id] }
 }
 

@@ -198,6 +198,8 @@ export function parseRequirement(text: string, declarations?: CapabilitySyntax[]
       return { construct: { capability, values: { ...(args[2] ? { url: args[2] } : {}), ...(args[1] ? { method: args[1].toUpperCase() } : {}) } }, label: args[3] ?? '' }
     }
     if (capability === 'solve') return { construct: { capability, values: {} }, label: rest }
+    // "verify @bob": the user to verify is the row's user field, as typed
+    if (capability === 'verify') { const { user, text } = namedUser(rest); return { requirement: { capability }, ...(user ? { user } : {}), label: user ? `@${user.username}${text ? ` ${text}` : ''}` : text } }
     if (capability === 'choice') {
       const options = rest.split('|').map(option => option.trim()).filter(Boolean)
       return { requirement: { capability, options }, label: `choice: ${options.join(' | ')}` }

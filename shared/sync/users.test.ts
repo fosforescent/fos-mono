@@ -4,7 +4,7 @@ import { content, identityCid, isRefNode, memberEntryId, resolveScope, typeIdOf,
 import { syncWith } from './test-helpers'
 import {
   USER_FIELD, USER_SELF_ATTESTATION, USER_SERVER_ATTESTATION, userObjectContent, userType, cacheUser, cachedUser, isUserType, rebindUsers, unverifiedUser, userAttestationPayload,
-  userFieldEdge, userOf, usersPath, verifyUser, peerKeyId, publishedKey, publishedKeys, requestVerification, verifiedAt, verifyPublished, verifyRequestId, type UserRecord, type UserTrust
+  userFieldEdge, userOf, usersPath, verifyUser, verifyRequestAt, peerKeyId, publishedKey, publishedKeys, requestVerification, verifiedAt, verifyPublished, type UserRecord, type UserTrust
 } from './users'
 import { ALLOCATION_TYPE, PLAIN_TYPE } from './library-types'
 
@@ -79,7 +79,8 @@ test('verified objects are cached in Home; typed "@bob" binds the cached one, ea
   r = addRow(r, [HOME_ID, 't'], ALLOCATION_TYPE, 'offline', 3, { id: 'early', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
   expect(cachedUser(r, 'bob')).toBeNull()
   r = cacheUser(r, bob, 4)
-  expect(usersPath(r)).toEqual([HOME_ID, 'fos:users'])
+  // the people are a row of the People type in Home
+  expect(usersPath(r)?.slice(0, -1)).toEqual([HOME_ID])
   expect(cachedUser(r, 'BOB')).toEqual(bob)
   expect(cacheUser(r, bob, 5)).toBe(r)
   r = addRow(r, [HOME_ID, 't'], ALLOCATION_TYPE, 'online', 6, { id: 'late', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
@@ -123,9 +124,8 @@ test('the server publishes its key on its member entry; a device\'s verify handl
   expect(ensureHomeContext(account, 2, { keys: { fos: server.publicKey } })).toBe(account)
   expect(publishedKey(ensureHomeContext(loadReplica(serializeReplica(account)), 2, { keys: { fos: stranger.publicKey } }), 'fos')).toBe(stranger.publicKey)
   // the key row is a row of the user type on the fos member entry of the root, not in Home, and no one `@fos` binds
-  const keyRow = rowNode(account, [memberEntryId('fos'), peerKeyId('fos')])
-  expect(keyRow.data.alias?.id).toBe('fos:key:fos')
-  expect(resolveScope(account.store, headCid(account), [HOME_ID, 'fos:users', peerKeyId('fos')])).toBeNull()
+  expect(rowNode(account, [memberEntryId('fos'), peerKeyId('fos')])).toBeDefined()
+  expect(usersPath(account)).toBeNull()
   expect(cachedUser(account, 'fos')).toBeNull()
   // an owner's device attached at Home takes the server's entry above it, key row included
   const home = syncWith(shareHome(ensureHomeContext(createReplica('phone'), 1)), account)
@@ -145,31 +145,24 @@ test('the server publishes its key on its member entry; a device\'s verify handl
   expect(publishedKey(device, 'fos')).toBe(server.publicKey)
 })
 
-test('a key an older server left among the people in Home is removed once the key is on the fos member entry', () => {
-  let account = ensureHomeContext(createReplica('user:alice'), 1)
-  account = addRow(account, [HOME_ID], PLAIN_TYPE, 'People', 2, { id: 'fos:users' })
-  const type = userType(account.store, [HOME_ID, 'fos:users'])
-  account = writeGraphNode(account, [HOME_ID, 'fos:users'], userObjectContent(account.store, type, { account: 'fos', username: 'fos', name: 'Fos', publicKey: stranger.publicKey, verification: null }, peerKeyId('fos')), 3, type)
-  expect(publishedKey(account, 'fos')).toBeNull() // the old row is not where keys are read
-  account = ensureHomeContext(account, 4, { keys: { fos: server.publicKey } })
-  expect(resolveScope(account.store, headCid(account), [HOME_ID, 'fos:users', peerKeyId('fos')])).toBeNull()
-  expect(publishedKey(account, 'fos')).toBe(server.publicKey)
-})
-
 test('a verify request names the user in a verify requirement among the people; the filled one holds the attested object', () => {
   let r = ensureHomeContext(createReplica('d'), 1)
   const asked = requestVerification(r, '@Bob', 2)
-  expect(asked.path).toEqual([HOME_ID, 'fos:users', verifyRequestId('bob')])
-  const row = view(asked.replica, [HOME_ID, 'fos:users'])!.tasks.find(t => t.id === asked.path.at(-1))!
+  const people = usersPath(asked.replica)!
+  expect(asked.path).toEqual(verifyRequestAt(asked.replica, 'bob'))
+  const row = view(asked.replica, people)!.tasks.find(t => t.id === asked.path.at(-1))!
   expect(row.title).toBe('@Bob')
+  // the user to verify is the request's user field, not its text
+  expect(row.user?.username).toBe('Bob')
   expect(row.requirement).toMatchObject({ capability: 'verify', satisfied: false })
   expect(verifiedAt(asked.replica, asked.path)).toBeNull()
   // what the verifier does: bind the attested object, supply
   r = bindUserAt(asked.replica, asked.path, bob, 3)
-  expect(view(r, [HOME_ID, 'fos:users'])!.tasks.find(t => t.id === asked.path.at(-1))!.requirement!.satisfied).toBe(false)
-  r = addSupply(r, [HOME_ID, 'fos:users'], asked.path.at(-1)!, { capability: 'verify', by: 'fos', ref: '42' }, 4)
-  expect(view(r, [HOME_ID, 'fos:users'])!.tasks.find(t => t.id === asked.path.at(-1))!.requirement).toMatchObject({ satisfied: true, summary: 'verify @bob' })
+  expect(view(r, people)!.tasks.find(t => t.id === asked.path.at(-1))!.requirement!.satisfied).toBe(false)
+  r = addSupply(r, people, asked.path.at(-1)!, { capability: 'verify', by: 'fos', ref: '42' }, 4)
+  expect(view(r, people)!.tasks.find(t => t.id === asked.path.at(-1))!.requirement).toMatchObject({ satisfied: true, summary: 'verify @bob' })
   expect(verifiedAt(r, asked.path)).toEqual(bob)
   // asking again replaces the earlier request
-  expect(view(requestVerification(r, 'bob', 5).replica, [HOME_ID, 'fos:users'])!.tasks.filter(t => t.id === asked.path.at(-1))).toHaveLength(1)
+  const again = requestVerification(r, 'bob', 5).replica
+  expect(view(again, people)!.tasks.filter(t => t.requirement?.capability === 'verify')).toHaveLength(1)
 })

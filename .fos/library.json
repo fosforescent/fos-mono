@@ -1,6 +1,6 @@
 {
   "nodes": {
-    "v0.0.3-8af4ebbe3337922bba008d3a4d4903924a7d0536a3251ce26f0c5a945acd4470": {
+    "v0.0.3-bc12d43aaddf026603532a4794cefb0f76ec0428c53351fd6c6095ec2c486b6c": {
       "data": {
         "description": {
           "content": "Standard library"
@@ -14,6 +14,10 @@
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
           "v0.0.3-253e0f9abf093e2b899ba40e633a64105cc34e11ed09c928aae3714483e2e7cf"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-561ff84063c364aac38cc60a4b314f49484c80bf497a69ebacd749f45b5eddc0"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
@@ -8233,6 +8237,47 @@
         ]
       ]
     },
+    "v0.0.3-561ff84063c364aac38cc60a4b314f49484c80bf497a69ebacd749f45b5eddc0": {
+      "data": {
+        "alias": {
+          "id": "lib:type:people"
+        },
+        "name": {
+          "content": "lib:type:people"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-470767e80b2523e9629fad5a8f9820d0729ba1f64ffad9c7d404d6f3e8494a3e"
+        ]
+      ]
+    },
+    "v0.0.3-470767e80b2523e9629fad5a8f9820d0729ba1f64ffad9c7d404d6f3e8494a3e": {
+      "data": {
+        "description": {
+          "content": "People"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
+        ]
+      ]
+    },
     "v0.0.3-253e0f9abf093e2b899ba40e633a64105cc34e11ed09c928aae3714483e2e7cf": {
       "data": {
         "alias": {
@@ -8291,6 +8336,6 @@
       ]
     }
   },
-  "rootNodeId": "v0.0.3-8af4ebbe3337922bba008d3a4d4903924a7d0536a3251ce26f0c5a945acd4470",
+  "rootNodeId": "v0.0.3-bc12d43aaddf026603532a4794cefb0f76ec0428c53351fd6c6095ec2c486b6c",
   "version": "0.0.3"
 }
