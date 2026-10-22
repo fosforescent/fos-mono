@@ -12,7 +12,7 @@ import { parsePastedRows, isLongProse } from './paste'
 import { recordingUnsupported } from './recording'
 import { missingSchedule, nodeTrigger } from '../../shared/sync/triggers'
 import { AUDIENCE_LABEL, audiencePeer } from '../../shared/sync/sharing'
-import { SETTING_LABELS, settingKeyFromName } from './settings'
+import { SETTING_LABELS, settingKeyOf } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
 import { openTimeBlockPicker, type TimeBank } from './timeblocks'
@@ -1270,7 +1270,7 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
   return box
 }
 function constructorBody(task: TaskView, state: AppState, app: App, path: Scope = state.view): HTMLElement {
-  const box = div('title constructor-body', ''), key = settingKeyFromName(task.construction?.name)
+  const box = div('title constructor-body', ''), key = settingKeyOf(task)
   if (task.construction?.evaluation) {
     const parent = path.slice(0, -1), record = app.evaluationStatus(parent)
     box.append(span('constructor-label', 'Evaluation'))
@@ -1285,7 +1285,7 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
   }
   else if (key) {
     box.classList.add('setting-row'); box.append(span('constructor-label', SETTING_LABELS[key] ?? key))
-    if (task.construction?.name === app.settingKey(key)) box.append(settingControl(key, state, app))
+    if (task.construction?.holder === state.replica.meta.peerId) box.append(settingControl(key, state, app))
     else box.append(span('muted', 'Owned by another device'))
   }
   else if (task.construction?.handler) {
@@ -1325,7 +1325,7 @@ function peerRowBody(handler: string, state: AppState, app: App, path: Scope): H
       for (const r of PEER_ROWS) if (r.id !== 'peer' && (!r.desktop || inTauri())) select.append(new Option(r.label, r.id))
       select.onchange = () => {
         if (!select.value) return
-        if (path.at(-1)?.startsWith('fos:constructor:')) addPeerRow(app, select.value, node)
+        if (path.at(-1) === app.peerConstructorId()) addPeerRow(app, select.value, node)
         else app.setPeerRow(path, select.value)
       }
       parts.push(select)
@@ -1754,10 +1754,10 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   el.className = `list tree layout-${prefs.layout}`
   const textMatches = (row: TaskView, path: Scope): boolean => matchesSearch(row, prefs.search) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
   const matches = (row: TaskView): boolean => textMatches(row, [...state.view, row.id])
-  node = { ...node, tasks: node.tasks.filter(row => settingKeyFromName(row.construction?.name) !== 'history') }
+  node = { ...node, tasks: node.tasks.filter(row => settingKeyOf(row) !== 'history') }
   // Home lists one of its bookkeeping rows, where this device left off; the other constructors stay in Settings.
   if (state.view.length === 1 && app.isHome(state.view) && !state.atRoot) {
-    const remembered = viewAt(state.replica, state.view, true)?.tasks.find(row => row.construction?.name === app.settingKey('view'))
+    const remembered = viewAt(state.replica, state.view, true)?.tasks.find(row => settingKeyOf(row) === 'view' && row.construction?.holder === state.replica.meta.peerId)
     if (remembered && !node.tasks.some(row => row.id === remembered.id)) node = { ...node, tasks: [...node.tasks, remembered] }
   }
   const filtered = prefs.search ? { ...node, tasks: node.tasks.filter(matches) } : node
@@ -1989,7 +1989,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   // the device root is a settings page: its rows stay rows, shown in groups
   if (state.atRoot && !at.length && !query) {
     const groupOf = (task: TaskView): string => {
-      const key = settingKeyFromName(task.construction?.name)
+      const key = settingKeyOf(task)
       if (task.construction?.peerId || key === 'sessions') return 'Account'
       if (task.construction?.handler) return 'Connections'
       if (!key) return task.type === HOME_TYPE ? '' : 'Other'

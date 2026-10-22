@@ -20,7 +20,7 @@ import { constructForm, formFields, formText, formTitle, formValueAt, positionFo
 import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
-import { memberEntryId, homeIdOf, isValueSubmission } from './graph'
+import { memberEntryId, homeIdOf, isValueSubmission, settingOf } from './graph'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
@@ -353,7 +353,7 @@ function editPolicy(replica: Replica, at: Scope, now: number, fn: (node: FosNode
 /** A child row carrying `aliasId` (a row of any type, or a setting). */
 function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string) {
   const edge = findEdge(replica.store, value, `a:${aliasId}`)
-  return edge && (isRowEdge(replica.store, edge) || content(replica.store, identityCid(replica.store, edge)).data.name?.content.startsWith('fos:setting:')) ? edge : undefined
+  return edge && (isRowEdge(replica.store, edge) || !!settingOf(replica.store, content(replica.store, identityCid(replica.store, edge)))) ? edge : undefined
 }
 
 /** Parse single-brace parameters into ordinary named mutable-ref children.
@@ -898,9 +898,9 @@ export function setConstructorEnabledAt(replica: Replica, at: Scope, peerId: str
     return { ...node, children: node.children.map(edge => {
       if (!isMemberEdge(replica.store, edge)) return edge
       const member = content(replica.store, edge[1]); if (member.data.peerId?.content !== peerId) return edge
-      const disabled = new Set<string>(member.data.disabledCapabilities?.content ?? [])
-      if (enabled) disabled.delete(`fos:constructor:${id}`); else disabled.add(`fos:constructor:${id}`)
-      return [edge[0], put(replica.store, { ...member, data: { ...member.data, disabledCapabilities: { content: [...disabled] } } })]
+      const disabled = new Set<string>(member.data.disabledConstructors?.content ?? [])
+      if (enabled) disabled.delete(id); else disabled.add(id)
+      return [edge[0], put(replica.store, { ...member, data: { ...member.data, disabledConstructors: { content: [...disabled] } } })]
     }) }
   })
 }

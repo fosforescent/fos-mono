@@ -1,3 +1,4 @@
+import { hashContent } from '../../shared/dag-implementation/cid'
 import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
@@ -22,7 +23,7 @@ import { parsePastedRows } from './paste'
 import { ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
-import { SETTING_LABELS, settingKeyFromName } from './settings'
+import { SETTING_LABELS, settingKeyOf } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, sharedAddressAt, type SharedAddress } from '../../shared/sync/sharing'
 import { writeTriggerState, triggerOffers as discoverTriggerOffers, triggerObservation, missingSchedule, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
@@ -485,7 +486,8 @@ export class App {
     this.autoCredentials = config.autoLogin
     const loaded = this.withRootContext(loadReplica(config.storage.loadReplica()))
     const replica = config.scopedDocument || config.project ? loaded : ensureHomeContext(loaded, 0)
-    const prefs = (config.storage.loadPrefs() ?? {}) as { repositories?: Array<[string, RepositorySnapshot]>; branches?: Record<string, string>; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown }
+    const prefs = (config.storage.loadPrefs() ?? {}) as { repositories?: Array<[string, RepositorySnapshot]>; branches?: Record<string, string>; connectDismissed?: unknown; deviceName?: unknown; collapsed?: unknown; policy?: unknown; installedSettings?: unknown }
+    if (Array.isArray(prefs.installedSettings)) this.installedSettings = prefs.installedSettings.filter((key): key is string => typeof key === 'string')
     if (Array.isArray(prefs.repositories)) this.repositories = new Map(prefs.repositories.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && Array.isArray(entry[1]?.pulls)))
     this.branchSelections = prefs.branches && typeof prefs.branches === 'object' ? Object.fromEntries(Object.entries(prefs.branches).filter(([, name]) => typeof name === 'string')) : {}
     for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(replica.store, id, name)
@@ -536,6 +538,8 @@ export class App {
 
   private pendingSession: Session | null
   private connectDismissed: boolean
+  /** The default settings this device already made (a deleted setting row is not made again). */
+  private installedSettings: string[] = []
   /** Accept the account's organized captures on this device as soon as they arrive (still one local, undoable edit). */
   autoAcceptCaptures = false
   setAutoAcceptCaptures(on: boolean): void { this.autoAcceptCaptures = on; this.savePrefs(); this.set({}) }
@@ -581,7 +585,7 @@ export class App {
   }
 
   private savePrefs(): void {
-    this.config.storage.savePrefs({ repositories: [...this.repositories], branches: this.branchSelections, connectDismissed: this.connectDismissed, autoAcceptCaptures: this.autoAcceptCaptures, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
+    this.config.storage.savePrefs({ installedSettings: this.installedSettings, repositories: [...this.repositories], branches: this.branchSelections, connectDismissed: this.connectDismissed, autoAcceptCaptures: this.autoAcceptCaptures, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
   notify(kind: Notice['kind'], text: string): void {
@@ -599,7 +603,7 @@ export class App {
     const node = view(this.state.replica, this.state.view, this.state.atRoot)
     const remote = this.state.replica.meta.serverPeerId && this.state.replica.meta.nodeSync?.[nodeSyncKey(this.state.replica.meta.serverPeerId, this.state.view, nodeBranches(this.state.replica, this.state.view))]?.remote
     if (node && remote && remote.proposals) node.proposals = remote.proposals
-    if (node) for (const row of node.tasks) { const key = settingKeyFromName(row.construction?.name); if (key) row.title = SETTING_LABELS[key] ?? key }
+    if (node) for (const row of node.tasks) { const key = settingKeyOf(row); if (key) row.title = SETTING_LABELS[key] ?? key }
     return node
   }
 
@@ -2103,7 +2107,8 @@ export class App {
   }
   setPeerRow(path: Scope, handler: string | undefined): void { this.edit(this.peerRowReplica(this.state.replica, path, handler)) }
   /** The device root's Peer constructor row: choosing a handler on it makes a new peer row instead of changing it. */
-  peerConstructorId(): string { return `fos:constructor:${this.state.replica.meta.peerId}:peer` }
+  /** The id of this device's declared Peer constructor row on the device root: a content address. */
+  peerConstructorId(): string { return hashContent({ data: { peerId: { content: this.state.replica.meta.peerId }, description: { content: 'Peer constructor' } }, children: [] }) }
   newBranchAt(path: Scope): void {
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
     if (!row) return
@@ -2317,7 +2322,7 @@ export class App {
   currentRow(): TaskView | null {
     const path = this.state.view
     const row = path.length ? view(this.state.replica, path.slice(0, -1), true)?.tasks.find(row => row.id === path.at(-1)) ?? null : null
-    const key = settingKeyFromName(row?.construction?.name); if (row && key) row.title = SETTING_LABELS[key] ?? key
+    const key = settingKeyOf(row); if (row && key) row.title = SETTING_LABELS[key] ?? key
     return row
   }
   /** The full text editor uses the same three-way merge as cells, preserving remote edits. */
@@ -2473,7 +2478,7 @@ export class App {
   }
   constructorEnabled(peerId: string, id: string): boolean {
     const cid = contextMemberRefs(this.state.replica, this.peerContextPath()).get(peerId)
-    return !cid || !(content(this.state.replica.store, cid).data.disabledCapabilities?.content ?? []).includes(`fos:constructor:${id}`)
+    return !cid || !(content(this.state.replica.store, cid).data.disabledConstructors?.content ?? []).includes(id)
   }
   setConstructorEnabled(peerId: string, id: string, enabled: boolean): void {
     if (!this.canApprove()) return
@@ -3890,7 +3895,7 @@ export class App {
   savedHomeView(replica: Replica): Scope {
     const home = homePath(replica)
     if (!home.length) return home
-    const saved = readNodeValue<unknown>(replica, home, `fos:setting:${replica.meta.peerId}:view`)
+    const saved = readNodeValue<unknown>(replica, home, 'view', replica.meta.peerId)
     const path = Array.isArray(saved) && saved.every((id): id is string => typeof id === 'string') ? [...home, ...saved] : null
     return path && path.length > home.length && view(replica, path) ? path : home
   }
@@ -3898,10 +3903,10 @@ export class App {
     const { view: current, replica, atRoot } = this.state
     const home = homePath(replica)
     if (atRoot || !home.length || current[0] !== home[0] || current.length < 2) return
-    const key = this.settingKey('view'), relative = current.slice(1)
-    if (JSON.stringify(readNodeValue(replica, home, key)) === JSON.stringify(relative)) return
+    const relative = current.slice(1), peer = replica.meta.peerId
+    if (JSON.stringify(readNodeValue(replica, home, 'view', peer)) === JSON.stringify(relative)) return
     // Navigation is not an edit: no undo entry, but the row syncs like any other.
-    this.set({ replica: writeNodeValue(replica, home, key, relative, this.now()) })
+    this.set({ replica: writeNodeValue(replica, home, 'view', relative, this.now(), { peer }) })
     this.scheduleSync()
   }
 
@@ -4054,36 +4059,22 @@ export class App {
     this.set({ modal: null, connectFlow: { phase: 'idle' }, manual: {}, device: this.state.modal === 'device' ? null : this.state.device })
   }
 
-  settingKey(key: string): string { return `fos:setting:${this.state.replica.meta.peerId}:${key}` }
-  settingValue<T>(key: string): T | null { return readNodeValue<T>(this.state.replica, [], this.settingKey(key)) }
-  setSetting(key: string, value: unknown): void { this.edit(writeNodeValue(this.state.replica, [], this.settingKey(key), value, this.now())) }
+  /** This device's setting `key`: a value it holds on the device root under that name. */
+  settingValue<T>(key: string): T | null { return readNodeValue<T>(this.state.replica, [], key, this.state.replica.meta.peerId) }
+  setSetting(key: string, value: unknown): void { this.edit(writeNodeValue(this.state.replica, [], key, value, this.now(), { peer: this.state.replica.meta.peerId })) }
   ensureSettings(): void {
     let r = this.state.replica
     const defaults: Record<string, unknown> = { history: { handler: 'history' }, name: this.state.deviceName, theme: document.documentElement.dataset.theme || 'system', microphone: 'Not checked', camera: 'Not checked', geolocation: 'Not checked', server: { handler: 'connect' }, direct: { handler: 'direct' }, invite: { handler: 'invite' }, virtual: { handler: 'virtual' }, phone: { handler: 'phone' }, share: { handler: 'share' }, resetHome: { handler: 'reset-home' }, resetAccount: { handler: 'reset-account' }, sessions: { handler: 'sessions' }, export: { handler: 'export-yaml' }, import: { handler: 'import-yaml' } }
-    const installedName = `fos:settings-installed:${r.meta.peerId}`
-    const installed = readNodeValue<string[]>(r, [], installedName) ?? []
+    // the defaults this device already made (a device preference): a setting row it deleted is not made again
+    const installed = this.installedSettings, peer = r.meta.peerId
     for (const [key, value] of Object.entries(defaults)) {
-      const name = this.settingKey(key), existing = readNodeValue(r, [], name)
-      const peerHandler = ['server', 'direct', 'invite', 'virtual', 'phone', 'share'].includes(key)
-      const type = capabilityTarget(r.store, peerHandler ? 'peer' : 'tool')
-      const argument = argumentRefs(r.store, headCid(r)).find(arg => arg.name === name)
-      if ((!installed.includes(key) && existing === null) || (peerHandler && argument && argument.type !== type)) r = writeNodeValue(r, [], name, existing ?? value, this.now(), typeof value === 'object' ? { type, peer: r.meta.peerId } : undefined)
+      if (installed.includes(key) || readNodeValue(r, [], key, peer) !== null) continue
+      const type = capabilityTarget(r.store, ['server', 'direct', 'invite', 'virtual', 'phone', 'share'].includes(key) ? 'peer' : 'tool')
+      r = writeNodeValue(r, [], key, value, this.now(), typeof value === 'object' ? { type, peer } : { peer })
     }
-    if (Object.keys(defaults).some(key => !installed.includes(key))) r = writeNodeValue(r, [], installedName, [...new Set([...installed, ...Object.keys(defaults)])], this.now())
-    // Adding a peer is the Peer constructor itself, declared as a row (it replaces the old "Add peer" setting)
-    const oldPeerSetting = argumentRefs(r.store, headCid(r)).find(arg => arg.name === this.settingKey('peer'))
-    const oldId = oldPeerSetting && content(r.store, oldPeerSetting.cid).data.alias?.id
-    if (oldId) r = deleteTask(r, [], oldId, this.now())
+    if (Object.keys(defaults).some(key => !installed.includes(key))) { this.installedSettings = [...new Set([...installed, ...Object.keys(defaults)])]; this.savePrefs() }
     const declared = this.peerConstructorId()
     if (!resolveScope(r.store, headCid(r), [declared])) r = this.peerRowReplica(addRow(r, [], PLAIN_TYPE, '', this.now(), { id: declared }), [declared], 'peer')
-    const root = headCid(r), store = r.store
-    const next = updateAtScope(store, root, [], node => ({ ...node, children: node.children.map(edge => {
-      if (![store.primitive.memberField.getId(), store.primitive.peerField.getId()].includes(edge[0])) return edge
-      const peer = content(store, edge[1]), id = peer.data.peerId?.content
-      if (!id || peer.data.alias) return edge
-      return [edge[0], put(store, { ...peer, data: { ...peer.data, alias: { id: edge[0] === store.primitive.memberField.getId() ? memberEntryId(id) : peerEntryId(id) } } })]
-    }) }), 'node')
-    if (next !== root) { commitRoot(store, next, this.now()); r = { ...r } }
     if (r !== this.state.replica) { this.set({ replica: r }); this.scheduleSync() }
   }
   exportYaml(): string { return exportNodeYaml(this.state.replica, this.state.view) }

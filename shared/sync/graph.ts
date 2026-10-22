@@ -1253,7 +1253,8 @@ export type TaskView = {
   /** This row is one of those its parent's type does not accept. */
   rejected?: boolean
   /** `evaluation`: the node's execute row, whose value is the evaluator's journal. */
-  construction?: { name?: string; peerId?: string; handler?: string; evaluation?: true }
+  /** `name` and `holder`: a setting (`settingOf`), its key and the device holding it. */
+  construction?: { name?: string; holder?: string; peerId?: string; handler?: string; evaluation?: true }
 
   branches?: { selected: string; names: string[]; mergeRequests?: string[] }
   id: string
@@ -1421,7 +1422,8 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
   const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity
   if (sameCapabilityType(store, typeCid, capabilityTarget(store, 'peer')) && constructor.data.name) view.construction = { handler: constructor.data.name.content }
-  if (constructor.data.name?.content.startsWith('fos:setting:')) view.construction = { name: constructor.data.name.content }
+  const setting = settingOf(store, constructor)
+  if (setting) view.construction = { name: setting.key, holder: setting.peer }
   // a node's execute row: the evaluator's journal of it
   if (edge && isExecuteLeft(store, plainEdge(store, edge)[0])) { view.construction = { evaluation: true }; view.title = 'Evaluation' }
   if (held || type === REF_TYPE) { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
@@ -1730,20 +1732,31 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
     for (const edge of [...value.children, ...(identity === value ? [] : identity.children)]) {
       const child = content(store, identityCid(store, edge))
       const peerId = (isMemberEdge(store, edge) || isPeerEdge(store, edge)) ? child.data.peerId?.content : undefined
-      const name = isRefNode(store, child) ? child.data.name?.content : undefined
+      const setting = settingOf(store, child)
       const evaluation = isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])
-      if ((!peerId && !evaluation && !name?.startsWith('fos:setting:')) || !child.data.alias?.id) continue
+      if ((!peerId && !evaluation && !setting) || !child.data.alias?.id) continue
       if (seen.has(peerId ?? child.data.alias.id)) continue
       seen.add(peerId ?? child.data.alias.id)
       const existing = view.tasks.find(row => row.id === child.data.alias!.id)
       const row = existing ?? rowView(store, identityCid(store, edge))
-      row.title = evaluation ? 'Evaluation' : peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name!
-      row.construction = evaluation ? { evaluation: true } : { ...(name ? { name } : {}), ...(peerId ? { peerId } : {}) }
+      row.title = evaluation ? 'Evaluation' : peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? setting!.key
+      row.construction = evaluation ? { evaluation: true } : { ...(setting ? { name: setting.key, holder: setting.peer } : {}), ...(peerId ? { peerId } : {}) }
       if (!existing) view.tasks.push(row)
     }
   }
   // Order is the edge order (part of the node's identity since cid v2); no sorting.
   return view
+}
+
+/**
+ * A setting: a named value a peer holds (its key is the ref's name, the device its holder: the value's peerId), such
+ * as a device's theme on the device root or where it left Home.
+ */
+export function settingOf(store: FosStore, node: FosNodeContent): { key: string; peer: string } | null {
+  if (!node.data.name || !isRefNode(store, node)) return null
+  const target = refValueCid(store, node)
+  const peer = target && store.table.has(target) ? content(store, target).data.peerId?.content : undefined
+  return peer ? { key: node.data.name.content, peer } : null
 }
 
 /** Where a peer is attached: the scope of the first node (depth-first) carrying a [PEER, ref] edge for `peerId`. */

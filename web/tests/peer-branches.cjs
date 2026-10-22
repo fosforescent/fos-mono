@@ -87,7 +87,7 @@ async function main() {
   a.goToRoot(); await tick()
   const declared = a.currentView().tasks.find(t => t.id === a.peerConstructorId())
   assert.equal(declared?.construction?.handler, 'peer', 'the device root has a Peer constructor row')
-  assert(!a.currentView().tasks.some(t => t.construction?.name === a.settingKey('peer')), 'the old Add peer setting is gone')
+  assert(!a.currentView().tasks.some(t => t.construction?.name === 'peer' && t.construction?.holder), 'the old Add peer setting is gone')
   a.toggleMenu(true); await tick()
   assert(![...document.querySelectorAll('.menu-item')].some(b => b.textContent === 'Invite a device here'))
   a.toggleMenu(false); await tick()

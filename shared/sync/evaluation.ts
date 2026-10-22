@@ -1,6 +1,8 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { mergeNodes } from './merge'
-import { constructNodeValue, readGraphValue } from './node-values'
+import { hashContent } from '../dag-implementation/cid'
+import { settingOf } from './graph'
+import { constructNodeValue, isNodeValueType, readGraphValue } from './node-values'
 import { isAttempt } from './work'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { formText } from './forms'
@@ -22,26 +24,36 @@ export type EvaluationRecord = {
 
 
 /** Runtime state is a typed mutable ref, not a new row kind or a separate database. */
-export function readNodeValue<T>(r: Replica, path: Scope, name: string): T | null {
+/** The value named `name` at `path`; with `holder`, the one that peer holds there (a device's setting, `settingOf`). */
+export function readNodeValue<T>(r: Replica, path: Scope, name: string, holder?: string): T | null {
   const cid = resolveScope(r.store, headCid(r), path)
-  const arg = cid && argumentRefs(r.store, cid).find(a => a.name === name)
+  const arg = cid && namedValue(r, cid, name, holder)
   if (!arg) return null
   return (readGraphValue(r.store, arg.cid) as T | undefined) ?? null
 }
-export function writeNodeValue(r: Replica, path: Scope, name: string, value: unknown, now: number, handler?: { type: string; peer: string }): Replica {
+/**
+ * Write the value named `name` at `path`. `handler.peer` is who holds it (a device's setting: found by its name and
+ * holder, `settingOf`), `handler.type` its constructor when not a native value.
+ */
+export function writeNodeValue(r: Replica, path: Scope, name: string, value: unknown, now: number, handler?: { type?: string; peer: string }): Replica {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new Error('The node no longer exists.')
-  const arg = argumentRefs(r.store, cid).find(a => a.name === name)
+  const arg = namedValue(r, cid, name, handler?.peer)
   const previous = arg ? content(r.store, arg.cid) : null
   const peer = handler?.peer ?? (arg ? valueContent(r.store, arg.cid).data.peerId?.content : undefined)
-  const built = constructNodeValue(r.store, value, previous?.data.alias?.id ?? `${name}:${path.at(-1) ?? r.meta.peerId}`, arg?.cid)
-  const type = handler?.type ?? (arg && arg.type !== r.store.primitive.documentField.getId() && !content(r.store, arg.type).data.name?.content.startsWith('fos:value:') ? arg.type : built.type)
+  const alias = previous?.data.alias?.id ?? hashContent({ data: { name: { content: name }, ...(peer ? { peerId: { content: peer } } : {}) }, children: [] })
+  const built = constructNodeValue(r.store, value, alias, arg?.cid)
+  const type = handler?.type ?? (arg && arg.type !== r.store.primitive.documentField.getId() && !isNodeValueType(r.store, arg.type) ? arg.type : built.type)
   const target = peer ? put(r.store, { ...content(r.store, built.cid), data: { ...content(r.store, built.cid).data, peerId: { content: peer } } }) : built.cid
-  if (!arg) return addRefAt(r, path, `${name}:${path.at(-1) ?? r.meta.peerId}`, type, now, target, name)
+  if (!arg) return addRefAt(r, path, alias, type, now, target, name)
   const declarations = previous!.children.filter(([key]) => key !== r.store.primitive.targetPointerConstructor.getId() && key !== r.store.primitive.instructionPointerConstructor.getId() && key !== r.store.primitive.previousVersion.getId())
   const next = put(r.store, refNodeContent(r.store, previous!.data, target, [...declarations, [r.store.primitive.previousVersion.getId(), arg.cid]]))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [type, next] : edge) })), now)
   return { ...r }
+}
+/** The ref named `name` among the node `cid`'s declarations; with `holder`, the one that peer holds. */
+function namedValue(r: Replica, cid: string, name: string, holder?: string) {
+  return argumentRefs(r.store, cid).find(a => a.name === name && (!holder || settingOf(r.store, content(r.store, a.cid))?.peer === holder))
 }
 /** A stored value may reference local or foreign nodes without importing their private context. */
 export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, value: unknown, now: number, links: Record<string, { id: string; owner?: string }>): Replica {

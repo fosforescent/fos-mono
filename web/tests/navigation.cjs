@@ -19,15 +19,15 @@ async function main() {
   const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage }); app.scheduleSync = () => {}
   mountUi(document.getElementById('app'), app)
   assert.deepEqual(app.state.view, [HOME_ID], 'a fresh device starts at Home')
-  const key = `fos:setting:${app.state.replica.meta.peerId}:view`
+  const remembered = r => readNodeValue(r, [HOME_ID], 'view', app.state.replica.meta.peerId)
 
   // The Home descendant being viewed is remembered as a row in Home, and only Home descendants are.
   const plan = app.applyConstructor([HOME_ID], { type: TASK_TYPE, text: 'Plan the trip', done: false })
   const entries = window.history.length
   app.goTo(plan)
-  assert.deepEqual(readNodeValue(app.state.replica, [HOME_ID], key), plan.slice(1), 'the viewed path is stored relative to Home')
+  assert.deepEqual(remembered(app.state.replica), plan.slice(1), 'the viewed path is stored relative to Home')
   app.goToRoot()
-  assert.deepEqual(readNodeValue(app.state.replica, [HOME_ID], key), plan.slice(1), 'Settings does not replace the remembered Home view')
+  assert.deepEqual(remembered(app.state.replica), plan.slice(1), 'Settings does not replace the remembered Home view')
   assert(document.querySelector('.crumb-path .crumb.current.crumb-settings svg'), 'Settings crumb is the gear')
   assert.equal(document.querySelector('.crumb-path .sep').textContent, '‹')
   document.querySelector('.crumb-path .crumb-home[aria-label="Home"]').click()

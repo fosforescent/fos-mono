@@ -832,7 +832,7 @@ async function main() {
   assert.equal(workspaceApp.settingValue('theme'), 'dark', 'settings are stored as child refs')
   assert(document.querySelector('.tasks [data-setting="theme"]'), 'settings appear in the child list')
   document.activeElement.blur(); workspaceApp.refresh()
-  const themeRow = workspaceApp.currentView().tasks.find(row => row.construction?.name === workspaceApp.settingKey('theme'))
+  const themeRow = workspaceApp.currentView().tasks.find(row => row.construction?.name === 'theme' && row.construction?.holder === workspaceApp.state.replica.meta.peerId)
   assert(themeRow && document.querySelector(`[data-id="${themeRow.id}"]`), 'stored constructor uses the ordinary row shell')
   workspaceApp.deleteTaskAt([], themeRow.id)
   assert(!workspaceApp.currentView().tasks.some(row => row.id === themeRow.id))
@@ -841,7 +841,7 @@ async function main() {
   workspaceApp.undo()
   assert.equal(workspaceApp.settingValue('theme'), 'dark', 'ordinary undo restores constructor and its value')
   workspaceApp.goTo([themeRow.id])
-  assert.equal(workspaceApp.currentRow().construction.name, workspaceApp.settingKey('theme'))
+  assert.equal(workspaceApp.currentRow().construction.name, 'theme')
   assert(document.querySelector('[aria-label="Device theme"]'), 'zoomed constructor retains its handler')
   workspaceApp.goTo([])
   const homeForSearch = [...workspaceApp.state.view]

@@ -230,7 +230,7 @@ export function unloadedMemberEdge(store: Replica['store'], child: NodeChild): F
 }
 
 /** Fields a member entry's shape carries besides the usual ones (who it is, what is switched off). */
-export const MEMBER_ENTRY_FIELDS = new Set(['peerId', 'disabledCapabilities'])
+export const MEMBER_ENTRY_FIELDS = new Set(['peerId', 'disabledCapabilities', 'disabledConstructors'])
 
 /** The children of the node `cid` (at `path`) as node exchange lists them: its rows, then its member entries (or, in a member entry, its grants). */
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> {

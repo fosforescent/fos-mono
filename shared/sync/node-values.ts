@@ -17,6 +17,12 @@ export function nodeValueType(store: FosStore, shape: ValueShape): string {
   })
 }
 
+const VALUE_SHAPES: ValueShape[] = ['text', 'number', 'boolean', 'null', 'record', 'sequence']
+/** Whether `cid` is one of the native value types (`nodeValueType`): told by identity. */
+export function isNodeValueType(store: FosStore, cid: string): boolean {
+  return VALUE_SHAPES.some(shape => nodeValueType(store, shape) === cid)
+}
+
 /** Stable field refs preserve identity across edits; unchanged fields keep their exact CID. */
 export function constructNodeValue(
   store: FosStore,

@@ -178,6 +178,10 @@ export type FosDataContent = {
   disabledCapabilities?: {
     content: string[]
   },
+  /** On a member reference: the constructors the owner switched off in that peer's menu here (menu ids). */
+  disabledConstructors?: {
+    content: string[]
+  },
   /** Retired row marker (older builds wrote it): never a row discriminator, and the library compiler refuses it. A row's type is its edge's left node. */
   instanceKind?: {
     kind: string
