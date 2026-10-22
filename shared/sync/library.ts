@@ -178,10 +178,8 @@ export function ensureLibraryLink(r: Replica, address: LibraryAddress, now: numb
   if (existing) return { replica: r, path: existing, added: false }
   const home = homePath(r)
   if (!view(r, home)) return { replica: r, path: home, added: false }
-  r = addRow(r, home, REF_TYPE, address.title, now, { id: LIBRARY_ID, refOwner: address.owner, refId: address.path.at(-1) ?? LIBRARY_ID })
-  const path = [...home, LIBRARY_ID]
-  r = writeNodeValue(r, path, 'fos:shared-link', { owner: address.owner, path: address.path }, now)
-  return { replica: r, path, added: true }
+  r = addRow(r, home, REF_TYPE, address.title, now, { id: LIBRARY_ID, refOwner: address.owner, refId: address.path.at(-1) ?? LIBRARY_ID, refScope: address.path })
+  return { replica: r, path: [...home, LIBRARY_ID], added: true }
 }
 
 /** What the `fos` CLI pulled: the library's nodes, root first, each with the request that fetched it (node-provider protocol). */

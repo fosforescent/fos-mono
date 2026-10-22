@@ -2,7 +2,17 @@ import { nodeAuthorityAt } from './node-context'
 import { nodeLinkMaskAt, type NodeAuthority } from './node-provider'
 /** Owner-authorized execution interactions. Transport must bind identity and scope. */
 import { executionInputs } from './sharing'
-import { evaluationRecord, evaluationSteps, writeNodeValue } from './evaluation'
+import { evaluationRecord, evaluationSteps, handlerResult, writeHandlerResult } from './evaluation'
+
+/** An allocation an execution used: who consumed how much of it, when (the allocation row's handler result). */
+export type Consumption = { peer: string; value: unknown; time: number }
+export function consumption(r: Replica, path: Scope): Consumption | null {
+  const value = handlerResult<Consumption>(r, path)
+  return value && typeof value === 'object' && typeof value.peer === 'string' && typeof value.time === 'number' ? value : null
+}
+export function consume(r: Replica, path: Scope, record: Consumption, now: number): Replica {
+  return writeHandlerResult(r, path, record, now)
+}
 import { proposeRefAt, applyProposalAt, addRow, addSupply, headCid, type Replica } from './replica'
 import { put, type ResourceType, type Scope } from './graph'
 import { ALLOCATION_TYPE, MONEY_TYPE } from './library-types'
@@ -44,7 +54,7 @@ export function executionInput(r: Replica, path: Scope, body: any, peer: string,
   }
   if (!value || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit || field.direction === 'consume' && value.amount > (field.amount ?? 0) || field.direction !== 'consume' && value.amount < (field.amount ?? 0) || field.start !== undefined && (!Number.isFinite(value.start) || value.start > field.start) || field.end !== undefined && (!Number.isFinite(value.end) || value.end < field.end)) throw new Error('Allocation does not match the declared bounds.')
   const allocation = { resource: '', type: field.type as ResourceType, amount: value.amount, unit: field.unit!, ...(field.start !== undefined ? { start: field.start } : {}), ...(field.end !== undefined ? { end: field.end } : {}) }
-  if (field.direction === 'consume') return writeNodeValue(r, target, 'fos:consumed', { peer, value: allocation, time: now }, now)
+  if (field.direction === 'consume') return consume(r, target, { peer, value: allocation, time: now }, now)
   const id = crypto.randomUUID()
   // money is a payment: the positive money row under the request is what fills it
   if (field.type === 'account') return addRow(r, target, MONEY_TYPE, field.name, now, { id, allocation: { ...allocation, by: peer } })

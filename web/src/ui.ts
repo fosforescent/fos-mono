@@ -29,6 +29,7 @@ import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
+import { consumption } from '../../shared/sync/execution-access'
 import { CAPABILITY_LABEL, LIBRARY_ID, libraryLink, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
 import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
 
@@ -259,7 +260,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     fullscreen.setAttribute('aria-pressed', String(!!document.fullscreenElement))
     toolbar.append(fullscreen)
   }
-  if (current?.allocation && !readNodeValue(state.replica, root, 'fos:consumed')) {
+  if (current?.allocation && !consumption(state.replica, root)) {
     const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(current.allocation.amount); amount.value = String(current.allocation.amount); amount.setAttribute('aria-label', 'Amount to consume'); amount.disabled = locked
     const consume = button('secondary', 'Use allocation', () => app.consumeExecutionAllocation(root, Number(amount.value))); consume.disabled = locked
     regions.node.append(amount, consume)
@@ -301,7 +302,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
         : span('title', resolveText(state.replica, [...path, row.id], row.title).text)
       body.title = ''
       li.append(span('constructor-label', row.typeName ?? 'Row'), body)
-      if (row.allocation && !readNodeValue(state.replica, [...path, row.id], 'fos:consumed') && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
+      if (row.allocation && !consumption(state.replica, [...path, row.id]) && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
         const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(row.allocation.amount); amount.step = 'any'; amount.value = String(row.allocation.amount); amount.setAttribute('aria-label', `Use ${row.title}`); amount.disabled = locked
         li.append(amount, button('secondary small', 'Use allocation', () => app.consumeExecutionAllocation([...path, row.id], Number(amount.value))))
       }

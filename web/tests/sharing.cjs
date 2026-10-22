@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-sharing-tests-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/sharing'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { App, mountUi, mountSharedNode, shareUrl, sharedAddress, createMemoryStorage, view, readNodeValue, headCid, syncPublishedUrls } = require(path.join(dir, 'app.cjs'))
+const { App, mountUi, mountSharedNode, shareUrl, sharedAddress, createMemoryStorage, view, headCid, handlerResult, writePageBase, sharedAddressAt, memberEntryId, SERVER_MEMBER } = require(path.join(dir, 'app.cjs'))
 const c = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 let a
@@ -50,10 +50,8 @@ async function main() {
     const execute = dialog.querySelector('.peer-grants input[aria-label$=": execute"]')
     execute.checked = true; execute.dispatchEvent(new window.Event('change')); await tick()
     assert.deepEqual(view(a.state.replica, a.state.view).members.find(m => m.peerId === peer).capabilities, ['execute'])
-    // the server's `url` handler, after this write reaches the account: the node's URL as a row in its member entry
-    const r = a.state.replica
-    const served = syncPublishedUrls({ ...r, meta: { ...r.meta, peerId: 'user:publisher' } }, a.state.view, 'http://localhost', Date.now())
-    a.set({ replica: { ...served, meta: r.meta } }); await tick()
+    // what the server's `url` handler records on its member entry (where share pages are, whose account): the link is made from it
+    a.set({ replica: writePageBase(a.state.replica, [memberEntryId(SERVER_MEMBER)], { base: 'http://localhost', owner: 'publisher' }, Date.now()) }); await tick()
     const published = document.querySelector('.tree .constructor-body .sharing-controls')?.closest('.constructor-body')
     const link = published.querySelector('[aria-label="Shareable URL"]').value
     assert.deepEqual(sharedAddress(new URL(link).hash), { owner: 'publisher', path: a.state.view })
@@ -67,9 +65,6 @@ async function main() {
     } else assert(!snippet, 'links for Fos users need sign-in, so they are not embeddable')
     a.undo(); a.undo(); await tick()
     assert(!view(a.state.replica, a.state.view).members.some(m => m.peerId === peer), 'undo takes the publication back')
-    // the server sees the node is no longer published and removes its link
-    const after = a.state.replica, cleaned = syncPublishedUrls({ ...after, meta: { ...after.meta, peerId: 'user:publisher' } }, a.state.view, 'http://localhost', Date.now())
-    a.set({ replica: { ...cleaned, meta: after.meta } }); await tick()
   }
   a.state.session = savedSession; a.state.connection = savedConnection; a.syncNow = savedSync; global.fetch = savedFetch
 
@@ -82,11 +77,12 @@ async function main() {
   location.hash = new URL(url).hash
   mountSharedNode(root, a, 'http://localhost')
   await tick()
-  assert.deepEqual(a.state.view, ['fos:home', 'shared-host:host@example.test', 'shared:host@example.test:poll'])
+  assert.equal(a.state.view.length, 3, 'the link sits below the host row in Home')
+  const linkId = a.state.view.at(-1)
+  assert.deepEqual(sharedAddressAt(a.state.replica, a.state.view), at)
   const home = view(a.state.replica, ['fos:home'])
   assert(home.tasks.some(t => t.title === 'My private task'))
   assert(home.tasks.some(t => t.title === 'Host'))
-  assert.equal(readNodeValue(a.state.replica, a.state.view, 'fos:shared-link').owner, at.owner)
   const panel = document.querySelector('.shared-node')
   assert(root.contains(panel), 'handler belongs to the linked node view, not a separate workspace')
   assert.equal(panel.hidden, false)
@@ -109,7 +105,7 @@ async function main() {
   assert.equal(a.state.session, null)
   a.goTo(['fos:home']); await tick(); assert.equal(panel.hidden, true)
   assert(!root.classList.contains('shared-site'), 'leaving the shared ref shows the app again')
-  a.openSharedLink('shared:host@example.test:poll'); await tick(); assert.equal(panel.hidden, false)
+  a.openSharedLink(linkId); await tick(); assert.equal(panel.hidden, false)
   assert.equal(view(a.state.replica, ['fos:home']).tasks.filter(t => t.title === 'Host').length, 1)
   assert.equal(panel.querySelector('input[autocomplete="nickname"]').value, 'Pat')
   form = panel.querySelector('form')
@@ -120,7 +116,7 @@ async function main() {
   form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await tick()
   const supplied = requests.filter(r => r.url.endsWith('/input')).at(-1).body
   assert.deepEqual(supplied.fields.text, { value: 'My private task' }, 'anonymous linked values send only the chosen property')
-  assert(readNodeValue(a.state.replica, a.state.view, 'fos:input-links').text, 'the source remains linked in the anonymous local context')
+  assert(handlerResult(a.state.replica, a.state.view).sources.text, 'the source remains linked in the anonymous local context')
   console.log('PASS: shareable URLs, Host row in Home, anonymous name/input, private-context isolation, and reopening a shared ref')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); rmSync(dir, { recursive: true, force: true }) })

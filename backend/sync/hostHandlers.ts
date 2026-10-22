@@ -8,7 +8,7 @@ import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, publication, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
-import { TITLE_SYSTEM, syncPublishedUrls, titleRequestAt, truncateTitle, writeHandlerResult } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, writePageBase, memberEntryId, SERVER_MEMBER, titleRequestAt, truncateTitle, writeHandlerResult } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './host-runtime'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 import type { VerifyHandler } from './verify'
@@ -339,12 +339,17 @@ export type HostHandlerDeps = {
  * handler any device can run; here it runs as `fos` after every submission a node exchange brings in.
  */
 /**
- * The fos `url` handler: a node an audience may run (or read) gets its share page's URL as a row in the server's
- * member entry above it (`syncPublishedUrls`), after every write that reaches it; a node no longer published loses
- * it. Visiting that URL serves the node's execute view to whoever may run it, and 404 to anyone else.
+ * The fos `url` handler: it records where this account's share pages are (the web app and the account's name) on
+ * its member entry, after every write that reaches the account; devices make a published node's link from it and
+ * the node's place (`publishedUrl`). Visiting a link serves the node's execute view to whoever may run it, and 404
+ * to anyone else.
  */
 export function publicUrlHandler(webUrl: string): HostHandler {
-  return { peerId: 'fos', ref: standardHostRef('fos', 'url'), submission: (replica, path, now) => syncPublishedUrls(replica, path, webUrl, now) }
+  return { peerId: 'fos', ref: standardHostRef('fos', 'url'), submission: (replica, _path, now) => {
+    const owner = replica.meta.peerId.startsWith('user:') ? replica.meta.peerId.slice('user:'.length) : null
+    const entry = [memberEntryId(SERVER_MEMBER)]
+    return owner && resolveScope(replica.store, headCid(replica), entry) ? writePageBase(replica, entry, { base: webUrl.replace(/\/$/, ''), owner }, now) : replica
+  } }
 }
 
 export function relayHandler(): HostHandler {

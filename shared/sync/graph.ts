@@ -660,6 +660,8 @@ export type RowExtras = {
   refId?: string
   /** Market result: the account owning the referenced node. */
   refOwner?: string
+  /** Where the referenced node is in its owner's account (a received shared link). */
+  refScope?: string[]
   author?: { id: string; name: string }
   targetCid?: string
   store?: FosStore
@@ -689,7 +691,7 @@ export function rowContent(typeId: string, id: string, text: string, now: number
   if (typeId === QUERY_TYPE) data.query = extra.query ?? {}
   if (typeId === RESOURCE_TYPE) data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
   if (typeId === REF_TYPE) {
-    data.ref = extra.refOwner ? { id: extra.refId ?? '', owner: extra.refOwner } : { id: extra.refId ?? '' }
+    data.ref = { id: extra.refId ?? '', ...(extra.refOwner ? { owner: extra.refOwner } : {}), ...(extra.refScope ? { scope: extra.refScope } : {}) }
     // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
     if (extra.targetCid && extra.store) return refNodeContent(extra.store, data, extra.targetCid)
   }
@@ -2269,7 +2271,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return false
     // the template's own trigger makes instances; the trigger rows inside it are declarations its instances bind
     if (instantiate && root && isRowEdge(store, edge) && isTriggerLeft(store, plainEdge(store, edge)[0])) return false
-    if ((instantiate && (name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' ||name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
+    if ((instantiate && (name === 'fos:sharing' || name?.startsWith('fos:guest:')))) return false
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
     if (isRowEdge(store, edge)) return !(instantiate && !definition && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false

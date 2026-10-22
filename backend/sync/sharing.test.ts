@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
-import { addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
+import { addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -85,7 +85,7 @@ test('received links reuse the host peer under Home and do not grant access to t
   expect(first.path[0]).toBe('fos:home')
   expect(view(r, ['fos:home'])!.tasks).toHaveLength(1)
   expect(view(r, first.path.slice(0, -1))!.members[0].capabilities).toEqual([])
-  expect(readNodeValue(r, first.path, 'fos:shared-link')).toEqual(at)
+  expect(sharedAddressAt(r, first.path)).toEqual(at)
   const repeated = ensureSharedLink(r, at, 'Lunch?', 3)
   expect(repeated.replica).toBe(r)
   r = ensureSharedLink(r, { ...at, path: ['dinner'] }, 'Dinner?', 4).replica

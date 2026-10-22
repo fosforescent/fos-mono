@@ -102,7 +102,7 @@ async function main() {
   assert.deepEqual(c.view(account(), [HOME, notesId]).members.find(m => m.peerId === 'audience:public').capabilities, ['execute'])
   // the server's `url` handler (it runs after this write reaches the account) makes the node's link a row of its entry
   const device = account().meta.peerId
-  host((r => ({ ...r, meta: { ...r.meta, peerId: device } }))(c.syncPublishedUrls({ ...account(), meta: { ...account().meta, peerId: 'user:alice' } }, [HOME, notesId], 'http://localhost', ++now)))
+  host(c.writePageBase(account(), [c.memberEntryId(c.SERVER_MEMBER)], { base: 'http://localhost', owner: 'alice' }, ++now))
   const link = $(publishRow(), '[aria-label="Shareable URL"]')?.value
   assert(link && link.includes('#share='), 'the audience row shows the link the server made')
   // what a visitor sees: the note's title and its body as Markdown, math included

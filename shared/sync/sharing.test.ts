@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
 import { content, put, readProposals, resolveScope, rowTypeAt, valueContent } from './graph'
 import { formValueAt } from './forms'
-import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, syncPublishedUrls, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
-import { HOME_ID } from './graph'
+import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, writePageBase, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
+import { HOME_ID, memberEntryId, SERVER_MEMBER } from './graph'
 import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE, TEXT_TYPE } from './library-types'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -88,17 +88,18 @@ test('publishing is membership: the audience peer may run the node (execute only
   expect(() => sharedProjection(r, ['page'], () => 'x')).toThrow()
 })
 
-test('the url handler keeps a published node\'s link as a row in the server\'s member entry above it', () => {
+test('a published node\'s link is made from the page base the url handler records on the server\'s member entry', () => {
   let r = ensureHomeContext(createReplica('user:host'), 1)
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Page', 2, { id: 'page' })
-  expect(syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example', 3)).toBe(r)
-  r = publish(r, [HOME_ID, 'page'], 'public', 4)
-  r = syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example/', 5)
+  const entry = [memberEntryId(SERVER_MEMBER)]
+  r = writePageBase(r, entry, { base: 'https://app.example', owner: 'host' }, 3)
+  expect(writePageBase(r, entry, { base: 'https://app.example', owner: 'host' }, 4)).toBe(r)
+  expect(publishedUrl(r, [HOME_ID, 'page'])).toBeNull()
+  r = publish(r, [HOME_ID, 'page'], 'public', 5)
   const url = publishedUrl(r, [HOME_ID, 'page'])!
   expect(url.startsWith('https://app.example/#share=')).toBe(true)
   expect(JSON.parse(decodeURIComponent(url.slice(url.indexOf('#share=') + 7)))).toEqual({ owner: 'host', path: [HOME_ID, 'page'] })
-  expect(syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example', 6)).toBe(r)
-  r = syncPublishedUrls(unpublish(r, [HOME_ID, 'page'], 'public', 7), [HOME_ID, 'page'], 'https://app.example', 8)
+  r = unpublish(r, [HOME_ID, 'page'], 'public', 6)
   expect(publishedUrl(r, [HOME_ID, 'page'])).toBeNull()
 })
 

@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
-import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { visitorExecution, consume, applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 void TEMPLATE_TYPE
@@ -86,9 +86,9 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         let r = loaded.r, policy = loaded.policy, token: string | undefined, entryToken: string | undefined, executionAddress: Address | undefined, createdExecution = false
         const beforeJoin = headCid(r)
         if (policy.template) {
-          const entry = { ...at }, key = `fos:execution:${digest([at.path, guest.peer])}`
+          const entry = { ...at }, started = visitorExecution(r, at.path, guest.peer)
           if (!account) entryToken = visitorToken(guest)
-          executionAddress = readNodeValue<Address>(r, at.path, key) ?? undefined
+          executionAddress = started ? { owner: at.owner, path: started } : undefined
           if (!executionAddress) {
             createdExecution = true
             const template = view(r, at.path.slice(0, -1))?.tasks.find(t => t.id === at.path.at(-1))
@@ -100,7 +100,6 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
             executionAddress = { owner: at.owner, path: [...parent, id] }
             r = markExecution(r, executionAddress.path, { peer: guest.peer, entry, audience: policy.audience }, account ?? 'Anonymous guest', now())
             r = writeEvaluationRecord(r, executionAddress.path, { id: randomUUID(), status: 'idle', started: now(), effects: [] }, now())
-            r = writeNodeValue(r, at.path, key, executionAddress, now())
           }
           at = executionAddress; policy = publication(r, at.path)!
           if (policy?.execution?.peer !== guest.peer) throw new Failure(404, NOT_FOUND)
@@ -210,7 +209,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
             } else if (field.kind === 'text') {
               const proposed = proposeRefAt(r, target, put(r.store, { data: { description: { content: value as string } }, children: [] }), r.meta.peerId, now())
               r = applyProposalAt(proposed.replica, target, proposed.proposalCid, r.meta.peerId, now())
-            } else if (field.direction === 'consume') r = writeNodeValue(r, target, 'fos:consumed', { peer, value, time: now() }, now())
+            } else if (field.direction === 'consume') r = consume(r, target, { peer, value, time: now() }, now())
             else if (field.kind === 'confirmation' || field.kind === 'choice') r = addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: field.kind, by: peer, ...(field.kind === 'choice' ? { choice: value as number } : {}) }, now())
             else {
               const amount = value as { amount: number; type: string; unit: string; start?: number; end?: number }, id = randomUUID()

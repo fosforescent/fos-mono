@@ -36,6 +36,7 @@ import {
   type Replica,
   type Scope
 } from './index'
+import { sharedAddressAt } from './sharing'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
@@ -247,7 +248,7 @@ export const api = {
     const r = get(handle), path = libraryLink(r)
     if (!path) return 'null'
     const row = view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
-    const address = readNodeValue<{ owner: string; path: Scope }>(r, path, 'fos:shared-link')
+    const address = sharedAddressAt(r, path)
     return JSON.stringify({ path, owner: row?.refOwner ?? address?.owner ?? null, refId: row?.refId ?? null, title: row?.title ?? 'Standard library', address })
   },
   /** The nodes `fos library export` pulled, as the bundle a client build carries (web/src/library.json). */

@@ -628,6 +628,26 @@ export function setQueryOptionsAt(replica: Replica, at: Scope, queryId: string, 
   return updateTask(replica, at, queryId, now, (row) => (row.data.query ? { ...row, data: { ...row.data, query: { ...row.data.query, ...patch } } } : null))
 }
 
+/** The standard-library row type of a file kept inline (its data URL in the graph; small files only). */
+export const ATTACHMENT_TYPE = 'lib:type:attachment'
+export type Attachment = { name: string; type: string; data: string; size: number }
+export function addAttachment(replica: Replica, at: Scope, file: Attachment, now: number, id: string = newId()): Replica {
+  const template = libraryTypeAt(replica.store, ATTACHMENT_TYPE, at, headCid(replica))
+  if (!template) throw new Error('No standard library above this row has an attachment type.')
+  return addConstructedRow(replica, at, template, { name: file.name, type: file.type, data: file.data, size: file.size }, now, id)
+}
+/** The file the row at `path` keeps, when it is an attachment row (by its type, any version of it). */
+export function attachmentAt(replica: Replica, path: Scope): Attachment | null {
+  if (!path.length) return null
+  const parent = resolveScope(replica.store, headCid(replica), path.slice(0, -1))
+  const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${path.at(-1)}`) : null
+  if (!edge || !isLibraryType(replica.store, edge[0], ATTACHMENT_TYPE)) return null
+  const node = valueContent(replica.store, identityCid(replica.store, edge))
+  const field = (name: string) => formValueAt(replica.store, node, [name])?.data.scalar?.value
+  const name = field('name'), type = field('type'), data = field('data'), size = field('size')
+  return typeof name === 'string' && typeof type === 'string' && typeof data === 'string' && typeof size === 'number' ? { name, type, data, size } : null
+}
+
 /** The standard-library row type of rows that reference a file in a linked directory (web/src/filesystem.ts). */
 export const FILE_REFERENCE_TYPE = 'lib:type:file-reference'
 /** Its fields: the `/`-separated path relative to the linked directory, and the SHA-256 and size it was made against. */

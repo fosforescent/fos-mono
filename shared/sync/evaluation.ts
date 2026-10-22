@@ -62,7 +62,8 @@ export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, valu
  * What running a row left on it, in its execute row: the evaluator's `journal` when the row was evaluated, and the
  * `result` its handler recorded when it ran as a step (a payment it opened, what an organizer placed, a title).
  */
-type ExecutionState = { journal?: EvaluationRecord; result?: unknown }
+export type ExecutionTime = Array<{ start: number; end?: number; notes: string }>
+type ExecutionState = { journal?: EvaluationRecord; result?: unknown; time?: ExecutionTime; origin?: unknown }
 function executionState(r: Replica, path: Scope): ExecutionState {
   const state = readRowValue<ExecutionState>(r, path, isExecuteLeft)
   return state && typeof state === 'object' ? state : {}
@@ -80,6 +81,21 @@ export function handlerResult<T>(r: Replica, path: Scope): T | null {
 }
 export function writeHandlerResult(r: Replica, path: Scope, result: unknown, now: number): Replica {
   return writeExecutionState(r, path, { result }, now)
+}
+/** What a run of a published template was started for (the visitor, the endpoint, its audience): kept with the run, past its visitor's revocation. */
+export function executionOrigin<T>(r: Replica, path: Scope): T | null {
+  return (executionState(r, path).origin as T | undefined) ?? null
+}
+export function writeExecutionOrigin(r: Replica, path: Scope, origin: unknown, now: number): Replica {
+  return writeExecutionState(r, path, { origin }, now)
+}
+/** Time a person spent running the node by hand (start/stop entries with notes). */
+export function executionTime(r: Replica, path: Scope): ExecutionTime {
+  const time = executionState(r, path).time
+  return Array.isArray(time) ? time : []
+}
+export function writeExecutionTime(r: Replica, path: Scope, time: ExecutionTime, now: number): Replica {
+  return writeExecutionState(r, path, { time }, now)
 }
 export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | null {
   const record = executionState(r, path).journal ?? null

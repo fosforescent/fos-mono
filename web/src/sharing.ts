@@ -3,7 +3,7 @@ import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { parseShareAddress, renderSitePage, siteAnswers, SITE_CSS, type SiteAnswers } from './site'
 import type { App } from './app'
 import { sharedRequest, type ShareAddress } from './api'
-import { participants, publishedUrl, readNodeValue, resolveRef, isDirty, type SharedInput, type SharedNode } from '../../shared/sync/index'
+import { participants, publishedUrl, handlerResult, resolveRef, isDirty, type SharedInput, type SharedNode } from '../../shared/sync/index'
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag); el.textContent = text; return el
@@ -171,7 +171,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
     panel.replaceChildren()
     if (node) {
       answers = siteAnswers(node)
-      const ownSources = node.sources ?? (linkedPath ? readNodeValue<Record<string, string>>(app.state.replica, linkedPath, 'fos:input-links') : null) ?? {}
+      const ownSources = node.sources ?? (linkedPath ? handlerResult<{ sources: Record<string, string> }>(app.state.replica, linkedPath)?.sources : null) ?? {}
       for (const [key, source] of Object.entries(ownSources)) answers.fields[key] = { source }
     }
     if (!node) panel.append(element('h2', 'Shared node'))

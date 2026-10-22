@@ -24,8 +24,11 @@ import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
-import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
+import { ensureSharedLink, sharedAddressAt, type SharedAddress } from '../../shared/sync/sharing'
 import { writeTriggerState, triggerOffers as discoverTriggerOffers, triggerObservation, missingSchedule, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
+import { executionTime, writeExecutionTime, writeHandlerResult } from '../../shared/sync/evaluation'
+import { consume, consumption } from '../../shared/sync/execution-access'
+import { addAttachment, attachmentAt } from '../../shared/sync/replica'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeEvaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
@@ -2734,14 +2737,14 @@ export class App {
   }
   executionTimeEntries(): Array<{ start: number; end?: number; notes: string }> {
     const path = this.executionPath()
-    return path ? readNodeValue(this.state.replica, path, 'fos:execution-time') ?? [] : []
+    return path ? executionTime(this.state.replica, path) : []
   }
   setExecutionTimeNotes(notes: string): void {
     const path = this.executionPath(), entries = this.executionTimeEntries()
     const active = entries.find(entry => entry.end === undefined)
     if (!path || !active || this.evaluating) return
     active.notes = notes
-    this.edit(writeNodeValue(this.state.replica, path, 'fos:execution-time', entries, this.now()))
+    this.edit(writeExecutionTime(this.state.replica, path, entries, this.now()))
   }
   toggleExecutionTimer(notes: string): void {
     const path = this.executionPath()
@@ -2752,7 +2755,7 @@ export class App {
       if (this.evaluationStatus(path)?.status === 'committed') return
       entries.push({ start: this.now(), notes })
     }
-    this.edit(writeNodeValue(this.state.replica, path, 'fos:execution-time', entries, this.now()))
+    this.edit(writeExecutionTime(this.state.replica, path, entries, this.now()))
   }
   async finishExecution(abort = false): Promise<void> {
     const path = this.executionPath()
@@ -2770,8 +2773,8 @@ export class App {
     if (!root || !root.every((id, i) => path[i] === id) || !Number.isFinite(amount) || amount < 0) return
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
     const status = this.evaluationStatus(root)?.status
-    if (!row?.allocation || amount > row.allocation.amount || this.evaluating || status && status !== 'idle' && status !== 'rolled-back' && status !== 'awaiting-review' || readNodeValue(this.state.replica, path, 'fos:consumed')) return
-    this.edit(writeNodeValue(this.state.replica, path, 'fos:consumed', { peer: this.state.replica.meta.peerId, value: { ...row.allocation, amount }, time: this.now() }, this.now()))
+    if (!row?.allocation || amount > row.allocation.amount || this.evaluating || status && status !== 'idle' && status !== 'rolled-back' && status !== 'awaiting-review' || consumption(this.state.replica, path)) return
+    this.edit(consume(this.state.replica, path, { peer: this.state.replica.meta.peerId, value: { ...row.allocation, amount }, time: this.now() }, this.now()))
   }
   exitExecution(): void { this.execution = null; this.refresh() }
   evaluating = false
@@ -3560,10 +3563,7 @@ export class App {
     if (file.size > 1024 * 1024) { this.notify('error', 'Attachments are limited to 1 MB while documents use browser storage.'); return }
     const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read file.')); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(file) })
     if (this.state.replica.store !== store || !view(this.state.replica, at)) return
-    const id = newId()
-    let r = addRow(this.state.replica, at, PLAIN_TYPE, file.name, this.now(), { id })
-    r = writeNodeValue(r, [...at, id], 'fos:attachment', { name: file.name, type: file.type, data, size: file.size }, this.now())
-    this.edit(r)
+    this.edit(addAttachment(this.state.replica, at, { name: file.name, type: file.type, data, size: file.size }, this.now()))
   }
   /** A plain row referencing a file in a linked directory (path relative to it, checksum from the desktop; web/src/filesystem.ts). */
   addFileReference(at: Scope, file: FileReference): string {
@@ -3574,7 +3574,7 @@ export class App {
   /** Re-pin a reference to the checksum its file has now. */
   setFileReference(at: Scope, rowId: string, file: FileReference): void { this.edit(setFileReferenceAt(this.state.replica, at, rowId, file, this.now())) }
   fileReference(path: Scope): FileReference | null { return fileReferenceAt(this.state.replica, path) }
-  attachment(at: Scope) { return readNodeValue<{ name: string; type: string; data: string; size: number }>(this.state.replica, at, 'fos:attachment') }
+  attachment(at: Scope) { return attachmentAt(this.state.replica, at) }
   insertVoiceNote(note: VoiceNote, at: Scope = this.state.view, sourceLabel = 'Transcript'): void {
     if (!view(this.state.replica, at)) throw new Error('The recording location was removed. Voice note could not be added.')
     const stamp = new Date(this.now()).toLocaleString()
@@ -3596,7 +3596,7 @@ export class App {
   /** The shared address of the row `id` as seen from `at` (refs resolve by nearest ancestor; default: the current view). */
   sharedLink(id: string, at: Scope = this.state.view): SharedAddress | null {
     const found = resolveRef(this.state.replica, id, at)
-    return found ? readNodeValue(this.state.replica, [...found.path, found.row.id], 'fos:shared-link') : null
+    return found ? sharedAddressAt(this.state.replica, [...found.path, found.row.id]) : null
   }
   receiveSharedLink(address: SharedAddress, title: string): Scope {
     const result = ensureSharedLink(this.state.replica, address, title, this.now(), this.state.session?.kind !== 'user')
@@ -3604,7 +3604,8 @@ export class App {
     return result.path
   }
   rememberSharedSources(path: Scope, sources: Record<string, string>): void {
-    this.edit(writeLinkedNodeValue(this.state.replica, path, 'fos:input-links', sources, this.now(), Object.fromEntries(Object.entries(sources).map(([key, id]) => [key, { id }]))))
+    // which of this context's rows answered the shared node's inputs: what taking part in it left on the link row
+    this.edit(writeHandlerResult(this.state.replica, path, { sources }, this.now()))
   }
   openSharedLink(id: string, at: Scope = this.state.view): void {
     const address = this.sharedLink(id, at), found = resolveRef(this.state.replica, id, at)
