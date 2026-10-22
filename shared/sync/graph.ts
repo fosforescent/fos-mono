@@ -310,7 +310,7 @@ function libraryValues(store: FosStore): string[] {
   if (!store.table.has(store.rootNodeId)) return []
   let root: string
   try { root = rootTargetCid(store) } catch { return [] }
-  const home = findChild(store, root, HOME_ID)
+  const home = homeCidOf(store, root)
   const refs = [findChild(store, root, LIBRARY_ID), home ? findChild(store, home, LIBRARY_ID) : null].filter((cid): cid is string => !!cid)
   const values: string[] = []
   const add = (cid: string) => { if (store.table.has(cid) && !values.includes(cid)) values.push(cid) }
@@ -878,9 +878,10 @@ export function resolveScope(store: FosStore, nodeCid: string | null, scope: Sco
     if (!current) break
     current = findChild(store, current, step)
   }
-  if (!current && nodeCid && scope[0] !== 'fos:home') {
-    const home = findChild(store, nodeCid, 'fos:home')
-    if (home) return resolveScope(store, home, scope)
+  // a path that is not from the root may be from its Home
+  if (!current && nodeCid && scope.length) {
+    const home = homeCidOf(store, nodeCid)
+    if (home && homeIdOf(store, nodeCid) !== scope[0]) return resolveScope(store, home, scope)
   }
   return current
 }
@@ -888,8 +889,8 @@ export function resolveScope(store: FosStore, nodeCid: string | null, scope: Sco
 /** Legacy attachment paths predate the explicit Home constructor. */
 export function contextScope(store: FosStore, nodeCid: string, scope: Scope): Scope {
   if (!scope.length || findChild(store, nodeCid, scope[0]!)) return scope
-  const home = findChild(store, nodeCid, 'fos:home')
-  return home && resolveScope(store, home, scope) ? ['fos:home', ...scope] : scope
+  const home = homeCidOf(store, nodeCid), id = homeIdOf(store, nodeCid)
+  return home && id && resolveScope(store, home, scope) ? [id, ...scope] : scope
 }
 
 /** Replace, append or remove (`null`) the edge with `key`, keeping the others in order. */
@@ -1039,7 +1040,34 @@ export function rootIsAlias(store: FosStore): boolean {
   return content(store, store.rootNodeId).children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
 }
 
-export const HOME_ID = 'fos:home'
+/**
+ * Home's identity on its store root: a content address (every store's Home has the same one, so devices converge on
+ * it). Code finds Home by its type (`homeCidOf`) and its path by `homePath`; this is what a new Home is called.
+ */
+export const HOME_ID = hashContent({ data: { description: { content: 'Home' } }, children: [] })
+/** The store root's Home: its row of the Home type, if there is one. */
+export function homeCidOf(store: FosStore, rootCid: string): string | null {
+  // the Home type the build ships, and the one the root's own library names (not through the names of the store's
+  // libraries: finding those starts from Home)
+  const types = new Set([shippedRef(store, HOME_TYPE)])
+  const library = findChild(store, rootCid, LIBRARY_ID)
+  const named = library ? namesInLibrary(store, valueCidOf(store, library)).byName.get(HOME_TYPE) : undefined
+  if (named) types.add(named)
+  // a branched Home is its selected branch's row
+  const leftOf = (raw: FosPathElem): string | null => {
+    const edge = plainEdge(store, raw)
+    if (isChoiceEdge(store, edge) && store.table.has(edge[1]) && isBranchChoice(store, content(store, edge[1]))) { const active = branchEdge(store, edge[1]); return active ? plainEdge(store, active)[0] : null }
+    return isRowEdge(store, edge) ? edge[0] : null
+  }
+  for (const edge of valueContent(store, rootCid).children) { const left = leftOf(edge); if (left && types.has(left)) return identityCid(store, edge) }
+  return null
+}
+/** Home's id among the root's rows (a branched Home's is its choice's). */
+export function homeIdOf(store: FosStore, rootCid: string): string | null {
+  const home = homeCidOf(store, rootCid)
+  if (!home) return null
+  return isBranchChoice(store, content(store, home)) ? readChoice(store, home).id : content(store, home).data.alias?.id ?? null
+}
 /** The account server's member on a store root (its offers, the key it publishes): `fos:peer:fos`. */
 export const SERVER_MEMBER = 'fos'
 
@@ -1064,7 +1092,7 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
   const serverOffers = [...new Set([...SERVER_TRANSPORT_CAPABILITIES, ...(offers.server ?? [])])]
   if (!readMembers(store, bindings).some(member => member.peerId === 'fos')) bindings = withMember(store, bindings, 'fos', 'fos', [], [], serverOffers)
   else if (offers.server) bindings = withMemberOffers(store, bindings, 'fos', 'fos', [], serverOffers)
-  const homeCid = findChild(store, rootCid, HOME_ID)
+  const homeCid = homeCidOf(store, rootCid)
   // A branched Home is already a container: preserve its choice wrapper and alternatives.
   if (homeCid && isBranchChoice(store, content(store, homeCid))) {
     const edge = root.children.find(edge => identityCid(store, edge) === homeCid)!

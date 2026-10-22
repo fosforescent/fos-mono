@@ -649,10 +649,10 @@ export class App {
     let replica = this.state.replica
     for (const store of stores) {
       if (store.peerId === me.peerId) continue
-      replica = linkLocalStore(replica, store.peerId, store.name, this.now(), store.home ? [HOME_ID] : [])
+      replica = linkLocalStore(replica, store.peerId, store.name, this.now(), store.home ? homePath(replica) : [])
       const stored = await this.config.localStores?.read(store.peerId).catch(() => null)
       if (!stored) continue
-      const other = loadReplica(stored), linked = linkLocalStore(other, me.peerId, me.name, this.now(), home ? [HOME_ID] : [])
+      const other = loadReplica(stored), linked = linkLocalStore(other, me.peerId, me.name, this.now(), home ? homePath(other) : [])
       if (linked !== other) await this.config.localStores!.write(store.peerId, serializeReplica(linked))
     }
     if (replica !== this.state.replica) this.set({ replica })
@@ -962,7 +962,7 @@ export class App {
     }
     const attachment = await getAttachment(session, this.state.replica.meta.peerId)
     // Owner Home attachments live below this device's private root. Invited scopes stay unchanged.
-    if (session.kind === 'user' && !this.config.project && !this.config.scopedDocument && attachment.scope.length === 1 && attachment.scope[0] === HOME_ID) { attachment.scope = []; attachment.scopeNames = [] }
+    if (session.kind === 'user' && !this.config.project && !this.config.scopedDocument && attachment.scope.length === 1 && attachment.scope[0] === homePath(this.state.replica)[0]) { attachment.scope = []; attachment.scopeNames = [] }
     if (generation !== this.authGeneration) return
     let replica = this.state.replica
     const same = replica.meta.scope.length === attachment.scope.length && replica.meta.scope.every((s, i) => attachment.scope[i] === s)
@@ -1578,7 +1578,7 @@ export class App {
     if (row && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
   rewriteRowAt(at: Scope, id: string, parsed: import('./rows').ParsedInput, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
-    if (id === HOME_ID) return
+    if (this.isHome([...this.state.view, ...at, id])) return
     if ((parsed.children?.length || parsed.peer !== undefined) && !this.groupedEdit) { this.together(() => this.rewriteRowAt(at, id, parsed, draft)); return }
     if (draft && draft.store !== this.state.replica.store) return
     let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
@@ -2323,7 +2323,7 @@ export class App {
   }
   /** The full text editor uses the same three-way merge as cells, preserving remote edits. */
   editCurrentText(text: string, draft: { store: Replica['store']; head: string; path: Scope }): void {
-    if (draft.store !== this.state.replica.store || !draft.path.length || draft.path.at(-1) === HOME_ID) return
+    if (draft.store !== this.state.replica.store || !draft.path.length || this.isHome(draft.path)) return
     const parent = draft.path.slice(0, -1), id = draft.path.at(-1)!
     if (headCid(this.state.replica) === draft.head) { this.edit(renameTask(this.state.replica, parent, id, text, this.now())); if (text.includes('\n')) this.titleFromText(draft.path); return }
     const branch = createReplica(this.state.replica.meta.peerId)
@@ -2341,7 +2341,7 @@ export class App {
    * row in the view (same type: only its text, and its done state for a task; another marker: the row in place).
    */
   rewriteCurrentRow(parsed: import('./rows').ParsedInput, draft: { store: Replica['store']; head: string; path: Scope }): void {
-    if (draft.store !== this.state.replica.store || !draft.path.length || draft.path.at(-1) === HOME_ID) return
+    if (draft.store !== this.state.replica.store || !draft.path.length || this.isHome(draft.path)) return
     const before = this.currentRow(), parent = draft.path.slice(0, -1), id = draft.path.at(-1)!
     if (!before) return
     this.together(() => {
@@ -2396,7 +2396,7 @@ export class App {
   }
   changeTemplate(type: string, templateId?: string, extras: Omit<RowExtras, 'store'> = {}): void {
     const path = this.state.templatePicker?.path
-    if (!path?.length || path.at(-1) === HOME_ID) return
+    if (!path?.length || this.isHome(path)) return
     this.together(() => {
       let r = this.state.replica
       if (templateId) r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, templateId, this.now())
@@ -2406,7 +2406,7 @@ export class App {
   }
   createLinkedTemplate(name: string, icon: string, inHome: boolean): void {
     const path = this.state.templatePicker?.path
-    if (!path?.length || path.at(-1) === HOME_ID) return
+    if (!path?.length || this.isHome(path)) return
     const parent = inHome ? homePath(this.state.replica) : path.slice(0, -1), id = newId(), title = name.trim() || 'Untitled template'
     this.together(() => {
       let r = addRow(this.state.replica, parent, TEMPLATE_TYPE, title, this.now(), { id })
@@ -2603,7 +2603,7 @@ export class App {
   }
   changeCurrentType(type: string): void {
     const path = this.state.view
-    if (path.length && path.at(-1) !== 'fos:home') this.edit(setRowType(this.state.replica, path.slice(0, -1), path.at(-1)!, type, this.now()))
+    if (path.length && !this.isHome(path)) this.edit(setRowType(this.state.replica, path.slice(0, -1), path.at(-1)!, type, this.now()))
   }
   /** Rows whose title matches `query` (of the row type `type`, when given). */
   searchLocalNodes(query: string, type?: string): Array<{ row: TaskView; path: Scope }> {
@@ -3636,7 +3636,7 @@ export class App {
     this.edit(setTaskDone(this.state.replica, [...this.state.view, ...at], task.id, !task.done, this.now()))
   }
   renameTaskAt(at: Scope, taskId: string, title: string): void {
-    if (taskId === HOME_ID) return
+    if (this.isHome([...this.state.view, taskId])) return
     this.edit(renameTask(this.state.replica, [...this.state.view, ...at], taskId, title, this.now()))
   }
   deleteTaskAt(at: Scope, taskId: string): void {
@@ -3903,18 +3903,19 @@ export class App {
   /** The Home descendant this device last viewed, kept as a setting row inside Home so every visit resumes there. */
   savedHomeView(replica: Replica): Scope {
     const home = homePath(replica)
-    if (home[0] !== HOME_ID) return home
+    if (!home.length) return home
     const saved = readNodeValue<unknown>(replica, home, `fos:setting:${replica.meta.peerId}:view`)
     const path = Array.isArray(saved) && saved.every((id): id is string => typeof id === 'string') ? [...home, ...saved] : null
     return path && path.length > home.length && view(replica, path) ? path : home
   }
   private rememberView(): void {
     const { view: current, replica, atRoot } = this.state
-    if (atRoot || homePath(replica)[0] !== HOME_ID || current[0] !== HOME_ID || current.length < 2) return
+    const home = homePath(replica)
+    if (atRoot || !home.length || current[0] !== home[0] || current.length < 2) return
     const key = this.settingKey('view'), relative = current.slice(1)
-    if (JSON.stringify(readNodeValue(replica, [HOME_ID], key)) === JSON.stringify(relative)) return
+    if (JSON.stringify(readNodeValue(replica, home, key)) === JSON.stringify(relative)) return
     // Navigation is not an edit: no undo entry, but the row syncs like any other.
-    this.set({ replica: writeNodeValue(replica, [HOME_ID], key, relative, this.now()) })
+    this.set({ replica: writeNodeValue(replica, home, key, relative, this.now()) })
     this.scheduleSync()
   }
 
@@ -3925,6 +3926,10 @@ export class App {
     const row = view(this.state.replica, [], true)?.tasks.find(row => row.construction?.peerId === 'fos')
     if (row) this.goTo([row.id])
     else this.notify('error', 'The Fos peer is unavailable in this context.')
+  }
+  /** Whether the row at `path` is a store root's Home (by its type). */
+  isHome(path: Scope): boolean {
+    return !!path.length && view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.type === HOME_TYPE
   }
   goToRoot(): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); this.ensureSettings(); this.set({ atRoot: true, view: [], selected: null, collapsed: [...new Set([...this.state.collapsed, HOME_ID])], contextMenu: null }) }
   /** Browser back/forward: return to the node, Settings or execution view a history entry recorded. */
@@ -4126,7 +4131,7 @@ export class App {
     const { replica, connection, session } = this.state
     if (this.virtualIdentity || session?.kind === 'peer') return false // a peer credential is fixed to its node
     const attached = [...replica.meta.scope, ...(replica.meta.localScope ?? [])]
-    const target = replica.meta.localScope?.length && !scope.length ? [HOME_ID] : scope
+    const target = replica.meta.localScope?.length && !scope.length ? homePath(replica) : scope
     const same = attached.length === target.length && attached.every((s, i) => target[i] === s)
     return (connection === 'online' || connection === 'syncing') && !isDirty(replica) && hasSynced(replica) && !same
   }

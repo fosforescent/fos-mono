@@ -18,7 +18,7 @@ import { standardHostRef } from '../sync/host-runtime'
  * usage; a non-paying account over the budget is refused before the evaluation opens. Texted messages use the same
  * handler (`createAccountOrganizer`, for channels/textCommands.ts); their submission waits in Home.
  */
-import { handlerResult, writeHandlerResult, proposeOrganizePlan, captureOutline, deleteTask, headCid, HOME_ID, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
+import { handlerResult, writeHandlerResult, proposeOrganizePlan, captureOutline, deleteTask, headCid, homePath, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
@@ -100,7 +100,7 @@ export function createAccountOrganizer(deps: AccountStoreDeps, runNode: RunNode)
   })
   return async (username: string, text: string, label: string): Promise<OrganizedResult | null> => {
     const placed = await edit(username, r => {
-      const at = resolveScope(r.store, headCid(r), [HOME_ID]) ? [HOME_ID] : []
+      const at = homePath(r)
       const request = requestOrganize(r, at, text, label, deps.now?.() ?? Date.now())
       const cid = resolveScope(request.replica.store, headCid(request.replica), request.path)!
       return { replica: request.replica, value: { path: request.path, expected: put(request.replica.store, valueContent(request.replica.store, cid)) } }

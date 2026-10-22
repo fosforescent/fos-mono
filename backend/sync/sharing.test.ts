@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
-import { addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -82,17 +82,17 @@ test('received links reuse the host peer under Home and do not grant access to t
   let r = ensureHomeContext(createReplica('guest-device'), 1)
   const first = ensureSharedLink(r, at, 'Lunch?', 2)
   r = first.replica
-  expect(first.path[0]).toBe('fos:home')
-  expect(view(r, ['fos:home'])!.tasks).toHaveLength(1)
+  expect(first.path[0]).toBe(HOME_ID)
+  expect(view(r, [HOME_ID])!.tasks).toHaveLength(1)
   expect(view(r, first.path.slice(0, -1))!.members[0].capabilities).toEqual([])
   expect(sharedAddressAt(r, first.path)).toEqual(at)
   const repeated = ensureSharedLink(r, at, 'Lunch?', 3)
   expect(repeated.replica).toBe(r)
   r = ensureSharedLink(r, { ...at, path: ['dinner'] }, 'Dinner?', 4).replica
-  expect(view(r, ['fos:home'])!.tasks).toHaveLength(1)
+  expect(view(r, [HOME_ID])!.tasks).toHaveLength(1)
   expect(view(r, first.path.slice(0, -1))!.tasks).toHaveLength(2)
   const anonymous = ensureSharedLink(ensureHomeContext(createReplica('anon'), 1), at, 'Lunch?', 2, true)
-  expect(view(anonymous.replica, ['fos:home'])!.tasks[0].title).toBe('Host')
+  expect(view(anonymous.replica, [HOME_ID])!.tasks[0].title).toBe('Host')
 })
 test('there is no configure route: publishing is a member edge the owner writes and syncs', () => {
   const s = setup() as any
@@ -125,7 +125,7 @@ test('allocation links expose only requested fields and reject mismatching sourc
   expect(saved.body.node.mine.fields.need).toEqual({ amount: 1, type: 'inventory', unit: 'dress' })
   expect(JSON.stringify(saved.body.node.mine)).not.toContain('private-bank')
   expect((await s.call('submit', input(visit.body, { fields: { need: { source: 'source' } } }), 'guest')).status).toBe(400)
-  expect(view(s.replicas.guest, ['fos:home'])!.tasks.some(t => view(s.replicas.guest, ['fos:home', t.id])?.members.some(m => m.peerId === 'user:host'))).toBe(true)
+  expect(view(s.replicas.guest, [HOME_ID])!.tasks.some(t => view(s.replicas.guest, [HOME_ID, t.id])?.members.some(m => m.peerId === 'user:host'))).toBe(true)
 })
 test('the public read endpoint serves the projection for embeds without recording a visitor', async () => {
   let host = addRow(createReplica('user:host'), [], NOTE_TYPE, '# A post\n\nWith a **body**.', 1, { id: 'post' })

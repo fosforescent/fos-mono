@@ -20,7 +20,7 @@ import { constructForm, formFields, formText, formTitle, formValueAt, positionFo
 import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
-import { memberEntryId } from './graph'
+import { memberEntryId, homeIdOf } from './graph'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
@@ -199,7 +199,8 @@ export function loadReplica(input: unknown): Replica {
 
 /** Home is an ordinary constructor child of the account root, with a stable identity. */
 export function homePath(replica: Replica): Scope {
-  return findChild(replica.store, headCid(replica), HOME_ID) ? [HOME_ID] : []
+  const id = homeIdOf(replica.store, headCid(replica))
+  return id ? [id] : []
 }
 
 /** Remember initialization in the graph so reopening a store cannot resurrect withdrawn refs. */
@@ -257,7 +258,7 @@ export function ensureHomeContext(replica: Replica, now: number, offers?: HostOf
 /** Attach a device's Home to the corresponding shared node, retaining its private root. */
 export function shareHome(replica: Replica): Replica {
   if (replica.meta.scope.length || replica.meta.localScope?.length || !homePath(replica).length) return replica
-  return { ...replica, meta: { ...replica.meta, localScope: [HOME_ID] } }
+  return { ...replica, meta: { ...replica.meta, localScope: homePath(replica) } }
 }
 
 export function headCid(replica: Replica): string {

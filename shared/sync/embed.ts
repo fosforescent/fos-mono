@@ -95,7 +95,7 @@ export const api = {
    * what it shares is its Home); returns whether it changed.
    */
   linkStore(handle: string, peerId: string, name: string, home: boolean, now: number): boolean {
-    const before = get(handle), after = linkLocalStore(before, peerId, name, now, home ? [HOME_ID] : [])
+    const before = get(handle), after = linkLocalStore(before, peerId, name, now, home ? homePath(before) : [])
     set(handle, after)
     return after !== before
   },
@@ -130,7 +130,7 @@ export const api = {
   setScope(handle: string, scopeJson: string, namesJson: string): void {
     const r = get(handle)
     const requested = parse<Scope>(scopeJson, [])
-    const home = requested.length === 1 && requested[0] === HOME_ID && homePath(r).length
+    const home = requested.length === 1 && homePath(r).length && requested[0] === homePath(r)[0]
     set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []) } }))
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },

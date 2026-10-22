@@ -25,7 +25,7 @@ import { alternativePicker, proposalPreview, clearProposal } from './alternative
 
 import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
-import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
@@ -456,7 +456,8 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   const labels = app.labels()
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
-  const settingsContext = view.length > 0 && view[0] !== HOME_ID && !state.replica.meta.scope.length && !!viewAt(state.replica, [])?.tasks.some(row => row.id === HOME_ID)
+  const home = homePath(state.replica)
+  const settingsContext = view.length > 0 && view[0] !== home[0] && !state.replica.meta.scope.length && !!home.length
   const homeCrumb = button('crumb', settingsContext || !labels.scope.length ? '' : shortCrumb(pathLabel(labels.scope)), () => settingsContext ? app.goToRoot() : app.goTo([]))
   if (settingsContext) glyphCrumb(homeCrumb, '⚙', 'Device root')
   else if (!labels.scope.length) glyphCrumb(homeCrumb, '⌂', 'Home')
@@ -468,7 +469,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   } else {
     crumbs.append(homeCrumb)
     view.forEach((_id, index) => {
-      if (_id === HOME_ID) return
+      if (app.isHome(view.slice(0, index + 1))) return
       const row = viewAt(state.replica, view.slice(0, index), true)?.tasks.find(row => row.id === _id)
       const crumb = button('crumb', shortCrumb(labels.view[index] ?? '…'), () => app.goTo(view.slice(0, index + 1)))
       crumb.title = labels.view[index] ?? ''
@@ -1475,7 +1476,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const raw = preview || !row ? title : titleText(row)
     const input = document.createElement('textarea'); input.className = 'edit node-title-input'; input.rows = 1
     input.setAttribute('aria-label', 'Current node text'); input.placeholder = 'Row text…'; input.value = raw
-    input.readOnly = !!preview || !row || row.id === HOME_ID || !!row.refPeer
+    input.readOnly = !!preview || !row || row.type === HOME_TYPE || !!row.refPeer
     const titleRow = div('node-title-row task', ''), check = span('node-title-check', ''), after = span('node-title-after', '')
     const editing = span('title editing', ''); editing.append(input, kindPreview(input, app), peerAutocomplete(input, app))
     titleRow.append(check, editing, after)
@@ -1761,15 +1762,15 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const matches = (row: TaskView): boolean => textMatches(row, [...state.view, row.id])
   node = { ...node, tasks: node.tasks.filter(row => settingKeyFromName(row.construction?.name) !== 'history') }
   // Home lists one of its bookkeeping rows, where this device left off; the other constructors stay in Settings.
-  if (state.view.length === 1 && state.view[0] === HOME_ID && !state.atRoot) {
-    const remembered = viewAt(state.replica, [HOME_ID], true)?.tasks.find(row => row.construction?.name === app.settingKey('view'))
+  if (state.view.length === 1 && app.isHome(state.view) && !state.atRoot) {
+    const remembered = viewAt(state.replica, state.view, true)?.tasks.find(row => row.construction?.name === app.settingKey('view'))
     if (remembered && !node.tasks.some(row => row.id === remembered.id)) node = { ...node, tasks: [...node.tasks, remembered] }
   }
   const filtered = prefs.search ? { ...node, tasks: node.tasks.filter(matches) } : node
   let rows = renderRows(filtered, [], 0, state, app)
   const preview = proposalPreview(app)
   // Home shows what relays delivered to this device
-  const inbox = !preview && state.view.length === 1 && state.view[0] === HOME_ID && !state.atRoot ? renderRelayInbox(app) : null
+  const inbox = !preview && state.view.length === 1 && app.isHome(state.view) && !state.atRoot ? renderRelayInbox(app) : null
   if (inbox) rows = [inbox, ...rows]
   if (!preview && prefs.layout === 'tree') { const files = filesystemRows(app, prefs.search); if (files) rows.push(files) }
   // a node with nothing of the user's own yet (the seeded standard library does not count) shows the first-run help

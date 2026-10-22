@@ -14,7 +14,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 let a
 async function main() {
   // an address is the owner and the node's path; whether it may be visited is the node's membership
-  const at = { owner: 'host@example.test', path: ['fos:home', 'poll'] }
+  const at = { owner: 'host@example.test', path: [c.HOME_ID, 'poll'] }
   const url = shareUrl(at)
   assert.deepEqual(sharedAddress(new URL(url).hash), at)
   assert.equal(sharedAddress('#share=%bad'), null)
@@ -80,7 +80,7 @@ async function main() {
   assert.equal(a.state.view.length, 3, 'the link sits below the host row in Home')
   const linkId = a.state.view.at(-1)
   assert.deepEqual(sharedAddressAt(a.state.replica, a.state.view), at)
-  const home = view(a.state.replica, ['fos:home'])
+  const home = view(a.state.replica, [c.HOME_ID])
   assert(home.tasks.some(t => t.title === 'My private task'))
   assert(home.tasks.some(t => t.title === 'Host'))
   const panel = document.querySelector('.shared-node')
@@ -103,10 +103,10 @@ async function main() {
   assert.deepEqual(saved.body.approvals, ['proposal:p'])
   assert(!JSON.stringify(saved.body).includes('My private task'))
   assert.equal(a.state.session, null)
-  a.goTo(['fos:home']); await tick(); assert.equal(panel.hidden, true)
+  a.goTo([c.HOME_ID]); await tick(); assert.equal(panel.hidden, true)
   assert(!root.classList.contains('shared-site'), 'leaving the shared ref shows the app again')
   a.openSharedLink(linkId); await tick(); assert.equal(panel.hidden, false)
-  assert.equal(view(a.state.replica, ['fos:home']).tasks.filter(t => t.title === 'Host').length, 1)
+  assert.equal(view(a.state.replica, [c.HOME_ID]).tasks.filter(t => t.title === 'Host').length, 1)
   assert.equal(panel.querySelector('input[autocomplete="nickname"]').value, 'Pat')
   form = panel.querySelector('form')
   const search = form.querySelector('input[placeholder="Find a value in your context"]')

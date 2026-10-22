@@ -101,7 +101,9 @@ mod tests {
         core.call("open", &[json!("h"), Value::Null, json!("dev")]).unwrap();
         // a device root's own rows live in Home
         let home = core.call_string("homePath", &[json!("h")]).unwrap();
-        assert_eq!(home, r#"["fos:home"]"#);
+        // Home is the device root's row of the Home type: one step, its id a content address
+        let steps: Vec<String> = serde_json::from_str(&home).unwrap();
+        assert_eq!(steps.len(), 1);
         let task = core.call_json("addTask", &[json!("h"), json!(home), json!("hello"), json!(1)]).unwrap();
         assert_eq!(task["title"], "hello");
         let tree = core.call_json("tree", &[json!("h"), json!("[]")]).unwrap();

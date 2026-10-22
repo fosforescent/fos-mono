@@ -90,16 +90,6 @@ test('handler demands and their supplied values share the same flow primitive', 
 })
 
 
-test('legacy Home template becomes an ordinary container without losing children', () => {
-  let r = addRow(createReplica(), [], TEMPLATE_TYPE, 'Home', 1, { id: HOME_ID })
-  r = addTask(r, [HOME_ID], 'Keep this', 2, 'child')
-  r = ensureHomeContext(r, 3)
-  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.type).toBe(HOME_TYPE)
-  expect(view(r, [HOME_ID])!.tasks[0]!.id).toBe('child')
-  expect(ensureHomeContext(r, 4)).toBe(r)
-})
-
-
 test('Home branches survive normalization and keep their separate children', () => {
   let r = ensureHomeContext(createReplica(), 0)
   r = addTask(r, [HOME_ID], 'Original', 1, 'original')
