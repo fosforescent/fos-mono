@@ -817,9 +817,9 @@ function readPointer(store: FosStore, cid: string): { peerId: string | null; edg
 }
 
 /** Both local and received branches request approval through this ordinary typed child ref. */
+/** A branch's flag asking for it to be merged: a row of the approve action on the option (what it is, its left). */
 export function mergeRequestEdge(store: FosStore, id: string): FosPathElem {
-  const type = store.primitive.approveAction.getId()
-  return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: 'request merge' } }, null))]
+  return [store.primitive.approveAction.getId(), put(store, refNodeContent(store, { alias: { id: hashContent({ data: { description: { content: id } }, children: [] }) } }, null))]
 }
 
 /** Build and insert a choice node; the alternatives are sorted so the cid is deterministic. */
@@ -857,7 +857,7 @@ export function readChoice(store: FosStore, choiceCid: string): ChoiceRecord {
     } else if (instr === store.primitive.optionNotSelectedConstructor.getId()) {
       const pointer = readPointer(store, target)
       const basePointer = content(store, target).children.find(e => e[0] === store.primitive.conflictBaseNode.getId())
-      const requestMerge = content(store, target).children.find(e => content(store, e[1]).data.name?.content === 'request merge')?.[1]
+      const requestMerge = content(store, target).children.find(e => e[0] === store.primitive.approveAction.getId())?.[1]
       options.push({ peerId: pointer.peerId ?? 'unknown', edge: pointer.edge, ...(requestMerge ? { requestMerge } : {}), ...(basePointer ? { base: readPointer(store, basePointer[1]).edge } : {}) })
     }
   }
@@ -2127,55 +2127,34 @@ function textNode(store: FosStore, text: string): string {
   return put(store, { data: { description: { content: text } }, children: [] })
 }
 
-/** Proposal instances are typed refs with a branch argument and an input requirement.
- * The parent ref owns the constructor; the branch holds its proposed value and merge base.
+/**
+ * A submission: a candidate value for a mutable ref, with the value it was based on and who sent it, as rows of the
+ * language's own submission constructors. `name` is the branch it carries (a peer may send one per branch; its main
+ * one has none): a label, never read for what the submission is. A rejected one says so in its data.
  */
 export function proposalContent(store: FosStore, peerId: string, name: string, contentCid: string, baseCid: string, timestamp: number, status: 'open' | 'rejected' = 'open'): FosNodeContent {
-  const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`
-  const branchType = store.primitive.rootInstructionNode.getId()
-  const textType = store.primitive.documentField.getId()
-  const argument = (key: string, type: string, target: string | null, history: FosPathElem[] = []): FosPathElem => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history))]
-  const constructor = put(store, {
-    data: { description: { content: name || 'Proposal' }, peerId: { content: peerId }, updated: { time: timestamp } },
-    children: [
-      argument('branch', branchType, contentCid, [[store.primitive.previousVersion.getId(), baseCid]]),
-      mergeRequestEdge(store, id),
-      argument('status', textType, textNode(store, status))
-    ]
-  })
-  return refNodeContent(store, { alias: { id }, name: { content: 'branch' }, updated: { time: timestamp } }, constructor, [])
+  const p = store.primitive
+  const children: FosPathElem[] = [
+    [p.senderField.getId(), put(store, { data: { peerId: { content: peerId } }, children: [] })],
+    [p.proposedContentField.getId(), contentCid],
+    [p.previousVersion.getId(), baseCid]
+  ]
+  if (name) children.push([p.proposalNameField.getId(), textNode(store, name)])
+  return { data: { updated: { time: timestamp }, ...(status === 'rejected' ? { proposal: { status } } : {}) }, children }
 }
 
 export function readProposal(store: FosStore, cid: string): ProposalRecord | null {
-  const identity = content(store, cid)
-  if (valueContent(store, cid).children.some(edge => content(store, edge[1]).data.name?.content === 'branch') && valueContent(store, cid).data.peerId) {
-    const value = valueContent(store, cid)
-    const args = value.children.map(edge => content(store, identityCid(store, edge)))
-    const branch = args.find(arg => arg.data.name?.content === 'branch')
-    const status = args.find(arg => arg.data.name?.content === 'status')
-    const contentCid = branch && refValueCid(store, branch)
-    const baseCid = branch?.children.find(edge => isPrevEdge(store, edge))?.[1]
-    const peerId = value.data.peerId?.content
-    const statusCid = status && refValueCid(store, status)
-    if (!contentCid || !baseCid || !peerId) return null
-    return { cid, peerId, name: value.data.description?.content ?? '', contentCid, baseCid, timestamp: value.data.updated?.time ?? 0, status: statusCid && (readGraphValue(store, statusCid) === 'rejected' || content(store, statusCid).data.description?.content === 'rejected') ? 'rejected' : 'open' }
-  }
-  // Read older saved proposals; subsequent updates use the ordinary ref constructor.
-  const value = identity
-  let peerId = ''
-  let name = ''
-  let contentCid = ''
-  let baseCid = ''
-  let timestamp = 0
+  if (!store.table.has(cid)) return null
+  const value = content(store, cid), p = store.primitive
+  let peerId = '', name = '', contentCid = '', baseCid = ''
   for (const [instr, target] of value.children) {
-    if (instr === store.primitive.proposalNameField.getId()) name = content(store, target).data.description?.content ?? ''
-    else if (instr === store.primitive.proposedContentField.getId()) contentCid = target
-    else if (instr === store.primitive.senderField.getId()) peerId = content(store, target).data.description?.content ?? ''
-    else if (instr === store.primitive.timestampField.getId()) timestamp = Number(content(store, target).data.description?.content ?? 0) || 0
-    else if (instr === store.primitive.previousVersion.getId()) baseCid = target
+    if (instr === p.proposalNameField.getId()) name = content(store, target).data.description?.content ?? ''
+    else if (instr === p.proposedContentField.getId()) contentCid = target
+    else if (instr === p.senderField.getId()) peerId = content(store, target).data.peerId?.content ?? ''
+    else if (instr === p.previousVersion.getId()) baseCid = target
   }
   if (!peerId || !contentCid || !baseCid) return null
-  return { cid, peerId, name, status: value.data.proposal?.status === 'rejected' ? 'rejected' : 'open', contentCid, baseCid, timestamp }
+  return { cid, peerId, name, status: value.data.proposal?.status === 'rejected' ? 'rejected' : 'open', contentCid, baseCid, timestamp: value.data.updated?.time ?? 0 }
 }
 
 /** Mark a proposal rejected (kept on the node so the peer learns about it and it does not reopen by itself). */
