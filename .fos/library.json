@@ -1,6 +1,6 @@
 {
   "nodes": {
-    "v0.0.3-83d37701d60f0fcd3d47de44937b2ebaeee620d98e34b9ec5185445d9ce90102": {
+    "v0.0.3-42bd8850e5d4d73fb3cea56ee7b56a3894e48cd8ca6cd2917800b246356d352c": {
       "data": {
         "description": {
           "content": "Standard library"
@@ -18,6 +18,10 @@
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
           "v0.0.3-0c81bc6cb2c7ea05c7f45a107ce1c9985e670d8d44fbe179edc2098fe76a6fd8"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-ddab7ed3774d940681b0825dd58f249c0240c5bc864634d57d817647b3996ea3"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
@@ -125,31 +129,31 @@
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-2a85fc9a093d7131fe9211d5ecf931fa2fee20e62044bea033b2540830d67746"
+          "v0.0.3-06294bfc3880cbfdff8c651f7e00a6595ea1bb6163fac2449483e6d7f73e24b2"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-49788e1da6e780dfdf24d1aa51711a66cff9dc2659e47ea417f55bc148c5df8b"
+          "v0.0.3-1ff9e6d29f3a0d4402466ebd55dba1b4709bb3fc84115d5a916d245c55b69255"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-d26781298e61ebc2fd26c112a3182a1503581dcc7c017dd350988e689ac4f377"
+          "v0.0.3-c6950180b15e16e3de7257c7cfb1ef4f6b4d6a3df0b6a5a5f60b67069f203071"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-b926ce5ce9872d0d33a290582757e1e71078c93ffbba67ce486a65cabd9bf157"
+          "v0.0.3-32295c11157cf642ba72dff97291090fdfdd1e897d48cec4538d7a1a8607e11a"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-faa30f08cf08aedb4b90adb38928909f090f162738eaa0cf9b83a81092c5f718"
+          "v0.0.3-c46344feef36de3a49f1675003eae769dc83bf630bca01c964ca1e72fe26ae99"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-1f8c663d55f114e2679a59d00f0f29980533e5188bf5801f87fecad0d2168ca2"
+          "v0.0.3-4816f62462cb072ef86f1049e9b133943dfef3c28552d1c9c374643296bbc2a1"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-d7aca54f46677867ae119851c1f24c6621496da0e4c16c471bf22115986a1983"
+          "v0.0.3-ba0186af7db3fe7573a24b82a450a9808606f89bbc26609192b602b3ec95ff1a"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
@@ -157,11 +161,11 @@
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-938a8b63ba20754bc28712371de82772ba0e10fe93e8de9401519bea1b0e20f1"
+          "v0.0.3-41edba82f5de107197ab419f0784a6b0f5f92bd7fac8e0c6b1df4c0ee7006035"
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-69efcdf53efc095e111520b5d969221eb6eb0c73282d95cb035dcdc468211038"
+          "v0.0.3-cf645d11df361bbd4eb7d34cff93a3803a8b48599b7d04396c43dfedcfab810a"
         ],
         [
           "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
@@ -3508,7 +3512,7 @@
       },
       "children": []
     },
-    "v0.0.3-69efcdf53efc095e111520b5d969221eb6eb0c73282d95cb035dcdc468211038": {
+    "v0.0.3-cf645d11df361bbd4eb7d34cff93a3803a8b48599b7d04396c43dfedcfab810a": {
       "data": {
         "alias": {
           "id": "lib:project-coding-request"
@@ -3518,6 +3522,9 @@
         },
         "updated": {
           "time": 0
+        },
+        "presentation": {
+          "icon": "code"
         }
       },
       "children": [
@@ -3539,58 +3546,11 @@
         ],
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-ab61928d878cac3c6db7789b421ffab9dc382c6de4cef6f08cb66e7d64ccaeda"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-521f53919f7176521f2d1c3d07a13cfbaf1c003da8ff123756545a1ce102e34c"
+          "v0.0.3-621a469df00eb6e20493e89a5826728d0700f23963f9d8b53358d4953dbe7145"
         ]
       ]
     },
-    "v0.0.3-521f53919f7176521f2d1c3d07a13cfbaf1c003da8ff123756545a1ce102e34c": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:project-coding-request"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-3c9a4a15ef53342574832a65fa5e66e7e76b3b97bf5f98b43e73665276bebb6a"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-3c9a4a15ef53342574832a65fa5e66e7e76b3b97bf5f98b43e73665276bebb6a": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "code"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf": {
-      "data": {
-        "name": {
-          "content": "fos:value:text"
-        },
-        "form": {
-          "primitive": "text"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-ab61928d878cac3c6db7789b421ffab9dc382c6de4cef6f08cb66e7d64ccaeda": {
+    "v0.0.3-621a469df00eb6e20493e89a5826728d0700f23963f9d8b53358d4953dbe7145": {
       "data": {
         "alias": {
           "id": "lib:project-coding-request:execute"
@@ -3612,24 +3572,38 @@
       },
       "children": [
         [
-          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
-          "v0.0.3-8c06a017727f2bde67557563345875b30809869d7bee4024f61a4f84fe5a255e"
+          "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2",
+          "v0.0.3-1a05dd2d8aec7309cac65a4543029158e0829c2433102ed46a660a026346f683"
         ]
       ]
     },
-    "v0.0.3-8c06a017727f2bde67557563345875b30809869d7bee4024f61a4f84fe5a255e": {
+    "v0.0.3-1a05dd2d8aec7309cac65a4543029158e0829c2433102ed46a660a026346f683": {
+      "data": {
+        "presentation": {},
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
+          "v0.0.3-ec21ca1969ec4fc37b6b5744b3df00cee5620b10c145a49c2fa0fb4b29eac819"
+        ]
+      ]
+    },
+    "v0.0.3-ec21ca1969ec4fc37b6b5744b3df00cee5620b10c145a49c2fa0fb4b29eac819": {
       "data": {
         "alias": {
-          "id": "lib:project-coding-request:execute:request"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request"
         },
         "name": {
-          "content": "fos:agent-request"
+          "content": "request"
         }
       },
       "children": [
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-2165044125a344d3ccfb9bcf215ec5374b24d907d18665f3e9898952977ca860"
+          "v0.0.3-96f90d4e3722dbf21b6b9b3a0b0c2efafd18958eee706dc59746bf8f795afcb3"
         ],
         [
           "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
@@ -3637,29 +3611,32 @@
         ]
       ]
     },
-    "v0.0.3-2165044125a344d3ccfb9bcf215ec5374b24d907d18665f3e9898952977ca860": {
+    "v0.0.3-96f90d4e3722dbf21b6b9b3a0b0c2efafd18958eee706dc59746bf8f795afcb3": {
       "data": {
-        "presentation": {}
+        "presentation": {},
+        "name": {
+          "content": "request"
+        }
       },
       "children": [
         [
           "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-c6d11b61782720b9e7d10cc4556914a1a60f87435db9446f19beb5d384e8740d"
+          "v0.0.3-c7879c9197966442f834dc33f4ad972a7ad23959977c2552de19784428129cb7"
         ],
         [
           "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-7e50271f8fcaed32dd891ead05bddc0d93f19e54f5c03d4ebc22537cc8559a2d"
+          "v0.0.3-71c2b1b898a5d877c5163828c4fc5aea59248ced668d82d1c4a9616fd4602840"
         ],
         [
           "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
-          "v0.0.3-8f7b766f8c972cf0eed10ea539ad7c479d84da6268349a0945ac57c35fd138f3"
+          "v0.0.3-492aab7b6a82acdff5a8803f1c65e691e3505071592d2d8bea789d2fc1c45b3c"
         ]
       ]
     },
-    "v0.0.3-8f7b766f8c972cf0eed10ea539ad7c479d84da6268349a0945ac57c35fd138f3": {
+    "v0.0.3-492aab7b6a82acdff5a8803f1c65e691e3505071592d2d8bea789d2fc1c45b3c": {
       "data": {
         "alias": {
-          "id": "lib:project-coding-request:execute:request/field/worktree"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/worktree"
         },
         "name": {
           "content": "worktree"
@@ -3669,17 +3646,21 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-d730b26ba55b71b524260d0b5b0af0ce80177fac9d5d6d5d13c8b1db1fd36c21"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-d730b26ba55b71b524260d0b5b0af0ce80177fac9d5d6d5d13c8b1db1fd36c21": {
       "data": {
-        "name": {
-          "content": "worktree"
-        },
         "scalar": {
           "type": "boolean",
           "value": true
+        },
+        "name": {
+          "content": "worktree"
         }
       },
       "children": []
@@ -3695,10 +3676,10 @@
       },
       "children": []
     },
-    "v0.0.3-7e50271f8fcaed32dd891ead05bddc0d93f19e54f5c03d4ebc22537cc8559a2d": {
+    "v0.0.3-71c2b1b898a5d877c5163828c4fc5aea59248ced668d82d1c4a9616fd4602840": {
       "data": {
         "alias": {
-          "id": "lib:project-coding-request:execute:request/field/provider"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/provider"
         },
         "name": {
           "content": "provider"
@@ -3708,25 +3689,40 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-bdec676b18460965490d38e89afe99697a6b282fd991824412d7d572cf592afa"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-bdec676b18460965490d38e89afe99697a6b282fd991824412d7d572cf592afa": {
       "data": {
-        "name": {
-          "content": "provider"
-        },
         "scalar": {
           "type": "text",
           "value": "{{coding-agent}}"
+        },
+        "name": {
+          "content": "provider"
         }
       },
       "children": []
     },
-    "v0.0.3-c6d11b61782720b9e7d10cc4556914a1a60f87435db9446f19beb5d384e8740d": {
+    "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf": {
+      "data": {
+        "name": {
+          "content": "fos:value:text"
+        },
+        "form": {
+          "primitive": "text"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-c7879c9197966442f834dc33f4ad972a7ad23959977c2552de19784428129cb7": {
       "data": {
         "alias": {
-          "id": "lib:project-coding-request:execute:request/field/prompt"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/prompt"
         },
         "name": {
           "content": "prompt"
@@ -3736,17 +3732,21 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-f9f3a33166ac948c6d06170bb6007394f56ed541b5faa9fce1962ae4fe7e3513"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-f9f3a33166ac948c6d06170bb6007394f56ed541b5faa9fce1962ae4fe7e3513": {
       "data": {
-        "name": {
-          "content": "prompt"
-        },
         "scalar": {
           "type": "text",
           "value": "{{coding-instructions}}"
+        },
+        "name": {
+          "content": "prompt"
         }
       },
       "children": []
@@ -3868,7 +3868,7 @@
         ]
       ]
     },
-    "v0.0.3-938a8b63ba20754bc28712371de82772ba0e10fe93e8de9401519bea1b0e20f1": {
+    "v0.0.3-41edba82f5de107197ab419f0784a6b0f5f92bd7fac8e0c6b1df4c0ee7006035": {
       "data": {
         "alias": {
           "id": "lib:project-agent-workflow"
@@ -3878,6 +3878,9 @@
         },
         "updated": {
           "time": 0
+        },
+        "presentation": {
+          "icon": "workflow"
         }
       },
       "children": [
@@ -3931,47 +3934,11 @@
         ],
         [
           "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-7158c760824d5d6e63f6a87252adfb7dcd3541bb6978050b47cc8fae1f5f29f2"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-283c21d486c00246ebc7c06d1d29495d7cd5eaa142906c18d16191275f11214a"
+          "v0.0.3-fa0cbedd86adeaa95c5c7d0a83ad56a1bc1110fa59a89181376782e4111f1041"
         ]
       ]
     },
-    "v0.0.3-283c21d486c00246ebc7c06d1d29495d7cd5eaa142906c18d16191275f11214a": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:project-agent-workflow"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-c95ce358f64275bf7aff806cb23063399a2894500337f4d5f695e01aa3721040"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-c95ce358f64275bf7aff806cb23063399a2894500337f4d5f695e01aa3721040": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "workflow"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-7158c760824d5d6e63f6a87252adfb7dcd3541bb6978050b47cc8fae1f5f29f2": {
+    "v0.0.3-fa0cbedd86adeaa95c5c7d0a83ad56a1bc1110fa59a89181376782e4111f1041": {
       "data": {
         "alias": {
           "id": "lib:project-agent-workflow:after-merge"
@@ -4002,7 +3969,7 @@
         ],
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-3b281023e20f0e96cefabaf1d67777ee717f28a5623ee8093b0cc4a07dd46a75"
+          "v0.0.3-0f664a8973660fef9a5e8dbd38a01fe470f772df5eb4abd03f05eb93b86d8594"
         ],
         [
           "v0.0.3-5390328713846fe2cef3556b4ac3f4ee627a94e3e7f40172576a41d600c7311c",
@@ -4281,7 +4248,7 @@
       },
       "children": []
     },
-    "v0.0.3-3b281023e20f0e96cefabaf1d67777ee717f28a5623ee8093b0cc4a07dd46a75": {
+    "v0.0.3-0f664a8973660fef9a5e8dbd38a01fe470f772df5eb4abd03f05eb93b86d8594": {
       "data": {
         "alias": {
           "id": "lib:project-agent-workflow:verify"
@@ -4303,24 +4270,38 @@
       },
       "children": [
         [
-          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
-          "v0.0.3-c6828b90822e737686647e19a75d3741af030597a9e49f1c6389bb718db5166c"
+          "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2",
+          "v0.0.3-78fc8cd5c11d40e1155524f1d4dc430743df015b6f93bed5b782a5be25f09c7d"
         ]
       ]
     },
-    "v0.0.3-c6828b90822e737686647e19a75d3741af030597a9e49f1c6389bb718db5166c": {
+    "v0.0.3-78fc8cd5c11d40e1155524f1d4dc430743df015b6f93bed5b782a5be25f09c7d": {
+      "data": {
+        "presentation": {},
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
+          "v0.0.3-0fd5f74cfb9e8dc61de98dccfcab31e80df0f4e8a9ab0ce2bd7cfa8d98fc46ed"
+        ]
+      ]
+    },
+    "v0.0.3-0fd5f74cfb9e8dc61de98dccfcab31e80df0f4e8a9ab0ce2bd7cfa8d98fc46ed": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request"
         },
         "name": {
-          "content": "fos:agent-request"
+          "content": "request"
         }
       },
       "children": [
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-dfbcf45bb00bc5bf6ad275ab663097d2ec532733ad9798712c90fe789f5b9b1a"
+          "v0.0.3-edd8329caf6ac86f7028b50431b8d9e014ef87a615c68efe8e9c49f308d0f8ee"
         ],
         [
           "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
@@ -4328,41 +4309,44 @@
         ]
       ]
     },
-    "v0.0.3-dfbcf45bb00bc5bf6ad275ab663097d2ec532733ad9798712c90fe789f5b9b1a": {
+    "v0.0.3-edd8329caf6ac86f7028b50431b8d9e014ef87a615c68efe8e9c49f308d0f8ee": {
       "data": {
-        "presentation": {}
+        "presentation": {},
+        "name": {
+          "content": "request"
+        }
       },
       "children": [
         [
           "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-26ff00a75ba2c19f7506f823142c50629380d639c62567c24881a808b8c25497"
+          "v0.0.3-9a23f5199f580c5a3e8d8de62862e1b9b9f2126f120f81ce207bc0451fc474ce"
         ],
         [
           "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
-          "v0.0.3-50a1203f3997a74e42539e2ce1738e593228b91c81898b3efdc749c3dbada6ad"
+          "v0.0.3-c08cddad0ee56f5b6f1027811771ba88212b53f5ec0de34f558fbf470462fe67"
         ],
         [
           "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
-          "v0.0.3-9b08103f6eda6ff6b60d05157094b1c24cbba30f3de81a3831873625c2d481b1"
+          "v0.0.3-0eff48012a8e2b1bfe95fb4879728a9ea0c03f7b96c3060cb9f30b8df0f67641"
         ],
         [
           "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-c7d45cd32475186dd87801f666931927de24fedbacdce044f4079dc3231092e2"
+          "v0.0.3-ad8f1b591c7033e40cc99f615aa5de19860965020d6546f32869058cef79f1cd"
         ],
         [
           "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-0496f1156cb40342559c752346a43de86712162cc97b50a9c94875c4e7e39c62"
+          "v0.0.3-0c11f7c8c409ba14e70074036ebf97d37b5bea5d681262f1dd0fdf5fb5ddc161"
         ],
         [
           "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
-          "v0.0.3-61a424d636c2e776b0e5cf927e08616d79962f73b0d0b5a036409b66a50ad64f"
+          "v0.0.3-6e5d270c1f40692fb02e54c6d45808ec9120331ffaba841c6805a937bfca472b"
         ]
       ]
     },
-    "v0.0.3-61a424d636c2e776b0e5cf927e08616d79962f73b0d0b5a036409b66a50ad64f": {
+    "v0.0.3-6e5d270c1f40692fb02e54c6d45808ec9120331ffaba841c6805a937bfca472b": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/readOnly"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/readOnly"
         },
         "name": {
           "content": "readOnly"
@@ -4372,25 +4356,29 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-a28b5668c35b017422969556a21da1308722fe923788ce478d190d2d09c2a499"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-a28b5668c35b017422969556a21da1308722fe923788ce478d190d2d09c2a499": {
       "data": {
-        "name": {
-          "content": "readOnly"
-        },
         "scalar": {
           "type": "boolean",
           "value": true
+        },
+        "name": {
+          "content": "readOnly"
         }
       },
       "children": []
     },
-    "v0.0.3-0496f1156cb40342559c752346a43de86712162cc97b50a9c94875c4e7e39c62": {
+    "v0.0.3-0c11f7c8c409ba14e70074036ebf97d37b5bea5d681262f1dd0fdf5fb5ddc161": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/provider"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/provider"
         },
         "name": {
           "content": "provider"
@@ -4400,25 +4388,29 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-55a8f5a97194bf0e8b59e1109a1c07e560c807220903dc9d76dd85ef280f1328"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-55a8f5a97194bf0e8b59e1109a1c07e560c807220903dc9d76dd85ef280f1328": {
       "data": {
-        "name": {
-          "content": "provider"
-        },
         "scalar": {
           "type": "text",
           "value": "{{verification-agent}}"
+        },
+        "name": {
+          "content": "provider"
         }
       },
       "children": []
     },
-    "v0.0.3-c7d45cd32475186dd87801f666931927de24fedbacdce044f4079dc3231092e2": {
+    "v0.0.3-ad8f1b591c7033e40cc99f615aa5de19860965020d6546f32869058cef79f1cd": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/prompt"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/prompt"
         },
         "name": {
           "content": "prompt"
@@ -4428,25 +4420,29 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-cf1eac30b4e128f7a2a527327cde4eb09d9cb7a02279a99da77fb6fb55563f88"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-cf1eac30b4e128f7a2a527327cde4eb09d9cb7a02279a99da77fb6fb55563f88": {
       "data": {
-        "name": {
-          "content": "prompt"
-        },
         "scalar": {
           "type": "text",
           "value": "{{verification-instructions}}"
+        },
+        "name": {
+          "content": "prompt"
         }
       },
       "children": []
     },
-    "v0.0.3-9b08103f6eda6ff6b60d05157094b1c24cbba30f3de81a3831873625c2d481b1": {
+    "v0.0.3-0eff48012a8e2b1bfe95fb4879728a9ea0c03f7b96c3060cb9f30b8df0f67641": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/deployment"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/deployment"
         },
         "name": {
           "content": "deployment"
@@ -4455,28 +4451,32 @@
       "children": [
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-0a06fd7a5eb1f50862d7dce925c0a36fa35c831e850317a4601f06709c701a4c"
+          "v0.0.3-e30d63bc429b58cd3def47ddffd0ea4f8aabf7e109c484813e45c4d526a45320"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
-    "v0.0.3-0a06fd7a5eb1f50862d7dce925c0a36fa35c831e850317a4601f06709c701a4c": {
+    "v0.0.3-e30d63bc429b58cd3def47ddffd0ea4f8aabf7e109c484813e45c4d526a45320": {
       "data": {
+        "presentation": {},
         "name": {
           "content": "deployment"
-        },
-        "presentation": {}
+        }
       },
       "children": [
         [
           "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-fc5e2f51e4d759b3fbc70074326b3d6292246435779dcc3b8bae6af7f90fddc4"
+          "v0.0.3-bacf1f462384bd02d8e5426d10401a796f504ace83da66487e27ac7ad43bee46"
         ]
       ]
     },
-    "v0.0.3-fc5e2f51e4d759b3fbc70074326b3d6292246435779dcc3b8bae6af7f90fddc4": {
+    "v0.0.3-bacf1f462384bd02d8e5426d10401a796f504ace83da66487e27ac7ad43bee46": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/deployment/field/environment"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/deployment/field/environment"
         },
         "name": {
           "content": "environment"
@@ -4486,25 +4486,29 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-96029d2a80e7a5bc3e3e21e10b76badcb33c548d7864cf9fbc308f8f86c7e9b6"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-96029d2a80e7a5bc3e3e21e10b76badcb33c548d7864cf9fbc308f8f86c7e9b6": {
       "data": {
-        "name": {
-          "content": "environment"
-        },
         "scalar": {
           "type": "text",
           "value": "{{deployment-environment}}"
+        },
+        "name": {
+          "content": "environment"
         }
       },
       "children": []
     },
-    "v0.0.3-50a1203f3997a74e42539e2ce1738e593228b91c81898b3efdc749c3dbada6ad": {
+    "v0.0.3-c08cddad0ee56f5b6f1027811771ba88212b53f5ec0de34f558fbf470462fe67": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/chrome"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/chrome"
         },
         "name": {
           "content": "chrome"
@@ -4514,25 +4518,29 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-9f65e571ec763afd71e3402c93947263c600bac56abd3bc2506717987432d4b6"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
     "v0.0.3-9f65e571ec763afd71e3402c93947263c600bac56abd3bc2506717987432d4b6": {
       "data": {
-        "name": {
-          "content": "chrome"
-        },
         "scalar": {
           "type": "boolean",
           "value": true
+        },
+        "name": {
+          "content": "chrome"
         }
       },
       "children": []
     },
-    "v0.0.3-26ff00a75ba2c19f7506f823142c50629380d639c62567c24881a808b8c25497": {
+    "v0.0.3-9a23f5199f580c5a3e8d8de62862e1b9b9f2126f120f81ce207bc0451fc474ce": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/branch"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/branch"
         },
         "name": {
           "content": "branch"
@@ -4542,6 +4550,10 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-6d005cd6c45445be03fc3b36c640fd40f6988d166ba01c6dc0de3242e3f0327f"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
@@ -5360,13 +5372,16 @@
       },
       "children": []
     },
-    "v0.0.3-d7aca54f46677867ae119851c1f24c6621496da0e4c16c471bf22115986a1983": {
+    "v0.0.3-ba0186af7db3fe7573a24b82a450a9808606f89bbc26609192b602b3ec95ff1a": {
       "data": {
         "alias": {
           "id": "lib:relay"
         },
         "description": {
           "content": "Relay"
+        },
+        "presentation": {
+          "icon": "relay"
         }
       },
       "children": [
@@ -5377,33 +5392,6 @@
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
           "v0.0.3-851748804461fb5c1a5ee43ded92a836216128f8fe5b1a6b30f6c34e9d46e372"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-3b58510ab8f34cb03c07e8554f22c39ffe6f0052a5f07bc50e5c687a1c96be15"
-        ]
-      ]
-    },
-    "v0.0.3-3b58510ab8f34cb03c07e8554f22c39ffe6f0052a5f07bc50e5c687a1c96be15": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:relay"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-e06ab38adc11e1831445faec42970436db3e54d3c3f4df9a7d6b08044b14ec5f"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
@@ -5435,7 +5423,7 @@
       },
       "children": []
     },
-    "v0.0.3-1f8c663d55f114e2679a59d00f0f29980533e5188bf5801f87fecad0d2168ca2": {
+    "v0.0.3-4816f62462cb072ef86f1049e9b133943dfef3c28552d1c9c374643296bbc2a1": {
       "data": {
         "alias": {
           "id": "lib:meet"
@@ -5445,6 +5433,9 @@
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "meet"
         }
       },
       "children": [
@@ -5471,44 +5462,8 @@
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
           "v0.0.3-9de8b5de428aed0ff21455547afa0380837a51a6e7808f07d2885512236f6787"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-e734a22d2b11a703d23f9d4e3c45abf58422d452d1cfb43a48ddfe4721ddc087"
         ]
       ]
-    },
-    "v0.0.3-e734a22d2b11a703d23f9d4e3c45abf58422d452d1cfb43a48ddfe4721ddc087": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:meet"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-478072a8f356cd22374dd190f69d79b03031a8074321c5dd2320d22ae3ae030b"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-478072a8f356cd22374dd190f69d79b03031a8074321c5dd2320d22ae3ae030b": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "meet"
-        }
-      },
-      "children": []
     },
     "v0.0.3-9de8b5de428aed0ff21455547afa0380837a51a6e7808f07d2885512236f6787": {
       "data": {
@@ -5608,7 +5563,7 @@
       },
       "children": []
     },
-    "v0.0.3-faa30f08cf08aedb4b90adb38928909f090f162738eaa0cf9b83a81092c5f718": {
+    "v0.0.3-c46344feef36de3a49f1675003eae769dc83bf630bca01c964ca1e72fe26ae99": {
       "data": {
         "alias": {
           "id": "lib:research"
@@ -5618,6 +5573,9 @@
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "research"
         }
       },
       "children": [
@@ -5648,44 +5606,8 @@
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
           "v0.0.3-d5cd8e51fb5b848256694d62cf50490759b2f5ceedafc1ba39ad4103428c76c7"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-c75f56590557253cece7bd9515221703d3fa29d2f05b9b357b40107730eef4a0"
         ]
       ]
-    },
-    "v0.0.3-c75f56590557253cece7bd9515221703d3fa29d2f05b9b357b40107730eef4a0": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:research"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-9cfc7eb4ba86c7efa209d7d2bb905d81873d2700029d11956d3cd5fc42769680"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-9cfc7eb4ba86c7efa209d7d2bb905d81873d2700029d11956d3cd5fc42769680": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "research"
-        }
-      },
-      "children": []
     },
     "v0.0.3-d5cd8e51fb5b848256694d62cf50490759b2f5ceedafc1ba39ad4103428c76c7": {
       "data": {
@@ -5799,7 +5721,7 @@
       },
       "children": []
     },
-    "v0.0.3-b926ce5ce9872d0d33a290582757e1e71078c93ffbba67ce486a65cabd9bf157": {
+    "v0.0.3-32295c11157cf642ba72dff97291090fdfdd1e897d48cec4538d7a1a8607e11a": {
       "data": {
         "alias": {
           "id": "lib:contact"
@@ -5809,6 +5731,9 @@
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "contact"
         }
       },
       "children": [
@@ -5835,44 +5760,8 @@
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
           "v0.0.3-81cf3e3b16ff90e6b8c7580ea2836e916540063ca102eae4080f63a438df2a9f"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-8ac531a8ef8fa11fe425b4ad8ce5d7bb27d26c674398103bd27914b927a57e2b"
         ]
       ]
-    },
-    "v0.0.3-8ac531a8ef8fa11fe425b4ad8ce5d7bb27d26c674398103bd27914b927a57e2b": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:contact"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-12ce989318646e15e7b9826e1e245f65f19f2bbed70718a26f207f886d7ce605"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-12ce989318646e15e7b9826e1e245f65f19f2bbed70718a26f207f886d7ce605": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "contact"
-        }
-      },
-      "children": []
     },
     "v0.0.3-81cf3e3b16ff90e6b8c7580ea2836e916540063ca102eae4080f63a438df2a9f": {
       "data": {
@@ -5965,7 +5854,7 @@
       },
       "children": []
     },
-    "v0.0.3-d26781298e61ebc2fd26c112a3182a1503581dcc7c017dd350988e689ac4f377": {
+    "v0.0.3-c6950180b15e16e3de7257c7cfb1ef4f6b4d6a3df0b6a5a5f60b67069f203071": {
       "data": {
         "alias": {
           "id": "lib:paid-task"
@@ -5975,6 +5864,9 @@
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "paid"
         }
       },
       "children": [
@@ -6001,44 +5893,8 @@
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
           "v0.0.3-1d3d0248406038ecb66e63280300b340bc4625aa27b75b04141b1250ad5ad0ad"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-62bb6319ef8fbb3aa4d199ebd4ef937d2b46330d30e2a5a7827700945686ae12"
         ]
       ]
-    },
-    "v0.0.3-62bb6319ef8fbb3aa4d199ebd4ef937d2b46330d30e2a5a7827700945686ae12": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:paid-task"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-a443a321cf92350e3acf955a29d449557e22cab964b0ce7c7cb63702954d4e62"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-a443a321cf92350e3acf955a29d449557e22cab964b0ce7c7cb63702954d4e62": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "paid"
-        }
-      },
-      "children": []
     },
     "v0.0.3-1d3d0248406038ecb66e63280300b340bc4625aa27b75b04141b1250ad5ad0ad": {
       "data": {
@@ -6138,7 +5994,7 @@
       },
       "children": []
     },
-    "v0.0.3-49788e1da6e780dfdf24d1aa51711a66cff9dc2659e47ea417f55bc148c5df8b": {
+    "v0.0.3-1ff9e6d29f3a0d4402466ebd55dba1b4709bb3fc84115d5a916d245c55b69255": {
       "data": {
         "alias": {
           "id": "lib:poll"
@@ -6148,6 +6004,9 @@
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "poll"
         }
       },
       "children": [
@@ -6170,44 +6029,8 @@
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
           "v0.0.3-6499921a0df0b8a17cad8a75c069c0ddc4e0b4e73893bf499a404bb6ca625760"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-3435f2bc6d099215b0ae661d5dabc5bd8e0946de318f2032502deb47d548ec5e"
         ]
       ]
-    },
-    "v0.0.3-3435f2bc6d099215b0ae661d5dabc5bd8e0946de318f2032502deb47d548ec5e": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:poll"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-59d07e0037ad98fa06219188fdcec288815aaec77a35d8a2ad5938dde6078b12"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-59d07e0037ad98fa06219188fdcec288815aaec77a35d8a2ad5938dde6078b12": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "poll"
-        }
-      },
-      "children": []
     },
     "v0.0.3-6499921a0df0b8a17cad8a75c069c0ddc4e0b4e73893bf499a404bb6ca625760": {
       "data": {
@@ -6291,7 +6114,7 @@
       },
       "children": []
     },
-    "v0.0.3-2a85fc9a093d7131fe9211d5ecf931fa2fee20e62044bea033b2540830d67746": {
+    "v0.0.3-06294bfc3880cbfdff8c651f7e00a6595ea1bb6163fac2449483e6d7f73e24b2": {
       "data": {
         "alias": {
           "id": "lib:invoice"
@@ -6301,6 +6124,9 @@
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "invoice"
         }
       },
       "children": [
@@ -6335,44 +6161,8 @@
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
           "v0.0.3-fd6870894b2a12253f4142031bb79687152799e92001e2a3a38a7ac064241863"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-ba1d41b9680c3dfd7029ff943235d6d5aeba263c79009f92c71b0e209f0d2493"
         ]
       ]
-    },
-    "v0.0.3-ba1d41b9680c3dfd7029ff943235d6d5aeba263c79009f92c71b0e209f0d2493": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:invoice"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-d6d7eecd730a68c74668e5bcaf2b50471d8f6e969e50f9166c33bf2cd877f61c"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-d6d7eecd730a68c74668e5bcaf2b50471d8f6e969e50f9166c33bf2cd877f61c": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "invoice"
-        }
-      },
-      "children": []
     },
     "v0.0.3-fd6870894b2a12253f4142031bb79687152799e92001e2a3a38a7ac064241863": {
       "data": {
@@ -7837,6 +7627,57 @@
       },
       "children": []
     },
+    "v0.0.3-ddab7ed3774d940681b0825dd58f249c0240c5bc864634d57d817647b3996ea3": {
+      "data": {
+        "alias": {
+          "id": "lib:type:specification"
+        },
+        "name": {
+          "content": "lib:type:specification"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-09be8b9eda039cfdc5165af3f01a3cc64dddb7586f6fd19a79c964409baa8cef"
+        ]
+      ]
+    },
+    "v0.0.3-09be8b9eda039cfdc5165af3f01a3cc64dddb7586f6fd19a79c964409baa8cef": {
+      "data": {
+        "description": {
+          "content": "Specification"
+        },
+        "form": {
+          "headline": [
+            "body"
+          ],
+          "open": true
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
+        ],
+        [
+          "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d",
+          "v0.0.3-5d5cdbb8cc65fcca16c02fb4d21affa2a2a1857bf5d983d53a540d6f071c5d2c"
+        ]
+      ]
+    },
     "v0.0.3-0c81bc6cb2c7ea05c7f45a107ce1c9985e670d8d44fbe179edc2098fe76a6fd8": {
       "data": {
         "alias": {
@@ -7911,6 +7752,6 @@
       ]
     }
   },
-  "rootNodeId": "v0.0.3-83d37701d60f0fcd3d47de44937b2ebaeee620d98e34b9ec5185445d9ce90102",
+  "rootNodeId": "v0.0.3-42bd8850e5d4d73fb3cea56ee7b56a3894e48cd8ca6cd2917800b246356d352c",
   "version": "0.0.3"
 }

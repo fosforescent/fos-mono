@@ -27,6 +27,9 @@ import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, sharedAddressAt, type SharedAddress } from '../../shared/sync/sharing'
 import { writeTriggerState, triggerOffers as discoverTriggerOffers, triggerObservation, missingSchedule, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { executionTime, writeExecutionTime, writeHandlerResult } from '../../shared/sync/evaluation'
+import { recordVerificationIssue, recordVerificationReport, verificationReport, verificationTask } from '../../shared/sync/specifications'
+import { workflowJob } from '../../shared/sync/project-workflow'
+import { setTemplateIcon, templateIconAt } from '../../shared/sync/replica'
 import { consume, consumption } from '../../shared/sync/execution-access'
 import { addAttachment, attachmentAt } from '../../shared/sync/replica'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeEvaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
@@ -2378,13 +2381,13 @@ export class App {
     try { this.edit(linkRequirementOutput(this.state.replica, path, cid, this.now())) }
     catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
+  /** A template's icon is its presentation; a row made from one shows its template's. */
   templateIcon(path: Scope): string {
-    const own = readNodeValue<string>(this.state.replica, path, 'fos:icon')
-    if (typeof own === 'string') return own
+    const own = templateIconAt(this.state.replica, path)
+    if (own) return own
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
     const template = row?.template && resolveRef(this.state.replica, row.template.id)
-    const value = template ? readNodeValue<string>(this.state.replica, [...template.path, template.row.id], 'fos:icon') : null
-    return typeof value === 'string' ? value : ''
+    return template ? templateIconAt(this.state.replica, [...template.path, template.row.id]) ?? '' : ''
   }
   openTemplatePicker(path: Scope): void {
     document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
@@ -2406,7 +2409,7 @@ export class App {
     const parent = inHome ? homePath(this.state.replica) : path.slice(0, -1), id = newId(), title = name.trim() || 'Untitled template'
     this.together(() => {
       let r = addRow(this.state.replica, parent, TEMPLATE_TYPE, title, this.now(), { id })
-      if (icon.trim()) r = writeNodeValue(r, [...parent, id], 'fos:icon', icon.trim(), this.now())
+      if (icon.trim()) r = setTemplateIcon(r, [...parent, id], icon.trim(), this.now())
       r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, id, this.now())
       this.edit(r); this.closeModal(); this.goTo([...parent, id])
     })
@@ -2659,14 +2662,13 @@ export class App {
     if (!sameValue(current, report.specifications)) throw new Error('Specifications changed during verification. Run again.')
     const valid = new Set(current.map(spec => spec.id))
     if (report.results.length !== valid.size || new Set(report.results.map(result => result.id)).size !== valid.size || report.results.some(result => !valid.has(result.id) || !['pass', 'fail', 'blocked'].includes(result.status) || typeof result.evidence !== 'string' || !result.evidence.trim() || result.evidence.length > 16000)) throw new Error('Provide one pass, fail, or blocked result with evidence for every specification.')
-    const prior = readNodeValue(this.state.replica,root,`fos:verification-result:${report.commit}`)
-    if (prior) throw new Error('Results for this commit have already been recorded.')
-    let r = writeNodeValue(this.state.replica, root, `fos:verification-result:${report.commit}`, report, this.now())
-    const queued = readNodeValue(r,root,`fos:verification:${report.commit}`) as {task?: string} | null
-    if (queued?.task) { const path=[...root,queued.task]; const request=readNodeValue(r,path,'fos:verification-request'); if(request) r=writeNodeValue(r,path,'fos:verification-request',{...request as object,status:'reviewed'},this.now()) }
+    const task = verificationTask(this.state.replica, root, report.commit)
+    if (task && verificationReport(this.state.replica, task)) throw new Error('Results for this commit have already been recorded.')
+    let r = this.state.replica
+    if (task) r = recordVerificationReport(r, task, report, this.now())
     for (const result of report.results.filter(item => item.status !== 'pass')) {
       const id = newId(); r = addTask(r, root, `${result.status === 'fail' ? 'Issue' : 'Blocked verification'}: ${current.find(spec => spec.id === result.id)!.text.split('\n')[0]}`, this.now(), id)
-      r = writeNodeValue(r, [...root, id], 'fos:verification-issue', { commit: report.commit, specification: result.id, evidence: result.evidence }, this.now())
+      r = recordVerificationIssue(r, [...root, id], { commit: report.commit, specification: result.id, evidence: result.evidence }, this.now())
       r = addRow(r, [...root,id], NOTE_TYPE, result.evidence, this.now())
     }
     this.edit(r)
@@ -2785,7 +2787,7 @@ export class App {
   /** A second window must not launch a request already claimed in shared durable storage. */
   workflowClaimAvailable(path: Scope): boolean {
     const saved = loadReplica(this.config.storage.loadReplica())
-    const job = readNodeValue<{ status: string }>(saved, path, 'fos:workflow-job')
+    const job = workflowJob(saved, path)
     return job?.status === 'queued'
   }
   evaluationStatus(path = this.state.view) { return evaluationRecord(this.state.replica, path) }

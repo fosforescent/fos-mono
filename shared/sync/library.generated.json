@@ -1,6 +1,6 @@
 {
   "version": "0.0.3",
-  "rootNodeId": "v0.0.3-83d37701d60f0fcd3d47de44937b2ebaeee620d98e34b9ec5185445d9ce90102",
+  "rootNodeId": "v0.0.3-42bd8850e5d4d73fb3cea56ee7b56a3894e48cd8ca6cd2917800b246356d352c",
   "nodes": {
     "v0.0.3-002007cd31ad23201225eca0596e1df02c14500b9437a896384e13f4474ebb36": {
       "data": {
@@ -117,22 +117,6 @@
       },
       "children": []
     },
-    "v0.0.3-0496f1156cb40342559c752346a43de86712162cc97b50a9c94875c4e7e39c62": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/provider"
-        },
-        "name": {
-          "content": "provider"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-55a8f5a97194bf0e8b59e1109a1c07e560c807220903dc9d76dd85ef280f1328"
-        ]
-      ]
-    },
     "v0.0.3-04e1bb2e6a36a1c5caf530796e7cf72f395718d76014747c60768a8edb71827b": {
       "data": {
         "alias": {
@@ -162,6 +146,56 @@
         }
       },
       "children": []
+    },
+    "v0.0.3-06294bfc3880cbfdff8c651f7e00a6595ea1bb6163fac2449483e6d7f73e24b2": {
+      "data": {
+        "alias": {
+          "id": "lib:invoice"
+        },
+        "description": {
+          "content": "Invoice"
+        },
+        "updated": {
+          "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "invoice"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-23b9f82f6f6aba42c77c9f074e007b56a50868b3194e177bb8edcde5e3dcc5c8"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-599e92f862adf5adbf77d68ae9b67385da8b1056ca88da26e411bb5e2f5efc08"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-81e2ff466068b340ef509d2dfc934c34b6cd2da1e7ab7a2c7739cfe5e5713c22"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-2bb83e1c5b76673e34d89ac1c410cc6a8cb6c8f7d50e11aa9eaa6728d7b72ea6"
+        ],
+        [
+          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
+          "v0.0.3-1d670bc91035dad0123617d417682f705c0849f6acaba9967498e80d90783613"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-33d7d3d2d47134086c5b066a4319546232ad441767792abdf276686eb52691c6"
+        ],
+        [
+          "v0.0.3-e250a8936589a6e745bdfc5ae497f8b1d1e6a051535a6c4526cc5184e98d73d3",
+          "v0.0.3-8869208e8e075f152bc6530a216968543c8b71171ee3e568ca26b1bf69b7b82d"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-fd6870894b2a12253f4142031bb79687152799e92001e2a3a38a7ac064241863"
+        ]
+      ]
     },
     "v0.0.3-073b782878374bb3ab17c4200e983eb35b4f13911eee59850fe85020233cbe9d": {
       "data": {
@@ -222,17 +256,38 @@
         ]
       ]
     },
-    "v0.0.3-0a06fd7a5eb1f50862d7dce925c0a36fa35c831e850317a4601f06709c701a4c": {
+    "v0.0.3-09be8b9eda039cfdc5165af3f01a3cc64dddb7586f6fd19a79c964409baa8cef": {
       "data": {
-        "name": {
-          "content": "deployment"
+        "description": {
+          "content": "Specification"
         },
-        "presentation": {}
+        "form": {
+          "headline": [
+            "body"
+          ],
+          "open": true
+        }
       },
       "children": [
         [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-fc5e2f51e4d759b3fbc70074326b3d6292246435779dcc3b8bae6af7f90fddc4"
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
+        ],
+        [
+          "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d",
+          "v0.0.3-5d5cdbb8cc65fcca16c02fb4d21affa2a2a1857bf5d983d53a540d6f071c5d2c"
         ]
       ]
     },
@@ -256,6 +311,26 @@
         }
       },
       "children": []
+    },
+    "v0.0.3-0c11f7c8c409ba14e70074036ebf97d37b5bea5d681262f1dd0fdf5fb5ddc161": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/provider"
+        },
+        "name": {
+          "content": "provider"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-55a8f5a97194bf0e8b59e1109a1c07e560c807220903dc9d76dd85ef280f1328"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
     },
     "v0.0.3-0c6f73b51d40b5a361390ead2d366b49c2c2c38c98226932e38175f3bd6af5da": {
       "data": {
@@ -321,6 +396,26 @@
         ]
       ]
     },
+    "v0.0.3-0eff48012a8e2b1bfe95fb4879728a9ea0c03f7b96c3060cb9f30b8df0f67641": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/deployment"
+        },
+        "name": {
+          "content": "deployment"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-e30d63bc429b58cd3def47ddffd0ea4f8aabf7e109c484813e45c4d526a45320"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
     "v0.0.3-0f3d91ca7a2f9e0ccfa8553c2b843a027399409f6ae14cf6e37c556cd9d043d1": {
       "data": {
         "alias": {
@@ -334,6 +429,53 @@
         }
       },
       "children": []
+    },
+    "v0.0.3-0f664a8973660fef9a5e8dbd38a01fe470f772df5eb4abd03f05eb93b86d8594": {
+      "data": {
+        "alias": {
+          "id": "lib:project-agent-workflow:verify"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "tool",
+          "resource": "",
+          "tool": "fos.agent",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Verify the deployed project"
+        },
+        "updated": {
+          "time": 0
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2",
+          "v0.0.3-78fc8cd5c11d40e1155524f1d4dc430743df015b6f93bed5b782a5be25f09c7d"
+        ]
+      ]
+    },
+    "v0.0.3-0fd5f74cfb9e8dc61de98dccfcab31e80df0f4e8a9ab0ce2bd7cfa8d98fc46ed": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request"
+        },
+        "name": {
+          "content": "request"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-edd8329caf6ac86f7028b50431b8d9e014ef87a615c68efe8e9c49f308d0f8ee"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
     },
     "v0.0.3-11949a1e14b0f91e005f13ced50e7c7e27f663ad5a20337c1927d2980f56b6e8": {
       "data": {
@@ -358,15 +500,6 @@
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
-    },
-    "v0.0.3-12ce989318646e15e7b9826e1e245f65f19f2bbed70718a26f207f886d7ce605": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "contact"
-        }
-      },
-      "children": []
     },
     "v0.0.3-13085f67ac017eec569ef76b9de3ef618c5fc81b7f9c6a2a465223bb3fbd64ce": {
       "data": {
@@ -617,6 +750,20 @@
         ]
       ]
     },
+    "v0.0.3-1a05dd2d8aec7309cac65a4543029158e0829c2433102ed46a660a026346f683": {
+      "data": {
+        "presentation": {},
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
+          "v0.0.3-ec21ca1969ec4fc37b6b5744b3df00cee5620b10c145a49c2fa0fb4b29eac819"
+        ]
+      ]
+    },
     "v0.0.3-1c4f17975b6981b70aeb920a856d11aab4b7a1d37fb342af4a98a9cb7daea4eb": {
       "data": {
         "alias": {
@@ -782,65 +929,41 @@
         ]
       ]
     },
-    "v0.0.3-1f8c663d55f114e2679a59d00f0f29980533e5188bf5801f87fecad0d2168ca2": {
+    "v0.0.3-1ff9e6d29f3a0d4402466ebd55dba1b4709bb3fc84115d5a916d245c55b69255": {
       "data": {
         "alias": {
-          "id": "lib:meet"
+          "id": "lib:poll"
         },
         "description": {
-          "content": "Meet up"
+          "content": "Group decision"
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "poll"
         }
       },
       "children": [
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-6f9ea58be37900a4bd8ab046fcd0034fa4bc2fc7f2c1d9eb592db94989010b07"
+          "v0.0.3-435793485b3a432c9be102b4a61e1939d715e2b3e38337e822271474e03e31d1"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-eaf799035f0c83077a775f824f43a8789c1b7cbccbccf24e41906d006b95f772"
+          "v0.0.3-f5cbc57f159f1a3513022dc7f719dfe01f588ab6d9f048e181a0c4fda85628c2"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-ba1c4c2f4c2a2778a9a0372d1098240b503c8a5a295cdc1a51cd168b2b1f490b"
+          "v0.0.3-569c3a4c0f17514492ad9c93ff5ab37b4fb7697af177a5daabd75fb767aee886"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-03e6bdf9f591a9778b836d8da56964b85914a8db7f28fa62183a3074f96ce057"
+          "v0.0.3-b63cb1de9443f017ffdbfd1e935d67fe842438caff43a6dc035c3eff5b7e5016"
         ],
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-cf4b0d1d5fffffbf9a810399b46bd432b8fda9b1b93d7ef726b793757adc9b1e"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-9de8b5de428aed0ff21455547afa0380837a51a6e7808f07d2885512236f6787"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-e734a22d2b11a703d23f9d4e3c45abf58422d452d1cfb43a48ddfe4721ddc087"
-        ]
-      ]
-    },
-    "v0.0.3-2165044125a344d3ccfb9bcf215ec5374b24d907d18665f3e9898952977ca860": {
-      "data": {
-        "presentation": {}
-      },
-      "children": [
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-c6d11b61782720b9e7d10cc4556914a1a60f87435db9446f19beb5d384e8740d"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-7e50271f8fcaed32dd891ead05bddc0d93f19e54f5c03d4ebc22537cc8559a2d"
-        ],
-        [
-          "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
-          "v0.0.3-8f7b766f8c972cf0eed10ea539ad7c479d84da6268349a0945ac57c35fd138f3"
+          "v0.0.3-6499921a0df0b8a17cad8a75c069c0ddc4e0b4e73893bf499a404bb6ca625760"
         ]
       ]
     },
@@ -949,22 +1072,6 @@
       },
       "children": []
     },
-    "v0.0.3-26ff00a75ba2c19f7506f823142c50629380d639c62567c24881a808b8c25497": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/branch"
-        },
-        "name": {
-          "content": "branch"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-6d005cd6c45445be03fc3b36c640fd40f6988d166ba01c6dc0de3242e3f0327f"
-        ]
-      ]
-    },
     "v0.0.3-27803ffb9bfded1d77f7a07ccc11553bb1f40ede98391eadd75b6fe546e5bfe9": {
       "data": {
         "scalar": {
@@ -982,29 +1089,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-283c21d486c00246ebc7c06d1d29495d7cd5eaa142906c18d16191275f11214a": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:project-agent-workflow"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-c95ce358f64275bf7aff806cb23063399a2894500337f4d5f695e01aa3721040"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
     },
     "v0.0.3-28981cddcb24bb6cddb9ed7d9eeb514a7b81aed883fc9b63c508b418da93c871": {
       "data": {},
@@ -1036,57 +1120,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-2a85fc9a093d7131fe9211d5ecf931fa2fee20e62044bea033b2540830d67746": {
-      "data": {
-        "alias": {
-          "id": "lib:invoice"
-        },
-        "description": {
-          "content": "Invoice"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-23b9f82f6f6aba42c77c9f074e007b56a50868b3194e177bb8edcde5e3dcc5c8"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-599e92f862adf5adbf77d68ae9b67385da8b1056ca88da26e411bb5e2f5efc08"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-81e2ff466068b340ef509d2dfc934c34b6cd2da1e7ab7a2c7739cfe5e5713c22"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-2bb83e1c5b76673e34d89ac1c410cc6a8cb6c8f7d50e11aa9eaa6728d7b72ea6"
-        ],
-        [
-          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
-          "v0.0.3-1d670bc91035dad0123617d417682f705c0849f6acaba9967498e80d90783613"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-33d7d3d2d47134086c5b066a4319546232ad441767792abdf276686eb52691c6"
-        ],
-        [
-          "v0.0.3-e250a8936589a6e745bdfc5ae497f8b1d1e6a051535a6c4526cc5184e98d73d3",
-          "v0.0.3-8869208e8e075f152bc6530a216968543c8b71171ee3e568ca26b1bf69b7b82d"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-fd6870894b2a12253f4142031bb79687152799e92001e2a3a38a7ac064241863"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-ba1d41b9680c3dfd7029ff943235d6d5aeba263c79009f92c71b0e209f0d2493"
-        ]
-      ]
     },
     "v0.0.3-2ac77a23e084b3234dc82d40de38395bd3480ae65009f5e9139e48ca6d1ec5a6": {
       "data": {},
@@ -1279,6 +1312,48 @@
       },
       "children": []
     },
+    "v0.0.3-32295c11157cf642ba72dff97291090fdfdd1e897d48cec4538d7a1a8607e11a": {
+      "data": {
+        "alias": {
+          "id": "lib:contact"
+        },
+        "description": {
+          "content": "Contact form"
+        },
+        "updated": {
+          "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "contact"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-65bbebf3bce645a10e7559c6a0658b39302bc388513afcee706dee3367a26fa7"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-a1d539ea3c1634834ec065662b682cb5fb22b798c58837a010c72fc704e05537"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-a1e20115002f9c13078d5e9769e7d65f0b5b51c06cbb354946d9f3239202bef6"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-3f90199ddf5b74ed3c0e81b5129fe2eee44a7785076d33125d1186b53e96182b"
+        ],
+        [
+          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
+          "v0.0.3-abaee62994a768c26e8c5e4df9cea1688d0b854f8f2439948e636f1b1fe54a45"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-81cf3e3b16ff90e6b8c7580ea2836e916540063ca102eae4080f63a438df2a9f"
+        ]
+      ]
+    },
     "v0.0.3-324377eb0fac3b5efee84bee45e568ec9a916724d0a6ce85c3544d1a822f0883": {
       "data": {
         "capabilityDefinition": {
@@ -1344,29 +1419,6 @@
       "children": [
         [
           "v0.0.3-69e2e7c2ea0bdd697b1a9e92bd4d78a6813517173787670737ceb2f248c67cc0",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-3435f2bc6d099215b0ae661d5dabc5bd8e0946de318f2032502deb47d548ec5e": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:poll"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-59d07e0037ad98fa06219188fdcec288815aaec77a35d8a2ad5938dde6078b12"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
@@ -1712,56 +1764,6 @@
       },
       "children": []
     },
-    "v0.0.3-3b281023e20f0e96cefabaf1d67777ee717f28a5623ee8093b0cc4a07dd46a75": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow:verify"
-        },
-        "allocation": {
-          "amount": -1,
-          "capability": "tool",
-          "resource": "",
-          "tool": "fos.agent",
-          "type": "inventory",
-          "unit": "unit"
-        },
-        "description": {
-          "content": "Verify the deployed project"
-        },
-        "updated": {
-          "time": 0
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
-          "v0.0.3-c6828b90822e737686647e19a75d3741af030597a9e49f1c6389bb718db5166c"
-        ]
-      ]
-    },
-    "v0.0.3-3b58510ab8f34cb03c07e8554f22c39ffe6f0052a5f07bc50e5c687a1c96be15": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:relay"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-e06ab38adc11e1831445faec42970436db3e54d3c3f4df9a7d6b08044b14ec5f"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
     "v0.0.3-3b922510906e8139410a82103d500386b745d214b55f0377b6812148788aa115": {
       "data": {
         "alias": {
@@ -1804,15 +1806,6 @@
           "v0.0.3-0065a4fa77da07c85fabf487176ddd05fbefe77ec8ea21a866c54e05c9eb522b"
         ]
       ]
-    },
-    "v0.0.3-3c9a4a15ef53342574832a65fa5e66e7e76b3b97bf5f98b43e73665276bebb6a": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "code"
-        }
-      },
-      "children": []
     },
     "v0.0.3-3d5139982d4c812cee7a3b82c3c618f7b6f56505c3be6a79a2f86c55102a052a": {
       "data": {
@@ -1912,6 +1905,76 @@
         ]
       ]
     },
+    "v0.0.3-41edba82f5de107197ab419f0784a6b0f5f92bd7fac8e0c6b1df4c0ee7006035": {
+      "data": {
+        "alias": {
+          "id": "lib:project-agent-workflow"
+        },
+        "description": {
+          "content": "Project agent workflow"
+        },
+        "updated": {
+          "time": 0
+        },
+        "presentation": {
+          "icon": "workflow"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-ede08c4f9226842ef3e3ea089a300fae301b5a3b1fb118c6d4a2cd6b7bfd9a07"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-21eec875973f22f5b155c4148432827978949bf058c0304d8e278006543fc2f3"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-2f8edda5b90ee084bbe7002d759ee0185a09853877e34316db3fd0556c4a78fd"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-26672df358968e9178d511a18e765cd18c016bbcbe6d605f0d7c2fab1a2929a6"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-821f75828706743dace004884101f65e6dabcf36d8f5dcf7d4c85bf801b4cefb"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-1822baa06b483de1a6a96c984e11ddd9c9461a438f791fafd1110f41637c1812"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-bd89f42820e4481aacc9b4f8a6031d37d631613c334b99fa873eea84504b5f27"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-8a032b4dd5574927da2e4a2fec7c2adb8ea2656752167d2bd2ca9de45b29c98a"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-7be40209c251c9a52e7bccaa8f77c8a6307917e591e3ae50cf04cd8f6b92569f"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-d0a23694c9c785ac0ec070af88378e2fa43ca6dd492e025f9f72ca060d7ff3d8"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-99fa43f37494a23cf18e3bd88eab13ea313c61428b42673f94658ea15450d475"
+        ],
+        [
+          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
+          "v0.0.3-4fbc75ea26041646b24c266949ea1b649edcc949cfd5b556323e5bbea3f4d9ab"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-fa0cbedd86adeaa95c5c7d0a83ad56a1bc1110fa59a89181376782e4111f1041"
+        ]
+      ]
+    },
     "v0.0.3-423a03c9c76b9a2fe74fbe031fe992db3d77e664fa3ce84a5718c5bce438788f": {
       "data": {
         "scalar": {
@@ -1964,6 +2027,191 @@
         [
           "v0.0.3-43e50e47902391253e8d0ddc27780cf32e4ee9d164828b4ad1cfaf3a6e4c0aa4",
           "v0.0.3-7f4fac043e27c70909418028e6e8e32401963c5c8dd1d0e22d051e357eb2708a"
+        ]
+      ]
+    },
+    "v0.0.3-42bd8850e5d4d73fb3cea56ee7b56a3894e48cd8ca6cd2917800b246356d352c": {
+      "data": {
+        "description": {
+          "content": "Standard library"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-1eb042bf5d85ad9e107661c1671bc01edfb29dc7c4e11f816b8075aea12adf98"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-253e0f9abf093e2b899ba40e633a64105cc34e11ed09c928aae3714483e2e7cf"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-0c81bc6cb2c7ea05c7f45a107ce1c9985e670d8d44fbe179edc2098fe76a6fd8"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-ddab7ed3774d940681b0825dd58f249c0240c5bc864634d57d817647b3996ea3"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-d6e8ef1ea47432ae2e1fba579ef63b9e20ef471b9eb4fe06a9479a92aad4c3c5"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-5a9088466ebac33e21047d41f41d36b6a9f34aaf031e9c8c2494e433f7f14337"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-34bdb9cd04d71592cc79a2ee3bfd67b58c35d83f393b8a2e60cf9f9a134c3a61"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-3b922510906e8139410a82103d500386b745d214b55f0377b6812148788aa115"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-2ff7cff65ad625ae2d7b4190bb803e205722834b00ae01639f954eec7b366731"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-c554ea66dea910dd4711dae10194c6c4a0be984f9c93869e1dc032197a247a09"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-5d1ce6ab532cba92203fb0a1a10fff37350035e1fbb8a1e3d26a5af25ba2a598"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-4d9f47c8651e55dd2658f7c55840b5fbe02e9b7e81b6879b6e6a8d70ed6d87b0"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-a4f45c3104419e9062a9dd8627e5f244731937116982582754cfc80e891b3cca"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-d473f00623f9bd2da5fddc98723309ddcf29735ecc30ecb50cd207a2b17c591e"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-d036c91ea56d76a4db61ce4a590cb5f686acab8c97cdcdc88d84ef7d159f3d80"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-dfaf7ecef8213f14a3b7f2d2eccd7005acfe961c93f43e990f852d6e63216bd9"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-79e49742d71f05697c9f2b8c0cd5cbabaecee6bc291dd004028f8a54724f6014"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-03883085d9c5ae7425624b69acafe0816cc0774024831fca57d94647198d6d48"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-9f5204861a181be79e8d686d047af49643915c0166d24b73e9285a7688489889"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-66d9779e3e54cf968fa9302ca4f9b8b335af722860a5c7d10927e8fb6375b3de"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-74d0f47b48cf80a18ba5379039669adae7503ab6715f4564bb2c580a4a26948e"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-bad2d11064b84cf478a987727a3a494230b8be49e427458dfb771b4368e4e3d7"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-ec525281129979575f3bf2dd48047435a7941c7309dba614e1e0b49984f477f0"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-0d6ef8d2ee735b1a08ad3f10ba16a6a6a819a90f454f75adecb3b668ae13fc9d"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-87779bc10db525cff3bbb0e876e5e75d7feddf5baa982ca4e33710b71d72d6c2"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-b555de39708de72441c2639b6bb0ed65736ef50c3986f1ea8db433ec9b95ee80"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-13085f67ac017eec569ef76b9de3ef618c5fc81b7f9c6a2a465223bb3fbd64ce"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-c1b4cf74dde9c2fd3eb11bbe16e87bacb6e4b66ac947135539049edaca52119b"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-6ba6c83bb277edcee99208f76e33bb88f9240b33468bb3086e96e6dd5d6aa3a1"
+        ],
+        [
+          "v0.0.3-c86bc92b358e1c1700ab63057abbf15de32e1a7f45a6d4b66fb5ad3a27d160f1",
+          "v0.0.3-5df326fcb2adb48ebaaeae3e59c84620d5b37c2d297868367543a19c646ab8f9"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-06294bfc3880cbfdff8c651f7e00a6595ea1bb6163fac2449483e6d7f73e24b2"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-1ff9e6d29f3a0d4402466ebd55dba1b4709bb3fc84115d5a916d245c55b69255"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-c6950180b15e16e3de7257c7cfb1ef4f6b4d6a3df0b6a5a5f60b67069f203071"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-32295c11157cf642ba72dff97291090fdfdd1e897d48cec4538d7a1a8607e11a"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-c46344feef36de3a49f1675003eae769dc83bf630bca01c964ca1e72fe26ae99"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-4816f62462cb072ef86f1049e9b133943dfef3c28552d1c9c374643296bbc2a1"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-ba0186af7db3fe7573a24b82a450a9808606f89bbc26609192b602b3ec95ff1a"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-1f006f9e8874ffa1b1f5e2de8ffbc53195138be7bf926310de6b78742be1294c"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-41edba82f5de107197ab419f0784a6b0f5f92bd7fac8e0c6b1df4c0ee7006035"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-cf645d11df361bbd4eb7d34cff93a3803a8b48599b7d04396c43dfedcfab810a"
+        ],
+        [
+          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
+          "v0.0.3-3616d75461b913cad5e4117e4baff190f1cef6d7281002690c887db9d192022b"
+        ],
+        [
+          "v0.0.3-bc21b76553196c70e5cf2e4eeff008d1b7bc7f35f85e9c346dd5ea0199c06224",
+          "v0.0.3-4cb8347eda3c2eb198252e86c4e6beab05f0efed673c20416cb78d53e3e84201"
+        ],
+        [
+          "v0.0.3-dc37b6877a2e0a3d53015ada1bbfc869d149254cab1aa48e70d242e87beea8c9",
+          "v0.0.3-a477c2de3845dd0947ebc3072d785bd872789bfeb9b6dc65aaed29ff68fb0d08"
+        ],
+        [
+          "v0.0.3-dd11f47950271f9fad0e761d7301f903d36cb789f4b059d2edbb5216f2b73f04",
+          "v0.0.3-04e1bb2e6a36a1c5caf530796e7cf72f395718d76014747c60768a8edb71827b"
         ]
       ]
     },
@@ -2043,15 +2291,6 @@
         ]
       ]
     },
-    "v0.0.3-478072a8f356cd22374dd190f69d79b03031a8074321c5dd2320d22ae3ae030b": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "meet"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-4789a66fd0c69cd9f813c5b6260026bc7a2483179d429f239baaa252376e1356": {
       "data": {
         "alias": {
@@ -2077,42 +2316,65 @@
       },
       "children": []
     },
-    "v0.0.3-49788e1da6e780dfdf24d1aa51711a66cff9dc2659e47ea417f55bc148c5df8b": {
+    "v0.0.3-4816f62462cb072ef86f1049e9b133943dfef3c28552d1c9c374643296bbc2a1": {
       "data": {
         "alias": {
-          "id": "lib:poll"
+          "id": "lib:meet"
         },
         "description": {
-          "content": "Group decision"
+          "content": "Meet up"
         },
         "updated": {
           "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "meet"
         }
       },
       "children": [
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-435793485b3a432c9be102b4a61e1939d715e2b3e38337e822271474e03e31d1"
+          "v0.0.3-6f9ea58be37900a4bd8ab046fcd0034fa4bc2fc7f2c1d9eb592db94989010b07"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-f5cbc57f159f1a3513022dc7f719dfe01f588ab6d9f048e181a0c4fda85628c2"
+          "v0.0.3-eaf799035f0c83077a775f824f43a8789c1b7cbccbccf24e41906d006b95f772"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-569c3a4c0f17514492ad9c93ff5ab37b4fb7697af177a5daabd75fb767aee886"
+          "v0.0.3-ba1c4c2f4c2a2778a9a0372d1098240b503c8a5a295cdc1a51cd168b2b1f490b"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-b63cb1de9443f017ffdbfd1e935d67fe842438caff43a6dc035c3eff5b7e5016"
+          "v0.0.3-03e6bdf9f591a9778b836d8da56964b85914a8db7f28fa62183a3074f96ce057"
         ],
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-6499921a0df0b8a17cad8a75c069c0ddc4e0b4e73893bf499a404bb6ca625760"
+          "v0.0.3-cf4b0d1d5fffffbf9a810399b46bd432b8fda9b1b93d7ef726b793757adc9b1e"
         ],
         [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-3435f2bc6d099215b0ae661d5dabc5bd8e0946de318f2032502deb47d548ec5e"
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-9de8b5de428aed0ff21455547afa0380837a51a6e7808f07d2885512236f6787"
+        ]
+      ]
+    },
+    "v0.0.3-492aab7b6a82acdff5a8803f1c65e691e3505071592d2d8bea789d2fc1c45b3c": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/worktree"
+        },
+        "name": {
+          "content": "worktree"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-d730b26ba55b71b524260d0b5b0af0ce80177fac9d5d6d5d13c8b1db1fd36c21"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
@@ -2300,45 +2562,6 @@
       },
       "children": []
     },
-    "v0.0.3-50a1203f3997a74e42539e2ce1738e593228b91c81898b3efdc749c3dbada6ad": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/chrome"
-        },
-        "name": {
-          "content": "chrome"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-9f65e571ec763afd71e3402c93947263c600bac56abd3bc2506717987432d4b6"
-        ]
-      ]
-    },
-    "v0.0.3-521f53919f7176521f2d1c3d07a13cfbaf1c003da8ff123756545a1ce102e34c": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:project-coding-request"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-3c9a4a15ef53342574832a65fa5e66e7e76b3b97bf5f98b43e73665276bebb6a"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
     "v0.0.3-5390328713846fe2cef3556b4ac3f4ee627a94e3e7f40172576a41d600c7311c": {
       "data": {
         "capabilityDefinition": {
@@ -2409,12 +2632,12 @@
     },
     "v0.0.3-55a8f5a97194bf0e8b59e1109a1c07e560c807220903dc9d76dd85ef280f1328": {
       "data": {
-        "name": {
-          "content": "provider"
-        },
         "scalar": {
           "type": "text",
           "value": "{{verification-agent}}"
+        },
+        "name": {
+          "content": "provider"
         }
       },
       "children": []
@@ -2490,15 +2713,6 @@
         },
         "pattern": {
           "type": "lib:type:device-root"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-59d07e0037ad98fa06219188fdcec288815aaec77a35d8a2ad5938dde6078b12": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "poll"
         }
       },
       "children": []
@@ -2685,22 +2899,6 @@
         ]
       ]
     },
-    "v0.0.3-61a424d636c2e776b0e5cf927e08616d79962f73b0d0b5a036409b66a50ad64f": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/readOnly"
-        },
-        "name": {
-          "content": "readOnly"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-a28b5668c35b017422969556a21da1308722fe923788ce478d190d2d09c2a499"
-        ]
-      ]
-    },
     "v0.0.3-61aa9bf0bedbfa3b1308465d6108318fb9b846c3a0aef7e21024ddb521060feb": {
       "data": {},
       "children": [
@@ -2711,6 +2909,33 @@
         [
           "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc",
           "v0.0.3-5b76a7ce78a79fc7b7364ac1d58f989b52aad88eca4e9296375cbf6a4c1b030a"
+        ]
+      ]
+    },
+    "v0.0.3-621a469df00eb6e20493e89a5826728d0700f23963f9d8b53358d4953dbe7145": {
+      "data": {
+        "alias": {
+          "id": "lib:project-coding-request:execute"
+        },
+        "allocation": {
+          "amount": -1,
+          "capability": "tool",
+          "resource": "",
+          "tool": "fos.agent",
+          "type": "inventory",
+          "unit": "unit"
+        },
+        "description": {
+          "content": "Implement the branch from its notes and tasks; open a PR for review"
+        },
+        "updated": {
+          "time": 0
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2",
+          "v0.0.3-1a05dd2d8aec7309cac65a4543029158e0829c2433102ed46a660a026346f683"
         ]
       ]
     },
@@ -2734,29 +2959,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-62bb6319ef8fbb3aa4d199ebd4ef937d2b46330d30e2a5a7827700945686ae12": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:paid-task"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-a443a321cf92350e3acf955a29d449557e22cab964b0ce7c7cb63702954d4e62"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
     },
     "v0.0.3-63776f837419638091c0c9d16ab1b0aff335acbcc3fc2032cc2d3f67408f2614": {
       "data": {
@@ -3033,45 +3235,6 @@
         ]
       ]
     },
-    "v0.0.3-69efcdf53efc095e111520b5d969221eb6eb0c73282d95cb035dcdc468211038": {
-      "data": {
-        "alias": {
-          "id": "lib:project-coding-request"
-        },
-        "description": {
-          "content": "Request project coding agent"
-        },
-        "updated": {
-          "time": 0
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-6dd60b80e2901502e94d3c3043e3fb802e5ddada290ed262fc904ab1f6885897"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-07af6c4fce0b88d1bd5b7847a6510915a76bf0d591263388f27c374709985eaa"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-bd9e0fa9e448ba45449d9a28fec71d87151992a5665053e2ca5238aa08d21df8"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-002007cd31ad23201225eca0596e1df02c14500b9437a896384e13f4474ebb36"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-ab61928d878cac3c6db7789b421ffab9dc382c6de4cef6f08cb66e7d64ccaeda"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-521f53919f7176521f2d1c3d07a13cfbaf1c003da8ff123756545a1ce102e34c"
-        ]
-      ]
-    },
     "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a": {
       "data": {
         "description": {
@@ -3174,6 +3337,26 @@
         ]
       ]
     },
+    "v0.0.3-6e5d270c1f40692fb02e54c6d45808ec9120331ffaba841c6805a937bfca472b": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/readOnly"
+        },
+        "name": {
+          "content": "readOnly"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-a28b5668c35b017422969556a21da1308722fe923788ce478d190d2d09c2a499"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
     "v0.0.3-6f9ea58be37900a4bd8ab046fcd0034fa4bc2fc7f2c1d9eb592db94989010b07": {
       "data": {
         "alias": {
@@ -3258,42 +3441,23 @@
         ]
       ]
     },
-    "v0.0.3-7158c760824d5d6e63f6a87252adfb7dcd3541bb6978050b47cc8fae1f5f29f2": {
+    "v0.0.3-71c2b1b898a5d877c5163828c4fc5aea59248ced668d82d1c4a9616fd4602840": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:after-merge"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/provider"
         },
-        "description": {
-          "content": "After Fos branch merge"
-        },
-        "updated": {
-          "time": 0
+        "name": {
+          "content": "provider"
         }
       },
       "children": [
         [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-e7ee7c2b558f8079c75bd5b9f58d4dddd380a262bcc8d0f8897e5372bea7b52a"
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-bdec676b18460965490d38e89afe99697a6b282fd991824412d7d572cf592afa"
         ],
         [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-cd42767fcaffa4f5a562918bab93d9ad2729e1293d64a4b9ecd8a12bb356fa91"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-05b3c787c88ff714486a199b78f56185493541af68407ebca6518d2e37e12585"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-262463348c96f04d279728f98ecd0fb7ddaf2b9b97e000d6d229e2ad8c32612c"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-3b281023e20f0e96cefabaf1d67777ee717f28a5623ee8093b0cc4a07dd46a75"
-        ],
-        [
-          "v0.0.3-5390328713846fe2cef3556b4ac3f4ee627a94e3e7f40172576a41d600c7311c",
-          "v0.0.3-a054c0979fad4417d32206d15b7252eb04de279c5b5946160790ecc83c31f243"
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
@@ -3428,6 +3592,20 @@
         [
           "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-78fc8cd5c11d40e1155524f1d4dc430743df015b6f93bed5b782a5be25f09c7d": {
+      "data": {
+        "presentation": {},
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
+          "v0.0.3-0fd5f74cfb9e8dc61de98dccfcab31e80df0f4e8a9ab0ce2bd7cfa8d98fc46ed"
         ]
       ]
     },
@@ -3617,22 +3795,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-7e50271f8fcaed32dd891ead05bddc0d93f19e54f5c03d4ebc22537cc8559a2d": {
-      "data": {
-        "alias": {
-          "id": "lib:project-coding-request:execute:request/field/provider"
-        },
-        "name": {
-          "content": "provider"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-bdec676b18460965490d38e89afe99697a6b282fd991824412d7d572cf592afa"
-        ]
-      ]
     },
     "v0.0.3-7e5379b60403910957324709b16600f7bfbf05dda1b870fa46c695f1c4a9f9d4": {
       "data": {
@@ -3839,187 +4001,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-83d37701d60f0fcd3d47de44937b2ebaeee620d98e34b9ec5185445d9ce90102": {
-      "data": {
-        "description": {
-          "content": "Standard library"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-1eb042bf5d85ad9e107661c1671bc01edfb29dc7c4e11f816b8075aea12adf98"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-253e0f9abf093e2b899ba40e633a64105cc34e11ed09c928aae3714483e2e7cf"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-0c81bc6cb2c7ea05c7f45a107ce1c9985e670d8d44fbe179edc2098fe76a6fd8"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-d6e8ef1ea47432ae2e1fba579ef63b9e20ef471b9eb4fe06a9479a92aad4c3c5"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-5a9088466ebac33e21047d41f41d36b6a9f34aaf031e9c8c2494e433f7f14337"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-34bdb9cd04d71592cc79a2ee3bfd67b58c35d83f393b8a2e60cf9f9a134c3a61"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-3b922510906e8139410a82103d500386b745d214b55f0377b6812148788aa115"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-2ff7cff65ad625ae2d7b4190bb803e205722834b00ae01639f954eec7b366731"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-c554ea66dea910dd4711dae10194c6c4a0be984f9c93869e1dc032197a247a09"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-5d1ce6ab532cba92203fb0a1a10fff37350035e1fbb8a1e3d26a5af25ba2a598"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-4d9f47c8651e55dd2658f7c55840b5fbe02e9b7e81b6879b6e6a8d70ed6d87b0"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-a4f45c3104419e9062a9dd8627e5f244731937116982582754cfc80e891b3cca"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-d473f00623f9bd2da5fddc98723309ddcf29735ecc30ecb50cd207a2b17c591e"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-d036c91ea56d76a4db61ce4a590cb5f686acab8c97cdcdc88d84ef7d159f3d80"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-dfaf7ecef8213f14a3b7f2d2eccd7005acfe961c93f43e990f852d6e63216bd9"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-79e49742d71f05697c9f2b8c0cd5cbabaecee6bc291dd004028f8a54724f6014"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-03883085d9c5ae7425624b69acafe0816cc0774024831fca57d94647198d6d48"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-9f5204861a181be79e8d686d047af49643915c0166d24b73e9285a7688489889"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-66d9779e3e54cf968fa9302ca4f9b8b335af722860a5c7d10927e8fb6375b3de"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-74d0f47b48cf80a18ba5379039669adae7503ab6715f4564bb2c580a4a26948e"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-bad2d11064b84cf478a987727a3a494230b8be49e427458dfb771b4368e4e3d7"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-ec525281129979575f3bf2dd48047435a7941c7309dba614e1e0b49984f477f0"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-0d6ef8d2ee735b1a08ad3f10ba16a6a6a819a90f454f75adecb3b668ae13fc9d"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-87779bc10db525cff3bbb0e876e5e75d7feddf5baa982ca4e33710b71d72d6c2"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-b555de39708de72441c2639b6bb0ed65736ef50c3986f1ea8db433ec9b95ee80"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-13085f67ac017eec569ef76b9de3ef618c5fc81b7f9c6a2a465223bb3fbd64ce"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-c1b4cf74dde9c2fd3eb11bbe16e87bacb6e4b66ac947135539049edaca52119b"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-6ba6c83bb277edcee99208f76e33bb88f9240b33468bb3086e96e6dd5d6aa3a1"
-        ],
-        [
-          "v0.0.3-c86bc92b358e1c1700ab63057abbf15de32e1a7f45a6d4b66fb5ad3a27d160f1",
-          "v0.0.3-5df326fcb2adb48ebaaeae3e59c84620d5b37c2d297868367543a19c646ab8f9"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-2a85fc9a093d7131fe9211d5ecf931fa2fee20e62044bea033b2540830d67746"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-49788e1da6e780dfdf24d1aa51711a66cff9dc2659e47ea417f55bc148c5df8b"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-d26781298e61ebc2fd26c112a3182a1503581dcc7c017dd350988e689ac4f377"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-b926ce5ce9872d0d33a290582757e1e71078c93ffbba67ce486a65cabd9bf157"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-faa30f08cf08aedb4b90adb38928909f090f162738eaa0cf9b83a81092c5f718"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-1f8c663d55f114e2679a59d00f0f29980533e5188bf5801f87fecad0d2168ca2"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-d7aca54f46677867ae119851c1f24c6621496da0e4c16c471bf22115986a1983"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-1f006f9e8874ffa1b1f5e2de8ffbc53195138be7bf926310de6b78742be1294c"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-938a8b63ba20754bc28712371de82772ba0e10fe93e8de9401519bea1b0e20f1"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-69efcdf53efc095e111520b5d969221eb6eb0c73282d95cb035dcdc468211038"
-        ],
-        [
-          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
-          "v0.0.3-3616d75461b913cad5e4117e4baff190f1cef6d7281002690c887db9d192022b"
-        ],
-        [
-          "v0.0.3-bc21b76553196c70e5cf2e4eeff008d1b7bc7f35f85e9c346dd5ea0199c06224",
-          "v0.0.3-4cb8347eda3c2eb198252e86c4e6beab05f0efed673c20416cb78d53e3e84201"
-        ],
-        [
-          "v0.0.3-dc37b6877a2e0a3d53015ada1bbfc869d149254cab1aa48e70d242e87beea8c9",
-          "v0.0.3-a477c2de3845dd0947ebc3072d785bd872789bfeb9b6dc65aaed29ff68fb0d08"
-        ],
-        [
-          "v0.0.3-dd11f47950271f9fad0e761d7301f903d36cb789f4b059d2edbb5216f2b73f04",
-          "v0.0.3-04e1bb2e6a36a1c5caf530796e7cf72f395718d76014747c60768a8edb71827b"
-        ]
-      ]
     },
     "v0.0.3-85036499acf36a62f3f56381435c7492caa3700346ac04cbb1ebaa6571b937d0": {
       "data": {
@@ -4283,29 +4264,6 @@
         ]
       ]
     },
-    "v0.0.3-8ac531a8ef8fa11fe425b4ad8ce5d7bb27d26c674398103bd27914b927a57e2b": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:contact"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-12ce989318646e15e7b9826e1e245f65f19f2bbed70718a26f207f886d7ce605"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
     "v0.0.3-8b0f4f1155697a4885ef879ff08e08a9cf650f25c807cec0d040805b48edd0fd": {
       "data": {},
       "children": [
@@ -4344,26 +4302,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-8c06a017727f2bde67557563345875b30809869d7bee4024f61a4f84fe5a255e": {
-      "data": {
-        "alias": {
-          "id": "lib:project-coding-request:execute:request"
-        },
-        "name": {
-          "content": "fos:agent-request"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-2165044125a344d3ccfb9bcf215ec5374b24d907d18665f3e9898952977ca860"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
     },
     "v0.0.3-8cc52b0d58041eaa1a491798bd8e2d60e431c62c8a7453b332c911511bcbb203": {
       "data": {
@@ -4421,22 +4359,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-8f7b766f8c972cf0eed10ea539ad7c479d84da6268349a0945ac57c35fd138f3": {
-      "data": {
-        "alias": {
-          "id": "lib:project-coding-request:execute:request/field/worktree"
-        },
-        "name": {
-          "content": "worktree"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-d730b26ba55b71b524260d0b5b0af0ce80177fac9d5d6d5d13c8b1db1fd36c21"
-        ]
-      ]
     },
     "v0.0.3-8ff434326fc2bc84c9c3613af3b1994f9e227a14e188b2bdea70ba3e104607aa": {
       "data": {
@@ -4539,77 +4461,6 @@
       },
       "children": []
     },
-    "v0.0.3-938a8b63ba20754bc28712371de82772ba0e10fe93e8de9401519bea1b0e20f1": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow"
-        },
-        "description": {
-          "content": "Project agent workflow"
-        },
-        "updated": {
-          "time": 0
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-ede08c4f9226842ef3e3ea089a300fae301b5a3b1fb118c6d4a2cd6b7bfd9a07"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-21eec875973f22f5b155c4148432827978949bf058c0304d8e278006543fc2f3"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-2f8edda5b90ee084bbe7002d759ee0185a09853877e34316db3fd0556c4a78fd"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-26672df358968e9178d511a18e765cd18c016bbcbe6d605f0d7c2fab1a2929a6"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-821f75828706743dace004884101f65e6dabcf36d8f5dcf7d4c85bf801b4cefb"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-1822baa06b483de1a6a96c984e11ddd9c9461a438f791fafd1110f41637c1812"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-bd89f42820e4481aacc9b4f8a6031d37d631613c334b99fa873eea84504b5f27"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-8a032b4dd5574927da2e4a2fec7c2adb8ea2656752167d2bd2ca9de45b29c98a"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-7be40209c251c9a52e7bccaa8f77c8a6307917e591e3ae50cf04cd8f6b92569f"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-d0a23694c9c785ac0ec070af88378e2fa43ca6dd492e025f9f72ca060d7ff3d8"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-99fa43f37494a23cf18e3bd88eab13ea313c61428b42673f94658ea15450d475"
-        ],
-        [
-          "v0.0.3-86f03375ff8a3b06eedee77ea6f5f06e7a6848c1347b1a855ea8403b55be0bda",
-          "v0.0.3-4fbc75ea26041646b24c266949ea1b649edcc949cfd5b556323e5bbea3f4d9ab"
-        ],
-        [
-          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
-          "v0.0.3-7158c760824d5d6e63f6a87252adfb7dcd3541bb6978050b47cc8fae1f5f29f2"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-283c21d486c00246ebc7c06d1d29495d7cd5eaa142906c18d16191275f11214a"
-        ]
-      ]
-    },
     "v0.0.3-953ad1aa2484b81bd35d2d53cb8ef36efbd1b7c89b8dea5d2d71c31fc53d902a": {
       "data": {
         "capabilityDefinition": {
@@ -4635,12 +4486,12 @@
     },
     "v0.0.3-96029d2a80e7a5bc3e3e21e10b76badcb33c548d7864cf9fbc308f8f86c7e9b6": {
       "data": {
-        "name": {
-          "content": "environment"
-        },
         "scalar": {
           "type": "text",
           "value": "{{deployment-environment}}"
+        },
+        "name": {
+          "content": "environment"
         }
       },
       "children": []
@@ -4658,6 +4509,28 @@
         [
           "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-96f90d4e3722dbf21b6b9b3a0b0c2efafd18958eee706dc59746bf8f795afcb3": {
+      "data": {
+        "presentation": {},
+        "name": {
+          "content": "request"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
+          "v0.0.3-c7879c9197966442f834dc33f4ad972a7ad23959977c2552de19784428129cb7"
+        ],
+        [
+          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
+          "v0.0.3-71c2b1b898a5d877c5163828c4fc5aea59248ced668d82d1c4a9616fd4602840"
+        ],
+        [
+          "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
+          "v0.0.3-492aab7b6a82acdff5a8803f1c65e691e3505071592d2d8bea789d2fc1c45b3c"
         ]
       ]
     },
@@ -4745,19 +4618,23 @@
         ]
       ]
     },
-    "v0.0.3-9b08103f6eda6ff6b60d05157094b1c24cbba30f3de81a3831873625c2d481b1": {
+    "v0.0.3-9a23f5199f580c5a3e8d8de62862e1b9b9f2126f120f81ce207bc0451fc474ce": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/deployment"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/branch"
         },
         "name": {
-          "content": "deployment"
+          "content": "branch"
         }
       },
       "children": [
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-0a06fd7a5eb1f50862d7dce925c0a36fa35c831e850317a4601f06709c701a4c"
+          "v0.0.3-6d005cd6c45445be03fc3b36c640fd40f6988d166ba01c6dc0de3242e3f0327f"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
@@ -4857,15 +4734,6 @@
         ]
       ]
     },
-    "v0.0.3-9cfc7eb4ba86c7efa209d7d2bb905d81873d2700029d11956d3cd5fc42769680": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "research"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-9da0d26bea01ba5d777b35e1a37bc75ce5c622a45e62aed939f521b7a8d61c32": {
       "data": {
         "scalar": {
@@ -4914,12 +4782,12 @@
     },
     "v0.0.3-9f65e571ec763afd71e3402c93947263c600bac56abd3bc2506717987432d4b6": {
       "data": {
-        "name": {
-          "content": "chrome"
-        },
         "scalar": {
           "type": "boolean",
           "value": true
+        },
+        "name": {
+          "content": "chrome"
         }
       },
       "children": []
@@ -5008,12 +4876,12 @@
     },
     "v0.0.3-a28b5668c35b017422969556a21da1308722fe923788ce478d190d2d09c2a499": {
       "data": {
-        "name": {
-          "content": "readOnly"
-        },
         "scalar": {
           "type": "boolean",
           "value": true
+        },
+        "name": {
+          "content": "readOnly"
         }
       },
       "children": []
@@ -5068,15 +4936,6 @@
         "scalar": {
           "type": "text",
           "value": "calendar"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-a443a321cf92350e3acf955a29d449557e22cab964b0ce7c7cb63702954d4e62": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "paid"
         }
       },
       "children": []
@@ -5262,33 +5121,6 @@
       },
       "children": []
     },
-    "v0.0.3-ab61928d878cac3c6db7789b421ffab9dc382c6de4cef6f08cb66e7d64ccaeda": {
-      "data": {
-        "alias": {
-          "id": "lib:project-coding-request:execute"
-        },
-        "allocation": {
-          "amount": -1,
-          "capability": "tool",
-          "resource": "",
-          "tool": "fos.agent",
-          "type": "inventory",
-          "unit": "unit"
-        },
-        "description": {
-          "content": "Implement the branch from its notes and tasks; open a PR for review"
-        },
-        "updated": {
-          "time": 0
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
-          "v0.0.3-8c06a017727f2bde67557563345875b30809869d7bee4024f61a4f84fe5a255e"
-        ]
-      ]
-    },
     "v0.0.3-abaee62994a768c26e8c5e4df9cea1688d0b854f8f2439948e636f1b1fe54a45": {
       "data": {
         "alias": {
@@ -5332,6 +5164,26 @@
         }
       },
       "children": []
+    },
+    "v0.0.3-ad8f1b591c7033e40cc99f615aa5de19860965020d6546f32869058cef79f1cd": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/prompt"
+        },
+        "name": {
+          "content": "prompt"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-cf1eac30b4e128f7a2a527327cde4eb09d9cb7a02279a99da77fb6fb55563f88"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
     },
     "v0.0.3-ae22e9e0ca34c44e0a57962bd5eedce6280df5d1a66fc9cddfdb5b3e7abb9faf": {
       "data": {
@@ -5682,49 +5534,6 @@
       },
       "children": []
     },
-    "v0.0.3-b926ce5ce9872d0d33a290582757e1e71078c93ffbba67ce486a65cabd9bf157": {
-      "data": {
-        "alias": {
-          "id": "lib:contact"
-        },
-        "description": {
-          "content": "Contact form"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-65bbebf3bce645a10e7559c6a0658b39302bc388513afcee706dee3367a26fa7"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-a1d539ea3c1634834ec065662b682cb5fb22b798c58837a010c72fc704e05537"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-a1e20115002f9c13078d5e9769e7d65f0b5b51c06cbb354946d9f3239202bef6"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-3f90199ddf5b74ed3c0e81b5129fe2eee44a7785076d33125d1186b53e96182b"
-        ],
-        [
-          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
-          "v0.0.3-abaee62994a768c26e8c5e4df9cea1688d0b854f8f2439948e636f1b1fe54a45"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-81cf3e3b16ff90e6b8c7580ea2836e916540063ca102eae4080f63a438df2a9f"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-8ac531a8ef8fa11fe425b4ad8ce5d7bb27d26c674398103bd27914b927a57e2b"
-        ]
-      ]
-    },
     "v0.0.3-b98e6d6d0be15f629dc5e8dd4b334fa2a430f1dc28d402fa1b55a52680d950eb": {
       "data": {
         "description": {
@@ -5738,6 +5547,29 @@
         [
           "v0.0.3-1311f5f420f4bcf80b9840b0546a98c26747e61cb895088b862459f0604a4204",
           "v0.0.3-4f96cf64bbe0e471590bc6ad0c5240ba468f38b53a20b8e8f6cfbf2e2afab54c"
+        ]
+      ]
+    },
+    "v0.0.3-ba0186af7db3fe7573a24b82a450a9808606f89bbc26609192b602b3ec95ff1a": {
+      "data": {
+        "alias": {
+          "id": "lib:relay"
+        },
+        "description": {
+          "content": "Relay"
+        },
+        "presentation": {
+          "icon": "relay"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-b31bdf01dd67860e56f06e8cdeb8a9f1aac461a54d6a48a1c256db6c9ba37b8d"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-851748804461fb5c1a5ee43ded92a836216128f8fe5b1a6b30f6c34e9d46e372"
         ]
       ]
     },
@@ -5755,22 +5587,19 @@
       },
       "children": []
     },
-    "v0.0.3-ba1d41b9680c3dfd7029ff943235d6d5aeba263c79009f92c71b0e209f0d2493": {
+    "v0.0.3-bacf1f462384bd02d8e5426d10401a796f504ace83da66487e27ac7ad43bee46": {
       "data": {
         "alias": {
-          "id": "fos:icon:lib:invoice"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/deployment/field/environment"
         },
         "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
+          "content": "environment"
         }
       },
       "children": [
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-d6d7eecd730a68c74668e5bcaf2b50471d8f6e969e50f9166c33bf2cd877f61c"
+          "v0.0.3-96029d2a80e7a5bc3e3e21e10b76badcb33c548d7864cf9fbc308f8f86c7e9b6"
         ],
         [
           "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
@@ -5942,12 +5771,12 @@
     },
     "v0.0.3-bdec676b18460965490d38e89afe99697a6b282fd991824412d7d572cf592afa": {
       "data": {
-        "name": {
-          "content": "provider"
-        },
         "scalar": {
           "type": "text",
           "value": "{{coding-agent}}"
+        },
+        "name": {
+          "content": "provider"
         }
       },
       "children": []
@@ -6006,6 +5835,26 @@
         ]
       ]
     },
+    "v0.0.3-c08cddad0ee56f5b6f1027811771ba88212b53f5ec0de34f558fbf470462fe67": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/chrome"
+        },
+        "name": {
+          "content": "chrome"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-9f65e571ec763afd71e3402c93947263c600bac56abd3bc2506717987432d4b6"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
     "v0.0.3-c13fc605cbc19337cf7343530e821a0b7aacc5269796e3d3a31b1db2b4c1f4c2": {
       "data": {},
       "children": [
@@ -6045,6 +5894,52 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-a45b6b8fca4a2c1a219354d7793ebb5d03c5fe8630efcf65d4f69cba5ae6aa2c"
+        ]
+      ]
+    },
+    "v0.0.3-c46344feef36de3a49f1675003eae769dc83bf630bca01c964ca1e72fe26ae99": {
+      "data": {
+        "alias": {
+          "id": "lib:research"
+        },
+        "description": {
+          "content": "Research note"
+        },
+        "updated": {
+          "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "research"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-fc2cac6ea5a0dfc34b16ea8f2d6fd3a7541b22aa55ef06a39a3dd0a81c52bbd3"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-bc66919d32daee5bc8565478bb766219cbac7214bf9ccc0bc1178e71011531c9"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-ddc7350c8ff0afdb8df72c80f4f00c0254db08d322a04481d6f890c1d4d9420d"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-9f68698ee9d72eea248a9bd7b589d991cfc3d8a1f51fe5da9f4f616738ca5b87"
+        ],
+        [
+          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
+          "v0.0.3-3497178a65650cab2874da5266259c306d2b940e247350e43c45f663f144f00e"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-acf58dd59b326f59af838c9487200983cb88e18716b00fed68436e94ef382156"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-d5cd8e51fb5b848256694d62cf50490759b2f5ceedafc1ba39ad4103428c76c7"
         ]
       ]
     },
@@ -6126,39 +6021,45 @@
       },
       "children": []
     },
-    "v0.0.3-c6828b90822e737686647e19a75d3741af030597a9e49f1c6389bb718db5166c": {
+    "v0.0.3-c6950180b15e16e3de7257c7cfb1ef4f6b4d6a3df0b6a5a5f60b67069f203071": {
       "data": {
         "alias": {
-          "id": "lib:project-agent-workflow:verify:request"
+          "id": "lib:paid-task"
         },
-        "name": {
-          "content": "fos:agent-request"
+        "description": {
+          "content": "Paid task"
+        },
+        "updated": {
+          "time": 1792453618404
+        },
+        "presentation": {
+          "icon": "paid"
         }
       },
       "children": [
         [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-dfbcf45bb00bc5bf6ad275ab663097d2ec532733ad9798712c90fe789f5b9b1a"
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-6dc2264afb02cb2b482c1701a5ea2dd6bb176d0024b7c742a200a33aa2c57ff7"
         ],
         [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-c6d11b61782720b9e7d10cc4556914a1a60f87435db9446f19beb5d384e8740d": {
-      "data": {
-        "alias": {
-          "id": "lib:project-coding-request:execute:request/field/prompt"
-        },
-        "name": {
-          "content": "prompt"
-        }
-      },
-      "children": [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-166b87551d2488e06e52f175b9fb74ea189a2d30ebab2247b2be78a7377e234a"
+        ],
         [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-f9f3a33166ac948c6d06170bb6007394f56ed541b5faa9fce1962ae4fe7e3513"
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-447bb5febb332a3a0dc2ed5271a00315042a474716e4e145975da1945e51cd53"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-012b6a9a696cec5659255d53d9e5303083470d5b0e97238f1e02f3ade6951bad"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-90cf89ff8d65ef17245a8041d07e32e31df44a5f98030b724709ef905185b2f2"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-1d3d0248406038ecb66e63280300b340bc4625aa27b75b04141b1250ad5ad0ad"
         ]
       ]
     },
@@ -6173,33 +6074,10 @@
       },
       "children": []
     },
-    "v0.0.3-c75f56590557253cece7bd9515221703d3fa29d2f05b9b357b40107730eef4a0": {
+    "v0.0.3-c7879c9197966442f834dc33f4ad972a7ad23959977c2552de19784428129cb7": {
       "data": {
         "alias": {
-          "id": "fos:icon:lib:research"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-9cfc7eb4ba86c7efa209d7d2bb905d81873d2700029d11956d3cd5fc42769680"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-c7d45cd32475186dd87801f666931927de24fedbacdce044f4079dc3231092e2": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/prompt"
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/prompt"
         },
         "name": {
           "content": "prompt"
@@ -6208,7 +6086,11 @@
       "children": [
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-cf1eac30b4e128f7a2a527327cde4eb09d9cb7a02279a99da77fb6fb55563f88"
+          "v0.0.3-f9f3a33166ac948c6d06170bb6007394f56ed541b5faa9fce1962ae4fe7e3513"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
@@ -6278,15 +6160,6 @@
         },
         "updated": {
           "time": 1792453618404
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-c95ce358f64275bf7aff806cb23063399a2894500337f4d5f695e01aa3721040": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "workflow"
         }
       },
       "children": []
@@ -6373,12 +6246,12 @@
     },
     "v0.0.3-cf1eac30b4e128f7a2a527327cde4eb09d9cb7a02279a99da77fb6fb55563f88": {
       "data": {
-        "name": {
-          "content": "prompt"
-        },
         "scalar": {
           "type": "text",
           "value": "{{verification-instructions}}"
+        },
+        "name": {
+          "content": "prompt"
         }
       },
       "children": []
@@ -6403,6 +6276,44 @@
         }
       },
       "children": []
+    },
+    "v0.0.3-cf645d11df361bbd4eb7d34cff93a3803a8b48599b7d04396c43dfedcfab810a": {
+      "data": {
+        "alias": {
+          "id": "lib:project-coding-request"
+        },
+        "description": {
+          "content": "Request project coding agent"
+        },
+        "updated": {
+          "time": 0
+        },
+        "presentation": {
+          "icon": "code"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-6dd60b80e2901502e94d3c3043e3fb802e5ddada290ed262fc904ab1f6885897"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-07af6c4fce0b88d1bd5b7847a6510915a76bf0d591263388f27c374709985eaa"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-bd9e0fa9e448ba45449d9a28fec71d87151992a5665053e2ca5238aa08d21df8"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-002007cd31ad23201225eca0596e1df02c14500b9437a896384e13f4474ebb36"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-621a469df00eb6e20493e89a5826728d0700f23963f9d8b53358d4953dbe7145"
+        ]
+      ]
     },
     "v0.0.3-cf78041562312bc4f24cb6b21995101b679428f0e8975e6c6a8e9c4b5a36eeb0": {
       "data": {
@@ -6511,49 +6422,6 @@
         ]
       ]
     },
-    "v0.0.3-d26781298e61ebc2fd26c112a3182a1503581dcc7c017dd350988e689ac4f377": {
-      "data": {
-        "alias": {
-          "id": "lib:paid-task"
-        },
-        "description": {
-          "content": "Paid task"
-        },
-        "updated": {
-          "time": 1792453618404
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-6dc2264afb02cb2b482c1701a5ea2dd6bb176d0024b7c742a200a33aa2c57ff7"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-166b87551d2488e06e52f175b9fb74ea189a2d30ebab2247b2be78a7377e234a"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-447bb5febb332a3a0dc2ed5271a00315042a474716e4e145975da1945e51cd53"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-012b6a9a696cec5659255d53d9e5303083470d5b0e97238f1e02f3ade6951bad"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-90cf89ff8d65ef17245a8041d07e32e31df44a5f98030b724709ef905185b2f2"
-        ],
-        [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-1d3d0248406038ecb66e63280300b340bc4625aa27b75b04141b1250ad5ad0ad"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-62bb6319ef8fbb3aa4d199ebd4ef937d2b46330d30e2a5a7827700945686ae12"
-        ]
-      ]
-    },
     "v0.0.3-d26c5cf15865dfa2cf02b35619e7b80054b57fa5bbee817c7bae53cc57cfd914": {
       "data": {
         "alias": {
@@ -6653,15 +6521,6 @@
         ]
       ]
     },
-    "v0.0.3-d6d7eecd730a68c74668e5bcaf2b50471d8f6e969e50f9166c33bf2cd877f61c": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "invoice"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-d6e8ef1ea47432ae2e1fba579ef63b9e20ef471b9eb4fe06a9479a92aad4c3c5": {
       "data": {
         "alias": {
@@ -6702,39 +6561,15 @@
     },
     "v0.0.3-d730b26ba55b71b524260d0b5b0af0ce80177fac9d5d6d5d13c8b1db1fd36c21": {
       "data": {
-        "name": {
-          "content": "worktree"
-        },
         "scalar": {
           "type": "boolean",
           "value": true
+        },
+        "name": {
+          "content": "worktree"
         }
       },
       "children": []
-    },
-    "v0.0.3-d7aca54f46677867ae119851c1f24c6621496da0e4c16c471bf22115986a1983": {
-      "data": {
-        "alias": {
-          "id": "lib:relay"
-        },
-        "description": {
-          "content": "Relay"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-b31bdf01dd67860e56f06e8cdeb8a9f1aac461a54d6a48a1c256db6c9ba37b8d"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-851748804461fb5c1a5ee43ded92a836216128f8fe5b1a6b30f6c34e9d46e372"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-3b58510ab8f34cb03c07e8554f22c39ffe6f0052a5f07bc50e5c687a1c96be15"
-        ]
-      ]
     },
     "v0.0.3-d86678dc08abbe2d71f49bbd8655de3e3c5ba412dc965339ff4ad55357e7e7b8": {
       "data": {
@@ -6935,6 +6770,22 @@
       },
       "children": []
     },
+    "v0.0.3-ddab7ed3774d940681b0825dd58f249c0240c5bc864634d57d817647b3996ea3": {
+      "data": {
+        "alias": {
+          "id": "lib:type:specification"
+        },
+        "name": {
+          "content": "lib:type:specification"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-09be8b9eda039cfdc5165af3f01a3cc64dddb7586f6fd19a79c964409baa8cef"
+        ]
+      ]
+    },
     "v0.0.3-ddc7350c8ff0afdb8df72c80f4f00c0254db08d322a04481d6f890c1d4d9420d": {
       "data": {
         "alias": {
@@ -6983,37 +6834,6 @@
         [
           "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
           "v0.0.3-1311f5f420f4bcf80b9840b0546a98c26747e61cb895088b862459f0604a4204"
-        ]
-      ]
-    },
-    "v0.0.3-dfbcf45bb00bc5bf6ad275ab663097d2ec532733ad9798712c90fe789f5b9b1a": {
-      "data": {
-        "presentation": {}
-      },
-      "children": [
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-26ff00a75ba2c19f7506f823142c50629380d639c62567c24881a808b8c25497"
-        ],
-        [
-          "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
-          "v0.0.3-50a1203f3997a74e42539e2ce1738e593228b91c81898b3efdc749c3dbada6ad"
-        ],
-        [
-          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
-          "v0.0.3-9b08103f6eda6ff6b60d05157094b1c24cbba30f3de81a3831873625c2d481b1"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-c7d45cd32475186dd87801f666931927de24fedbacdce044f4079dc3231092e2"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-0496f1156cb40342559c752346a43de86712162cc97b50a9c94875c4e7e39c62"
-        ],
-        [
-          "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
-          "v0.0.3-61a424d636c2e776b0e5cf927e08616d79962f73b0d0b5a036409b66a50ad64f"
         ]
       ]
     },
@@ -7153,6 +6973,20 @@
       },
       "children": []
     },
+    "v0.0.3-e30d63bc429b58cd3def47ddffd0ea4f8aabf7e109c484813e45c4d526a45320": {
+      "data": {
+        "presentation": {},
+        "name": {
+          "content": "deployment"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
+          "v0.0.3-bacf1f462384bd02d8e5426d10401a796f504ace83da66487e27ac7ad43bee46"
+        ]
+      ]
+    },
     "v0.0.3-e367a183df5067e661e76cf45a2de36b14b5563dbc9b8c34ba644f7ec0129b48": {
       "data": {
         "capabilityDefinition": {
@@ -7222,29 +7056,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-e734a22d2b11a703d23f9d4e3c45abf58422d452d1cfb43a48ddfe4721ddc087": {
-      "data": {
-        "alias": {
-          "id": "fos:icon:lib:meet"
-        },
-        "name": {
-          "content": "fos:icon"
-        },
-        "updated": {
-          "time": 3
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-478072a8f356cd22374dd190f69d79b03031a8074321c5dd2320d22ae3ae030b"
-        ],
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
     },
     "v0.0.3-e752010416a4f252f0ea1ceeebda54a8db306361076245b4855819c584bd3765": {
       "data": {
@@ -7396,6 +7207,26 @@
       },
       "children": []
     },
+    "v0.0.3-ec21ca1969ec4fc37b6b5744b3df00cee5620b10c145a49c2fa0fb4b29eac819": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request"
+        },
+        "name": {
+          "content": "request"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-96f90d4e3722dbf21b6b9b3a0b0c2efafd18958eee706dc59746bf8f795afcb3"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
     "v0.0.3-ec525281129979575f3bf2dd48047435a7941c7309dba614e1e0b49984f477f0": {
       "data": {
         "alias": {
@@ -7433,6 +7264,40 @@
         [
           "v0.0.3-e7839ff176dd1c97e44988328661678a3e49b8b317ab4da96e1aadb7af6f64b9",
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-edd8329caf6ac86f7028b50431b8d9e014ef87a615c68efe8e9c49f308d0f8ee": {
+      "data": {
+        "presentation": {},
+        "name": {
+          "content": "request"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
+          "v0.0.3-9a23f5199f580c5a3e8d8de62862e1b9b9f2126f120f81ce207bc0451fc474ce"
+        ],
+        [
+          "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
+          "v0.0.3-c08cddad0ee56f5b6f1027811771ba88212b53f5ec0de34f558fbf470462fe67"
+        ],
+        [
+          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
+          "v0.0.3-0eff48012a8e2b1bfe95fb4879728a9ea0c03f7b96c3060cb9f30b8df0f67641"
+        ],
+        [
+          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
+          "v0.0.3-ad8f1b591c7033e40cc99f615aa5de19860965020d6546f32869058cef79f1cd"
+        ],
+        [
+          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
+          "v0.0.3-0c11f7c8c409ba14e70074036ebf97d37b5bea5d681262f1dd0fdf5fb5ddc161"
+        ],
+        [
+          "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
+          "v0.0.3-6e5d270c1f40692fb02e54c6d45808ec9120331ffaba841c6805a937bfca472b"
         ]
       ]
     },
@@ -7715,60 +7580,52 @@
     },
     "v0.0.3-f9f3a33166ac948c6d06170bb6007394f56ed541b5faa9fce1962ae4fe7e3513": {
       "data": {
-        "name": {
-          "content": "prompt"
-        },
         "scalar": {
           "type": "text",
           "value": "{{coding-instructions}}"
+        },
+        "name": {
+          "content": "prompt"
         }
       },
       "children": []
     },
-    "v0.0.3-faa30f08cf08aedb4b90adb38928909f090f162738eaa0cf9b83a81092c5f718": {
+    "v0.0.3-fa0cbedd86adeaa95c5c7d0a83ad56a1bc1110fa59a89181376782e4111f1041": {
       "data": {
         "alias": {
-          "id": "lib:research"
+          "id": "lib:project-agent-workflow:after-merge"
         },
         "description": {
-          "content": "Research note"
+          "content": "After Fos branch merge"
         },
         "updated": {
-          "time": 1792453618404
+          "time": 0
         }
       },
       "children": [
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-fc2cac6ea5a0dfc34b16ea8f2d6fd3a7541b22aa55ef06a39a3dd0a81c52bbd3"
+          "v0.0.3-e7ee7c2b558f8079c75bd5b9f58d4dddd380a262bcc8d0f8897e5372bea7b52a"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-bc66919d32daee5bc8565478bb766219cbac7214bf9ccc0bc1178e71011531c9"
+          "v0.0.3-cd42767fcaffa4f5a562918bab93d9ad2729e1293d64a4b9ecd8a12bb356fa91"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-ddc7350c8ff0afdb8df72c80f4f00c0254db08d322a04481d6f890c1d4d9420d"
+          "v0.0.3-05b3c787c88ff714486a199b78f56185493541af68407ebca6518d2e37e12585"
         ],
         [
           "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-9f68698ee9d72eea248a9bd7b589d991cfc3d8a1f51fe5da9f4f616738ca5b87"
-        ],
-        [
-          "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
-          "v0.0.3-3497178a65650cab2874da5266259c306d2b940e247350e43c45f663f144f00e"
+          "v0.0.3-262463348c96f04d279728f98ecd0fb7ddaf2b9b97e000d6d229e2ad8c32612c"
         ],
         [
           "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-acf58dd59b326f59af838c9487200983cb88e18716b00fed68436e94ef382156"
+          "v0.0.3-0f664a8973660fef9a5e8dbd38a01fe470f772df5eb4abd03f05eb93b86d8594"
         ],
         [
-          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
-          "v0.0.3-d5cd8e51fb5b848256694d62cf50490759b2f5ceedafc1ba39ad4103428c76c7"
-        ],
-        [
-          "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
-          "v0.0.3-c75f56590557253cece7bd9515221703d3fa29d2f05b9b357b40107730eef4a0"
+          "v0.0.3-5390328713846fe2cef3556b4ac3f4ee627a94e3e7f40172576a41d600c7311c",
+          "v0.0.3-a054c0979fad4417d32206d15b7252eb04de279c5b5946160790ecc83c31f243"
         ]
       ]
     },
@@ -7826,22 +7683,6 @@
         [
           "v0.0.3-3a83754659116610ddc510a4b7a38af9d94ed162d093326a60b5d360ccd3eadf",
           "v0.0.3-7a4c6191cd67103e0427e710804eed705a4dc6945c52987de03d67cd1eb42553"
-        ]
-      ]
-    },
-    "v0.0.3-fc5e2f51e4d759b3fbc70074326b3d6292246435779dcc3b8bae6af7f90fddc4": {
-      "data": {
-        "alias": {
-          "id": "lib:project-agent-workflow:verify:request/field/deployment/field/environment"
-        },
-        "name": {
-          "content": "environment"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
-          "v0.0.3-96029d2a80e7a5bc3e3e21e10b76badcb33c548d7864cf9fbc308f8f86c7e9b6"
         ]
       ]
     },
@@ -7917,6 +7758,7 @@
     "lib:type:task": "v0.0.3-bb9c2c777b48be578d45cec189035a75a56243aa52a58fced1fb01b84df7b175",
     "lib:type:plain": "v0.0.3-6dffd54607a18530a688dbad41fe94fb0f82380fb9777dc5776de9f26535edcc",
     "lib:type:note": "v0.0.3-c86bc92b358e1c1700ab63057abbf15de32e1a7f45a6d4b66fb5ad3a27d160f1",
+    "lib:type:specification": "v0.0.3-09be8b9eda039cfdc5165af3f01a3cc64dddb7586f6fd19a79c964409baa8cef",
     "lib:type:comment": "v0.0.3-793d232fd6d9e370b1e9b1c6994dcb3a69b1cf8fe86fc1c3c870ab34dd17f993",
     "lib:type:ref": "v0.0.3-9ceb597e25ca0d8e3a557ebcaca01737f2410bf55642c85532ab7779fb08e0fe",
     "lib:type:query": "v0.0.3-d0fab15bc90bad941cfcc22016ff7c3029bc292ab9c5df2213301af4a43d93b6",

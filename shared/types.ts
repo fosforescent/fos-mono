@@ -38,7 +38,7 @@ export type FosDataContent = {
   triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
   scalar?: { type: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null'; value: string | number | boolean | null };
   /** Presentation is a projection of fields, not a second copy of their values. */
-  presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean };
+  presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean; icon?: string };
   created?: { time: number };
   position?: { value: number };
   versionControl?: {

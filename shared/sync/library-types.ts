@@ -8,6 +8,8 @@ export const TASK_TYPE = 'lib:type:task'
 /** The plain row: a row that is its text. Rows of a type this peer does not know render like it. */
 export const PLAIN_TYPE = 'lib:type:plain'
 /** A note: one title line, a Markdown body row (`MARKDOWN_TYPE`, its `body` field) and open child rows. */
+/** Rows that are feature specifications (notes a verifier checks after a merge). */
+export const SPECIFICATION_TYPE = 'lib:type:specification'
 export const NOTE_TYPE = 'lib:type:note'
 export const COMMENT_TYPE = 'lib:type:comment'
 /** A reference: a row standing for another row by alias id (`data.ref`). */

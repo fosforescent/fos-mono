@@ -2264,11 +2264,16 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const owned = new Set<string>()
   const argumentsToCopy = new Set<string>()
   const definitions = new Set<string>()
+  // an execute row's node reduced to its request (the record field the copy keeps), or null when it has none
+  const executeRequestOnly = (cid: string): string | null => {
+    const node = content(store, cid), kept = node.children.filter(edge => content(store, edge[1]).data.name?.content === 'request')
+    return kept.length ? put(store, { ...node, children: kept }) : null
+  }
   const childEdges = (value: FosNodeContent, definition = false, root = false) => value.children.filter((edge) => {
     const type = rowTypeIdOf(store, edge)
     const name = content(store, identityCid(store, edge)).data.name?.content
-    // an execute row's value is the evaluator's journal of this node: state, not part of what is copied
-    if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return false
+    // an execute row holds what running the row left on it (state, not copied) and what it asks (its request, copied)
+    if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return !!executeRequestOnly(identityCid(store, edge))
     // the template's own trigger makes instances; the trigger rows inside it are declarations its instances bind
     if (instantiate && root && isRowEdge(store, edge) && isTriggerLeft(store, plainEdge(store, edge)[0])) return false
     if ((instantiate && (name === 'fos:sharing' || name?.startsWith('fos:guest:')))) return false
@@ -2304,6 +2309,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   // A row made from a template copied along is pinned to the copy; templates outside stay pinned as they are.
   const ownedValues = new Map([...owned].map((cid) => [valueCidOf(store, cid), cid]))
   const copyEdge = (edge: FosPathElem): FosPathElem => {
+    if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return [edge[0], copy(executeRequestOnly(identityCid(store, edge))!)]
     const template = isRowEdge(store, edge) ? ownedValues.get(edge[0]) : undefined
     return [template ? valueCidOf(store, copy(template)) : edge[0], copy(identityCid(store, edge))]
   }

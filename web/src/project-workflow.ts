@@ -1,8 +1,8 @@
 import type { App } from './app'
 import {
-  WORKFLOW_CONFIG, WORKFLOW_JOB, configureProjectWorkflow, enqueueWorkflowJob, projectWorkflow, projectWorkflows, workflowPath,
+  configureProjectWorkflow, enqueueWorkflowJob, projectWorkflow, projectWorkflows, workflowAt, workflowJob, writeWorkflowJob, executionOrigin,
   CODING_TEMPLATE, agentRequest, validateAgentRequest, workflowTriggerPath, workflowDefault, instantiateTemplate, addTask,
-  readNodeValue, writeNodeValue, nodeTrigger, setTriggerEnabled, addRow, addMemberAt, setMemberCapabilitiesAt,
+  writeExecutionOrigin, nodeTrigger, setTriggerEnabled, addRow, addMemberAt, setMemberCapabilitiesAt,
   withBranches, view, ALLOCATION_TYPE, sameValue,
   type ProjectWorkflow, type WorkflowJob, type Replica, type Scope
 } from '../../shared/sync/index'
@@ -66,7 +66,7 @@ export function configureWorkflowDialog(app: App, project: Scope): void {
       if (!directory.value.trim()) throw new Error('Choose the local repository directory.')
       const config: ProjectWorkflow = { project, repo: info.repo, device: app.state.replica.meta.peerId, provider: provider.value as ProjectWorkflow['provider'], main: main.value.trim(), url: url.value.trim(), environment: environment.value.trim(), verifier: verifier.value as ProjectWorkflow['verifier'], enabled: true }
       let r = configureProjectWorkflow(app.state.replica, config, app.now())
-      const path = workflowPath(project)
+      const path = workflowAt(r, project)!
       const peer = agentPeerId(config.provider)
       // These grants are the ones the setup button explicitly enables; agents still submit proposals for review.
       r = addMemberAt(r, project, peer, provider.selectedOptions[0]!.text, ['read', 'edit'], app.now())
@@ -97,7 +97,8 @@ export async function requestProjectCoding(app: App, project: Scope): Promise<vo
 
 const busy = new WeakSet<App>(), nextPoll = new WeakMap<App, number>()
 export function workflowStatus(app: App): HTMLElement | null {
-  const path = app.state.view, config = readNodeValue<ProjectWorkflow>(app.state.replica, path, WORKFLOW_CONFIG)
+  const path = app.state.view, origin = executionOrigin<ProjectWorkflow>(app.state.replica, path)
+  const config = origin && Array.isArray(origin.project) ? origin : null
   if (!config) return null
   const box = document.createElement('section'), title = document.createElement('p')
   title.textContent = `${config.repo} · ${config.enabled ? 'Enabled' : 'Paused'} · desktop ${config.device}`; box.append(title)
@@ -105,7 +106,7 @@ export function workflowStatus(app: App): HTMLElement | null {
   if (config.enabled) {
     const pause = document.createElement('button'); pause.textContent = 'Pause workflow'
     pause.onclick = async () => {
-      let r = writeNodeValue(app.state.replica, path, WORKFLOW_CONFIG, { ...config, enabled: false }, app.now())
+      let r = writeExecutionOrigin(app.state.replica, path, { ...config, enabled: false }, app.now())
       const triggerPath = workflowTriggerPath(r, config.project)
       if (triggerPath && nodeTrigger(r, triggerPath)) r = setTriggerEnabled(r, triggerPath, false, app.now())
       await app.saveWorkflowReplica(r)
@@ -116,7 +117,7 @@ export function workflowStatus(app: App): HTMLElement | null {
     const help = document.createElement('p'); help.textContent = 'Save this configuration on this computer to authorize launches.'; box.append(help)
   }
   for (const row of view(app.state.replica, path)?.tasks ?? []) {
-    const at = [...path, row.id], job = readNodeValue<WorkflowJob>(app.state.replica, at, WORKFLOW_JOB)
+    const at = [...path, row.id], job = workflowJob(app.state.replica, at)
     if (!job) continue
     const item = document.createElement('p')
     item.textContent = `${row.title}: ${job.status}${job.request?.deployment && job.status === 'queued' ? ` — waiting for successful ${config.environment} deployment` : ''}${job.status === 'handoff' ? ' — send the prompt and enable Chrome in Claude Desktop' : ''}${job.error ? ` — ${job.error}` : ''}`
@@ -126,7 +127,7 @@ export function workflowStatus(app: App): HTMLElement | null {
         if (!window.confirm('Check the desktop terminal and worktree first. A previous agent may still be running. Create a new request?')) return
         const id = crypto.randomUUID()
         let r = addRow(app.state.replica, path, ALLOCATION_TYPE, `Retry ${row.title}`, app.now(), { id })
-        r = writeNodeValue(r, [...path, id], WORKFLOW_JOB, { ...job, id, status: 'queued', error: undefined, directory: undefined, requested: app.now() }, app.now())
+        r = writeWorkflowJob(r, [...path, id], { ...job, id, status: 'queued', error: undefined, directory: undefined, requested: app.now() }, app.now())
         await app.saveWorkflowReplica(r)
       }
       item.append(retry)
@@ -147,7 +148,7 @@ export async function runProjectWorkflows(app: App): Promise<void> {
         const directory = authorization(app, config)
         if (!valid() || !config.enabled || config.device !== app.state.replica.meta.peerId || !directory || view(app.state.replica, path)?.choices.length) continue
         for (const row of view(app.state.replica, path)?.tasks ?? []) {
-          const at = [...path, row.id], job = readNodeValue<WorkflowJob>(app.state.replica, at, WORKFLOW_JOB)
+          const at = [...path, row.id], job = workflowJob(app.state.replica, at)
           if (!job || job.status !== 'queued' || !app.workflowClaimAvailable(at) || view(app.state.replica, at)?.choices.length) continue
           let commit: string | undefined
           try {
@@ -158,13 +159,13 @@ export async function runProjectWorkflows(app: App): Promise<void> {
               if (!valid() || !authorization(app, config)) return
               if (!deployment.ready) continue
               commit = deployment.sha
-              if (readNodeValue(app.state.replica, path, `fos:verified-launch:${commit}`)) {
-                await app.saveWorkflowReplica(writeNodeValue(app.state.replica, at, WORKFLOW_JOB, { ...job, commit, status: 'launched', error: 'Verification was already dispatched for this deployment.' }, app.now()))
+              if ((view(app.state.replica, path)?.tasks ?? []).some(other => other.id !== row.id && workflowJob(app.state.replica, [...path, other.id])?.commit === commit && ['launched', 'handoff'].includes(workflowJob(app.state.replica, [...path, other.id])!.status))) {
+                await app.saveWorkflowReplica(writeWorkflowJob(app.state.replica, at, { ...job, commit, status: 'launched', error: 'Verification was already dispatched for this deployment.' }, app.now()))
                 continue
               }
             }
             // Persist before starting any external process. An interrupted claim needs explicit review, never automatic replay.
-            await app.saveWorkflowReplica(writeNodeValue(app.state.replica, at, WORKFLOW_JOB, { ...job, status: 'starting', ...(commit ? { commit } : {}) }, app.now()))
+            await app.saveWorkflowReplica(writeWorkflowJob(app.state.replica, at, { ...job, status: 'starting', ...(commit ? { commit } : {}) }, app.now()))
             if (!valid() || !authorization(app, config)) return
             const context = onBranch(app.state.replica, config.project, job.branch, () => agentContext(app.state.replica, config.project))
             let cwd = directory
@@ -172,7 +173,7 @@ export async function runProjectWorkflows(app: App): Promise<void> {
               const prepared = await tauriInvoke<{ cwd: string }>('local_git', { request: { action: 'agent-worktree', cwd: directory, repo: config.repo, branch: job.branch, id: job.id } })
               if (!valid() || !authorization(app, config)) return
               if (!prepared?.cwd) throw new Error('Could not prepare the agent worktree.')
-              await app.saveWorkflowReplica(writeNodeValue(app.state.replica, at, WORKFLOW_JOB, { ...job, status: 'starting', directory: prepared.cwd }, app.now()))
+              await app.saveWorkflowReplica(writeWorkflowJob(app.state.replica, at, { ...job, status: 'starting', directory: prepared.cwd }, app.now()))
               if (!valid() || !authorization(app, config)) return
               cwd = prepared.cwd
             }
@@ -182,14 +183,12 @@ export async function runProjectWorkflows(app: App): Promise<void> {
               await tauriInvoke('open_agent_link', { url: `claude://claude.ai/new?q=${encodeURIComponent(prompt)}` })
             } else await onBranch(app.state.replica, config.project, job.branch, () => launchAgent(app, job.request.provider as 'claude' | 'codex', { scope: config.project, branch: job.branch, cwd, prompt, chrome: job.request.chrome, verify: job.request.readOnly, throwErrors: true }))
             if (!valid() || !authorization(app, config)) return
-            if (commit) await app.saveWorkflowReplica(writeNodeValue(app.state.replica, path, `fos:verified-launch:${commit}`, { job: job.id }, app.now()))
-            if (!valid()) return
-            const claimed = readNodeValue<WorkflowJob>(app.state.replica, at, WORKFLOW_JOB)!
-            await app.saveWorkflowReplica(writeNodeValue(app.state.replica, at, WORKFLOW_JOB, { ...claimed, status: job.request.provider === 'claude-desktop' ? 'handoff' : 'launched' }, app.now()))
+            const claimed = workflowJob(app.state.replica, at)!
+            await app.saveWorkflowReplica(writeWorkflowJob(app.state.replica, at, { ...claimed, status: job.request.provider === 'claude-desktop' ? 'handoff' : 'launched' }, app.now()))
           } catch (error) {
             if (!valid()) return
-            const current = readNodeValue<WorkflowJob>(app.state.replica, at, WORKFLOW_JOB) ?? job
-            await app.saveWorkflowReplica(writeNodeValue(app.state.replica, at, WORKFLOW_JOB, { ...current, status: 'failed', error: String(error) }, app.now()))
+            const current = workflowJob(app.state.replica, at) ?? job
+            await app.saveWorkflowReplica(writeWorkflowJob(app.state.replica, at, { ...current, status: 'failed', error: String(error) }, app.now()))
           }
         }
       }

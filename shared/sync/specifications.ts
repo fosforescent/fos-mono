@@ -1,15 +1,39 @@
-import { readNodeValue, writeNodeValue } from './evaluation'
+/**
+ * Feature specifications are rows of the library's Specification type. Verifying them after a merge is a task whose
+ * request names the commit; the reviewer's report is its result, and each issue it raises is a task whose origin is
+ * the specification and the evidence.
+ */
+import { executionRequest, handlerResult, writeExecutionOrigin, writeExecutionRequest, writeHandlerResult } from './evaluation'
 import { addRow, addTask, deleteTask, moveNode, renameTask, view, type Replica } from './replica'
 import { newId, type Scope } from './graph'
-import { NOTE_TYPE } from './library-types'
+import { NOTE_TYPE, SPECIFICATION_TYPE } from './library-types'
 export type FeatureSpecification = { id: string; parent: string | null; text: string }
+export type VerificationRequest = { commit: string; branch: string; specifications: FeatureSpecification[]; status: 'pending' | 'reviewed' }
+export type VerificationReport = { commit: string; specifications: FeatureSpecification[]; results: Array<{ id: string; status: string; evidence: string }> }
+/** The task asking for the verification of `commit` below `root`, if one was queued. */
+export function verificationTask(r: Replica, root: Scope, commit: string): Scope | null {
+  const row = (view(r, root)?.tasks ?? []).find(t => executionRequest<VerificationRequest>(r, [...root, t.id])?.commit === commit)
+  return row ? [...root, row.id] : null
+}
+export const verificationRequest = (r: Replica, path: Scope) => executionRequest<VerificationRequest>(r, path)
+export const verificationReport = (r: Replica, path: Scope) => handlerResult<VerificationReport>(r, path)
+/** Record the reviewer's report on the verification task (its result) and mark the request reviewed. */
+export function recordVerificationReport(r: Replica, task: Scope, report: VerificationReport, now: number): Replica {
+  const request = verificationRequest(r, task)
+  r = writeHandlerResult(r, task, report, now)
+  return request ? writeExecutionRequest(r, task, { ...request, status: 'reviewed' }, now) : r
+}
+/** An issue a verification raised: a task made for that specification, with the evidence. */
+export function recordVerificationIssue(r: Replica, path: Scope, issue: { commit: string; specification: string; evidence: string }, now: number): Replica {
+  return writeExecutionOrigin(r, path, issue, now)
+}
 export function specificationRows(r: Replica, root: Scope): FeatureSpecification[] {
   const result: FeatureSpecification[] = []
   const walk = (path: Scope, parent: string | null, depth: number) => {
     if (depth > 64 || result.length >= 2000) throw new Error('Too many nested specifications.')
     for (const row of view(r, path)?.tasks ?? []) {
       if (row.refId !== undefined || row.refPeer || row.construction) continue
-      const at = [...path, row.id], spec = readNodeValue(r, at, 'fos:specification') !== null
+      const at = [...path, row.id], spec = row.type === SPECIFICATION_TYPE
       if (spec) result.push({ id: row.id, parent, text: row.title })
       walk(at, spec ? row.id : parent, depth + 1)
     }
@@ -18,8 +42,7 @@ export function specificationRows(r: Replica, root: Scope): FeatureSpecification
 }
 export function addSpecification(r: Replica, parent: Scope, text: string, now: number) {
   const id = newId(), path = [...parent, id]
-  r = addRow(r, parent, NOTE_TYPE, text, now, { id })
-  return { replica: writeNodeValue(r, path, 'fos:specification', { version: 1 }, now), path }
+  return { replica: addRow(r, parent, SPECIFICATION_TYPE, text, now, { id }), path }
 }
 export function validateSpecifications(value: unknown): FeatureSpecification[] {
   if (!Array.isArray(value) || value.length > 2000) throw new Error('Invalid specification list.')
@@ -53,22 +76,20 @@ export function importSpecifications(r: Replica, root: Scope, value: unknown, no
     if (row.parent) put(keep.get(row.parent)!)
     const parent = row.parent ? placed.get(row.parent)! : root
     let path = paths.get(row.id)
-    if (!path) { r = addRow(r, parent, NOTE_TYPE,row.text,now,{id:row.id}); path=[...parent,row.id] }
+    if (!path) { r = addRow(r, parent, SPECIFICATION_TYPE,row.text,now,{id:row.id}); path=[...parent,row.id] }
     else {
       if (topologyChanged && row.parent) { r=moveNode(r,path.slice(0,-1),row.id,parent.slice(0,-1),{into:parent.at(-1)!},now); path=[...parent,row.id] }
       r = renameTask(r,path.slice(0,-1),row.id,row.text,now)
     }
-    r = writeNodeValue(r,path,'fos:specification',{version:1},now); placed.set(row.id,path)
+    placed.set(row.id,path)
   }
   next.forEach(put); return r
 }
 
 export function queueSpecificationVerification(r: Replica, root: Scope, commit: string, branch: string, now: number): Replica {
   if (!specificationRows(r, root).length) return r
-  const key = `fos:verification:${commit}`
-  if (readNodeValue(r, root, key)) return r
+  if (verificationTask(r, root, commit)) return r
   const id = newId(), specs = specificationRows(r, root)
   r = addTask(r, root, `Verify specifications after merge (${branch}, ${commit.slice(0,8)})`, now, id)
-  r = writeNodeValue(r, [...root,id], 'fos:verification-request', { commit, branch, specifications: specs, status: 'pending' }, now)
-  return writeNodeValue(r, root, key, { task: id }, now)
+  return writeExecutionRequest(r, [...root, id], { commit, branch, specifications: specs, status: 'pending' } satisfies VerificationRequest, now)
 }

@@ -12,7 +12,7 @@ let poll
 // Drive the background watcher without sleeping or launching real agents.
 globalThis.setTimeout=(callback,delay,...args)=>delay===3000?(poll=callback,0):originalTimer(callback,delay,...args)
 buildSync({stdin:{contents:`export {localGitControls,openSpecificationVerification} from './src/local-git'; export {App} from './src/app';export {createMemoryStorage} from './src/storage';export * from '../shared/sync/index'`,resolveDir:path.resolve(__dirname,'..')},bundle:true,platform:'node',format:'cjs',outfile:path.join(dir,'app.cjs')})
-const {App,createMemoryStorage,localGitControls,openSpecificationVerification,specificationRows,view,readNodeValue}=require(path.join(dir,'app.cjs'))
+const {App,createMemoryStorage,localGitControls,openSpecificationVerification,specificationRows,view,verificationRequest}=require(path.join(dir,'app.cjs'))
 async function main(){
  const app=new App({baseUrl:'http://localhost',autoLogin:null,storage:createMemoryStorage()});app.scheduleSync=()=>{}
  const root=app.applyConstructor(app.state.view,{type:'lib:type:plain',text:'Repository',done:false,peer:'filesystem'},false,undefined,'/repo')
@@ -34,11 +34,11 @@ async function main(){
  snapshot={...snapshot,head:'b'.repeat(40),revision:'merged',merged:true,specifications:[...specs,{id:'new-spec',parent:null,text:'Merged feature'}]}
  poll(); await new Promise(setImmediate)
  assert.equal(specificationRows(app.state.replica,root).length,2)
- const tasks=view(app.state.replica,root).tasks.filter(row=>readNodeValue(app.state.replica,[...root,row.id],'fos:verification-request'))
+ const tasks=view(app.state.replica,root).tasks.filter(row=>verificationRequest(app.state.replica,[...root,row.id]))
  assert.equal(tasks.length,1)
- assert.equal(readNodeValue(app.state.replica,[...root,tasks[0].id],'fos:verification-request').status,'pending')
+ assert.equal(verificationRequest(app.state.replica,[...root,tasks[0].id]).status,'pending')
  poll(); await new Promise(setImmediate)
- assert.equal(view(app.state.replica,root).tasks.filter(row=>readNodeValue(app.state.replica,[...root,row.id],'fos:verification-request')).length,1)
+ assert.equal(view(app.state.replica,root).tasks.filter(row=>verificationRequest(app.state.replica,[...root,row.id])).length,1)
  assert(calls.every(command=>command==='local_git'))
  userLaunch=true
  await openSpecificationVerification(app,root)

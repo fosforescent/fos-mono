@@ -1,6 +1,7 @@
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { configureWorkflowDialog, requestProjectCoding, workflowStatus } from './project-workflow'
-import { projectWorkflow, workflowPath } from '../../shared/sync/project-workflow'
+import { projectWorkflow, workflowAt } from '../../shared/sync/project-workflow'
+import { SPECIFICATION_TYPE } from '../../shared/sync/library-types'
 import { openAnalysis } from './analysis'
 import { connectNodeAgent, hostedMcpConnection, localMcpEndpoint, mcpConfig } from './node-agent'
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack, renderFileReference } from './filesystem'
@@ -497,7 +498,7 @@ function renderRepository(el: HTMLElement, state: AppState, app: App): void {
     const row = div('row', '')
     row.append(span('', `GitHub · ${info.repo}`), button('secondary small', 'Refresh branches and PRs', () => void app.refreshRepositories(true)))
     row.append(button('secondary small', 'Configure agent workflow', () => configureWorkflowDialog(app, [...path])))
-    if (projectWorkflow(state.replica, path)) row.append(button('primary small', 'Request coding agent', () => void requestProjectCoding(app, [...path])), button('secondary small', 'Workflow status', () => app.goTo(workflowPath(path))))
+    if (projectWorkflow(state.replica, path)) row.append(button('primary small', 'Request coding agent', () => void requestProjectCoding(app, [...path])), button('secondary small', 'Workflow status', () => { const at = workflowAt(state.replica, path); if (at) app.goTo(at) }))
     if (!state.integrations.some(i => i.id === 'github' && i.connected)) row.append(button('secondary small', 'Connect GitHub', () => void app.connectIntegration('github')))
     if (id && !app.contextPeers(path).some(p => p.repository?.repo === info.repo.toLowerCase())) row.append(button('secondary small', 'Attach repository peer', () => app.bindNodeRepository(path.slice(0, -1), id, info.repo, true)))
     if (info.snapshot && !info.snapshot.canPush) row.append(span('muted', 'Read-only on GitHub · diffs are available below'))
@@ -2196,7 +2197,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   if (templateIcon) body.prepend(span('template-icon', templateIcon))
 
   const meta = span('row-meta', '')
-  if (readNodeValue(state.replica,[...state.view,...path],'fos:specification')) { const badge=span('kind-badge','Feature specification'); badge.title='Versioned with the local Git peer'; meta.append(badge) }
+  if (task.type === SPECIFICATION_TYPE) { const badge=span('kind-badge','Feature specification'); badge.title='Versioned with the local Git peer'; meta.append(badge) }
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
   meta.append(opRef, opCopy)

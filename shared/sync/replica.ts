@@ -628,6 +628,17 @@ export function setQueryOptionsAt(replica: Replica, at: Scope, queryId: string, 
   return updateTask(replica, at, queryId, now, (row) => (row.data.query ? { ...row, data: { ...row.data, query: { ...row.data.query, ...patch } } } : null))
 }
 
+/** A template's icon: part of its presentation. */
+export function templateIconAt(replica: Replica, path: Scope): string | null {
+  const cid = resolveScope(replica.store, headCid(replica), path)
+  const icon = cid ? valueContent(replica.store, cid).data.presentation?.icon : undefined
+  return typeof icon === 'string' && icon ? icon : null
+}
+export function setTemplateIcon(replica: Replica, path: Scope, icon: string, now: number): Replica {
+  if (!path.length) throw new Error('Choose a template.')
+  return updateTask(replica, path.slice(0, -1), path.at(-1)!, now, row => ({ ...row, data: { ...row.data, presentation: { ...row.data.presentation, icon } } }))
+}
+
 /** The standard-library row type of a file kept inline (its data URL in the graph; small files only). */
 export const ATTACHMENT_TYPE = 'lib:type:attachment'
 export type Attachment = { name: string; type: string; data: string; size: number }
