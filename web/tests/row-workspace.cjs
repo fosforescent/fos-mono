@@ -92,12 +92,12 @@ async function main() {
     const target = document.querySelector('.constructor-drop-target'); assert(!target.hidden)
     return { control, target, drop() { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer }); target.dispatchEvent(event) } }
   }
-  let drag = dragConstructor('Note'); assert.equal(drag.target.textContent, 'Disable'); drag.drop(); await tick()
-  assert.equal(document.querySelector('.constructor-grid [aria-label="Note"]').getAttribute('aria-disabled'), 'true')
-  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:> '), false)
+  let drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, 'Disable'); drag.drop(); await tick()
+  assert.equal(document.querySelector('.constructor-grid [aria-label="Decision"]').getAttribute('aria-disabled'), 'true')
+  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), false)
   a.refresh(); await tick()
-  drag = dragConstructor('Note'); assert.equal(drag.target.textContent, 'Enable'); drag.drop(); await tick()
-  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:> '), true)
+  drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, 'Enable'); drag.drop(); await tick()
+  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), true)
   assert(document.querySelector('.constructor-drop-target').hidden)
   assert(!document.querySelector('[aria-label="Permissions"]'), 'permissions are expanded inline')
   assert(!document.querySelector('.constructor-permissions'), 'no duplicate permission or constructor panels')

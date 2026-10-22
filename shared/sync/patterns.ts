@@ -20,7 +20,7 @@ import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { matchesGraph } from './structural'
 import { DOCUMENT_ROOT_TYPE, PATTERN_TYPE } from './library-types'
-import { seedTypes, content, valueContent, isHandle, isRefNode, refValueCid, put, isRowEdge, isRowOfType, rowTypeIdOf, typeIdOf, aliasIdOf, isChoiceEdge, missingTemplateOf } from './graph'
+import { shippedRef, content, valueContent, isHandle, isRefNode, refValueCid, put, isRowEdge, isRowOfType, rowTypeIdOf, typeIdOf, aliasIdOf, isChoiceEdge, missingTemplateOf } from './graph'
 
 export function isTypeErrorEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.typeErrorConstructor.getId()
@@ -50,7 +50,7 @@ export function rootTypeOf(store: FosStore): string {
   const root = content(store, store.rootNodeId)
   const isAlias = root.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
   const type = isAlias ? root.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())?.[1] : undefined
-  return type ?? put(store, seedTypes(store).find(t => t.data.alias?.id === DOCUMENT_ROOT_TYPE)!)
+  return type ?? shippedRef(store, DOCUMENT_ROOT_TYPE)!
 }
 
 /** The root's content when it is in error (its rejected children), else null. */

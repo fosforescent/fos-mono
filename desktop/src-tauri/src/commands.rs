@@ -18,6 +18,9 @@ fn out(line: &str) {
 
 pub fn open_workspace(path: Option<&Path>) -> Result<Workspace, String> {
     let project = Project::locate(path)?;
+    if project.ensure_store()? {
+        eprintln!("new store for {} (wrote {} and {}/)", crate::stores::display(&project.dir), crate::project::CONFIG_FILE, crate::stores::display(&project.state_dir));
+    }
     let ws = Workspace::open(project)?;
     Ok(ws)
 }
@@ -49,7 +52,7 @@ pub fn cmd_init(dir: &Path, server: Option<&str>, token: Option<&str>, port: u16
     let project = Project::locate(Some(dir))?;
     project.ensure_state()?;
     out(&format!("wrote {} and {}/", path.display(), project.state_dir.display()));
-    out("next: fos <dir> attach <token>   (from \"Invite a device here\" on the node this directory should sync)");
+    out("next: fos <dir> attach <token>   (from an @{invite} peer row on the node this directory should sync)");
     Ok(())
 }
 

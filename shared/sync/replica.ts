@@ -135,10 +135,7 @@ export type SerializedReplica = { meta: ReplicaMeta; context: FosContextData }
 export function createReplica(peerId: string = newId(), existing?: FosStore): Replica {
   const store = existing ?? new FosStore()
   if (!existing) ensureLibraryRow(store)
-  return {
-    store,
-    meta: { peerId, scope: [], scopeNames: [], lastSyncAt: null, serverPeerId: null }
-  }
+  return { store, meta: { peerId, scope: [], scopeNames: [], lastSyncAt: null, serverPeerId: null } }
 }
 
 /** Rewrite legacy inline link nodes into ref nodes (idempotent; no-op on current data). */
@@ -898,7 +895,9 @@ export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: strin
 }
 
 /** Submit a value (which can itself be a ref) through the ordinary proposal format. */
-export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, peerId: string, now: number): { replica: Replica; proposalCid: string } {
+/** Submit `targetCid` to the row ref at `at`. `name` keeps one submission per source (`binding:<source>`, as patterns and
+ * solve use); the default replaces this peer's earlier submission. */
+export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, peerId: string, now: number, name = 'binding'): { replica: Replica; proposalCid: string } {
   const store = replica.store
   const cid = resolveScope(store, headCid(replica), at)
   if (!cid || !store.table.has(targetCid)) throw new Error('ref or proposed value not found')
@@ -906,8 +905,8 @@ export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, pee
   const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
   const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
   if (!isRefNode(store, ref) || !(edge && isRowEdge(store, edge))) throw new Error('expected a row ref')
-  const proposalCid = put(store, proposalContent(store, peerId, 'binding', targetCid, refBindingBaseCid(store, ref), now))
-  return { replica: editNode(replica, at, now, (node) => withProposal(store, node, peerId, proposalCid, 'binding')), proposalCid }
+  const proposalCid = put(store, proposalContent(store, peerId, name, targetCid, refBindingBaseCid(store, ref), now))
+  return { replica: editNode(replica, at, now, (node) => withProposal(store, node, peerId, proposalCid, name)), proposalCid }
 }
 
 /**
@@ -922,8 +921,9 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     if (!proposal || proposal.status !== 'open' || !readProposals(store, value).some((p) => p.cid === proposalCid)) return value
     const main = putStripped(store, value)
     // A submission to a right ref accepts a whole value; concurrent handlers stay alternatives.
-    if (proposal.name === 'binding') {
-      if (proposal.baseCid !== refBindingBaseCid(store, value)) return value
+    if (proposal.name === 'binding' || proposal.name.startsWith('binding:')) {
+      // options from named sources (patterns, solve) stay choosable after another one is bound
+      if (proposal.name === 'binding' && proposal.baseCid !== refBindingBaseCid(store, value)) return value
       const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
       const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
       const type = edge && rowTypeOf(store, edge)

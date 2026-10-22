@@ -23,14 +23,11 @@ import type { FosStore } from '../dag-implementation/store'
 import {
   commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, memberEntryId, MEMBER_ENTRY_PREFIX, moveChild, aliasIdOf,
   capabilityTarget, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
-  LIBRARY_ID, importNodes, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
+  LIBRARY_ID, shippedLibrary, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
 import { constructForm } from './forms'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
-import { STANDARD_LIBRARY } from './library'
-import type { FosNodesData } from '../types'
-import * as COMPILED_LIBRARY from './library.generated.json'
 
 export const RELAY_MESSAGE = 'lib:type:relay-message'
 export const RELAY_QUEUE = 'lib:type:relay-queue'
@@ -217,10 +214,9 @@ export function relayTemplate(r: Replica, at: Scope = []): string {
   const library = findNearestRow(r.store, headCid(r), at, row => row.id === LIBRARY_ID && !!findChild(r.store, row.cid, RELAY_TEMPLATE))
   const local = library && findChild(r.store, library.cid, RELAY_TEMPLATE)
   if (local && !isPeerReference(content(r.store, local))) return local
-  const shipped = STANDARD_LIBRARY.find(row => row.id === RELAY_TEMPLATE)
-  if (!shipped?.graph) throw new Error('This build has no Relay template.')
-  importNodes(r.store, COMPILED_LIBRARY.nodes as unknown as FosNodesData)
-  return shipped.graph.cid
+  const shipped = findChild(r.store, shippedLibrary(r.store), RELAY_TEMPLATE)
+  if (!shipped) throw new Error('This build has no Relay template.')
+  return shipped
 }
 
 /** This device offers relay at `at`: a typed offer of the library's Relay template on its own member entry. */

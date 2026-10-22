@@ -12,6 +12,8 @@ export type NativeImplementation<Context> = {
   trigger?: import('./triggers').TriggerObserver
   handles?(step: EvaluationStep, replica: Replica): boolean
   effect?(context: Context): Promise<void | 'pending'>
+  /** It submits to the step's open refs itself, so they need not be bound before it runs. */
+  opensRefs?: boolean
 }
 export type PrimitiveDefinition<Context> = NativeImplementation<Context> & {
   id: string

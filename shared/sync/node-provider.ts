@@ -17,6 +17,11 @@ export type NodeRequest = {
   templates?: string[]
   /** Content of templates the provider asked for (`ProvidedNode.wanted`), or of the grants an update's member entry pins; accepted only for those. */
   templateNodes?: FosNodesData
+  /**
+   * A proposing peer's branch: its update is the submission named after it (`branch:<name>`, one per peer and branch),
+   * a pull request the owner sees as an option of the node, instead of the peer's one `node-sync` submission.
+   */
+  submission?: string
 }
 export type NodeShape = { data: FosDataContent; children: NodeChild[] }
 /**
@@ -77,8 +82,9 @@ export function parseNodeRequest(value: unknown): NodeRequest {
   if (r.proposal !== undefined && (!r.proposal || !validPath(r.proposal.scope) || typeof r.proposal.id !== 'string' || !r.proposal.id || r.proposal.id.length > 256 || r.update)) throw new NodeAccessError('Proposal previews are read-only.')
   if (r.templates !== undefined && (!Array.isArray(r.templates) || r.templates.length > 256 || r.templates.some(cid => !isCid(cid)))) throw new NodeAccessError('Invalid template request.')
   if (r.templateNodes !== undefined && (!r.templateNodes || typeof r.templateNodes !== 'object' || Array.isArray(r.templateNodes) || JSON.stringify(r.templateNodes).length > 4 * 1024 * 1024)) throw new NodeAccessError('Invalid template content.')
+  if (r.submission !== undefined && (typeof r.submission !== 'string' || !r.submission.trim() || r.submission.length > 200)) throw new NodeAccessError('Invalid submission name.')
   return { peerId: r.peerId, scope: [...r.scope], path: [...r.path], linkId: r.linkId, ...(r.branches?.length ? { branches: r.branches.map(b => ({ scope: [...b.scope], name: b.name })) } : {}), ...(r.proposal ? { proposal: { ...r.proposal, scope: [...r.proposal.scope] } } : {}), ...(r.update !== undefined ? { update: r.update } : {}),
-    ...(r.templates?.length ? { templates: [...new Set(r.templates)] } : {}), ...(r.templateNodes ? { templateNodes: r.templateNodes } : {}) }
+    ...(r.templates?.length ? { templates: [...new Set(r.templates)] } : {}), ...(r.templateNodes ? { templateNodes: r.templateNodes } : {}), ...(r.submission ? { submission: r.submission } : {}) }
 }
 function maskOf(value: unknown): NodeMask {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new NodeAccessError('Invalid node mask.')

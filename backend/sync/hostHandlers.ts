@@ -329,6 +329,8 @@ export type HostHandlerDeps = {
   webUrl: string
   /** The server's user attestation (sync/verify.ts): fills `verify` requirements with attested user objects; payees are checked against it. */
   verify: VerifyHandler
+  /** Approvals of pull requests, signed with the same identity key, and the group's merge rule (sync/approve.ts). */
+  approve?: HostHandler
 }
 
 /**
@@ -357,6 +359,7 @@ export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
     publicUrlHandler(deps.webUrl),
     marketHandler(deps.market),
     deps.verify,
+    ...(deps.approve ? [deps.approve] : []),
     pointsHandler(deps.points, deps.verify),
     ...(deps.payments ? [paymentHandler(deps.payments, deps.verify)] : []),
     mailHandler(deps.mail),

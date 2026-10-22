@@ -389,7 +389,6 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   if (!session) item('Connect…', () => app.goToAccountPeer(), 'primary-text')
   item('⚙ Device root', () => app.goToRoot())
   if (session?.kind === 'user') {
-    item('Invite a device here', () => void app.startInvite())
     item(`Connection requests${state.requests.length ? ` (${state.requests.length})` : ''}`, () => app.openModal('requests'))
   }
   if (state.replica.meta.scope.length > 0 && session?.kind === 'user') {
@@ -709,9 +708,9 @@ const PEER_ROWS: Array<{ id: string; label: string; icon: string; server?: true;
 const PEER_ROW_LABEL: Record<string, string> = { ...Object.fromEntries(PEER_ROWS.map(r => [r.id, r.label])), 'public-endpoint': 'Public template endpoint', 'users-endpoint': 'Fos template endpoint', repository: 'Repository' }
 /** Row kinds this device makes by typing a marker; clicking seeds the blank row (or a row inside the selected one) with it. */
 const ROW_SEEDS: Array<[string, string, string]> = [
-  ['Task', '[ ] ', '☑'], ['Note', '> ', 'note'], ['Comment', '// ', 'comment'], ['Query', '? ', 'query'],
+  // task, note, comment, query and template come from the library's names (`name:` constructors)
   ['Money requirement', '-$ ', 'money'], ['Time requirement', '-: ', 'clock'], ['Things requirement', '-# ', 'things'], ['Person requirement', '-@', 'person'],
-  ['Decision', '-choice: ', 'decision'], ['Confirmation', '- ', 'confirm'], ['Template', '` ', 'template']
+  ['Decision', '-choice: ', 'decision'], ['Confirmation', '- ', 'confirm']
 ]
 function constructorOptions(app: App): ConstructorItem[] {
   const peers = app.contextPeers()
@@ -721,6 +720,8 @@ function constructorOptions(app: App): ConstructorItem[] {
   const offerGroup = (peerId: string) => peerId === me ? 'device' : peerId === 'fos' || peerId.startsWith('user:') ? account : peerId
   return [
     ...app.libraryConstructors().map(c => ({ id: `library:${c.id}`, label: c.label, icon: c.icon, output: 'task', group: 'library' })),
+    // the library's names, dereferenced: each is the node a row made from it has on its left (ref declarations share the handler icon)
+    ...app.libraryNames().map(n => ({ id: `name:${n.name}`, label: n.label, icon: 'handler', output: 'row', group: 'library' })),
     ...PEER_ROWS.filter(r => !r.desktop || inTauri()).map(r => ({ id: `peer-row:${r.id}`, label: r.label, icon: r.icon, output: 'peer', group: r.server ? account : 'device' })),
     // a sub-peer's own row on this node: MCP servers and integrations (agents have their launch constructors)
     ...peers.filter(p => p.mcpServer || p.integration).map(p => ({ id: `peer-row:${p.integration ? p.id.slice(12) : p.id}`, label: p.integration ? `Connect ${p.name}` : p.name, icon: peerIcon(p), output: 'peer', group: p.id })),
@@ -842,6 +843,7 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   const item = constructorOptions(app).find(c => c.id === id)
   if (item && !constructorState(app, item).enabled) return
   if (id.startsWith('library:')) { try { app.insertLibraryConstructor(id.slice(8), path, replace) } catch (error) { app.notify('error', String(error)) }; return }
+  if (id.startsWith('name:')) { try { app.insertNamed(id.slice(5), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'trigger:public' || id === 'trigger:users') {
     // a template endpoint: a template whose row publishes it
     const audience = id === 'trigger:public' ? 'public' : 'users'
@@ -1010,7 +1012,7 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
     try { app.applyConstructor(path, { type: PLAIN_TYPE, text: peer?.name ?? constructor.slice(5), done: false, peer: constructor.slice(5) }, replace) } catch (error) { app.notify('error', String(error)) }
     return true
   }
-  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:') || constructor.startsWith('library:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
+  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:') || constructor.startsWith('library:') || constructor.startsWith('name:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -1022,6 +1024,36 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
   return true
 }
 /** A row's handler is run by its Complete button; the title says what completing does. */
+/**
+ * A row made by a constructor node ([fetch, right], …): the constructor's refs are its inputs (the left decides which
+ * show), the right's assignments are what is in them. A received ref lists what was submitted to it, to choose from.
+ */
+function constructedRowBody(task: TaskView, inputs: NonNullable<ReturnType<App['rowInputs']>>, path: Scope, app: App): HTMLElement {
+  const box = div('title constructor-body constructed-row', '')
+  box.append(span('constructor-label', task.title || 'Constructor'))
+  for (const ref of inputs) {
+    const line = div('row-input', '')
+    line.append(span('muted', ref.name))
+    if (ref.received) {
+      if (ref.text !== null) line.append(span('row-input-value', ref.text.length > 200 ? ref.text.slice(0, 200) + '…' : ref.text))
+      if (ref.options.length) {
+        const pick = document.createElement('select'); pick.setAttribute('aria-label', `Choose ${ref.name}`)
+        pick.append(new Option(`${ref.options.length} received…`, ''))
+        for (const option of ref.options) pick.append(new Option(option.text.slice(0, 80), option.proposal))
+        pick.addEventListener('change', () => { if (pick.value) app.chooseRowInput(path, ref.alias, pick.value) }); line.append(pick)
+      } else if (ref.text === null) line.append(span('muted', 'received when it runs'))
+    } else {
+      const input = document.createElement('input'); input.setAttribute('aria-label', ref.name); input.value = ref.text ?? ''
+      input.addEventListener('change', () => app.assignRowInput(path, ref.alias, input.value)); line.append(input)
+    }
+    box.append(line)
+  }
+  const run = app.deviceHandlerFor(path, task)
+  if (run) box.append(completeButton(run, () => void app.evaluateAt(path)))
+  box.addEventListener('click', event => { if ((event.target as HTMLElement).closest('input, button, select')) event.stopPropagation() })
+  box.addEventListener('keydown', event => { if ((event.target as HTMLElement).closest('input, select')) event.stopPropagation() })
+  return box
+}
 function completeButton(title: string, run: () => void): HTMLButtonElement {
   const b = button('secondary small handler-complete', 'Complete', run); b.title = title; return b
 }
@@ -1212,8 +1244,6 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
   } else if (key === 'server' || key === 'direct' || key === 'virtual') {
     const control = button('secondary small', SETTING_LABELS[key], () => key === 'server' ? app.goToAccountPeer() : app.openModal(key as 'direct' | 'virtual'))
     control.disabled = key === 'virtual' && !app.canSpawnVirtualPeer(); box.append(control)
-  } else if (key === 'peer') {
-    box.append(span('muted', 'Type @{ in a new row to choose a peer handler.'))
   } else if (key === 'invite') {
     const control = button('secondary small', SETTING_LABELS[key], () => void app.startInvite()); control.disabled = state.session?.kind !== 'user'; box.append(control)
   } else if (key === 'phone') {
@@ -1284,7 +1314,20 @@ function peerRowBody(handler: string, state: AppState, app: App, path: Scope): H
     return parts
   }
   switch (handler) {
-    case 'peer': parts.push(span('muted', 'Edit @{…} to choose a handler')); break
+    case 'peer': {
+      // the handler is this row's input: choosing one turns the row into that peer row (the device root's declared
+      // constructor stays, and a new row is made beside it)
+      const select = document.createElement('select'); select.setAttribute('aria-label', 'Peer handler')
+      select.append(new Option('Choose how to connect…', ''))
+      for (const r of PEER_ROWS) if (r.id !== 'peer' && (!r.desktop || inTauri())) select.append(new Option(r.label, r.id))
+      select.onchange = () => {
+        if (!select.value) return
+        if (path.at(-1)?.startsWith('fos:constructor:')) addPeerRow(app, select.value, node)
+        else app.setPeerRow(path, select.value)
+      }
+      parts.push(select)
+      break
+    }
     case 'invite': {
       parts.push(complete('Create an invite code for this node', () => { if (!here) app.goTo(node); void app.startInvite() }, state.session?.kind !== 'user'))
       if (state.invite && JSON.stringify(state.invite.scope) === JSON.stringify([...state.replica.meta.scope, ...node])) parts.push(codeBox(state.invite.token))
@@ -1619,6 +1662,17 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (arg.type !== 'text') { const branches = argumentBranchPicker(app, [], arg.id); if (branches) line.append(branches) }
     pick.disabled = !arg.candidates.length; pick.addEventListener('change', () => app.bindPlaceholder(arg.id, pick.value)); line.append(pick); dynamicValues.append(line)
   }
+  // the pattern this node is used with: what its rows submitted to each ref, as options to bind
+  for (const binding of app.patternBindingsAt()) {
+    const line = div('placeholder-row pattern-binding', '')
+    line.append(span('', `${binding.name} · pattern`), span('muted', binding.value ? app.valueLabel(binding.value) : binding.options.length > 1 ? 'choose one' : 'unbound'))
+    if (binding.options.length) {
+      const pick = document.createElement('select'); pick.setAttribute('aria-label', `Bind ${binding.name}`); pick.append(new Option('Choose a submitted value…', ''))
+      for (const option of binding.options) pick.append(new Option(`${app.valueLabel(option.value)} (${option.source})`, option.proposal))
+      pick.addEventListener('change', () => { if (pick.value) app.choosePatternBinding(binding.alias, pick.value) }); line.append(pick)
+    }
+    dynamicValues.append(line)
+  }
   const trigger = app.currentTrigger(), triggerState = app.currentTriggerState()
   if (trigger) dynamicValues.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
   if (trigger?.definition?.schedule && !preview) {
@@ -1940,9 +1994,10 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
     const groupOf = (task: TaskView): string => {
       const key = settingKeyFromName(task.construction?.name)
       if (task.construction?.peerId || key === 'sessions') return 'Account'
+      if (task.construction?.handler) return 'Connections'
       if (!key) return task.type === HOME_TYPE ? '' : 'Other'
       if (['name', 'theme', 'microphone', 'camera', 'geolocation', 'history'].includes(key)) return 'Device'
-      if (['server', 'direct', 'peer', 'invite', 'virtual', 'phone', 'share'].includes(key)) return 'Connections'
+      if (['server', 'direct', 'invite', 'virtual', 'phone', 'share'].includes(key)) return 'Connections'
       return 'Data'
     }
     const order = ['', 'Account', 'Device', 'Connections', 'Data', 'Other']
@@ -2096,7 +2151,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.tabIndex = -1
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
-  let body: HTMLElement
+  let body: HTMLElement, inputs: ReturnType<App['rowInputs']> = null
   // a row of the file-reference type: the file name and, on this device, whether the file still matches (its fields are not edited by hand)
   const fileReference = app.fileReference([...state.view, ...at, task.id])
   if (argument) {
@@ -2107,6 +2162,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
+  else if (!selected && (inputs = app.rowInputs([...state.view, ...at, task.id]))) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app) }
   else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
   else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
@@ -2587,6 +2643,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       for (const control of manualControls(app, state, at, task)) body.append(stop(control))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
       if (r.capability === 'task') hint('add a [ ] task inside and check it off')
+      const onDevice = !r.satisfied && app.deviceHandlerFor([...state.view, ...at, task.id], task)
+      if (onDevice) body.append(stop(completeButton(onDevice, () => void app.askPeerAt(at, task))))
       if (r.capability === 'search') {
         const fos = handler('search')
         if (fos) body.append(stop(completeButton(`Ask ${fos.name} to search`, () => void app.askPeerAt(at, task))))
@@ -3063,7 +3121,11 @@ function renderTemplatePicker(body: HTMLElement, state: AppState, app: App): voi
   for (const [type, icon, label, extras] of types) {
     common.append(iconButton(icon, label, () => app.changeTemplate(type, undefined, extras)))
   }
-  body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, TEMPLATE_TYPE).filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).map(found => ({ label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) })), () => [], 'Search templates…'))
+  body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, TEMPLATE_TYPE).filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).flatMap(found => [
+    { label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) },
+    // the same template as a pattern: this row's values are submitted to its refs instead of copying its rows in
+    { label: found.row.title, group: 'Use as pattern', run: () => app.usePattern(found.row.id) }
+  ]), () => [], 'Search templates…'))
   const form = document.createElement('form'); form.className = 'new-template-form'
   const name = document.createElement('input'); name.placeholder = 'Name (optional)'; name.setAttribute('aria-label', 'New template name')
   const icon = document.createElement('input'); icon.placeholder = 'Icon (optional)'; icon.setAttribute('aria-label', 'New template icon'); icon.maxLength = 16

@@ -39,7 +39,7 @@ import {
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
-import { capabilityTarget, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
+import { capabilityTarget, LIBRARY_ID, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
 import { nativeRef, publishNativeRef } from './native-refs'
 import { discoverHandlers } from './handlers'
 import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
@@ -76,7 +76,7 @@ export const api = {
    */
   open(handle: string, serialized: string | null, peerId: string, home = true): void {
     let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
-    loaded = ensureDeviceLibrary(loaded, { address: null, version: LIBRARY_VERSION, rows: [] }, Date.now())
+    loaded = ensureDeviceLibrary(loaded, undefined, Date.now())
     const seeded = nativeDefaultsApplied(loaded, [], `desktop:${peerId}`)
     for (const name of ['provideNode', 'sync']) {
       const ref = nativeRef(loaded.store, peerId, { id: `desktop:${name}`, label: name, type: store => capabilityTarget(store, name) })
@@ -260,15 +260,23 @@ export const api = {
     if (!cid) throw new Error('Node not found.')
     return JSON.stringify({ cid: valueCidOf(r.store, cid), ...valueContent(r.store, cid) })
   },
+  /** `fos node --write`: rows name existing cids, or give a node inline ({data, children}, nested to any depth). */
   writeGraphNode(handle: string, atJson: string, inputJson: string, instructionPathJson: string | null, now: number): void {
     const r = get(handle), input = JSON.parse(inputJson) as FosNodeContent & { nodes?: FosNodesData }
     if (input.nodes) {
       importNodes(r.store, input.nodes)
       if (Object.keys(input.nodes).some(cid => !r.store.table.has(cid))) throw new Error('Invalid graph dependencies.')
     }
+    const inline = (side: unknown): string => {
+      if (typeof side === 'string') return side
+      const node = side as FosNodeContent
+      if (!node || typeof node !== 'object' || !node.data || !Array.isArray(node.children)) throw new Error('A row side is a cid or a node {data, children}.')
+      return put(r.store, { data: node.data, children: node.children.map(([left, right]) => [inline(left), inline(right)] as [string, string]) })
+    }
     const cid = instructionPathJson ? resolveScope(r.store, headCid(r), JSON.parse(instructionPathJson)) : null
     if (instructionPathJson && !cid) throw new Error('Instruction node not found.')
-    set(handle, writeGraphNode(r, JSON.parse(atJson), { data: input.data, children: input.children }, now, cid ? valueCidOf(r.store, cid) : undefined))
+    const children = (input.children as unknown[][]).map(([left, right]) => [inline(left), inline(right)] as [string, string])
+    set(handle, writeGraphNode(r, JSON.parse(atJson), { data: input.data, children }, now, cid ? valueCidOf(r.store, cid) : undefined))
   },
   /** One MCP message (JSON-RPC) through the event grammar as this directory's owner. Returns {response, changed}. */
   mcp(handle: string, messageJson: string, peerId: string, now: number, sessionId?: string): string {

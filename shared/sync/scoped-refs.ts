@@ -1,6 +1,6 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
 import type { FosStore } from '../dag-implementation/store'
-import { content, enclosingScopes, importNodes, reachableNodes, identityCid, isBranchChoice, isGrantEdge, isMemberEdge, isRowEdge, put, readChoice, refNodeContent, isRefNode, refValueCid, typeIdOf, type Scope } from './graph'
+import { isLibraryRef, content, enclosingScopes, importNodes, reachableNodes, identityCid, isBranchChoice, isGrantEdge, isMemberEdge, isRowEdge, put, readChoice, refNodeContent, isRefNode, refValueCid, typeIdOf, type Scope } from './graph'
 import { matchesGraph } from './structural'
 import { headCid, type Replica } from './replica'
 
@@ -51,6 +51,8 @@ function declarationRows(store: FosStore, cid: string): Array<{ cid: string; typ
     const ref = content(store, edge[1])
     const namedRow = (ref.data.name || content(store, refValueCid(store, ref) ?? edge[1]).data.name) && refValueCid(store, ref) && isRowEdge(store, edge)
     const left = content(store, edge[0])
+    // A library ref is a container: its names resolve as names (namesInLibrary), never as lexical bindings.
+    if (isLibraryRef(ref)) return []
     // Linked library document rows are containers, not implicit lexical names.
     // Explicit names and ref constructor arguments declare bindings.
     const declaration = ref.data.name || !typeIdOf(store, edge[0]) || left.data.capabilityDefinition || left.data.form?.primitive

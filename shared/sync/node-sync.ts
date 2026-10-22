@@ -6,7 +6,7 @@ import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
 import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
 import { advertisedRows, content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
-  scopeBranches, branchSelection, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
+  scopeBranches, branchSelection, selectBranch, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
   isMemberEntryId, isMemberEdge, memberEdgesOf, memberEntryId, makeLink, isRefNode, MEMBER_ENTRY_PREFIX, SERVER_MEMBER, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
@@ -39,7 +39,8 @@ function acceptFilledHostDeclarations(r: Replica, local: NodeShape, remote: Node
     return stub && primitive?.implementation === id && primitive.host === value.data.peerId?.content ? { ...child, pinned: other.pinned } : child
   }) }
 }
-export const nodeSyncKey = (peer: string, path: Scope, branches?: NodeBranch[]): string => JSON.stringify(branches?.length ? [peer, path, [...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : [peer, path])
+export const nodeSyncKey = (peer: string, path: Scope, branches?: NodeBranch[], submission?: string): string => JSON.stringify([
+  peer, path, ...(branches?.length ? [[...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : []), ...(submission ? [{ submission }] : [])])
 /** Data fields a shape at `path` may carry: a member entry's also say who it is and what is switched off. */
 const shapeField = (path: Scope | undefined, key: string) => !forbidden.has(key) || (isMemberEntryId(path?.at(-1)) && MEMBER_ENTRY_FIELDS.has(key))
 
@@ -256,12 +257,18 @@ function allowedToEdit(r: Replica, path: Scope, authority: NodeAuthority): boole
   return allowed
 }
 
+/** The submission a proposing peer's branch `name` is (a pull request): `branch:<name>`. */
+export function branchSubmissionName(name: string): string { return `branch:${name}` }
+/** The branch a submission is, when it is one (`branch:<name>`). */
+export function submittedBranch(name: string): string | null { return name.startsWith('branch:') ? name.slice('branch:'.length) : null }
+
 /** Same request on HTTP, RTC, and virtual channels. Authorization is rechecked on
  * every node; the transport must serialize load/modify/save. */
 export function exchangeNode(r: Replica, input: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
   const request = withoutMemberWrites(parseNodeRequest(input), authority)
   if (request.branches?.length || request.proposal) return exchangeNodeContext(r, request, authority, now, exchangeNode)
-  return withMainBranchPolicy(r.store, () => authority.proposeOnly ? exchangeProposedNode(r, request, authority, now) : exchangeNodeOnMain(r, request, authority, now))
+  // a named submission (a pull request) is a proposal whoever sends it: it never writes main
+  return withMainBranchPolicy(r.store, () => authority.proposeOnly || request.submission ? exchangeProposedNode(r, request, authority, now) : exchangeNodeOnMain(r, request, authority, now))
 }
 
 function exchangeNodeOnMain(r: Replica, input: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
@@ -400,9 +407,9 @@ export function nodePersistenceAllowed(r: Replica, path: Scope): boolean {
   return true
 }
 
-export function rememberNodeSync(r: Replica, path: Scope, remote: ProvidedNode, local = nodeShape(r, path)): Replica {
+export function rememberNodeSync(r: Replica, path: Scope, remote: ProvidedNode, local = nodeShape(r, path), submission?: string): Replica {
   return { ...r, meta: { ...r.meta, serverPeerId: r.meta.serverPeerId ?? remote.peerId,
-    nodeSync: { ...r.meta.nodeSync, [nodeSyncKey(remote.peerId, path, remote.address.branches)]: { local, remote: { data: remote.data, children: remote.children, proposals: remote.proposals, grants: remote.grants } } } } }
+    nodeSync: { ...r.meta.nodeSync, [nodeSyncKey(remote.peerId, path, remote.address.branches, submission)]: { local, remote: { data: remote.data, children: remote.children, proposals: remote.proposals, grants: remote.grants } } } } }
 }
 
 export function nodeSyncRequest(r: Replica, path: Scope, peer: string, scope: Scope, remotePath: Scope): NodeRequest {
@@ -458,7 +465,9 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   const main = content(r.store, attachment), base = putStripped(r.store, main)
   // The proposer's submission (open or rejected) is what it is served, rebased onto main as it is now, so it sees what
   // changed on main and keeps its own rows. Only a submission with different content reopens a rejected one.
-  const existing = readProposals(r.store, main).find(p => p.peerId === authority.peerId && p.name === 'node-sync')
+  // a named branch is its own submission (a pull request); everything else is the peer's one `node-sync` submission
+  const name = request.submission ? branchSubmissionName(request.submission) : 'node-sync'
+  const existing = readProposals(r.store, main).find(p => p.peerId === authority.peerId && p.name === name)
   if (!existing && !request.update) return provideNode(r, request, authority, now)
   // Work on an isolated store so errors cannot mutate main or its pending value.
   let fork = loadReplica(serializeReplica(r))
@@ -475,8 +484,8 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   if (after !== before) {
     const value = putStripped(r.store, content(r.store, after))
     // a changed submission is checked again (open), against the main it was rebased onto
-    const proposal = put(r.store, proposalContent(r.store, authority.peerId, 'node-sync', value, existing && !rebased ? existing.baseCid : base, now))
-    const next = withProposal(r.store, main, authority.peerId, proposal, 'node-sync')
+    const proposal = put(r.store, proposalContent(r.store, authority.peerId, name, value, existing && !rebased ? existing.baseCid : base, now))
+    const next = withProposal(r.store, main, authority.peerId, proposal, name)
     commitRoot(r.store, updateAtScope(r.store, headCid(r), authority.scope, () => next, 'node'), now)
   }
   const type = capabilityTarget(r.store, 'provideNode'), root = content(r.store, r.store.rootNodeId)
@@ -615,6 +624,8 @@ export function nodeBranchBase(r: Replica, path: Scope): NodeShape | null {
  */
 export type NodeSyncContext = {
   peer: string | null; scope: Scope; remoteRoot: Scope; localRoot: Scope; branches: NodeBranch[]; push: boolean
+  /** A pull request: what this side sends is its submission named after a branch here (`pullRequest`). */
+  submission?: string
   /**
    * Member entries above the attachment, at the same path on both sides, that `nodeTreeSync` pulls after it (receive
    * only): an owner's device attached at Home takes its account server's own entry on the root (its offers, its key).
@@ -629,21 +640,23 @@ export function accountContextAbove(r: Replica): Scope[] {
 export type NodeSyncPlan = {
   path: Scope; peer: string | null; scope: Scope; remotePath: Scope; push: boolean; dirty: boolean
   request: NodeRequest; first: NodeRequest; local: NodeShape; baseline: NodeShape; previousRemote: NodeShape | null
+  submission?: string
 }
 
 export function planNodeSync(r: Replica, path: Scope, context: NodeSyncContext): NodeSyncPlan {
-  const { peer, scope, remoteRoot, localRoot, branches, push } = context
+  const { peer, scope, remoteRoot, localRoot, branches, push, submission } = context
   const local = nodeShape(r, path)
-  const state = peer ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches)] : undefined
-  const main = peer && branches.length ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches.map(b => ({ ...b, name: 'main' })))] ?? r.meta.nodeSync?.[nodeSyncKey(peer, path)] : undefined
+  const state = peer ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches, submission)] : undefined
+  // a branch or a pull request starts from what main agreed with the peer
+  const main = peer && (branches.length || submission) ? (branches.length ? r.meta.nodeSync?.[nodeSyncKey(peer, path, branches.map(b => ({ ...b, name: 'main' })))] : undefined) ?? r.meta.nodeSync?.[nodeSyncKey(peer, path)] : undefined
   const branchBase = nodeBranchBase(r, path)
   const baseline = state?.local ?? branchBase ?? main?.local ?? empty()
   const dirty = !sameNodeShape(local, baseline)
   const remotePath = [...remoteRoot.slice(scope.length), ...path.slice(localRoot.length)]
-  const request = { ...nodeSyncRequest(r, path, peer ?? 'virtual-host', scope, remotePath), ...(branches.length ? { branches } : {}) }
+  const request = { ...nodeSyncRequest(r, path, peer ?? 'virtual-host', scope, remotePath), ...(branches.length ? { branches } : {}), ...(submission ? { submission } : {}) }
   // a writer asks with an (empty) update, so the answer tells it what it may write
   const first = push && dirty ? { ...request, update: { base: empty(), value: empty() } } : request
-  return { path, peer, scope, remotePath, push, dirty, request, first, local, baseline, previousRemote: state?.remote ?? branchBase ?? main?.remote ?? null }
+  return { path, peer, scope, remotePath, push, dirty, request, first, local, baseline, previousRemote: state?.remote ?? branchBase ?? main?.remote ?? null, ...(submission ? { submission } : {}) }
 }
 
 /** Check the answer to `plan.first`, record the link, and return the push to make (null: nothing to push). */
@@ -686,7 +699,7 @@ export function finishNodeSync(r: Replica, plan: NodeSyncPlan, remote: ProvidedN
   const accepted = plan.push ? mergeNodeShape(previousRemote, filtered, local) : filtered
   const merged = plan.push ? mergeNodeShape(local, accepted, latest) : mergeNodeShape(previousRemote, filtered, latest)
   let next = sameNodeShape(current, merged) ? r : installNodeShape(r, plan.path, merged, now)
-  next = rememberNodeSync(next, plan.path, normalized, accepted)
+  next = rememberNodeSync(next, plan.path, normalized, accepted, plan.submission)
   return { ...next, meta: { ...next.meta, lastSyncAt: now } }
 }
 
@@ -708,7 +721,7 @@ export function nodeTemplateRequests(r: Replica, plan: NodeSyncPlan, remote: Pro
  */
 export function blankNodeRequest(r: Replica, path: Scope, context: NodeSyncContext): NodeRequest | null {
   if (!context.peer || !path.length || nodePersistenceAllowed(r, path) || (path.length > context.localRoot.length && !nodePersistenceAllowed(r, path.slice(0, -1)))) return null
-  const state = r.meta.nodeSync?.[nodeSyncKey(context.peer, path, context.branches)]
+  const state = r.meta.nodeSync?.[nodeSyncKey(context.peer, path, context.branches, context.submission)]
   if (!state || (!Object.keys(state.remote.data).length && !state.remote.children.length)) return null
   return { ...planNodeSync(r, path, context).request, update: { base: { data: state.remote.data, children: state.remote.children }, value: empty() } }
 }
@@ -720,6 +733,32 @@ export function finishBlankNode(r: Replica, path: Scope, remote: ProvidedNode): 
 
 export type NodeTreeSync = { replica: Replica; peer: string | null; synced: number }
 
+/** The branches of rows directly below `path` that are marked for merge, by the row they branch. */
+function mergeRequestedAt(r: Replica, path: Scope): Array<{ at: Scope; name: string }> {
+  const cid = resolveScope(r.store, headCid(r), path)
+  if (!cid) return []
+  return valueContent(r.store, cid).children.flatMap(edge => {
+    const choice = identityCid(r.store, edge)
+    if (!isBranchChoice(r.store, content(r.store, choice))) return []
+    const record = readChoice(r.store, choice)
+    return record.options.filter(o => o.requestMerge && o.peerId !== record.defaultName).map(o => ({ at: [...path, record.id], name: o.peerId }))
+  })
+}
+
+/**
+ * A pull request: the branch `name` of the row at `at` (a choice there) synced with the peer as the submission named
+ * after it, the ordinary tree sync with that branch selected here. The peer keeps it beside its main value, one per
+ * branch, until it is merged; its owner sees it as an option of the node.
+ */
+export function* pullRequest(r: Replica, context: NodeSyncContext, at: Scope, name: string, now: () => number, limit = 1000): Generator<{ request: NodeRequest; replica: Replica }, NodeTreeSync, ProvidedNode> {
+  const cid = resolveScope(r.store, headCid(r), at)
+  if (!cid || !isBranchChoice(r.store, content(r.store, cid)) || !readChoice(r.store, cid).options.some(o => o.peerId === name)) throw new Error(`No branch ${name} here.`)
+  const choice = readChoice(r.store, cid).id, previous = branchSelection(r.store, cid)
+  selectBranch(r.store, choice, name)
+  try { return yield* nodeTreeSync(r, { ...context, submission: name }, now, limit) }
+  finally { selectBranch(r.store, choice, previous) }
+}
+
 /**
  * Sync a whole tree with one peer, node by node (the desktop CLI's sync): the attachment first, then each child the
  * peer's answer lists that is here or held by that peer. A generator so any transport can drive it: it yields
@@ -729,6 +768,8 @@ export type NodeTreeSync = { replica: Replica; peer: string | null; synced: numb
  */
 export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => number, limit = 1000): Generator<{ request: NodeRequest; replica: Replica }, NodeTreeSync, ProvidedNode> {
   let peer = context.peer, synced = 0
+  // the branches here marked for merge (`setBranchMergeRequest`): each goes to the peer as its pull request after this walk
+  const requested: Array<{ at: Scope; name: string }> = []
   // `held`: the peer has only a reference to this device's copy, so it is pushed whatever was agreed before
   const queue: Array<{ path: Scope; held: boolean }> = [{ path: context.localRoot, held: false }]
   while (queue.length) {
@@ -756,6 +797,7 @@ export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => n
       if (reply.templates) r = acceptTemplateNodes(r, path, reply.templates, now())
     }
     if (templates.answer) yield { request: templates.answer, replica: r }
+    if (context.push && !context.submission) requested.push(...mergeRequestedAt(r, path))
     // a child here is pushed (or pulled into); one only the peer has is pulled; one a third peer holds is left alone
     // (the peer lists a child it has not received yet as a reference to this device; reference rows are not nodes)
     for (const child of accepted.children) {
@@ -763,6 +805,11 @@ export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => n
       const cid = resolveScope(r.store, headCid(r), [...path, child.id]), node = cid ? content(r.store, cid) : null
       if (node && (isPeerReference(node) ? node.data.ref?.peer === accepted.peerId : !isHandle(node))) queue.push({ path: [...path, child.id], held: !!child.held && child.address.peerId === r.meta.peerId })
     }
+  }
+  for (const { at, name } of requested) {
+    if (!resolveScope(r.store, headCid(r), at)) continue
+    const sent: NodeTreeSync = yield* pullRequest(r, { ...context, peer }, at, name, now, limit - synced)
+    r = sent.replica; peer = sent.peer ?? peer; synced += sent.synced
   }
   if (!context.scope.length) for (const at of context.above ?? []) {
     if (!resolveScope(r.store, headCid(r), at)) continue
@@ -773,6 +820,14 @@ export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => n
 }
 
 /** `nodeTreeSync` over an async transport. */
+/** `pullRequest` driven by an async transport, as `syncNodeTree` drives a tree sync. */
+export async function sendPullRequest(r: Replica, context: NodeSyncContext, at: Scope, name: string, send: (request: NodeRequest) => Promise<ProvidedNode>, now: () => number = Date.now): Promise<NodeTreeSync> {
+  const run = pullRequest(r, context, at, name, now)
+  let step = run.next()
+  while (!step.done) step = run.next(await send(step.value.request))
+  return step.value
+}
+
 export async function syncNodeTree(r: Replica, context: NodeSyncContext, send: (request: NodeRequest) => Promise<ProvidedNode>, now: () => number = Date.now): Promise<NodeTreeSync> {
   const run = nodeTreeSync(r, context, now)
   let step = run.next()

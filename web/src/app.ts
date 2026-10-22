@@ -1,7 +1,7 @@
 import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
-import { STANDARD_CAPABILITY_PATTERNS, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern } from '../../shared/sync/index'
+import { STANDARD_CAPABILITY_PATTERNS, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, bindingSubmissionName, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { capabilityOfTarget } from '../../shared/sync/graph'
 import { workClaims, saveWorkClaims } from '../../shared/sync/work-claims'
@@ -16,6 +16,7 @@ import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { CAPABILITY_LABEL, MARKET_PEER } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
+import { sendPullRequest, type NodeSyncContext } from '../../shared/sync/node-sync'
 import { parsePastedRows } from './paste'
 import { ORGANIZED_VALUE, ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
@@ -432,8 +433,39 @@ export class App {
       await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, step.path, operation, this.now()))
       this.notify('info', 'Execution queued for the configured desktop. Track its status in the project workflow.')
       return 'pending'
+    },
+    // The response is a submission to the row's `response` ref (one per fetch row: fetching again replaces it).
+    // [fetch, right]: the url and method are the right's assignments (or the fetch node's defaults); the response is
+    // received, so it is submitted to the right's response ref (one submission per fetch row: fetching again replaces it)
+    fetch: async ({ step }) => {
+      let r = this.state.replica
+      const at = step.path, constructor = rowConstructor(r, at), refs = constructor ? openRefs(r.store, constructor) : []
+      const value = (name: string) => { const ref = refs.find(x => x.name === name); return ref ? textOf(r, assignedValue(r, at, ref.alias)) : null }
+      const url = value('url'), method = value('method') ?? 'GET', response = refs.find(x => x.received)
+      if (!url) throw new Error('Give the address to fetch.')
+      if (!response) throw new Error('This fetch has no response ref.')
+      const answer = await this.fetchUrl(url, method)
+      if (answer.status >= 400) throw new Error(`${url} answered ${answer.status}.`)
+      r = this.state.replica
+      if (!resolveScope(r.store, headCid(r), [...at, response.alias])) r = assignRefAt(r, at, response.alias, null, this.now())
+      const body = put(r.store, { data: { description: { content: answer.body } }, children: [] })
+      this.set({ replica: proposeRefAt(r, [...at, response.alias], body, r.meta.peerId, this.now(), bindingSubmissionName('fetch')).replica })
+    },
+    solve: async ({ step }) => {
+      const { replica, solutions } = solveAt(this.state.replica, step.path, this.state.replica.meta.peerId, this.now())
+      if (!solutions.length) throw new Error('Nothing around this row matches its pattern.')
+      this.set({ replica })
+      this.notify('info', `${solutions.length} solution${solutions.length === 1 ? '' : 's'}: each placeholder lists them as options.`)
     }
   })
+  /** One request from this device. The desktop shell makes it natively (no browser CORS); the browser uses fetch. */
+  async fetchUrl(url: string, method: string): Promise<{ status: number; body: string }> {
+    if (!/^https?:\/\//i.test(url)) throw new Error('Only http and https addresses can be fetched.')
+    const native = tauriInvoke<{ status: number; body: string }>('fetch_url', { url, method })
+    if (native) return native
+    const response = await fetch(url, { method })
+    return { status: response.status, body: (await response.text()).slice(0, 1_000_000) }
+  }
   deviceCapabilities(): Capability[] {
     return [...new Set(this.handlerOffers([]).filter(offer => offer.peerId === this.state.replica.meta.peerId && offer.enabled).flatMap(offer => offer.capability ? [offer.capability] : []))]
   }
@@ -2058,6 +2090,8 @@ export class App {
     this.edit(addMemberAt(this.state.replica, this.peerContextPath(), peer.id, peer.name, ['read', 'edit'], this.now()))
   }
   setPeerRow(path: Scope, handler: string | undefined): void { this.edit(this.peerRowReplica(this.state.replica, path, handler)) }
+  /** The device root's Peer constructor row: choosing a handler on it makes a new peer row instead of changing it. */
+  peerConstructorId(): string { return `fos:constructor:${this.state.replica.meta.peerId}:peer` }
   newBranchAt(path: Scope): void {
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
     if (!row) return
@@ -2070,7 +2104,45 @@ export class App {
     if (this.state.voice || this.state.work?.busy || this.evaluating) return
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
     if (!row?.branches) return
-    this.edit(setBranchMergeRequest(this.state.replica, path, name, !row.branches.mergeRequests?.includes(name), this.now()))
+    const requested = !row.branches.mergeRequests?.includes(name)
+    this.edit(setBranchMergeRequest(this.state.replica, path, name, requested, this.now()))
+    // a branch of a row a peer holds goes to that peer as a pull request
+    if (requested && this.pullRequestTarget(path)) void this.sendPullRequest(path, name)
+  }
+  /** Where a pull request of a row at `path` goes: the peer that holds it, when this device proposes to it there. */
+  pullRequestTarget(path: Scope): { context: NodeSyncContext; send: (request: NodeRequest) => Promise<ProvidedNode> } | null {
+    const session = this.state.session, r = this.state.replica, shared = this.sharedNodeAt(path)
+    if (shared && session?.kind === 'user')
+      return { context: { peer: `user:${shared.owner}`, scope: shared.scope, remoteRoot: shared.scope, localRoot: shared.root, branches: [], push: true }, send: request => requestPeerNode(session, request, shared.owner) }
+    const transport = this.transport()
+    if (!(transport === 'virtual' || transport === 'direct' || (transport === 'account' && session?.kind === 'peer'))) return null
+    const localRoot = r.meta.localScope ?? []
+    const scope = transport === 'account' ? r.meta.scope : transport === 'virtual' ? this.virtualIdentity!.scope : this.link!.remoteScope
+    const peer = transport === 'direct' ? this.link!.remotePeerId! : r.meta.serverPeerId ?? null
+    const send = (request: NodeRequest) => transport === 'account' ? requestPeerNode(session!, request) : transport === 'virtual' ? this.virtualPeers!.requestNode(request) : this.link!.requestNode(request)
+    return { context: { peer, scope, remoteRoot: scope, localRoot, branches: [], push: true }, send }
+  }
+  /** Send the branch `name` of the row at `path` to the peer holding it as a pull request (its `branch:<name>` submission). */
+  async sendPullRequest(path: Scope, name: string): Promise<void> {
+    const target = this.pullRequestTarget(path), store = this.state.replica.store
+    if (!target) { this.notify('error', 'No peer holds this row to send a pull request to.'); return }
+    try {
+      const done = await sendPullRequest(this.state.replica, target.context, path, name, target.send, () => this.now())
+      if (this.state.replica.store !== store) return
+      this.set({ replica: done.replica })
+      this.notify('info', `Pull request “${name}” sent.`)
+    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
+  }
+  /**
+   * Approve the pull request `branch` on the node at `path`: an `approve` requirement there, run by the account
+   * server's approve handler (the approval is signed into the branch; the group's merge rule then merges it).
+   */
+  async approvePullRequest(path: Scope, branch: string): Promise<void> {
+    const id = `fos:approve:${branch}`
+    let r = this.state.replica
+    if (resolveScope(r.store, headCid(r), [...path, id])) r = deleteTask(r, path, id, this.now())
+    this.edit(addRow(r, path, ALLOCATION_TYPE, branch, this.now(), { id, requirement: { capability: 'approve' } }))
+    await this.evaluateAt([...path, id])
   }
   async createNodeBranch(at: Scope, id: string, name: string, absolute = false): Promise<void> {
     if (this.evaluating || this.state.voice || this.state.work?.busy) { this.notify('info', 'Finish the current recording or task before switching branches.'); return }
@@ -2345,9 +2417,27 @@ export class App {
   libraryConstructors() {
     const path = libraryPath(this.state.replica, this.constructorContext())
     if (!path) return []
+    const r = this.state.replica, ref = resolveScope(r.store, headCid(r), path)
+    // a name's row is its ref, offered by `libraryNames` as the node it names
+    const names = ref ? namesInLibrary(r.store, valueCidOf(r.store, ref)).byName : new Map()
     return (view(this.state.replica, path)?.tasks ?? [])
-      .filter(row => row.type === TEMPLATE_TYPE && row.id !== MANUAL_HANDLERS_ID && row.title.trim())
+      .filter(row => row.type === TEMPLATE_TYPE && row.id !== MANUAL_HANDLERS_ID && !names.has(row.id) && row.title.trim())
       .map(row => ({ id: row.id, label: row.title.trim(), path: [...path, row.id], icon: this.templateIcon([...path, row.id]) || 'template' }))
+  }
+  /** The names the nearest library gives (refs in its graph), each dereferenced: the node a row made from it has on its left. */
+  libraryNames(path = this.constructorContext()): Array<{ name: string; node: string; label: string }> {
+    const library = libraryPath(this.state.replica, path)
+    const r = this.state.replica, ref = library && resolveScope(r.store, headCid(r), library)
+    if (!ref) return []
+    return [...namesInLibrary(r.store, valueCidOf(r.store, ref)).byName].map(([name, node]) => {
+      const value = valueContent(r.store, node)
+      return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name }
+    })
+  }
+  /** A row made from the node the library names `name` where the row goes (the name resolves in that scope). */
+  insertNamed(name: string, path = this.constructorContext()): Scope {
+    const label = this.libraryNames(path).find(n => n.name === name)?.label ?? ''
+    return this.applyConstructor(path, { type: name, text: label, done: false })
   }
   insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false): Scope {
     const template = this.libraryConstructors().find(item => item.id === id)
@@ -2471,6 +2561,7 @@ export class App {
       this.resolveUser(parsed.extras?.user)
       if (templateCid) r = instantiateTemplateValue(r, parent, id, templateCid, this.now())
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
+      if (parsed.construct) r = constructAt(r, target, capabilityTarget(r.store, parsed.construct.capability), parsed.construct.values, this.now())
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
         const peer = `git:${r.meta.peerId}:${encodeURIComponent(localDirectory)}`
@@ -2753,6 +2844,7 @@ export class App {
         get: () => { valid(); return this.state.replica },
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
         now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).length > 0,
+        opensRefs: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).some(executor => executor.opensRefs),
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
         effect: async (step, operation) => {
           const executors = this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId)
@@ -2964,6 +3056,31 @@ export class App {
     selectBranch(this.state.replica.store, branches.id, name)
     this.branchSelections[branches.id] = name; this.savePrefs(); this.refresh()
   }
+  /** The pattern the node at `path` is used with (its row's left): each ref with its value and its submitted options. */
+  patternBindingsAt(path: Scope = this.state.view): PatternBinding[] {
+    if (!path.length) return []
+    const r = this.state.replica, parent = resolveScope(r.store, headCid(r), path.slice(0, -1))
+    const edge = parent ? findEdge(r.store, valueContent(r.store, parent), `a:${path.at(-1)}`) : undefined
+    return edge ? patternBindings(r.store, edge[0]).filter(binding => binding.value || binding.options.length) : []
+  }
+  valueLabel(cid: string): string {
+    const node = valueContent(this.state.replica.store, cid)
+    return node.data.description?.content ?? node.data.name?.content ?? (node.data.scalar ? String(node.data.scalar.value) : cid.slice(-8))
+  }
+  choosePatternBinding(alias: string, proposal: string, path: Scope = this.state.view): void {
+    this.edit(choosePatternBindingAt(this.state.replica, path.slice(0, -1), path.at(-1)!, alias, proposal, this.now()))
+  }
+  /** Use the template `templateId` as this row's pattern: the row's values are submitted to its refs by position. */
+  usePattern(templateId: string): void {
+    const path = this.state.templatePicker?.path
+    if (!path?.length) return
+    const r = this.state.replica, template = resolveRef(r, templateId, path.slice(0, -1))
+    const cid = template && resolveScope(r.store, headCid(r), [...template.path, templateId])
+    if (!cid) { this.notify('error', 'That pattern is unavailable.'); return }
+    const used = usePatternAt(r, path.slice(0, -1), path.at(-1)!, valueCidOf(r.store, cid), r.meta.peerId, this.now())
+    this.edit(used.replica); this.closeModal()
+    this.notify('info', `${used.submitted} value${used.submitted === 1 ? '' : 's'} submitted to the pattern${used.skipped ? `; ${used.skipped} did not fit` : ''}.`)
+  }
   bindPlaceholder(id: string, cid: string, at: Scope = []): void {
     if (!this.placeholders(at).some(p => p.id === id && p.candidates.some(c => c.cid === cid))) return
     this.setArgumentValue(at, id, cid)
@@ -3053,9 +3170,38 @@ export class App {
    * Hand a requirement to the peer that registered its capability: the account server runs it as an evaluation
    * effect of that requirement (search: hits as ref rows under it; market: the task listed), recording the supply.
    */
+  /** The handler this device runs `row` with (a device primitive such as fetch or solve), if any. */
+  deviceHandlerFor(path: Scope, row: TaskView): string | null {
+    const step = { path, row: row.requirement ? { ...row, requirement: { ...row.requirement, satisfied: false } } : row }
+    if (!this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).length) return null
+    const me = this.state.replica.meta.peerId, store = this.state.replica.store
+    const capability = row.requirement?.capability ?? (row.typeCid ? capabilityName(store, row.typeCid) : null)
+    return this.handlerOffers(path).find(offer => offer.peerId === me && offer.capability === capability)?.label ?? 'Run'
+  }
+  /** A row made by a constructor node: each ref it declares, with the row's value for it and what was submitted. */
+  rowInputs(path: Scope): Array<OpenRef & { text: string | null; options: Array<{ proposal: string; text: string }> }> | null {
+    const r = this.state.replica, constructor = path.length ? rowConstructor(r, path) : null
+    const refs = constructor ? openRefs(r.store, constructor) : []
+    if (!refs.length) return null
+    const node = resolveScope(r.store, headCid(r), path)
+    return refs.map(ref => {
+      const assignment = node && findEdge(r.store, valueContent(r.store, node), `a:${ref.alias}`)
+      const options = assignment ? readProposals(r.store, content(r.store, identityCid(r.store, assignment))).filter(p => p.status === 'open').map(p => ({ proposal: p.cid, text: textOf(r, p.contentCid) ?? '' })) : []
+      return { ...ref, text: textOf(r, assignedValue(r, path, ref.alias)), options }
+    })
+  }
+  assignRowInput(path: Scope, alias: string, text: string): void {
+    const r = this.state.replica
+    this.edit(assignRefAt(r, path, alias, text ? put(r.store, { data: { description: { content: text } }, children: [] }) : null, this.now()))
+  }
+  chooseRowInput(path: Scope, alias: string, proposal: string): void {
+    this.edit(applyProposalAt(this.state.replica, [...path, alias], proposal, this.state.replica.meta.peerId, this.now()))
+  }
   async askPeerAt(at: Scope, req: TaskView): Promise<void> {
     const r = req.requirement
     if (!r) return
+    // what this device runs itself needs no account
+    if (this.deviceHandlerFor([...this.state.view, ...at, req.id], req)) { await this.evaluateAt([...this.state.view, ...at, req.id]); return }
     if (r.capability === 'tool' && r.tool === 'fos.pull') { await this.evaluateAt([...this.state.view, ...at, req.id]); return }
     if (r.capability === 'search' && r.satisfied) {
       // searching again: the server's earlier fill (its supply) goes, so the requirement runs once more
@@ -3909,17 +4055,23 @@ export class App {
   setSetting(key: string, value: unknown): void { this.edit(writeNodeValue(this.state.replica, [], this.settingKey(key), value, this.now())) }
   ensureSettings(): void {
     let r = this.state.replica
-    const defaults: Record<string, unknown> = { history: { handler: 'history' }, name: this.state.deviceName, theme: document.documentElement.dataset.theme || 'system', microphone: 'Not checked', camera: 'Not checked', geolocation: 'Not checked', server: { handler: 'connect' }, direct: { handler: 'direct' }, peer: { handler: 'peer' }, invite: { handler: 'invite' }, virtual: { handler: 'virtual' }, phone: { handler: 'phone' }, share: { handler: 'share' }, resetHome: { handler: 'reset-home' }, resetAccount: { handler: 'reset-account' }, sessions: { handler: 'sessions' }, export: { handler: 'export-yaml' }, import: { handler: 'import-yaml' } }
+    const defaults: Record<string, unknown> = { history: { handler: 'history' }, name: this.state.deviceName, theme: document.documentElement.dataset.theme || 'system', microphone: 'Not checked', camera: 'Not checked', geolocation: 'Not checked', server: { handler: 'connect' }, direct: { handler: 'direct' }, invite: { handler: 'invite' }, virtual: { handler: 'virtual' }, phone: { handler: 'phone' }, share: { handler: 'share' }, resetHome: { handler: 'reset-home' }, resetAccount: { handler: 'reset-account' }, sessions: { handler: 'sessions' }, export: { handler: 'export-yaml' }, import: { handler: 'import-yaml' } }
     const installedName = `fos:settings-installed:${r.meta.peerId}`
     const installed = readNodeValue<string[]>(r, [], installedName) ?? []
     for (const [key, value] of Object.entries(defaults)) {
       const name = this.settingKey(key), existing = readNodeValue(r, [], name)
-      const peerHandler = ['server', 'direct', 'peer', 'invite', 'virtual', 'phone', 'share'].includes(key)
+      const peerHandler = ['server', 'direct', 'invite', 'virtual', 'phone', 'share'].includes(key)
       const type = capabilityTarget(r.store, peerHandler ? 'peer' : 'tool')
       const argument = argumentRefs(r.store, headCid(r)).find(arg => arg.name === name)
       if ((!installed.includes(key) && existing === null) || (peerHandler && argument && argument.type !== type)) r = writeNodeValue(r, [], name, existing ?? value, this.now(), typeof value === 'object' ? { type, peer: r.meta.peerId } : undefined)
     }
     if (Object.keys(defaults).some(key => !installed.includes(key))) r = writeNodeValue(r, [], installedName, [...new Set([...installed, ...Object.keys(defaults)])], this.now())
+    // Adding a peer is the Peer constructor itself, declared as a row (it replaces the old "Add peer" setting)
+    const oldPeerSetting = argumentRefs(r.store, headCid(r)).find(arg => arg.name === this.settingKey('peer'))
+    const oldId = oldPeerSetting && content(r.store, oldPeerSetting.cid).data.alias?.id
+    if (oldId) r = deleteTask(r, [], oldId, this.now())
+    const declared = this.peerConstructorId()
+    if (!resolveScope(r.store, headCid(r), [declared])) r = this.peerRowReplica(addRow(r, [], PLAIN_TYPE, '', this.now(), { id: declared }), [declared], 'peer')
     const root = headCid(r), store = r.store
     const next = updateAtScope(store, root, [], node => ({ ...node, children: node.children.map(edge => {
       if (![store.primitive.memberField.getId(), store.primitive.peerField.getId()].includes(edge[0])) return edge

@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub const CONFIG_FILE: &str = "fos.config.toml";
 pub const DEFAULT_SERVER: &str = "https://api.fosforescent.com";
 pub const NO_BRANCH: &str = "local";
+pub const DEFAULT_PORT: u16 = 4777;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -87,25 +88,48 @@ pub fn find_config_dir(start: &Path) -> Option<PathBuf> {
 }
 
 impl Project {
-    /// Resolve the context for `path` (a directory) or the home directory.
+    /// Resolve the context for `path` (a directory) or the home directory. A directory inside no configured project is
+    /// a store of its own (`<dir>/.fos`), created by `ensure_store`; it never falls back to Home's state.
     pub fn locate(path: Option<&Path>) -> Result<Project, String> {
         let home = home_dir();
         let dir = match path {
             Some(p) => p.canonicalize().map_err(|e| format!("{}: {}", p.display(), e))?,
             None => home.clone(),
         };
-        let is_home = dir == home;
-        let config_dir = if is_home { None } else { find_config_dir(&dir) };
-        let (config, state_dir) = match &config_dir {
-            Some(cfg) => (read_config(&cfg.join(CONFIG_FILE))?, cfg.join(".fos")),
-            None => {
-                // Home mode: optional ~/.fos/config.toml with the server to use.
-                let home_cfg = home.join(".fos").join("config.toml");
-                let config = if home_cfg.is_file() { read_config(&home_cfg)? } else { Config::default() };
-                (config, home.join(".fos"))
-            }
+        if !dir.is_dir() {
+            return Err(format!("{} is not a directory", dir.display()));
+        }
+        // canonicalize adds a `\?\` prefix on Windows, so compare against the canonical home as well
+        let is_home = dir == home || home.canonicalize().map_or(false, |h| h == dir);
+        // Home mode: optional ~/.fos/config.toml with the server to use.
+        let home_cfg = home.join(".fos").join("config.toml");
+        let home_config = || if home_cfg.is_file() { read_config(&home_cfg) } else { Ok(Config::default()) };
+        if is_home {
+            return Ok(Project { dir, config_dir: None, config: home_config()?, state_dir: home.join(".fos"), is_home });
+        }
+        let (config_dir, config) = match find_config_dir(&dir) {
+            Some(cfg) => { let config = read_config(&cfg.join(CONFIG_FILE))?; (cfg, config) }
+            // a new store attaches to the server Home uses
+            None => (dir.clone(), Config { attach: Attach { server: home_config()?.attach.server, ..Default::default() }, ..Default::default() }),
         };
-        Ok(Project { dir, config_dir, config, state_dir, is_home })
+        let state_dir = config_dir.join(".fos");
+        Ok(Project { dir, config_dir: Some(config_dir), config, state_dir, is_home })
+    }
+
+    /// Make this directory's store exist: fos.config.toml (what makes it a store for `locate`, the GUI and the stores
+    /// nested below it), `.fos/` and its device. The desktop window then lists the directory at the store's root.
+    /// Returns whether the store was new.
+    pub fn ensure_store(&self) -> Result<bool, String> {
+        let created = match &self.config_dir {
+            Some(dir) if !dir.join(CONFIG_FILE).is_file() => {
+                Project::write_default_config(dir, &self.server(), self.config.attach.token.as_deref(), DEFAULT_PORT)?;
+                true
+            }
+            _ => false,
+        };
+        self.ensure_state()?;
+        self.device()?;
+        Ok(created)
     }
 
     /// The store whose state lives in `state_dir` (`<dir>/.fos`), as `locate` would resolve its directory; `home_state`
@@ -330,6 +354,27 @@ mod tests {
         assert_eq!(project.device().unwrap().peer_id, device.peer_id);
         project.save_replica_json("main", "{}").unwrap();
         assert_eq!(project.branches(), vec!["main".to_string()]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unconfigured_directory_is_a_store_of_its_own() {
+        let dir = std::env::temp_dir().join(format!("fos-new-store-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        let project = Project::locate(Some(&dir)).unwrap();
+        let canonical = dir.canonicalize().unwrap();
+        assert!(!project.is_home);
+        assert_eq!(project.state_dir, canonical.join(".fos"), "never Home's state");
+        assert_eq!(project.config_dir.as_deref(), Some(canonical.as_path()));
+        assert!(!project.state_dir.exists(), "locate alone writes nothing");
+        assert!(project.ensure_store().unwrap(), "first use creates the store");
+        assert!(dir.join(CONFIG_FILE).is_file() && dir.join(".fos/device.json").is_file());
+        let device = project.device().unwrap();
+        assert!(!project.ensure_store().unwrap(), "an existing store is kept");
+        // reopened, and from a directory inside it, it is the same store and device
+        let inner = Project::locate(Some(&dir.join("sub"))).unwrap();
+        assert_eq!(inner.state_dir, project.state_dir);
+        assert_eq!(inner.device().unwrap().peer_id, device.peer_id);
         let _ = fs::remove_dir_all(&dir);
     }
 }

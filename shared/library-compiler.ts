@@ -1,18 +1,21 @@
 /**
- * Compile a portable .fos graph. No type definitions or application templates live in this module.
+ * Compile a portable .fos graph: the standard library as the content a device's library ref is submitted.
  *
  * The library's `version` is the data version (`FOS_DATA_VERSION`, shared/version.ts), the same one its cids carry: a
  * source in another version is refused, so the library and the cid format cannot drift apart.
+ *
+ * Nothing here gives library nodes identities. Names are refs in the graph: a ref named `lib:type:task` (its alias)
+ * points at the node rows put on their left. `refs` lists them, by name, so a build can find its own refs.
  */
 import { hashContent, isCurrentCid, verifyCid } from './dag-implementation/cid'
 import { FOS_DATA_VERSION } from './version'
-import type { FosNodeContent, FosNodesData, FosPathElem } from './types'
+import type { FosNodesData } from './types'
+import { libraryNames } from './library-names'
 
 export type LibrarySource = { version: string; rootNodeId: string; nodes: FosNodesData }
-/** A row of the library; `type` is the graph identity of its edge's left node (`lib:type:…`, or a template row's id). */
-export type CompiledLibraryRow = { id: string; type: string; text: string; graph: { template: string; cid: string }; children?: CompiledLibraryRow[] }
+export type CompiledLibrary = LibrarySource & { refs: Record<string, string> }
 
-export function compileLibrary(source: LibrarySource) {
+export function compileLibrary(source: LibrarySource): CompiledLibrary {
   if (!source || !source.nodes || !source.nodes[source.rootNodeId]) throw new Error('Invalid .fos library graph.')
   if (source.version !== FOS_DATA_VERSION) throw new Error(`The library graph is in data version ${JSON.stringify(source.version)}, this build is ${FOS_DATA_VERSION}: export it again (fos . library export --local).`)
   const nodes: FosNodesData = {}, visiting = new Set<string>()
@@ -22,7 +25,7 @@ export function compileLibrary(source: LibrarySource) {
     const node = source.nodes[cid]
     if (!node || !isCurrentCid(cid) || !verifyCid(cid, node)) throw new Error(`Invalid or missing library node ${cid}.`)
     if ('instanceKind' in node.data) throw new Error('Library definitions must not contain instanceKind.')
-    if (node.data.behavior?.content?.startsWith('builtin:')) throw new Error('Library definitions must not name builtin behaviors: a type is told apart by its graph identity.')
+    if (node.data.behavior?.content?.startsWith('builtin:')) throw new Error('Library definitions must not name builtin behaviors.')
     visiting.add(cid)
     for (const [i, t] of node.children) { visit(i); visit(t) }
     visiting.delete(cid)
@@ -31,25 +34,7 @@ export function compileLibrary(source: LibrarySource) {
   visit(source.rootNodeId)
   // The native mutable-ref pointer has a stable content identity, shared with the store.
   const target = hashContent({ data: { description: { content: 'Target Constructor Node' } }, children: [] })
-  const value = (cid: string): FosNodeContent => {
-    const node = nodes[cid]!
-    const pointer = node.children.find(([i]) => i === target)
-    return pointer ? value(pointer[1]) : node
-  }
-  const root = value(source.rootNodeId)
-  const group = root.children.find(([, cid]) => nodes[cid]!.data.alias?.id === 'lib:types')
-  if (!group) throw new Error('The library has no lib:types row.')
-  const types = value(group[1]).children.map(([, cid]) => value(cid))
-  if (types.some(type => !type.data.alias?.id)) throw new Error('Library definitions need graph identities.')
-  const row = ([template, cid]: FosPathElem): CompiledLibraryRow | null => {
-    const identity = nodes[cid]!, node = value(cid), instruction = value(template)
-    const id = identity.data.alias?.id ?? node.data.alias?.id
-    if (!id) return null
-    const type = instruction.data.alias?.id
-    if (!type || type === 'lib:type:pattern') return null
-    const children = node.children.map(row).filter((r): r is CompiledLibraryRow => !!r)
-    return { id, type, text: node.data.description?.content ?? '', graph: { template, cid }, ...(children.length ? { children } : {}) }
-  }
-  const rows = root.children.map(row).filter((r): r is CompiledLibraryRow => !!r)
-  return { version: FOS_DATA_VERSION, rootNodeId: source.rootNodeId, nodes: Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))), types, rows }
+  // the names the library gives its nodes (refs in the graph; see library-names.ts)
+  const refs = Object.fromEntries(libraryNames(cid => nodes[cid], source.rootNodeId, target).byName)
+  return { version: FOS_DATA_VERSION, rootNodeId: source.rootNodeId, nodes: Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))), refs }
 }

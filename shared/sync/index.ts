@@ -12,6 +12,7 @@ export * from './work'
 export * from './bindings'
 
 export * from './branches'
+export * from './approvals'
 
 export * from './repository'
 
@@ -53,3 +54,7 @@ export * from './capabilities'
 export { requirementHandlerTypes } from './standard-requirements'
 export * from './title'
 export * from './title-request'
+export * from './pattern-bindings'
+export * from './unify'
+export * from './parameters'
+export * from './constructor-rows'

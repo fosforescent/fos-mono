@@ -5,10 +5,9 @@
  * rank), its merge policy and its seed templates exist. Members' edits reach the node as proposals and merge once
  * enough members approved them (sharing.ts `submit` → `applyMergePolicy`).
  */
-import { DEFAULT_MERGE_POLICY, LIBRARY_ID, LIBRARY_VERSION, addRow, createReplica, ensureHomeContext, exportLibraryRows, headCid, homePath, libraryInfo, mergePolicy, seedStandardLibrary, addMemberAt, setMemberCapabilitiesAt, setMergePolicy, view, type LibraryAddress, type LibraryBundle, type Replica } from '@fosforescent/shared/sync/index'
+import { DEFAULT_MERGE_POLICY, LIBRARY_ID, addRefAt, createReplica, ensureHomeContext, headCid, homePath, mergePolicy, put, seedStandardLibrary, addMemberAt, setMemberCapabilitiesAt, setMergePolicy, view, type LibraryAddress } from '@fosforescent/shared/sync/index'
 import type { HostRuntime } from './host-runtime'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
-import { PLAIN_TYPE } from '@fosforescent/shared/sync/library-types'
 
 export const LIBRARY_TITLE = 'Standard library'
 export const LIBRARY_GRANTS = ['read', 'edit', 'rank'] as const
@@ -30,7 +29,8 @@ export async function ensureStandardLibrary(deps: LibraryDeps, owner: string, ru
     const before = headCid(r)
     r = ensureHomeContext(r, now, runtime?.hostOffers())
     const home = homePath(r)
-    if (!view(r, home)?.tasks.some(t => t.id === LIBRARY_ID)) r = addRow(r, home, PLAIN_TYPE, LIBRARY_TITLE, now, { id: LIBRARY_ID })
+    // a library ref like a device root's: any value fits it (the empty node on its left constrains nothing)
+    if (!view(r, home)?.tasks.some(t => t.id === LIBRARY_ID)) r = addRefAt(r, home, LIBRARY_ID, put(r.store, { data: {}, children: [] }), now, null, LIBRARY_TITLE)
     const path = [...home, LIBRARY_ID]
     // published to the group of every account, a member that reads, proposes (edit), approves and ranks
     const audience = view(r, path)?.members.find(m => m.peerId === 'audience:users')

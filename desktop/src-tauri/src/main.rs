@@ -115,7 +115,7 @@ enum Commands {
     Status,
     /// The .fos stores on this machine this one is linked with (Home's and those above it, both ways); `ls <name>` reads one's tree through node exchange
     Peers { action: Option<String>, name: Option<String> },
-    /// Attach this directory with a connect token (from "Invite a device here" on a node)
+    /// Attach this directory with a connect token (from an @{invite} peer row on a node)
     Attach { token: Option<String> },
     /// Sign in to your account (browser sign-in by default; --token for a connect token; --password to type credentials)
     Login {
@@ -249,8 +249,11 @@ fn reset(path: Option<&Path>, force: bool) -> Result<(), String> {
 #[cfg(desktop)]
 fn run_gui(path: Option<&Path>) -> Result<(), String> {
     let project = project::Project::locate(path)?;
-    project.ensure_state()?;
+    let created = project.ensure_store()?;
     println!("{}", "Launching Fosforescent…".cyan());
+    if created {
+        println!("  new store: wrote {} in {}", project::CONFIG_FILE, stores::display(&project.dir));
+    }
     println!("  context: {}", project.label());
     println!("  state:   {}", project.state_dir.display());
     env::set_var("FOS_TARGET_DIR", &project.dir);

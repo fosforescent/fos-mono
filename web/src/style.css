@@ -650,6 +650,9 @@ textarea.edit { width: 100%; font: inherit; font-family: var(--mono); font-size:
 .combo-option:has(.branch-request) { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .branch-request { flex: 0 0 auto; }
 .branch-request[aria-pressed="true"] { color: var(--accent); }
+/* a pull request waiting on this side's approval */
+.branch-request[data-tone="pending"], .approve-pull-request { color: var(--warn); }
+.approve-pull-request { margin-left: .35rem; border-color: var(--warn-line); }
 .task .alternative-picker { margin-left: .4rem; }
 .task .combo-trigger { opacity: .65; }
 .task:hover .combo-trigger, .combo-trigger:focus-visible { opacity: 1; }

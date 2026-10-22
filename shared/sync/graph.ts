@@ -46,6 +46,7 @@ import { standardRequirementSatisfied } from './standard-requirements'
 
 import { capabilityPattern, capabilityName, sameCapabilityType } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
+import { libraryNames, type LibraryNames } from '../library-names'
 import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, MONEY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { formAttribution, formElements, formTitle, positionFormRows, type FormElement } from './forms'
 import { sameUser, userOf, userPeerId, type UserRecord } from './users'
@@ -214,29 +215,48 @@ export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'po
  * peer that registered that capability, or a `peer` (the named peer confirms the assignment).
  */
 
-/** The standard library row: shipped in every root and, for people who contribute and vote, linked in Home. */
+/**
+ * The name of the standard library ref: a ref in every device root (and, for people who contribute, one linked in
+ * Home). Its value arrives as a submission: the build's library first, then what its members agree on.
+ */
 export const LIBRARY_ID = 'fos:library'
-/** The library's Row types group: one row per row type, what every row is made from. */
-export const ROW_TYPES_ID = 'lib:types'
 
-/** The seed's row types, their pattern rows stored in `store`. */
-export function seedTypes(store: FosStore): FosNodeContent[] {
+/** The library ref is a container: the names in its value resolve as names (`namesInLibrary`), never as lexical bindings. */
+export function isLibraryRef(node: FosNodeContent): boolean {
+  return node.data.alias?.id === LIBRARY_ID
+}
+
+/** The build's library, stored in `store`: the content of the submission a device root's library ref accepts. */
+export function shippedLibrary(store: FosStore): string {
   if (!store.table.has(COMPILED_LIBRARY.rootNodeId)) importNodes(store, COMPILED_LIBRARY.nodes as unknown as FosNodesData)
-  return COMPILED_LIBRARY.types as FosNodeContent[]
+  return COMPILED_LIBRARY.rootNodeId
 }
 
-/** The build's definition of the library type `typeId`, stored in `store`; null when this build has none. */
-function seedType(store: FosStore, typeId: string): string | null {
-  const seeded = seedTypes(store).find(type => type.data.alias?.id === typeId)
-  return seeded ? put(store, seeded) : null
+/** The node the build's library names `name` (`lib:type:task`, …), stored in `store`; null when it names none. */
+export function shippedRef(store: FosStore, name: string): string | null {
+  const cid = (COMPILED_LIBRARY.refs as Record<string, string>)[name]
+  if (!cid) return null
+  shippedLibrary(store)
+  return cid
 }
+
+/** The names a library value gives its nodes (library-names.ts), memoized per value: values never change. */
+const libraryNameCache = new WeakMap<FosStore, Map<string, LibraryNames>>()
+export function namesInLibrary(store: FosStore, value: string): LibraryNames {
+  let byValue = libraryNameCache.get(store)
+  if (!byValue) { byValue = new Map(); libraryNameCache.set(store, byValue) }
+  let names = byValue.get(value)
+  if (!names) { names = libraryNames(cid => store.table.get(cid), value, store.primitive.targetPointerConstructor.getId()); byValue.set(value, names) }
+  return names
+}
+const shippedNames = new Map(Object.entries(COMPILED_LIBRARY.refs as Record<string, string>).map(([name, cid]) => [cid, name]))
 
 /**
  * Type the store root (its root alias's instruction): a device root, or a document root (the type a fresh store
  * starts with). The seed's version, which the library starts with.
  */
 export function setRootType(store: FosStore, typeId: typeof DEVICE_ROOT_TYPE | typeof DOCUMENT_ROOT_TYPE): void {
-  const type = seedType(store, typeId)!
+  const type = shippedRef(store, typeId)!
   const root = content(store, store.rootNodeId)
   const ip = store.primitive.instructionPointerConstructor.getId()
   if (root.children.some(([i, t]) => i === ip && t === type)) return
@@ -261,10 +281,53 @@ function isPrimitive(store: FosStore, cid: string): boolean {
   return ids.has(cid)
 }
 
-/** The graph identity of the type node `typeCid`: `lib:type:…` for a library type (any version), a template row's id for a template. */
+/**
+ * The name of the left node `typeCid`: the name a library ref in this store gives it (its library ref and the one
+ * linked in Home, any of their earlier values, then the build's), else a template row's own id. Nodes do not name
+ * themselves; names are refs in the graph.
+ */
 export function typeIdOf(store: FosStore, typeCid: string | null | undefined): string | null {
   if (!typeCid || !store.table.has(typeCid)) return null
-  return content(store, typeCid).data.alias?.id ?? valueContent(store, typeCid).data.alias?.id ?? null
+  return nodeNames(store).get(typeCid) ?? shippedNames.get(typeCid) ?? content(store, typeCid).data.alias?.id ?? valueContent(store, typeCid).data.alias?.id ?? null
+}
+
+/** Node → name for the libraries this store's root has, memoized per root. */
+const rootNames = new WeakMap<FosStore, { root: string; byNode: Map<string, string> }>()
+function nodeNames(store: FosStore): Map<string, string> {
+  const cached = rootNames.get(store)
+  if (cached?.root === store.rootNodeId) return cached.byNode
+  const byNode = new Map<string, string>()
+  const add = (names: Map<string, string>) => { for (const [node, name] of names) if (!byNode.has(node)) byNode.set(node, name) }
+  for (const value of libraryValues(store)) add(namesInLibrary(store, value).byNode)
+  const outer = outerScopes.get(store)
+  if (outer) add(nodeNames(outer.store))
+  rootNames.set(store, { root: store.rootNodeId, byNode })
+  return byNode
+}
+
+/** The values of the root's library refs (its own, and the one linked in Home), current first, then earlier ones. */
+function libraryValues(store: FosStore): string[] {
+  if (!store.table.has(store.rootNodeId)) return []
+  let root: string
+  try { root = rootTargetCid(store) } catch { return [] }
+  const home = findChild(store, root, HOME_ID)
+  const refs = [findChild(store, root, LIBRARY_ID), home ? findChild(store, home, LIBRARY_ID) : null].filter((cid): cid is string => !!cid)
+  const values: string[] = []
+  const add = (cid: string) => { if (store.table.has(cid) && !values.includes(cid)) values.push(cid) }
+  for (const ref of refs) {
+    let current: string | undefined = ref
+    for (let depth = 0; current && depth < 32; depth++) {
+      const node = content(store, current), value = refValueCid(store, node)
+      // the selected value first, then the others the ref holds as alternatives
+      add(valueCidOf(store, current))
+      if (value && isBranchChoice(store, content(store, value))) for (const option of readChoice(store, value).options) if (option.edge) {
+        const right = content(store, option.edge[1])
+        add(isRefNode(store, right) && !refValueCid(store, right) ? option.edge[0] : valueCidOf(store, identityCid(store, option.edge)))
+      }
+      current = node.children.find(edge => isPrevEdge(store, edge))?.[1]
+    }
+  }
+  return values
 }
 
 /** Whether `typeCid` (a row edge's left node) is a version of the library type `typeId`. */
@@ -347,7 +410,7 @@ export function isAllocationRow(store: FosStore, edge: FosPathElem): boolean {
 export function rowTypeAt(store: FosStore, typeId: string, at: Scope = [], root: string = rootTargetCid(store)): string {
   const found = nearestLibraryType(store, typeId, at, root)
   if (found) return found
-  const seeded = nearestLibraryType(store, TEMPLATE_TYPE, at, root) ? seedType(store, typeId) : null
+  const seeded = nearestLibraryType(store, TEMPLATE_TYPE, at, root) ? shippedRef(store, typeId) : null
   if (seeded) return seeded
   throw new Error(`No standard library above this row has the row type ${typeId}.`)
 }
@@ -379,7 +442,7 @@ function nearestLibraryType(store: FosStore, typeId: string, at: Scope, root: st
  * nearest library's, falling back to the one this build ships (a library seeded before it existed). Null when neither has it.
  */
 export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
-  return nearestLibraryType(store, typeId, at, root) ?? seedType(store, typeId)
+  return nearestLibraryType(store, typeId, at, root) ?? shippedRef(store, typeId)
 }
 
 /**
@@ -407,35 +470,10 @@ export function enclosingScopes(store: FosStore, root: string, at: Scope): Array
   return result
 }
 
-/** The row type `typeId` of the library row `library`, when it is here (not a peer's unloaded node). */
+/** The node the library ref `library` names `typeId`, when its value is here (not a peer's unloaded node). */
 function libraryRowType(store: FosStore, library: string, typeId: string): string | null {
-  const loaded = (cid: string | null): cid is string => !!cid && !isPeerReference(content(store, cid))
-  const group = loaded(library) ? findChild(store, library, ROW_TYPES_ID) : null
-  const row = loaded(group) ? findChild(store, group, typeId) : null
-  if (!loaded(row)) return null
-  return valueCidOf(store, row)
-}
-
-/**
- * A Row types group from the contents of its types: one template row per type (an identity ref around the content,
- * so the content, which is what rows pin, is the same node wherever the group is). Its rows are made from its own
- * Template type.
- */
-export function rowTypesContent(store: FosStore, types: FosNodeContent[]): FosNodeContent {
-  const template = types.find((type) => type.data.alias?.id === TEMPLATE_TYPE)
-  if (!template) throw new Error('Row types need a Template type.')
-  const templateCid = put(store, template)
-  const children = types.map((type): FosPathElem => {
-    const id = type.data.alias?.id
-    if (!id) throw new Error('A library definition needs a graph identity.')
-    return [templateCid, put(store, refNodeContent(store, { alias: { id } }, put(store, type)))]
-  })
-  return { data: { alias: { id: ROW_TYPES_ID }, description: { content: 'Row types' } }, children }
-}
-
-/** The contents of the types in a Row types group, in order: what a version is (rows pin these). */
-export function rowTypeContents(store: FosStore, groupCid: string): FosNodeContent[] {
-  return valueContent(store, groupCid).children.flatMap((edge) => isRowOfType(store, edge, TEMPLATE_TYPE) ? [valueContent(store, identityCid(store, edge))] : [])
+  if (isPeerReference(content(store, library)) || !refValueCid(store, content(store, library))) return null
+  return namesInLibrary(store, valueCidOf(store, library)).byName.get(typeId) ?? null
 }
 
 /**
@@ -447,25 +485,26 @@ export function isShippedLibrary(store: FosStore, path: Scope, edge: FosPathElem
 }
 
 /**
- * The library row a device root ships: one with the library's seed Row types when the device root has none (the rest of
- * the library is filled from the build's bundle, `ensureDeviceLibrary` in sync/library.ts). It stays on this device: the
- * fos server does not persist it. Other store roots get none; they are nested in a device root (`nestScope`).
+ * The library ref a device root has, `fos:library`, with `first` (the build's library) as its value: what the ref
+ * holds once it accepted that submission (its earlier, empty version is its history). Later values arrive as submissions
+ * too (sync/library.ts). Any value fits it: its left is the empty node, which constrains nothing. It stays on this
+ * device: the fos server does not persist it. Other store roots get none; they are nested in a device root (`nestScope`).
  */
-export function ensureLibraryRow(store: FosStore): void {
+export function ensureLibraryRow(store: FosStore, first: string = shippedLibrary(store)): void {
   setRootType(store, DEVICE_ROOT_TYPE)
   const root = rootTargetCid(store)
   if (findChild(store, root, LIBRARY_ID)) return
-  const types = seedTypes(store)
-  // its rows are made from its own Row type, like every row under it
-  const row = seedType(store, PLAIN_TYPE)!
-  const library = put(store, withMember(store, { data: { alias: { id: LIBRARY_ID }, description: { content: 'Standard library' } }, children: [[row, put(store, rowTypesContent(store, types))]] }, 'fos', 'fos', ['persist'], ['persist']))
+  const anything = put(store, { data: {}, children: [] })
+  const data = { alias: { id: LIBRARY_ID }, description: { content: 'Standard library' } }
+  const empty = put(store, withMember(store, refNodeContent(store, data, null), 'fos', 'fos', ['persist'], ['persist']))
+  const library = put(store, withPrev(store, { ...content(store, empty), children: [[store.primitive.targetPointerConstructor.getId(), first], ...content(store, empty).children] }, empty))
   const value = valueContent(store, root)
-  commitRoot(store, put(store, { ...value, children: [...value.children, [row, library]] }), 0)
+  commitRoot(store, put(store, { ...value, children: [...value.children, [anything, library]] }), 0)
 }
 
 /** Stand-in type for a row pinned to template `cid` that this store does not hold (see `resolveReferenceErrors`). */
 export function referenceErrorTemplate(store: FosStore, cid: string): string {
-  return put(store, { data: { description: { content: 'Reference error' }, missingTemplate: { cid } }, children: seedTypes(store).find(type => type.data.alias?.id === PLAIN_TYPE)!.children })
+  return put(store, { data: { description: { content: 'Reference error' }, missingTemplate: { cid } }, children: content(store, shippedRef(store, PLAIN_TYPE)!).children })
 }
 
 /** A template row a task was made from (not a library type, which has no identity of its own): its cid, alias id and name. */
@@ -1071,7 +1110,7 @@ export function commitRoot(store: FosStore, newTargetCid: string, now: number, m
     : undefined
   const children: FosPathElem[] = [
     [store.primitive.targetPointerConstructor.getId(), newTargetCid],
-    [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : seedType(store, DOCUMENT_ROOT_TYPE)!],
+    [store.primitive.instructionPointerConstructor.getId(), instruction ? instruction[1] : shippedRef(store, DOCUMENT_ROOT_TYPE)!],
     [store.primitive.previousVersion.getId(), store.rootNodeId]
   ]
   if (mergeSourceCid) children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid])

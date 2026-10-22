@@ -680,7 +680,8 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     for (const edge of node.children) for (const cid of edge) if (!store.table.has(cid)) loadDefinition(definitions[cid]!)
     return store.create(node)
   }
-  const documentRootType = loadDefinition(COMPILED_LIBRARY.types.find(type => type.data.alias?.id === 'lib:type:document-root') as FosNodeContent)
+  // the node the build's library names lib:type:document-root (a ref in the library graph)
+  const documentRootType = loadDefinition(definitions[(COMPILED_LIBRARY.refs as Record<string, string>)['lib:type:document-root']!]!)
   const startRootAlias = getStartRootAlias(store, {
     terminal,
     previousVersion,

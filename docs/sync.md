@@ -369,6 +369,33 @@ removed) or rejects it (kept, marked rejected; a further edit by the peer
 reopens it). The link panel shows members, version count and proposals with
 an added/changed/removed summary against the proposal's base.
 
+### Pull requests, approvals and merge rules (`node-sync.ts` `pullRequest`, `approvals.ts`, `backend/sync/approve.ts`)
+
+A peer that sees another peer's node as a peer-held row branches a row of it (caret menu → new branch) and presses
+the pull-request button beside that branch. The branch goes to the holder as its own submission,
+`branch:<name>` (`NodeRequest.submission`; `pullRequest` / `sendPullRequest` sync the tree with that branch selected
+locally). It sits beside the peer's ordinary `node-sync` submission, one per peer and branch. A branch marked for
+merge (`setBranchMergeRequest`) is sent as its pull request on every tree sync. A named submission is a proposal
+whoever sends it, owners included: it never writes main.
+
+The holder sees it as a choice of that node, with a yellow pull-request marker, and can look inside it (the proposal
+preview). Looking at one shows **Approve merge** beside the picker. That adds an `approve` requirement on the node
+(its text is the branch), which the account server's `approve` handler runs:
+
+- **The approval.** It writes a row of the `approve` capability into the branch, `fos:approval:<approver>`. Its
+  value holds the approver, the subject (the branch content without its approval rows), the attester, the time and an
+  ed25519 signature (`approvalPayload`). For now the server's identity key signs it, the key `verify` uses, published
+  on the fos member entry; peers' own keypairs replace it for p2p. Any device checks it with `verifiedApprovers`. An
+  approval stops counting once the branch changes.
+- **The merge rule.** The group's node defines it as a row of the `approveMerge` capability: a pattern of approval
+  rows, one per required approver (`setMergeRule`, `mergeRule`). Without one, the default applies: the owner and every
+  member that may edit there, except the proposer, whose submission is its own approval (`defaultApprovers`).
+- **The merge.** When the rule is met, the branch is applied to main (`mergeIfApproved` → `applyProposalAt`). The
+  proposer's next sync of its pull request receives the approvals made so far.
+
+Still to do: relaying a pull request to an offline holder, and moving the standard library's governance from the
+vote threshold (`mergePolicy`) onto this flow.
+
 ## Requirements, resource banks, queries and the market
 
 **Requirements** (`-` prefix, under a task) are what the task needs before it
@@ -801,7 +828,7 @@ and local agents are one device:
 
 ```
 fos                      GUI for your account   (context ~, state in ~/.fos)
-fos <dir>                GUI for a project      (nearest fos.config.toml, state in <dir>/.fos)
+fos <dir>                GUI for a project      (nearest fos.config.toml, else a new store here; state in <dir>/.fos)
 fos [dir] run            sync, print the tree, then serve local devices/agents
 fos [dir] repl           interactive shell (ls, add, done, cd, mv, sync, approve, …)
 fos [dir] ls | add "…" | done <id> | open <id> | status | sync | approve <id> | reject <id>
@@ -858,7 +885,10 @@ from = ["edit"]
 
 `fos <dir>` (or any subdirectory) finds the config by walking up and keeps
 local state in `<dir>/.fos/` (ignored): `device.json` (this directory as one
-device), `session.json` (the credential) and `replicas/<branch>.json`.
+device), `session.json` (the credential) and `replicas/<branch>.json`. A directory
+inside no configured project becomes a store of its own on first use
+(`Project::ensure_store`: it writes `fos.config.toml`, attached to the server Home
+uses, then `.fos/` and its device); it never falls back to Home's state.
 
 **Git branches are proposed values.** The current branch is read from
 `.git/HEAD`; each branch has its own replica and is reported with the sync, so
@@ -897,7 +927,7 @@ and a dismissable **Connect** modal with three ways in:
 1. **Sign in** with username and password → a user session; the device attaches
    where the account says.
 2. **Connection token / QR code** (`backend/sync/peerInvites.ts`). The inviting
-   user picks a node (root or any task) and chooses *Invite a device here*:
+   user adds an `@{invite}` peer row to a node (root or any task) and completes it:
    the server creates a token (stored hashed, 15 min) tied to that scope and
    the app shows it as text and QR. The connecting device claims it
    (`POST /peer/connect`), the inviting user is notified over the WebSocket
@@ -1213,7 +1243,8 @@ implemented.
 to the linked root. Errors remain in the local view and stale responses are discarded.
 
 A desktop window opened on a project (`fos <dir>`, which keeps its state in
-`<dir>/.fos/`) lists that directory at the project's root node without linking it
+`<dir>/.fos/`, creating the store when the directory has none) lists that directory
+at the project's root node without a per-node binding
 (`linkedDirectory` in `web/src/filesystem.ts`: a "Link with directory" binding at the
 node, else a `local-repository` argument at or above it, else the project directory
 at the root). The home context (`fos` with no directory) does not list `~`. Outside
@@ -1541,6 +1572,40 @@ Ordinary published nodes also expose interactions through their configured peers
 unlike a visitor's private template instance, executing effects on the shared
 original requires explicit edit permissions.
 
+
+## Patterns, solve and fetch (`shared/sync/pattern-bindings.ts`, `unify.ts`)
+
+A pattern is an ordinary node whose rows have mutable refs (placeholders) on the
+right. Using it with a right node, the row `[pattern, node]` (`usePatternAt`; in
+the UI, Change template → *Use as pattern*), submits the node's values to the
+pattern's refs position by position: the i-th row of the node goes to the ref on
+the right of the pattern's i-th row, checked against that row's left; a nested
+pattern takes the nested rows. Bookkeeping and placement rules (a template's
+`lib:type:pattern` "accepts" rows) are not positions. Submissions are `binding`
+proposals named per source (`binding:<source>`), recorded on the refs of the use
+site's left node, so the shared pattern is unchanged and each use is its own
+scope. Viewing the node lists each ref with its value and its submitted options;
+choosing one binds it (`choosePatternBindingAt`) and the others stay options.
+
+`unify` is `matchesGraph` that binds: a placeholder on the pattern side binds to
+the value it meets, every occurrence of the same placeholder must meet the same
+value, and a row's left is a constraint (the same instruction, a matching one, or
+one the actual value satisfies). `-solve` is a device primitive: the solve row's
+rows (minus its supplies and `fos:` records) are the pattern, the rows under its
+parent are the candidates, and each solution is submitted to the placeholders as
+an option (`solveAt`); nothing is bound until one is chosen. Named-source options
+stay choosable after another is bound.
+
+`-fetch [METHOD] <url>` is the other new device primitive: the device makes the
+request (natively in the desktop shell via the `fetch_url` command, so browser CORS
+does not apply; `fetch` in the browser) and submits the response body to the row's
+`response` ref. Both are declared in `web/src/device-handlers.ts` with `opensRefs`:
+their handler submits to the step's open refs, so evaluation does not require those
+refs to be bound first or count them as instructions. The library declares their
+capability patterns (`lib:capability-pattern:fetch|solve`). Next: the inverse of
+fetch, a positive (supplied) `fetch` that accepts requests instead of sending them,
+each one submitted to its `request` ref, as allocations are the inverse of
+requirements.
 
 ## Structural row patterns
 
