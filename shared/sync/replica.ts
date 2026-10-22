@@ -930,9 +930,10 @@ export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: strin
   })
 }
 
-/** Submit a value (which can itself be a ref) through the ordinary proposal format. */
-/** Submit `targetCid` to the row ref at `at`. `name` keeps one submission per source (`binding:<source>`, as patterns and
- * solve use); the default replaces this peer's earlier submission. */
+/**
+ * Submit `targetCid` (which can itself be a ref) to the row ref at `at`. `name` is a label that keeps one submission
+ * per source (solve names it by the source's path); the default replaces this peer's earlier submission.
+ */
 export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, peerId: string, now: number, name = ''): { replica: Replica; proposalCid: string } {
   const store = replica.store
   const cid = resolveScope(store, headCid(replica), at)

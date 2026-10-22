@@ -156,7 +156,7 @@ export function parseEvent(input: unknown): FosEvent {
         if (!change || typeof change !== 'object') throw new EventError('Invalid change.')
         if (!['add_row', 'add_task', 'add_note', 'add_plain', 'rename', 'complete'].includes(change.operation)) throw new EventError('Unknown change operation.')
         if ((change.operation === 'add_row') !== (change.type !== undefined) || (change.type !== undefined && (typeof change.type !== 'string' || !/^lib:type:[\w-]{1,64}$/.test(change.type)))) throw new EventError('add_row names a standard-library row type (lib:type:…); other operations take none.')
-        if (change.id !== undefined && (!ADDS.includes(change.operation) || typeof change.id !== 'string' || !/^[\w.:-]{1,128}$/.test(change.id) || change.id.startsWith('fos:'))) throw new EventError('Only added rows take an id (letters, digits, . : _ -).')
+        if (change.id !== undefined && (!ADDS.includes(change.operation) || typeof change.id !== 'string' || !/^[\w.:-]{1,128}$/.test(change.id))) throw new EventError('Only added rows take an id (letters, digits, . : _ -).')
         return { path: pathOf(change.path), operation: change.operation, ...(change.text !== undefined ? { text: textOf(change.text) } : {}), ...(typeof change.done === 'boolean' ? { done: change.done } : {}), ...(change.id !== undefined ? { id: change.id } : {}), ...(change.type !== undefined ? { type: change.type } : {}) }
       })
       return { kind, path, branches, expected: expectedOf(raw.expected), ...(raw.name !== undefined ? { name: textOf(raw.name, 100) } : {}), changes }

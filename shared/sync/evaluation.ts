@@ -157,7 +157,7 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     if (row?.type === TEMPLATE_TYPE) return
     if (row && (row.refId !== undefined || row.supply)) return
     const cid = resolveScope(r.store, headCid(r), at)
-    if (depth > 0 && cid && content(r.store, cid).data.name?.content.startsWith('fos:')) return
+    if (depth > 0 && cid && settingOf(r.store, content(r.store, cid))) return
     // the execute row is the evaluator's own: its journal, not a step
     if (depth > 0 && row?.typeCid && isExecuteLeft(r.store, row.typeCid)) return
     // A handler's attempt records (pinned prompts, return slots) are bookkeeping, never steps.
@@ -187,7 +187,7 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   issues.push(...compileInstructions(r, step.path, { canRead: driver.canRead }).holes.filter(hole => !(left && receivedRef(r.store, left, hole.id))).map(hole => `Unfilled instruction ref: ${hole.id} (${hole.reason})`))
   const candidates = contextBindings(r, step.path, driver)
   const outputs = new Set(driver.outputs?.(step) ?? [])
-  if (!driver.opensRefs?.(step)) for (const arg of argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && content(r.store, a.cid).data.refRole !== 'output' && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
+  if (!driver.opensRefs?.(step)) for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
     issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { ...driver, scope: { replica: r, path: step.path } }).problems)
   }
   issues.push(...resolveText(r, step.path, formText(r.store, valueContent(r.store, cid)), [], driver).bindings.flatMap(b => b.problems))
@@ -210,7 +210,7 @@ const instruction = (r: Replica, path: Scope, outputs: string[] = [], opens = fa
   const { updated: _updated, ...data } = valueContent(r.store, cid).data
   const args = argumentRefs(r.store, cid)
   // Output properties are supplied by the effect too. Track their enclosing declaration identities.
-  const input = (a: { cid: string; name?: string; refIds?: string[] }) => !a.name?.startsWith('fos:') &&
+  const input = (a: { cid: string; name?: string; refIds?: string[] }) => !settingOf(r.store, content(r.store, a.cid)) &&
     !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '') &&
     !a.refIds?.some(id => outputs.includes(id)) &&
     !(opens && !refValueCid(r.store, content(r.store, a.cid)))

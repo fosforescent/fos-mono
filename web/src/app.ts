@@ -1,3 +1,4 @@
+import { settingOf } from '../../shared/sync/graph'
 import { hashContent } from '../../shared/dag-implementation/cid'
 import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
@@ -406,7 +407,7 @@ export class App {
   }
   /**
    * The device's verify handlers, by the peer that attested: a user object the fos server attested is checked
-   * against the key that server publishes on its member entry (`fos:key:fos` under `fos:peer:fos` on the root, graph data that node exchange brought here).
+   * against the key that server publishes on its member entry (the key row on `memberEntryId('fos')` on the root, graph data that node exchange brought here).
    */
   private readonly verifiers: Record<string, (user: UserRecord) => Promise<boolean | null>> = {
     fos: user => checkUserAttestation({ peer: 'fos', publicKey: publishedKey(this.state.replica, 'fos') }, user)
@@ -2027,10 +2028,10 @@ export class App {
   }
   /**
    * `@name` binds an unverified user object (the username only) until the account server attests it. The device
-   * asks through the graph: a `verify` requirement for that name (`requestVerification`, under `fos:users`) run on
+   * asks through the graph: a `verify` requirement for that name (`requestVerification`, under the People row (`lib:type:people`)) run on
    * the account server (`runOnServer`), whose `verify` handler binds the attested object as its user field. The
    * device's own verify handler (`verifiers`) checks the attestation against the key the server publishes on its member entry;
-   * then the object is kept in the graph (`fos:users`), every row that named that username is rebound and the
+   * then the object is kept in the graph (the People row), every row that named that username is rebound and the
    * request removed. Offline, rows keep the unverified object; the next edit retries.
    */
   private resolveUser(user: UserRecord | null | undefined): void {
@@ -2522,7 +2523,7 @@ export class App {
     if (row?.requirement && !row.requirement.satisfied) needs.push(row.requirement.capability === 'allocation' ? row.requirement.resource ?? 'allocation' : row.requirement.capability)
     const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
     if (cid) for (const arg of argumentRefs(this.state.replica.store, cid)) {
-      if (arg.name?.startsWith('fos:') || refValueCid(this.state.replica.store, content(this.state.replica.store, arg.cid))) continue
+      if (settingOf(this.state.replica.store, content(this.state.replica.store, arg.cid)) || refValueCid(this.state.replica.store, content(this.state.replica.store, arg.cid))) continue
       needs.push(capabilityOfTarget(this.state.replica.store, arg.type) ?? content(this.state.replica.store, arg.type).data.name?.content?.replace('fos:type:', '') ?? '')
     }
     return needs
@@ -2998,7 +2999,7 @@ export class App {
     const path = [...this.state.view, ...at], r = this.state.replica
     const cid = resolveScope(r.store, headCid(r), path)
     if (!cid) return []
-    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && !content(r.store, arg.cid).data.ref && content(r.store, arg.cid).data.name?.content && !arg.name?.startsWith('fos:')).map(arg => {
+    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && !content(r.store, arg.cid).data.ref && content(r.store, arg.cid).data.name?.content && !settingOf(r.store, content(r.store, arg.cid))).map(arg => {
       const result = resolveText(r, path, `{{${arg.name}}}`)
       return { id: content(r.store, arg.cid).data.alias!.id, name: arg.name!, text: result.bindings[0]?.status === 'ready' ? result.text : '', problems: result.bindings.flatMap(b => b.problems) }
     })
@@ -3035,7 +3036,7 @@ export class App {
     const candidates = contextBindings(r, path, { isPeerActive: id => this.isOnline(id) })
     // Form fields already have editors from their left constructors. This picker
     // offers explicitly declared ref inputs, including those that now appear as rows.
-    return argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && isRefNode(r.store, content(r.store, a.cid))).map(a => ({
+    return argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && isRefNode(r.store, content(r.store, a.cid))).map(a => ({
       id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
       branches: refBranches(r.store, content(r.store, a.cid)),
       child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && isRefNode(r.store, content(r.store, target)) ? content(r.store, target).data.name?.content ?? 'Value' : null })(),

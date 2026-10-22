@@ -8,7 +8,7 @@ import { standardHostRef } from './host-runtime'
  * identity key, and records the supply. There is no route:
  *
  * - the public key is graph data: the handler's `publicKey` is in the runtime's `hostOffers().keys`, which
- *   `ensureHomeContext` writes onto the fos member entry of every account's root as the `fos:key:fos` row
+ *   `ensureHomeContext` writes onto the fos member entry of every account's root as its key row (a user-type row whose username is the entry's peer)
  *   (`publishPeerKey`); member entries travel by node exchange, and the owner's devices take that entry above their
  *   Home (`accountContextAbove`), so their own verify handler checks `verification.attestation` over
  *   `userAttestationPayload` against it (`verifyPublished`; WebCrypto Ed25519 in the app);

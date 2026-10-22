@@ -16,7 +16,7 @@ import { isValueSubmission } from './graph'
 import { refValueCompatible } from './scoped-refs'
 import { PATTERN_TYPE } from './library-types'
 
-/** Submissions to a right ref are `binding` proposals; a `binding:<source>` name keeps one option per source. */
+/** Submissions to a right ref are value submissions; a label per source keeps one option per source. */
 
 /**
  * The rows a pattern position counts: everything but bookkeeping, the ref constructor's own pointers and placement

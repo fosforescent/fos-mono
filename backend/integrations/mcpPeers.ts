@@ -1,3 +1,4 @@
+import { settingOf } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from '../sync/host-runtime'
 import { sameCapabilityType, primitiveRef, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
 /**
@@ -105,7 +106,7 @@ function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServer
   const server = servers.find((s) => `${MCP_PEER_PREFIX}${s.id}` === peerId)
   if (!server || !peerId || !attached.some((a) => a.peerId === peerId) || !tool || !server.tools.some((t) => t.name === tool) || (r.tool && tool !== r.tool)) return { error: 'bound MCP handler is unavailable or does not match the requirement' }
   if (!stillAdvertised(replica, scope, peerId, tool)) return { error: 'bound MCP handler is disabled or no longer advertised' }
-  const returns = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
+  const returns = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !settingOf(store, content(store, a.cid)))
   if (returns.length > 1) return { error: 'tool requirement has ambiguous return arguments' }
   const returnId = returns[0]?.id ?? newId()
   if (!returns.length) replica = addRefAt(replica, scope, returnId, store.primitive.documentField.getId(), now)

@@ -4,7 +4,7 @@
  * Everything is a row of a library type (`.fos/library.json`), recognised by the row edge's left node only:
  *   message (`lib:type:relay-message`)  a row a peer leaves at a relay node: its value is the addressee (a peer id),
  *                                       its child rows are what is sent (a task, a note, ...)
- *   queue   (`lib:type:relay-queue`)    the row under a recipient's member entry (`fos:peer:<id>`) holding what was
+ *   queue   (`lib:type:relay-queue`)    the row under a recipient's member entry (`memberEntryId(<id>)`) holding what was
  *                                       delivered to it; that subtree is the recipient's queue
  *   ack     (`lib:type:relay-ack`)      a row the recipient leaves (in its queue, or as its submission at the relay
  *                                       node) naming a message it took; the message and the ack leave the queue

@@ -1,4 +1,5 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
+import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
@@ -87,7 +88,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       }
     }
     for (const input of refArguments(store, value, store.primitive.documentField.getId())) {
-      if (content(store, input.cid).data.name?.content?.startsWith('fos:')) continue // runtime values are not inputs
+      if (settingOf(store, content(store, input.cid))) continue // a device's settings are not inputs
       const resolved = resolveBinding(store, store.primitive.documentField.getId(), input.cid, contextBindings(r, at), undefined, { scope: { replica: r, path: at } })
       if (resolved.status !== 'ready') resolved.problems.forEach(p => blockers.add(p))
       else emit(resolved.cid!, 'Bound input', depth + 1, true)
@@ -97,7 +98,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       if (ancestorNotes && !isText(edge)) continue
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
-      if (content(store, child).data.name?.content?.startsWith('fos:') || isHandlerStateLeft(store, edge[0])) continue
+      if (settingOf(store, content(store, child)) || isHandlerStateLeft(store, edge[0])) continue
       if (headline && content(store, child).data.name?.content === headline) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (isAllocationRow(store, edge) && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue

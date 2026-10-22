@@ -1088,7 +1088,7 @@ export function homeIdOf(store: FosStore, rootCid: string): string | null {
   if (!home) return null
   return isBranchChoice(store, content(store, home)) ? readChoice(store, home).id : content(store, home).data.alias?.id ?? null
 }
-/** The account server's member on a store root (its offers, the key it publishes): `fos:peer:fos`. */
+/** The account server's member on a store root (its offers, the key it publishes): `memberEntryId('fos')`. */
 export const SERVER_MEMBER = 'fos'
 
 /** Replace a member's offers (ACCEPTS edges) when they differ from `offers`, keeping its grants and switches. */
@@ -2354,7 +2354,6 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return !!executeRequestOnly(identityCid(store, edge))
     // the template's own trigger makes instances; the trigger rows inside it are declarations its instances bind
     if (instantiate && root && isRowEdge(store, edge) && isTriggerLeft(store, plainEdge(store, edge)[0])) return false
-    if (instantiate && name === 'fos:sharing') return false
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
     if (isRowEdge(store, edge)) return !(instantiate && !definition && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false

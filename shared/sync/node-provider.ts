@@ -30,7 +30,7 @@ export type NodeShape = { data: FosDataContent; children: NodeChild[] }
  * cid), so the type travels as the template and nothing else. `held`: its content is not served through this node (a
  * reference row, whose target has its own attachment, or a node another peer holds: `address` says which).
  *
- * Member entries are children too (`template` = the MEMBER primitive, `id` = `fos:peer:<peer>`), listed to the peers
+ * Member entries are children too (`template` = the MEMBER primitive, `id` = `memberEntryId(<peer>)`), listed to the peers
  * that receive them (`memberEntryVisible`) and synced in their own round like any node. In a member entry, its grants
  * and offers (`[CAPABILITY|ACCEPTS, x]`, `template` = that primitive) are immutable children `pinned` to the cid of
  * `x`, whose content travels with the shape (`ProvidedNode.templates`, `NodeRequest.templateNodes`).
@@ -216,7 +216,7 @@ function permitted(r: Replica, cid: string, authority: Pick<NodeAuthority, 'peer
 
 /**
  * Which member entries of a node a peer receives, as children of that node: the owner (its own devices) all of them,
- * any other peer only its own (`fos:peer:<itself>`: its grants, its offers, the rows left there for it such as its
+ * any other peer only its own (`memberEntryId(<itself>)`: its grants, its offers, the rows left there for it such as its
  * relay queue). Everything else about who else is a member stays the owner's.
  */
 export function memberEntryVisible(id: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>): boolean {

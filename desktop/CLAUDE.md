@@ -20,8 +20,8 @@ fos [dir] run       sync, print the tree, serve local agents (MCP) and change ev
 fos [dir] repl      interactive shell
 fos [dir] ls | add "…" | done <id> | open <id> | status | sync | approve <id> | reject <id> | attach <token> | detach | init | reset
 fos login           home context: browser sign-in (SSO-capable device flow) | --token <connect token> | --password
-fos . library export --local --out .fos/library.json  export the editable local library for builds
-fos . ls fos:library | node <id> --out node.json | node <id> --write node.json  navigate and edit graph rows
+fos . library export --out .fos/library.json  export the library this store sees, for builds
+fos . ls <id> | node <id> --out node.json | node <id> --write node.json  navigate and edit graph rows
 fos [dir] peers     the .fos stores on this machine this one is linked with; `peers ls <name>` reads one's tree
 ```
 

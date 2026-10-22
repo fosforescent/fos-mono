@@ -7,7 +7,7 @@
  * Verification is an ed25519 signature over `userAttestationPayload`. Today the fos server signs (`method`
  * `ed25519-server`, `by` = the server's peer id). Resolving `@name` is the effect of the server's `verify` handler:
  * a `verify` requirement (`requestVerification`) evaluated there comes back with the attested object bound as its
- * `user` field. The server's public key is graph data too: a `fos:key:fos` row on the fos member entry of the store
+ * `user` field. The server's public key is graph data too: a key row (a user-type row whose username is the entry's peer) on the fos member entry of the store
  * root (`publishPeerKey`, written when the server ensures the account context) that node exchange brings to the
  * owner's devices with that entry, whose own verify handler (`verifyPublished`) checks attestations against it; the
  * server re-checks on use (payments, fos points).
@@ -16,7 +16,7 @@
  * attestation, which covers `publicKey` too. The crypto is injected (`UserTrust.verify`, `SignatureCheck`) so this
  * module runs in the browser, QuickJS and Node alike.
  *
- * Verified objects are cached in the user's graph (`fos:users` in Home, one user row each); a row typed offline
+ * Verified objects are cached in the user's graph (the People row in Home, one user row each); a row typed offline
  * binds an unverified object (username only) that the client replaces once it resolves.
  */
 import { hashContent } from '../dag-implementation/cid'
@@ -229,11 +229,11 @@ function keyRowAt(r: Replica, entry: Scope, peerId: string): string | null {
 }
 
 /**
- * Publish `peerId`'s public key on its member entry on the store root (`fos:peer:<peer id>`): a row of the user type
+ * Publish `peerId`'s public key on its member entry on the store root (`memberEntryId(<peer id>)`): a row of the user type
  * for that peer (account and username = its peer id, `publicKey` = its raw ed25519 key, base64). The account server
  * writes it whenever it ensures the account context (`ensureHomeContext(…, { keys })`); member entries travel by node
  * exchange, and an owner's device takes the server's entry above its Home (`accountContextAbove`). No-op when
- * unchanged or when `peerId` is no member of the root. A key an older server left in Home (`fos:users`) is removed.
+ * unchanged or when `peerId` is no member of the root. A key an older server left in Home (the People row) is removed.
  */
 export function publishPeerKey(r: Replica, peerId: string, publicKey: string, now: number): Replica {
   const id = peerKeyId(peerId), entry = [memberEntryId(peerId)]

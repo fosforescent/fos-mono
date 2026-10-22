@@ -1,3 +1,4 @@
+import { settingOf } from '@fosforescent/shared/sync/index'
 import type { Request, Response } from 'express'
 import { evaluationRecord, formTitle, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
@@ -167,7 +168,7 @@ test('an explicit handler ref is honored and the return ref addresses the result
   r = replica()
   const request = valueContent(store, resolveScope(store, headCid(r), scope)!)
   expect(refArguments(store, request, capabilityTarget(store, 'tool'))[0]!.targetCid).toBe(handler)
-  const returned = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
+  const returned = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !settingOf(store, content(store, a.cid)))
   expect(returned).toHaveLength(1)
   expect(formTitle(store, valueContent(store, returned[0]!.targetCid!))).toBe('weather(Paris next week) = sunny')
 })

@@ -5,6 +5,7 @@
  * execute view (`sharedProjection`), and their inputs are stored in typed refs on it. A published template is an
  * endpoint: each visitor who starts it gets a private execution, a node of which only that visitor is a member.
  */
+import { settingOf } from './graph'
 import { nodeLinkMaskAt } from './node-provider'
 import { consumption } from './execution-access'
 import { argumentRefs, capabilityPeers } from './bindings'
@@ -159,7 +160,7 @@ export type SharedNode = {
 export function sharedInputs(r: Replica, path: Scope): SharedInput[] {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return []
-  const text = argumentRefs(r.store, cid).filter(a => a.type === r.store.primitive.documentField.getId() && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !a.name.startsWith('fos:')).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
+  const text = argumentRefs(r.store, cid).filter(a => a.type === r.store.primitive.documentField.getId() && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !settingOf(r.store, content(r.store, a.cid))).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
   // a choice requirement asks the visitor to choose; an allocation requirement asks for an amount
   const choices = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'choice' && !row.requirement.satisfied && row.requirement.options?.length ? [{ key: row.id, path: [row.id], name: row.title, kind: 'choice' as const, options: row.requirement.options.slice(0, 100) }] : [])
   const allocations = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'allocation' ? [{ key: row.id, name: row.title, kind: 'allocation' as const, type: row.requirement.resource ?? 'inventory', unit: row.requirement.unit ?? 'unit', amount: row.requirement.amount, ...(row.requirement.start !== undefined ? { start: row.requirement.start } : {}), ...(row.requirement.end !== undefined ? { end: row.requirement.end } : {}) }] : [])
@@ -176,7 +177,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     const cid = resolveScope(r.store, headCid(r), path)
     for (const arg of cid ? argumentRefs(r.store, cid) : []) {
       const ref = content(r.store, arg.cid), id = ref.data.alias?.id
-      if (!id || arg.name?.startsWith('fos:') || ref.data.refExpression) continue
+      if (!id || settingOf(r.store, ref) || ref.data.refExpression) continue
       const relative = [...path.slice(root.length), id]
       if (!refValueCid(r.store, ref)) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id,
         kind: arg.type === r.store.primitive.documentField.getId() ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
