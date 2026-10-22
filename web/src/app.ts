@@ -37,7 +37,7 @@ import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, write
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
 import { requestTitle, truncateTitle, handlerResult } from '../../shared/sync/index'
-import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, memberEntryId, isMemberEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
+import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, memberEntryId, memberEntryPeerAt, peerEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
@@ -1200,7 +1200,7 @@ export class App {
     // lazy until they are on screen.
     const own = memberEntryId(initial.meta.peerId)
     const onScreen = (path: Scope) => path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
-    const eager = (path: Scope) => path.includes(own) || (isMemberEntryId(path.at(-1)) && onScreen(path.slice(0, -1)))
+    const eager = (path: Scope) => path.includes(own) || (memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path) !== null && onScreen(path.slice(0, -1)))
     const queue = materializedNodePaths(initial, localRoot, peer), seen = new Set<string>()
     // a row's handler state (its execute row, its trigger row) syncs whenever the row does: it is that row's state
     const state = new Set<string>()
@@ -1250,7 +1250,7 @@ export class App {
         const next = [...path, child.id]
         const held = isHandlerStateLeft(this.state.replica.store, child.template) && (visible || plan.dirty)
         if (held) state.add(JSON.stringify(next))
-        if (isMemberEntryId(child.id) ? visible || child.id === own : eager(next) || held) queue.push(next)
+        if (child.peer !== undefined ? visible || child.id === own : eager(next) || held) queue.push(next)
       }
     }
     // an owner's device attached at Home takes its server's own entry above it (its offers, its published key)
@@ -3837,7 +3837,7 @@ export class App {
     const replica = this.state.replica, cid = resolveScope(replica.store, headCid(replica), path)
     if (!cid || !isPeerReference(content(replica.store, cid))) return
     // a member entry is no projection of its own: it loads with its node's sync
-    if (isMemberEntryId(path.at(-1))) { await this.syncNow('member entry'); return }
+    if (memberEntryPeerAt(replica.store, headCid(replica), path) !== null) { await this.syncNow('member entry'); return }
     const ref = content(replica.store, cid).data.ref!, session = this.state.session, generation = this.authGeneration
     const dataSession = this.activeDataSession()?.id, branch = this.currentBranch(), selection = JSON.stringify(this.branchSelections)
     let scope: Scope = [], address = ref.scope ?? [...replica.meta.scope, ...path], provider: NodeProvider | null = null
@@ -4085,7 +4085,7 @@ export class App {
       if (![store.primitive.memberField.getId(), store.primitive.peerField.getId()].includes(edge[0])) return edge
       const peer = content(store, edge[1]), id = peer.data.peerId?.content
       if (!id || peer.data.alias) return edge
-      return [edge[0], put(store, { ...peer, data: { ...peer.data, alias: { id: `${edge[0] === store.primitive.memberField.getId() ? 'fos:peer' : 'fos:device'}:${id}` } } })]
+      return [edge[0], put(store, { ...peer, data: { ...peer.data, alias: { id: edge[0] === store.primitive.memberField.getId() ? memberEntryId(id) : peerEntryId(id) } } })]
     }) }), 'node')
     if (next !== root) { commitRoot(store, next, this.now()); r = { ...r } }
     if (r !== this.state.replica) { this.set({ replica: r }); this.scheduleSync() }

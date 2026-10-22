@@ -52,7 +52,7 @@ import { formAttribution, formElements, formTitle, positionFormRows, type FormEl
 import { sameUser, userOf, userPeerId, type UserRecord } from './users'
 import { FosStore } from '../dag-implementation/store'
 import { canonicalTypeErrors, isTypeErrorEdge, plainEdge, typeErrorOf, unwrapRootTarget } from './patterns'
-import { isCurrentCid, verifyCid } from '../dag-implementation/cid'
+import { hashContent, isCurrentCid, verifyCid } from '../dag-implementation/cid'
 import type { FosContextData, FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 
 export type Scope = string[] // alias ids of nested nodes (tasks or legacy plain nodes), [] = the node a replica is attached to
@@ -772,8 +772,10 @@ export function convertRowContent(value: FosNodeContent, typeId: string, now: nu
   return { ...value, data: canonicalRowData(data) }
 }
 
+/** A peer edge's identity (a device attached to the store): the content address of who it is, apart from a member entry for the same peer. */
+export const peerEntryId = (peerId: string): string => hashContent({ data: { peerId: { content: peerId }, description: { content: 'attached peer' } }, children: [] })
 export function peerRefContent(peerId: string): FosNodeContent {
-  return { data: { alias: { id: `fos:device:${peerId}` }, peerId: { content: peerId } }, children: [] }
+  return { data: { alias: { id: peerEntryId(peerId) }, peerId: { content: peerId } }, children: [] }
 }
 
 // ---------------------------------------------------------------------------
@@ -1929,11 +1931,26 @@ export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null
   return capabilityOfTarget(store, edge[1])
 }
 
-/** A member entry's identity on its node: `fos:peer:<peer id>` (also the path step to it, and to the rows it holds). */
-export const MEMBER_ENTRY_PREFIX = 'fos:peer:'
-export const memberEntryId = (peerId: string): string => `${MEMBER_ENTRY_PREFIX}${peerId}`
-/** Is `id` (a path step, a child id) a member entry's identity? */
-export const isMemberEntryId = (id: string | undefined): id is string => !!id && id.startsWith(MEMBER_ENTRY_PREFIX)
+/**
+ * A member entry's identity on its node (the path step to it, and to the rows it holds): the content address of whom
+ * it is for, so two peers that add the same member make the same entry. Opaque: nothing reads a peer out of it; what
+ * an entry is, and for whom, is its member edge and its data (`memberEntryPeerAt`).
+ */
+export const memberEntryId = (peerId: string): string => hashContent({ data: { peerId: { content: peerId } }, children: [] })
+
+/** The peer the member entry at `path` is for, when its last step is a member entry of its parent; else null. */
+export function memberEntryPeerAt(store: FosStore, root: string | null, path: Scope): string | null {
+  if (!path.length) return null
+  const parent = resolveScope(store, root, path.slice(0, -1))
+  if (!parent) return null
+  const id = path.at(-1)
+  const edge = memberEdgesOf(store, parent).find(e => content(store, e[1]).data.alias?.id === id)
+  return edge ? content(store, edge[1]).data.peerId?.content ?? null : null
+}
+/** Whether `path` goes into a member entry (one of its steps is one). */
+export function inMemberEntry(store: FosStore, root: string | null, path: Scope): boolean {
+  return path.some((_, i) => memberEntryPeerAt(store, root, path.slice(0, i + 1)) !== null)
+}
 
 /** The node a node's member edges live on: its identity (a link's ref node), through a selected branch. */
 export function memberHolderCid(store: FosStore, cid: string): string {

@@ -21,7 +21,7 @@
 import type { FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, memberEntryId, MEMBER_ENTRY_PREFIX, moveChild, aliasIdOf,
+  commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, memberEntryId, inMemberEntry, moveChild, aliasIdOf,
   capabilityTarget, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
   LIBRARY_ID, shippedLibrary, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
@@ -147,7 +147,7 @@ function dequeue(r: Replica, queue: Scope, id: string, now: number): { replica: 
  */
 export function relayAt(r: Replica, at: Scope, handlerPeer: string, now: number): Replica {
   // a queue (inside a member entry) is not a relay node: its node's run handles it
-  if (at.some(id => id.startsWith(MEMBER_ENTRY_PREFIX)) || !relayOffered(r, at, handlerPeer)) return r
+  if (inMemberEntry(r.store, headCid(r), at) || !relayOffered(r, at, handlerPeer)) return r
   const s = r.store
   const node = () => resolveScope(s, headCid(r), at)
   let cid = node()

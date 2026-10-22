@@ -1,3 +1,4 @@
+import { memberEntryId } from './index'
 import {
   SERVER_TRANSPORT_CAPABILITIES, addMemberAt, addTask, content, createReplica, exchangeNode, headCid, readProposals,
   resolveScope, setMemberCapabilitiesAt, view, type NodeAuthority, type Replica, type Scope,
@@ -6,7 +7,7 @@ import { RELAY_QUEUE_ID, addRelayAck, addRelayMessage, offerRelay, relayAfterSub
 import { syncWith } from './test-helpers'
 
 const HUB: Scope = ['hub']
-const queueOf = (peer: string): Scope => [...HUB, `fos:peer:${peer}`, RELAY_QUEUE_ID]
+const queueOf = (peer: string): Scope => [...HUB, memberEntryId(peer), RELAY_QUEUE_ID]
 
 /** A relay context: the hub knows the phone and the desktop; `handler` offers relay there. */
 function relayNode(peerId: string, handler: 'fos' | 'self'): Replica {
@@ -84,15 +85,15 @@ test('an invited recipient receives its own queue through its masked view of the
   const desktop = syncWith(createReplica('desktop'), server, { invited: HUB, wire })
   // the hub as the desktop sees it: its rows and its own member entry, not the phone's or the fos server's
   expect(view(desktop, [])!.members.map(m => m.peerId)).toEqual(['desktop'])
-  expect(relayInbox(desktop, ['fos:peer:desktop', RELAY_QUEUE_ID]).map(m => m.id)).toEqual(['m7'])
-  expect(JSON.stringify(wire)).not.toContain('fos:peer:phone')
+  expect(relayInbox(desktop, [memberEntryId('desktop'), RELAY_QUEUE_ID]).map(m => m.id)).toEqual(['m7'])
+  expect(JSON.stringify(wire)).not.toContain(memberEntryId('phone'))
 })
 
 test('an invited recipient acknowledges with its submission at the relay node', () => {
   let server = relayAt(leaveInMain(relayNode('user:alice', 'fos'), 'desktop', 'm5'), HUB, 'fos', 20)
   // another peer cannot step into the desktop's queue
   const phone: NodeAuthority = { peerId: 'phone', scope: HUB, proposeOnly: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }
-  expect(() => exchangeNode(server, { peerId: 'phone', scope: HUB, path: ['fos:peer:desktop', RELAY_QUEUE_ID], linkId: 'x' }, phone, 21)).toThrow()
+  expect(() => exchangeNode(server, { peerId: 'phone', scope: HUB, path: [memberEntryId('desktop'), RELAY_QUEUE_ID], linkId: 'x' }, phone, 21)).toThrow()
   let desktop = addRelayAck(createReplica('desktop'), [], 'm5', 30)
   desktop = syncWith(desktop, server, { invited: HUB })
   server = relayAfterSubmission(server, [...HUB, 'relay:ack:m5'], 'fos', 40)

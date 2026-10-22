@@ -7,7 +7,7 @@ import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
 import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
 import { advertisedRows, content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, selectBranch, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
-  isMemberEntryId, isMemberEdge, memberEdgesOf, memberEntryId, makeLink, isRefNode, MEMBER_ENTRY_PREFIX, SERVER_MEMBER, type Scope } from './graph'
+  memberEntryPeerAt, inMemberEntry, isMemberEdge, memberEdgesOf, memberEntryId, makeLink, isRefNode, SERVER_MEMBER, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
 import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError, exchangedChildren, memberEntryVisible, unloadedMemberEdge, decidingMember, MEMBER_ENTRY_FIELDS, rightChild, validRightChild, exchangedValueEdge, unloadedRightEdge,
@@ -41,20 +41,21 @@ function acceptFilledHostDeclarations(r: Replica, local: NodeShape, remote: Node
 }
 export const nodeSyncKey = (peer: string, path: Scope, branches?: NodeBranch[], submission?: string): string => JSON.stringify([
   peer, path, ...(branches?.length ? [[...branches].sort((a, b) => JSON.stringify(a.scope).localeCompare(JSON.stringify(b.scope)))] : []), ...(submission ? [{ submission }] : [])])
-/** Data fields a shape at `path` may carry: a member entry's also say who it is and what is switched off. */
-const shapeField = (path: Scope | undefined, key: string) => !forbidden.has(key) || (isMemberEntryId(path?.at(-1)) && MEMBER_ENTRY_FIELDS.has(key))
+/** Data fields a shape may carry: a member entry's also say who it is and what is switched off. */
+const shapeField = (entry: boolean, key: string) => !forbidden.has(key) || (entry && MEMBER_ENTRY_FIELDS.has(key))
 
-/** Check a shape from the wire. `at`: where it is (a member entry's shape names its own peer and may pin grants). */
-export function validateNodeShape(shape: NodeShape, at?: Scope): void {
+/** Check a shape from the wire. `entryPeer`: the peer, when the shape is a member entry's (it names its own peer and may pin grants). */
+export function validateNodeShape(shape: NodeShape, entryPeer: string | null = null): void {
   // the only cids on the wire are pinned templates and grants: a peer in another data version has to update first
   const outdated = (cid: unknown) => typeof cid === 'string' && cidVersion(cid) !== null && !isCurrentCid(cid)
   if (Array.isArray(shape?.children) && shape.children.some(c => outdated(c?.template) || outdated(c?.pinned))) throw new NodeAccessError(`This peer uses another data version (this app: ${FOS_DATA_VERSION}). Update the app to sync.`)
-  const entry = isMemberEntryId(at?.at(-1)) ? at!.at(-1)! : null
+  const entry = entryPeer
   if (!shape || !shape.data || typeof shape.data !== 'object' || Array.isArray(shape.data) || !Array.isArray(shape.children) || shape.children.length > 10000 ||
-    Object.keys(shape.data).some(key => !shapeField(at, key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || (c.held !== undefined && c.held !== true) || !isCid(c.template) ||
+    Object.keys(shape.data).some(key => !shapeField(!!entry, key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || (c.held !== undefined && c.held !== true) || !isCid(c.template) ||
+      (c.peer !== undefined && (typeof c.peer !== 'string' || memberEntryId(c.peer) !== c.id)) ||
       !validRightChild(c) || (c.pinned !== undefined && (!entry || !isCid(c.pinned))) ||
       !c.address || typeof c.address.peerId !== 'string' || !Array.isArray(c.address.scope) || c.address.scope.length > 64 || c.address.scope.some(id => typeof id !== 'string' || !id || id === '.' || id === '..')) ||
-    (entry && shape.data.peerId !== undefined && shape.data.peerId?.content !== entry.slice(MEMBER_ENTRY_PREFIX.length)) ||
+    (entry && shape.data.peerId !== undefined && shape.data.peerId?.content !== entry) ||
     (entry && shape.data.disabledCapabilities !== undefined && (!Array.isArray(shape.data.disabledCapabilities?.content) || shape.data.disabledCapabilities.content.some(c => typeof c !== 'string'))) ||
     new Set(shape.children.map(c => c.id)).size !== shape.children.length || JSON.stringify(shape).length > 1024 * 1024) throw new NodeAccessError('Invalid node update.')
 }
@@ -73,9 +74,10 @@ export function nodeShape(r: Replica, path: Scope, root = headCid(r)): NodeShape
     const right = rightChild(r, edge)
     const template = member ? edge[0] : pinnedTemplateOf(r.store, edge)!
     const held = isPeerReference(child) ? !!child.data.ref?.held : isHandle(child)
-    children.push({ id, ...(right ? { right } : {}), ...(held ? { held: true as const } : {}), address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) }, template })
+    children.push({ id, ...(right ? { right } : {}), ...(held ? { held: true as const } : {}), ...(member ? { peer: content(r.store, edge[1]).data.peerId?.content } : {}), address: { peerId: ref?.peer ?? r.meta.peerId, scope: ref?.scope ?? [...path, id], ...(ref?.branches ? { branches: ref.branches } : !ref && nodeBranches(r, path, false).length ? { branches: nodeBranches(r, path, false) } : {}) }, template })
   }
-  return { data: Object.fromEntries(Object.entries(value.data).filter(([key]) => shapeField(path, key))) as FosDataContent, children }
+  const entry = memberEntryPeerAt(r.store, root, path) !== null
+  return { data: Object.fromEntries(Object.entries(value.data).filter(([key]) => shapeField(entry, key))) as FosDataContent, children }
 }
 
 const isMemberChild = (store: Replica['store'], child: NodeChild) => child.template === store.primitive.memberField.getId()
@@ -125,7 +127,10 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
     if (edge) return !missingTemplateOf(s, edge) && pinnedTemplateOf(s, edge) === child.template ? edge : pinnedRowEdge(s, identityCid(s, edge), child.template)
     return restored.has(child.id) ? pinnedRowEdge(s, restored.get(child.id)!, child.template) : unloadedRowEdge(s, child)
   })
-  const entry = put(s, { data: { ...shape.data, alias: { id }, peerId: { content: id.slice(MEMBER_ENTRY_PREFIX.length) } }, children })
+  // who the entry is for: what it said, else what its member edge here says (its id is that peer's entry id)
+  const peerId = shape.data.peerId?.content ?? memberEntryPeerAt(s, headCid(r), path)
+  if (!peerId || memberEntryId(peerId) !== id) throw new NodeAccessError('Invalid node update.')
+  const entry = put(s, { data: { ...shape.data, alias: { id }, peerId: { content: peerId } }, children })
   if (cid === entry) return r
   const root = updateAtScope(s, headCid(r), path.slice(0, -1), node => {
     const edges = node.children.filter(e => isMemberEdge(s, e) && content(s, e[1]).data.alias?.id === id)
@@ -183,7 +188,7 @@ function installRightChild(r: Replica, child: NodeChild, edge?: [string, string]
   return pinnedRowEdge(r.store, put(r.store, refNodeContent(r.store, { ...data, ...(child.right!.name !== undefined ? { name: { content: child.right!.name! } } : {}), ...(child.right!.bound && prior.data.ref ? { ref: prior.data.ref } : {}) }, child.right!.bound ? target : null, bookkeepingOf(r.store, prior))), child.template)
 }
 export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now: number, restored = new Map<string, string>()): Replica {
-  if (isMemberEntryId(path.at(-1))) return installMemberEntry(r, path, shape, now, restored)
+  if (memberEntryPeerAt(r.store, headCid(r), path) !== null) return installMemberEntry(r, path, shape, now, restored)
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new NodeAccessError('Node no longer exists.')
   const before = content(r.store, cid), held = isPeerReference(before)
@@ -265,15 +270,18 @@ export function submittedBranch(name: string): string | null { return name.start
 /** Same request on HTTP, RTC, and virtual channels. Authorization is rechecked on
  * every node; the transport must serialize load/modify/save. */
 export function exchangeNode(r: Replica, input: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
-  const request = withoutMemberWrites(parseNodeRequest(input), authority)
+  const request = withoutMemberWrites(r, parseNodeRequest(input), authority)
   if (request.branches?.length || request.proposal) return exchangeNodeContext(r, request, authority, now, exchangeNode)
   // a named submission (a pull request) is a proposal whoever sends it: it never writes main
   return withMainBranchPolicy(r.store, () => authority.proposeOnly || request.submission ? exchangeProposedNode(r, request, authority, now) : exchangeNodeOnMain(r, request, authority, now))
 }
 
 function exchangeNodeOnMain(r: Replica, input: NodeRequest, authority: NodeAuthority, now: number): { replica: Replica; node: ProvidedNode } {
-  const request = withoutMemberWrites(parseNodeRequest(input), authority)
-  if (request.update) { validateNodeShape(request.update.base, request.path); validateNodeShape(request.update.value, request.path) }
+  const request = withoutMemberWrites(r, parseNodeRequest(input), authority)
+  if (request.update) {
+    const entry = memberEntryPeerAt(r.store, headCid(r), [...request.scope, ...request.path])
+    validateNodeShape(request.update.base, entry); validateNodeShape(request.update.value, entry)
+  }
   // a holder that sends a node blank no longer makes it available here (Fos storage switched off on its side)
   if (request.update && request.path.length && isBlank(request.update.value) && !isBlank(request.update.base)) return keepAsHeld(r, request, authority, now)
   let served = provideNode(r, request, authority, now)
@@ -385,7 +393,7 @@ export function materializedNodePaths(r: Replica, at: Scope, peer?: string | nul
     const path = queue.pop()!, cid = resolveScope(r.store, headCid(r), path)
     if (!cid || isHandle(content(r.store, cid))) continue
     paths.push(path)
-    for (const child of nodeShape(r, path).children) if (!child.held && !child.pinned && child.right?.bound !== false && (!peer || !isMemberEntryId(child.id) || memberEntryListed(r, path, peer, child.id))) queue.push([...path, child.id])
+    for (const child of nodeShape(r, path).children) if (!child.held && !child.pinned && child.right?.bound !== false && (!peer || child.peer === undefined || memberEntryListed(r, path, peer, child.id))) queue.push([...path, child.id])
   }
   return paths.sort((a, b) => a.length - b.length)
 }
@@ -460,7 +468,7 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   }
   if (!read || (request.update && !edit)) throw new NodeAccessError('Node editing is not permitted.')
   // the served node is exchanged as the owner on a fork: the member entries this peer receives are its own only
-  if (path.slice(authority.scope.length).some(id => isMemberEntryId(id) && !memberEntryVisible(id, authority))) throw new NodeAccessError('Node unavailable.')
+  if (path.some((id, i) => i >= authority.scope.length && memberEntryPeerAt(r.store, headCid(r), path.slice(0, i + 1)) !== null && !memberEntryVisible(id, authority))) throw new NodeAccessError('Node unavailable.')
   const attachment = resolveScope(r.store, headCid(r), authority.scope)!
   const main = content(r.store, attachment), base = putStripped(r.store, main)
   // The proposer's submission (open or rejected) is what it is served, rebased onto main as it is now, so it sees what
@@ -493,7 +501,7 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => e[0] !== type), ...endpoints] })
   served.node.grants = grants
   served.node.children = served.node.children.filter(child => {
-    if (isMemberEntryId(child.id) && !memberEntryVisible(child.id, authority)) return false
+    if (child.peer !== undefined && !memberEntryVisible(child.id, authority)) return false
     const cid = resolveScope(r.store, headCid(r), [...path, child.id])
     const member = cid && memberFor(r.store, content(r.store, cid), authority.peerId)
     return !member || (!member.disabled?.includes('read') && !member.disabled?.includes('provideNode') && (member.capabilities.includes('read') || member.capabilities.includes('edit')))
@@ -506,14 +514,14 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
  * proposer) receives its own entry (`memberEntryVisible`) but never writes one. Its writes inside a member entry are
  * refused; member children in its updates of a node are left out (they are its local bookkeeping, not a proposal).
  */
-function withoutMemberWrites(request: NodeRequest, authority: NodeAuthority): NodeRequest {
+function withoutMemberWrites(r: Replica, request: NodeRequest, authority: NodeAuthority): NodeRequest {
   if (authority.owner || !request.update) return request
-  if (request.path.some(id => isMemberEntryId(id))) {
+  if (inMemberEntry(r.store, headCid(r), [...request.scope, ...request.path])) {
     // asking what it may write (an empty update) is reading; a change is refused
     if (sameNodeShape(request.update.base, request.update.value)) return { ...request, update: undefined }
     throw new NodeAccessError('Only the owner of a node changes its member entries.')
   }
-  const strip = (shape: NodeShape): NodeShape => ({ ...shape, children: shape.children.filter(child => !isMemberEntryId(child.id)) })
+  const strip = (shape: NodeShape): NodeShape => ({ ...shape, children: shape.children.filter(child => child.template !== r.store.primitive.memberField.getId()) })
   return { ...request, update: { base: strip(request.update.base), value: strip(request.update.value) } }
 }
 
@@ -662,7 +670,7 @@ export function planNodeSync(r: Replica, path: Scope, context: NodeSyncContext):
 /** Check the answer to `plan.first`, record the link, and return the push to make (null: nothing to push). */
 export function nodeSyncPush(r: Replica, plan: NodeSyncPlan, remote: ProvidedNode, now: number): { replica: Replica; peer: string; update: NodeRequest | null } {
   if (plan.peer && remote.peerId !== plan.peer) throw new Error('Node provider identity changed.')
-  validateNodeShape(remote, plan.path)
+  validateNodeShape(remote, memberEntryPeerAt(r.store, headCid(r), plan.path))
   if (remote.remoteLinkId !== plan.request.linkId || JSON.stringify(remote.address.scope) !== JSON.stringify([...plan.scope, ...plan.remotePath])) throw new Error('Node response does not match its attachment.')
   const replica = establishNodeSync(r, plan.path, plan.request, remote, now)
   acceptPinnedContent(replica, remote, remote.templates)
@@ -681,7 +689,7 @@ export function nodeSyncPush(r: Replica, plan: NodeSyncPlan, remote: ProvidedNod
 
 /** Install the final answer: three-way merge of what the peer accepted with what changed here meanwhile. */
 export function finishNodeSync(r: Replica, plan: NodeSyncPlan, remote: ProvidedNode, now: number): Replica {
-  validateNodeShape(remote, plan.path)
+  validateNodeShape(remote, memberEntryPeerAt(r.store, headCid(r), plan.path))
   // a member entry's grants arrive with their content
   acceptPinnedContent(r, remote, remote.templates)
   const peer = remote.peerId

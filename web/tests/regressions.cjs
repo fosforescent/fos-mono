@@ -909,7 +909,7 @@ async function main() {
   const reader = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage(), localStores: { read: async id => disk[id] ?? null, write: async (id, value) => { disk[id] = JSON.parse(JSON.stringify(value)) } } })
   reader.startPolling = () => {}; reader.openEvents = () => {}; apps.push(reader)
   await reader.linkLocalStores([{ peerId: 'home-store', name: 'laptop', home: true }])
-  const entry = 'fos:peer:home-store', held = [entry, 'store:home-store']
+  const entry = sync.memberEntryId('home-store'), held = [entry, 'store:home-store']
   const storeRow = view(reader.state.replica, [entry]).tasks.find(t => t.id === 'store:home-store')
   assert.equal(storeRow.refPeer, 'home-store'); assert.equal(storeRow.title, 'laptop')
   assert(sync.localStores(loadReplica(disk['home-store'])).some(s => s.peerId === reader.state.replica.meta.peerId), 'the other store links this one back at once')

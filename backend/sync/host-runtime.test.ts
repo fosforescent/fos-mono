@@ -1,3 +1,4 @@
+import { memberEntryId } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { CAPABILITIES, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
 import { createHostRuntime } from './host-runtime'
@@ -101,6 +102,6 @@ test('the server runs the relay on submissions: a message to a peer the account 
   r = addRelayMessage(r, [HOME_ID, 'hub'], 'desktop', 4, 'm1')
   r = addRelayMessage(r, [HOME_ID, 'hub'], 'stranger', 4, 'm2')
   r = runtime.afterSubmission(r, [HOME_ID, 'hub', 'm1'], 5)
-  expect(view(r, [HOME_ID, 'hub', 'fos:peer:desktop', RELAY_QUEUE_ID])!.tasks.map(t => t.id)).toEqual(['m1'])
+  expect(view(r, [HOME_ID, 'hub', memberEntryId('desktop'), RELAY_QUEUE_ID])!.tasks.map(t => t.id)).toEqual(['m1'])
   expect(view(r, [HOME_ID, 'hub'])!.tasks.map(t => t.id)).toEqual(['m2'])
 })

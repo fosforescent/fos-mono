@@ -54,7 +54,7 @@ async function main() {
   assert(!c.view(phone.state.replica, HUB).tasks.some(t => t.id === 'job'), 'the row moved into the message')
   // where the relay runs (the fos server after the sync), the message moves into the desktop's queue
   const relayed = c.relayAt(phone.state.replica, HUB, 'fos', 10)
-  assert.deepEqual(c.view(relayed, [...HUB, 'fos:peer:desktop', c.RELAY_QUEUE_ID]).tasks.map(t => t.id), [message.id])
+  assert.deepEqual(c.view(relayed, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID]).tasks.map(t => t.id), [message.id])
 
   // the desktop: the account holds a delivered message; an ordinary sync brings its queue, Home shows the inbox
   let server = c.ensureHomeContext(c.createReplica('user:me'), 1)
@@ -78,10 +78,10 @@ async function main() {
   assert(!document.querySelector('.relay-inbox'))
   // the ack goes back on the next sync; the relay takes both out, and the following sync clears the queue here
   desktop.set({ replica: sync(desktop.state.replica, server, 30) })
-  server = c.relayAfterSubmission(server, [...HUB, 'fos:peer:desktop', c.RELAY_QUEUE_ID, 'relay:ack:m1'], 'fos', 31)
-  assert.deepEqual(c.view(server, [...HUB, 'fos:peer:desktop', c.RELAY_QUEUE_ID]).tasks, [])
+  server = c.relayAfterSubmission(server, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID, 'relay:ack:m1'], 'fos', 31)
+  assert.deepEqual(c.view(server, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID]).tasks, [])
   desktop.set({ replica: sync(desktop.state.replica, server, 32) })
-  assert.deepEqual(c.view(desktop.state.replica, [...HUB, 'fos:peer:desktop', c.RELAY_QUEUE_ID]).tasks, [])
+  assert.deepEqual(c.view(desktop.state.replica, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID]).tasks, [])
   console.log('relay: ok')
 }
 function mountUi(app) { c.mountUi(document.getElementById('app'), app) }

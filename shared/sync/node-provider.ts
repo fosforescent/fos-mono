@@ -1,7 +1,7 @@
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, isRefNode, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
-  valueContent, readMembers, memberFor, memberEntryId, isMemberEntryId, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
+  valueContent, readMembers, memberFor, memberEntryId, memberEntryPeerAt, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, CAPABILITIES, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
 import { importNodes } from './graph'
 import { headCid, type Replica } from './replica'
@@ -34,7 +34,8 @@ export type NodeShape = { data: FosDataContent; children: NodeChild[] }
  * and offers (`[CAPABILITY|ACCEPTS, x]`, `template` = that primitive) are immutable children `pinned` to the cid of
  * `x`, whose content travels with the shape (`ProvidedNode.templates`, `NodeRequest.templateNodes`).
  */
-export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true; pinned?: string; right?: { name?: string; bound: boolean } }
+/** `peer`: a member entry's, whom it is for (its id is that peer's entry id, `memberEntryId`). */
+export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true; pinned?: string; right?: { name?: string; bound: boolean }; peer?: string }
 /** Shallow wire projection of a row's right ref. The graph remains the source of
  * truth: the enclosing row supplies its pattern; bound is the presence of TARGET. No values are bundled. */
 export function rightChild(r: Replica, edge: FosPathElem): NodeChild['right'] {
@@ -223,7 +224,7 @@ export function memberEntryVisible(id: string, authority: Pick<NodeAuthority, 'p
 /** A member entry a peer listed and this side has not loaded: who it names, no grants yet (so it grants nothing). */
 export function unloadedMemberEdge(store: Replica['store'], child: NodeChild): FosPathElem {
   const ref = { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) }
-  return [store.primitive.memberField.getId(), put(store, { data: { alias: { id: child.id }, peerId: { content: child.id.slice(MEMBER_ENTRY_PREFIX.length) }, ref }, children: [] })]
+  return [store.primitive.memberField.getId(), put(store, { data: { alias: { id: child.id }, peerId: { content: child.peer! }, ref }, children: [] })]
 }
 
 /** Fields a member entry's shape carries besides the usual ones (who it is, what is switched off). */
@@ -232,7 +233,7 @@ export const MEMBER_ENTRY_FIELDS = new Set(['peerId', 'disabledCapabilities'])
 /** The children of the node `cid` (at `path`) as node exchange lists them: its rows, then its member entries (or, in a member entry, its grants). */
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> {
   const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> = []
-  const entry = isMemberEntryId(path.at(-1))
+  const entry = memberEntryPeerAt(r.store, headCid(r), path) !== null
   for (const edge of value.children) {
     if (entry && isGrantEdge(r.store, edge)) { out.push({ id: grantChildId(r.store, edge), edge, grant: true }); continue }
     if (isBookkeepingEdge(r.store, edge) || !exchangedValueEdge(r, edge)) continue
@@ -242,7 +243,7 @@ export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{
   if (!entry && !isHandle(content(r.store, cid))) for (const edge of memberEdgesOf(r.store, cid)) {
     const id = content(r.store, edge[1]).data.alias?.id
     // a store reached through this machine's files (granted `local`, `linkLocalStore`) is this machine's link: it never leaves it
-    if (isMemberEntryId(id) && !content(r.store, edge[1]).children.some(e => capabilityOf(r.store, e) === 'local')) out.push({ id, edge, member: true })
+    if (id && !content(r.store, edge[1]).children.some(e => capabilityOf(r.store, e) === 'local')) out.push({ id, edge, member: true })
   }
   return out
 }
@@ -289,7 +290,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     restrictFields(mask)
     const identity = content(r.store, cid)
     const value = heldByRequester ? { data: {}, children: [] } : valueContent(r.store, cid)
-    const entry = isMemberEntryId(path.at(-1))
+    const entry = memberEntryPeerAt(r.store, headCid(r), path) !== null
     const data = Object.fromEntries(Object.entries(value.data).filter(([key]) => (!forbiddenFields.has(key) || (entry && MEMBER_ENTRY_FIELDS.has(key))) && (!fields || fields.has(key)))) as FosDataContent
     const children: NodeChild[] = []
     const pinned = new Set<string>(), wanted = new Set<string>(), grantNodes: string[] = []
@@ -306,7 +307,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       if (right) grantNodes.push(pinnedTemplateOf(r.store, edge)!)
       const missing = !member && missingTemplateOf(r.store, edge), template = member ? edge[0] : pinnedTemplateOf(r.store, edge)!
       if (!member) (missing ? wanted : pinned).add(template)
-      children.push({ id, ...(right ? { right } : {}), ...(isHandle(child) ? { held: true as const } : {}), address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
+      children.push({ id, ...(right ? { right } : {}), ...(isHandle(child) ? { held: true as const } : {}), ...(member ? { peer: content(r.store, edge[1]).data.peerId?.content } : {}), address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
     }
     // Only templates this node's visible rows are pinned to are served, never an arbitrary cid.
     const served = (request.templates ?? []).filter(cid => pinned.has(cid))
@@ -334,7 +335,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) throw new NodeAccessError('The receiving node no longer exists.')
   // a member entry is not a projection of its own: it syncs in its node's rounds (node-sync.ts `installNodeShape`)
-  if (isMemberEntryId(at.at(-1))) throw new NodeAccessError('A member entry syncs with its node.')
+  if (memberEntryPeerAt(r.store, headCid(r), at) !== null) throw new NodeAccessError('A member entry syncs with its node.')
   const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
   const listed = node.children.filter(child => (!local.children || local.children.includes(child.id)) && !child.pinned)
@@ -360,7 +361,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   const shipped = valueContent(r.store, cid).children.filter(edge => isShippedLibrary(r.store, at, edge))
   const kept = bookkeepingOf(r.store, isPeerReference(before) ? { data: {}, children: [] } : before)
   const known = new Set(kept.filter(e => isMemberEdge(r.store, e)).map(e => content(r.store, e[1]).data.alias?.id))
-  const members = listed.filter(child => child.template === memberType && isMemberEntryId(child.id) && !known.has(child.id)).map(child => unloadedMemberEdge(r.store, child))
+  const members = listed.filter(child => child.template === memberType && typeof child.peer === 'string' && memberEntryId(child.peer) === child.id && !known.has(child.id)).map(child => unloadedMemberEdge(r.store, child))
   const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId }, ...(before.data.name ? { name: before.data.name } : {}) }, put(r.store, { data, children: [...shipped, ...children] }), [...kept, ...members]), node.peerId)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), at, () => identity, 'replace'), now)
   r = setNodeLinkMask({ ...r }, at, node.peerId, node.linkId, ownMask, now, request.linkId)
