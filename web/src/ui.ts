@@ -473,7 +473,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
       const row = viewAt(state.replica, view.slice(0, index), true)?.tasks.find(row => row.id === _id)
       const crumb = button('crumb', shortCrumb(labels.view[index] ?? '…'), () => app.goTo(view.slice(0, index + 1)))
       crumb.title = labels.view[index] ?? ''
-      const symbol = ({ task: '☑', note: 'note', comment: 'comment', template: '✦', allocation: 'money', 'allocation-money': 'money', requirement: '⑂' } as Record<string, string>)[row ? typeClass(row) : '']
+      const symbol = ({ task: '☑', note: 'note', comment: 'comment', template: '✦', allocation: 'money', money: 'money', requirement: '⑂' } as Record<string, string>)[row ? typeClass(row) : '']
       if (symbol) { const icon = span('crumb-icon', ''); icon.innerHTML = iconSvg(symbol) ?? ''; crumb.prepend(icon) }
       crumbs.append(span('sep', '›'), crumb)
     })
@@ -577,13 +577,14 @@ let editingSpecial: string | null = null
 const hasControls = (task: TaskView) => isAllocationType(task.type) || task.type === QUERY_TYPE || task.type === RESOURCE_TYPE
 /**
  * A row's type as a short style name (classes `type-…`, glyphs, `type:` search terms): its library type's id without
- * `lib:type:`; what a row does on top of its type (a task made from a template, a requirement, a reference) wins.
+ * a library field; what a row does on top of its type (a task made from a template, a requirement, a reference) wins.
  */
 function typeClass(task: TaskView): string {
   if (task.refId !== undefined) return 'ref'
   if (task.requirement) return 'requirement'
   if (task.checkable) return 'task'
-  return task.type.startsWith('lib:type:') ? task.type.slice('lib:type:'.length).replace(/:/g, '-') : 'plain'
+  // a library type's field name (`money` → `type-money`); a row of a template is a task, handled above
+  return task.type && !task.template ? task.type.replace(/[A-Z]/g, c => '-' + c.toLowerCase()) : 'plain'
 }
 type DragMode = 'move' | 'ref' | 'copy'
 let drag: { id: string; at: Scope; mode: DragMode } | null = null
@@ -1637,7 +1638,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     }))
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
   }
-  if (!preview && row?.type === TEMPLATE_TYPE && !row.id.startsWith('lib:type:')) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
+  if (!preview && row?.type === TEMPLATE_TYPE && !app.isLibrary(state.view.slice(0, -1))) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
   const git = !preview && localGitControls(app); if (git) controls.append(git)
   if (row?.construction) controls.append(constructorBody(row, state, app))
   // the account form is its own block under the peer's row, never a column beside it

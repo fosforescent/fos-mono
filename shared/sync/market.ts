@@ -8,6 +8,7 @@
  * the verified nodes; the market appends them (`applyBid`) to a branch of the node and records that as the bidder's
  * proposal. Nothing here knows what kinds of rows a bid holds.
  */
+import { ALLOCATION_TYPE } from './library-types'
 import { FosStore } from '../dag-implementation/store'
 import type { FosNodesData, FosPathElem } from '../types'
 import {
@@ -90,7 +91,7 @@ export function applyBid(store: FosStore, valueCid: string, bid: unknown, bidder
     checked.add(cid)
     if (content(store, cid).children.some(e => isBookkeepingEdge(store, e) && !isPrevEdge(store, e))) throw new BidError('A bid cannot carry members or proposals.')
     // flow records (the allocation row type: allocations, requirements, supplies) name who they are by
-    if (isRowOfType(store, edge, 'lib:type:allocation')) {
+    if (isRowOfType(store, edge, ALLOCATION_TYPE)) {
       const data = valueContent(store, cid).data
       for (const by of [data.allocation?.by, data.supply?.by]) if (by !== undefined && by !== bidder && by !== `user:${bidder}`) throw new BidError('Supplies and allocations in a bid are the bidder’s own.')
     }

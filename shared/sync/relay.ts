@@ -2,11 +2,11 @@
  * Relay: the durable queue for peers that are offline, as a standard-library handler any peer can run.
  *
  * Everything is a row of a library type (`.fos/library.json`), recognised by the row edge's left node only:
- *   message (`lib:type:relay-message`)  a row a peer leaves at a relay node: its value is the addressee (a peer id),
+ *   message (`lib.relayMessage`)  a row a peer leaves at a relay node: its value is the addressee (a peer id),
  *                                       its child rows are what is sent (a task, a note, ...)
- *   queue   (`lib:type:relay-queue`)    the row under a recipient's member entry (`memberEntryId(<id>)`) holding what was
+ *   queue   (`lib.relayQueue`)    the row under a recipient's member entry (`memberEntryId(<id>)`) holding what was
  *                                       delivered to it; that subtree is the recipient's queue
- *   ack     (`lib:type:relay-ack`)      a row the recipient leaves (in its queue, or as its submission at the relay
+ *   ack     (`lib.relayAck`)      a row the recipient leaves (in its queue, or as its submission at the relay
  *                                       node) naming a message it took; the message and the ack leave the queue
  *
  * The handler is three generic primitives: read the rows peers left at a node (`rowsLeftAt`: rows of main and the
@@ -30,11 +30,11 @@ import { constructForm } from './forms'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
 
-export const RELAY_MESSAGE = 'lib:type:relay-message'
-export const RELAY_QUEUE = 'lib:type:relay-queue'
-export const RELAY_ACK = 'lib:type:relay-ack'
+export const RELAY_MESSAGE = 'relayMessage'
+export const RELAY_QUEUE = 'relayQueue'
+export const RELAY_ACK = 'relayAck'
 /** The library's Relay template: what a relay node accepts (messages, acknowledgements); a peer offers it as its relay. */
-export const RELAY_TEMPLATE = 'lib:relay'
+export const RELAY_TEMPLATE = 'relay'
 /** What a new queue row under a member entry is called: a content address (code finds a queue by its type, `queueIn`). */
 export const RELAY_QUEUE_ID = hashContent({ data: { description: { content: 'Relay queue' } }, children: [] })
 /** What the acknowledgement of the message `messageId` is called: a content address of what it acknowledges. */
@@ -229,12 +229,9 @@ export function relayAfterSubmission(r: Replica, path: Scope, handlerPeer: strin
 
 /** The library's Relay template as `at` sees it: the nearest library's, else this build's. */
 export function relayTemplate(r: Replica, at: Scope = []): string {
-  const library = findNearestRow(r.store, headCid(r), at, row => isLibraryRef(r.store, content(r.store, row.cid)) && !!findChild(r.store, row.cid, RELAY_TEMPLATE))
-  const local = library && findChild(r.store, library.cid, RELAY_TEMPLATE)
-  if (local && !isPeerReference(content(r.store, local))) return local
-  const shipped = findChild(r.store, shippedLibrary(r.store), RELAY_TEMPLATE)
-  if (!shipped) throw new Error('This build has no Relay template.')
-  return shipped
+  const template = libraryTypeAt(r.store, RELAY_TEMPLATE, at)
+  if (!template) throw new Error('This build has no Relay template.')
+  return template
 }
 
 /** This device offers relay at `at`: a typed offer of the library's Relay template on its own member entry. */

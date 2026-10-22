@@ -575,7 +575,7 @@ describe('row types', () => {
     expect(v.tasks.find((t) => t.id === 'n')!.title).toBe('Title')
     expect(view(r, ['n'])!.tasks.find((t) => t.id === 'n/field/body')!.title).toBe('# Title\n\nbody with {{who}}')
     expect(v.tasks.find((t) => t.id === 'c')!.author).toMatchObject({ name: 'Ada' })
-    expect(view(r, ['c'])!.tasks.map((t) => t.type)).toEqual([TEXT_TYPE, 'lib:type:person', 'lib:type:list-text', COMMENT_TYPE])
+    expect(view(r, ['c'])!.tasks.map((t) => t.type)).toEqual([TEXT_TYPE, 'person', 'listText', COMMENT_TYPE])
     expect(view(r, ['c'])!.tasks.slice(0, 3).map(t => t.id)).toEqual(['c/field/body', 'c/field/person', 'c/field/texts'])
     // a plain row cannot be completed; converting it to a task makes it checkable
     expect(userView(setTaskDone(r, [], 'p', true, 7))!.tasks[0]).toMatchObject({ id: 'p', done: false, checkable: false })

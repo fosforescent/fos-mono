@@ -156,11 +156,11 @@ test('the public read endpoint serves the projection for embeds without recordin
   const ok = await read({ owner: 'host', path: JSON.stringify(['post']) })
   expect(ok.status).toBe(200)
   // a note publishes its title line, and its body as a Markdown row of its own
-  expect(ok.body.node).toMatchObject({ title: 'A post', type: 'lib:type:note' })
+  expect(ok.body.node).toMatchObject({ title: 'A post', type: 'note' })
   expect(ok.body.node.rows).toEqual([
-    { id: 'post/field/body', title: '', depth: 0, type: 'lib:type:markdown', body: '# A post\n\nWith a **body**.' },
-    { id: 'part', title: 'Part', depth: 0, type: 'lib:type:note' },
-    { id: 'part/field/body', title: '', depth: 1, type: 'lib:type:markdown', body: '## Part\n\nMore.' }
+    { id: 'post/field/body', title: '', depth: 0, type: 'markdown', body: '# A post\n\nWith a **body**.' },
+    { id: 'part', title: 'Part', depth: 0, type: 'note' },
+    { id: 'part/field/body', title: '', depth: 1, type: 'markdown', body: '## Part\n\nMore.' }
   ])
   expect(ok.body.node.mine).toBeUndefined()
   expect(ok.headers['Cache-Control']).toBe('public, max-age=60')

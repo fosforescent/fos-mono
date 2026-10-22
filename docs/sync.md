@@ -157,18 +157,18 @@ on every edit, its alias id does not.
 ```
 row         [type, rowNode]              rowNode.data: alias{id}, description{content}, updated{time}. The type (the left node, the
                                      instruction) is what the row is, and nothing else is: a row type (see "Row types" below; every
-                                     pinned version shares its graph identity `lib:type:…`) or a template row the row was made from,
+                                     pinned version shares its graph identity `lib.<type>`) or a template row the row was made from,
                                      pinned by the cid of that version's content. Library row types and the native data their rows hold:
-              Task        lib:type:task        + todo{completed,time}   (checkbox; "[ ]"/"[x]" prefix in the add bar)
-              Row         lib:type:plain       the default row: text with links/embeds; rows of a type this peer does not know
+              Task        lib.task        + todo{completed,time}   (checkbox; "[ ]"/"[x]" prefix in the add bar)
+              Row         lib.plain       the default row: text with links/embeds; rows of a type this peer does not know
                                      render like it
-              Note        lib:type:note        a graph form: a Markdown body field (">" prefix); child rows are variables (key: value,
+              Note        lib.note        a graph form: a Markdown body field (">" prefix); child rows are variables (key: value,
                                      or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
                                      expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
-              Comment     lib:type:comment     a graph form: body, person, texts ("//" prefix or the menu; replies are child comments)
-              Reference   lib:type:ref         + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
+              Comment     lib.comment     a graph form: body, person, texts ("//" prefix or the menu; replies are child comments)
+              Reference   lib.ref         + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
                                      copy; `owner` marks a market result (the row lives in another account; click opens the listing)
-              Allocation  lib:type:allocation  + allocation{resource, type, amount, unit, start?, end?, by?, capability?, …}: a signed
+              Allocation  lib.allocation  + allocation{resource, type, amount, unit, start?, end?, by?, capability?, …}: a signed
                                      entry of a resource, read by sign (`flowOf`). Negative = a requirement, what its parent needs ("-"
                                      prefix; capability = task | allocation | search | confirmation | choice | market | mail | peer | …).
                                      Positive with a capability = a supply that satisfies a requirement (`ref` names an allocation/query
@@ -176,11 +176,11 @@ row         [type, rowNode]              rowNode.data: alias{id}, description{co
                                      optional window "2026-10-13..2026-10-20" after the amount, start = now / end = forever when absent;
                                      drawn from the parent context: the bank above, the bank the requirement names, or the type's
                                      default pool = first top-level bank)
-              Money       lib:type:allocation:money  the same entry for money, told apart by sign alone: negative = a request for
+              Money       lib.money  the same entry for money, told apart by sign alone: negative = a request for
                                      payment ("-$ 50"), positive = a payment ("$ 50"), which fills the request it sits under
-              Query       lib:type:query       + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
-              Resource    lib:type:resource    + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
-              Template    lib:type:template    its rows are copied under every task made from it; the template's content is the
+              Query       lib.query       + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
+              Resource    lib.resource    + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
+              Template    lib.template    its rows are copied under every task made from it; the template's content is the
                                      type of those tasks ("`name" prefix; "[ ] `name` …" makes the task [Trip's content, taskNode])
 reference error  [missing, rowNode]      the row is pinned to a template this peer has not received; `missing` is a stand-in template
                                      (data.missingTemplate{cid}). Node sync reports it as the row it stands for, asks the peer
@@ -405,7 +405,7 @@ Still to do: relaying a pull request to an offline holder.
 **Requirements** (`-` prefix, under a task) are what the task needs before it
 can be completed. `-` is a modifier: what follows it names the child row that
 fills the requirement (a requirement is a negative allocation entry; money is
-its own row type, `lib:type:allocation:money`, a negative money row a request
+its own row type, `lib.money`, a negative money row a request
 for payment and a positive one a payment). `-[ ] text` needs a task inside it to be done;
 `-$ 50 text` (or `-@account 50`, `-@calendar 1h`, `-@inventory 2 widgets`)
 needs an allocation of that resource and amount inside it; `-? text` needs a
@@ -430,7 +430,7 @@ children. Each resource type has a marker: `$` money, `:` time, `#` things,
 `-ff`, `-at` for the matching requirements; `-at Eiffel Tower` needs a
 location allocation at that place, by name or by a device's position). A
 place at a time is not its own type: it is the product of a location row and
-a time row in one node (the library's "Meet up" template). Fos points are the account's token balance
+a time row in one node. Fos points are the account's token balance
 (`GET /tokens/balance`, shown on the fos row); an `ff` allocation with no
 `@points` bank above draws from that balance (`resource: 'fos:points'`). A
 `-ff N` requirement under a task is a **payout**: when the task runs, the fos
@@ -516,8 +516,8 @@ is (`.fos/stores.json`, never in the graph; `desktop/src-tauri/src/stores.rs`).
 `fos peers` lists the links.
 
 **Row types.** What every row is made from lives in the standard library's
-"Row types" group (`lib:types`): one template row per type (`lib:type:task`,
-`lib:type:note`, `lib:type:allocation:money`, ...) whose content is the row type a row edge pins. A row
+fields: one row per type (`lib.task`,
+`lib.note`, `lib.money`, ...) whose content is the row type a row edge pins. A row
 is told apart by that left node alone (`rowTypeOf`, `isRowOfType`, any pinned
 version, by graph identity); there is no row kind and no `builtin:` behavior
 marker. Data from builds before data version 0.0.1 (which had such markers)
@@ -544,7 +544,7 @@ reference error and asks for it.
 **What a type accepts** (`shared/sync/patterns.ts`). Every type says which rows
 it accepts as children with **pattern rows** of its own, made from the Pattern
 type (patterns as types, `docs/language-design.md` §2.1). A pattern names a row
-type (`pattern.type`, e.g. `lib:type:home`) and optionally the versions of it
+type (`pattern.type`, e.g. `lib.home`) and optionally the versions of it
 that match (`pattern.versions`, pinned cids; none = any version); `pattern.any`
 is the wildcard. Without the wildcard a type accepts what its patterns match;
 with it, everything except what they match. A child is matched by its row type
@@ -703,7 +703,7 @@ A voice transcript, a long paste or a texted message is organized into one
 node as an effect, not through a route of its own. The client places an
 `organize` requirement in the target (`requestOrganize`: identity
 `fos:organize:…`, so it is never part of an outline; text = what the capture
-is, e.g. "Voice note"; its `lib:type:note` row = the captured text) and
+is, e.g. "Voice note"; its `lib.note` row = the captured text) and
 sends `complete` on it. The server's `organize` handler refuses a non-paying
 account over the voice budget before the evaluation opens, builds the
 outline from the account's own store (`captureOutline`: the target's
@@ -1019,7 +1019,7 @@ export [--out file]` writes the value of the library ref the store sees (the one
 referenced in Home once it is there, else the device root's) back as that
 source.
 
-**Manual fallbacks.** The library's "Manual handlers" group (`lib:manual`)
+**Manual fallbacks.** The library's "Manual handlers" group (`lib.manual`)
 carries one requirement row per kind of requirement, each a fallback the app
 offers on any unsatisfied requirement of that kind (`manualHandlersFor`,
 `App.applyManualHandler`): "Paid outside Fos", "Sent it myself", "Opened the
@@ -1041,16 +1041,16 @@ The durable queue for a device that is offline is a standard-library handler,
 not a server feature: any peer can run it, and the fos server is one peer that
 does. It is three library row types (`.fos/library.json`, Row types) and a
 template, recognised only by the row edge's left node (any pinned version of
-the type, by its identity `lib:type:…`; no flags or row kinds):
+the type, by its identity `lib.<type>`; no flags or row kinds):
 
-* **Message** (`lib:type:relay-message`, a `peer` scalar form, open): a row a
+* **Message** (`lib.relayMessage`, a `peer` scalar form, open): a row a
   peer leaves at a relay node. Its value is the addressee (a peer id), its child
   rows are what it carries (a task for the desktop's agent, a note, …).
-* **Queue** (`lib:type:relay-queue`): the row of that type under a recipient's
+* **Queue** (`lib.relayQueue`): the row of that type under a recipient's
   member entry on the node where that peer is a member (found by its type; its
   id, `RELAY_QUEUE_ID`, is a content address). That subtree is the recipient's
   queue.
-* **Acknowledgement** (`lib:type:relay-ack`, a `text` scalar): the id of a
+* **Acknowledgement** (`lib.relayAck`, a `text` scalar): the id of a
   message the recipient took.
 * **Relay** (`lib:relay`, a template): what a relay node accepts (pattern rows
   for messages and acknowledgements). A device that relays publishes it as its
@@ -1105,10 +1105,10 @@ entry until the desktop connects.
 ## Users (`shared/sync/users.ts`, `backend/sync/verify.ts`)
 
 `@name` in a row is never stored as text. It is shorthand for a **user
-object**: a row of the standard library type `lib:type:user` (graph data in
+object**: a row of the standard library type `lib.user` (graph data in
 `.fos/library.json`, read through its form, `formRecord`) with the fields
 `account` (the stable account id), `username`, `name` (display name),
-`publicKey` and `verification` (`lib:type:attestation`: `by`, the verifying
+`publicKey` and `verification` (`lib.attestation`: `by`, the verifying
 peer; `method`; `issuedAt`; `attestation`, the signature). A row that names a
 user (`-@bob`, `@bob 2h`, `-ff 5 thanks @carol`, `$ 20 @bob`) binds it as its
 `user` field: a ref, typed by the user type, to the user object node
@@ -1121,7 +1121,7 @@ object travels with the row through node sync like any form field.
 **Verification.** The account server is the verifier today, and verifying
 is an effect like any other (no user or key route). Its `verify` handler
 (`backend/sync/verify.ts`) fills a `verify` requirement: a row whose text
-names the user (`@bob`; `requestVerification` puts it under the People row (`lib:type:people`) as
+names the user (`@bob`; `requestVerification` puts it under the People row (`lib.people`) as
 `fos:verify:bob`) completed through a `complete` event comes back with the
 attested object bound as its `user` field (`verifiedAt`) and the supply
 `{capability: 'verify', by: 'fos'}`; an unknown name is refused before the
@@ -1137,7 +1137,7 @@ context, e.g. on every node exchange) writes it onto the fos member entry of
 the account root (`memberEntryId('fos')`, the server's own place there, beside its
 offers) as a row of the user type: a key row with account and username
 `fos` and `publicKey` the raw key (`publishPeerKey`; unchanged keys write
-nothing, and a key row an older server left in Home's People row (`lib:type:people`) is removed).
+nothing, and a key row an older server left in Home's People row (`lib.people`) is removed).
 Member entries travel by node exchange, and an owner's device attached at Home
 pulls that entry above its attachment (`accountContextAbove`), so the key
 arrives on the device's own root fos entry (`publishedKey`, `publishedKeys`
@@ -1161,7 +1161,7 @@ proves possession of the key, not the account.
 username only). Online with a fos peer that offers `verify`, the app runs a
 verify requirement for that name on the server (`App.resolveUser` →
 `runOnServer`: sync, `complete`, sync), checks the result with its verify
-handler, keeps it in Home under the People row (`lib:type:people`) (`cacheUser`, one user row
+handler, keeps it in Home under the People row (`lib.people`) (`cacheUser`, one user row
 each), rebinds every row that named that username (`rebindUsers`) and removes
 the request; later rows bind the cached object directly (`knownUser`).
 Offline rows keep the unverified object until the next edit online.
@@ -1234,7 +1234,7 @@ the desktop shell (web, and mobile, which has no project context) nothing is lis
 
 **File references.** A file row's **Reference** action (or **Reference this file** in
 an open file's workspace) adds a row of the standard-library type
-`lib:type:file-reference` (`.fos/library.json`) to the hosting graph node: the row
+`lib.fileReference` (`.fos/library.json`) to the hosting graph node: the row
 edge's left node is that type, and its form fields hold `path` (`/`-separated,
 relative to the linked directory), `sha256` and `size` as computed by the desktop
 (`hash_node_file`, `desktop/src-tauri/src/files.rs`: streamed in 64 KB blocks,
@@ -1422,10 +1422,10 @@ that audience.
 (`sharedProjection`, `shared/sync/sharing.ts`) carries each row's `type`, the id
 of the library row type its left node is (`rowTypeOfEdge`; every pinned version
 of a library type shares that id), and nothing else to tell rows apart
-(`shared/sync/published-types.ts`). A note (`lib:type:note`) carries its whole
+(`shared/sync/published-types.ts`). A note (`lib.note`) carries its whole
 markdown `body` (up to `SHARED_BODY_LIMIT`, 100,000 characters, and
 `SHARED_TOTAL_BODY`, 1,000,000 per projection; a cut body says `truncated`) and a
-short `title` (`markdownTitle`). A scalar field (`lib:type:text|number|time|peer`)
+short `title` (`markdownTitle`). A scalar field (`lib.text|number|time|peer`)
 carries its name as `title` and its value as `body`; the field a row presents as
 its title (a note's body, per its type's `form.title`) is not repeated, and an
 empty one is declared as an input, rendered as a control of that field's type.
@@ -1468,7 +1468,7 @@ without credentials; every other route keeps the account origins list. The embed
 shows math and diagram fences as source. The public audience's row offers "Copy
 embed".
 
-Not yet: a payment form (money requests are rows of `lib:type:allocation:money`, so
+Not yet: a payment form (money requests are rows of `lib.money`, so
 a page can render them by type; the visitor-pays path through Stripe Checkout is
 not wired); messages to online visitors (the seam: a visitor is
 already a member peer `visitor:<uuid>` with a receipt; a delivery channel keyed by
@@ -1567,7 +1567,7 @@ the UI, Change template → *Use as pattern*), submits the node's values to the
 pattern's refs position by position: the i-th row of the node goes to the ref on
 the right of the pattern's i-th row, checked against that row's left; a nested
 pattern takes the nested rows. Bookkeeping and placement rules (a template's
-`lib:type:pattern` "accepts" rows) are not positions. Submissions are value
+`lib.pattern` "accepts" rows) are not positions. Submissions are value
 submissions labelled per source (by the source's path), recorded on the refs of the use
 site's left node, so the shared pattern is unchanged and each use is its own
 scope. Viewing the node lists each ref with its value and its submitted options;

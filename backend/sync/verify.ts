@@ -1,7 +1,7 @@
 import { standardHostRef } from './host-runtime'
 /**
  * The fos server attests users. `@name` in a row is shorthand for a user object (shared/sync/users.ts, the standard
- * library type `lib:type:user`): account id, username, display name, public key and a verification. Resolving a
+ * library type `lib.user`): account id, username, display name, public key and a verification. Resolving a
  * username to that object is the effect of this server's `verify` handler, reached like every other effect: a
  * `verify` requirement (`requestVerification`, its text `@name`) evaluated through a `complete`
  * event. The handler binds the attested object as the requirement's `user` field, signed with the server's ed25519

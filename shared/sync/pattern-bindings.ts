@@ -20,7 +20,7 @@ import { PATTERN_TYPE } from './library-types'
 
 /**
  * The rows a pattern position counts: everything but bookkeeping, the ref constructor's own pointers and placement
- * rules (a template's `lib:type:pattern` rows say what it accepts as children; they are not positions).
+ * rules (a template's `lib.pattern` rows say what it accepts as children; they are not positions).
  */
 export function patternRows(store: FosStore, node: FosNodeContent): FosPathElem[] {
   const own = [store.primitive.targetPointerConstructor.getId(), store.primitive.instructionPointerConstructor.getId(), store.primitive.aliasConstructor.getId()]

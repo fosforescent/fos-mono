@@ -45,7 +45,7 @@ test('plans are validated: unknown parents fall back to the target, refs are uni
     { ref: 'n5', text: '   ' },
     'junk',
     { ref: 'n6', parent: 'n2', text: 'Line one\nline two' },
-    { ref: 'n7', parent: 'n2', type: 'lib:type:task', text: 'a type a plan may not name' },
+    { ref: 'n7', parent: 'n2', type: 'task', text: 'a type a plan may not name' },
     { ref: 'n8', parent: 'n2', type: NOTE_TYPE, text: 'named note' },
   ] }) + '\n```', ['garden', 'tomatoes', 'trip'])
   expect(plan.title).toBe('Garden thoughts')
@@ -127,7 +127,7 @@ test('the same plan as one submission of the event grammar: added rows take ids 
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: ['a'], operation: 'rename', text: 't', id: 'x' }] })).toThrow(/Only added rows/)
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: [], operation: 'add_row', text: 't' }] })).toThrow(/row type/)
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: [], operation: 'add_plain', type: NOTE_TYPE, text: 't' }] })).toThrow(/row type/)
-  expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: (dispatchEvent(r, { kind: 'read', path: [] }, principal, 10).result as { revision: string }).revision, changes: [{ path: [], operation: 'add_row', type: 'lib:type:nonexistent', text: 't' }] }), principal, 11)).toThrow(/No standard library/)
+  expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: (dispatchEvent(r, { kind: 'read', path: [] }, principal, 10).result as { revision: string }).revision, changes: [{ path: [], operation: 'add_row', type: 'nonexistent', text: 't' }] }), principal, 11)).toThrow(/No standard library/)
   const again = dispatchEvent(r, { kind: 'read', path: [] }, principal, 10).result as { revision: string }
   expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: again.revision, changes: [{ path: [], operation: 'add_plain', text: 'a', id: 'garden' }] }), principal, 11)).toThrow(/already exists/)
   expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: again.revision, changes: [{ path: [], operation: 'add_plain', text: 'a', id: 'q1' }, { path: ['q1'], operation: 'rename', text: 'b' }] }), principal, 11)).toThrow(/only take further rows/)

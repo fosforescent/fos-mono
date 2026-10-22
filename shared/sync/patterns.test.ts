@@ -30,14 +30,14 @@ function receiveHome(r: Replica, at: string[]): Replica {
 
 test('only a device root accepts Home; nothing accepts a store root', () => {
   const r = device()
-  expect(typeIdOf(r.store, rootTypeOf(r.store))).toBe('lib:type:device-root')
+  expect(typeIdOf(r.store, rootTypeOf(r.store))).toBe('deviceRoot')
   expect(userView(r)!.tasks.map(t => [t.id, t.type])).toEqual([[HOME_ID, HOME_TYPE]])
   // a device root also holds its own rows; Home and ordinary rows hold no Home
   expect(() => addTask(r, [], 'Device setting', 3, 'setting')).not.toThrow()
   expect(() => addRow(r, [HOME_ID], HOME_TYPE, 'Another Home', 3)).toThrow(/does not accept/)
   expect(() => addRow(r, [HOME_ID, 't'], HOME_TYPE, 'Home in a task', 3)).toThrow(/does not accept/)
   const doc = documentRoot()
-  expect(typeIdOf(doc.store, rootTypeOf(doc.store))).toBe('lib:type:document-root')
+  expect(typeIdOf(doc.store, rootTypeOf(doc.store))).toBe('documentRoot')
   expect(() => addRow(doc, [], HOME_TYPE, 'Home in a project', 3)).toThrow(/does not accept/)
   expect(() => addTask(doc, [], 'Project task', 3)).not.toThrow()
 })
@@ -83,7 +83,7 @@ test('a store root holding what its type rejects is a type error too', () => {
 /** The library's next value, with its task ref pointing at `version`, accepted as a submission to the library ref. */
 function nextTaskVersion(r: Replica, version: string): Replica {
   const store = r.store, ref = resolveScope(store, headCid(r), [LIBRARY_ID])!, value = refValueCid(store, content(store, ref))!
-  const next = put(store, { ...content(store, value), children: content(store, value).children.map(edge => content(store, edge[1]).data.alias?.id === TASK_TYPE ? [edge[0], put(store, refNodeContent(store, content(store, edge[1]).data, version))] as [string, string] : edge) })
+  const next = put(store, { ...content(store, value), children: content(store, value).children.map(edge => content(store, edge[1]).data.name?.content === TASK_TYPE ? [edge[0], put(store, refNodeContent(store, content(store, edge[1]).data, version))] as [string, string] : edge) })
   const submitted = proposeRefAt(r, [LIBRARY_ID], next, 'member', 3, 'binding:member')
   return applyProposalAt(submitted.replica, [LIBRARY_ID], submitted.proposalCid, r.meta.peerId, 4)
 }
@@ -118,7 +118,7 @@ test('a bare root (as the seed and registration write it) commits as a document 
   nestScope(store, { store: host.store, root: headCid(host), at: [] })
   store.rootNodeId = put(store, { data: { alias: { id: 'ws' }, description: { content: 'workspace' } }, children: [] })
   const r = addTask(createReplica('server', store), [], 'first', 1, 'a')
-  expect(typeIdOf(store, rootTypeOf(store))).toBe('lib:type:document-root')
+  expect(typeIdOf(store, rootTypeOf(store))).toBe('documentRoot')
   expect(view(r, [])!.typeError).toBeUndefined()
   expect(view(r, [])!.tasks.map(t => t.title)).toEqual(['first'])
 })

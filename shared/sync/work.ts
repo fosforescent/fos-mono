@@ -1,4 +1,5 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
+import { instantiateLibraryTemplate } from './replica'
 import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
@@ -13,8 +14,9 @@ import { ALLOCATION_TYPE, NOTE_TYPE, PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from 
 import { executionRequest } from './evaluation'
 import { acceptSubmission } from './approvals'
 /** The library's work templates (applied to a task by the shared copier). */
-export const PLANNING_TEMPLATE = 'lib:implement-and-verify'
-export const SUBTASKS_TEMPLATE = 'lib:generate-subtasks'
+/** The library's work templates: its fields `implementAndVerify` and `generateSubtasks`. */
+export const PLANNING_TEMPLATE = 'implementAndVerify'
+export const SUBTASKS_TEMPLATE = 'generateSubtasks'
 import {
   addRefAt, addRow, addTask, addSupply, setRefValueAt, headCid, instantiateTemplate,
   proposeRefAt, rejectProposalAt, view, type Replica
@@ -208,14 +210,13 @@ function asksForSubtasks(r: Replica, path: Scope): boolean {
 
 /** The library's Implement and verify template, applied to the task. */
 export function addPlanningTemplate(r: Replica, taskPath: Scope, now: number): Replica {
-  return instantiateTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, PLANNING_TEMPLATE, now)
+  return instantiateLibraryTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, PLANNING_TEMPLATE, now)
 }
 
 /** The library's Generate subtasks template: an LLM argument and a reviewed return, its request asking for subtasks. */
 export function addSubtasksTemplate(r: Replica, taskPath: Scope, now: number): { replica: Replica; requestId: string } {
-  const templateId = SUBTASKS_TEMPLATE
   const existing = new Set(view(r, taskPath)?.tasks.map(row => row.id))
-  r = instantiateTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, templateId, now)
+  r = instantiateLibraryTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, SUBTASKS_TEMPLATE, now)
   const request = view(r, taskPath)?.tasks.find(row => !existing.has(row.id) && row.requirement?.capability === 'llm')
   if (!request) throw new Error('Select a task for the Generate subtasks template.')
   return { replica: r, requestId: request.id }

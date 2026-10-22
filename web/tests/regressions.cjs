@@ -12,10 +12,10 @@ for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTex
 buildSync({ stdin: { contents: `export {App} from './src/app'; export * from './src/yaml'; export {createProjectStorage} from './src/project'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
 const sync = require(path.join(dir, 'app.cjs'))
 const { exchangeNode, SERVER_TRANSPORT_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, nodeTreeSync, createReplica, ensureHomeContext, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
-const TASK_TYPE = 'lib:type:task'
-const PLAIN_TYPE = 'lib:type:plain'
-const COMMENT_TYPE = 'lib:type:comment'
-const TEMPLATE_TYPE = 'lib:type:template'
+const TASK_TYPE = 'task'
+const PLAIN_TYPE = 'plain'
+const COMMENT_TYPE = 'comment'
+const TEMPLATE_TYPE = 'template'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']
 const tick = () => new Promise(resolve => setImmediate(resolve))

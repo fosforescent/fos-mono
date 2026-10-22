@@ -27,7 +27,7 @@ test('a published note is its title line and its whole markdown body row, keyed 
   // bodies are not cut at 8000 characters
   expect(rows.long).toEqual({ id: 'long', title: 'Section', depth: 0, type: NOTE_TYPE })
   expect(rows['long/field/body']!.body).toHaveLength('## Section\n\n'.length + 9000)
-  expect(rows.plain).toEqual({ id: 'plain', title: 'A plain row', depth: 0, type: 'lib:type:plain' })
+  expect(rows.plain).toEqual({ id: 'plain', title: 'A plain row', depth: 0, type: 'plain' })
   expect(rows.nested).toMatchObject({ title: 'Nested note', depth: 1 })
   expect(rows['huge/field/body']!.body).toHaveLength(SHARED_BODY_LIMIT)
   expect(rows['huge/field/body']!.truncated).toBe(true)
@@ -55,7 +55,7 @@ test('empty fields of a published row are inputs of their type; each visitor sub
   const node = sharedProjection(r, ['page'], value => JSON.stringify(value).length.toString())
   expect(node.rows).toEqual([
     { id: 'details', title: 'Your details', depth: 0 },
-    { id: 'details/field/email', title: 'email', depth: 1, type: 'lib:type:text', body: '' }
+    { id: 'details/field/email', title: 'email', depth: 1, type: 'text', body: '' }
   ])
   expect(node.inputs).toEqual([{ key: JSON.stringify(['details', 'details/field/email']), path: ['details', 'details/field/email'], name: 'email', kind: 'text' }])
   // two visitors (a visit admits each as a member that may run the node): two submissions; a resubmission replaces only its own

@@ -9,9 +9,9 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const { App, mountUi, createMemoryStorage, addRow, readNodeValue, HOME_ID } = require(path.join(dir, 'test.cjs'))
-const TASK_TYPE = 'lib:type:task'
-const NOTE_TYPE = 'lib:type:note'
-const ALLOCATION_TYPE = 'lib:type:allocation'
+const TASK_TYPE = 'task'
+const NOTE_TYPE = 'note'
+const ALLOCATION_TYPE = 'allocation'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {

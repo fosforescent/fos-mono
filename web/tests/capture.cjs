@@ -13,7 +13,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/recording'; export {isLongProse} from './src/paste'; export * from '../shared/sync/index'; export {syncWith} from '../shared/sync/test-helpers'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
-const PLAIN_TYPE = 'lib:type:plain'
+const PLAIN_TYPE = 'plain'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {

@@ -13,7 +13,7 @@ function changedLibrary(r: Replica, title: string): string {
   const store = r.store, value = valueCidOf(store, resolveScope(store, headCid(r), [LIBRARY_ID])!)
   return put(store, { ...content(store, value), children: content(store, value).children.map(edge => {
     const ref = content(store, edge[1])
-    if (ref.data.alias?.id !== TASK_TYPE) return edge
+    if (ref.data.name?.content !== TASK_TYPE) return edge
     const node = put(store, { ...valueContent(store, edge[1]), data: { ...valueContent(store, edge[1]).data, description: { content: title } } })
     return [edge[0], put(store, refNodeContent(store, ref.data, node))] as [string, string]
   }) })

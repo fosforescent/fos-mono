@@ -13,7 +13,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
-const ALLOCATION_TYPE = 'lib:type:allocation'
+const ALLOCATION_TYPE = 'allocation'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 // the server's ed25519 identity key, as backend/sync/verify.ts makes it from a seed

@@ -1,3 +1,4 @@
+import { QUERY_TYPE } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 /**
@@ -151,13 +152,13 @@ export function searchHandler(deps: SearchDeps): HostHandler {
     async effect(ctx) {
       const path = ctx.step.path, r = ctx.replica(), cid = resolveScope(r.store, headCid(r), path)!
       // which rows inside are what is decided by their row types: a query row says what to look for, refs are earlier hits
-      const queryRow = rowsOfType(r.store, cid, 'lib:type:query')[0]
+      const queryRow = rowsOfType(r.store, cid, QUERY_TYPE)[0]
       const query = queryRow ? { id: queryRow.id, title: formTitle(r.store, valueContent(r.store, queryRow.cid)), market: !!valueContent(r.store, queryRow.cid).data.query?.market } : null
       const text = (query?.title || ctx.step.row!.title).trim().slice(0, 1000)
       if (!text) throw new Error('Say what to search for: "-? text".')
       const hits = await deps.search({ id: ctx.userId, username: ctx.username }, text, !!query?.market)
       let next = ctx.replica()
-      for (const ref of rowsOfType(r.store, cid, 'lib:type:ref')) next = deleteTask(next, path, ref.id, ctx.now())
+      for (const ref of rowsOfType(r.store, cid, REF_TYPE)) next = deleteTask(next, path, ref.id, ctx.now())
       for (const hit of hits) {
         if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
         if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
@@ -242,7 +243,7 @@ export type PaymentDeps = {
 }
 
 /**
- * A request for money (`-$ 20 reward`: a negative row of the money type, `lib:type:allocation:money`) under a task is a payment: when the task runs, the server opens one with the
+ * A request for money (`-$ 20 reward`: a negative row of the money type, `lib.money`) under a task is a payment: when the task runs, the server opens one with the
  * payment provider from the owner to the respondent and leaves the evaluation awaiting review. The provider's
  * confirmation (its webhook, `sync/payments.ts`) settles the requirement and continues the evaluation, whether or
  * not the owner's devices are online. Running again while the payment is open does not open a second one.

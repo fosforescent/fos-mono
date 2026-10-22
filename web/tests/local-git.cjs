@@ -15,7 +15,7 @@ buildSync({stdin:{contents:`export {localGitControls,openSpecificationVerificati
 const {App,createMemoryStorage,localGitControls,openSpecificationVerification,specificationRows,view,verificationRequest}=require(path.join(dir,'app.cjs'))
 async function main(){
  const app=new App({baseUrl:'http://localhost',autoLogin:null,storage:createMemoryStorage()});app.scheduleSync=()=>{}
- const root=app.applyConstructor(app.state.view,{type:'lib:type:plain',text:'Repository',done:false,peer:'filesystem'},false,undefined,'/repo')
+ const root=app.applyConstructor(app.state.view,{type:'plain',text:'Repository',done:false,peer:'filesystem'},false,undefined,'/repo')
  app.addFeatureSpecification(root)
  const specs=specificationRows(app.state.replica,root)
  let snapshot={cwd:'/repo',branch:'main',head:'a'.repeat(40),revision:'a',specifications:[],branches:['main'],merged:false,dirty:false}

@@ -7,7 +7,7 @@
  * the outline (or no longer under the target when the plan is applied) falls back to the target itself. Plans only
  * add rows; the raw capture is always kept as a note beside them, so nothing said is lost when the model drops it.
  *
- * Every row a plan adds names its row type: a type of the standard library (`ORGANIZE_TYPES`, e.g. `lib:type:note`),
+ * Every row a plan adds names its row type: a type of the standard library (`ORGANIZE_TYPES`, e.g. `lib.note`),
  * resolved at the target like any row type (`libraryTypeAt`, nearest library); the row's edge is `[that type, row]`.
  * The raw capture is a row of the note type.
  *

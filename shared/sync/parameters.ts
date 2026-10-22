@@ -8,10 +8,10 @@ import * as library from './library.generated.json'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent } from '../types'
 
-/** Names of library refs (refs in the library graph; the nodes they point at carry no name). */
-export const PRIMITIVE_ID = 'lib:primitive'
-export const NEGATIVE_ID = 'lib:negative'
-export const STRING_ID = 'lib:string'
+/** Library fields (the library's named rows). */
+export const PRIMITIVE_ID = 'primitive'
+export const NEGATIVE_ID = 'negative'
+export const STRING_ID = 'string'
 
 const nodes = library.nodes as unknown as Record<string, FosNodeContent>
 const refs = library.refs as Record<string, string>

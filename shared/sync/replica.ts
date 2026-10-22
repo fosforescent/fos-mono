@@ -449,7 +449,7 @@ const BLANK_TYPES = [PLAIN_TYPE, COMMENT_TYPE, REF_TYPE]
 const rowBody = (store: FosStore, type: string, text: string) => content(store, type).data.form?.text ? text.replace(/\s+$/, '') : text.trim()
 
 /**
- * Append (or place at `position`) a row of `type` under the node at `at`: a type id (`lib:type:…`: the row type of the
+ * Append (or place at `position`) a row of `type` under the node at `at`: a type id (`lib.<type>`: the row type of the
  * library nearest to `at`) or a type cid. A type with a graph form is constructed from it (its text field gets `text`);
  * a native type holds `text` as its title, plus what `options` give it. References need `refId`.
  */
@@ -608,6 +608,13 @@ export function templateValuePattern(store: FosStore, templateCid: string): stri
   return put(store, { data: { ...(content(store, templateCid).data.alias ? { alias: content(store, templateCid).data.alias } : {}) }, children: copied.children })
 }
 
+/** Make the task `taskId` at `at` from the library template that is the field `field` of the library `at` sees. */
+export function instantiateLibraryTemplate(replica: Replica, at: Scope, taskId: string, field: string, now: number): Replica {
+  const cid = libraryTypeAt(replica.store, field, at)
+  if (!cid) throw new Error('Update the standard library: it has no such template.')
+  return instantiateTemplateValue(replica, at, taskId, cid, now)
+}
+
 /** Local templates and advertised templates use the same copy/remap operation. */
 export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: string, templateCid: string, now: number): Replica {
   if (!replica.store.table.has(templateCid)) throw new Error('Template content is unavailable.')
@@ -642,7 +649,7 @@ export function setTemplateIcon(replica: Replica, path: Scope, icon: string, now
 }
 
 /** The standard-library row type of a file kept inline (its data URL in the graph; small files only). */
-export const ATTACHMENT_TYPE = 'lib:type:attachment'
+export const ATTACHMENT_TYPE = 'attachment'
 export type Attachment = { name: string; type: string; data: string; size: number }
 export function addAttachment(replica: Replica, at: Scope, file: Attachment, now: number, id: string = newId()): Replica {
   const template = libraryTypeAt(replica.store, ATTACHMENT_TYPE, at, headCid(replica))
@@ -662,7 +669,7 @@ export function attachmentAt(replica: Replica, path: Scope): Attachment | null {
 }
 
 /** The standard-library row type of rows that reference a file in a linked directory (web/src/filesystem.ts). */
-export const FILE_REFERENCE_TYPE = 'lib:type:file-reference'
+export const FILE_REFERENCE_TYPE = 'fileReference'
 /** Its fields: the `/`-separated path relative to the linked directory, and the SHA-256 and size it was made against. */
 export type FileReference = { path: string; sha256: string; size: number }
 function validFileReference(file: FileReference): boolean {
@@ -670,7 +677,7 @@ function validFileReference(file: FileReference): boolean {
     file.path.split('/').every(name => name && name !== '.' && name !== '..') && /^[0-9a-f]{64}$/.test(file.sha256) && Number.isSafeInteger(file.size) && file.size >= 0
 }
 /**
- * A row of the library type `lib:type:file-reference` under `at`: its edge's left node is that type, its values are the
+ * A row of the library type `lib.fileReference` under `at`: its edge's left node is that type, its values are the
  * type's form fields (ordinary mutable refs, so node exchange, merge and copies carry them). The file's content never
  * enters the graph.
  */

@@ -135,7 +135,7 @@ export const api = {
     set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []) } }))
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },
-  /** Add a row of the library row type `type` (`lib:type:task`, `lib:type:plain`, `lib:type:note`, …) under `at`; returns its view. */
+  /** Add a row of the library row type `type` (`lib.task`, `lib.plain`, `lib.note`, …) under `at`; returns its view. */
   addRow(handle: string, atJson: string, type: string, text: string, now: number, optionsJson: string | null): string {
     const r = get(handle)
     const at = parse<Scope>(atJson, [])

@@ -28,10 +28,10 @@ test('"@bob" binds a ref to a user object, a row of the library user type read t
   let r = addTask(createReplica('d'), [], 'review', 1, 't')
   r = addRow(r, ['t'], ALLOCATION_TYPE, 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer' }, user: bob })
   const node = rowNode(r, ['t', 'rq'])
-  // no string: the requirement holds no peer name; its `user` field is a ref whose type is lib:type:user
+  // no string: the requirement holds no peer name; its `user` field is a ref whose type is user
   expect(node.data.allocation?.peer).toBeUndefined()
   const edge = userFieldEdge(r.store, node)!
-  expect(typeIdOf(r.store, edge[0])).toBe('lib:type:user')
+  expect(typeIdOf(r.store, edge[0])).toBe('user')
   expect(isUserType(r.store, edge[0])).toBe(true)
   const ref = content(r.store, identityCid(r.store, edge))
   expect(isRefNode(r.store, ref)).toBe(true)

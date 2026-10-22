@@ -5,8 +5,8 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
-const PLAIN_TYPE = 'lib:type:plain'
-const REF_TYPE = 'lib:type:ref'
+const PLAIN_TYPE = 'plain'
+const REF_TYPE = 'ref'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-shared-node-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })

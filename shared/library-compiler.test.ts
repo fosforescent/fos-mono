@@ -30,7 +30,7 @@ test('a data-only definition edit changes constructed fields and UI projections'
   const compiled = compileLibrary({ ...source, rootNodeId, nodes })
   // a device whose library ref holds the edited library: its comment is the edited node
   let r = ensureDeviceLibrary(createReplica('new', new FosStore()), { version: compiled.version, root: compiled.rootNodeId, nodes: compiled.nodes }, 1)
-  const definition = compiled.refs['lib:type:comment']!
+  const definition = compiled.refs['comment']!
   expect(rowTypeAt(r.store, COMMENT_TYPE)).toBe(definition)
   r = addConstructedRow(r, [], definition, { text: 'From data', texts: ['One'] }, 1, 'message')
   const row = view(r, [])!.tasks.find(row => row.id === 'message')!
@@ -54,14 +54,14 @@ test('locally authored library rows export as buildable graph data: a named ref 
   let r = createReplica('author')
   // the definition carries no name; the ref in the library's rows names it
   const count = put(r.store, { data: { description: { content: 'Count' }, form: { primitive: 'number' } }, children: [] })
-  const ref = (value: string) => refNodeContent(r.store, { alias: { id: 'lib:type:count' }, name: { content: 'lib:type:count' } }, value)
+  const ref = (value: string) => refNodeContent(r.store, { alias: { id: 'count' }, name: { content: 'count' } }, value)
   r = writeGraphNode(r, [LIBRARY_ID], ref(count), 1, rowTypeAt(r.store, TEMPLATE_TYPE))
   // writing at the ref's path writes its value: the node it names
-  r = writeGraphNode(r, [LIBRARY_ID, 'lib:type:count'], { data: { description: { content: 'Quantity' }, form: { primitive: 'number' } }, children: [] }, 2)
+  r = writeGraphNode(r, [LIBRARY_ID, 'count'], { data: { description: { content: 'Quantity' }, form: { primitive: 'number' } }, children: [] }, 2)
   const exported = compileLibrary(exportLocalLibrary(r))
-  expect(exported.nodes[exported.refs['lib:type:count']!]!.data.description?.content).toBe('Quantity')
+  expect(exported.nodes[exported.refs['count']!]!.data.description?.content).toBe('Quantity')
   expect(Object.values(exported.nodes).some(node => node.data.description?.content === 'Count')).toBe(false)
   const before = r.store.rootNodeId
-  expect(() => writeGraphNode(r, [LIBRARY_ID, 'lib:type:count'], { data: {}, children: [['missing', 'missing']] }, 3)).toThrow(/CIDs/)
+  expect(() => writeGraphNode(r, [LIBRARY_ID, 'count'], { data: {}, children: [['missing', 'missing']] }, 3)).toThrow(/CIDs/)
   expect(r.store.rootNodeId).toBe(before)
 })

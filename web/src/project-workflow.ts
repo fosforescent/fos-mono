@@ -1,7 +1,7 @@
 import type { App } from './app'
 import {
   configureProjectWorkflow, enqueueWorkflowJob, projectWorkflow, projectWorkflows, workflowAt, workflowJob, writeWorkflowJob, executionOrigin,
-  CODING_TEMPLATE, agentRequest, validateAgentRequest, workflowTriggerPath, workflowDefault, instantiateTemplate, addTask,
+  CODING_TEMPLATE, instantiateLibraryTemplate, agentRequest, validateAgentRequest, workflowTriggerPath, workflowDefault, instantiateTemplate, addTask,
   writeExecutionOrigin, nodeTrigger, setTriggerEnabled, addRow, addMemberAt, setMemberCapabilitiesAt,
   withBranches, view, ALLOCATION_TYPE, sameValue,
   type ProjectWorkflow, type WorkflowJob, type Replica, type Scope
@@ -89,7 +89,7 @@ export async function requestProjectCoding(app: App, project: Scope): Promise<vo
     if (!config?.enabled) throw new Error('Configure this project workflow on your desktop first.')
     const id = crypto.randomUUID(), path = [...project, id]
     let r = addTask(app.state.replica, project, 'Request coding agent', app.now(), id)
-    r = instantiateTemplate(r, project, id, CODING_TEMPLATE, app.now())
+    r = instantiateLibraryTemplate(r, project, id, CODING_TEMPLATE, app.now())
     await app.saveWorkflowReplica(r)
     await app.evaluateAt(path)
   } catch (error) { app.notify('error', String(error)) }

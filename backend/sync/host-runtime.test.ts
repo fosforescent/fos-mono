@@ -33,7 +33,7 @@ test('advertised capabilities are exactly transport facts plus registered handle
   expect(runtime.serverCapabilities()).toEqual([...new Set([...SERVER_TRANSPORT_CAPABILITIES, 'search', 'llm'])].sort())
   for (const unbacked of ['mail', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'cron']) expect(runtime.serverCapabilities()).not.toContain(unbacked)
   expect(runtime.integrationOffers()).toEqual({ github: ['repo'], phone: ['notify'] })
-  const step = (capability: string) => ({ path: ['t', 'r'], row: { id: 'r', type: 'lib:type:allocation', requirement: { capability } } } as any)
+  const step = (capability: string) => ({ path: ['t', 'r'], row: { id: 'r', type: 'allocation', requirement: { capability } } } as any)
   const r = createReplica('owner')
   expect(runtime.executors(step('repo'), r)).toHaveLength(0) // no ref row means no registration
   expect(runtime.executors(step('search'), r)).toHaveLength(0)

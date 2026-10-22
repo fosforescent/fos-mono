@@ -1,41 +1,66 @@
 /**
- * The names a library value gives nodes. Names are refs in the graph; no node names itself. In the library's rows:
- *   [left, ref → value]   the ref's name names the value (`lib:type:task` → the node task rows have on their left)
- *   [left, ref]           a ref with no value is a declaration: its name names the left (a capability pattern, …)
- * Declarations also count one level down, in a group row's rows (`lib:capabilities`), after the library's own rows:
- * a node keeps the first name it is given. Refs inside left nodes are their fields, not names of the library.
+ * The fields of a library value: `lib.task`, `lib.meet`, `lib.capabilities.mail`, ... A field is a named row of the
+ * library (its name is its field name in the graph; ids are opaque and never read). In a row `[left, right]`:
+ *   right a ref with a value   the field is that value (`task` → the node task rows have on their left)
+ *   right a ref with no value  a declaration: the field is its left (a capability pattern, ...)
+ *   right a named row          the field is the row itself (a template, a group such as `capabilities`)
+ * A field's own named rows are its fields in turn (`capabilities.mail`, `task.complete`, reached by `fieldOf`); the index
+ * below holds the library's fields and the declarations its groups make, a node keeping the first path it is given.
  */
 import type { FosNodeContent } from './types'
 
 export type LibraryNames = { byName: Map<string, string>; byNode: Map<string, string> }
+type Get = (cid: string) => FosNodeContent | null | undefined
 
-/** The names in the library value `root`; `get` reads a node (null when missing), `target` is the ref pointer constructor. */
-export function libraryNames(get: (cid: string) => FosNodeContent | null | undefined, root: string, target: string): LibraryNames {
+/** The node a named row `[left, right]` of a library stands for, or null when it is no field. */
+export function fieldNode(get: Get, edge: [string, string], target: string, alias: string): { name: string; node: string } | null {
+  const [left, right] = edge
+  const node = get(right)
+  const name = node?.data.name?.content
+  if (!node || !name) return null
+  const pointer = node.children.find(([key]) => key === target)?.[1]
+  if (pointer) return { name, node: pointer }
+  if (node.children.some(([key]) => key === alias)) return { name, node: left }
+  return { name, node: right }
+}
+
+/** The value of `cid` (through ref pointers). */
+function valueOf(get: Get, cid: string, target: string): FosNodeContent | null {
+  let node = get(cid), hops = 0
+  while (node && hops++ < 16) {
+    const next = node.children.find(([key]) => key === target)?.[1]
+    if (!next) break
+    node = get(next)
+  }
+  return node ?? null
+}
+
+/** The field `name` of the node `cid` (a library value or one of its fields), or null. */
+export function fieldOf(get: Get, cid: string, name: string, target: string, alias: string): string | null {
+  for (const edge of valueOf(get, cid, target)?.children ?? []) {
+    const field = fieldNode(get, edge as [string, string], target, alias)
+    if (field?.name === name) return field.node
+  }
+  return null
+}
+
+/** The library value `root`'s fields and their fields (dotted paths); `target`/`alias` are the ref constructors. */
+export function libraryNames(get: Get, root: string, target: string, alias: string): LibraryNames {
   const byName = new Map<string, string>(), byNode = new Map<string, string>()
-  const pointer = (node: FosNodeContent) => node.children.find(([key]) => key === target)?.[1] ?? null
-  const value = (cid: string): FosNodeContent | null => {
-    let node = get(cid), hops = 0
-    while (node && pointer(node) && hops++ < 16) node = get(pointer(node)!)
-    return node ?? null
+  const name = (path: string, node: string) => {
+    if (!byName.has(path)) byName.set(path, node)
+    if (!byNode.has(node)) byNode.set(node, path)
   }
-  const name = (id: string, node: string) => {
-    if (!byName.has(id)) byName.set(id, node)
-    if (!byNode.has(node)) byNode.set(node, id)
+  const fields: Array<{ name: string; node: string }> = []
+  for (const edge of valueOf(get, root, target)?.children ?? []) {
+    const field = fieldNode(get, edge as [string, string], target, alias)
+    if (field) { name(field.name, field.node); fields.push(field) }
   }
-  const groups: string[] = []
-  // a named ref: a `lib:` alias with its name (whether it points at a value or not: node exchange delivers every row
-  // as a ref, so a pointer alone says nothing)
-  const named = (node: FosNodeContent | null | undefined): node is FosNodeContent =>
-    !!node?.data.alias?.id.startsWith('lib:') && !!node.data.name
-  for (const [left, right] of value(root)?.children ?? []) {
-    const ref = get(right)
-    if (!named(ref)) { if (ref) groups.push(right); continue }
-    const bound = pointer(ref)
-    name(ref.data.alias!.id, bound ?? left)
-  }
-  for (const group of groups) for (const [left, right] of value(group)?.children ?? []) {
-    const ref = get(right)
-    if (named(ref) && !pointer(ref)) name(ref.data.alias!.id, left)
+  // one level down, the declarations a group makes (`capabilities.mail`); a template's named refs are its arguments,
+  // reached by traversal (`fieldOf`), not indexed as the library's
+  for (const field of fields) for (const edge of valueOf(get, field.node, target)?.children ?? []) {
+    const inner = fieldNode(get, edge as [string, string], target, alias)
+    if (inner && inner.node === edge[0]) name(`${field.name}.${inner.name}`, inner.node)
   }
   return { byName, byNode }
 }

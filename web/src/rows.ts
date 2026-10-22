@@ -10,7 +10,7 @@
  *               -[ ] subtask · -$ 50 money · -: 1h time · -# 2 widgets things · -@bob a person
  *               -? search · -market · -mail · -choice: a | b · - confirmation
  *   $ : # @     allocation of money / time / things / a person, taken from the parent context (money is the type
- *               lib:type:allocation:money: "$ 50" a payment, "-$ 50" a request for one, told apart by sign)
+ *               lib.money: "$ 50" a payment, "-$ 50" a request for one, told apart by sign)
  *               (the bank above it, the bank the requirement names, or the default pool of that
  *               type: the first bank of that type at the top level). An optional window follows the
  *               amount: "2026-10-13", "2026-10-13T09:00..2026-10-13T11:00", "..2026-12-31";
@@ -29,7 +29,7 @@ import { parseCapabilityName, type CapabilitySyntax } from '../../shared/sync/ca
 import { ALLOCATION_TYPE, MONEY_TYPE, NOTE_TYPE, COMMENT_TYPE, PLAIN_TYPE, QUERY_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType, unverifiedUser, type ResourceType, type RowExtras, type TaskView, type UserRecord } from '../../shared/sync/index'
 
 export type ParsedInput = {
-  /** The standard library row type the line makes (`lib:type:…`). */
+  /** The standard library row type the line makes (`lib.<type>`). */
   type: string
   text: string
   done: boolean

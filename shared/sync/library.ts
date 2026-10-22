@@ -1,6 +1,6 @@
 /**
  * The standard library: a mutable ref in the graph, a row of the Library type in every device root. Its value is the
- * library's content (its rows: named refs such as `lib:type:task`, templates, groups), and it changes like any ref's
+ * library's content (its rows: named refs such as `lib.task`, templates, groups), and it changes like any ref's
  * value: by a submission being accepted (approvals.ts). The first one is the build's: `.fos/library.json`, compiled by
  * scripts/compile-library.cjs, is the content a fresh device root's library ref holds (`ensureDeviceLibrary`), offline
  * from the first run; a later build's is the fos peer's submission. A library shared across devices and accounts is a
@@ -17,10 +17,11 @@ import { headCid } from './replica'
 import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
+import { fieldNode } from '../library-names'
 import { isBookkeepingEdge, refNodeContent, valueCidOf } from './graph'
 
-/** The library row holding the manual fallback handlers (`manualHandlers`). */
-export const MANUAL_HANDLERS_ID = 'lib:manual'
+/** The library's field holding the manual fallback handlers (`manualHandlers`). */
+export const MANUAL_HANDLERS = 'manual'
 /** The library's version is the data version (shared/version.ts); the compiler refuses a library graph in another. */
 export const LIBRARY_VERSION: string = FOS_DATA_VERSION
 if (COMPILED_LIBRARY.version !== LIBRARY_VERSION) throw new Error(`shared/sync/library.generated.json is in version ${COMPILED_LIBRARY.version}, this build is ${LIBRARY_VERSION}: run node scripts/compile-library.cjs.`)
@@ -60,14 +61,26 @@ export function libraryPath(r: Replica, at: Scope = homePath(r)): Scope | null {
   return found ? [...found.path, found.id] : null
 }
 
-/** The manual (and device) fallback handlers the library at `at` carries, from its "Manual handlers" group. */
+/** The path of the row that is the field `field` of the library at `at` (a template, a group), if it has one. */
+export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope | null {
+  const path = libraryPath(r, at), cid = path && resolveScope(r.store, headCid(r), path)
+  if (!path || !cid) return null
+  const target = r.store.primitive.targetPointerConstructor.getId(), alias = r.store.primitive.aliasConstructor.getId()
+  const edge = valueContent(r.store, cid).children.find(e => fieldNode(id => r.store.table.get(id), e as [string, string], target, alias)?.name === field)
+  const id = edge && content(r.store, edge[1]).data.alias?.id
+  return id ? [...path, id] : null
+}
+
+/** The manual (and device) fallback handlers the library at `at` carries: the rows of its `manual` field. */
 export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
-  const path = libraryPath(r, at)
+  const path = libraryFieldPath(r, MANUAL_HANDLERS, at)
   if (!path) return []
-  return (view(r, [...path, MANUAL_HANDLERS_ID])?.tasks ?? []).flatMap(row => {
+  return (view(r, path)?.tasks ?? []).flatMap(row => {
     const req = row.requirement
     if (!req || !row.title.trim()) return []
-    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: row.id.startsWith('lib:device:') }]
+    const cid = resolveScope(r.store, headCid(r), [...path, row.id])
+    const device = !!cid && content(r.store, cid).data.name?.content === 'deviceLocation'
+    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device }]
   })
 }
 

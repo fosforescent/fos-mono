@@ -1,4 +1,4 @@
-import { settingOf } from '../../shared/sync/graph'
+import { settingOf, isTemplateType } from '../../shared/sync/graph'
 import { hashContent } from '../../shared/dag-implementation/cid'
 import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
@@ -11,7 +11,7 @@ import { workClaims, saveWorkClaims } from '../../shared/sync/work-claims'
 import { BUNDLED_LIBRARY as LIBRARY_BUNDLE } from '../../shared/sync/library'
 import { runProjectWorkflows, queueAgentEffect } from './project-workflow'
 import { AGENT_TOOL } from '../../shared/sync/project-workflow'
-import { libraryPath, MANUAL_HANDLERS_ID } from '../../shared/sync/library'
+import { libraryPath, libraryFieldPath, MANUAL_HANDLERS } from '../../shared/sync/library'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
@@ -2028,7 +2028,7 @@ export class App {
   }
   /**
    * `@name` binds an unverified user object (the username only) until the account server attests it. The device
-   * asks through the graph: a `verify` requirement for that name (`requestVerification`, under the People row (`lib:type:people`)) run on
+   * asks through the graph: a `verify` requirement for that name (`requestVerification`, under the People row (`lib.people`)) run on
    * the account server (`runOnServer`), whose `verify` handler binds the attested object as its user field. The
    * device's own verify handler (`verifiers`) checks the attestation against the key the server publishes on its member entry;
    * then the object is kept in the graph (the People row), every row that named that username is rebound and the
@@ -2435,18 +2435,22 @@ export class App {
     const path = libraryPath(this.state.replica, this.constructorContext())
     if (!path) return []
     const r = this.state.replica, ref = resolveScope(r.store, headCid(r), path)
-    // a name's row is its ref, offered by `libraryNames` as the node it names
-    const names = ref ? namesInLibrary(r.store, valueCidOf(r.store, ref)).byName : new Map()
+    // the library's templates (not its types: `isTemplateType`), but the manual handlers' group
+    const manual = libraryFieldPath(r, MANUAL_HANDLERS, this.constructorContext())?.at(-1)
+    const template = (id: string) => { const cid = ref && resolveScope(r.store, headCid(r), [...path, id]); return !!cid && isTemplateType(r.store, cid) }
     return (view(this.state.replica, path)?.tasks ?? [])
-      .filter(row => row.type === TEMPLATE_TYPE && row.id !== MANUAL_HANDLERS_ID && !names.has(row.id) && row.title.trim())
+      .filter(row => row.type === TEMPLATE_TYPE && row.id !== manual && template(row.id) && row.title.trim())
       .map(row => ({ id: row.id, label: row.title.trim(), path: [...path, row.id], icon: this.templateIcon([...path, row.id]) || 'template' }))
   }
-  /** The names the nearest library gives (refs in its graph), each dereferenced: the node a row made from it has on its left. */
+  /**
+   * The nearest library's fields a row is made from (its types and the capabilities it declares; its templates are
+   * `libraryConstructors`), each the node a row made from it has on its left.
+   */
   libraryNames(path = this.constructorContext()): Array<{ name: string; node: string; label: string }> {
     const library = libraryPath(this.state.replica, path)
     const r = this.state.replica, ref = library && resolveScope(r.store, headCid(r), library)
     if (!ref) return []
-    return [...namesInLibrary(r.store, valueCidOf(r.store, ref)).byName].map(([name, node]) => {
+    return [...namesInLibrary(r.store, valueCidOf(r.store, ref)).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
       const value = valueContent(r.store, node)
       return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name }
     })
@@ -3204,7 +3208,7 @@ export class App {
       const path = [...this.state.view, ...at, req.id], store = this.state.replica.store, cid = resolveScope(store, headCid(this.state.replica), path)
       let next = this.state.replica
       // supplies are flow records (the allocation row type); the server's search fill is the one by fos for search
-      for (const row of cid ? rowsOfType(store, cid, 'lib:type:allocation') : []) {
+      for (const row of cid ? rowsOfType(store, cid, ALLOCATION_TYPE) : []) {
         const s = supplyOf(valueContent(store, row.cid))
         if (s?.capability === 'search' && s.by === 'fos') next = deleteTask(next, path, row.id, this.now())
       }

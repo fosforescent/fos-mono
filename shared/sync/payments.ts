@@ -1,5 +1,5 @@
 /**
- * Money payments as evaluation effects. Money is the row type `lib:type:allocation:money`, told apart by sign: a
+ * Money payments as evaluation effects. Money is the row type `lib.money`, told apart by sign: a
  * negative row is a request for payment (a requirement), a positive one a payment. A `-$ 20` request under a task is
  * a payment the owner makes to the respondent when the task runs. The `fos` payment handler does not move money itself: it opens a payment with the
  * account's payment provider (Stripe Checkout, paying the payee's connected account), records what it opened as its

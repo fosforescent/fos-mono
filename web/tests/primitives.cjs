@@ -12,6 +12,8 @@ const c = require(path.join(dir, 'test.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 
 async function main() {
+  // a constructor's ref by its declared name (its alias is the library's own)
+  const refAlias = (row, name) => c.openRefs(app.state.replica.store, c.rowConstructor(app.state.replica, row)).find(ref => ref.name === name).alias
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}
   c.mountUi(document.getElementById('app'), app); await tick()
@@ -39,8 +41,8 @@ async function main() {
   assert(c.matchesGraph(s, refs[0].left, c.put(s, { data: { description: { content: 'https://x' } }, children: [] })), 'a string fits')
   assert(!c.matchesGraph(s, refs[0].left, c.put(s, { data: { scalar: { type: 'number', value: 3 } }, children: [] })), 'a number does not')
   // the right only assigns: the url, by the same ref; the method falls back to the left's default
-  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, 'lib:fetch:url')), 'https://example.com/data')
-  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, 'lib:fetch:method')), 'GET')
+  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, refAlias(fetchRow, 'url'))), 'https://example.com/data')
+  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, refAlias(fetchRow, 'method'))), 'GET')
   const row = () => app.currentView().tasks.find(t => t.id === fetchRow.at(-1))
   assert.equal(row().requirement, undefined, 'not a requirement row')
   assert.equal(document.querySelector(`.task[data-id="${fetchRow.at(-1)}"] input[aria-label="url"]`).value, 'https://example.com/data', 'the left decides the inputs, the right fills them')
@@ -48,7 +50,7 @@ async function main() {
   ;[...document.querySelectorAll(`.task[data-id="${fetchRow.at(-1)}"] button`)].find(b => b.textContent === 'Complete').click()
   await tick(); await tick()
   assert.deepEqual(requests, [['https://example.com/data', 'GET']])
-  const response = c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), [...fetchRow, 'lib:fetch:response'])
+  const response = c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), [...fetchRow, refAlias(fetchRow, 'response')])
   assert(response, 'the right has the response ref')
   const submitted = c.readProposals(app.state.replica.store, c.content(app.state.replica.store, response)).filter(p => p.status === 'open')
   assert.equal(submitted.length, 1)
@@ -56,7 +58,7 @@ async function main() {
   assert.equal(c.refValueCid(app.state.replica.store, c.content(app.state.replica.store, response)), null, 'nothing is bound until it is chosen')
   const responsePick = document.querySelector(`.task[data-id="${fetchRow.at(-1)}"] select[aria-label="Choose response"]`)
   responsePick.value = submitted[0].cid; responsePick.dispatchEvent(new window.Event("change")); await tick()
-  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, 'lib:fetch:response')), 'hello from the network')
+  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, refAlias(fetchRow, 'response'))), 'hello from the network')
 
   // solve: every person under Trip with a city row is a solution; the placeholder lists them as options
   let r = c.addTask(app.state.replica, home, 'Trip', 1, 'trip')

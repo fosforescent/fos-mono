@@ -250,7 +250,7 @@ export function shippedLibrary(store: FosStore): string {
   return COMPILED_LIBRARY.rootNodeId
 }
 
-/** The node the build's library names `name` (`lib:type:task`, …), stored in `store`; null when it names none. */
+/** The node that is the build's library field `name` (`task`, `capabilities.mail`, ...), stored in `store`; null when it has none. */
 export function shippedRef(store: FosStore, name: string): string | null {
   const cid = (COMPILED_LIBRARY.refs as Record<string, string>)[name]
   if (!cid) return null
@@ -264,7 +264,7 @@ export function namesInLibrary(store: FosStore, value: string): LibraryNames {
   let byValue = libraryNameCache.get(store)
   if (!byValue) { byValue = new Map(); libraryNameCache.set(store, byValue) }
   let names = byValue.get(value)
-  if (!names) { names = libraryNames(cid => store.table.get(cid), value, store.primitive.targetPointerConstructor.getId()); byValue.set(value, names) }
+  if (!names) { names = libraryNames(cid => store.table.get(cid), value, store.primitive.targetPointerConstructor.getId(), store.primitive.aliasConstructor.getId()); byValue.set(value, names) }
   return names
 }
 const shippedNames = new Map(Object.entries(COMPILED_LIBRARY.refs as Record<string, string>).map(([name, cid]) => [cid, name]))
@@ -285,7 +285,7 @@ export function setRootType(store: FosStore, typeId: typeof DEVICE_ROOT_TYPE | t
 
 // ---------------------------------------------------------------------------
 // Row types. A row is the edge [type, row]: its type is the left node and nothing else. Library types are told apart
-// by graph identity (`lib:type:…`, shared by every pinned version); a template row's content is the type of the tasks
+// by graph identity (`lib.<type>`, shared by every pinned version); a template row's content is the type of the tasks
 // made from it.
 
 /** The sync primitives: edges they label are bookkeeping (pointers, members, proposals, …), never rows. */
@@ -396,15 +396,24 @@ export function isRowOfType(store: FosStore, edge: FosPathElem, typeId: string):
   return rowTypeIdOf(store, edge) === typeId
 }
 
-/** The child rows of `cid` made from the library row type `typeId` (`lib:type:…`): their alias ids and identity cids. */
+/** The child rows of `cid` made from the library row type `typeId` (a library field, `task`, ...): their alias ids and identity cids. */
 export function rowsOfType(store: FosStore, cid: string, typeId: string): Array<{ id: string; cid: string }> {
   return valueContent(store, cid).children.filter(e => isRowOfType(store, e, typeId)).map(e => ({ id: content(store, identityCid(store, e)).data.alias?.id ?? '', cid: identityCid(store, e) })).filter(r => r.id)
 }
 
-/** A template row's content used as a type (not a library type, a form or a missing template): instances of it are tasks. */
+/**
+ * A template used as a type: a node that declares refs locally that are assigned there, once (rows with their own
+ * identity and a value, not a parameter left open, not alternatives, not a reference to elsewhere). A type's value has
+ * none: its pattern rows have no identity and its fields are parameters, declared but unassigned. Instances of a
+ * template are tasks.
+ */
 export function isTemplateType(store: FosStore, typeCid: string): boolean {
-  const id = typeIdOf(store, typeCid)
-  return !!id && !id.startsWith('lib:type:') && !content(store, typeCid).data.name && !valueContent(store, typeCid).data.form && !valueContent(store, typeCid).data.capabilityDefinition
+  if (!store.table.has(typeCid)) return false
+  return valueContent(store, typeCid).children.some(edge => {
+    if (!isRowEdge(store, edge) || isChoiceEdge(store, plainEdge(store, edge))) return false
+    const identity = content(store, identityCid(store, edge))
+    return !!identity.data.alias && !identity.data.ref && !valueContent(store, identityCid(store, edge)).data.parameter
+  })
 }
 
 /** A task: made from the Task type or from a template row. It has a done state, blockers and a checkbox. */
@@ -419,7 +428,7 @@ export function isAllocationRow(store: FosStore, edge: FosPathElem): boolean {
 }
 
 /**
- * The row type `typeId` (e.g. `lib:type:task`) new rows at `at` (below `root`) are made from: the library row
+ * The row type `typeId` (e.g. `lib.task`) new rows at `at` (below `root`) are made from: the library row
  * `fos:library` resolved like any mutable ref, by nearest ancestor (`findNearestRow`). So a library linked in Home
  * overrides the one shipped in the root for everything under Home, and any node can carry its own for its subtree. A
  * library seeded before the type existed falls back to the build's definition; a library whose Row types have not
@@ -439,7 +448,7 @@ export function resolveRowType(store: FosStore, type: string, at: Scope = [], ro
 }
 
 /**
- * The row type `typeId` (a row of the library's Row types group, e.g. `lib:type:note`) of the standard library nearest
+ * The row type `typeId` (a row of the library's Row types group, e.g. `lib.note`) of the standard library nearest
  * to `at`, or null when no library above has it. New rows of that type are edges `[this cid, row]`.
  */
 function nearestLibraryType(store: FosStore, typeId: string, at: Scope, root: string): string | null {
@@ -456,7 +465,7 @@ function nearestLibraryType(store: FosStore, typeId: string, at: Scope, root: st
 }
 
 /**
- * The library definition `typeId` (any library type or definition, e.g. `lib:type:user`) that a row at `at` sees: the
+ * The library definition `typeId` (any library type or definition, e.g. `lib.user`) that a row at `at` sees: the
  * nearest library's, falling back to the one this build ships (a library seeded before it existed). Null when neither has it.
  */
 export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], root: string = rootTargetCid(store)): string | null {
@@ -531,7 +540,7 @@ export function referenceErrorTemplate(store: FosStore, cid: string): string {
 export function userTemplateOf(store: FosStore, edge: FosPathElem): { cid: string; id: string; name: string } | null {
   const cid = rowTypeOf(store, edge)
   if (!cid || !isTemplateType(store, cid)) return null
-  return { cid, id: typeIdOf(store, cid)!, name: valueContent(store, cid).data.description?.content ?? 'Template' }
+  return { cid, id: content(store, cid).data.alias?.id ?? valueContent(store, cid).data.alias?.id ?? typeIdOf(store, cid)!, name: valueContent(store, cid).data.description?.content ?? 'Template' }
 }
 
 /** A row pinned to a template this store has not received: the template it is waiting for. */
@@ -1260,7 +1269,7 @@ export type TaskView = {
   id: string
   title: string
   /**
-   * The row's type: the graph identity of its edge's left node (`lib:type:…` for a library type, any version; a template
+   * The row's type: the graph identity of its edge's left node (`lib.<type>` for a library type, any version; a template
    * row's id for a task made from it), '' when its type has none (rows of types this peer does not know render as plain).
    */
   type: string
@@ -1460,7 +1469,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
 
 /**
  * What an allocation-typed row is, read from the sign of its amount: a negative entry is a requirement (what its
- * parent needs), a positive one is supplied. A money row (`lib:type:allocation:money`) is told apart by sign alone:
+ * parent needs), a positive one is supplied. A money row (`lib.money`) is told apart by sign alone:
  * negative = a request for payment, positive = a payment (a supply that is also an allocation of that amount). Other
  * allocation rows supply a handler's answer when they name its capability; without one they are plain allocations.
  */

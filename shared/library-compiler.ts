@@ -4,8 +4,8 @@
  * The library's `version` is the data version (`FOS_DATA_VERSION`, shared/version.ts), the same one its cids carry: a
  * source in another version is refused, so the library and the cid format cannot drift apart.
  *
- * Nothing here gives library nodes identities. Names are refs in the graph: a ref named `lib:type:task` (its alias)
- * points at the node rows put on their left. `refs` lists them, by name, so a build can find its own refs.
+ * Nothing here gives library nodes identities. The library's fields are its named rows (library-names.ts): `task`
+ * is the node task rows have on their left. `refs` lists them by field path, so a build can find its own fields.
  */
 import { hashContent, isCurrentCid, verifyCid } from './dag-implementation/cid'
 import { FOS_DATA_VERSION } from './version'
@@ -17,7 +17,7 @@ export type CompiledLibrary = LibrarySource & { refs: Record<string, string> }
 
 export function compileLibrary(source: LibrarySource): CompiledLibrary {
   if (!source || !source.nodes || !source.nodes[source.rootNodeId]) throw new Error('Invalid .fos library graph.')
-  if (source.version !== FOS_DATA_VERSION) throw new Error(`The library graph is in data version ${JSON.stringify(source.version)}, this build is ${FOS_DATA_VERSION}: export it again (fos . library export --local).`)
+  if (source.version !== FOS_DATA_VERSION) throw new Error(`The library graph is in data version ${JSON.stringify(source.version)}, this build is ${FOS_DATA_VERSION}: export it again (fos . library export).`)
   const nodes: FosNodesData = {}, visiting = new Set<string>()
   const visit = (cid: string) => {
     if (nodes[cid]) return
@@ -34,7 +34,8 @@ export function compileLibrary(source: LibrarySource): CompiledLibrary {
   visit(source.rootNodeId)
   // The native mutable-ref pointer has a stable content identity, shared with the store.
   const target = hashContent({ data: { description: { content: 'Target Constructor Node' } }, children: [] })
+  const alias = hashContent({ data: { description: { content: 'Alias Constructor Node' } }, children: [] })
   // the names the library gives its nodes (refs in the graph; see library-names.ts)
-  const refs = Object.fromEntries(libraryNames(cid => nodes[cid], source.rootNodeId, target).byName)
+  const refs = Object.fromEntries(libraryNames(cid => nodes[cid], source.rootNodeId, target, alias).byName)
   return { version: FOS_DATA_VERSION, rootNodeId: source.rootNodeId, nodes: Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))), refs }
 }

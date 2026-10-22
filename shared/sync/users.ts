@@ -1,6 +1,6 @@
 /**
  * Users as graph data. `@name` in row text is shorthand: it binds the row's `user` field to a user object, a row of
- * the standard library's `lib:type:user` (account id, username, display name, public key, and a verification made
+ * the standard library's `lib.user` (account id, username, display name, public key, and a verification made
  * by the fos server that attested it). A user object is recognised by its type (the edge's left node, any pinned
  * version) and read through that type's form; nothing here tells types apart by flags or row kinds.
  *
@@ -29,11 +29,11 @@ import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode
 import { PLAIN_TYPE } from './library-types'
 import { ALLOCATION_TYPE } from './library-types'
 
-export const USER_TYPE_ID = 'lib:type:user'
+export const USER_TYPE_ID = 'user'
 /** The field of a row that names a user (`-@bob`, `@bob 2h`, `-ff 5 reward @bob`). */
 export const USER_FIELD = 'user'
 /** The library row type of the row in Home keeping the people this account verified (their user objects). */
-export const PEOPLE_TYPE = 'lib:type:people'
+export const PEOPLE_TYPE = 'people'
 export const USER_SERVER_ATTESTATION = 'ed25519-server'
 export const USER_SELF_ATTESTATION = 'ed25519-self'
 
@@ -48,7 +48,7 @@ export function isUserType(store: FosStore, typeCid: string): boolean {
 /** The user type a row at `at` sees (nearest library, else the one this build ships). */
 export function userType(store: FosStore, at: Scope = [], root?: string): string {
   const type = libraryTypeAt(store, USER_TYPE_ID, at, root)
-  if (!type) throw new Error('No standard library here defines users (lib:type:user).')
+  if (!type) throw new Error('No standard library here defines users (lib.user).')
   return type
 }
 

@@ -2,7 +2,7 @@
 const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
-const NOTE_TYPE = 'lib:type:note'
+const NOTE_TYPE = 'note'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-spec-test-'))
 try {
  buildSync({stdin:{contents:`export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`,resolveDir:path.resolve(__dirname,'..')},bundle:true,platform:'node',format:'cjs',outfile:path.join(dir,'test.cjs')})

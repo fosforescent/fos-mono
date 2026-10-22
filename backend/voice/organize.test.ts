@@ -67,15 +67,15 @@ function garden(): Replica {
 }
 
 test('the model sees the target, the outline with ids and the capture; its answer is validated against that outline', async () => {
-  const fake = model(JSON.stringify({ title: 'Garden', items: [{ ref: 'n1', parent: 'tomatoes', type: 'lib:type:plain', text: 'water daily' }, { ref: 'n2', parent: 'not-in-outline', text: 'compost' }] }))
+  const fake = model(JSON.stringify({ title: 'Garden', items: [{ ref: 'n1', parent: 'tomatoes', type: 'plain', text: 'water daily' }, { ref: 'n2', parent: 'not-in-outline', text: 'compost' }] }))
   const outline = [{ id: 'garden', parent: null, title: 'Garden', depth: 0, path: ['garden'] }, { id: 'tomatoes', parent: 'garden', title: 'Tomatoes', depth: 1, path: ['garden', 'tomatoes'] }]
   const plan = await organizeCapture(fake, { text: 'water the tomatoes daily, start compost', title: 'Home', outline })
   expect(fake.asked).toHaveLength(1)
   expect(fake.asked[0]!.json).toBe(true)
   expect(fake.asked[0]!.system).toMatch(/Never use an id that is not in the subtree/)
-  expect(fake.asked[0]!.system).toMatch(/"lib:type:note" for a note/) // rows name a standard-library row type
+  expect(fake.asked[0]!.system).toMatch(/"note" for a note/) // rows name a standard-library row type
   expect(fake.asked[0]!.user).toBe('Target: Home\n\nSubtree:\n- [garden] Garden\n  - [tomatoes] Tomatoes\n\nCapture:\nwater the tomatoes daily, start compost')
-  expect(plan.items).toEqual([{ ref: 'n1', parent: 'tomatoes', text: 'water daily', type: 'lib:type:plain' }, { ref: 'n2', parent: null, text: 'compost', type: 'lib:type:plain' }])
+  expect(plan.items).toEqual([{ ref: 'n1', parent: 'tomatoes', text: 'water daily', type: 'plain' }, { ref: 'n2', parent: null, text: 'compost', type: 'plain' }])
 })
 
 test('an answer that is not JSON is asked for once more, then fails', async () => {
@@ -154,7 +154,7 @@ test('texted messages go through the same handler: a pending fos submission in H
   let r = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 1, { server: ['organize'] })
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Groceries', 2, { id: 'groceries' })
   r = addRow(r, [HOME_ID, 'groceries'], PLAIN_TYPE, 'milk', 3, { id: 'milk' })
-  const fake = model(JSON.stringify({ title: 'Errands', items: [{ ref: 'n1', parent: 'groceries', type: 'lib:type:plain', text: 'eggs' }, { ref: 'n2', parent: null, type: 'lib:type:plain', text: 'Hardware store' }, { ref: 'n3', parent: 'n2', type: 'lib:type:plain', text: 'hinges' }] }))
+  const fake = model(JSON.stringify({ title: 'Errands', items: [{ ref: 'n1', parent: 'groceries', type: 'plain', text: 'eggs' }, { ref: 'n2', parent: null, type: 'plain', text: 'Hardware store' }, { ref: 'n3', parent: 'n2', type: 'plain', text: 'hinges' }] }))
   const h = host(r, organizeHandler(() => fake))
   const replies: string[] = []
   const inbound = createTextCommandInbound({

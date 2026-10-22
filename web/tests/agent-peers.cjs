@@ -8,8 +8,8 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
-const TASK_TYPE = 'lib:type:task'
-const PLAIN_TYPE = 'lib:type:plain'
+const TASK_TYPE = 'task'
+const PLAIN_TYPE = 'plain'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-agent-peers-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLDialogElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })

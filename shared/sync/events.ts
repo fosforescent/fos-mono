@@ -75,7 +75,7 @@ export type Principal = {
 
 export type EventBranch = { path: Scope; name: string }
 /**
- * `add_row` adds a row of the standard-library row type `type` (e.g. `lib:type:note`, resolved by the nearest library
+ * `add_row` adds a row of the standard-library row type `type` (a library field, e.g. `note`, resolved by the nearest library
  * at the parent) holding `text`. `id` (add operations only): the new row's alias id, so later changes of the same
  * submission can add inside it.
  */
@@ -155,7 +155,7 @@ export function parseEvent(input: unknown): FosEvent {
       const changes: Change[] = raw.changes.map((change: any) => {
         if (!change || typeof change !== 'object') throw new EventError('Invalid change.')
         if (!['add_row', 'add_task', 'add_note', 'add_plain', 'rename', 'complete'].includes(change.operation)) throw new EventError('Unknown change operation.')
-        if ((change.operation === 'add_row') !== (change.type !== undefined) || (change.type !== undefined && (typeof change.type !== 'string' || !/^lib:type:[\w-]{1,64}$/.test(change.type)))) throw new EventError('add_row names a standard-library row type (lib:type:…); other operations take none.')
+        if ((change.operation === 'add_row') !== (change.type !== undefined) || (change.type !== undefined && (typeof change.type !== 'string' || !/^[A-Za-z][\w-]{0,63}$/.test(change.type)))) throw new EventError('add_row names a standard-library row type (a library field such as note); other operations take none.')
         if (change.id !== undefined && (!ADDS.includes(change.operation) || typeof change.id !== 'string' || !/^[\w.:-]{1,128}$/.test(change.id))) throw new EventError('Only added rows take an id (letters, digits, . : _ -).')
         return { path: pathOf(change.path), operation: change.operation, ...(change.text !== undefined ? { text: textOf(change.text) } : {}), ...(typeof change.done === 'boolean' ? { done: change.done } : {}), ...(change.id !== undefined ? { id: change.id } : {}), ...(change.type !== undefined ? { type: change.type } : {}) }
       })

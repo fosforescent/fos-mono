@@ -4,6 +4,8 @@
  * was started for (its execution origin) and the template's parameters. Each job is a row of it, whose state is its
  * handler result; what an agent requirement asks is that row's request.
  */
+import { libraryTypeAt } from './graph'
+import { instantiateLibraryTemplate } from './replica'
 import { executionOrigin, executionRequest, handlerResult, writeExecutionOrigin, writeHandlerResult } from './evaluation'
 import { addTask, headCid, instantiateTemplate, resolveRef, setRefValueAt, view, type Replica } from './replica'
 import { ensureDeviceLibrary, BUNDLED_LIBRARY } from './library'
@@ -14,8 +16,9 @@ import { bindTemplateTriggers, nodeTrigger } from './triggers'
 import { bindRefInputs } from './refs'
 
 export const AGENT_TOOL = 'fos.agent'
-export const WORKFLOW_TEMPLATE = 'lib:project-agent-workflow'
-export const CODING_TEMPLATE = 'lib:project-coding-request'
+/** The library's project workflow templates: its fields `projectAgentWorkflow` and `projectCodingRequest`. */
+export const WORKFLOW_TEMPLATE = 'projectAgentWorkflow'
+export const CODING_TEMPLATE = 'projectCodingRequest'
 export type ProjectWorkflow = {
   project: Scope; repo: string; device: string; provider: 'claude' | 'codex'; main: string
   url: string; environment: string; verifier: 'claude' | 'claude-desktop'; enabled: boolean
@@ -60,9 +63,8 @@ export function projectWorkflow(r: Replica, project: Scope): ProjectWorkflow | n
   return { ...config, repo: text('repository', config.repo), url: text('deployment-url', config.url), environment: text('deployment-environment', config.environment), main: text('main-branch', config.main), provider: text('coding-agent', config.provider) as ProjectWorkflow['provider'], verifier: text('verification-agent', config.verifier) as ProjectWorkflow['verifier'] }
 }
 export function workflowDefault(r: Replica, name: string): string {
-  const template = resolveRef(r, WORKFLOW_TEMPLATE)
-  if (!template) return ''
-  const cid = resolveScope(r.store, headCid(r), [...template.path, template.row.id])!
+  const cid = libraryTypeAt(r.store, WORKFLOW_TEMPLATE)
+  if (!cid) return ''
   const arg = argumentRefs(r.store, cid).find(a => a.name === name)
   return arg ? valueContent(r.store, arg.cid).data.description?.content ?? '' : ''
 }
@@ -88,10 +90,10 @@ export function configureProjectWorkflow(r: Replica, config: ProjectWorkflow, no
   r = ensureDeviceLibrary(r, BUNDLED_LIBRARY, now)
   let path = workflowAt(r, config.project)
   if (!path) {
-    if (!resolveRef(r, WORKFLOW_TEMPLATE)) throw new Error('Update the standard library to load the project workflow template.')
+    if (!libraryTypeAt(r.store, WORKFLOW_TEMPLATE, config.project)) throw new Error('Update the standard library to load the project workflow template.')
     path = [...config.project.slice(0, -1), newId()]
     r = addTask(r, path.slice(0, -1), `${view(r, config.project)?.name || config.repo} workflow`, now, path.at(-1)!)
-    r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, WORKFLOW_TEMPLATE, now)
+    r = instantiateLibraryTemplate(r, path.slice(0, -1), path.at(-1)!, WORKFLOW_TEMPLATE, now)
     r = writeExecutionOrigin(r, path, config, now)
   }
   for (const [name, value] of Object.entries({ repository: config.repo, 'deployment-url': config.url, 'deployment-environment': config.environment, 'main-branch': config.main, 'coding-agent': config.provider, 'verification-agent': config.verifier })) {

@@ -2,8 +2,8 @@ const assert = require('node:assert/strict')
 const { build } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
-const ALLOCATION_TYPE = 'lib:type:allocation'
-const TEMPLATE_TYPE = 'lib:type:template'
+const ALLOCATION_TYPE = 'allocation'
+const TEMPLATE_TYPE = 'template'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-execution-trigger-'))
 async function main() {
   await build({ nodePaths: [path.resolve(__dirname, '../node_modules'), ...(process.env.NODE_PATH ?? '').split(path.delimiter).filter(Boolean)], stdin: { contents: `export {createSharingHandlers} from './backend/sync/sharing'; export {createEventService} from './backend/sync/events'; export * from './shared/sync/execution-access'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'persistence', setup(b) {
