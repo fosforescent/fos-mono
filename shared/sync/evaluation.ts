@@ -63,7 +63,7 @@ export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, valu
  * `result` its handler recorded when it ran as a step (a payment it opened, what an organizer placed, a title).
  */
 export type ExecutionTime = Array<{ start: number; end?: number; notes: string }>
-type ExecutionState = { journal?: EvaluationRecord; result?: unknown; time?: ExecutionTime; origin?: unknown; request?: unknown }
+type ExecutionState = { journal?: EvaluationRecord; result?: unknown; time?: ExecutionTime; origin?: unknown; request?: unknown; claims?: unknown }
 function executionState(r: Replica, path: Scope): ExecutionState {
   const state = readRowValue<ExecutionState>(r, path, isExecuteLeft)
   return state && typeof state === 'object' ? state : {}
@@ -95,6 +95,13 @@ export function executionRequest<T>(r: Replica, path: Scope): T | null {
 }
 export function writeExecutionRequest(r: Replica, path: Scope, request: unknown, now: number): Replica {
   return writeExecutionState(r, path, { request }, now)
+}
+/** Leases on work below the node: who is running which part of it now (host-coordinated). */
+export function executionClaims<T>(r: Replica, path: Scope): T | null {
+  return (executionState(r, path).claims as T | undefined) ?? null
+}
+export function writeExecutionClaims(r: Replica, path: Scope, claims: unknown, now: number): Replica {
+  return writeExecutionState(r, path, { claims }, now)
 }
 /** Time a person spent running the node by hand (start/stop entries with notes). */
 export function executionTime(r: Replica, path: Scope): ExecutionTime {

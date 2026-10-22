@@ -2225,7 +2225,10 @@ export function findAliasEdge(store: FosStore, value: FosNodeContent, aliasId: s
 /** Resolve a direct child by mutable alias, or an immutable row by its CID.
  * A CID only addresses an existing child here; it is never a store-wide lookup. */
 export function findChild(store: FosStore, nodeCid: string, aliasId: string): string | null {
-  const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId)
+  // a branched row's bookkeeping (its member entries) is on the selected branch's node
+  const branch = isBranchChoice(store, content(store, nodeCid)) ? branchEdge(store, nodeCid) : null
+  const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId) ??
+    (branch ? findAliasEdge(store, content(store, identityCid(store, branch)), aliasId) : null)
   if (!found) {
     const edge = valueContent(store, nodeCid).children.find(e => isRowEdge(store, e) && identityCid(store, e) === aliasId && !content(store, aliasId).data.alias)
     return edge ? identityCid(store, edge) : null

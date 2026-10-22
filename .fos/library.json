@@ -1,6 +1,6 @@
 {
   "nodes": {
-    "v0.0.3-42bd8850e5d4d73fb3cea56ee7b56a3894e48cd8ca6cd2917800b246356d352c": {
+    "v0.0.3-8af4ebbe3337922bba008d3a4d4903924a7d0536a3251ce26f0c5a945acd4470": {
       "data": {
         "description": {
           "content": "Standard library"
@@ -182,19 +182,116 @@
         [
           "v0.0.3-dd11f47950271f9fad0e761d7301f903d36cb789f4b059d2edbb5216f2b73f04",
           "v0.0.3-04e1bb2e6a36a1c5caf530796e7cf72f395718d76014747c60768a8edb71827b"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-6e592b053eeae6aee7a2708b106438fb55622c026d1ef1c01a290a9b25e2c604"
+        ],
+        [
+          "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f",
+          "v0.0.3-9e299f5c3f6884298c2a8d2d826fde6fdc847e9858172c4a74bf84b4bd161606"
         ]
       ]
     },
-    "v0.0.3-04e1bb2e6a36a1c5caf530796e7cf72f395718d76014747c60768a8edb71827b": {
+    "v0.0.3-9e299f5c3f6884298c2a8d2d826fde6fdc847e9858172c4a74bf84b4bd161606": {
       "data": {
         "alias": {
-          "id": "lib:string"
+          "id": "lib:generate-subtasks"
         },
-        "name": {
-          "content": "string"
+        "description": {
+          "content": "Generate subtasks"
+        },
+        "updated": {
+          "time": 0
+        },
+        "presentation": {
+          "icon": "window"
         }
       },
       "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-219e986cd8dbb782aedf8cc8610633769b624ca1b391bcc5d1023cc7d8d057fe"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-10fad522d4fbbd078f77a2c051070859415897c64c3a7f6ebd963e0354ab8d0f"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-159b7fff62fb3f863e12d3400128d6b72aaf1d2a383a15b34ca5981c9d93c8f8"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-9df1f2e1971ce769509ee18c88a455aa7c246e19dad8f3f80dfc5d708f2f2543"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-7fdbe89858d55546c9a7a65ae83faae448b74e77504b26eb2598747ec450ce96"
+        ]
+      ]
+    },
+    "v0.0.3-7fdbe89858d55546c9a7a65ae83faae448b74e77504b26eb2598747ec450ce96": {
+      "data": {
+        "alias": {
+          "id": "lib:generate-subtasks:request"
+        },
+        "description": {
+          "content": "Generate fine-grained subtasks with acceptance criteria. Return one unchecked Markdown task per line, like [ ] Implement reservation validation — reject overlapping bookings. Do not claim the tasks are completed."
+        },
+        "updated": {
+          "time": 0
+        },
+        "allocation": {
+          "capability": "llm",
+          "resource": "",
+          "type": "inventory",
+          "amount": -1,
+          "unit": "unit"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-d9e01013bd2e61e89ecb477964f7e3050592e6e00f76cdcbad4f905bd307937b",
+          "v0.0.3-af60b2a795aa3bbb3471305f860583c506171d08f04ba2ca45868667e0e17068"
+        ],
+        [
+          "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2",
+          "v0.0.3-7915677469326f350de791dcf39c52795afc6291fe777414fd5646cb782e0f37"
+        ]
+      ]
+    },
+    "v0.0.3-7915677469326f350de791dcf39c52795afc6291fe777414fd5646cb782e0f37": {
+      "data": {
+        "presentation": {},
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2"
+        },
+        "updated": {
+          "time": 0
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9",
+          "v0.0.3-43c748253bd2b3c802f7f9bb40e424b1fd4c97f6fc447c61e4c3eeae93b357bd"
+        ]
+      ]
+    },
+    "v0.0.3-43c748253bd2b3c802f7f9bb40e424b1fd4c97f6fc447c61e4c3eeae93b357bd": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request"
+        },
+        "name": {
+          "content": "request"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-604f4cfd051ff090aba4adb7baa9f75de3708d6610bafd883d6f133fec8ff05a"
+        ],
         [
           "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
@@ -212,6 +309,746 @@
         }
       },
       "children": []
+    },
+    "v0.0.3-604f4cfd051ff090aba4adb7baa9f75de3708d6610bafd883d6f133fec8ff05a": {
+      "data": {
+        "presentation": {},
+        "name": {
+          "content": "request"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff",
+          "v0.0.3-8e6f84e28e329fbe7498ad0fd536715bf97519d325b8822613ea5d3f590a311b"
+        ]
+      ]
+    },
+    "v0.0.3-8e6f84e28e329fbe7498ad0fd536715bf97519d325b8822613ea5d3f590a311b": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2/field/request/field/subtasks"
+        },
+        "name": {
+          "content": "subtasks"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-f4402802a860766308d01a80d6eaa0dbdb0826757e1e1947a89f477f01cb1ea4"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-f4402802a860766308d01a80d6eaa0dbdb0826757e1e1947a89f477f01cb1ea4": {
+      "data": {
+        "scalar": {
+          "type": "boolean",
+          "value": true
+        },
+        "name": {
+          "content": "subtasks"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25": {
+      "data": {
+        "description": {
+          "content": "Target Constructor Node"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff": {
+      "data": {
+        "name": {
+          "content": "fos:value:boolean"
+        },
+        "form": {
+          "primitive": "boolean"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9": {
+      "data": {
+        "name": {
+          "content": "fos:value:record"
+        },
+        "form": {
+          "open": true
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2": {
+      "data": {
+        "capabilityDefinition": {
+          "label": "run evaluations",
+          "legacy": "v0.0.1-22a8c10f27c509c33d7349fded710fe03f81e679b992dbc2dbd6908692b47ce1",
+          "name": "execute",
+          "syntax": [
+            "execute"
+          ]
+        },
+        "description": {
+          "content": "run evaluations"
+        },
+        "name": {
+          "content": "fos:capability:execute"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7a6ef52c85dc8a209cb11fadb20164e18b0e25c5e98a13f116506c967156a093",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-7a6ef52c85dc8a209cb11fadb20164e18b0e25c5e98a13f116506c967156a093": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ],
+        [
+          "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc",
+          "v0.0.3-f1725425c4c7b3824f34061e94155ede313b2bbecd74caee5a1a7ed3f54b44dc"
+        ]
+      ]
+    },
+    "v0.0.3-f1725425c4c7b3824f34061e94155ede313b2bbecd74caee5a1a7ed3f54b44dc": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "execute"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc": {
+      "data": {
+        "description": {
+          "content": "title"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-af60b2a795aa3bbb3471305f860583c506171d08f04ba2ca45868667e0e17068": {
+      "data": {
+        "alias": {
+          "id": "lib:generate-subtasks:model"
+        },
+        "name": {
+          "content": "model"
+        },
+        "updated": {
+          "time": 0
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-d9e01013bd2e61e89ecb477964f7e3050592e6e00f76cdcbad4f905bd307937b": {
+      "data": {
+        "capabilityDefinition": {
+          "label": "language model",
+          "legacy": "v0.0.1-5265533700deed1e13a8119dbb99d50dd44f314c9cfbc4a2bf8edf304d3691f7",
+          "name": "llm",
+          "syntax": [
+            "llm",
+            "ai",
+            "ask"
+          ]
+        },
+        "description": {
+          "content": "language model"
+        },
+        "name": {
+          "content": "fos:capability:llm"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-d53cb2c9a0c455fb6e830ef1a635fcbc6eac86151fda92bfd1d821b9fa64666e",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-d53cb2c9a0c455fb6e830ef1a635fcbc6eac86151fda92bfd1d821b9fa64666e": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ],
+        [
+          "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc",
+          "v0.0.3-351c5311953b22e7ef6557cea2ddbbe4264715328357e0f3b92727123298138b"
+        ]
+      ]
+    },
+    "v0.0.3-351c5311953b22e7ef6557cea2ddbbe4264715328357e0f3b92727123298138b": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "llm"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718": {
+      "data": {
+        "description": {
+          "content": "Allocation"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
+        ]
+      ]
+    },
+    "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409": {
+      "data": {
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a": {
+      "data": {
+        "description": {
+          "content": "Pattern"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e": {
+      "data": {
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69": {
+      "data": {
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e": {
+      "data": {
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-9df1f2e1971ce769509ee18c88a455aa7c246e19dad8f3f80dfc5d708f2f2543": {
+      "data": {
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        },
+        "alias": {
+          "id": "lib:generate-subtasks:accepts:lib:type:document-root"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-159b7fff62fb3f863e12d3400128d6b72aaf1d2a383a15b34ca5981c9d93c8f8": {
+      "data": {
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        },
+        "alias": {
+          "id": "lib:generate-subtasks:accepts:lib:type:device-root"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-10fad522d4fbbd078f77a2c051070859415897c64c3a7f6ebd963e0354ab8d0f": {
+      "data": {
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        },
+        "alias": {
+          "id": "lib:generate-subtasks:accepts:lib:type:home"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-219e986cd8dbb782aedf8cc8610633769b624ca1b391bcc5d1023cc7d8d057fe": {
+      "data": {
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        },
+        "alias": {
+          "id": "lib:generate-subtasks:accepts:any"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f": {
+      "data": {
+        "description": {
+          "content": "Template"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
+        ]
+      ]
+    },
+    "v0.0.3-6e592b053eeae6aee7a2708b106438fb55622c026d1ef1c01a290a9b25e2c604": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify"
+        },
+        "description": {
+          "content": "Implement and verify"
+        },
+        "updated": {
+          "time": 0
+        },
+        "presentation": {
+          "icon": "rocket"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8ca88b5a0e08183c77e6dfbf94427afda7e7ee89bcb13c272ddd2465f077e5bc"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-88ce2d734beff4885b1b8b0371f53991abae1c866065a40f65d9683f6b11dbbb"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-944e3723f7f71300852a5f99c2b25c04105ec2120566a548566ec6e304531c24"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-de743e347417c43531a1e0ac819fed7fcb6a127bb048fef798e7b94d544b872a"
+        ],
+        [
+          "v0.0.3-c86bc92b358e1c1700ab63057abbf15de32e1a7f45a6d4b66fb5ad3a27d160f1",
+          "v0.0.3-08d1f836e216962a9b92762ca998b4e5450ac37a3685929508d9d9c79f0c4ee4"
+        ],
+        [
+          "v0.0.3-c86bc92b358e1c1700ab63057abbf15de32e1a7f45a6d4b66fb5ad3a27d160f1",
+          "v0.0.3-5ad5006dec43dcf9c35f57d2f40d701b3d750cc85323effdbcca27aa830c055f"
+        ],
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-26b5ae16ef774e6f1eaf79b691d3279cf9c120461924465687da5ec5ac14be57"
+        ]
+      ]
+    },
+    "v0.0.3-26b5ae16ef774e6f1eaf79b691d3279cf9c120461924465687da5ec5ac14be57": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:plan"
+        },
+        "description": {
+          "content": "Propose a detailed implementation plan and verification steps. Identify missing decisions."
+        },
+        "updated": {
+          "time": 0
+        },
+        "allocation": {
+          "capability": "llm",
+          "resource": "",
+          "type": "inventory",
+          "amount": -1,
+          "unit": "unit"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718",
+          "v0.0.3-bafbdedaeb1069d38868ae9229510eeafa32e3e5c54ad217bf7a460c95d7a520"
+        ],
+        [
+          "v0.0.3-d9e01013bd2e61e89ecb477964f7e3050592e6e00f76cdcbad4f905bd307937b",
+          "v0.0.3-a16dbd0d22da7b74be7466d3f984c1db70c877e35b2fb426b8cd397c1f1f940c"
+        ]
+      ]
+    },
+    "v0.0.3-a16dbd0d22da7b74be7466d3f984c1db70c877e35b2fb426b8cd397c1f1f940c": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:model"
+        },
+        "updated": {
+          "time": 0
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-bafbdedaeb1069d38868ae9229510eeafa32e3e5c54ad217bf7a460c95d7a520": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:ready"
+        },
+        "description": {
+          "content": "Specification, acceptance examples and required input references are ready"
+        },
+        "updated": {
+          "time": 0
+        },
+        "allocation": {
+          "capability": "confirmation",
+          "resource": "",
+          "type": "inventory",
+          "amount": -1,
+          "unit": "unit"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-5ad5006dec43dcf9c35f57d2f40d701b3d750cc85323effdbcca27aa830c055f": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:examples"
+        },
+        "created": {
+          "time": 0
+        },
+        "updated": {
+          "time": 0
+        },
+        "presentation": {
+          "headline": [
+            "body"
+          ]
+        },
+        "description": {
+          "content": "Acceptance examples"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d",
+          "v0.0.3-3ff4fa8e864d5762f6f96115ff656b156584588804547a94c41ed830b5f4800c"
+        ]
+      ]
+    },
+    "v0.0.3-3ff4fa8e864d5762f6f96115ff656b156584588804547a94c41ed830b5f4800c": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:examples/field/body"
+        },
+        "name": {
+          "content": "body"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-1c443698422c2aee500eba97cc9703f472a1f511dee9dc14f26124be7467a92f"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-1c443698422c2aee500eba97cc9703f472a1f511dee9dc14f26124be7467a92f": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:examples/field/body"
+        },
+        "created": {
+          "time": 0
+        },
+        "updated": {
+          "time": 0
+        },
+        "scalar": {
+          "type": "text",
+          "value": "Acceptance examples\nDescribe concrete inputs and expected outcomes. Replace these instructions before delegating."
+        },
+        "name": {
+          "content": "body"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d": {
+      "data": {
+        "description": {
+          "content": "Markdown"
+        },
+        "form": {
+          "primitive": "text",
+          "text": {
+            "interpolate": true,
+            "mediaType": "text/markdown"
+          }
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-c86bc92b358e1c1700ab63057abbf15de32e1a7f45a6d4b66fb5ad3a27d160f1": {
+      "data": {
+        "description": {
+          "content": "Note"
+        },
+        "form": {
+          "headline": [
+            "body"
+          ],
+          "open": true
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
+        ],
+        [
+          "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d",
+          "v0.0.3-5d5cdbb8cc65fcca16c02fb4d21affa2a2a1857bf5d983d53a540d6f071c5d2c"
+        ]
+      ]
+    },
+    "v0.0.3-5d5cdbb8cc65fcca16c02fb4d21affa2a2a1857bf5d983d53a540d6f071c5d2c": {
+      "data": {
+        "description": {
+          "content": "Body"
+        },
+        "parameter": {
+          "from": [
+            "text"
+          ],
+          "name": "body"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-08d1f836e216962a9b92762ca998b4e5450ac37a3685929508d9d9c79f0c4ee4": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:specification"
+        },
+        "created": {
+          "time": 0
+        },
+        "updated": {
+          "time": 0
+        },
+        "presentation": {
+          "headline": [
+            "body"
+          ]
+        },
+        "description": {
+          "content": "Specification"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d",
+          "v0.0.3-1d007f12afcb78432824b7893b9be8d6c4cc1c3d7ef28f087dd4663d037b6909"
+        ]
+      ]
+    },
+    "v0.0.3-1d007f12afcb78432824b7893b9be8d6c4cc1c3d7ef28f087dd4663d037b6909": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:specification/field/body"
+        },
+        "name": {
+          "content": "body"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25",
+          "v0.0.3-2fa0fef74c9649a821faac31c8af6adc6f673736f0d5a8e4779dc2fbea11ee1f"
+        ],
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-2fa0fef74c9649a821faac31c8af6adc6f673736f0d5a8e4779dc2fbea11ee1f": {
+      "data": {
+        "alias": {
+          "id": "lib:implement-and-verify:specification/field/body"
+        },
+        "created": {
+          "time": 0
+        },
+        "updated": {
+          "time": 0
+        },
+        "scalar": {
+          "type": "text",
+          "value": "Specification\nDescribe the required outcome, constraints, and important decisions."
+        },
+        "name": {
+          "content": "body"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-de743e347417c43531a1e0ac819fed7fcb6a127bb048fef798e7b94d544b872a": {
+      "data": {
+        "description": {
+          "content": "lib:type:document-root"
+        },
+        "pattern": {
+          "type": "lib:type:document-root"
+        },
+        "alias": {
+          "id": "lib:implement-and-verify:accepts:lib:type:document-root"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-944e3723f7f71300852a5f99c2b25c04105ec2120566a548566ec6e304531c24": {
+      "data": {
+        "description": {
+          "content": "lib:type:device-root"
+        },
+        "pattern": {
+          "type": "lib:type:device-root"
+        },
+        "alias": {
+          "id": "lib:implement-and-verify:accepts:lib:type:device-root"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-88ce2d734beff4885b1b8b0371f53991abae1c866065a40f65d9683f6b11dbbb": {
+      "data": {
+        "description": {
+          "content": "lib:type:home"
+        },
+        "pattern": {
+          "type": "lib:type:home"
+        },
+        "alias": {
+          "id": "lib:implement-and-verify:accepts:lib:type:home"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-8ca88b5a0e08183c77e6dfbf94427afda7e7ee89bcb13c272ddd2465f077e5bc": {
+      "data": {
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        },
+        "alias": {
+          "id": "lib:implement-and-verify:accepts:any"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-04e1bb2e6a36a1c5caf530796e7cf72f395718d76014747c60768a8edb71827b": {
+      "data": {
+        "alias": {
+          "id": "lib:string"
+        },
+        "name": {
+          "content": "string"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
     },
     "v0.0.3-dd11f47950271f9fad0e761d7301f903d36cb789f4b059d2edbb5216f2b73f04": {
       "data": {
@@ -535,14 +1372,6 @@
       },
       "children": []
     },
-    "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc": {
-      "data": {
-        "description": {
-          "content": "title"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-9caa5d927c65c83fae1e8f50e06a1cb278d88ae4072bf422d967d5babdaf84bb": {
       "data": {
         "alias": {
@@ -721,14 +1550,6 @@
       "data": {
         "description": {
           "content": "GET"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-7cc3cce4345f73c7f218624d330a384f63e0dacdaa26d6fd52c2a470aa42fd25": {
-      "data": {
-        "description": {
-          "content": "Target Constructor Node"
         }
       },
       "children": []
@@ -1296,52 +2117,6 @@
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
-    },
-    "v0.0.3-4b5b7a3167f0069432b764e1b75cfe91bd5e2fcd01cea5711b058eb764a87cc2": {
-      "data": {
-        "capabilityDefinition": {
-          "label": "run evaluations",
-          "legacy": "v0.0.1-22a8c10f27c509c33d7349fded710fe03f81e679b992dbc2dbd6908692b47ce1",
-          "name": "execute",
-          "syntax": [
-            "execute"
-          ]
-        },
-        "description": {
-          "content": "run evaluations"
-        },
-        "name": {
-          "content": "fos:capability:execute"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-7a6ef52c85dc8a209cb11fadb20164e18b0e25c5e98a13f116506c967156a093",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-7a6ef52c85dc8a209cb11fadb20164e18b0e25c5e98a13f116506c967156a093": {
-      "data": {},
-      "children": [
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ],
-        [
-          "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc",
-          "v0.0.3-f1725425c4c7b3824f34061e94155ede313b2bbecd74caee5a1a7ed3f54b44dc"
-        ]
-      ]
-    },
-    "v0.0.3-f1725425c4c7b3824f34061e94155ede313b2bbecd74caee5a1a7ed3f54b44dc": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "execute"
-        }
-      },
-      "children": []
     },
     "v0.0.3-691319efb36236bc875c794a9341c9ff583eda2e7cb968c282eaa50e2ca063f9": {
       "data": {
@@ -2580,54 +3355,6 @@
         ]
       ]
     },
-    "v0.0.3-d9e01013bd2e61e89ecb477964f7e3050592e6e00f76cdcbad4f905bd307937b": {
-      "data": {
-        "capabilityDefinition": {
-          "label": "language model",
-          "legacy": "v0.0.1-5265533700deed1e13a8119dbb99d50dd44f314c9cfbc4a2bf8edf304d3691f7",
-          "name": "llm",
-          "syntax": [
-            "llm",
-            "ai",
-            "ask"
-          ]
-        },
-        "description": {
-          "content": "language model"
-        },
-        "name": {
-          "content": "fos:capability:llm"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-d53cb2c9a0c455fb6e830ef1a635fcbc6eac86151fda92bfd1d821b9fa64666e",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-d53cb2c9a0c455fb6e830ef1a635fcbc6eac86151fda92bfd1d821b9fa64666e": {
-      "data": {},
-      "children": [
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ],
-        [
-          "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc",
-          "v0.0.3-351c5311953b22e7ef6557cea2ddbbe4264715328357e0f3b92727123298138b"
-        ]
-      ]
-    },
-    "v0.0.3-351c5311953b22e7ef6557cea2ddbbe4264715328357e0f3b92727123298138b": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "llm"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-772d2f5ab7b1f853557f4b9aed23762615dbeb1b941e6df1b0d6bc8befdb9e3a": {
       "data": {
         "alias": {
@@ -3460,58 +4187,6 @@
         ]
       ]
     },
-    "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409": {
-      "data": {
-        "description": {
-          "content": "lib:type:document-root"
-        },
-        "pattern": {
-          "type": "lib:type:document-root"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a": {
-      "data": {
-        "description": {
-          "content": "Pattern"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e": {
-      "data": {
-        "description": {
-          "content": "lib:type:device-root"
-        },
-        "pattern": {
-          "type": "lib:type:device-root"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69": {
-      "data": {
-        "description": {
-          "content": "lib:type:home"
-        },
-        "pattern": {
-          "type": "lib:type:home"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e": {
-      "data": {
-        "description": {
-          "content": "Any row"
-        },
-        "pattern": {
-          "any": true
-        }
-      },
-      "children": []
-    },
     "v0.0.3-cf645d11df361bbd4eb7d34cff93a3803a8b48599b7d04396c43dfedcfab810a": {
       "data": {
         "alias": {
@@ -3665,17 +4340,6 @@
       },
       "children": []
     },
-    "v0.0.3-a8a066724e611c646e01c3181584cfe2e7513d2b2594f3fa773d53b0e7486cff": {
-      "data": {
-        "name": {
-          "content": "fos:value:boolean"
-        },
-        "form": {
-          "primitive": "boolean"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-71c2b1b898a5d877c5163828c4fc5aea59248ced668d82d1c4a9616fd4602840": {
       "data": {
         "alias": {
@@ -3751,42 +4415,6 @@
       },
       "children": []
     },
-    "v0.0.3-47a530b8143d6ddeb9a396a0bb67ab4e8d73496ab89655d9ded8c1de9fa136b9": {
-      "data": {
-        "name": {
-          "content": "fos:value:record"
-        },
-        "form": {
-          "open": true
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-a3d664dc424055378bdc6abae7d7ef4b3d14ebec8d3a811472769edf49068718": {
-      "data": {
-        "description": {
-          "content": "Allocation"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
-        ]
-      ]
-    },
     "v0.0.3-002007cd31ad23201225eca0596e1df02c14500b9437a896384e13f4474ebb36": {
       "data": {
         "alias": {
@@ -3842,31 +4470,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-cbc5d81c0eb001bdd967bd30bc46e97cb078059402777613f31870d71a06b50f": {
-      "data": {
-        "description": {
-          "content": "Template"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
-        ]
-      ]
     },
     "v0.0.3-41edba82f5de107197ab419f0784a6b0f5f92bd7fac8e0c6b1df4c0ee7006035": {
       "data": {
@@ -6361,70 +6964,6 @@
       },
       "children": []
     },
-    "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d": {
-      "data": {
-        "description": {
-          "content": "Markdown"
-        },
-        "form": {
-          "primitive": "text",
-          "text": {
-            "interpolate": true,
-            "mediaType": "text/markdown"
-          }
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-c86bc92b358e1c1700ab63057abbf15de32e1a7f45a6d4b66fb5ad3a27d160f1": {
-      "data": {
-        "description": {
-          "content": "Note"
-        },
-        "form": {
-          "headline": [
-            "body"
-          ],
-          "open": true
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-7650fe48875b0d2deddeaa52333b26bacc0b40079d4afe8a7dc6da2ab3fa5b69"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-b6cfe6ed1dd1bbd98045d4f800ce5c9aedd350a362d5c66fc96cb59f4d0c739e"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-1540e1e31378bffbb25a692e67b34013fd641001599070a4ce2cf777f6085409"
-        ],
-        [
-          "v0.0.3-e206936c540f1a5caf44d8b4de2a681e130a050ea9c386c822b2357d6571ac3d",
-          "v0.0.3-5d5cdbb8cc65fcca16c02fb4d21affa2a2a1857bf5d983d53a540d6f071c5d2c"
-        ]
-      ]
-    },
-    "v0.0.3-5d5cdbb8cc65fcca16c02fb4d21affa2a2a1857bf5d983d53a540d6f071c5d2c": {
-      "data": {
-        "description": {
-          "content": "Body"
-        },
-        "parameter": {
-          "from": [
-            "text"
-          ],
-          "name": "body"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-6ba6c83bb277edcee99208f76e33bb88f9240b33468bb3086e96e6dd5d6aa3a1": {
       "data": {
         "alias": {
@@ -7752,6 +8291,6 @@
       ]
     }
   },
-  "rootNodeId": "v0.0.3-42bd8850e5d4d73fb3cea56ee7b56a3894e48cd8ca6cd2917800b246356d352c",
+  "rootNodeId": "v0.0.3-8af4ebbe3337922bba008d3a4d4903924a7d0536a3251ce26f0c5a945acd4470",
   "version": "0.0.3"
 }

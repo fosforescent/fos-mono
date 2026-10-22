@@ -9,6 +9,10 @@ import {
   rowEdgeAt, rowTypeAt, rowTypeOf, typeIdOf, isRowEdge, isRowOfType, isAllocationRow, flowOf, updateAtScope, valueContent, type Scope
 } from './graph'
 import { ALLOCATION_TYPE, NOTE_TYPE, PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
+import { executionRequest } from './evaluation'
+/** The library's work templates (applied to a task by the shared copier). */
+export const PLANNING_TEMPLATE = 'lib:implement-and-verify'
+export const SUBTASKS_TEMPLATE = 'lib:generate-subtasks'
 import {
   addRefAt, addRow, addTask, addSupply, applyProposalAt, headCid, instantiateTemplate,
   proposeRefAt, rejectProposalAt, view, type Replica
@@ -120,7 +124,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   if (view(r, requestPath.slice(0, -1))?.tasks.find((t) => t.id === requestPath.at(-1))?.requirement?.satisfied) blockers.add('This request already has an accepted result.')
   const prompt = lines.join('\n').trim()
   if (prompt.length > 20_000) blockers.add('Context exceeds 20,000 characters. Narrow this task or shorten its inputs.')
-  return { prompt, sources: [...sources], blockers: [...blockers], ...(request.value.data.name?.content === 'fos:generate-subtasks' ? { createsSubtasks: true } : {}) }
+  return { prompt, sources: [...sources], blockers: [...blockers], ...(asksForSubtasks(r, requestPath) ? { createsSubtasks: true } : {}) }
 }
 
 export function workAttempts(r: Replica, requestPath: Scope) {
@@ -146,7 +150,8 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   const resolved = workHandler(r, requestPath)
   if (resolved.status !== 'ready') throw new Error(resolved.problems.join('\n'))
   const handler = resolved.cid!
-  if (valueContent(store, handler).data.peerId?.content !== 'fos' || valueContent(store, handler).data.description?.content !== 'llm') throw new Error('No executor is configured for this language-model handler.')
+  // the handler the binding resolved (an llm offer) must be the account server's, whose model runs it
+  if (valueContent(store, handler).data.peerId?.content !== 'fos') throw new Error('No executor is configured for this language-model handler.')
   const id = newId(), path = [...requestPath, id], contextId = newId(), resultId = newId()
   r = addRow(r, requestPath, PLAIN_TYPE, `Agent attempt ${workAttempts(r, requestPath).length + 1}`, now, { id })
   r = addRow(r, path, NOTE_TYPE, current.prompt, now, { id: contextId })
@@ -165,7 +170,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
 export function proposeTaskResult(r: Replica, resultPath: Scope, text: string, now: number): Replica {
   if (!text.trim()) throw new Error('The model returned an empty result. Try again.')
   const result = put(r.store, constructForm(r.store, rowTypeAt(r.store, NOTE_TYPE, resultPath), newId(), { text }, now))
-  return proposeRefAt(r, resultPath, result, 'fos:llm', now).replica
+  return proposeRefAt(r, resultPath, result, 'fos', now).replica
 }
 
 /** Acceptance is the only operation that supplies the work request. The task remains manually checkable. */
@@ -177,7 +182,7 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   const current = taskWorkContext(r, requestPath)
   if (current.blockers.length) throw new Error(current.blockers.join('\n'))
   if (attempt.context !== current.prompt) throw new Error('The task context changed. Run a new attempt before accepting.')
-  const generating = nodeAt(r, requestPath).value.data.name?.content === 'fos:generate-subtasks'
+  const generating = asksForSubtasks(r, requestPath)
   const subtasks = generating ? formText(r.store, valueContent(r.store, proposal.contentCid)).split('\n').flatMap(line => {
     const match = line.match(/^\s*(?:[-*]\s+)?\[ \]\s+(.+)$/)
     return match ? [match[1]!.trim()] : []
@@ -190,33 +195,22 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, NOTE_TYPE, proposal.contentCid, requestPath)] }))
   commitRoot(r.store, next, now)
   for (const title of subtasks) r = addTask(r, requestPath.slice(0, -1), title, now)
-  return addSupply(r, requestPath.slice(0, -1), requestPath.at(-1)!, { capability: 'llm', by: 'fos:llm', ref: result.data.alias.id }, now)
+  return addSupply(r, requestPath.slice(0, -1), requestPath.at(-1)!, { capability: 'llm', by: 'fos', ref: result.data.alias.id }, now)
 }
 
-/** An editable ordinary template, installed on demand and instantiated by the shared copier. */
+/** Whether the request at `path` asks for its answer as subtasks (its row's request, from the Generate subtasks template). */
+function asksForSubtasks(r: Replica, path: Scope): boolean {
+  return executionRequest<{ subtasks?: boolean }>(r, path)?.subtasks === true
+}
+
+/** The library's Implement and verify template, applied to the task. */
 export function addPlanningTemplate(r: Replica, taskPath: Scope, now: number): Replica {
-  const templateId = 'fos:implement-and-verify'
-  if (!findRowByAlias(r.store, headCid(r), templateId)) {
-    r = addRow(r, [], TEMPLATE_TYPE, 'Implement and verify', now, { id: templateId })
-    r = addRow(r, [templateId], NOTE_TYPE, 'Specification\nDescribe the required outcome, constraints, and important decisions.', now)
-    r = addRow(r, [templateId], NOTE_TYPE, 'Acceptance examples\nDescribe concrete inputs and expected outcomes. Replace these instructions before delegating.', now)
-    const reqId = newId()
-    r = addRow(r, [templateId], ALLOCATION_TYPE, 'Propose a detailed implementation plan and verification steps. Identify missing decisions.', now, { id: reqId, requirement: { capability: 'llm' } })
-    r = addRow(r, [templateId, reqId], ALLOCATION_TYPE, 'Specification, acceptance examples and required input references are ready', now, { requirement: { capability: 'confirmation' } })
-    r = addRefAt(r, [templateId, reqId], newId(), capabilityTarget(r.store, 'llm'), now)
-  }
-  return instantiateTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, templateId, now)
+  return instantiateTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, PLANNING_TEMPLATE, now)
 }
 
-/** Generate subtasks is an ordinary template with an LLM argument and a reviewed return. */
+/** The library's Generate subtasks template: an LLM argument and a reviewed return, its request asking for subtasks. */
 export function addSubtasksTemplate(r: Replica, taskPath: Scope, now: number): { replica: Replica; requestId: string } {
-  const templateId = 'fos:generate-subtasks'
-  if (!findRowByAlias(r.store, headCid(r), templateId)) {
-    r = addRow(r, [], TEMPLATE_TYPE, 'Generate subtasks', now, { id: templateId })
-    r = addRow(r, [templateId], ALLOCATION_TYPE, 'Generate fine-grained subtasks with acceptance criteria. Return one unchecked Markdown task per line, like [ ] Implement reservation validation — reject overlapping bookings. Do not claim the tasks are completed.', now, { id: 'fos:subtask-request', requirement: { capability: 'llm' } })
-    r = addRefAt(r, [templateId, 'fos:subtask-request'], newId(), capabilityTarget(r.store, 'llm'), now, null, 'model')
-    commitRoot(r.store, updateAtScope(r.store, headCid(r), [templateId, 'fos:subtask-request'], value => ({ ...value, data: { ...value.data, name: { content: templateId } } })), now)
-  }
+  const templateId = SUBTASKS_TEMPLATE
   const existing = new Set(view(r, taskPath)?.tasks.map(row => row.id))
   r = instantiateTemplate(r, taskPath.slice(0, -1), taskPath.at(-1)!, templateId, now)
   const request = view(r, taskPath)?.tasks.find(row => !existing.has(row.id) && row.requirement?.capability === 'llm')

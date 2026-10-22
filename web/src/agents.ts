@@ -1,4 +1,4 @@
-import { readGraphValue } from '../../shared/sync/node-values'
+import { localRepositoryHere } from '../../shared/sync/repository'
 /**
  * Coding agents on this computer (desktop): Claude Code and Codex are local peers of the device (`agent-cli:<provider>`),
  * Claude Desktop is one too (`agent-app:claude-desktop`). Their launch buttons live on the peer's own panel. A launch
@@ -18,16 +18,8 @@ export const CLAUDE_DESKTOP_PEER = 'agent-app:claude-desktop'
 
 export function localRepository(r: Replica, path: Scope): string | null {
   for (let depth = path.length; depth >= 0; depth--) {
-    const cid = resolveScope(r.store, headCid(r), path.slice(0, depth))
-    if (!cid) continue
-    const args = argumentRefs(r.store, cid).filter(a => a.name === 'local-repository' && a.type === capabilityTarget(r.store, 'repo'))
-    if (!args.length) continue
-    if (args.length !== 1) return null
-    const value = refValueCid(r.store, content(r.store, args[0]!.cid))
-    try {
-      const binding = (value ? readGraphValue(r.store, value) : null) as { device?: string; path?: string }
-      return binding?.device === r.meta.peerId && typeof binding.path === 'string' ? binding.path : null
-    } catch { return null }
+    const binding = localRepositoryHere(r, path.slice(0, depth))
+    if (binding) return binding.device === r.meta.peerId ? binding.path : null
   }
   return null
 }

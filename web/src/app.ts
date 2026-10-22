@@ -29,6 +29,7 @@ import { writeTriggerState, triggerOffers as discoverTriggerOffers, triggerObser
 import { executionTime, writeExecutionTime, writeHandlerResult } from '../../shared/sync/evaluation'
 import { recordVerificationIssue, recordVerificationReport, verificationReport, verificationTask } from '../../shared/sync/specifications'
 import { workflowJob } from '../../shared/sync/project-workflow'
+import { bindLocalRepository, localRepositoryHere } from '../../shared/sync/repository'
 import { setTemplateIcon, templateIconAt } from '../../shared/sync/replica'
 import { consume, consumption } from '../../shared/sync/execution-access'
 import { addAttachment, attachmentAt } from '../../shared/sync/replica'
@@ -2555,7 +2556,7 @@ export class App {
     if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Use owner/repository.')
     if (localDirectory) {
       const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), target)
-      if (cid && argumentRefs(this.state.replica.store, cid).some(a => a.name === 'local-repository')) throw new Error('This node already has a local repository; edit its local-repository argument to change the path.')
+      if (cid && localRepositoryHere(this.state.replica, target)) throw new Error('This node already has a local repository; edit its argument to change the path.')
     }
     const allocation = parsed.extras?.allocation
     if (allocation?.resource && !this.banks().some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable or has a different resource type.')
@@ -2576,7 +2577,7 @@ export class App {
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
         const peer = `git:${r.meta.peerId}:${encodeURIComponent(localDirectory)}`
-        r = writeNodeValue(r, target, 'local-repository', { path: localDirectory, device: r.meta.peerId, peer }, this.now(), { type: capabilityTarget(r.store, 'repo'), peer })
+        r = bindLocalRepository(r, target, { path: localDirectory, device: r.meta.peerId, peer }, this.now())
         r = addMemberAt(r, target, peer, 'Local Git', ['repo'], this.now())
         r = setMemberCapabilitiesAt(r, target, peer, ['repo'], [], this.now(), ['repo'])
       }
@@ -2644,11 +2645,10 @@ export class App {
     return this.execution?.store === this.state.replica.store && JSON.stringify(this.execution.path) === JSON.stringify(this.state.view) ? this.execution.path : null
   }
   registerLocalGitPeer(root: Scope, directory: string): void {
-    const data = readNodeValue<{ path: string; device: string; peer?: string }>(this.state.replica, root, 'local-repository')
-    if (!data || data.peer || data.device !== this.state.replica.meta.peerId || data.path !== directory) return
-    const peer = `git:${data.device}:${encodeURIComponent(directory)}`
-    let r = writeNodeValue(this.state.replica, root, 'local-repository', { ...data, peer }, this.now())
-    r = addMemberAt(r, root, peer, 'Local Git', ['repo'], this.now())
+    const data = localRepositoryHere(this.state.replica, root)
+    if (!data?.peer || data.device !== this.state.replica.meta.peerId || data.path !== directory || view(this.state.replica, root)?.members.some(m => m.peerId === data.peer)) return
+    const peer = data.peer
+    let r = addMemberAt(this.state.replica, root, peer, 'Local Git', ['repo'], this.now())
     this.edit(setMemberCapabilitiesAt(r, root, peer, ['repo'], [], this.now(), ['repo']))
   }
   addFeatureSpecification(parent: Scope): void {
