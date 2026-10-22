@@ -1,6 +1,6 @@
 /** Common ref-property view over existing storage. No new on-disk representation. */
 import type { FosStore } from '../dag-implementation/store'
-import { content, identityCid, isMemberEdge, isGrantEdge, isRowEdge, memberEdgesOf, refTypeCid, refValueCid, valueContent } from './graph'
+import { advertisedRows, content, identityCid, isMemberEdge, isGrantEdge, isRowEdge, memberEdgesOf, refValueCid, valueContent } from './graph'
 
 export type RefProperty = {
   id: string; cid: string; name: string; type: string | null; value: string | null
@@ -13,13 +13,15 @@ export function refProperties(store: FosStore, cid: string, select: 'all' | 'arg
   // Binding and policy lookups are frequent: inspect only the edges they consume.
   const edges = select === 'members' ? memberEdgesOf(store, cid) : [...valueContent(store, cid).children]
   if (select === 'all') for (const edge of memberEdgesOf(store, cid)) if (!edges.some(e => e[0] === edge[0] && e[1] === edge[1])) edges.push(edge)
-  return edges.flatMap(edge => {
+  return edges.flatMap((edge): RefProperty[] => {
     const member = isMemberEdge(store, edge), grant = isGrantEdge(store, edge)
+    if (grant && advertisedRows(store, edge[1]).length) return refProperties(store, edge[1], 'arguments').map(property => ({ ...property, direction: edge[0] === store.primitive.acceptsNode.getId() ? 'from' as const : 'to' as const }))
     const id = member || grant ? edge[1] : identityCid(store, edge), node = content(store, id)
-    const type = refTypeCid(store, node), argument = !!type && edge[0] === type
+    const argument = isRowEdge(store, edge)
+    const type = edge[0]
     if (select === 'arguments' && !argument) return []
     if (!node.data.alias?.id || (!member && !grant && !argument && !isRowEdge(store, edge))) return []
-    return [{ id: node.data.alias.id, cid: id, name: node.data.name?.content ?? node.data.alias.id,
+    return [{ id: node.data.alias.id, cid: id, name: node.data.name?.content ?? valueContent(store, id).data.name?.content ?? node.data.alias.id,
       type, value: refValueCid(store, node), member, argument,
       ...(node.data.peerId?.content || node.data.ref?.peer ? { peer: node.data.peerId?.content ?? node.data.ref!.peer } : {}),
       ...(grant ? { direction: edge[0] === store.primitive.acceptsNode.getId() ? 'from' as const : 'to' as const } : {}) }]

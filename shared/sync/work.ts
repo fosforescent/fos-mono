@@ -82,7 +82,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     }
     for (const input of refArguments(store, value, store.primitive.documentField.getId())) {
       if (content(store, input.cid).data.name?.content?.startsWith('fos:')) continue // runtime values are not inputs
-      const resolved = resolveBinding(store, store.primitive.documentField.getId(), input.cid, contextBindings(r, at))
+      const resolved = resolveBinding(store, store.primitive.documentField.getId(), input.cid, contextBindings(r, at), undefined, { scope: { replica: r, path: at } })
       if (resolved.status !== 'ready') resolved.problems.forEach(p => blockers.add(p))
       else emit(resolved.cid!, 'Bound input', depth + 1, true)
     }
@@ -155,7 +155,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   r = addRefAt(r, path, newId(), store.primitive.descriptionField.getId(), now, snapshot)
   const handlerId = newId()
   r = addRefAt(r, path, handlerId, type, now)
-  const binding = proposeRefAt(r, [...path, handlerId], put(store, refNodeContent(store, {}, handler, [], type)), r.meta.peerId, now)
+  const binding = proposeRefAt(r, [...path, handlerId], put(store, refNodeContent(store, {}, handler, [])), r.meta.peerId, now)
   r = applyProposalAt(binding.replica, [...path, handlerId], binding.proposalCid, r.meta.peerId, now)
   r = addRefAt(r, path, resultId, store.primitive.documentField.getId(), now)
   return { replica: r, path, resultPath: [...path, resultId], prompt: current.prompt, system: WORK_SYSTEM }

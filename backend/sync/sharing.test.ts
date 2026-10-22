@@ -60,7 +60,7 @@ test('authenticated state lives in guest account, with only declared projection 
   expect(JSON.stringify(saved.body)).not.toContain('private-child-secret')
   const arg = argumentRefs(s.replicas.guest.store, headCid(s.replicas.guest)).find(a => a.name?.startsWith('fos:participation:'))!
   expect(content(s.replicas.guest.store, arg.cid).data.alias?.id).toBe(record.account?.ref)
-  expect(content(s.replicas.guest.store, refValueCid(s.replicas.guest.store, content(s.replicas.guest.store, arg.cid))!).data.description?.content).toContain('source')
+  expect(readNodeValue(s.replicas.guest, [], arg.name!)).toMatchObject({ links: { 'comment-slot': 'source' } })
 })
 test('unpublishing, removed visitors, stale versions, and unexpected fields reject input', async () => {
   const s = setup(), visit = await s.call('visit', at)

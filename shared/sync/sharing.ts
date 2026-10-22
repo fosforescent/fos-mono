@@ -15,7 +15,7 @@ import { plainEdge } from './patterns'
 import { FIELD_TYPES, MARKDOWN_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
 import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
-import { aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
+import { aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
 
 /** A visitor's private execution of a published template: the visitor, the endpoint it came from, its audience. */
 export const EXECUTION_ARGUMENT = 'fos:execution'
@@ -136,7 +136,7 @@ export function mayParticipate(r: Replica, path: Scope, peer: string, capability
   const may = (who: string) => hasCapability(r.store, identity, who, capability) || hasCapability(r.store, identity, who, 'execute')
   return may(peer) && (!!policy.execution || may(audiencePeer(policy.audience)))
 }
-export type SharedInput = { key: string; name: string; kind: 'text' | 'allocation' | 'confirmation' | 'choice'; path?: Scope; options?: string[]; direction?: 'provide' | 'consume'; type?: string; unit?: string; amount?: number; start?: number; end?: number }
+export type SharedInput = { key: string; name: string; kind: 'text' | 'ref' | 'allocation' | 'confirmation' | 'choice'; path?: Scope; options?: string[]; direction?: 'provide' | 'consume'; type?: string; unit?: string; amount?: number; start?: number; end?: number; role?: 'input' | 'output' }
 export type Participation = {
   peer: string; name?: string; labels?: Record<string, string>; audience: string; revision: string; updated: number
   approvals: string[]; ranking: string[]; fields: Record<string, string | boolean | number | { amount: number; type: string; unit: string; start?: number; end?: number }>
@@ -175,7 +175,15 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   const result: SharedInput[] = []
   const walk = (path: Scope, depth: number) => {
     if (depth > 8 || result.length >= 32) return
-    for (const field of sharedInputs(r, path).filter(f => f.kind === 'text')) result.push({ ...field, key: JSON.stringify([...path.slice(root.length), field.key]), path: [...path.slice(root.length), field.key] })
+    const cid = resolveScope(r.store, headCid(r), path)
+    for (const arg of cid ? argumentRefs(r.store, cid) : []) {
+      const ref = content(r.store, arg.cid), id = ref.data.alias?.id
+      if (!id || arg.name?.startsWith('fos:') || ref.data.refExpression) continue
+      const relative = [...path.slice(root.length), id]
+      if (!refValueCid(r.store, ref)) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id,
+        kind: arg.type === r.store.primitive.documentField.getId() ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
+      else walk([...path, id], depth + 1)
+    }
     for (const row of view(r, path)?.tasks ?? []) {
       if (result.length >= 32) break
       const req = row.requirement, relative = [...path.slice(root.length), row.id]
@@ -202,7 +210,9 @@ export function proposeVisitorValues(r: Replica, path: Scope, peer: string, valu
   for (const { path: relative, value } of values) {
     const target = [...path, ...relative]
     if (!value.trim()) continue
-    if (view(r, target.slice(0, -1))?.tasks.some(t => t.id === target.at(-1))) { rows.push({ path: relative, value }); continue }
+    const targetCid = resolveScope(r.store, headCid(r), target)
+    const ref = targetCid && content(r.store, targetCid)
+    if (!(ref && isRefNode(r.store, ref) && !refValueCid(r.store, ref))) { rows.push({ path: relative, value }); continue }
     r = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now).replica
   }
   if (!rows.length) return r
@@ -279,6 +289,9 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
       // peer rows (who the node is connected to) are the read/edit view's, never the served page's
       if (!visible(childPath) || row.construction) continue
       const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id), type = libraryType(row)
+      // The execute projection offers declared inputs separately. Their private
+      // bindings and runtime state are graph rows, but are not published page content.
+      if (edge && content(store, identityCid(store, edge)).data.name && !(type && (FIELD_TYPES.includes(type) || type === MARKDOWN_TYPE))) continue
       hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth })
       if (type && FIELD_TYPES.includes(type)) {
         // a field of its row's product: the one the row presents (a note's body) is already shown by the row; an

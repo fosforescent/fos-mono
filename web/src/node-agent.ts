@@ -13,18 +13,32 @@ const connections = new WeakMap<App, Connection[]>()
  */
 type LocalMcp = { scope: string[]; store: App['state']['replica']['store']; url: string; token: string; stop(): Promise<void> }
 const localMcp = new WeakMap<App, LocalMcp>()
+const localMcpStarting = new WeakMap<App, Promise<{ url: string; token: string } | null>>()
 export function localMcpEndpoint(app: App, scope = app.state.view): { url: string; token: string } | null {
   const running = localMcp.get(app)
   return running && running.store === app.state.replica.store && JSON.stringify(running.scope) === JSON.stringify(scope) ? { url: running.url, token: running.token } : null
 }
 export async function ensureLocalMcp(app: App, scope: string[]): Promise<{ url: string; token: string } | null> {
+  const pending = localMcpStarting.get(app)
+  if (pending) { await pending; return ensureLocalMcp(app, scope) }
+  const starting = startLocalMcp(app, [...scope])
+  localMcpStarting.set(app, starting)
+  try { return await starting }
+  finally { if (localMcpStarting.get(app) === starting) localMcpStarting.delete(app) }
+}
+async function startLocalMcp(app: App, scope: string[]): Promise<{ url: string; token: string } | null> {
   if (!inTauri()) return null
+  if (!app.peerGrants('mcp:local', scope).length) return null
   const existing = localMcp.get(app)
   if (existing && existing.store === app.state.replica.store && JSON.stringify(existing.scope) === JSON.stringify(scope)) return { url: existing.url, token: existing.token }
   if (existing) await existing.stop().catch(() => {})
   const store = app.state.replica.store, branches = nodeBranches(app.state.replica, scope)
   const endpoint = await tauriInvoke<{ id: string; url: string; token: string }>('node_agent_start')
   if (!endpoint) return null
+  if (store !== app.state.replica.store || !app.peerGrants('mcp:local', scope).length) {
+    await tauriInvoke('node_agent_stop', { id: endpoint.id })
+    return null
+  }
   const controller = new AbortController()
   let stopped = false, timer: ReturnType<typeof setTimeout> | undefined
   const running: LocalMcp = { scope, store, url: endpoint.url, token: endpoint.token, async stop() {

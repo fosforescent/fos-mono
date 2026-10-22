@@ -1,12 +1,12 @@
 /** Requirement outputs are named typed refs pointing at their source's stable identity. */
 import type { FosStore } from '../dag-implementation/store'
-import { newId, childRows, commitRoot, content, demandOf, findRowByAlias, flowOf, identityCid, put, refNodeContent, refTypeCid, refValueCid, requirementSatisfied, resolveScope, rootTargetCid, updateAtScope, valueContent, type Scope } from './graph'
+import { newId, childRows, commitRoot, content, demandOf, findRowByAlias, flowOf, identityCid, put, refNodeContent, isRefNode, rowTypeOf, refValueCid, requirementSatisfied, resolveScope, rootTargetCid, updateAtScope, valueContent, type Scope } from './graph'
 import { isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
 
 export function requirementOutputs(store: FosStore, cid: string) {
   return valueContent(store, cid).children.flatMap(edge => {
-    const ref = content(store, identityCid(store, edge)), type = refTypeCid(store, ref)
+    const ref = content(store, identityCid(store, edge)), type = rowTypeOf(store, edge)
     return type && edge[0] === type && ref.data.ref ? [{ cid: identityCid(store, edge), id: ref.data.alias!.id, name: ref.data.name?.content ?? 'Value', amount: ref.data.allocation?.amount, type }] : []
   })
 }
@@ -20,7 +20,7 @@ export function destructureRequirement(r: Replica, path: Scope, name: string, am
   if (outputs.some(o => o.name === name.trim())) throw new Error('That placeholder name is already used.')
   if (req.capability === 'allocation' && (amount === undefined || !Number.isFinite(amount) || amount <= 0 || req.amount === undefined || outputs.reduce((sum, o) => sum + (o.amount ?? 0), 0) + amount > req.amount + 1e-9)) throw new Error('The pieces must be positive and cannot exceed the required amount.')
   const type = req.capability === 'allocation' ? r.store.primitive.allocationField.getId() : r.store.primitive.documentField.getId()
-  const ref = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: name.trim() }, ref: { id: path.at(-1)! }, ...(req.capability === 'allocation' ? { allocation: { type: req.resource ?? 'account', resource: path.at(-1)!, amount: amount!, unit: req.unit ?? 'USD' } } : {}) }, null, [], type))
+  const ref = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: name.trim() }, ref: { id: path.at(-1)! }, ...(req.capability === 'allocation' ? { allocation: { type: req.resource ?? 'account', resource: path.at(-1)!, amount: amount!, unit: req.unit ?? 'USD' } } : {}) }, null, []))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: [...node.children, [type, ref]] })), now)
   return { ...r }
 }
@@ -28,7 +28,7 @@ export function destructureRequirement(r: Replica, path: Scope, name: string, am
 /** Resolve at use time; no funds or selected values are fabricated while a requirement is unfilled. */
 export function resolveRequirementOutput(store: FosStore, cid: string): { cid?: string; error?: string } | null {
   const ref = content(store, cid)
-  if (!refTypeCid(store, ref) || !ref.data.ref) return null
+  if (!isRefNode(store, ref) || !ref.data.ref) return null
   if (ref.data.ref.owner) return { error: 'The source requirement is outside this workspace.' }
   const source = findRowByAlias(store, rootTargetCid(store), ref.data.ref.id)
   if (!source) return { error: 'The source requirement is unavailable.' }
@@ -51,7 +51,10 @@ export function resolveRequirementOutput(store: FosStore, cid: string): { cid?: 
 
 /** Bind an output as a typed property; the constructor may keep this as a record field. */
 export function linkRequirementOutput(r: Replica, path: Scope, outputCid: string, now: number): Replica {
-  const output = r.store.table.get(outputCid), type = output && refTypeCid(r.store, output)
+  const output = r.store.table.get(outputCid)
+  const source = output?.data.ref && findRowByAlias(r.store, headCid(r), output.data.ref.id)
+  const sourceCid = source && resolveScope(r.store, headCid(r), [...source.path, source.row.id])
+  const type = sourceCid && requirementOutputs(r.store, sourceCid).find(row => row.cid === outputCid)?.type
   if (!output?.data.ref || !type) throw new Error('Drop a requirement placeholder.')
   if (path.includes(output.data.ref.id)) throw new Error('A requirement cannot be supplied by its own output.')
   const cid = resolveScope(r.store, headCid(r), path)
@@ -59,7 +62,7 @@ export function linkRequirementOutput(r: Replica, path: Scope, outputCid: string
   const allocation = valueContent(r.store, cid).data.allocation
   if (allocation && type !== r.store.primitive.allocationField.getId()) throw new Error('An allocation needs an amount placeholder.')
   const name = allocation ? 'amount' : output.data.name?.content ?? 'value'
-  const target = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: name } }, outputCid, [], type))
+  const target = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: name } }, outputCid, []))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, value => ({ ...value, children: [...value.children.filter(edge => !(edge[0] === type && content(r.store, identityCid(r.store, edge)).data.name?.content === name)), [type, target]] })), now)
   return { ...r }
 }

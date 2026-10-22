@@ -1,3 +1,8 @@
+import { sameCapabilityType } from './capabilities'
+import { refValueCompatible } from './scoped-refs'
+import { matchesGraph } from './structural'
+import { parseRefExpression, textRefExpressions } from './ref-paths'
+import { contextMemberRefs, discoverHandlers, marketplaceOffers } from './handlers'
 import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSyncKey, nodePersistenceAllowed } from './node-sync'
 /**
  * Device replica: a FosStore whose root alias points at the node this device is
@@ -22,7 +27,6 @@ import {
   homeContextCid,
   canonicalRowData,
   type Capability,
-  type CapabilityKind,
   type MovePosition,
   type NodeView,
   type RowExtras,
@@ -43,7 +47,7 @@ import {
   rowView,
   findTemplate,
   refNodeContent,
-  refTypeCid,
+  advertisement, advertisedRows,
   refBindingBaseCid,
   isRefNode,
   proposalContent,
@@ -94,7 +98,7 @@ import {
   withMember,
   withPeer,
   withoutMember,
-  withoutPeer, ensureLibraryRow, isShippedLibrary, rootStoredTarget, type HostOffers } from './graph'
+  withoutPeer, ensureLibraryRow, isShippedLibrary, rootStoredTarget, importNodes, type HostOffers } from './graph'
 import { mergeNodes, resolveChoiceIn } from './merge'
 import { assertNoNewTypeErrors, rootTypeError, typeErrorOf } from './patterns'
 
@@ -200,15 +204,55 @@ export function homePath(replica: Replica): Scope {
   return findChild(replica.store, headCid(replica), HOME_ID) ? [HOME_ID] : []
 }
 
+/** Remember initialization in the graph so reopening a store cannot resurrect withdrawn refs. */
+export function nativeDefaultsApplied(replica: Replica, at: Scope, source: string): boolean {
+  const cid = resolveScope(replica.store, headCid(replica), at)
+  return !!cid && (!!content(replica.store, cid).data.nativeDefaults?.sources.includes(source) || !!valueContent(replica.store, cid).data.nativeDefaults?.sources.includes(source))
+}
+
+export function markNativeDefaultsApplied(replica: Replica, at: Scope, source: string, now: number): Replica {
+  if (nativeDefaultsApplied(replica, at, source)) return replica
+  const next = updateAtScope(replica.store, headCid(replica), at, node => ({ ...node, data: { ...node.data,
+    nativeDefaults: { sources: [...(node.data.nativeDefaults?.sources ?? []), source] }
+  } }), 'node')
+  commitRoot(replica.store, next, now)
+  return { ...replica }
+}
+
 /** Move legacy document rows into Home without copying their identities or losing root bookkeeping. */
 export function ensureHomeContext(replica: Replica, now: number, offers?: HostOffers): Replica {
   if (replica.meta.scope.length) return replica
   const before = headCid(replica)
-  const next = homeContextCid(replica.store, before, now, offers)
+  const seeded = nativeDefaultsApplied(replica, [], 'server')
+  const next = homeContextCid(replica.store, before, now, seeded ? {} : offers)
   let r = replica
   if (next !== before) { commitRoot(replica.store, next, now); r = { ...replica } }
   // the host's peers publish their public keys in Home, where node exchange carries them to every device
   for (const [peerId, publicKey] of Object.entries(offers?.keys ?? {})) r = publishPeerKey(r, peerId, publicKey, now)
+  if (offers?.native && !seeded) {
+    importNodes(r.store, offers.native.nodes)
+    for (const [peer, refs] of Object.entries(offers.native.peers)) {
+      const at = peer === 'fos' ? [] : homePath(r)
+      if (!contextMemberRefs(r, at).has(peer)) r = addMemberAt(r, at, peer, peer, [], now)
+      const groups = new Map<string, string[]>()
+      for (const [type, cid] of refs) {
+        if (type) groups.set(type, [...(groups.get(type) ?? []), cid])
+      }
+      for (const [type, values] of groups) {
+        const existing = discoverHandlers(r, at).filter(offer => offer.peerId === peer && sameCapabilityType(r.store, offer.type, type))
+        const preserved = existing.filter(offer => !offer.legacy && !values.some(cid => content(r.store, cid).data.alias?.id === offer.id)).map(offer => offer.cid)
+        const defaults = values.map(cid => {
+          const prior = existing.find(offer => !offer.legacy && offer.id === content(r.store, cid).data.alias?.id)
+          if (!prior) return cid
+          const target = refValueCid(r.store, content(r.store, prior.cid)), value = target ? content(r.store, target) : null
+          const stub = value && value.children.every(edge => content(r.store, type).children.some(row => row[0] === edge[0] && row[1] === edge[1])) && value.data.peerId?.content === peer && value.data.description?.content === prior.capability && Object.keys(value.data).every(key => ['peerId', 'description', 'behavior'].includes(key))
+          return stub ? cid : prior.cid
+        })
+        if (existing.length !== defaults.length + preserved.length || defaults.some(cid => !existing.some(offer => offer.cid === cid))) r = setHandlerOffersAt(r, at, peer, type, [...preserved, ...defaults], now)
+      }
+    }
+    r = markNativeDefaultsApplied(r, [], 'server', now)
+  }
   return r
 }
 
@@ -319,13 +363,21 @@ function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string)
  */
 function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeContent {
   const text = node.data.presentation?.headline ? formText(store, node) : node.data.description?.content ?? ''
-  const names = [...new Set(Array.from(text.matchAll(/(?<![\\{@])\{([A-Za-z_][\w.-]*)\}(?!\})/g), m => m[1]))]
+  const { refExpression: _previousExpression, ...data } = node.data
+  node = { ...node, data }
+  // A whole-row path is a ref value; braces interpolate paths into text instead.
+  if (/^(?:\.|\()/.test(text.trim())) {
+    try { node.data.refExpression = parseRefExpression(text) } catch { /* Ordinary prose. */ }
+  }
+  const names = [...new Set(textRefExpressions(text).filter(expression => expression.declaration).map(expression => expression.source))]
   const type = store.primitive.documentField.getId(), children = [...node.children]
   for (const name of names) {
     if (name === undefined) continue
-    if (children.some(edge => { const child = content(store, identityCid(store, edge)); return child.data.name?.content === name && refTypeCid(store, child) === type })) continue
+    if (children.some(edge => { const child = content(store, identityCid(store, edge)); return child.data.name?.content === name && edge[0] === type })) continue
     const id = `${node.data.alias?.id ?? newId()}:param:${name}`
-    const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, null, [], type))
+    const expression = parseRefExpression(name)
+    const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: name },
+      ...(!expression.lexical || expression.path.length > 1 ? { refExpression: expression } : {}) }, null, []))
     children.push([type, ref])
   }
   return children.length === node.children.length ? node : { ...node, children }
@@ -510,8 +562,8 @@ export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: 
 }
 
 /** Satisfy a requirement row at `at`/`requirementId` with a supply (who, and for search/allocation which row by alias id). */
-export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: CapabilityKind; by: string; ref?: string; choice?: number }, now: number, id?: string): Replica {
-  const labels: Record<CapabilityKind, string> = {
+export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: string; by: string; ref?: string; choice?: number }, now: number, id?: string): Replica {
+  const labels: Record<string, string> = {
     confirmation: `confirmed by ${supply.by}`,
     choice: `chose option ${(supply.choice ?? 0) + 1}`,
     search: 'search results',
@@ -527,7 +579,8 @@ export function addSupply(replica: Replica, at: Scope, requirementId: string, su
     verify: `verified by ${supply.by}`,
     organize: `organized by ${supply.by}`
   }
-  return addRow(replica, [...at, requirementId], ALLOCATION_TYPE, labels[supply.capability], now, { supply: { ...supply, at: now }, id })
+  const label = Object.hasOwn(labels, supply.capability) ? labels[supply.capability] : undefined
+  return addRow(replica, [...at, requirementId], ALLOCATION_TYPE, label ?? `${supply.capability} supplied by ${supply.by}`, now, { supply: { ...supply, at: now }, id })
 }
 
 /** The template row called `name` that a row at `at` sees (nearest ancestor first), or null. */
@@ -546,6 +599,14 @@ export function instantiateTemplate(replica: Replica, at: Scope, taskId: string,
   const templateCid = resolveScope(replica.store, headCid(replica), [...template.path, templateId])
   if (!templateCid || taskId === templateId || !resolveScope(replica.store, headCid(replica), [...at, taskId])) return replica
   return instantiateTemplateValue(replica, at, taskId, templateCid, now)
+}
+
+/** The product a template constructs. Editor placement rules stay on the
+ * definition; the resulting pattern contains the same rows as an instance. */
+export function templateValuePattern(store: FosStore, templateCid: string): string {
+  let field = 0
+  const copied = content(store, copyRowContent(store, templateCid, 0, () => `pattern:${templateCid}:${field++}`, { instantiate: true }))
+  return put(store, { data: { ...(content(store, templateCid).data.alias ? { alias: content(store, templateCid).data.alias } : {}) }, children: copied.children })
 }
 
 /** Local templates and advertised templates use the same copy/remap operation. */
@@ -773,16 +834,8 @@ export function removeMemberAt(replica: Replica, at: Scope, peerId: string, now:
 /** Materialize the nearest inherited member before overriding its offers locally. Called in main policy context. */
 function localMember(replica: Replica, at: Scope, node: FosNodeContent, peerId: string): FosNodeContent {
   if (!node.children.some(e => isMemberEdge(replica.store, e) && content(replica.store, e[1]).data.peerId?.content === peerId)) {
-    let inherited: [string, string] | undefined
-    for (let depth = 0; depth < at.length; depth++) {
-      const cid = resolveScope(replica.store, headCid(replica), at.slice(0, depth))
-      if (!cid) continue
-      const current = content(replica.store, cid)
-      const active = isBranchChoice(replica.store, current) ? branchEdge(replica.store, cid) : null
-      const policy = active ? content(replica.store, identityCid(replica.store, active)) : current
-      const edge = policy.children.find(e => isMemberEdge(replica.store, e) && content(replica.store, e[1]).data.peerId?.content === peerId)
-      if (edge) inherited = edge
-    }
+    const cid = contextMemberRefs(replica, at).get(peerId)
+    const inherited: [string, string] | undefined = cid ? [replica.store.primitive.memberField.getId(), cid] : undefined
     if (!inherited) throw new Error('Peer no longer exists.')
     node = { ...node, children: [...node.children, inherited] }
   }
@@ -792,14 +845,14 @@ function localMember(replica: Replica, at: Scope, node: FosNodeContent, peerId: 
 /** Publish typed offers without requiring registration in the built-in capability vocabulary. */
 export function setHandlerOffersAt(replica: Replica, at: Scope, peerId: string, type: string, handlers: string[], now: number, direction: 'from' | 'to' = 'from'): Replica {
   const s = replica.store, marker = direction === 'from' ? s.primitive.acceptsNode.getId() : s.primitive.capabilityNode.getId()
-  if (!s.table.has(type) || handlers.some(cid => !s.table.has(cid) || refTypeCid(s, content(s, cid)) !== type)) throw new Error('Handler type does not match its advertised capability.')
+  if (!s.table.has(type) || handlers.some(cid => !s.table.has(cid) || !matchesGraph(s, type, cid))) throw new Error('Handler value does not match its advertised pattern.')
   return editPolicy(replica, at, now, node => {
     node = localMember(replica, at, node, peerId)
     return { ...node, children: node.children.map(edge => {
       if (!isMemberEdge(s, edge)) return edge
       const member = content(s, edge[1]); if (member.data.peerId?.content !== peerId) return edge
-      const children = member.children.filter(e => e[0] !== marker || (refTypeCid(s, content(s, e[1])) ?? e[1]) !== type)
-      children.push(...[...new Set(handlers)].map(cid => [marker, cid] as [string, string]))
+      const children = member.children.filter(e => e[0] !== marker || !advertisedRows(s, e[1]).some(row => sameCapabilityType(s, row[0], type)))
+      children.push(...[...new Set(handlers)].map(cid => [marker, advertisement(s, type, cid)] as [string, string]))
       return [edge[0], put(s, { ...member, children })]
     }) }
   })
@@ -821,12 +874,13 @@ export function setConstructorEnabledAt(replica: Replica, at: Scope, peerId: str
 
 /** Disable one configured handler without deleting it or changing its type. */
 export function setHandlerEnabledAt(replica: Replica, at: Scope, peerId: string, id: string, enabled: boolean, now: number): Replica {
+  if (!discoverHandlers(replica, at).some(offer => offer.peerId === peerId && offer.id === id) &&
+    !marketplaceOffers(replica).some(offer => offer.peerId === peerId && offer.id === id && JSON.stringify(offer.path) === JSON.stringify(at))) throw new Error('Handler no longer exists.')
   return editPolicy(replica, at, now, node => {
-    node = localMember(replica, at, node, peerId)
+    node = contextMemberRefs(replica, at).has(peerId) ? localMember(replica, at, node, peerId) : withMember(replica.store, node, peerId, peerId, [])
     return { ...node, children: node.children.map(edge => {
       if (!isMemberEdge(replica.store, edge)) return edge
       const member = content(replica.store, edge[1]); if (member.data.peerId?.content !== peerId) return edge
-      if (!member.children.some(e => (e[0] === replica.store.primitive.acceptsNode.getId() || e[0] === replica.store.primitive.capabilityNode.getId()) && (content(replica.store, e[1]).data.alias?.id ?? e[1]) === id)) throw new Error('Handler no longer exists.')
       const disabled = new Set(member.data.disabledCapabilities?.content ?? [])
       if (enabled) disabled.delete(id); else disabled.add(id)
       return [edge[0], put(replica.store, { ...member, data: { ...member.data, disabledCapabilities: { content: [...disabled] } } })]
@@ -838,7 +892,7 @@ export function setHandlerEnabledAt(replica: Replica, at: Scope, peerId: string,
 export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: string, now: number, defaultCid: string | null = null, name?: string): Replica {
   return edit(replica, at, now, (value) => {
     if (findEdge(replica.store, value, `a:${id}`)) return value
-    const ref = put(replica.store, refNodeContent(replica.store, { alias: { id }, ...(name ? { name: { content: name } } : {}), updated: { time: now } }, defaultCid, [], typeCid))
+    const ref = put(replica.store, refNodeContent(replica.store, { alias: { id }, ...(name ? { name: { content: name } } : {}), updated: { time: now } }, defaultCid, []))
     return { ...value, children: [...value.children, [typeCid, ref]] }
   })
 }
@@ -849,7 +903,9 @@ export function proposeRefAt(replica: Replica, at: Scope, targetCid: string, pee
   const cid = resolveScope(store, headCid(replica), at)
   if (!cid || !store.table.has(targetCid)) throw new Error('ref or proposed value not found')
   const ref = content(store, cid)
-  if (!isRefNode(store, ref) || !refTypeCid(store, ref)) throw new Error('expected a typed ref')
+  const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
+  const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
+  if (!isRefNode(store, ref) || !(edge && isRowEdge(store, edge))) throw new Error('expected a row ref')
   const proposalCid = put(store, proposalContent(store, peerId, 'binding', targetCid, refBindingBaseCid(store, ref), now))
   return { replica: editNode(replica, at, now, (node) => withProposal(store, node, peerId, proposalCid, 'binding')), proposalCid }
 }
@@ -865,17 +921,21 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     const proposal = readProposal(store, proposalCid)
     if (!proposal || proposal.status !== 'open' || !readProposals(store, value).some((p) => p.cid === proposalCid)) return value
     const main = putStripped(store, value)
-    // A typed slot accepts a value atomically; merging two handlers would invent a handler.
-    if (refTypeCid(store, value)) {
+    // A submission to a right ref accepts a whole value; concurrent handlers stay alternatives.
+    if (proposal.name === 'binding') {
       if (proposal.baseCid !== refBindingBaseCid(store, value)) return value
+      const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
+      const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
+      const type = edge && rowTypeOf(store, edge)
+      if (!type || !refValueCompatible(store, type, proposal.contentCid)) throw new Error('The submitted value has an incompatible ref type.')
       const previous = refValueCid(store, value)
       let target = proposal.contentCid
       if (previous && previous !== target) {
         const inherited = Object.values(scopeBranches(store, headCid(replica), at.slice(0, -1))).at(-1) ?? replica.meta.branch ?? 'main'
-        target = putRefValueBranches(store, value, [previous, target], inherited, target)
+        target = putRefValueBranches(store, value, [previous, target], inherited, target, type)
         selectBranch(store, value.data.alias!.id, readChoice(store, target).defaultName!)
       }
-      const next = refNodeContent(store, { ...value.data, updated: { time: now } }, target, bookkeepingOf(store, value), refTypeCid(store, value))
+      const next = refNodeContent(store, { ...value.data, updated: { time: now } }, target, bookkeepingOf(store, value))
       return removeProposalByCid(store, withPrev(store, next, put(store, value)), proposalCid)
     }
     const mergedCid = proposal.baseCid === main

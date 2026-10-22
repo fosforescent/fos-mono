@@ -11,7 +11,7 @@ test('local bindings and remote members expose properties through the same ref t
     expect.objectContaining({ id: 'input', name: 'input', type, value: null, argument: true }),
     expect.objectContaining({ id: 'fos:peer:remote', peer: 'remote', name: 'Remote', member: true })
   ]))
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'handler' }, name: { content: 'input' } }, put(r.store, { data: { description: { content: 'Remote result' } }, children: [] }), [], type))
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'handler' }, name: { content: 'input' } }, put(r.store, { data: { description: { content: 'Remote result' } }, children: [] }), []))
   r = setHandlerOffersAt(r, ['project'], 'remote', type, [handler], 4)
   const remote = properties(r, ['project']).find(p => p.peer === 'remote')!
   expect(refProperties(r.store, remote.cid)).toContainEqual(expect.objectContaining({ id: 'handler', name: 'input', type, direction: 'from' }))

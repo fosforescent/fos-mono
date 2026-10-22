@@ -1,3 +1,5 @@
+import { STANDARD_CAPABILITY_PATTERNS } from './capability-catalog'
+import { readGraphValue } from './node-values'
 /**
  * Graph helpers for sync, written against the hash-consed FosStore.
  *
@@ -17,7 +19,7 @@
  *
  *   ref node    data: alias{id} (+ ref{id} for a reference row)
  *               [TARGETPOINTER, valueCid]       the current value (a content node: description, todo, rows…)
- *               [INSTRUCTIONPOINTER, typeCid]   optional type (the root uses the ROOT instruction)
+ *               [ALIAS, empty]                 ref constructor; the enclosing row supplies the pattern
  *               [PREV, previousRefCid]*         history: one per parent version, two after a merge
  *               [MEMBER, ref]* [PROPOSAL, p]* [PEER, ref]*   who is attached to the reference
  *
@@ -40,6 +42,9 @@
  */
 
 import { allocationValue } from './destructure'
+import { standardRequirementSatisfied } from './standard-requirements'
+
+import { capabilityPattern, capabilityName, sameCapabilityType } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, MONEY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { formAttribution, formElements, formTitle, positionFormRows, type FormElement } from './forms'
@@ -76,9 +81,9 @@ export function aliasIdOf(value: FosNodeContent): string | null {
 // ---------------------------------------------------------------------------
 // Mutable references (ALIAS nodes)
 
-/** A bound ref has TARGETPOINTER; an unbound typed ref has alias + INSTRUCTIONPOINTER. */
+/** A ref is declared by its constructor row, with an optional current target. */
 export function isRefNode(store: FosStore, value: FosNodeContent): boolean {
-  return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId() || (!!value.data.alias && i === store.primitive.instructionPointerConstructor.getId()))
+  return value.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId() || i === store.primitive.aliasConstructor.getId())
 }
 
 /** A reference row: a ref node standing for another row (data.ref.id); its own value is not followed. */
@@ -105,9 +110,9 @@ export function refBranches(store: FosStore, ref: FosNodeContent): { cid: string
   return { cid, id: record.id, names: record.options.map(o => o.peerId), selected: branchSelection(store, cid) }
 }
 /** Union supplied values without copying their documents or merging distinct handlers. */
-export function putRefValueBranches(store: FosStore, ref: FosNodeContent, values: Array<string | null>, baseName = 'main', selectedValue?: string | null): string {
+export function putRefValueBranches(store: FosStore, ref: FosNodeContent, values: Array<string | null>, baseName = 'main', selectedValue?: string | null, inputType?: string): string {
   const id = ref.data.alias!.id
-  const incoming = put(store, refNodeContent(store, { alias: { id }, ...(ref.data.name ? { name: ref.data.name } : {}) }, null, [], refTypeCid(store, ref)))
+  const incoming = put(store, refNodeContent(store, { alias: { id }, ...(ref.data.name ? { name: ref.data.name } : {}) }, null, []))
   const options: ChoiceOption[] = []
   const add = (cid: string, preferred?: string) => {
     if (options.some(o => o.edge?.[0] === cid)) return
@@ -130,13 +135,9 @@ export function selectedBranchValue(store: FosStore, cid: string): string | null
   const edge = branchEdge(store, cid)
   if (!edge) return null
   const right = content(store, edge[1])
-  return refTypeCid(store, right) && right.data.alias?.id === readChoice(store, cid).id ? edge[0] : identityCid(store, edge)
+  return isRefNode(store, right) && !refValueCid(store, right) && right.data.alias?.id === readChoice(store, cid).id ? edge[0] : identityCid(store, edge)
 }
 
-export function refTypeCid(store: FosStore, value: FosNodeContent): string | null {
-  const edge = value.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())
-  return edge ? edge[1] : null
-}
 
 /** The content a node stands for: its TARGETPOINTER value for ref nodes (not handles), the node itself otherwise. */
 export function valueContent(store: FosStore, cid: string): FosNodeContent {
@@ -162,20 +163,20 @@ export function refBindingBaseCid(store: FosStore, value: FosNodeContent): strin
 }
 
 /** Build a ref node for `valueCid` with the given identity and bookkeeping edges. */
-export function refNodeContent(store: FosStore, data: FosNodeContent['data'], valueCid: string | null, bookkeeping: FosPathElem[] = [], typeCid: string | null = null): FosNodeContent {
+export function refNodeContent(store: FosStore, data: FosNodeContent['data'], valueCid: string | null, bookkeeping: FosPathElem[] = []): FosNodeContent {
   const children: FosPathElem[] = valueCid ? [[store.primitive.targetPointerConstructor.getId(), valueCid]] : []
-  if (typeCid) children.push([store.primitive.instructionPointerConstructor.getId(), typeCid])
+  children.push([store.primitive.aliasConstructor.getId(), put(store, { data: {}, children: [] })])
   return { data, children: [...children, ...bookkeeping] }
 }
 
 /** Locally owned argument refs; the field is their type, their alias is the instance identity. */
 export function refArguments(store: FosStore, value: FosNodeContent, typeCid: string): Array<{ id: string; cid: string; targetCid: string | null }> {
   return value.children.flatMap((edge) => {
-    if (edge[0] !== typeCid) return []
+    if (!sameCapabilityType(store, edge[0], typeCid)) return []
     const cid = identityCid(store, edge)
     const ref = content(store, cid)
     const id = aliasIdOf(ref)
-    return id && refTypeCid(store, ref) === typeCid ? [{ id, cid, targetCid: refValueCid(store, ref) }] : []
+    return id ? [{ id, cid, targetCid: refValueCid(store, ref) }] : []
   })
 }
 
@@ -212,9 +213,6 @@ export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'po
  * of a resource, a run `search`, a `confirmation` or `choice` by a signed-in person, `market`/`mail` handled by a
  * peer that registered that capability, or a `peer` (the named peer confirms the assignment).
  */
-export type CapabilityKind = 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize' | 'title'
-/** Capabilities a peer can register with (shown as resource banks in the context panel). */
-export const PEER_CAPABILITIES: CapabilityKind[] = ['search', 'market', 'mail', 'llm', 'repo', 'tool']
 
 /** The standard library row: shipped in every root and, for people who contribute and vote, linked in Home. */
 export const LIBRARY_ID = 'fos:library'
@@ -276,8 +274,8 @@ export function isLibraryType(store: FosStore, typeCid: string, typeId: string):
 
 /**
  * The type a row edge is made from: its left node, through a branched row's selected alternative and a type error; a
- * row held by a peer and not loaded here is a reference. Null when the edge is not a row (a primitive's edge, a choice,
- * a typed argument slot, a node this store lacks).
+ * row held by a peer and not loaded here is a reference. Null when the edge is not a row (a primitive's edge,
+ * an unresolved choice, or a node this store lacks). A typed ref on the right is the row's argument.
  */
 export function rowTypeOf(store: FosStore, edge: FosPathElem): string | null {
   edge = plainEdge(store, edge)
@@ -289,9 +287,18 @@ export function rowTypeOf(store: FosStore, edge: FosPathElem): string | null {
     return active ? rowTypeOf(store, active) : null
   }
   const [type, target] = edge
-  if (!store.table.has(type) || !store.table.has(target) || isPrimitive(store, type)) return null
-  // a typed argument ([type, ref] whose ref is of that type) is a slot, not a row
-  return refTypeCid(store, content(store, target)) === type ? null : type
+  if (!store.table.has(type) || !store.table.has(target)) return null
+  if (isPrimitive(store, type)) {
+    // Native data constructors can be the left side too. Pointer/history/policy
+    // edges describe the ref itself rather than applying a constructor to a right node.
+    if (isBookkeepingEdge(store, edge) || isGrantEdge(store, edge) || [
+      store.primitive.targetPointerConstructor.getId(), store.primitive.instructionPointerConstructor.getId(),
+      store.primitive.mergeSourceNode.getId(), store.primitive.conflictBaseNode.getId(),
+      store.primitive.optionSelectedConstructor.getId(), store.primitive.optionNotSelectedConstructor.getId(),
+      store.primitive.linkField.getId()
+    ].includes(type) || !content(store, target).data.alias) return null
+  }
+  return type
 }
 
 /** The graph identity of a row's type (`typeIdOf(rowTypeOf(edge))`): null for non-rows and for types without one. */
@@ -316,7 +323,7 @@ export function rowsOfType(store: FosStore, cid: string, typeId: string): Array<
 /** A template row's content used as a type (not a library type, a form or a missing template): instances of it are tasks. */
 export function isTemplateType(store: FosStore, typeCid: string): boolean {
   const id = typeIdOf(store, typeCid)
-  return !!id && !id.startsWith('lib:type:') && !valueContent(store, typeCid).data.form
+  return !!id && !id.startsWith('lib:type:') && !content(store, typeCid).data.name && !valueContent(store, typeCid).data.form && !valueContent(store, typeCid).data.capabilityDefinition
 }
 
 /** A task: made from the Task type or from a template row. It has a done state, blockers and a checkbox. */
@@ -383,6 +390,22 @@ export function nestScope(draft: FosStore, outer: { store: FosStore; root: strin
   outerScopes.set(draft, outer)
 }
 const outerScopes = new WeakMap<FosStore, { store: FosStore; root: string; at: Scope }>()
+
+/** Lexical ancestors, nearest first, continuing through a nested document's device root. */
+export function enclosingScopes(store: FosStore, root: string, at: Scope): Array<{ store: FosStore; cid: string; path: Scope }> {
+  const result: Array<{ store: FosStore; cid: string; path: Scope }> = [], visited = new Set<FosStore>()
+  while (!visited.has(store)) {
+    visited.add(store)
+    for (let depth = at.length; depth >= 0; depth--) {
+      const path = at.slice(0, depth), cid = resolveScope(store, root, path)
+      if (cid) result.push({ store, cid, path })
+    }
+    const outer = outerScopes.get(store)
+    if (!outer) break
+    ;({ store, root, at } = outer)
+  }
+  return result
+}
 
 /** The row type `typeId` of the library row `library`, when it is here (not a peer's unloaded node). */
 function libraryRowType(store: FosStore, library: string, typeId: string): string | null {
@@ -753,7 +776,7 @@ function readPointer(store: FosStore, cid: string): { peerId: string | null; edg
 /** Both local and received branches request approval through this ordinary typed child ref. */
 export function mergeRequestEdge(store: FosStore, id: string): FosPathElem {
   const type = store.primitive.approveAction.getId()
-  return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: 'request merge' } }, null, [], type))]
+  return [type, put(store, refNodeContent(store, { alias: { id: `${id}:request-merge` }, name: { content: 'request merge' } }, null))]
 }
 
 /** Build and insert a choice node; the alternatives are sorted so the cid is deterministic. */
@@ -1005,14 +1028,14 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
     const nextEdge = rowEdge(store, homeCid, keptRowType(store, edge, HOME_TYPE) ?? rowTypeAt(store, HOME_TYPE, [], rootCid))
     if (nextEdge[0] === edge[0] && nextEdge[1] === edge[1] && bindings === identity && identity === content(store, rootCid)) return rootCid
     const nextValue = put(store, { ...root, children: root.children.map(e => e === edge ? nextEdge : e) })
-    return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings), refTypeCid(store, identity)))
+    return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings)))
   }
   const movable = homeCid ? [] : root.children.filter(edge => ((isRowEdge(store, edge) && !isRowOfType(store, edge, TEMPLATE_TYPE)) || isChoiceEdge(store, edge)) && content(store, identityCid(store, edge)).data.alias?.id !== LIBRARY_ID)
   const homeValue = homeCid ? valueContent(store, homeCid) : rowContent(HOME_TYPE, HOME_ID, 'Home', 0)
   let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0)
   // a Home that was a template (older data) is no type: it keeps its rows but not a type's pattern rows
   if (homeCid && homeValue.children.some((edge) => isRowOfType(store, edge, PATTERN_TYPE))) {
-    home = refNodeContent(store, home.data, put(store, { data: homeValue.data, children: homeValue.children.filter((edge) => !isRowOfType(store, edge, PATTERN_TYPE)) }), bookkeepingOf(store, home), refTypeCid(store, home))
+    home = refNodeContent(store, home.data, put(store, { data: homeValue.data, children: homeValue.children.filter((edge) => !isRowOfType(store, edge, PATTERN_TYPE)) }), bookkeepingOf(store, home))
   }
   // Integration handlers belong to Home; carry over old root bindings without losing overrides.
   const legacyIntegrations = bindings.children.filter(edge => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith('integration:'))
@@ -1030,7 +1053,7 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
   if (homeEdge && isRowOfType(store, homeEdge, HOME_TYPE) && homeCid === nextHome && bindings === identity && identity === content(store, rootCid)) return rootCid
   const keep = root.children.filter(edge => !movable.includes(edge) && (!homeCid || identityCid(store, edge) !== homeCid))
   const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, nextHome, (homeEdge && keptRowType(store, homeEdge, HOME_TYPE)) ?? rowTypeAt(store, HOME_TYPE, [], rootCid))] })
-  return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings), refTypeCid(store, identity)))
+  return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings)))
 }
 
 /**
@@ -1245,14 +1268,14 @@ export function isListed(store: FosStore, nodeCid: string): boolean {
   return !!marketGrantsOf(store, nodeCid)?.includes('read')
 }
 /**
- * The JSON value of the named argument ref `name` on the node `nodeCid` (what `readNodeValue` reads, without a
+ * The native projection of the named argument ref `name` on the node `nodeCid` (what `readNodeValue` reads, without a
  * replica). Null when the node has no such value.
  */
 export function namedValueOf<T>(store: FosStore, nodeCid: string, name: string): T | null {
   for (const edge of valueContent(store, nodeCid).children) {
-    const id = identityCid(store, edge), ref = content(store, id), type = refTypeCid(store, ref)
+    const id = identityCid(store, edge), ref = content(store, id), type = rowTypeOf(store, edge)
     if (!type || edge[0] !== type || !ref.data.alias?.id || (ref.data.name?.content ?? ref.data.alias.id) !== name) continue
-    try { return JSON.parse(valueContent(store, id).data.description?.content ?? '') as T } catch { return null }
+    return (readGraphValue(store, id) as T | undefined) ?? null
   }
   return null
 }
@@ -1303,7 +1326,8 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   if (held) { view.refPeer = identity.data.ref!.peer; view.title = identity.data.description?.content ?? 'Peer-held node' }
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
   const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity
-  if (refTypeCid(store, constructor) === capabilityTarget(store, 'peer') && constructor.data.name) view.construction = { handler: constructor.data.name.content }
+  if (sameCapabilityType(store, typeCid, capabilityTarget(store, 'peer')) && constructor.data.name) view.construction = { handler: constructor.data.name.content }
+  if (constructor.data.name?.content.startsWith('fos:setting:')) view.construction = { name: constructor.data.name.content }
   if (held || type === REF_TYPE) { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
   const attribution = formAttribution(store, value, definition)
   if (attribution) view.author = attribution
@@ -1383,6 +1407,7 @@ export function requirementSummary(req: NonNullable<FosDataContent['requirement'
     case 'verify': return user ? `verify @${user.username}` : 'verify'
     case 'organize': return 'organize'
     case 'title': return 'title'
+    default: return req.capability
   }
 }
 
@@ -1456,56 +1481,13 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
  * matches its capability (confirmation, choice, a peer's answer, or a reference to an allocation/query row elsewhere).
  */
 export function requirementSatisfied(store: FosStore, requirementCid: string, root?: string): boolean {
+  const node = content(store, requirementCid)
+  if (isRefNode(store, node) && !refValueCid(store, node)) return false
+  if (isRefNode(store, node) && node.data.name) return true
   const req = demandOf(valueContent(store, requirementCid))
   if (!req) return true
-  const rows = childRows(store, requirementCid)
-  const named = userOf(store, valueContent(store, requirementCid))
-  const filledByChild = rows.some((row) => {
-    const { value, cid } = row
-    switch (req.capability) {
-      case 'task': return isTaskRow(store, row.edge) && !!value.data.todo?.completed
-      case 'allocation': return allocationEntry(row) && allocationFills(req, allocationValue(store, cid), requiredUser(store, requirementCid, cid))
-      case 'search': return row.type === QUERY_TYPE && !!value.data.query?.executedAt
-      // "-@name": the named user allocates themself ("@name 2h") inside it: the same user object on both rows
-      case 'peer': {
-        if (!allocationEntry(row) || value.data.allocation?.type !== 'person') return false
-        const given = userOf(store, value)
-        return (!named || (!!given && sameUser(named, given))) && (!req.peer || (!!given && userPeerId(given) === req.peer))
-      }
-      default: return false
-    }
-  })
-  if (filledByChild) return true
-  // an allocation requirement with an amount is also met by several smaller allocations adding up (child rows and supplied references)
-  if (req.capability === 'allocation' && req.amount !== undefined && req.amount > 0) {
-    const progress = requirementProgress(store, requirementCid, root)
-    if (progress && progress.have >= progress.need) return true
-  }
-  return rows.some((row) => {
-    const s = supplyEntry(row)
-    if (!s || s.capability !== req.capability) return false
-    switch (req.capability) {
-      case 'confirmation': return !!s.by
-      case 'choice': return typeof s.choice === 'number' && (!req.options || (s.choice >= 0 && s.choice < req.options.length))
-      case 'search': return !!s.ref
-      case 'task': return !!s.ref
-      case 'market': return !!s.by
-      case 'mail': return !!s.by
-      case 'llm': return !!s.by
-      case 'repo': return !!s.by
-      case 'tool': return !!s.by
-      // filled by the verifier, which binds the attested user object as the requirement's user field
-      case 'verify': return !!s.by && !!named?.verification
-      case 'organize': case 'title': return !!s.by
-      case 'peer': return !!s.by && (!req.peer || s.by === req.peer) && (!named || s.by === userPeerId(named) || s.by === named.username)
-      case 'allocation': {
-        if (!s.ref) return false
-        const found = findRowByAlias(store, root ?? rootTargetCid(store), s.ref)
-        if (!found) return true // supplied by reference to an allocation outside this replica's scope: trusted
-        return allocationFills(req, found.row.allocation, { required: named, given: found.row.user })
-      }
-    }
-  })
+  // Signed resource rows are a standard-library adapter. A handler input is not a result.
+  return standardRequirementSatisfied(store, requirementCid, req, root)
 }
 
 /** The template row named `name` (case-insensitive) that a row at `at` sees: by nearest ancestor (`findNearestRow`). */
@@ -1578,7 +1560,23 @@ export function choiceView(store: FosStore, choiceCid: string): ChoiceView {
   return { id: record.id, subject, base: base.task, baseLabel: base.label, options }
 }
 
-export function countNode(store: FosStore, cid: string): { tasks: number; done: number; choices: number } {
+type NodeCounts = { tasks: number; done: number; choices: number }
+const nodeCounts = new WeakMap<FosStore, { selection: string; counts: Map<string, NodeCounts> }>()
+function countCache(store: FosStore): Map<string, NodeCounts> {
+  // CIDs are immutable, but the selected branch is local state. Reuse counts
+  // across row views only while that selection is unchanged.
+  const selection = JSON.stringify([...(branchSelections.get(store) ?? [])])
+  let cached = nodeCounts.get(store)
+  if (!cached || cached.selection !== selection || cached.counts.size > 10000) {
+    cached = { selection, counts: new Map() }; nodeCounts.set(store, cached)
+  }
+  return cached.counts
+}
+export function countNode(store: FosStore, cid: string, ancestors = new Set<string>(), counts = countCache(store)): NodeCounts {
+  if (ancestors.has(cid) || ancestors.size >= 128) return { tasks: 0, done: 0, choices: 0 }
+  const known = counts.get(cid)
+  if (known) return known
+  ancestors.add(cid)
   let tasks = 0
   let done = 0
   let choices = 0
@@ -1587,16 +1585,19 @@ export function countNode(store: FosStore, cid: string): { tasks: number; done: 
       tasks++
       const taskCid = identityCid(store, edge)
       if (valueContent(store, taskCid).data.todo?.completed) done++
-      const sub = countNode(store, taskCid)
+      const sub = countNode(store, taskCid, ancestors, counts)
       tasks += sub.tasks; done += sub.done; choices += sub.choices
     } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) {
       choices++
     } else if (isRowEdge(store, edge)) {
-      const sub = countNode(store, identityCid(store, edge))
+      const sub = countNode(store, identityCid(store, edge), ancestors, counts)
       tasks += sub.tasks; done += sub.done; choices += sub.choices
     }
   }
-  return { tasks, done, choices }
+  ancestors.delete(cid)
+  const result = { tasks, done, choices }
+  counts.set(cid, result)
+  return result
 }
 
 export function viewNode(store: FosStore, cid: string, constructors = false): NodeView {
@@ -1633,14 +1634,15 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
     for (const edge of [...value.children, ...(identity === value ? [] : identity.children)]) {
       const child = content(store, identityCid(store, edge))
       const peerId = (isMemberEdge(store, edge) || isPeerEdge(store, edge)) ? child.data.peerId?.content : undefined
-      const name = refTypeCid(store, child) ? child.data.name?.content : undefined
+      const name = isRefNode(store, child) ? child.data.name?.content : undefined
       if ((!peerId && (!name?.startsWith('fos:setting:') && name !== 'fos:evaluation')) || !child.data.alias?.id) continue
       if (seen.has(peerId ?? child.data.alias.id)) continue
       seen.add(peerId ?? child.data.alias.id)
-      const row = rowView(store, identityCid(store, edge))
+      const existing = view.tasks.find(row => row.id === child.data.alias!.id)
+      const row = existing ?? rowView(store, identityCid(store, edge))
       row.title = name === 'fos:evaluation' ? 'Evaluation' : peerId ? child.data.name?.content ?? peerId : child.data.description?.content ?? name!
       row.construction = { ...(name ? { name } : {}), ...(peerId ? { peerId } : {}) }
-      view.tasks.push(row)
+      if (!existing) view.tasks.push(row)
     }
   }
   // Order is the edge order (part of the node's identity since cid v2); no sorting.
@@ -1702,8 +1704,9 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
  * that exposes it, 'relay' forwards for peers that cannot reach each other); and the services it handles
  * ('search', 'market', 'mail'; these act as resource banks for the matching requirements).
  */
-export type Capability = 'read' | 'read-requests' | 'edit' | 'autopush' | 'direct' | 'local' | 'http' | 'ws' | 'relay' | 'search' | 'market' | 'mail' | 'calendar' | 'llm' | 'repo' | 'tool' | 'send-payment' | 'receive-payment' | 'allocate' | 'request-payment' | 'notify' | 'timer' | 'cron' | 'task-completion' | 'ref-change' | 'request' | 'rank' | 'peer' | 'persist' | 'provideNode' | 'sync' | 'response' | 'points' | 'execute' | 'verify' | 'organize' | 'title' | 'url'
-export const CAPABILITIES: Capability[] = ['read', 'read-requests', 'edit', 'autopush', 'direct', 'local', 'http', 'ws', 'relay', 'search', 'market', 'mail', 'calendar', 'llm', 'repo', 'tool', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'notify', 'timer', 'cron', 'task-completion', 'ref-change', 'request', 'rank', 'peer', 'persist', 'provideNode', 'sync', 'response', 'points', 'execute', 'verify', 'organize', 'title', 'url']
+export type Capability = string
+/** Standard-library suggestions; never a whitelist for declarations or wire values. */
+export const CAPABILITIES: Capability[] = STANDARD_CAPABILITY_PATTERNS.map(p => p.name)
 /**
  * MCP peers: an MCP server attached to a node as a member (peer id `mcp:<server id>`) advertises `tool` (it runs
  * its tools for "-tool <name> …" requirements under that node) next to what else it may do there.
@@ -1712,7 +1715,7 @@ export const MCP_PEER_PREFIX = 'mcp:'
 /**
  * Integration peers: outside services a user signs in with (OAuth), platform peers the account is set up with
  * (Stripe) and channel peers (a phone). This list is identity only: what each one *provides* is not declared
- * here but derived by the account server from the handlers it actually has (backend/sync/registry.ts) and
+ * here but derived by the account server from the handlers it actually has (backend/sync/host-runtime.ts) and
  * written into Home as that peer's offers (`HostOffers`). A capability no handler backs is never advertised.
  */
 export type IntegrationPeer = { id: string; name: string; kind: 'oauth' | 'platform' | 'channel'; consumes: Capability[] }
@@ -1730,9 +1733,10 @@ export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'r
  * reports the derived list in every sync/node response (`capabilities`) and devices record it on their fos member.
  */
 export const SERVER_TRANSPORT_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'peer', 'persist', 'provideNode', 'sync']
-export const CLIENT_CAPABILITIES: Capability[] = ['provideNode', 'sync', 'timer', 'task-completion', 'ref-change', 'request']
 /** What a host (the account server) currently offers: its own services and, per integration peer id, that peer's handlers. */
 export type HostOffers = {
+  /** Native refs are ordinary incoming sub-refs of their host peer. Names below are wire projections. */
+  native?: { peers: Record<string, FosPathElem[]>; nodes: FosNodesData }
   server?: Capability[]
   integrations?: Record<string, Capability[]>
   /**
@@ -1743,13 +1747,8 @@ export type HostOffers = {
   keys?: Record<string, string>
 }
 /** Human names for the capability rows (the ids above are what the graph and fos.config.toml use). */
-export const CAPABILITY_LABEL: Record<Capability, string> = {
-  provideNode: 'provide nodes', sync: 'traverse and sync',
-  read: 'read', 'read-requests': 'read requests', edit: 'edit (propose and decide proposals)', execute: 'run evaluations', autopush: 'autopush',
-  direct: 'direct connect', local: 'this machine (files)', http: 'http', ws: 'websockets', relay: 'relay', search: 'search', market: 'market', mail: 'mail',
-  calendar: 'calendar', llm: 'language model', repo: 'repositories', tool: 'tools',
-  'send-payment': 'send payment', 'receive-payment': 'receive payment', allocate: 'allocate', 'request-payment': 'request payment', notify: 'notify', points: 'fos points', timer: 'timer', cron: 'cron (UTC)', 'ref-change': 'on reference change', 'task-completion': 'parent task completion', request: 'on request', rank: 'rank', peer: 'peer connection', persist: 'persist storage', response: 'on response', verify: 'verify users', organize: 'organize captures', title: 'titles from text', url: 'links to published nodes'
-}
+export const CAPABILITY_LABEL: Record<Capability, string> = Object.fromEntries(STANDARD_CAPABILITY_PATTERNS.map(p => [p.name, p.label]))
+
 /**
  * What flows between this side and a peer, each direction on its own: `to` is what this side lets the peer have or do
  * (its content may be read, changes are pushed automatically, proposals may be submitted, …); `from` is what this side
@@ -1762,11 +1761,11 @@ export type PeerPolicy = { to: Capability[]; from: Capability[] }
 export const DEFAULT_DEVICE_POLICY: PeerPolicy = { to: ['read', 'autopush', 'edit', 'http', 'ws'], from: ['read', 'read-requests', 'autopush', 'relay', 'search', 'market', 'mail'] }
 /** A device that only takes work in (e.g. the desktop app on a work machine): nothing but the connection leaves it; it pulls its node and the requests addressed to it. */
 export const RECEIVE_ONLY_POLICY: PeerPolicy = { to: ['http', 'ws'], from: ['read', 'read-requests', 'relay'] }
-/** `{ to?: string[], from?: string[] }` (a fos.config.toml table or saved prefs) → a policy with only known capabilities, or null. */
+/** `{ to?: string[], from?: string[] }` (a fos.config.toml table or saved prefs) → a policy, preserving extension names. */
 export function parsePolicy(value: unknown): PeerPolicy | null {
   if (!value || typeof value !== 'object') return null
   const v = value as { to?: unknown; from?: unknown }
-  const list = (x: unknown): Capability[] => (Array.isArray(x) ? x.filter((c): c is Capability => typeof c === 'string' && (CAPABILITIES as string[]).includes(c)) : [])
+  const list = (x: unknown): Capability[] => (Array.isArray(x) ? x.filter((c): c is Capability => typeof c === 'string' && c.length > 0) : [])
   if (!Array.isArray(v.to) && !Array.isArray(v.from)) return null
   return { to: list(v.to), from: list(v.from) }
 }
@@ -1855,52 +1854,22 @@ export function linkHistory(store: FosStore, cid: string, limit = 50): string[] 
  */
 export type MemberRecord = { peerId: string; name: string | null; capabilities: Capability[]; disabled?: Capability[]; accepts?: Capability[] }
 
-/**
- * Capabilities are graph vocabulary, not data: a member reference carries one
- * [CAPABILITY, <constructor>] edge per capability, as the language design does
- * for actors. 'edit' → PROPOSE (may change the node, through proposals where it has several peers); the
- * connection kinds → DIRECTCONNECT / HTTPCONNECT / WSCONNECT / RELAY; the
- * services → SEARCH / MARKET / MAIL.
- */
+/** Compatibility spelling for callers that still name a standard-library pattern. */
 export function capabilityTarget(store: FosStore, capability: Capability): string {
-  const p = store.primitive
-  switch (capability) {
-    case 'edit': return p.proposeAction.getId()
-    case 'direct': return p.directConnectCapability.getId()
-    case 'http': return p.httpConnectCapability.getId()
-    case 'ws': return p.wsConnectCapability.getId()
-    case 'relay': return p.relayCapability.getId()
-    case 'search': return p.searchCapability.getId()
-    case 'market': return p.marketCapability.getId()
-    case 'mail': return p.mailCapability.getId()
-    case 'read': return p.readCapability.getId()
-    case 'read-requests': return p.readRequestsCapability.getId()
-    case 'autopush': return p.autopushCapability.getId()
-    case 'calendar': return p.calendarCapability.getId()
-    case 'llm': return p.llmCapability.getId()
-    case 'repo': return p.repoCapability.getId()
-    case 'tool': return p.toolCapability.getId()
-    case 'send-payment': return p.sendPaymentCapability.getId()
-    case 'receive-payment': return p.receivePaymentCapability.getId()
-    case 'allocate': return p.allocateCapability.getId()
-    case 'request-payment': return p.requestPaymentCapability.getId()
-    case 'notify': return p.notifyCapability.getId()
-    case 'rank': case 'local':
-    case 'peer': case 'persist': case 'provideNode': case 'sync':
-    case 'timer': case 'cron': case 'task-completion': case 'ref-change': case 'request': case 'response': case 'points': case 'execute': case 'verify': case 'organize': case 'title': case 'url':
-    // a capability this build has no name for (a newer peer offers it): a capability with no handler here yet
-    default:
-      return put(store, { data: { name: { content: `fos:capability:${capability}` } }, children: [] })
-  }
+  return capabilityPattern(store, capability)
 }
 
-function capabilityOfTarget(store: FosStore, target: string): Capability | null {
-  const type = refTypeCid(store, content(store, target)) ?? target
-  const known = CAPABILITIES.find((c) => type === capabilityTarget(store, c))
-  if (known) return known
-  // one this build does not know is still the capability it names (no handler for it here yet)
-  const name = store.table.has(type) ? content(store, type).data.name?.content : undefined
-  return name?.startsWith('fos:capability:') ? name.slice('fos:capability:'.length) as Capability : null
+export function capabilityOfTarget(store: FosStore, target: string): Capability | null {
+  if (!store.table.has(target)) return null
+  return capabilityName(store, target) ?? advertisedRows(store, target).map(row => capabilityName(store, row[0])).find(Boolean) ?? null
+}
+
+/** A grant contains ordinary declaration rows, so each pattern stays on its row's left. */
+export function advertisedRows(store: FosStore, cid: string): FosPathElem[] {
+  return content(store, cid).children.filter(edge => isRowEdge(store, edge) && isRefNode(store, content(store, edge[1])) && !!content(store, edge[1]).data.alias)
+}
+export function advertisement(store: FosStore, pattern: string, ref: string): string {
+  return put(store, { data: {}, children: [[pattern, ref]] })
 }
 
 /** The capability a [CAPABILITY, x] edge grants (the `to` direction), or null for any other edge. */
@@ -1948,7 +1917,8 @@ export function isGrantEdge(store: FosStore, edge: FosPathElem): boolean {
 export function grantChildId(store: FosStore, edge: FosPathElem): string {
   const direction = edge[0] === store.primitive.acceptsNode.getId() ? 'from' : 'to'
   const target = content(store, edge[1])
-  return `${direction}:${target.data.alias?.id ?? capabilityOfTarget(store, edge[1]) ?? edge[1]}`
+  const row = advertisedRows(store, edge[1])[0]
+  return `${direction}:${(row && content(store, row[1]).data.alias?.id) ?? target.data.alias?.id ?? capabilityOfTarget(store, edge[1]) ?? edge[1]}`
 }
 
 export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
@@ -1964,7 +1934,13 @@ export function memberRefContent(store: FosStore, peerId: string, name: string |
     },
     children: [
       ...unique.map((c): FosPathElem => [store.primitive.capabilityNode.getId(), capabilityTarget(store, c)]),
-      ...from.map((c): FosPathElem => [store.primitive.acceptsNode.getId(), capabilityTarget(store, c)])
+      ...from.map((c): FosPathElem => {
+        const id = `fos:handler:${peerId}:${c}`
+        const pattern = capabilityTarget(store, c)
+        const value = put(store, { data: { peerId: { content: peerId }, description: { content: c }, behavior: { content: id } }, children: [...content(store, pattern).children] })
+        const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: c } }, value))
+        return [store.primitive.acceptsNode.getId(), advertisement(store, pattern, ref)]
+      })
     ]
   }
 }
@@ -1979,7 +1955,7 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
     if (!peerId) continue
     const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c): c is Capability => c !== null))]
     const accepts = [...new Set(ref.children.map((e) => acceptsOf(store, e)).filter((c): c is Capability => c !== null))]
-    const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => (CAPABILITIES as string[]).includes(c) && (caps.includes(c as Capability) || accepts.includes(c as Capability)))
+    const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => caps.includes(c) || accepts.includes(c))
     out.push({ peerId, name: ref.data.name?.content ?? null, capabilities: caps, ...(off.length ? { disabled: off } : {}), ...(accepts.length ? { accepts } : {}) })
   }
   return out
@@ -1987,9 +1963,12 @@ export function readMembers(store: FosStore, value: FosNodeContent): MemberRecor
 
 /** Handler advertisements are ordinary typed refs in either member direction. */
 export function memberHandlers(store: FosStore, value: FosNodeContent, peerId: string, direction?: string): string[] {
-  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return memberHandlers(store, content(store, identityCid(store, edge)), peerId, direction) }
+  return memberHandlerRows(store, value, peerId, direction).map(row => row[1])
+}
+export function memberHandlerRows(store: FosStore, value: FosNodeContent, peerId: string, direction?: string): FosPathElem[] {
+  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return memberHandlerRows(store, content(store, identityCid(store, edge)), peerId, direction) }
   const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)
-  return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && (e[0] === store.primitive.capabilityNode.getId() || e[0] === store.primitive.acceptsNode.getId()) && !!refTypeCid(store, content(store, e[1]))).map((e) => e[1]) : []
+  return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && isGrantEdge(store, e)).flatMap(e => advertisedRows(store, e[1])) : []
 }
 
 /** Add or replace the member entry for `peerId`. */
@@ -2001,15 +1980,15 @@ export function withMember(store: FosStore, value: FosNodeContent, peerId: strin
     const old = content(store, previous[1])
     next.children.push(...old.children.filter(edge =>
       (edge[0] !== store.primitive.capabilityNode.getId() && edge[0] !== store.primitive.acceptsNode.getId()) ||
-      (!!refTypeCid(store, content(store, edge[1])) && !capabilityOfTarget(store, edge[1]))))
+      (advertisedRows(store, edge[1]).length > 0 && !capabilityOfTarget(store, edge[1]))))
     // Built-in checkbox edits must not erase custom handler overrides.
     const custom = (old.data.disabledCapabilities?.content ?? []).filter(id => !CAPABILITIES.includes(id as Capability))
     if (custom.length) next.data.disabledCapabilities = { content: [...new Set([...(next.data.disabledCapabilities?.content ?? []), ...custom])] }
   }
   next.children = next.children.flatMap((edge) => {
     const capability = capabilityOf(store, edge) ?? acceptsOf(store, edge)
-    const matching = capability ? memberHandlers(store, value, peerId, edge[0]).filter((cid) => capabilityOfTarget(store, cid) === capability) : []
-    return matching.length ? matching.map((cid): FosPathElem => [edge[0], cid]) : [edge]
+    const matching = capability ? memberHandlerRows(store, value, peerId, edge[0]).filter(([pattern]) => capabilityName(store, pattern) === capability) : []
+    return matching.length ? matching.map(([pattern, cid]): FosPathElem => [edge[0], advertisement(store, pattern, cid)]) : [edge]
   })
   const refCid = put(store, next)
   const children = value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId))
@@ -2065,7 +2044,7 @@ export function proposalContent(store: FosStore, peerId: string, name: string, c
   const id = `proposal:${textNode(store, JSON.stringify([peerId, name]))}`
   const branchType = store.primitive.rootInstructionNode.getId()
   const textType = store.primitive.documentField.getId()
-  const argument = (key: string, type: string, target: string | null, history: FosPathElem[] = []): FosPathElem => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history, type))]
+  const argument = (key: string, type: string, target: string | null, history: FosPathElem[] = []): FosPathElem => [type, put(store, refNodeContent(store, { alias: { id: `${id}:${key}` }, name: { content: key } }, target, history))]
   const constructor = put(store, {
     data: { description: { content: name || 'Proposal' }, peerId: { content: peerId }, updated: { time: timestamp } },
     children: [
@@ -2074,12 +2053,12 @@ export function proposalContent(store: FosStore, peerId: string, name: string, c
       argument('status', textType, textNode(store, status))
     ]
   })
-  return refNodeContent(store, { alias: { id }, name: { content: 'branch' }, updated: { time: timestamp } }, constructor, [], store.primitive.proposalField.getId())
+  return refNodeContent(store, { alias: { id }, name: { content: 'branch' }, updated: { time: timestamp } }, constructor, [])
 }
 
 export function readProposal(store: FosStore, cid: string): ProposalRecord | null {
   const identity = content(store, cid)
-  if (refTypeCid(store, identity) === store.primitive.proposalField.getId()) {
+  if (valueContent(store, cid).children.some(edge => content(store, edge[1]).data.name?.content === 'branch') && valueContent(store, cid).data.peerId) {
     const value = valueContent(store, cid)
     const args = value.children.map(edge => content(store, identityCid(store, edge)))
     const branch = args.find(arg => arg.data.name?.content === 'branch')
@@ -2089,7 +2068,7 @@ export function readProposal(store: FosStore, cid: string): ProposalRecord | nul
     const peerId = value.data.peerId?.content
     const statusCid = status && refValueCid(store, status)
     if (!contentCid || !baseCid || !peerId) return null
-    return { cid, peerId, name: value.data.description?.content ?? '', contentCid, baseCid, timestamp: value.data.updated?.time ?? 0, status: statusCid && ['rejected', '"rejected"'].includes(content(store, statusCid).data.description?.content ?? '') ? 'rejected' : 'open' }
+    return { cid, peerId, name: value.data.description?.content ?? '', contentCid, baseCid, timestamp: value.data.updated?.time ?? 0, status: statusCid && (readGraphValue(store, statusCid) === 'rejected' || content(store, statusCid).data.description?.content === 'rejected') ? 'rejected' : 'open' }
   }
   // Read older saved proposals; subsequent updates use the ordinary ref constructor.
   const value = identity
@@ -2149,11 +2128,12 @@ export function relinkContent(store: FosStore, previous: FosNodeContent, previou
   const data: FosNodeContent['data'] = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } }
   if (previous.data.ref) data.ref = previous.data.ref
   if (previous.data.name) data.name = previous.data.name
+  if (previous.data.nativeDefaults) data.nativeDefaults = previous.data.nativeDefaults
   const branches = refBranches(store, previous)
   const active = branches && branchEdge(store, branches.cid)
   const value = put(store, strippedContent)
   const target = branches && active ? updateBranch(store, branches.cid, [value, active[1]]) : value
-  const next = refNodeContent(store, data, target, bookkeeping, refTypeCid(store, previous))
+  const next = refNodeContent(store, data, target, bookkeeping)
   return withPrev(store, next, previousCid)
 }
 
@@ -2197,10 +2177,14 @@ export function findAliasEdge(store: FosStore, value: FosNodeContent, aliasId: s
   return index >= 0 ? { edge: value.children[index] as FosPathElem, index } : null
 }
 
-/** Cid of the node that `aliasId` names below `nodeCid` (task or partition), or null. */
+/** Resolve a direct child by mutable alias, or an immutable row by its CID.
+ * A CID only addresses an existing child here; it is never a store-wide lookup. */
 export function findChild(store: FosStore, nodeCid: string, aliasId: string): string | null {
   const found = findAliasEdge(store, valueContent(store, nodeCid), aliasId) ?? findAliasEdge(store, content(store, nodeCid), aliasId)
-  if (!found) return null
+  if (!found) {
+    const edge = valueContent(store, nodeCid).children.find(e => isRowEdge(store, e) && identityCid(store, e) === aliasId && !content(store, aliasId).data.alias)
+    return edge ? identityCid(store, edge) : null
+  }
   const { edge } = found
   if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) return null
   return identityCid(store, edge)
@@ -2233,6 +2217,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const { instantiate = false } = options
   const ids = new Map<string, string>()
   const owned = new Set<string>()
+  const argumentsToCopy = new Set<string>()
   const definitions = new Set<string>()
   const childEdges = (value: FosNodeContent, definition = false) => value.children.filter((edge) => {
     const type = rowTypeIdOf(store, edge)
@@ -2254,10 +2239,12 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       for (const edge of [choice.base, ...choice.options.flatMap(o => [o.edge, o.base])]) if (edge) collect(identityCid(store, edge))
       return
     }
-    // Typed refs are slots, not ownership of their bound value.
-    if (refTypeCid(store, identity)) return
+    // A row's argument refers to its value; it does not take ownership of it.
+    if (isRefNode(store, identity) && (argumentsToCopy.has(cid) || identity.data.name || !refValueCid(store, identity) || refBranches(store, identity))) { argumentsToCopy.add(cid); return }
     for (const edge of childEdges(stripLink(store, identity), definitions.has(cid))) {
       const child = identityCid(store, edge)
+      const left = content(store, edge[0])
+      if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || left.data.capabilityDefinition || left.data.form?.primitive)) argumentsToCopy.add(child)
       // Nested templates remain definitions when their containing workflow is instantiated.
       if (rowTypeIdOf(store, edge) === TEMPLATE_TYPE) definitions.add(child)
       collect(child)
@@ -2282,7 +2269,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       copied.set(cid, result)
       return result
     }
-    const type = refTypeCid(store, identity)
+    const type = argumentsToCopy.has(cid)
     const value = type ? identity : stripLink(store, identity)
     const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? '') ?? freshId() }, updated: { time: now } }
     if (instantiate && data.todo) data.todo = { ...data.todo, completed: false, time: now }
@@ -2298,12 +2285,12 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     const alternatives = type && refBranches(store, identity)
     if (alternatives) {
       const record = readChoice(store, alternatives.cid)
-      const incoming = put(store, refNodeContent(store, { alias: data.alias, ...(data.name ? { name: data.name } : {}) }, null, [], type))
+      const incoming = put(store, refNodeContent(store, { alias: data.alias, ...(data.name ? { name: data.name } : {}) }, null, []))
       const edge = (original: FosPathElem | null | undefined): FosPathElem | null => original ? [owned.has(original[0]) ? copy(original[0]) : original[0], incoming] : null
       bound = putBranches(store, data.alias.id, edge(record.base), record.options.map(option => ({ ...option, edge: edge(option.edge) })), record.defaultName)
     }
     const valueCopy = { data, children }
-    const result = put(store, type ? refNodeContent(store, data, bound, [], type)
+    const result = put(store, type ? refNodeContent(store, data, bound)
       : isRefNode(store, identity) && !isHandle(identity) && (value.data.scalar || value.data.presentation)
         ? refNodeContent(store, { alias: data.alias, ...(data.name ? { name: data.name } : {}) }, put(store, valueCopy))
         : valueCopy)

@@ -1,7 +1,7 @@
 /**
  * The account server's adapters for the event grammar (shared/sync/events.ts): HTTP, MCP and the WebSocket all
  * build the same principal from the request's claims and hand the event to `dispatchEvent` under the user's store
- * lock. `complete` hands the authorized request to the evaluation service, which runs the handler registry.
+ * lock. `complete` hands the authorized request to the evaluation service, which runs the handler runtime.
  */
 import type { Request, Response } from 'express'
 import { createHash, randomUUID } from 'node:crypto'
@@ -62,12 +62,12 @@ export function createEventService(deps: AccountStoreDeps, evaluate?: Evaluate) 
     // it and proposes through the market routes, which honour the member grant.
     const delivery = outcome.result as { status?: string; id?: string; title?: string } | null
     if (event.kind === 'invite' && delivery?.status === 'invited' && delivery.id) {
-      if (deps.registry && !deps.registry.serverCapabilities().includes('relay')) throw new EventError('This host does not relay between accounts; the member grant is recorded but not delivered.')
+      if (deps.runtime && !deps.runtime.serverCapabilities().includes('relay')) throw new EventError('This host does not relay between accounts; the member grant is recorded but not delivered.')
       await withUserLock(`user:${event.user}`, async () => {
         const loaded = await deps.loadStore(event.user)
         if (!loaded) return
         const now = deps.now?.() ?? Date.now(), before = createReplica(`user:${event.user}`, loaded.store), head = headCid(before)
-        const r = ensureInviteRequest(ensureHomeContext(before, now, deps.registry?.hostOffers()), principal.username, delivery.id!, delivery.title || principal.username, now).replica
+        const r = ensureInviteRequest(ensureHomeContext(before, now, deps.runtime?.hostOffers()), principal.username, delivery.id!, delivery.title || principal.username, now).replica
         if (headCid(r) === head) return
         await deps.saveStore(loaded.user, r.store)
         deps.notify?.(loaded.user.id, { type: 'sync_changed', byPeerId: 'fos:invite' })

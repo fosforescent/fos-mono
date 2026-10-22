@@ -244,7 +244,7 @@ async function main() {
   Object.defineProperty(drop, 'dataTransfer', { value: { types: ['application/x-fos-placeholder'], getData: type => type === 'application/x-fos-placeholder' ? 'text' : '' } })
   document.querySelector(`.task[data-id="${first}"]`).dispatchEvent(drop)
   assert(a.placeholders([first]).some(arg => arg.status === 'missing'))
-  a.triggerKinds = () => ['request', 'timer']; a.refresh()
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: async (_name, _options, callback) => callback(null) } }); a.refresh()
   assert(!document.querySelector('[aria-label="Add trigger workflow"]'), 'triggers use the common constructor menu')
   a.openTemplatePicker([HOME_ID, first]); a.createLinkedTemplate('Editable constructor', '', true)
   const definition = a.state.view.at(-1)
@@ -385,7 +385,7 @@ async function main() {
   const count = a.currentView().tasks.length
   a.configureTrigger('request', '', true, [HOME_ID], false)
   assert.equal(a.currentView().tasks.length, count + 1)
-  const workflow = a.currentView().tasks.find(t => t.title === 'request workflow')
+  const workflow = a.currentView().tasks.find(t => t.title === a.triggerOffers().find(o => o.capability === 'request').definition.label)
   a.goTo([HOME_ID, workflow.id]); assert.equal(a.currentTrigger().enabled, false)
   console.log('PASS: unified constructor menu, selected-input suggestions, deferred Pull evaluation, and paused trigger construction')
   console.log('PASS: constructor palette click/drop, bank amounts, allocation sources, child preservation, requirement inputs, and repository actions')

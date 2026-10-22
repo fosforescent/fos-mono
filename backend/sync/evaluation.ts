@@ -1,11 +1,11 @@
-/** Owner-initiated and scheduled evaluation share the same graph evaluator, user-store lock and handler registry. */
-import { INTEGRATION_PEERS, evaluationRecord, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, evaluationSteps, headCid, put, resolveScope, runNodeTriggers, selectBranch, valueContent, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
+/** Owner-initiated and scheduled evaluation share the same graph evaluator, user-store lock and handler runtime. */
+import { INTEGRATION_PEERS, evaluationRecord, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, evaluationSteps, headCid, put, resolveScope, runNodeTriggers, configuredTriggers, selectBranch, valueContent, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
-import type { HandlerRegistry, HostHandler } from './registry'
+import type { HostRuntime, HostHandler } from './host-runtime'
 
 const peerLabel = (peerId: string) => peerId === 'fos' ? 'Fos' : INTEGRATION_PEERS.find(p => `integration:${p.id}` === peerId)?.name ?? (peerId.startsWith('mcp:') ? 'An attached MCP server' : peerId)
 
-export function createEvaluationService(deps: AccountStoreDeps, registry: HandlerRegistry) {
+export function createEvaluationService(deps: AccountStoreDeps, runtime: HostRuntime) {
   async function run(username: string, request?: { path: Scope; branches: Record<string, string>; expected: string; action?: 'recover' | 'continue' }) {
     return withUserLock(`user:${username}`, async () => {
       const loaded = await deps.loadStore(username)
@@ -16,12 +16,16 @@ export function createEvaluationService(deps: AccountStoreDeps, registry: Handle
       if (request) for (const [id, name] of Object.entries(request.branches)) selectBranch(r.store, id, name)
       const save = async (next: typeof r) => { r = next; await deps.saveStore(user, r.store); deps.notify?.(user.id, { type: 'sync_changed', by: 'fos:evaluation' }) }
       /** The peers that provide an executor's capability in this step's context. */
-      const providers = (step: EvaluationStep, h: HostHandler) => capabilityPeers(r, step.path, h.capability).filter(p => registry.provides(h, p))
+      const providers = (step: EvaluationStep, h: HostHandler) => runtime.providers(step, r, h)
       const evaluate = async (path: Scope) => {
+        // Persist the one-time legacy advertisement upgrade before pinning execution instructions.
+        const before = headCid(r)
+        r = runtime.migrate(r, path, now())
+        if (headCid(r) !== before) await save(r)
         // Live availability of every provider that could execute something below `path`, checked once per run.
         const active = new Map<string, boolean>()
-        for (const step of evaluationSteps(r, path)) for (const h of registry.executors(step, r)) for (const p of providers(step, h)) if (!active.has(p)) active.set(p, await registry.active(p, user.id))
-        const executorFor = (step: EvaluationStep): HostHandler | null => registry.executors(step, r).find(h => providers(step, h).some(p => active.get(p))) ?? null
+        for (const step of evaluationSteps(r, path)) for (const h of runtime.executors(step, r)) for (const p of providers(step, h)) if (!active.has(p)) active.set(p, await runtime.active(p, user.id, r, step.path))
+        const executorFor = (step: EvaluationStep): HostHandler | null => runtime.executors(step, r).find(h => providers(step, h).some(p => active.get(p))) ?? null
         // An interrupted run is reviewed before anything new is bound or called (the evaluator checks this too).
         const prior = evaluationRecord(r, path)
         if (prior && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
@@ -37,9 +41,9 @@ export function createEvaluationService(deps: AccountStoreDeps, registry: Handle
           get: () => r, save, now,
           // a return slot a handler fills is excluded from the change check of its step and of every step below it (whose context includes it)
           outputs: step => [...outputs.entries()].filter(([at]) => { const prefix = JSON.parse(at) as Scope; return prefix.length <= step.path.length && prefix.every((id, i) => step.path[i] === id) }).flatMap(([, ids]) => ids),
-          handles: step => registry.executors(step, r).length > 0,
+          handles: step => runtime.executors(step, r).length > 0,
           isPeerActive: peer => peer === 'fos' || active.get(peer) === true,
-          check: step => registry.executors(step, r).length && !executorFor(step) ? [`${[...new Set(registry.executors(step, r).map(h => peerLabel(h.peerId)))].join(' or ')} is not active in this context.`] : [],
+          check: step => runtime.executors(step, r).length && !executorFor(step) ? [`${[...new Set(runtime.executors(step, r).map(h => peerLabel(h.peerId)))].join(' or ')} is not active in this context.`] : [],
           effect: async step => {
             const handler = executorFor(step)
             if (!handler) throw new Error('No active handler for this requirement.')
@@ -57,7 +61,12 @@ export function createEvaluationService(deps: AccountStoreDeps, registry: Handle
         if (request.action === 'recover') { await save(recoverEvaluation(r, request.path, now())); return null }
         return evaluate(request.path)
       }
-      await runNodeTriggers({ get: () => r, save, now, available: (peer, kind, path) => peer === 'fos' && kind === 'cron' && registry.offers('fos').includes('cron') && capabilityPeers(r, path, 'cron').includes('fos'), evaluate: async path => { await evaluate(path) } })
+      const observers = new Map<string, boolean>()
+      for (const { path, trigger } of configuredTriggers(r)) {
+        runtime.restore(r, path)
+        observers.set(JSON.stringify([trigger.peer, path]), await runtime.active(trigger.peer, user.id, r, path))
+      }
+      await runNodeTriggers({ get: () => r, save, now, available: (peer, _kind, path) => observers.get(JSON.stringify([peer, path])) === true, evaluate: async path => { await evaluate(path) } })
       return null
     })
   }

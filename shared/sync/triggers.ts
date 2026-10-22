@@ -1,21 +1,88 @@
+import { STANDARD_CAPABILITY_PATTERNS, capabilityName } from './capabilities'
+import { discoverHandlers } from './handlers'
+import { nativeRefValues } from './native-refs'
+import { primitiveValue } from './primitives'
+import { refSubmissions } from './scoped-refs'
+import { isRefNode } from './graph'
+export { cronMatches } from './trigger-primitives'
 /** Triggers are named arguments on nodes, supplied by a device or the Home server peer. */
-import { evaluationRecord, readNodeValue, writeNodeValue } from './evaluation'
+import { readNodeValue, writeNodeValue } from './evaluation'
 import { addTask, headCid, instantiateTemplate, view, type Replica } from './replica'
-import { capabilityTarget, newId, resolveScope, valueContent, content, isBranchChoice, readChoice, refBranches, put, withBranches, type Scope } from './graph'
+import { newId, resolveScope, valueContent, content, isBranchChoice, readChoice, refBranches, put, withBranches, type Scope } from './graph'
 import { TEMPLATE_TYPE } from './library-types'
 import { argumentRefs } from './bindings'
 import { bindRefInputs } from './refs'
-export type TriggerKind = 'timer' | 'cron' | 'task-completion' | 'request' | 'response' | 'ref-change'
+/** Compatibility spelling at API boundaries; declarations, not this string, determine behavior. */
+export type TriggerKind = string
+export type TriggerDefinition = NonNullable<import('../types').FosDataContent['triggerDefinition']>
+export type TriggerContext = { replica: Replica; path: Scope; config: NodeTrigger; now: number; previous: TriggerState | null }
+export type TriggerEvent = { id: string; reset?: boolean; state?: Partial<TriggerState> }
+export type TriggerObserver = { validate?(context: TriggerContext): void; observe(context: TriggerContext): TriggerEvent | null }
+export function triggerOffers(r: Replica, path: Scope) {
+  return discoverHandlers(r, path).flatMap((offer) => {
+    const definition =
+      content(r.store, offer.type).data.triggerDefinition ??
+      STANDARD_CAPABILITY_PATTERNS.find((p) => p.name === capabilityName(r.store, offer.type))?.node.data.triggerDefinition
+    return definition && refSubmissions(r.store, offer.cid).some((cid) => primitiveValue(r.store, cid)) ? [{ ...offer, definition }] : []
+  })
+}
+function triggerArgument(r: Replica, path: Scope) {
+  const cid = resolveScope(r.store, headCid(r), path)
+  return cid ? argumentRefs(r.store, cid).find((a) => a.name === TRIGGER_ARGUMENT) : undefined
+}
+function boundObserver(r: Replica, path: Scope): string | undefined {
+  const arg = triggerArgument(r, path)
+  // The left side is the observer declaration itself, just like an ordinary primitive call.
+  return arg && isRefNode(r.store, content(r.store, arg.type)) ? arg.type : undefined
+}
+export function triggerObserver(r: Replica, path: Scope, t: NodeTrigger): TriggerObserver | null {
+  const bound = boundObserver(r, path)
+  const offers = triggerOffers(r, path).filter(
+    (o) => o.enabled && o.active && o.peerId === t.peer && (bound ? o.cid === bound : (o.capability ?? o.id) === t.kind)
+  )
+  if (offers.length !== 1) return null
+  return nativeRefValues<unknown>(r, path, t.peer).find((value) => value.ref === offers[0]!.cid)?.native.trigger ?? null
+}
+function definitionOf(t: NodeTrigger): TriggerDefinition | undefined {
+  return t.definition ?? STANDARD_CAPABILITY_PATTERNS.find((p) => p.name === t.kind)?.node.data.triggerDefinition
+}
 /** What a `response` trigger waits for: the evaluation request this peer left on another peer's node. */
 export type AwaitedResponse = { request: string; node: Scope; requestedAt: number }
-export type NodeTrigger = { kind: TriggerKind; peer: string; enabled: boolean; created: number; due?: number; expression?: string; response?: AwaitedResponse; watch?: { path: Scope; branch: string; baseline: string; argument?: string } }
-export type TriggerState = { occurrence: string; status: 'running' | 'finished' | 'failed'; error?: string; target: Scope; requestTime?: number; requestIds?: string[] }
+export type TriggerInput = {
+  /** Legacy selector; new calls supply the handler ref directly. Never persisted. */
+  kind?: TriggerKind
+  peer: string
+  enabled: boolean
+  created: number
+  due?: number
+  expression?: string
+  response?: AwaitedResponse
+  watch?: { path: Scope; branch: string; baseline: string; argument?: string }
+  handler?: string
+  definition?: TriggerDefinition
+  [key: string]: unknown
+}
+export type NodeTrigger = TriggerInput & { kind: TriggerKind }
+export type TriggerState = {
+  occurrence: string
+  status: 'running' | 'finished' | 'failed'
+  error?: string
+  target: Scope
+  requestTime?: number
+  requestIds?: string[]
+}
 export const TRIGGER_ARGUMENT = 'fos:trigger'
 export const TRIGGER_TEMPLATE_ARGUMENT = 'fos:trigger-template'
 export const TRIGGER_STATE_ARGUMENT = 'fos:trigger-state'
 export function nodeTrigger(r: Replica, path: Scope): NodeTrigger | null {
-  const t = readNodeValue<NodeTrigger>(r, path, TRIGGER_ARGUMENT)
-  return t && ['timer', 'cron', 'task-completion', 'request', 'response', 'ref-change'].includes(t.kind) && typeof t.peer === 'string' && typeof t.created === 'number' ? t : null
+  const t = readNodeValue<NodeTrigger>(r, path, TRIGGER_ARGUMENT),
+    arg = triggerArgument(r, path)
+  if (!t || !arg || typeof t.peer !== 'string' || typeof t.created !== 'number' || typeof t.enabled !== 'boolean') return null
+  const type = discoverHandlers(r, path).find(offer => offer.cid === arg.type)?.type ?? arg.type
+  const definition =
+    content(r.store, type).data.triggerDefinition ??
+    STANDARD_CAPABILITY_PATTERNS.find((p) => p.name === capabilityName(r.store, type))?.node.data.triggerDefinition
+  return { ...t, kind: capabilityName(r.store, type) ?? t.kind ?? type, handler: boundObserver(r, path), definition }
 }
 export const triggerState = (r: Replica, path: Scope) => readNodeValue<TriggerState>(r, path, TRIGGER_STATE_ARGUMENT)
 
@@ -30,7 +97,8 @@ export function bindTemplateTriggers(r: Replica, path: Scope, bindings: Record<s
       const trigger = bindRefInputs(declaration, bindings) as NodeTrigger
       trigger.created = now
       if (trigger.watch) {
-        if (!Array.isArray(trigger.watch.path) || !trigger.watch.path.length || typeof trigger.watch.branch !== 'string') throw new Error('Bind the trigger to a node path and branch.')
+        if (!Array.isArray(trigger.watch.path) || !trigger.watch.path.length || typeof trigger.watch.branch !== 'string')
+          throw new Error('Bind the trigger to a node path and branch.')
         trigger.watch.baseline = watchedRefValue(r, trigger.watch.path, trigger.watch.branch, trigger.watch.argument) ?? ''
       }
       r = setNodeTrigger(r, at, trigger, now)
@@ -45,102 +113,58 @@ export function bindTemplateTriggers(r: Replica, path: Scope, bindings: Record<s
 export function watchedRefValue(r: Replica, path: Scope, branch: string, argument?: string): string | null {
   const target = resolveScope(r.store, headCid(r), path)
   if (!target) return null
-  const node = content(r.store, target), names = isBranchChoice(r.store, node) ? readChoice(r.store, target).options.map(o => o.peerId) : refBranches(r.store, node)?.names
+  const node = content(r.store, target),
+    names = isBranchChoice(r.store, node) ? readChoice(r.store, target).options.map((o) => o.peerId) : refBranches(r.store, node)?.names
   if (names && !names.includes(branch)) return null
   return withBranches(r.store, { [path.at(-1)!]: branch }, () => {
     const cid = resolveScope(r.store, headCid(r), path)
     if (cid && argument) {
-      const ref = argumentRefs(r.store, cid).find(a => a.name === argument)
+      const ref = argumentRefs(r.store, cid).find((a) => a.name === argument)
       return put(r.store, ref ? valueContent(r.store, ref.cid) : { data: {}, children: [] })
     }
     return cid ? put(r.store, valueContent(r.store, cid)) : null
   })
 }
 
-/** Numeric five-field UTC cron; lists, ranges and steps. Day-of-month/day-of-week use cron's OR rule. */
-export function cronMatches(expression: string, now: number): boolean {
-  const fields = expression.trim().split(/\s+/)
-  if (fields.length !== 5) throw new Error('Use five UTC cron fields: minute hour day month weekday.')
-  const date = new Date(now), values = [date.getUTCMinutes(), date.getUTCHours(), date.getUTCDate(), date.getUTCMonth() + 1, date.getUTCDay()]
-  const ranges = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]]
-  const matches = fields.map((field, i) => {
-    const [min, max] = ranges[i]!
-    const accepted = new Set<number>()
-    for (const part of field.split(',')) {
-      const match = /^(\*|\d+(?:-\d+)?)(?:\/(\d+))?$/.exec(part)
-      if (!match) throw new Error('Cron supports numeric values, *, ranges, lists and steps.')
-      const range = match[1]!, step = Number(match[2] ?? 1)
-      const [start, end] = range === '*' ? [min!, max!] : range.includes('-') ? range.split('-').map(Number) : [Number(range), Number(range)]
-      if (!Number.isInteger(step) || step < 1 || step > max! + 1 || start! < min! || end! > max! || start! > end!) throw new Error(`Invalid cron field: ${field}`)
-      for (let n = start!; n <= end!; n += step) accepted.add(n)
-    }
-    return accepted.has(values[i]!)
-  })
-  const day = fields[2] !== '*' && fields[4] !== '*' ? matches[2] || matches[4] : matches[2] && matches[4]
-  return !!(matches[0] && matches[1] && matches[3] && day)
-}
-/**
- * What a timer or cron trigger still needs before it can run: its schedule (a time, a cron expression), made empty
- * and filled on its node. Null when nothing is missing. A trigger with a missing schedule never fires and cannot be
- * enabled; its row reads as an unmet requirement.
- */
+/** Required configuration is declared by the observer type. */
 export function missingSchedule(t: NodeTrigger | null | undefined): string | null {
-  if (t?.kind === 'timer' && t.due === undefined) return 'a time'
-  if (t?.kind === 'cron' && !t.expression?.trim()) return 'a cron expression'
-  return null
+  if (!t) return null
+  const field = definitionOf(t)?.schedule
+  return field && (t[field.field] === undefined || t[field.field] === null || t[field.field] === '') ? field.label : null
 }
-export function setNodeTrigger(r: Replica, path: Scope, trigger: NodeTrigger, now: number): Replica {
-  if (!['timer', 'cron', 'task-completion', 'request', 'response', 'ref-change'].includes(trigger.kind) || typeof trigger.peer !== 'string' || !trigger.peer.trim()) throw new Error('Choose a trigger capability and executor peer.')
-  // A continuation waits on the node that made the request; every other trigger instantiates a template.
-  if (trigger.kind !== 'response' && (!path.length || view(r, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.type !== TEMPLATE_TYPE)) throw new Error('Triggers require a template.')
-  if (trigger.kind === 'response' && (!trigger.response || typeof trigger.response.request !== 'string' || !Array.isArray(trigger.response.node))) throw new Error('A response trigger names the request it waits for.')
-  if (missingSchedule(trigger) && trigger.enabled) throw new Error(`Set its schedule (${missingSchedule(trigger)}) before enabling the trigger.`)
-  if (trigger.kind === 'cron' && !missingSchedule(trigger)) cronMatches(trigger.expression ?? '', now)
-  if (trigger.kind === 'timer' && !missingSchedule(trigger) && (!Number.isFinite(trigger.due) || trigger.due! < now)) throw new Error('Choose a future time.')
-  if (trigger.kind === 'ref-change') {
-    const w = trigger.watch
-    if (!w || !Array.isArray(w.path) || !w.path.every(id => typeof id === 'string') || !w.path.length || !w.branch || !w.baseline) throw new Error('Choose a reference and branch to watch.')
-    // The trigger and its instantiated tasks must be outside the watched subtree, otherwise its own claim refires it.
-    const parent = path.slice(0, -1)
-    if (w.path.length <= parent.length && w.path.every((id, i) => parent[i] === id)) throw new Error('Place the trigger outside the watched node.')
-    if (w.argument !== undefined && (typeof w.argument !== 'string' || !w.argument)) throw new Error('The watched argument must have a name.')
-    if (!watchedRefValue(r, w.path, w.branch, w.argument)) throw new Error('The watched node is unavailable.')
-  }
-  return writeNodeValue(r, path, TRIGGER_ARGUMENT, trigger, now, { type: capabilityTarget(r.store, trigger.kind), peer: trigger.peer })
+export function setNodeTrigger(r: Replica, path: Scope, trigger: TriggerInput, now: number): Replica {
+  const offers = triggerOffers(r, path).filter(
+    (o) =>
+      o.peerId === trigger.peer &&
+      o.enabled &&
+      o.active &&
+      (trigger.handler ? o.cid === trigger.handler : (o.capability ?? o.id) === trigger.kind)
+  )
+  if (offers.length !== 1) throw new Error('Choose one available observer ref in this scope.')
+  const offer = offers[0]!,
+    config = { ...trigger, kind: offer.capability ?? offer.id, definition: offer.definition }
+  if (
+    offer.definition.mode === 'instantiate' &&
+    (!path.length || view(r, path.slice(0, -1))?.tasks.find((row) => row.id === path.at(-1))?.type !== TEMPLATE_TYPE)
+  )
+    throw new Error('This observer instantiates a template.')
+  if (missingSchedule(config) && trigger.enabled)
+    throw new Error('Set its schedule (' + missingSchedule(config) + ') before enabling the trigger.')
+  const observer = nativeRefValues<unknown>(r, path, trigger.peer).find((v) => v.ref === offer.cid)?.native.trigger
+  observer?.validate?.({ replica: r, path, config, now, previous: triggerState(r, path) })
+  const { kind: _kind, handler: _handler, definition: _definition, ...fields } = trigger
+  return writeNodeValue(r, path, TRIGGER_ARGUMENT, fields, now, { type: offer.cid, peer: offer.peerId })
+}
+export function triggerObservation(r: Replica, path: Scope, t: NodeTrigger, now: number): TriggerEvent | null {
+  if (!t.enabled || missingSchedule(t)) return null
+  return triggerObserver(r, path, t)?.observe({ replica: r, path, config: t, now, previous: triggerState(r, path) }) ?? null
 }
 export function triggerOccurrence(r: Replica, path: Scope, t: NodeTrigger, now: number): string | null {
-  if (!t.enabled || missingSchedule(t)) return null
-  if (t.kind === 'ref-change') {
-    if (!t.watch) return null
-    const value = watchedRefValue(r, t.watch.path, t.watch.branch, t.watch.argument)
-    const consumed = triggerState(r, path)?.occurrence.startsWith(`ref-change:${t.created}:`)
-    return value && (value !== t.watch.baseline || consumed) ? `ref-change:${t.created}:${value}` : null
-  }
-  if (t.kind === 'timer') return t.due !== undefined && now >= t.due ? `timer:${t.created}:${t.due}` : null
-  if (t.kind === 'cron') return cronMatches(t.expression ?? '', now) ? `cron:${t.created}:${Math.floor(now / 60000)}` : null
-  if (t.kind === 'response') {
-    // Peer A asked peer B to evaluate `node`; the answer is B's committed evaluation there (or B's rejection of the request).
-    const awaited = t.response!, record = evaluationRecord(r, awaited.node)
-    if (record?.status === 'committed' && record.started >= awaited.requestedAt) return `response:${awaited.request}:${record.id}`
-    // The request was recorded (by name) on the attachment the requester used, at or above the node: look up the chain.
-    for (let i = awaited.node.length; i >= 0; i--) if (view(r, awaited.node.slice(0, i))?.proposals.some(p => p.name === awaited.request && p.status === 'rejected' && p.timestamp >= awaited.requestedAt)) return `response:${awaited.request}:rejected`
-    return null
-  }
-  if (t.kind === 'request') {
-    const previous = triggerState(r, path)
-    const next = view(r, path)?.proposals.filter(p => p.status === 'open' && p.timestamp >= t.created &&
-      (p.timestamp > (previous?.requestTime ?? -Infinity) || (p.timestamp === previous?.requestTime && !previous.requestIds?.includes(p.id))))
-      .sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id))[0]
-    return next ? `request:${next.id}` : null
-  }
-  const parent = path.slice(0, -1), cid = resolveScope(r.store, headCid(r), parent)
-  const evaluated = evaluationRecord(r, parent)
-  if (evaluated?.status === 'committed' && evaluated.started >= t.created) return `evaluation:${evaluated.id}`
-  const data = cid ? valueContent(r.store, cid).data : null
-  return data?.todo?.completed && (data.updated?.time ?? 0) >= t.created ? `completion:${data.updated?.time}` : null
+  return triggerObservation(r, path, t, now)?.id || null
 }
 export function configuredTriggers(r: Replica): Array<{ path: Scope; trigger: NodeTrigger }> {
-  const result: Array<{ path: Scope; trigger: NodeTrigger }> = [], seen = new Set<string>()
+  const result: Array<{ path: Scope; trigger: NodeTrigger }> = [],
+    seen = new Set<string>()
   const walk = (path: Scope) => {
     if (path.length > 64 || seen.size > 5000) return
     const trigger = nodeTrigger(r, path)
@@ -150,39 +174,70 @@ export function configuredTriggers(r: Replica): Array<{ path: Scope; trigger: No
       seen.add(row.id)
       // Only the template itself can trigger; its internal declarations are inactive until applied.
       if (row.type === TEMPLATE_TYPE) {
-        const nested = nodeTrigger(r, [...path, row.id]); if (nested) result.push({ path: [...path, row.id], trigger: nested })
+        const nested = nodeTrigger(r, [...path, row.id])
+        if (nested) result.push({ path: [...path, row.id], trigger: nested })
       } else walk([...path, row.id])
     }
   }
-  walk([]); return result
+  walk([])
+  return result
 }
 export async function runNodeTriggers(driver: {
-  get(): Replica; save(r: Replica): void | Promise<void>; now(): number
+  get(): Replica
+  save(r: Replica): void | Promise<void>
+  now(): number
   available(peer: string, kind: TriggerKind, path: Scope): boolean
   evaluate(path: Scope): Promise<void>
 }): Promise<void> {
   for (const { path, trigger } of configuredTriggers(driver.get())) {
     if (!driver.available(trigger.peer, trigger.kind, path) || view(driver.get(), path)?.choices.length) continue
-    const event = triggerOccurrence(driver.get(), path, trigger, driver.now())
     const prior = triggerState(driver.get(), path)
-    if (trigger.kind === 'task-completion' && prior?.status === 'finished' && prior.occurrence) {
-      if (event && (!event.startsWith('evaluation:') || event === prior.occurrence)) continue // already consumed this completed state; edits to the parent are not another completion
-      await driver.save(writeNodeValue(driver.get(), path, TRIGGER_STATE_ARGUMENT, { ...prior, occurrence: '' }, driver.now()))
+    if (prior?.status === 'running' || prior?.status === 'failed') continue
+    let observed: TriggerEvent | null
+    try {
+      observed = triggerObservation(driver.get(), path, trigger, driver.now())
+    } catch (error) {
+      await driver.save(
+        writeNodeValue(
+          driver.get(),
+          path,
+          TRIGGER_STATE_ARGUMENT,
+          {
+            occurrence: `invalid:${trigger.created}`,
+            status: 'failed',
+            target: path,
+            error: error instanceof Error ? error.message : String(error)
+          },
+          driver.now()
+        )
+      )
+      continue
     }
-    if (!event || prior?.occurrence === event || prior?.status === 'running' || prior?.status === 'failed') continue
-    let r = driver.get(), target = path
-    const row = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
-    if (row?.type === TEMPLATE_TYPE) {
-      const id = newId(), parent = path.slice(0, -1)
+    const event = observed?.id
+    if (observed?.reset && prior) {
+      await driver.save(writeNodeValue(driver.get(), path, TRIGGER_STATE_ARGUMENT, { ...prior, occurrence: '' }, driver.now()))
+      continue
+    }
+    if (!event || prior?.occurrence === event) continue
+    let r = driver.get(),
+      target = path
+    const row = path.length ? view(r, path.slice(0, -1))?.tasks.find((t) => t.id === path.at(-1)) : null
+    if (definitionOf(trigger)?.mode === 'instantiate' && row?.type === TEMPLATE_TYPE) {
+      const id = newId(),
+        parent = path.slice(0, -1)
       r = addTask(r, parent, row.title, driver.now(), id)
-      r = instantiateTemplate(r, parent, id, row.id, driver.now()); target = [...parent, id]
+      r = instantiateTemplate(r, parent, id, row.id, driver.now())
+      target = [...parent, id]
     }
     // Claim before evaluating. Failed/interrupted runs require explicit review, not an automatic retry.
-    const request = trigger.kind === 'request' ? view(r, path)?.proposals.find(p => `request:${p.id}` === event) : undefined
-    let state: TriggerState = { occurrence: event, status: 'running', target, ...(request ? { requestTime: request.timestamp, requestIds: [...(prior?.requestTime === request.timestamp ? prior.requestIds ?? [] : []), request.id] } : {}) }
+    let state: TriggerState = { ...observed?.state, occurrence: event, status: 'running', target }
     await driver.save(writeNodeValue(r, path, TRIGGER_STATE_ARGUMENT, state, driver.now()))
-    try { await driver.evaluate(target); state = { ...state, status: 'finished' } }
-    catch (error) { state = { ...state, status: 'failed', error: error instanceof Error ? error.message : String(error) } }
+    try {
+      await driver.evaluate(target)
+      state = { ...state, status: 'finished' }
+    } catch (error) {
+      state = { ...state, status: 'failed', error: error instanceof Error ? error.message : String(error) }
+    }
     await driver.save(writeNodeValue(driver.get(), path, TRIGGER_STATE_ARGUMENT, state, driver.now()))
   }
 }

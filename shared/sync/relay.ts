@@ -228,7 +228,9 @@ export function offerRelay(r: Replica, at: Scope, now: number): Replica {
   const peerId = r.meta.peerId
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
   const type = capabilityTarget(r.store, 'relay')
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id: `fos:relay:${peerId}` }, name: { content: 'Relay' } }, relayTemplate(r, at), [], type))
+  const template = valueContent(r.store, relayTemplate(r, at))
+  const value = put(r.store, { ...template, children: [...template.children, ...content(r.store, type).children] })
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id: `fos:relay:${peerId}` }, name: { content: 'Relay' } }, value, []))
   return setHandlerOffersAt(r, at, peerId, type, [handler], now)
 }
 

@@ -3,7 +3,7 @@ import Stripe from 'stripe'
 import { prisma } from '../prismaClient'
 
 
-const stripe = new Stripe(process.env.STRIPE_TOKEN!, { apiVersion: '2024-10-28.acacia' })
+const stripe = new Stripe(process.env.STRIPE_TOKEN!, { apiVersion: '2025-02-24.acacia' })
 
 interface ConnectAccountCreateRequest {
   success_url: string;

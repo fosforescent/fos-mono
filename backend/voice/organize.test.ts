@@ -8,7 +8,7 @@ import { asAccountStore } from '../sync/deviceRoot'
 import type { AccountStoreDeps } from '../sync/accountStore'
 import { createEventService } from '../sync/events'
 import { createEvaluationService } from '../sync/evaluation'
-import { createHandlerRegistry } from '../sync/registry'
+import { createHostRuntime } from '../sync/host-runtime'
 import { createTextCommandInbound } from '../channels/textCommands'
 import { createAccountOrganizer, organizeCapture, organizeHandler } from './organize'
 import { createVoiceNoteHandler, mediaTypeOf, type VoiceDeps, type VoiceUsage } from './voiceNotes'
@@ -40,12 +40,12 @@ function usage(spent = 0, paying = false): VoiceUsage & { records: number[] } {
   }
 }
 
-/** The account `alice` on a host whose registry has the organize handler: its event route and evaluation. */
+/** The account `alice` on a host whose runtime has the organize handler: its event route and evaluation. */
 function host(initial: Replica, handler = organizeHandler(() => model())) {
   let store = initial.store
-  const registry = createHandlerRegistry([handler])
-  const deps: AccountStoreDeps = { async loadStore(username) { return username === 'alice' ? { user: { id: 1, username }, store } : null }, async saveStore(_u, next) { store = next }, now: () => Date.UTC(2026, 9, 20, 9, 30), registry }
-  const evaluation = createEvaluationService(deps, registry)
+  const runtime = createHostRuntime([handler])
+  const deps: AccountStoreDeps = { async loadStore(username) { return username === 'alice' ? { user: { id: 1, username }, store } : null }, async saveStore(_u, next) { store = next }, now: () => Date.UTC(2026, 9, 20, 9, 30), runtime }
+  const evaluation = createEvaluationService(deps, runtime)
   const events = createEventService(deps, evaluation.runNode)
   const send = async (event: unknown, scope: string[] = []) => {
     let status = 200, body: any

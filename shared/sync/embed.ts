@@ -39,8 +39,10 @@ import {
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
-import { CLIENT_CAPABILITIES, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
-import { writeGraphNode } from './replica'
+import { capabilityTarget, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
+import { nativeRef, publishNativeRef } from './native-refs'
+import { discoverHandlers } from './handlers'
+import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
 import type { FosNodeContent, FosNodesData } from '../types'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import { addRelayAck, relayInbox, relayQueues } from './relay'
@@ -75,6 +77,12 @@ export const api = {
   open(handle: string, serialized: string | null, peerId: string, home = true): void {
     let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
     loaded = ensureDeviceLibrary(loaded, { address: null, version: LIBRARY_VERSION, rows: [] }, Date.now())
+    const seeded = nativeDefaultsApplied(loaded, [], `desktop:${peerId}`)
+    for (const name of ['provideNode', 'sync']) {
+      const ref = nativeRef(loaded.store, peerId, { id: `desktop:${name}`, label: name, type: store => capabilityTarget(store, name) })
+      if (!seeded) loaded = publishNativeRef(loaded, [], peerId, ref, 0)
+    }
+    loaded = markNativeDefaultsApplied(loaded, [], `desktop:${peerId}`, 0)
     if (home) loaded = ensureHomeContext(loaded, Date.now())
     set(handle, { store: loaded.store, meta: { ...loaded.meta, peerId } })
     if (home) homes.add(handle); else homes.delete(handle)
@@ -102,7 +110,8 @@ export const api = {
     const run = nodeTreeSync(view, { peer: peer.meta.peerId, scope: [], remoteRoot: [], localRoot: [], branches: [], push: false }, () => now)
     let step = run.next()
     while (!step.done) {
-      const served = exchangeNode(peer, step.value.request, { peerId, scope: [], capabilities: CLIENT_CAPABILITIES }, now)
+      const capabilities = discoverHandlers(peer, []).filter(offer => offer.peerId === peer.meta.peerId && offer.enabled).flatMap(offer => offer.capability ? [offer.capability] : [])
+      const served = exchangeNode(peer, step.value.request, { peerId, scope: [], capabilities }, now)
       peer = served.replica
       step = run.next(served.node)
     }

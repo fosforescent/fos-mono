@@ -7,7 +7,7 @@ import Stripe from 'stripe'
 import { ensureStandardLibrary } from './sync/library'
 import { createSystemAccount, libraryOwner } from './library'
 import { sendPlainEmail } from './email/email'
-import { createHandlerRegistry } from './sync/registry'
+import { createHostRuntime } from './sync/host-runtime'
 import { createHostHandlers } from './sync/hostHandlers'
 import { repositoryLoadHandler } from './sync/repository'
 import { identityKeyFromEnv, verifyHandler } from './sync/verify'
@@ -378,7 +378,7 @@ const verify = verifyHandler({
     return { id: user.id, username: user.user_name, name: text(profile.displayName) ?? text(profile.name), publicKey: text(profile.publicKey) }
   }
 }, identityKeyFromEnv())
-const registry = createHandlerRegistry([...createHostHandlers({
+const runtime = createHostRuntime([...createHostHandlers({
   verify,
   webUrl: (process.env.WEB_URL ?? process.env.FRONTEND_URL ?? 'https://fosforescent.com').replace(/\/$/, ''),
   // captures organized into a node: one provider instance per capture, metered under the voice budget
@@ -401,7 +401,7 @@ const registry = createHandlerRegistry([...createHostHandlers({
   },
   // money (`-$`) through Stripe Checkout to the payee's connected account; settled by the webhook (payments/stripe.ts)
   ...(process.env.STRIPE_TOKEN ? { payments: stripePayments({
-    stripe: new Stripe(process.env.STRIPE_TOKEN, { apiVersion: '2024-10-28.acacia' }),
+    stripe: new Stripe(process.env.STRIPE_TOKEN, { apiVersion: '2025-02-24.acacia' }),
     webUrl: (process.env.WEB_URL ?? process.env.FRONTEND_URL ?? 'https://fosforescent.com').replace(/\/$/, ''),
     feePercent: Number(process.env.FOS_PAYMENT_FEE_PERCENT ?? 0) || 0,
     async payee(username) {
@@ -419,10 +419,10 @@ const registry = createHandlerRegistry([...createHostHandlers({
   connected: async id => !!await integrationDeps.connections.get(id, 'github'),
   snapshot: (userId, repo, tracked, branch) => integrations.repositorySnapshot(userId, repo, tracked, branch)
 })])
-prismaAccountStoreDeps.registry = registry
-integrationDeps.offers = id => registry.offers(`integration:${id}`)
+prismaAccountStoreDeps.runtime = runtime
+integrationDeps.offers = id => runtime.offers(`integration:${id}`)
 const integrations = createIntegrationHandlers(integrationDeps)
-const evaluationService = createEvaluationService(prismaAccountStoreDeps, registry)
+const evaluationService = createEvaluationService(prismaAccountStoreDeps, runtime)
 // Payment confirmations from the Stripe webhook settle the requirement in the owner's graph and resume its evaluation.
 setPaymentSettler(createPaymentSettlement(prismaAccountStoreDeps, evaluationService.continueNode).settle)
 // The event grammar (shared/sync/events.ts): one HTTP route and one MCP route; the WebSocket below carries the same events.
@@ -505,8 +505,8 @@ const PORT = parseInt(process.env.PORT || '4000', 10);
 server.listen(PORT, '0.0.0.0', async () => {
   void startChannels()
   // The standard library: its system account, node, sharing and seed templates; then every owner sync references it.
-  ensureStandardLibrary({ ...prismaAccountStoreDeps, createAccount: createSystemAccount }, libraryOwner(), registry)
-    .then(address => { registry.library = address; console.log(`[library] @${address.owner} shares ${address.title}`) })
+  ensureStandardLibrary({ ...prismaAccountStoreDeps, createAccount: createSystemAccount }, libraryOwner(), runtime)
+    .then(address => { runtime.library = address; console.log(`[library] @${address.owner} shares ${address.title}`) })
     .catch(error => console.error('[library] unavailable:', error instanceof Error ? error.message : error))
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);

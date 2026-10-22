@@ -38,7 +38,7 @@ test('notes are a title line plus a Markdown body row, bindings, and ordinary ch
   expect(formText(r.store, node())).toBe('# Hello {name}\n\nDear {name}, $x^2$.')
   r = setRowContentAt(r, [], 'document', NOTE_TYPE, '  ## Updated {name}\n\n{extra}', {}, 5)
   expect(content(r.store, node().children[0]![1]).data.alias).toEqual(content(r.store, body[1]).data.alias)
-  expect(argumentRefs(r.store, resolveScope(r.store, headCid(r), ['document'])!).map(arg => arg.name)).toEqual(['name', 'extra'])
+  expect(argumentRefs(r.store, resolveScope(r.store, headCid(r), ['document'])!).map(arg => arg.name)).toEqual(['body', 'name', 'extra'])
   r = loadReplica(serializeReplica(r))
   expect(node().data.description).toEqual({ content: 'Updated {name}' })
   expect(formText(r.store, node())).toBe('  ## Updated {name}\n\n{extra}')

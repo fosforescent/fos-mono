@@ -18,6 +18,7 @@
 
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
+import { matchesGraph } from './structural'
 import { DOCUMENT_ROOT_TYPE, PATTERN_TYPE } from './library-types'
 import { seedTypes, content, valueContent, isHandle, isRefNode, refValueCid, put, isRowEdge, isRowOfType, rowTypeIdOf, typeIdOf, aliasIdOf, isChoiceEdge, missingTemplateOf } from './graph'
 
@@ -91,14 +92,22 @@ export function acceptsChild(store: FosStore, typeCid: string, child: FosPathEle
   // a type with no graph identity (a retired format, a reference error's stand-in) is not one this peer knows: no type errors
   if (!typeIdOf(store, typeCid)) return true
   const definition = content(store, typeCid)
+  // A callable ref supplies instructions; its right-side call arguments remain
+  // ordinary rows, governed by the function's input patterns during binding.
+  if (isRefNode(store, definition)) return true
+  // An unconstrained ref pattern imposes no product-field restrictions on call inputs or outputs.
+  if (definition.data.capabilityDefinition && !definition.data.form && !patternsOf(store, typeCid).length) return true
   if (definition.data.form) {
     if (!isRowEdge(store, child)) return true
-    if (definition.children.some(([type]) => type === child[0])) return true
+    if (definition.children.some(([pattern]) => matchesGraph(store, pattern, child[0]))) return true
     if (!definition.data.form.open) return false
   }
   const type = childType(store, child)
   if (!type) return true // not a row: bookkeeping, arguments, choices
   const patterns = patternsOf(store, typeCid)
+  // Placement policies constrain the editor only when explicitly declared.
+  // Structural value patterns (including sums) are checked by matchesGraph.
+  if (!patterns.length) return true
   const matches = patterns.some(p => !p.any && p.type === type.type && (!p.versions || p.versions.includes(type.version)))
   return patterns.some(p => p.any) ? !matches : matches
 }

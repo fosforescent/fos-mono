@@ -4,8 +4,9 @@
 
 `shared/sync/node-provider.ts` separates `provideNode` from the optional `sync`
 capability. Fos and web peers advertise both. `provideNode` returns one logical
-node's permitted data and child addresses; it never sends descendant values,
-history, proposal contents, or reference targets. `pullNode` only tries the supplied
+node's permitted data and child addresses. Ordinary child values load separately;
+requested templates and pinned grants additionally carry their reachable graph.
+Those exports must not contain private dependencies. `pullNode` only tries the supplied
 associated peers that advertise the capability. `pullNodeTree` is an explicit,
 bounded eager handler that uses the same checked request for every node.
 
@@ -559,7 +560,7 @@ reach each other) and the services it handles (`search`, `market`, `mail`).
 The fos account server registers what it can actually do with every device in
 each node-provider response (`ProvidedNode.capabilities`): the transport facts
 (`SERVER_TRANSPORT_CAPABILITIES`: http, ws, relay, peer, persist, provideNode,
-sync) plus the services its handler registry has (`backend/sync/registry.ts`,
+sync) plus the services its handler registry has (`backend/sync/host-runtime.ts`,
 today search, market, points, verify, organize, title, llm and cron when enabled). Devices record the
 reported list on their own fos member (`App.recordServerOffers`), so a
 capability no handler backs is never offered in the palette. The context panel under the tree lists the banks in scope
@@ -1083,7 +1084,7 @@ integrations); it moves the row into a relay message addressed to that peer
 
 **On the server** the registry's `relayHandler` (`backend/sync/hostHandlers.ts`)
 reacts to submissions: after every node exchange that wrote, `provideNode.ts`
-calls `registry.afterSubmission`, which runs the relay on that node and its
+calls `runtime.afterSubmission`, which runs the relay on that node and its
 ancestors (`relayAfterSubmission`) under the account's lock, and the usual
 `sync_changed` nudge tells connected devices to sync. So a task the phone sends
 to the desktop's agent peer (a member of the node) waits under that peer's
@@ -1349,8 +1350,26 @@ Play opens an execution view using the existing constructor rows. Graph editing
 is hidden; only requested text, confirmations, choices, and allocations are
 interactive. The evaluation journal persists while execution runs.
 
-The Triggers constructor tab includes public, Fos user, cron, and child evaluation
-triggers. New triggers require templates. Public and Fos template entry links stay
+Observer constructors are discovered from scoped primitive ref declarations and
+shown under their provider's trigger sub-tab. Their graph type supplies the label,
+schedule input, and whether the observer instantiates a template or resumes a node.
+Configuration pins the exact observer declaration on its instruction side; its
+value side and occurrence journal are named typed fields, with scalar leaves.
+The runner calls the selected primitive's observation function, with no dispatch
+over a list of event names. Removing or disabling that ref stops its subscriptions.
+Restoring host implementations after reload does not register absent declarations.
+
+Native objects and lists are projected to ordinary rows, using the same constructors
+as forms. A row is `[left, right]`: its left can be a type, data constructor, capability
+or function; its right can be an argument, handler or composed function. A typed
+right ref remains a row, and its own type does not replace the left instruction.
+JavaScript objects are an adapter at the host boundary, not stored JSON records.
+Properties have independent identities and can be addressed, edited,
+merged and permission-masked individually. Node exchange carries their type
+definitions with declarations and loads their values separately. Older JSON-text
+records remain readable and are rewritten as graph fields when edited.
+
+Public and Fos template entry links stay
 reusable. Each visitor gets an independent private instance; returning visitors
 resume that instance. Public access uses a signed browser credential, while Fos
 access uses the logged-in account. Copying a private URL does not grant access.
@@ -1521,3 +1540,59 @@ evaluation request. Revoking the peer removes access.
 Ordinary published nodes also expose interactions through their configured peers;
 unlike a visitor's private template instance, executing effects on the shared
 original requires explicit edit permissions.
+
+
+## Structural row patterns
+
+A row is [left, right]. The left is its instruction/pattern (type, constructor,
+capability, or function); the right is its argument, handler, or composed function.
+A node has no independent type annotation. Ref construction adds an ALIAS row and
+an optional TARGET; it never adds a type instruction pointer. IP/TARGET pairs used
+to encode whole rows in choice options and root envelopes are row serialization.
+
+Patterns are graph nodes, checked by matchesGraph in structural.ts. Required rows
+are products; choices are sums. Both sides match recursively. Empty pattern values
+are unconstrained. Alias identities, history, and presentation do not establish a
+type. A namedRefPattern("complete") constructs a ref and its title as rows; a row
+with that left and an empty right requires the complete property with any value.
+Each actual alternative must satisfy a whole allowed pattern; alternatives cannot
+supply separate parts of one product. Native scalar constructors inspect leaf values.
+
+Declarations and advertisements retain [pattern, ref] rows. Discovery receives the
+pattern from that row and recursively inspects accepted submissions for subrefs.
+Node exchange carries the left definition with a declaration; right-side metadata
+only describes name/bound state. Values and their descendants load under their own
+permissions. Binding, submission validation, and execution use structural matching.
+Partial assignments may retain UUID holes; that does not make an input executable.
+Compilation preserves sums as choice rows and retains outstanding hole identities
+alongside the residual CID. Run requires a closed left side; right-side outputs may
+remain open. Legacy library names and editor placement policies are adapters, not
+intrinsic node types or an alternative handler registration mechanism.
+
+### Private graphs and permission constructors: required next boundary
+
+Current endpoint field/child masks are not a general read/write/execute constructor.
+Some membership checks still infer read access from edit or execute, and account
+owner authority defaults broadly. Template and grant exchange uses reachable graph
+exports. A secret placed inside an exported definition is therefore not protected
+merely by masking its usual row path.
+
+A server-private graph must have a separate store and persistence boundary from
+the account graph served to clients. It must not be a lexical parent of a client
+graph, an imported subtree, or part of its template/grant exports. OAuth credentials
+currently stay outside the account graph as encrypted connection records; retain
+that isolation when converting them to rows. This conversion is not implemented.
+
+The proposed permission application is an ordinary row: a permissions constructor
+on the left, the protected ref on the right. The left constructor's rows supply
+read, write, and execute restrictions, with authenticated principal/scope context.
+These operations are independent. Restrictions intersect along an authorized
+path, missing private-graph grants deny access, and changing the governing policy
+requires separate authority; editing a submitted value cannot grant that authority.
+
+Expose a public callable ref whose signature can be read independently of its
+implementation. Execution resolves the private handler and credential refs on the
+server under server authority. The client can compile the public call without
+reading the private dependency graph. Execution does not authorize exporting that
+graph or returning its secrets. Enforce the same boundary for sync, templates,
+history, search, logs, and effect results before claiming private-graph isolation.

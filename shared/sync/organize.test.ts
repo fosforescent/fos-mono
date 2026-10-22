@@ -122,7 +122,7 @@ test('the same plan as one submission of the event grammar: added rows take ids 
   const compost = view(r, [HOME_ID])!.tasks.find(t => t.title === 'Compost')!
   expect(titles(r, [HOME_ID, compost.id])).toEqual(['buy a bin'])
   expect(titles(r, [HOME_ID, 'garden', 'tomatoes'])).toEqual(['Stake them', 'water daily'])
-  expect(titles(r, [HOME_ID]).some(t => t.startsWith('Text message'))).toBe(true)
+  expect(titles(r, [HOME_ID]).some(t => t?.startsWith('Text message'))).toBe(true)
   // ids are only for added rows, and only further rows go inside rows added by the same submission
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: ['a'], operation: 'rename', text: 't', id: 'x' }] })).toThrow(/Only added rows/)
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: [], operation: 'add_row', text: 't' }] })).toThrow(/row type/)

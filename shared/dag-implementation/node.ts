@@ -8,6 +8,8 @@ import { FosStore } from './store'
 
 
 export class FosNode {
+  /** Runtime meaning supplied by this host's primitive constructor; never part of serialized content. */
+  nativeImplementation?: unknown
 
   primitiveTag: string | undefined = undefined
   cid: string

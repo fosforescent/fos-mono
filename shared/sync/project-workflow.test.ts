@@ -1,4 +1,5 @@
-import { createReplica, addTask, bindRepository, configureProjectWorkflow, createBranch, enqueueWorkflowJob, projectWorkflows, workflowPath, readNodeValue, WORKFLOW_JOB, loadReplica, serializeReplica, selectBranch, renameTask, addRow, TEMPLATE_TYPE, setNodeTrigger, watchedRefValue, triggerOccurrence, nodeTrigger, runNodeTriggers, triggerState, view, type ProjectWorkflow } from './index'
+import { installTestObservers } from './test-helpers'
+import { createReplica as bareReplica, addTask, bindRepository, configureProjectWorkflow, createBranch, enqueueWorkflowJob, projectWorkflows, workflowPath, readNodeValue, WORKFLOW_JOB, loadReplica as bareLoadReplica, serializeReplica, selectBranch, renameTask, addRow, TEMPLATE_TYPE, setNodeTrigger, watchedRefValue, triggerOccurrence, nodeTrigger, runNodeTriggers, triggerState, view, type ProjectWorkflow } from './index'
 import { ensureHomeContext, shareHome, HOME_ID, withBranches, writeNodeValue, repositoryAt, workflowTriggerPath, mergeBranch, workflowText } from './index'
 import { syncWith } from './test-helpers'
 import { AGENT_REQUEST, agentRequest, validateAgentRequest } from './index'
@@ -109,3 +110,6 @@ test('ref-change watches main independently of the displayed branch and cannot t
   expect(() => setNodeTrigger(r, ['project', 'unsafe'], nodeTrigger(r, path)!, 11)).toThrow(/outside/)
   expect(watchedRefValue(r, ['project'], 'missing')).toBeNull()
 })
+
+function createReplica(id: string) { return installTestObservers(bareReplica(id), [id]) }
+function loadReplica(data: Parameters<typeof bareLoadReplica>[0]) { const r = bareLoadReplica(data); return installTestObservers(r, [r.meta.peerId, 'desktop', 'device-a', 'device-b'], false) }

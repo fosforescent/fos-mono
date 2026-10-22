@@ -6,6 +6,8 @@ import { evaluationRecord, evaluationSteps, writeNodeValue } from './evaluation'
 import { proposeRefAt, applyProposalAt, addRow, addSupply, headCid, type Replica } from './replica'
 import { put, type ResourceType, type Scope } from './graph'
 import { ALLOCATION_TYPE, MONEY_TYPE } from './library-types'
+import { compileRow } from './ref-compiler'
+import { resolveRefExpression, type RefAccess } from './ref-paths'
 
 export function executionSnapshot(r: Replica, path: Scope, authority?: NodeAuthority) {
   if (authority) nodeAuthorityAt(r, path, authority)
@@ -13,15 +15,24 @@ export function executionSnapshot(r: Replica, path: Scope, authority?: NodeAutho
     if (!authority) return true
     try { nodeAuthorityAt(r, at, authority); const mask = nodeLinkMaskAt(r, at, authority.peerId); return !mask.fields || mask.fields.includes(field) } catch { return false }
   }
-  return { revision: headCid(r), status: evaluationRecord(r, path)?.status ?? 'idle', inputs: executionInputs(r, path).filter(f => allowed([...path, ...f.path!], f.kind === 'text' ? 'description' : f.direction === 'consume' ? 'allocation' : 'requirement')), nodes: evaluationSteps(r, path).filter(s => !s.row?.construction && allowed(s.path)).map(s => ({ path: s.path.slice(path.length), text: s.row?.title ?? '', type: s.row?.type ?? '' })) }
+  const compilation = compileRow(r, path, { canRead: (store, _cid, at) => (!authority || store === r.store) && allowed(at) })
+  return { revision: headCid(r), status: evaluationRecord(r, path)?.status ?? 'idle', compilation, canRun: compilation.canRun, inputs: executionInputs(r, path).filter(f => allowed([...path, ...f.path!], f.kind === 'text' || f.kind === 'ref' ? 'description' : f.direction === 'consume' ? 'allocation' : 'requirement')), nodes: evaluationSteps(r, path).filter(s => !s.row?.construction && allowed(s.path)).map(s => ({ path: s.path.slice(path.length), text: s.row?.title ?? '', type: s.row?.type ?? '' })) }
 }
-export function executionInput(r: Replica, path: Scope, body: any, peer: string, now: number): Replica {
+export function executionInput(r: Replica, path: Scope, body: any, peer: string, now: number, access: RefAccess = {}): Replica {
   if (body.revision !== headCid(r)) throw new Error('Evaluation changed. Read it again before submitting.')
   const status = evaluationRecord(r, path)?.status ?? 'idle'
   if (!['idle', 'rolled-back'].includes(status)) throw new Error('This evaluation no longer accepts input.')
   const field = executionInputs(r, path).find(f => f.key === body.key)
   if (!field?.path) throw new Error('Only declared inputs may be submitted.')
   const target = [...path, ...field.path], value = body.value
+  if (field.kind === 'ref') {
+    if (typeof value !== 'string') throw new Error('Supply a ref property path.')
+    const resolved = resolveRefExpression(r, target.slice(0, -1), value, access)
+    const location = resolved.locations[0]
+    if (resolved.status !== 'ready' || !location || location.store !== r.store) throw new Error('The supplied ref is unavailable in this graph.')
+    const proposal = proposeRefAt(r, target, location.cid, peer, now)
+    return applyProposalAt(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now)
+  }
   if (field.kind === 'text') {
     if (typeof value !== 'string' || value.length > 8000) throw new Error('Text must be at most 8000 characters.')
     const proposal = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now)

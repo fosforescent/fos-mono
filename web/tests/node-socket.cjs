@@ -24,7 +24,7 @@ async function main() {
   const session = { username: 'alice', jwt: 'test', kind: 'user', baseUrl: 'http://localhost' }
   let r = c.ensureHomeContext(c.createReplica('browser'), 1)
   r = c.addTask(r, [c.HOME_ID], 'Browser body', 2, 'task')
-  app.set({ session, replica: r })
+  app.set({ session, replica: app.withRootContext(r) })
   app.openEvents()
   const socket = Socket.last
   socket.dispatchEvent(new Event('open'))

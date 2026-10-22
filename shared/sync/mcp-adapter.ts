@@ -39,7 +39,7 @@ const taskNames: Record<string, string> = { fos_read: 'fos_task_read', fos_searc
 export const TASK_TOOLS = [
   ...MCP_TOOLS.filter(t => taskNames[t.name]).map(t => {
     const { branches: _branches, ...properties } = t.inputSchema.properties
-    return { ...t, name: taskNames[t.name], description: `Within your claimed task only. [] is the task root; branches are pinned. ${t.kind === 'submit' ? 'A successful submission releases the claim and restores general tools; call tools/list afterward. ' : ''}${t.description}`, inputSchema: { ...t.inputSchema, properties: { ...properties, claimId }, required: [...t.inputSchema.required, 'claimId'] } }
+    return { ...t, name: taskNames[t.name]!, description: `Within your claimed task only. [] is the task root; branches are pinned. ${t.kind === 'submit' ? 'A successful submission releases the claim and restores general tools; call tools/list afterward. ' : ''}${t.description}`, inputSchema: { ...t.inputSchema, properties: { ...properties, claimId }, required: [...t.inputSchema.required, 'claimId'] } }
   }),
   tool('fos_task_renew', 'work', 'Extend your task lease by 15 minutes. Renew before expiresAt while working.', { claimId }, ['claimId'], false),
   tool('fos_task_release', 'work', 'Abandon this claim without submitting. Restores the general tools; call tools/list afterward.', { claimId }, ['claimId'], false),

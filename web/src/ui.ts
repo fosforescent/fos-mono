@@ -28,7 +28,7 @@ import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, 
 import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, parseRowInput, rawRowText, renderInlineText } from './rows'
+import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
 import { CAPABILITY_LABEL, LIBRARY_ID, libraryLink, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
 import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
 
@@ -210,7 +210,7 @@ function installNavigationHistory(app: App): void {
 
 /** Execution uses the outline, with editing limited to declared input slots. */
 function renderExecution(regions: Regions, state: AppState, app: App): void {
-  if ((regions.list.contains(document.activeElement) || regions.node.contains(document.activeElement)) && document.activeElement?.matches('input,select,textarea')) return
+  if (regions.node.classList.contains('execution-view') && (regions.list.contains(document.activeElement) || regions.node.contains(document.activeElement)) && document.activeElement?.matches('input,select,textarea')) return
   for (const region of [regions.menu, regions.context, regions.repository, regions.choices]) region.replaceChildren()
   renderModal(regions.modal, state, app)
   regions.node.parentElement?.classList.add('execution-page')
@@ -282,19 +282,16 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   // Whether this node is work that gets completed (inputs, requirements or allocations anywhere beneath it),
   // as opposed to content such as a note that is only viewed or interacted with.
   let work = !!current?.requirement || !!current?.allocation || (!!record && record.status !== 'committed')
+  for (const field of app.executionRefFields(root)) {
+    const li = document.createElement('li'); li.className = 'task argument-row'
+    const input = document.createElement('input'); input.setAttribute('aria-label', field.name); input.disabled = locked
+    if (field.kind === 'ref') input.placeholder = '.peer.handler'
+    const save = button('secondary small', 'Provide', () => app.submitExecutionField(field.key, input.value)); save.disabled = locked
+    li.append(span('constructor-label', field.name), input, save); rows.push(li)
+    if (field.role !== 'output') work = true
+  }
   const walk = (path: Scope, depth: number, fields: string[] = []) => {
     if (depth > 32 || rows.length > 1000) return
-    for (const arg of app.textArguments(path.slice(root.length))) {
-      const li = document.createElement('li'); li.className = 'task argument-row'; li.style.setProperty('--depth', String(depth))
-      li.append(span('constructor-label', arg.name))
-      if (arg.problems.length) work = true
-      if (arg.problems.length) {
-        const input = document.createElement('input'); input.setAttribute('aria-label', arg.name); input.value = arg.text; input.disabled = locked
-        const save = button('secondary small', 'Provide', () => app.setTextArgument(path.slice(root.length), arg.id, input.value)); save.disabled = locked
-        li.append(input, save)
-      } else li.append(span('title', arg.text))
-      rows.push(li)
-    }
     for (const row of viewAt(state.replica, path)?.tasks ?? []) {
       if (row.construction || fields.includes(row.id)) continue
       if (row.requirement || row.allocation) work = true
@@ -691,7 +688,7 @@ const CONSTRUCTORS = [
   { id: 'bank', label: 'Resource bank', icon: 'bank' },
   { id: 'repository', label: 'Repository', icon: 'pull-request' }
 ] as const
-type ConstructorItem = { id: string; label: string; icon: string; output: string; group: string; mask?: { peer: string; key: 'fields' | 'children'; id: string }; peer?: Peer }
+type ConstructorItem = { id: string; label: string; icon: string; output: string; group: string; mask?: { peer: string; key: 'fields' | 'children'; id: string }; peer?: Peer; triggerPeer?: string }
 /**
  * Peer rows the panel makes (`@{handler}`): connecting this node to a peer. Whatever a connection needs (a code, a
  * name, an audience) is entered in the row, and its Complete button connects. Device rows are direct (p2p)
@@ -730,7 +727,7 @@ function constructorOptions(app: App): ConstructorItem[] {
     { id: 'trigger:public', label: 'Public template endpoint', icon: 'broadcast', output: 'trigger', group: 'triggers' },
     { id: 'trigger:users', label: 'Fos template endpoint', icon: 'user-check', output: 'trigger', group: 'triggers' },
     ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
-    ...app.handlerOffers().filter(o => o.type === app.state.replica.store.primitive.templateField.getId()).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: 'handler', output: 'template', group: offerGroup(o.peerId) })),
+    ...app.handlerOffers().filter(o => !o.legacy && !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: 'handler', output: o.type === app.state.replica.store.primitive.templateField.getId() ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) })),
     ...(canVerifySpecifications(app,app.constructorContext()) ? [{id:'verify-specifications',label:'Verify specifications',icon:'verify',output:'tool',group:'device'}] : []),
     { id: 'feature-specification', label: 'Feature specification', icon: 'specification', output: 'note', group: 'device' },
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
@@ -739,7 +736,8 @@ function constructorOptions(app: App): ConstructorItem[] {
     // agents on this computer: the CLI opens in a new terminal on this node (with the grants on its panel), Claude Desktop in a new chat
     ...app.state.localAgents.map(a => ({ id: `action:agent-launch:${a.provider}`, label: `Launch ${a.name} on this task`, icon: a.provider === 'claude' ? 'rocket' : 'play', output: 'tool', group: `agent-cli:${a.provider}` })),
     ...(app.state.claudeDesktop ? [{ id: 'action:agent-app:claude-desktop', label: 'Open in Claude Desktop', icon: 'chat', output: 'tool', group: CLAUDE_DESKTOP_PEER }] : []),
-    ...[...new Set([...app.triggerKinds(app.constructorContext()), ...app.handlerOffers().filter(o => ['timer', 'cron', 'task-completion', 'request'].includes(o.capability ?? '')).map(o => o.capability as 'timer' | 'cron' | 'task-completion' | 'request')])].map(kind => ({ id: `trigger:${kind}`, label: kind === 'task-completion' ? 'Child evaluation' : kind === 'request' ? 'On request' : kind === 'cron' ? 'Cron trigger' : 'Timer trigger', icon: kind === 'timer' ? 'hourglass' : kind === 'request' ? 'request' : kind === 'task-completion' ? 'flag' : 'repeat', output: kind, group: 'triggers' }))]
+    ...app.triggerOffers().filter(o=>!o.definition.hidden).map(o=>({id:'trigger:'+o.cid,label:o.definition.label,icon:o.definition.icon,output:o.type,group:'triggers',triggerPeer:o.peerId}))]
+
 }
 function constructorState(app: App, item: ConstructorItem) {
   if (item.mask) {
@@ -754,8 +752,8 @@ function constructorState(app: App, item: ConstructorItem) {
       app.setNodeMask(peer, { ...latest, [key]: [...selected] }, path)
     } }
   }
-  const peer = item.group === 'triggers' ? (item.id === 'trigger:cron' ? 'fos' : app.state.replica.meta.peerId) : (item.group === 'device' || item.group === 'library' || item.group === 'add-peer') ? app.state.replica.meta.peerId : item.group
-  const offer = item.id.startsWith('handler:') ? app.handlerOffers().find(o => o.cid === item.id.slice(8)) : undefined
+  const peer = item.group === 'triggers' ? (item.triggerPeer ?? 'fos') : (item.group === 'device' || item.group === 'library' || item.group === 'add-peer') ? app.state.replica.meta.peerId : item.group
+  const offer = item.id.startsWith('handler:') ? app.handlerOffers().find(o => o.cid === item.id.slice(8)) : item.triggerPeer ? app.triggerOffers().find(o=>o.cid===item.id.slice(8)) : undefined
   const cap = item.id.startsWith('action:') ? item.id.slice(7) : item.id.startsWith('trigger:') && !['trigger:public', 'trigger:users'].includes(item.id) ? item.id.slice(8) : undefined
   const provider = app.contextPeers().find(p => p.id === peer)
   const enabled = app.constructorEnabled(peer, item.id) && (offer ? offer.enabled : !cap || !provider?.disabled.includes(cap as Capability))
@@ -803,7 +801,7 @@ function peerIcon(p: ContextPeer): string {
 }
 type ConstructorGroup = { id: string; name: string; icon: string; items: ConstructorItem[]; peer?: ContextPeer; parent?: string }
 /** Trigger constructors the fos server runs (cron, template endpoints); the others run on this device from the standard library. */
-const SERVER_TRIGGERS = ['trigger:cron', 'trigger:public', 'trigger:users']
+const triggerParent = (item: ConstructorItem, app: App) => item.triggerPeer === app.state.replica.meta.peerId ? 'library' : item.triggerPeer ?? 'fos'
 /**
  * The constructor panel's tabs: the standard library, then the fos server (added by the panel), then this device, then
  * every other peer of the context; each constructor belongs to the peer that provides it. Triggers are a sub-tab of
@@ -828,7 +826,7 @@ function seedRow(app: App, seed: string, path: Scope, replace: boolean): void {
   const view = app.state.view
   if (replace && path.length) {
     const current = viewAt(app.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
-    const parsed = parseRowInput(seed + (current?.title ?? '')), relative = path.slice(view.length)
+    const parsed = app.parseRowInput(seed + (current?.title ?? '')), relative = path.slice(view.length)
     // a row in view is re-read like typed text (an allocation draws from the bank above it); others are rebuilt in place
     if (current && !current.requirement && view.every((id, i) => path[i] === id) && relative.length) { app.rewriteRowAt(relative.slice(0, -1), relative.at(-1)!, parsed); return }
     try { app.applyConstructor(path, parsed, true) } catch (error) { app.notify('error', String(error)) }
@@ -836,7 +834,7 @@ function seedRow(app: App, seed: string, path: Scope, replace: boolean): void {
   }
   if (path.length > view.length) { app.addRowInside(path.slice(view.length, -1), path.at(-1)!, PLAIN_TYPE, seed); return }
   const ghost = document.querySelector<HTMLTextAreaElement>('.tree .task.ghost textarea.edit')
-  if (!ghost) { app.addRowAtTop(parseRowInput(seed)); return }
+  if (!ghost) { app.addRowAtTop(app.parseRowInput(seed)); return }
   ghost.value = seed; ghost.dispatchEvent(new window.Event('input')); ghost.focus(); ghost.setSelectionRange(seed.length, seed.length)
 }
 function insertConstructor(app: App, id: string, path = app.constructorContext(), replace = false): void {
@@ -874,9 +872,9 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   }
   if (!id.startsWith('trigger:')) { openConstructor(app, id, path, replace); return }
   const kind = id.slice(8) as import('../../shared/sync/triggers').TriggerKind
-  if (!app.triggerKinds(path).includes(kind)) { app.notify('error', 'The trigger provider is not active.'); return }
-  // created paused; a timer or cron trigger has no schedule yet, which its node asks for
-  app.configureTrigger(kind, undefined, true, path, false)
+  // Created paused; required inputs come from the observer declaration.
+  const observer = app.triggerOffers(path).find(offer => offer.cid === kind)
+  app.configureTrigger(kind, undefined, observer?.definition.mode === 'instantiate', path, false)
 }
 /** Typed values for the selected row's unmet requirement or argument: chips that drop onto a row or insert with a click. Empty when nothing is needed. */
 function suggestedConstructors(app: App): HTMLElement {
@@ -1016,10 +1014,11 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
-  if (!kind || !app.triggerKinds(path).includes(kind)) return false
+  const offer = kind && app.triggerOffers(path).find(o => o.cid === kind || (o.capability ?? o.id) === kind)
+  if (!offer || !offer.enabled || !offer.active) return false
   event.preventDefault(); event.stopPropagation()
-  const value = kind === 'timer' ? window.prompt('When? Include a timezone, e.g. 2026-10-15T09:00:00-07:00') : kind === 'cron' ? window.prompt('Five-field UTC cron expression', '0 9 * * *') : ''
-  if (value !== null) app.configureTrigger(kind, value, true, path)
+  const value = offer.definition.schedule ? window.prompt(offer.definition.schedule.label) : ''
+  if (value !== null) app.configureTrigger(offer.cid, value, offer.definition.mode === 'instantiate', path)
   return true
 }
 /** A row's handler is run by its Complete button; the title says what completing does. */
@@ -1130,8 +1129,9 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   // publishing this node is a server connection: its entries sit in the server's grid
   server.items.push(...options.filter(c => c.group === 'add-peer'))
   const triggers = options.filter(c => c.group === 'triggers')
-  groups.push({ id: 'triggers:library', name: 'Triggers', icon: 'trigger', items: triggers.filter(c => !SERVER_TRIGGERS.includes(c.id)), parent: 'library' })
-  groups.push({ id: 'triggers:server', name: 'Triggers', icon: 'trigger', items: triggers.filter(c => SERVER_TRIGGERS.includes(c.id)), parent: server.id })
+  for (const provider of new Set(['library', 'fos', ...triggers.map(c => triggerParent(c, app))])) {
+    groups.push({ id: `triggers:${provider === 'fos' ? 'server' : provider}`, name: 'Triggers', icon: 'trigger', items: triggers.filter(c => triggerParent(c, app) === provider), parent: provider === 'fos' ? server.id : provider })
+  }
   if (!groups.some(g => g.id === prefs.peer)) prefs.peer = 'library'
   const group = groups.find(g => g.id === prefs.peer)!
   const isTriggers = group.id.startsWith('triggers:')
@@ -1243,7 +1243,7 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
     box.append(span('constructor-label', 'Evaluation'))
     const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'awaiting-review': 'Awaiting review', 'needs-recovery': 'Needs recovery' }
     if (record) box.append(span('muted', labels[record.status] ?? record.status))
-    const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating
+    const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating || !app.executionInstructions(parent).complete
     box.append(run)
     if (record?.error) box.append(span('error', record.error))
     if (record && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(record.status)) {
@@ -1432,7 +1432,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     input.setAttribute('aria-label', 'Current node text'); input.placeholder = 'Row text…'; input.value = raw
     input.readOnly = !!preview || !row || row.id === HOME_ID || !!row.refPeer
     const titleRow = div('node-title-row task', ''), check = span('node-title-check', ''), after = span('node-title-after', '')
-    const editing = span('title editing', ''); editing.append(input, kindPreview(input), peerAutocomplete(input, app))
+    const editing = span('title editing', ''); editing.append(input, kindPreview(input, app), peerAutocomplete(input, app))
     titleRow.append(check, editing, after)
     const controls = div('node-actions', '')
     const entry = { key, store: state.replica.store, input, baseline: raw, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls, titleRow, check, after }
@@ -1440,7 +1440,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       if (entry.input.readOnly || entry.input.value === entry.baseline) return
       const text = entry.input.value, current = app.currentRow(); entry.baseline = text
       if (!current || current.text || current.scalar || current.refId !== undefined || current.supply) app.editCurrentText(text, entry.draft)
-      else app.rewriteCurrentRow(parseRowInput(text), entry.draft)
+      else app.rewriteCurrentRow(app.parseRowInput(text), entry.draft)
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
     }
     if (row?.construction || row?.template) { input.readOnly = true; input.title = 'Use Change template → Edit template to edit the constructor.' }
@@ -1551,9 +1551,11 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   const run = toolbar.querySelector<HTMLButtonElement>('.evaluate')!
   run.hidden = false
-  run.disabled = app.evaluating || (!!shared && !app.sharedGrants(state.view)?.includes('execute'))
+  const instructions = app.executionInstructions(state.view)
+  run.disabled = app.evaluating || !instructions.complete || (!!shared && !app.sharedGrants(state.view)?.includes('execute'))
   run.title = app.evaluating ? 'Evaluating…' : shared && !app.sharedGrants(state.view)?.includes('execute') ? `@${shared.owner} has not granted “run evaluations” here` : row?.blockedBy?.length ? 'Blocked by unfilled requirements' : 'Evaluate this node'
   run.setAttribute('aria-label', app.evaluating ? 'Evaluating' : 'Run (evaluate this node)')
+  if (!instructions.complete) run.title = `Needs instruction refs: ${instructions.holes.map(hole => hole.id).join(', ')}`
   const editToggle = header.querySelector<HTMLElement>('.input-toggle')!
   editToggle.hidden = !!preview || !row
   editToggle.setAttribute('aria-pressed', String(prefs.input)); editToggle.setAttribute('aria-controls', 'node-input')
@@ -1619,11 +1621,11 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   const trigger = app.currentTrigger(), triggerState = app.currentTriggerState()
   if (trigger) dynamicValues.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
-  if (trigger && (trigger.kind === 'timer' || trigger.kind === 'cron') && !preview) {
-    const schedule = document.createElement('input'); schedule.type = trigger.kind === 'timer' ? 'datetime-local' : 'text'
-    schedule.setAttribute('aria-label', 'Trigger schedule'); schedule.placeholder = 'Five-field UTC cron expression'
-    schedule.value = trigger.kind === 'timer' ? (trigger.due ? localInputValue(trigger.due) : '') : trigger.expression ?? ''
-    schedule.onchange = () => app.configureTrigger(trigger.kind, schedule.value, false, [...state.view], trigger.enabled)
+  if (trigger?.definition?.schedule && !preview) {
+    const schedule = document.createElement('input'); schedule.type = trigger.definition.schedule.input
+    schedule.setAttribute('aria-label', 'Trigger schedule'); schedule.placeholder = trigger.definition.schedule.label
+    schedule.value = schedule.type === 'datetime-local' ? (typeof trigger[trigger.definition.schedule.field] === 'number' ? localInputValue(trigger[trigger.definition.schedule.field] as number) : '') : String(trigger[trigger.definition.schedule.field] ?? '')
+    schedule.onchange = () => app.configureTrigger(trigger.handler ?? trigger.kind, schedule.value, false, [...state.view], trigger.enabled)
     const missing = missingSchedule(trigger)
     schedule.classList.toggle('unmet-input', !!missing); if (missing) schedule.title = `Needs ${missing}`
     dynamicValues.append(schedule)
@@ -1786,7 +1788,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
   input.className = 'edit'
   input.placeholder = 'New row…'
   void node
-  const preview = kindPreview(input)
+  const preview = kindPreview(input, app)
   input.autocomplete = 'off'
   let committed = false
   /** Make the typed row; null when nothing was typed or the row could not be made (e.g. an allocation with no bank). */
@@ -1798,7 +1800,7 @@ function renderGhostRow(node: NodeView, state: AppState, app: App): HTMLElement 
     const raw = input.value
     if (!raw.trim()) return null
     committed = true
-    const parsed = parseRowInput(raw)
+    const parsed = app.parseRowInput(raw)
     const created = app.addRowAtTop(parsed)
     if (!created) { committed = false; return null }
     lastCreatedRows.set(app, { parent: path, id: created })
@@ -1864,12 +1866,12 @@ function indentDraft(event: KeyboardEvent, input: HTMLInputElement | HTMLTextAre
   return true
 }
 
-function kindPreview(input: HTMLInputElement | HTMLTextAreaElement): HTMLElement {
+function kindPreview(input: HTMLInputElement | HTMLTextAreaElement, app: App): HTMLElement {
   const badge = span('kind-preview', '')
   const update = () => {
     const text = input.value
     if (input instanceof HTMLTextAreaElement) input.rows = Math.min(16, Math.max(1, text.split('\n').length))
-    const what = text.trim() ? describeParsed(parseRowInput(text)) : ''
+    const what = text.trim() ? describeParsed(app.parseRowInput(text)) : ''
     badge.textContent = what
     badge.hidden = !what
   }
@@ -1932,12 +1934,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   const matches = (row: TaskView, path: Scope): boolean => matchesSearch(row, query) || (path.length < 64 && !!viewAt(state.replica, [...state.view, ...path])?.tasks.some(child => matches(child, [...path, child.id])))
   if (query) node = { ...node, tasks: node.tasks.filter(row => matches(row, [...at, row.id])) }
   const rows: HTMLElement[] = []
-  for (const arg of app.textArguments(at)) {
-    const li = document.createElement('li'); li.className = 'task argument-row'; li.dataset.argument = arg.id; li.style.setProperty('--depth', String(depth))
-    li.append(argumentEditor(app, at, arg.id, arg.name, arg.text))
-    if (arg.problems.length && !insideTemplate(state, [...state.view, ...at])) li.append(span('blocked-badge', arg.problems.join('; ')))
-    rows.push(li)
-  }
+  const argumentsById = new Map((node.tasks.some(row => row.typeCid === state.replica.store.primitive.documentField.getId()) ? app.textArguments(at) : []).map(arg => [arg.id, arg]))
   // the device root is a settings page: its rows stay rows, shown in groups
   if (state.atRoot && !at.length && !query) {
     const groupOf = (task: TaskView): string => {
@@ -1961,12 +1958,12 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   }
   node.tasks.forEach((task, index) => renderTask(task, index))
   function renderTask(task: TaskView, index: number): void {
-    rows.push(renderRow(task, at, depth, index, node.tasks.length, state, app))
+    rows.push(renderRow(task, at, depth, index, node.tasks.length, state, app, argumentsById.get(task.id)))
     const path = [...at, task.id]
     const editingBelow = !!state.selected && state.selected.length > path.length && path.every((id, i) => state.selected![i] === id)
     // Responsive depth limits must not hide the child the user just opened for editing.
     const expanded = editingBelow || (workspace(app).layout === 'tree' && !state.collapsed.includes(task.id) && depth + 1 < maxDepth())
-    if (expanded && (task.childCount > 0 || task.childChoices > 0 || app.textArguments(path).length > 0)) {
+    if (expanded && (task.childCount > 0 || task.childChoices > 0)) {
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
         child.choices.forEach((choice) => rows.push(renderNestedChoice(choice, [...at, task.id], depth + 1, state, app)))
@@ -1983,7 +1980,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   return rows
 }
 
-function renderRow(task: TaskView, at: Scope, depth: number, index: number, siblingCount: number, state: AppState, app: App): HTMLElement {
+function renderRow(task: TaskView, at: Scope, depth: number, index: number, siblingCount: number, state: AppState, app: App, argument?: ReturnType<App['textArguments']>[number]): HTMLElement {
   const path: Scope = [...at, task.id]
   const selected = !!state.selected && state.selected.length === path.length && state.selected.every((p, i) => path[i] === p)
   const li = document.createElement('li')
@@ -2080,7 +2077,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const handle = span('handle', '⋮⋮')
   handle.title = 'Drag to move'
 
-  const hasChildren = task.childCount > 0 || task.childChoices > 0 || app.textArguments(path).length > 0
+  const hasChildren = task.childCount > 0 || task.childChoices > 0
   const canExpandHere = depth + 1 < maxDepth()
   // rows without children show no bullet; notes keep a middot so a note block reads as an item in the outline
   const toggle = hasChildren && !canExpandHere
@@ -2102,7 +2099,12 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   let body: HTMLElement
   // a row of the file-reference type: the file name and, on this device, whether the file still matches (its fields are not edited by hand)
   const fileReference = app.fileReference([...state.view, ...at, task.id])
-  if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
+  if (argument) {
+    li.classList.add('argument-row'); li.dataset.argument = argument.id
+    body = argumentEditor(app, at, argument.id, argument.name, argument.text)
+    if (argument.problems.length && !insideTemplate(state, [...state.view, ...at])) body.append(span('blocked-badge', argument.problems.join('; ')))
+  }
+  else if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
@@ -2149,7 +2151,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
       if (child.allocation && !child.requirement) { const t = span('alloc-tag', allocationTag(child.allocation, child.user)); t.title = `${child.title || 'allocation'}${child.allocation.by ? ` · ${child.allocation.by}` : ''}`; meta.append(t) }
     }
   }
-  if (!insideTemplate(state, [...state.view, ...path]) && !!task.requirement && task.requirement && !task.requirement.satisfied) li.classList.add('unmet')
+  if (task.requirement && !task.requirement.satisfied && !insideTemplate(state, [...state.view, ...path])) li.classList.add('unmet')
   const unscheduled = task.type === TEMPLATE_TYPE ? missingSchedule(nodeTrigger(state.replica, [...state.view, ...path])) : null
   if (unscheduled) { li.classList.add('unmet'); const b = span('blocked-badge', `Needs: ${unscheduled}`); b.title = 'This trigger has no schedule yet: it does not run until one is set on its node'; meta.append(b) }
   if (task.subtreeTasks > 0) meta.append(span('muted', `${task.subtreeDone}/${task.subtreeTasks}`))
@@ -2225,9 +2227,13 @@ function renderForm(task: TaskView, at: Scope, state: AppState, app: App): HTMLE
       const label = document.createElement('label'); label.className = 'node-form-field'
       label.append(span('muted', field.label))
       const input = document.createElement(field.primitive === 'text' ? 'textarea' : 'input')
-      if (input instanceof HTMLInputElement) input.type = field.primitive === 'number' || field.primitive === 'time' ? 'number' : 'text'
+      if (input instanceof HTMLInputElement) {
+        input.type = field.primitive === 'number' || field.primitive === 'time' ? 'number' : field.primitive === 'boolean' ? 'checkbox' : 'text'
+        if (field.primitive === 'boolean') input.checked = field.value === true
+        if (field.primitive === 'null') input.readOnly = true
+      }
       else input.rows = Math.min(8, Math.max(1, String(field.value ?? '').split('\n').length))
-      input.value = String(field.value ?? ''); input.setAttribute('aria-label', field.label)
+      input.value = field.primitive === 'null' ? 'null' : String(field.value ?? ''); input.setAttribute('aria-label', field.label)
       input.dataset.fieldPath = JSON.stringify(field.path)
       const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...path.slice(0, -1)] }
       let baseline = input.value
@@ -2239,6 +2245,7 @@ function renderForm(task: TaskView, at: Scope, state: AppState, app: App): HTMLE
         baseline = text
       }
       input.addEventListener('input', () => input.setCustomValidity(''))
+      if (input instanceof HTMLInputElement && input.type === 'checkbox') input.addEventListener('change', () => { input.value = String(input.checked); save() })
       input.addEventListener('commit-edit', save)
       input.addEventListener('blur', () => { if (!renderDepth) save() })
       input.addEventListener('click', event => event.stopPropagation())
@@ -2277,7 +2284,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     if (input.value === raw) { if (!task.scalar && !input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
     if (task.text || task.scalar || task.refId !== undefined || !!task.supply) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
     // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
-    const parsed = parseRowInput(input.value)
+    const parsed = app.parseRowInput(input.value)
     if (parsed.type === PLAIN_TYPE && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
     app.rewriteRowAt(at, task.id, parsed, draft)
   }
@@ -2324,7 +2331,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   })
   // the editor plus a badge saying what the typed line is recognized as
   const wrap = span('title editing', '')
-  wrap.append(input, kindPreview(input), peerAutocomplete(input, app))
+  wrap.append(input, kindPreview(input, app), peerAutocomplete(input, app))
   return wrap
 }
 

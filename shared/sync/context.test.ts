@@ -95,7 +95,7 @@ test('legacy Home template becomes an ordinary container without losing children
   r = addTask(r, [HOME_ID], 'Keep this', 2, 'child')
   r = ensureHomeContext(r, 3)
   expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.type).toBe(HOME_TYPE)
-  expect(view(r, [HOME_ID])!.tasks[0].id).toBe('child')
+  expect(view(r, [HOME_ID])!.tasks[0]!.id).toBe('child')
   expect(ensureHomeContext(r, 4)).toBe(r)
 })
 

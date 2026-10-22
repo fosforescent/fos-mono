@@ -1,10 +1,11 @@
+import { standardHostRef } from './host-runtime'
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, addRow, commitRoot, createReplica, ensureLibraryLink, nestScope, ensureHomeContext, headCid, importNodes, libraryLink, makeLink, mergePolicy, proposalContent, put, reachableNodes, resolveScope, publication, updateAtScope, valueContent, view, withProposal, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
-import { createHandlerRegistry } from './registry'
+import { createHostRuntime } from './host-runtime'
 import { createSharingHandlers } from './sharing'
 import { ensureStandardLibrary, LIBRARY_GRANTS } from './library'
 import { ensureAccountContext } from './provideNode'
@@ -39,8 +40,8 @@ function proposeRow(r: Replica, path: Scope, peer: string, title: string, id: st
 }
 
 test('the library account, node, sharing, policy and templates come to exist once; every other account references it', async () => {
-  const h = host(), registry = createHandlerRegistry([{ peerId: 'fos', capability: 'search' }])
-  const address = await ensureStandardLibrary(h.deps, 'fos-library', registry)
+  const h = host(), runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search') }])
+  const address = await ensureStandardLibrary(h.deps, 'fos-library', runtime)
   expect(address).toMatchObject({ owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], title: 'Standard library' })
   const lib = h.get('fos-library')
   const node = view(lib, address.path)!
@@ -49,24 +50,24 @@ test('the library account, node, sharing, policy and templates come to exist onc
   expect(node.members.find(m => m.peerId === 'audience:users')!.capabilities).toEqual(expect.arrayContaining([...LIBRARY_GRANTS]))
   expect(mergePolicy(lib, address.path)).toEqual({ approvals: 2 })
   const saved = h.saves.length
-  expect(await ensureStandardLibrary(h.deps, 'fos-library', registry)).toEqual(address)
+  expect(await ensureStandardLibrary(h.deps, 'fos-library', runtime)).toEqual(address)
   expect(h.saves.length).toBe(saved)
-  // the registry carries the address; an account's Home links the library only when its owner contributes
-  registry.library = address
+  // the runtime carries the address; an account's Home links the library only when its owner contributes
+  runtime.library = address
   h.add('alice')
-  let alice = ensureAccountContext(h.get('alice'), 5, registry)
+  let alice = ensureAccountContext(h.get('alice'), 5, runtime)
   expect(libraryLink(alice)).toBeNull()
   alice = ensureLibraryLink(alice, address, 6).replica
   expect(libraryLink(alice)).toEqual([HOME_ID, LIBRARY_ID])
   expect(view(alice, [HOME_ID])!.tasks.find(t => t.id === LIBRARY_ID)).toMatchObject({ type: REF_TYPE, refOwner: 'fos-library', refId: LIBRARY_ID })
-  expect(headCid(ensureAccountContext(alice, 6, registry))).toBe(headCid(alice))
-  expect(libraryLink(ensureAccountContext(h.get('fos-library'), 7, registry))).toBeNull()
-  expect(libraryLink(ensureAccountContext(ensureHomeContext(createReplica('user:bob'), 1), 8, createHandlerRegistry([])))).toBeNull()
+  expect(headCid(ensureAccountContext(alice, 6, runtime))).toBe(headCid(alice))
+  expect(libraryLink(ensureAccountContext(h.get('fos-library'), 7, runtime))).toBeNull()
+  expect(libraryLink(ensureAccountContext(ensureHomeContext(createReplica('user:bob'), 1), 8, createHostRuntime([])))).toBeNull()
 })
 
 test('members vote on a proposed change through the shared view and the library merges it at the policy threshold', async () => {
-  const h = host(), registry = createHandlerRegistry([])
-  const address = await ensureStandardLibrary(h.deps, 'fos-library', registry)
+  const h = host(), runtime = createHostRuntime([])
+  const address = await ensureStandardLibrary(h.deps, 'fos-library', runtime)
   h.add('bob'); h.add('carol')
   const cid = proposeRow(h.get('fos-library'), address.path, 'user:bob', 'Weekly review', 'lib:weekly', 50)
   const handlers = createSharingHandlers(h.deps, 'test-only-secret')

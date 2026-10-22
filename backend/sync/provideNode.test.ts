@@ -9,7 +9,7 @@ jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 
 import { createNodeProvider } from './provideNode'
 import type { AccountStoreDeps } from './accountStore'
-import { createHandlerRegistry } from './registry'
+import { createHostRuntime } from './host-runtime'
 import { relayHandler } from './hostHandlers'
 import { repositoryLoadHandler } from './repository'
 import { bindRepository, createBranch, selectBranch, type RepositorySnapshot } from '@fosforescent/shared/sync/index'
@@ -82,7 +82,7 @@ describe('node provider', () => {
     stores.set(7, server.store)
     const snapshot: RepositorySnapshot = { repo: 'acme/project', defaultBranch: 'main', canPush: true, branches: [], pulls: [{ number: 1, title: 'PR', url: 'https://github.com/acme/project/pull/1', head: 'feature', base: 'main', headRepo: 'acme/project', sha: 'a'.repeat(40), state: 'merged' }] }
     const fetch = jest.fn(async () => snapshot)
-    deps.registry = createHandlerRegistry([repositoryLoadHandler({ connected: async () => true, snapshot: fetch })])
+    deps.runtime = createHostRuntime([repositoryLoadHandler({ connected: async () => true, snapshot: fetch })])
     const handler = createNodeProvider(deps), request = { peerId: 'phone', scope: [], path: [HOME_ID, 'project'], linkId: 'project-phone' }
     expect((await ask(handler, request, { username: 'alice', kind: 'peer', peerId: 'stranger', scope: [] })).status).toBe(403)
     expect(fetch).not.toHaveBeenCalled()
@@ -208,9 +208,9 @@ test('Home sync persists public siblings, never content excluded from Fos', asyn
 
 test('a message one device leaves for another waits in that peer\'s queue on the account', async () => {
   const { deps, stores } = makeDeps()
-  deps.registry = createHandlerRegistry([relayHandler()])
+  deps.runtime = createHostRuntime([relayHandler()])
   // the account knows the desktop's agent peer on the hub
-  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0, deps.registry.hostOffers())
+  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0, deps.runtime.hostOffers())
   account = addTask(account, [HOME_ID], 'Hub', 1, 'hub')
   account = addMemberAt(account, [HOME_ID, 'hub'], 'desktop-agent', 'Desktop agent', ['read', 'edit'], 2)
   stores.set(7, account.store)

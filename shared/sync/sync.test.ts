@@ -78,7 +78,7 @@ const LABELS = { ours: 'A', theirs: 'B' }
 /** Build content nodes in one store for the merge tests. */
 function fixtures(store: FosStore) {
   const task = (id: string, title: string, done = false, time = 1000, updated = time) =>
-    rowEdgeAt(store, TASK_TYPE, put(store, taskContent(id, title, done, time, updated)))
+    rowEdgeAt(store, TASK_TYPE, put(store, taskContent(id, title, done, time, updated)), [])
   const node = (...edges: FosPathElem[]) => put(store, { data: {}, children: edges })
   const part = (id: string, name: string, ...edges: FosPathElem[]) => rowEdgeAt(store, PLAIN_TYPE, put(store, { data: { alias: { id }, description: { content: name } }, children: edges }), [])
   return { task, node, part }
@@ -395,14 +395,11 @@ describe('replica + account end to end', () => {
 // Tree, links and proposals
 
 import {
-  addMemberAt,
-  applyProposalAt,
-  makeLinkAt,
   moveNode,
   rejectProposalAt,
   removePeerAt
 } from './replica'
-import { hasCapability, linkHistory, readProposals, stripLink, content as nodeContent } from './graph'
+import { readProposals, content as nodeContent } from './graph'
 import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from './library-types'
 import { REF_TYPE } from './library-types'
 import { TEXT_TYPE } from './library-types'
@@ -537,7 +534,7 @@ describe('link nodes: history, members and proposals', () => {
     expect(reviewer.data).not.toHaveProperty('actor')
     expect(reviewer.children).toEqual([
       [store.primitive.capabilityNode.getId(), capabilityTarget(store, 'read')],
-      [store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()]
+      [store.primitive.capabilityNode.getId(), capabilityTarget(store, 'edit')]
     ])
     // deciding proposals is how edit is exercised on a node with several peers: no grant of its own
     expect(hasCapability(store, linkValue, 'reviewer', 'edit')).toBe(true)
@@ -991,9 +988,9 @@ describe('peer capabilities', () => {
     expect(world.serverTasks()).toEqual(['assigned to the work machine', 'another task'])
   })
 
-  it('policies come from fos.config.toml tables and keep only known capabilities', () => {
+  it('policies come from fos.config.toml tables and preserve extension capabilities', () => {
     const config = parseToml('[attach]\nserver = "https://api.example"\n\n[server]\nto = ["http", "ws", "bogus"]\nfrom = ["read", "read-requests", "relay"]\n\n[peers.bob]\nto = ["read"]\nfrom = ["edit"]\n') as FosProjectConfig
-    expect(serverPolicyOf(config)).toEqual({ to: ['http', 'ws'], from: ['read', 'read-requests', 'relay'] })
+    expect(serverPolicyOf(config)).toEqual({ to: ['http', 'ws', 'bogus'], from: ['read', 'read-requests', 'relay'] })
     expect(peerPolicyOf(config, '@bob')).toEqual({ to: ['read'], from: ['edit'] })
     expect(peerPolicyOf(config, 'carol')).toBeNull()
     expect(serverPolicyOf(parseToml('[attach]\nname = "x"\n') as FosProjectConfig)).toBeNull()
@@ -1025,7 +1022,7 @@ describe('service capability registration', () => {
     expect(readMembers(store, member)[0]).toEqual({ peerId: 'user:services', name: 'Services', capabilities: CAPABILITIES, accepts: CAPABILITIES })
   })
 
-  it('advertises only transport facts about fos by default; services come from the host registry', () => {
+  it('advertises only transport facts about fos by default; services come from host ref declarations', () => {
     for (const service of ['search', 'market', 'mail', 'llm', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'poll', 'cron']) expect(SERVER_TRANSPORT_CAPABILITIES).not.toContain(service)
     expect(INTEGRATION_PEERS.find((p) => p.id === 'phone')).toMatchObject({ kind: 'channel', consumes: [] })
     expect(INTEGRATION_PEERS.some((p) => p.id === 'discord')).toBe(false)

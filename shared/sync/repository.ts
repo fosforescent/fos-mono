@@ -1,3 +1,4 @@
+import { sameCapabilityType } from './capabilities'
 /** A repository constructor is a named typed ref, not a separate row kind. */
 import { contextMembers } from './handlers'
 import { argumentRefs } from './bindings'
@@ -15,7 +16,7 @@ export function repositoryAt(r: Replica, at: Scope): string | null {
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) return null
   const type = capabilityTarget(r.store, 'repo')
-  const values = argumentRefs(r.store, cid).filter(arg => arg.name === 'repo' && arg.type === type).map(arg => refValueCid(r.store, content(r.store, arg.cid))).filter((value): value is string => !!value)
+  const values = argumentRefs(r.store, cid).filter(arg => arg.name === 'repo' && sameCapabilityType(r.store, arg.type, type)).map(arg => refValueCid(r.store, content(r.store, arg.cid))).filter((value): value is string => !!value)
   const names = [...new Set(values.map(value => content(r.store, value).data.description?.content ?? ''))]
   return names.length === 1 && /^[\w.-]+\/[\w.-]+$/.test(names[0]!) ? names[0]! : null
 }

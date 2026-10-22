@@ -1,13 +1,31 @@
 import type { Request, Response } from 'express'
-import { LIBRARY_ID, addMemberAt, setMemberCapabilitiesAt, addRow, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view } from '@fosforescent/shared/sync/index'
+import { LIBRARY_ID, addMemberAt, setMemberCapabilitiesAt, addRow, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view, nativeRef, setNodeTrigger, triggerState, serializeReplica, loadReplica, removeMemberAt } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEvaluationService } from './evaluation'
 import { createEventService } from './events'
-import { createHandlerRegistry } from './registry'
+import { createHostRuntime } from './host-runtime'
 import { githubRepoHandler } from './hostHandlers'
 import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
+
+test('the scheduler discovers custom observer refs in nested scopes after reload and respects removal', async () => {
+  let r = addTask(addTask(createReplica('owner'), [], 'Container', 1, 'container'), ['container'], 'Listen', 1, 'listener')
+  let observed = 0
+  const handler = { peerId: 'custom-host', ref: { id: 'custom-observer', type: (store: typeof r.store) => put(store, { data: { triggerDefinition: { label: 'Custom', icon: 'clock', mode: 'resume' } }, children: [] }), trigger: { observe: () => { observed++; return { id: 'one' } } } } }
+  const runtime = createHostRuntime([handler])
+  r = runtime.declare(r, ['container'], 'custom-host', 1)
+  const selected = nativeRef(r.store, 'custom-host', handler.ref)
+  r = setNodeTrigger(r, ['container', 'listener'], { kind: 'custom', handler: selected, peer: 'custom-host', enabled: true, created: 1 }, 1)
+  r = loadReplica(serializeReplica(r))
+  const service = createEvaluationService({ loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user, store) => { r = { ...r, store } }, now: () => 10 }, runtime)
+  await service.runCron('owner')
+  expect(observed).toBe(1)
+  expect(triggerState(r, ['container', 'listener'])?.status).toBe('finished')
+  r = removeMemberAt(r, ['container'], 'custom-host', 11)
+  await service.runCron('owner')
+  expect(observed).toBe(1)
+})
 
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
@@ -20,9 +38,9 @@ function setup() {
     expect(evaluationRecord(r, ['project'])?.effects[0]?.status).toBe('attempting')
     return { url: 'https://example.test/issues/1', number: 1 }
   } }
-  const registry = createHandlerRegistry([githubRepoHandler({ connected: () => effects.connected(), createIssue: () => effects.createIssue() })])
+  const runtime = createHostRuntime([githubRepoHandler({ connected: () => effects.connected(), createIssue: () => effects.createIssue() })])
   const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user: unknown, store: any) => { r = { ...r, store } }, now: () => 10 }
-  const service = createEvaluationService(deps, registry)
+  const service = createEvaluationService(deps, runtime)
   // Owners evaluate through the event grammar: a `complete` event at the node (backend/sync/events.ts → runNode).
   const events = createEventService(deps, service.runNode)
   const expected = put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), ['project'])!))
@@ -70,9 +88,9 @@ test('a rejected persistent claim stops before invoking any integration', async 
   r = addMemberAt(r, [], 'integration:github', 'GitHub', [], 1)
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 1, ['repo'])
   const issue = jest.fn()
-  const registry = createHandlerRegistry([githubRepoHandler({ connected: async () => true, createIssue: issue })])
+  const runtime = createHostRuntime([githubRepoHandler({ connected: async () => true, createIssue: issue })])
   const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async () => { throw new Error('Stale root') } }
-  const events = createEventService(deps, createEvaluationService(deps, registry).runNode)
+  const events = createEventService(deps, createEvaluationService(deps, runtime).runNode)
   let status = 200
   const res = { setHeader() {}, status(n: number) { status = n; return res }, json() { return res } } as unknown as Response
   await events.http({ claims: { username: 'owner' }, body: { scope: ['project'], event: { kind: 'complete', path: [], expected: put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), ['project'])!)) } } } as unknown as Request, res)

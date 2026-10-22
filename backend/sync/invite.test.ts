@@ -4,7 +4,7 @@ jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
-import { createHandlerRegistry } from './registry'
+import { createHostRuntime } from './host-runtime'
 import { REF_TYPE } from '@fosforescent/shared/sync/library-types'
 
 function setup(relay = true) {
@@ -13,13 +13,13 @@ function setup(relay = true) {
     bob: ensureHomeContext(createReplica('user:bob'), 1),
   }
   const notified: number[] = []
-  const registry = createHandlerRegistry(relay ? [] : [])
+  const runtime = createHostRuntime(relay ? [] : [])
   // the fos server relays between the accounts it hosts; without `relay` the grant is recorded but cannot be delivered
-  if (!relay) registry.serverCapabilities = () => ['http', 'ws']
+  if (!relay) runtime.serverCapabilities = () => ['http', 'ws']
   const events = createEventService({
     loadStore: async username => replicas[username] ? { user: { id: username === 'alice' ? 1 : 2, username }, store: replicas[username]!.store } : null,
     saveStore: async (user, store) => { replicas[user.username] = createReplica(`user:${user.username}`, store) },
-    notify: id => { notified.push(id) }, now: () => 100, registry,
+    notify: id => { notified.push(id) }, now: () => 100, runtime,
   })
   const send = async (scope: string[], event: unknown, claims: Record<string, unknown> = { username: 'alice' }) => {
     let status = 200, body: any

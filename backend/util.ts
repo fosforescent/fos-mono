@@ -24,7 +24,6 @@ import { hashPassword } from "./auth/register";
 import { defaultTrellisData } from "@fosforescent/shared/defaults";
 import { validateNodeData, validateTrellisData } from "@fosforescent/shared/utils";
 import { get } from "http";
-import { th } from "date-fns/locale";
 
 
 

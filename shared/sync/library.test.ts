@@ -42,7 +42,8 @@ test('seeding adds the standard templates once and records the version', () => {
   const rows = view(r, path)!.tasks
   expect(rows.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(STANDARD_LIBRARY.filter(s => s.type === TEMPLATE_TYPE).map(s => s.text))
   // a template's own pattern rows (what tasks made from it accept) are rows too; its requirements are the rest
-  expect(view(r, [...path, 'lib:meet'])!.tasks.filter(t => t.type !== PATTERN_TYPE)).toHaveLength(2)
+  expect(view(r, [...path, 'lib:meet'])!.tasks.filter(t => t.requirement)).toHaveLength(2)
+  expect(view(r, [...path, 'lib:meet'])!.tasks.some(t => t.id === 'fos:icon:lib:meet')).toBe(true)
   expect(rows.some(t => t.id === 'lib:trip')).toBe(false)
   expect(libraryInfo(r, path)).toMatchObject({ version: LIBRARY_VERSION })
   expect(libraryInfo(r, path)!.seeded).toContain('lib:meet:when')
@@ -143,10 +144,10 @@ test('the nodes the fos CLI pulls through the account export as the same bundle 
   const queue: Scope[] = [[]]
   while (queue.length) {
     const relative = queue.shift()!
-    const request = { peerId: 'user:dev', scope, path: relative, linkId: `fos-cli:${relative.join('/')}` }
+    const request = { peerId: 'user:dev', scope, path: relative, linkId: `fos-cli:${pulled.length}` }
     const served = exchangeNode(lib, request, { peerId: 'user:dev', scope, owner: false, proposeOnly: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }, 50 + pulled.length)
     pulled.push({ request, node: served.node })
-    for (const child of served.node.children) if (child.refId === undefined) queue.push([...relative, child.id])
+    for (const child of served.node.children) if (!child.held) queue.push([...relative, child.id])
   }
   const bundle = exportProvidedLibrary({ address, nodes: pulled }, 99)
   expect(bundle.address).toEqual(address)

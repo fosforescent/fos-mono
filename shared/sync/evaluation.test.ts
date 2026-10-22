@@ -116,3 +116,21 @@ test('declared return slots can start empty, but an effect cannot commit with an
   expect(record.error).toMatch(/valid return value/)
   expect(userView(s.get())!.tasks[0]!.done).toBe(false)
 })
+
+test.each([false, true])('output rows are tracked by declaration identity, not a name prefix (change input: %s)', async changeInput => {
+  const { writeNodeValue } = await import('./index')
+  const s = setup(), path = ['parent', 'child']
+  s.set(writeNodeValue(s.get(), path, 'result', {}, 3))
+  s.set(writeNodeValue(s.get(), path, 'result.other', { count: 1 }, 3))
+  s.driver.handles = () => true
+  s.driver.outputs = () => ['result:child']
+  s.driver.effect = async () => {
+    s.set(writeNodeValue(s.get(), path, 'result', { nested: { count: 2 } }, 4))
+    if (changeInput) s.set(writeNodeValue(s.get(), path, 'result.other', { count: 9 }, 4))
+  }
+  const record = await evaluateNode(path, s.driver)
+  if (changeInput) {
+    expect(record.status).toBe('needs-recovery')
+    expect(record.error).toMatch(/Instructions changed/)
+  } else expect(record.status).toBe('committed')
+})

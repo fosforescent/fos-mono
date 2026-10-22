@@ -1,3 +1,5 @@
+import { standardHostRef } from '../sync/host-runtime'
+import { sameCapabilityType, primitiveRef, instructionPrimitives } from '@fosforescent/shared/sync/index'
 /**
  * MCP peers: an MCP server the account has access to attaches to a node as a member (`mcp:<server id>`),
  * advertises `tool` (and read/edit) there, and runs its tools for "-tool <name> …" requirements under that
@@ -5,7 +7,7 @@
  *
  *   GET  /user/data/mcp-peers                   the account's MCP servers as peers (id, name, tools)
  *   POST /user/data/mcp-peers/attach            { scope, serverId }   → the server becomes a member of that node
- *   (running a `-tool` requirement is a `complete` event: `mcpToolHandler` is the registry effect, see sync/hostHandlers.ts)
+ *   (running a `-tool` requirement is a `complete` event: `mcpToolHandler` is the runtime effect, see sync/hostHandlers.ts)
  *
  * With MCP_LISTEN=true the peers also listen: after every save of the tree, open tool requirements under nodes
  * they are attached to are run (`runOpenToolRequests`, debounced per user).
@@ -15,13 +17,13 @@ import type { Request, Response } from 'express'
 import {
   evaluateNode, evaluationRecord, resolveBinding, contextBindings, addMemberAt, addRefAt, addRow, addSupply, applyProposalAt, capabilityTarget,
   content, headCid, discoverHandlers, MCP_PEER_PREFIX, newId, proposeRefAt, put,
-  refArguments, refNodeContent, refTypeCid, refValueCid, resolveScope,
+  refArguments, refNodeContent, matchesGraph, refValueCid, resolveScope,
   setHandlerOffersAt, valueContent, view, type Replica, type Scope, type TaskView
 } from '@fosforescent/shared/sync/index'
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { editTree, walkRows, type StoreDeps } from './store'
 import type { AccountUser } from '../sync/accountStore'
-import type { HostHandler } from '../sync/registry'
+import type { HostHandler } from '../sync/host-runtime'
 import { NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
 
 export type McpServerInfo = { id: number; name: string; endpoint: string; credentials: Record<string, unknown>; tools: Array<{ name: string; description: string | null }> }
@@ -46,18 +48,19 @@ function handlersAbove(replica: Replica, at: Scope, peerId: string): string[] {
 /** Create the native handler as a value behind the same ref that can hold a template. */
 function toolHandler(replica: Replica, server: McpServerInfo, tool: string): string {
   const store = replica.store
-  const value = put(store, { data: { peerId: { content: `${MCP_PEER_PREFIX}${server.id}` }, description: { content: tool } }, children: [] })
-  return put(store, refNodeContent(store, { alias: { id: `${MCP_PEER_PREFIX}${server.id}/${tool}` } }, value, [], capabilityTarget(store, 'tool')))
+  return primitiveRef(store, { id: `${MCP_PEER_PREFIX}${server.id}/${tool}`, implementation: 'fos:handler:mcp:*:tool',
+    host: `${MCP_PEER_PREFIX}${server.id}`, label: tool, type: capabilityTarget(store, 'tool') })
 }
 
 type BoundTool = { replica: Replica; server: McpServerInfo; tool: string; peerId: string; returnId: string }
 
 /** Resolve the pinned handler; unavailable explicit bindings never fall back to a different peer. Writes the binding and the return ref, never calls anything. */
 function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): BoundTool | { error: string } {
-  const r = req.requirement
-  if (!r || r.capability !== 'tool' || r.satisfied) return { error: 'not an open tool requirement' }
   const store = replica.store
   const scope = [...at, req.id]
+  const pinned = instructionPrimitives(replica, { path: scope, row: req }).some(value => value.implementation === 'fos:handler:mcp:*:tool' && value.host.startsWith(MCP_PEER_PREFIX)) ? req.typeCid : null
+  const r = req.requirement ?? (pinned ? {} as { tool?: string; capability?: string; satisfied?: boolean } : null)
+  if (!r || (!pinned && r.capability !== 'tool') || r.satisfied) return { error: 'not an open tool instruction' }
   const requestView = view(replica, scope)
   if (requestView?.choices.length) return { error: 'tool requirement has unresolved choices' }
   if (requestView?.tasks.some((row) => !!row.requirement && !row.requirement?.satisfied)) return { error: 'tool requirement has unresolved dependencies' }
@@ -68,6 +71,8 @@ function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServer
   const bindingPath = [...scope, bindingId]
   const bindingCid = resolveScope(store, headCid(replica), bindingPath)
   let handlerCid = bindingCid ? refValueCid(store, content(store, bindingCid)) : null
+  if (pinned && handlerCid && handlerCid !== pinned) return { error: 'handler argument conflicts with the pinned instruction' }
+  handlerCid ??= pinned ?? null
   const attached = mcpMembersAbove(replica, scope)
   if (!handlerCid) {
     const candidates: Array<{ cid: string; type: string }> = []
@@ -89,7 +94,7 @@ function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServer
     const proposed = proposeRefAt(replica, bindingPath, handlerCid, replica.meta.peerId, now)
     replica = applyProposalAt(proposed.replica, bindingPath, proposed.proposalCid, replica.meta.peerId, now)
   }
-  if (refTypeCid(store, content(store, handlerCid)) !== capabilityTarget(store, 'tool')) return { error: 'bound handler is not a tool handler' }
+  if (!matchesGraph(store, capabilityTarget(store, 'tool'), handlerCid)) return { error: 'bound handler is not a tool handler' }
   const resolved = resolveBinding(store, capabilityTarget(store, 'tool'), handlerCid, contextBindings(replica, scope))
   if (resolved.status !== 'ready') return { error: resolved.problems.join('; ') }
   const handler = content(store, resolved.cid!)
@@ -123,10 +128,10 @@ async function executeTool(deps: McpPeerDeps, replica: Replica, bound: BoundTool
   return { replica, text }
 }
 
-/** `-tool` requirements as a registry effect: the attached MCP server (`mcp:<id>`) that is bound, or the single candidate, runs the tool. */
+/** `-tool` requirements as a runtime effect: the attached MCP server (`mcp:<id>`) that is bound, or the single candidate, runs the tool. */
 export function mcpToolHandler(deps: McpPeerDeps): HostHandler {
   return {
-    peerId: 'mcp:*', capability: 'tool',
+    peerId: 'mcp:*', ref: standardHostRef('mcp:*', 'tool'),
     matches: id => id.startsWith(MCP_PEER_PREFIX),
     handles: step => step.row?.requirement?.capability === 'tool' && step.row.requirement.tool !== 'fos.pull',
     available: async (userId, peerId) => (await deps.servers(userId)).some(s => `${MCP_PEER_PREFIX}${s.id}` === peerId),

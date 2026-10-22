@@ -20,7 +20,7 @@ export type TextPresentation = { mediaType: 'text/plain' | 'text/markdown'; inte
 export type FosDataContent = {
   /** Graph constructor declarations. Products are rows; repetition expands a row template. */
   form?: {
-    primitive?: 'text' | 'number' | 'peer' | 'time';
+    primitive?: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null';
     repeat?: boolean;
     open?: boolean;
     title?: string[];
@@ -34,7 +34,9 @@ export type FosDataContent = {
   };
   /** A constructor row's parameter, optionally bound from the caller's environment. */
   parameter?: { name: string; from?: string[] };
-  scalar?: { type: 'text' | 'number' | 'peer' | 'time'; value: string | number };
+  /** Presentation and invocation contract of an observer ref, supplied by its declaration. */
+  triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
+  scalar?: { type: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null'; value: string | number | boolean | null };
   /** Presentation is a projection of fields, not a second copy of their values. */
   presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean };
   created?: { time: number };
@@ -145,7 +147,7 @@ export type FosDataContent = {
    * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
    */
   requirement?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize' | 'title'
+    capability: string
     resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount?: number
     unit?: string
@@ -166,7 +168,7 @@ export type FosDataContent = {
   },
   /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
   supply?: {
-    capability: 'confirmation' | 'choice' | 'search' | 'allocation' | 'task' | 'market' | 'mail' | 'peer' | 'llm' | 'repo' | 'tool' | 'verify' | 'organize' | 'title'
+    capability: string
     by: string
     at: number
     ref?: string
@@ -190,6 +192,24 @@ export type FosDataContent = {
     type?: string
     versions?: string[]
   },
+  /** Standard-library adapter metadata. Custom patterns need no registered name. */
+  capabilityDefinition?: {
+    name: string
+    label: string
+    legacy?: string
+    syntax?: string[]
+  },
+  /** A property path is code/data in the same ref shape as an explicitly bound input. */
+  refExpression?: import('./sync/ref-paths').RefExpression,
+  /** Only a local runtime meaning attached to this graph value can execute it. */
+  primitive?: import('./sync/primitives').Primitive,
+  /** Installation history only; availability is always determined by current ref rows. */
+  nativeDefaults?: { sources: string[] },
+  /** Output refs may remain mutable or unfilled when the instruction starts. */
+  refRole?: 'input' | 'output',
+  /** A compiled residual: its stable ref identity survives next to the partial CID. */
+  refHole?: { id: string },
+  refCompilation?: { cid: string; holes: import('./sync/ref-compiler').RefHole[] },
   /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
   typeError?: {
     rejected: string[]

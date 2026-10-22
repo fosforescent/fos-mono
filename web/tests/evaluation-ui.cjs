@@ -86,11 +86,13 @@ async function main() {
   const body = app.applyConstructor(parent, { type: NOTE_TYPE, text: '**Bound note**\n\nSecond paragraph.' })
   const composed = app.applyConstructor(parent, { type: TASK_TYPE, text: 'Hello {recipient}' })
   const childText = app.applyConstructor(composed, { type: PLAIN_TYPE, text: 'For {{recipient}}; still {missing}' })
-  const childNote = app.applyConstructor(composed, { type: NOTE_TYPE, text: '# For {{recipient}}\n\n{body}' })
+  // The note already has a body property; give its interpolated ref a distinct
+  // name so two declarations in the same scope do not compete for "body".
+  const childNote = app.applyConstructor(composed, { type: NOTE_TYPE, text: '# For {{recipient}}\n\n{noteText}' })
   const localText = app.applyConstructor(composed, { type: PLAIN_TYPE, text: 'Local {recipient}' })
   app.goTo(composed)
   app.dropArgument([], app.placeholders().find(arg => arg.name === 'recipient').id, recipient.at(-1))
-  app.dropArgument([childNote.at(-1)], app.placeholders([childNote.at(-1)]).find(arg => arg.name === 'body').id, body.at(-1))
+  app.dropArgument([childNote.at(-1)], app.placeholders([childNote.at(-1)]).find(arg => arg.name === 'noteText').id, body.at(-1))
   app.setTextArgument([localText.at(-1)], app.placeholders([localText.at(-1)]).find(arg => arg.name === 'recipient').id, 'Grace')
   const beforeDisplay = JSON.stringify(storage.loadReplica())
   await app.startExecution(composed)
@@ -124,12 +126,20 @@ async function main() {
   const triggers = tab => { document.querySelector(`.peer-tabs [aria-label="${tab}"]`).click(); document.querySelector('.constructor-grid [aria-label="Triggers"]')?.click(); return [...document.querySelectorAll('.constructor-grid button')].map(b => b.getAttribute('aria-label')) }
   assert(!document.querySelector('.peer-tabs [aria-label="Triggers"]'), 'triggers are not a top-level tab')
   assert(!triggers('Fos server').includes('Cron trigger'), 'Cron trigger is not offered before a provider advertises it')
-  assert(!triggers('Standard library').includes('Child evaluation'), 'Child evaluation is not offered before a provider advertises it')
+  assert(triggers('Standard library').includes('Child evaluation'), 'the registered device handler advertises child evaluation at startup')
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'cron']) // the account server reports its scheduler
-  app.setPeerOffers(app.state.replica.meta.peerId, ['task-completion'], true) // this device offers child-evaluation triggers
+  const { nativeRef, publishNativeRef, capabilityTarget, setHandlerOffersAt } = require(path.join(dir, 'test.cjs'))
+  const cron = nativeRef(store, 'fos', { id: 'server:cron', type: s => capabilityTarget(s, 'cron') })
+  app.set({ replica: publishNativeRef(app.state.replica, [], 'fos', cron, Date.now()) })
   const serverTriggers = triggers('Fos server')
   for (const label of ['Public template endpoint', 'Fos template endpoint', 'Cron trigger']) assert(serverTriggers.includes(label), label)
   assert(triggers('Standard library').includes('Child evaluation'), 'Child evaluation')
+  const eventType = put(store, { data: { triggerDefinition: { label: 'User observer', icon: 'clock', mode: 'resume' } }, children: [] })
+  const observer = nativeRef(store, 'fos', { id: 'user:observer', type: () => eventType })
+  app.set({ replica: publishNativeRef(app.state.replica, [], 'fos', observer, Date.now()) })
+  assert(triggers('Fos server').includes('User observer'), 'unfamiliar observer declarations drive the menu')
+  app.set({ replica: setHandlerOffersAt(app.state.replica, [], 'fos', eventType, [], Date.now()) })
+  assert(!triggers('Fos server').includes('User observer'), 'withdrawing the ref removes its constructor')
   document.querySelector('.peer-tabs [aria-label="Standard library"]').click()
 
   const need = [...target.slice(0, -1), 'choose-research']

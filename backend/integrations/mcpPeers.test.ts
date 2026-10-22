@@ -6,10 +6,11 @@ jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createMcpPeerHandlers, mcpMembersAbove, mcpToolHandler, type McpPeerDeps, type McpServerInfo } from './mcpPeers'
 import { createEventService } from '../sync/events'
 import { createEvaluationService } from '../sync/evaluation'
-import { createHandlerRegistry } from '../sync/registry'
+import { createHostRuntime } from '../sync/host-runtime'
 import { withUserLock } from '../sync/accountStore'
 import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
 import { NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
+import { addRefCall } from '@fosforescent/shared/sync/index'
 
 function setup(servers: McpServerInfo[]) {
   let r: Replica = createReplica('server')
@@ -29,8 +30,8 @@ function setup(servers: McpServerInfo[]) {
     callTool: async (server, tool, input) => { calls.push([server.id, tool, input]); return `${tool}(${input}) = sunny` },
     now: () => 10
   }
-  // `-tool` requirements run as a registry effect reached through a `complete` event (the web's Run on the requirement)
-  const events = createEventService(deps, createEvaluationService(deps, createHandlerRegistry([mcpToolHandler(deps)])).runNode)
+  // `-tool` requirements run as a runtime effect reached through a `complete` event (the web's Run on the requirement)
+  const events = createEventService(deps, createEvaluationService(deps, createHostRuntime([mcpToolHandler(deps)])).runNode)
   const run = async (scope: string[], requirementId: string) => {
     let status = 200, json: any
     const res = { setHeader() {}, status(c: number) { status = c; return res }, json(v: unknown) { json = v; return res } } as unknown as Response
@@ -49,6 +50,22 @@ function call(handler: (req: Request, res: Response) => Promise<unknown>, body: 
 }
 
 const weather: McpServerInfo = { id: 5, name: 'Weather MCP', endpoint: 'ws://x', credentials: {}, tools: [{ name: 'weather', description: null }, { name: 'forecast', description: null }] }
+
+test('an MCP primitive ref executes as a row instruction without a capability-name requirement', async () => {
+  const { deps, calls, replica, run } = setup([weather])
+  await call(createMcpPeerHandlers(deps).attach, { scope: ['proj'], serverId: 5 })
+  const offer = discoverHandlers(replica(), ['proj']).find(value => value.id === 'mcp:5/forecast')!
+  addRefCall(replica(), ['proj', 'trip'], offer.cid, 11, 'direct')
+  expect(view(replica(), ['proj', 'trip'])!.tasks.find(row => row.id === 'direct')!.requirement).toBeUndefined()
+  const result = await run(['proj', 'trip'], 'direct')
+  expect(result.json.error).toBeUndefined()
+  expect(result.status).toBe(200)
+  expect(calls).toEqual([[5, 'forecast', 'forecast']])
+  setHandlerEnabledAt(replica(), ['proj'], offer.peerId, offer.id, false, 12)
+  addRefCall(replica(), ['proj', 'trip'], offer.cid, 13, 'disabled')
+  expect((await run(['proj', 'trip'], 'disabled')).status).toBe(400)
+  expect(calls).toHaveLength(1)
+})
 
 test('an MCP server attaches to a node as a member advertising tool; it is found from rows below', async () => {
   const { deps, replica } = setup([weather])
@@ -74,7 +91,7 @@ test('completing a tool requirement calls the attached server and records the an
   expect(calls).toEqual([[5, 'weather', 'Paris next week']])
   const rq = view(replica(), ['proj', 'trip'])!.tasks.find((t) => t.id === 'rq')!
   expect(rq.requirement?.satisfied).toBe(true)
-  expect(view(replica(), ['proj', 'trip', 'rq'])!.tasks.map((t) => [t.type, !!t.supply, t.title])).toEqual([[NOTE_TYPE, false, 'weather(Paris next week) = sunny'], [ALLOCATION_TYPE, true, 'run by mcp:5']])
+  expect(view(replica(), ['proj', 'trip', 'rq'])!.tasks.filter(t => t.type === NOTE_TYPE || t.supply).map((t) => [t.type, !!t.supply, t.title])).toEqual([[NOTE_TYPE, false, 'weather(Paris next week) = sunny'], [ALLOCATION_TYPE, true, 'run by mcp:5']])
   expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toEqual(['tool weather']) // rq2 still open
   expect(saved.length).toBeGreaterThan(0)
   // the listener runs what is still open (rq2 explicitly requests weather too)

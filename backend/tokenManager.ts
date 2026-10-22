@@ -2,7 +2,7 @@ import { prisma } from './prismaClient'
 import Stripe from 'stripe'
 
 const stripe = new Stripe(process.env.STRIPE_TOKEN || '', {
-  apiVersion: '2024-10-28.acacia'
+  apiVersion: '2025-02-24.acacia'
 })
 
 export interface TokenTransaction {

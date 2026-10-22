@@ -1,5 +1,5 @@
 import { userView } from './test-helpers'
-import { createReplica, ensureHomeContext, headCid, view, writeNodeValue, addMemberAt, addTask, setMemberCapabilitiesAt, deleteTask, resolveScope, content, refTypeCid, capabilityTarget } from './index'
+import { createReplica, ensureHomeContext, headCid, view, writeNodeValue, addMemberAt, addTask, setMemberCapabilitiesAt, deleteTask, resolveScope, content, capabilityTarget } from './index'
 
 test('settings and peer constructors project their existing identities as traversable rows', () => {
   let r = ensureHomeContext(createReplica('device'), 1)
@@ -9,7 +9,7 @@ test('settings and peer constructors project their existing identities as traver
   const setting = rows.find(row => row.construction?.name === 'fos:setting:device:direct')!
   const peer = rows.find(row => row.construction?.peerId === 'guest')!
   expect(setting).toBeTruthy(); expect(peer).toBeTruthy()
-  expect(refTypeCid(r.store, content(r.store, resolveScope(r.store, headCid(r), [setting.id])!))).toBe(capabilityTarget(r.store, 'peer'))
+  expect(setting.typeCid).toBe(capabilityTarget(r.store, 'peer'))
   expect(content(r.store, resolveScope(r.store, headCid(r), [peer.id])!).data.peerId?.content).toBe('guest')
   r = addTask(r, [peer.id], 'Connection argument', 4, 'connection-argument')
   r = setMemberCapabilitiesAt(r, [], 'guest', ['read', 'edit'], [], 4)

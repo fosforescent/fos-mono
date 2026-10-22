@@ -6,7 +6,7 @@ test('permissions do not become handlers; built-in offers use the same candidate
   expect(discoverHandlers(r, [])).toEqual([])
   r = addMemberAt(r, [], 'fos', 'fos', ['llm'], 2)
   const offer = discoverHandlers(r, [])[0]!
-  expect(contextBindings(r, [])).toContainEqual({ cid: offer.cid, type: offer.type })
+  expect(contextBindings(r, [])).toContainEqual({ cid: offer.cid, type: offer.type, name: 'llm', refIds: [offer.id] })
   expect(workHandler(r, []).status).toBe('ready')
   expect(discoverHandlers(r, [], { isPeerActive: () => false })[0]!.active).toBe(false)
   expect(contextBindings(r, [], { isPeerActive: () => false })).toEqual([])
@@ -15,8 +15,8 @@ test('permissions do not become handlers; built-in offers use the same candidate
 test('custom typed handlers survive built-in edits and individual toggles', () => {
   let r = addMemberAt(createReplica('owner'), [], 'peer', 'Peer', ['read'], 1)
   const type = put(r.store, { data: { name: { content: 'custom capability' } }, children: [] })
-  const value = put(r.store, { data: { description: { content: 'custom value' } }, children: [] })
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'custom-handler' } }, value, [], type))
+  const value = put(r.store, { data: { name: { content: 'custom capability' }, description: { content: 'custom value' } }, children: [] })
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'custom-handler' } }, value, []))
   r = setHandlerOffersAt(r, [], 'peer', type, [handler], 2)
   expect(resolveBinding(r.store, type, null, contextBindings(r, [])).cid).toBe(value)
   r = setHandlerEnabledAt(r, [], 'peer', 'custom-handler', false, 3)
@@ -41,7 +41,7 @@ test('main controls capability discovery while editing an alternative; policy ed
 
 test('wrong handler type is rejected without advancing the head', () => {
   const r = addMemberAt(createReplica(), [], 'peer', 'Peer', [], 0), before = headCid(r)
-  const handler = put(r.store, refNodeContent(r.store, {}, null, [], capabilityTarget(r.store, 'llm')))
+  const handler = put(r.store, refNodeContent(r.store, {}, null, []))
   expect(() => setHandlerOffersAt(r, [], 'peer', capabilityTarget(r.store, 'repo'), [handler], 1)).toThrow()
   expect(headCid(r)).toBe(before)
 })

@@ -10,7 +10,7 @@ import { asAccountStore } from './deviceRoot'
 import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createNodeProvider } from './provideNode'
-import { createHandlerRegistry } from './registry'
+import { createHostRuntime } from './host-runtime'
 import type { AccountStoreDeps } from './accountStore'
 import { identityKeyFromEnv, identityKeyFromSeed, verifyEd25519, verifyHandler } from './verify'
 import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
@@ -18,15 +18,15 @@ import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
 const accounts: Record<string, { id: number; username: string; name?: string | null; publicKey?: string | null }> = { bob: { id: 42, username: 'bob', name: 'Bob Builder' }, ada: { id: 7, username: 'ada', publicKey: 'cHVibGljLWtleQ==' } }
 const verify = verifyHandler({ findUser: async username => accounts[username] ?? null, now: () => 1234 }, identityKeyFromSeed(Buffer.alloc(32, 5)))
 
-/** An account `alice` on a host with this registry: its event route (owners' `complete`) and its node provider. */
-function host(registry = createHandlerRegistry([verify])) {
+/** An account `alice` on a host with this runtime: its event route (owners' `complete`) and its node provider. */
+function host(runtime = createHostRuntime([verify])) {
   let store = asAccountStore(new FosStore())
   const deps: AccountStoreDeps = {
     async loadStore(username) { return username === 'alice' ? { user: { id: 1, username }, store } : null },
     async saveStore(_user, next) { store = next },
-    now: () => 2000, registry
+    now: () => 2000, runtime
   }
-  const events = createEventService(deps, createEvaluationService(deps, registry).runNode)
+  const events = createEventService(deps, createEvaluationService(deps, runtime).runNode)
   const provider = createNodeProvider(deps)
   const send = async (scope: string[], event: unknown) => {
     let status = 200, body: any
@@ -73,7 +73,7 @@ test('the server re-checks before it acts: tampered, unverified and foreign obje
 
 test('a verify requirement is filled through the evaluation: the attested object bound as its user field, and the server\'s supply', async () => {
   const h = host()
-  let r = ensureHomeContext(h.get(), 1, createHandlerRegistry([verify]).hostOffers())
+  let r = ensureHomeContext(h.get(), 1, createHostRuntime([verify]).hostOffers())
   const asked = requestVerification(r, 'bob', 2)
   h.set(asked.replica)
   const read = await h.send([], { kind: 'read', path: asked.path })
@@ -96,10 +96,10 @@ test('a verify requirement is filled through the evaluation: the attested object
 })
 
 test('the server\'s key is graph data: published on its member entry and carried to devices by node exchange, where they check attestations', async () => {
-  const registry = createHandlerRegistry([verify])
-  expect(registry.hostOffers().keys).toEqual({ fos: verify.publicKey })
-  expect(registry.serverCapabilities()).toContain('verify')
-  const h = host(registry)
+  const runtime = createHostRuntime([verify])
+  expect(runtime.hostOffers().keys).toEqual({ fos: verify.publicKey })
+  expect(runtime.serverCapabilities()).toContain('verify')
+  const h = host(runtime)
   let device = ensureHomeContext(createReplica('user:alice'), 1)
   device = addTask(device, [HOME_ID], 'review the draft', 2, 'review')
   device = addRow(device, [HOME_ID, 'review'], ALLOCATION_TYPE, 'read it', 3, { id: 'rq', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })

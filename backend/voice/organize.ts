@@ -1,3 +1,4 @@
+import { standardHostRef } from '../sync/host-runtime'
 /**
  * Organizing a capture into one node's subtree is an effect of this server: the `organize` handler fills an
  * `organize` requirement placed in the target node (shared/sync/organize.ts `requestOrganize`: its text is what the
@@ -19,7 +20,7 @@
  */
 import { ORGANIZED_VALUE, proposeOrganizePlan, captureOutline, deleteTask, headCid, HOME_ID, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
-import type { HostHandler } from '../sync/registry'
+import type { HostHandler } from '../sync/host-runtime'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 export type OrganizeInput = { text: string; title: string; outline: OutlineEntry[] }
@@ -44,7 +45,7 @@ const utcStamp = (now: number) => new Date(now).toISOString().replace('T', ' ').
 export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): HostHandler {
   const payer = async (username: string) => usage?.userNamed ? await usage.userNamed(username) : null
   return {
-    peerId: 'fos', capability: 'organize',
+    peerId: 'fos', ref: standardHostRef('fos', 'organize'),
     async prepare(ctx) {
       // refusals come before the evaluation opens, so nothing is journaled for them
       if (!organizeRequestAt(ctx.replica(), ctx.step.path)) throw new Error('Put the captured text in the organize requirement as a note.')

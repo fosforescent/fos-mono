@@ -1,5 +1,7 @@
+import { standardHostRef } from './host-runtime'
+import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 /**
- * The handlers this backend registers (see registry.ts). Each entry is a capability a peer provides on this host;
+ * The handlers this backend registers (see runtime.ts). Each entry is a capability a peer provides on this host;
  * entries with an `effect` execute requirements through the shared evaluator when a `complete` event reaches them,
  * the rest (cron, notify) are only advertised.
  */
@@ -7,7 +9,7 @@ import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, publication, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
 import { TITLE_SYSTEM, TITLED_VALUE, syncPublishedUrls, titleRequestAt, truncateTitle, writeNodeValue } from '@fosforescent/shared/sync/index'
-import type { EffectContext, HostHandler } from './registry'
+import type { EffectContext, HostHandler } from './host-runtime'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 import type { VerifyHandler } from './verify'
 import { PLAIN_TYPE, REF_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
@@ -21,7 +23,7 @@ export type GitHubIssueDeps = {
 /** `-repo` requirements: open a GitHub issue through the account's OAuth connection and record it as the supply. */
 export function githubRepoHandler(deps: GitHubIssueDeps): HostHandler {
   return {
-    peerId: 'integration:github', capability: 'repo',
+    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo'),
     available: userId => deps.connected(userId),
     async effect(ctx) {
       if (!await deps.connected(ctx.userId)) throw new Error('GitHub disconnected before the effect.')
@@ -48,7 +50,7 @@ export type CalendarDeps = {
  */
 export function calendarHandler(deps: CalendarDeps): HostHandler {
   return {
-    peerId: 'integration:google', capability: 'calendar',
+    peerId: 'integration:google', ref: standardHostRef('integration:google', 'calendar'),
     handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined },
     available: userId => deps.connected(userId),
     async effect(ctx) {
@@ -74,7 +76,7 @@ export type LlmDeps = { complete(system: string, user: string): Promise<string> 
  */
 export function llmHandler(deps: LlmDeps): HostHandler {
   return {
-    peerId: 'fos', capability: 'llm',
+    peerId: 'fos', ref: standardHostRef('fos', 'llm'),
     async effect(ctx) {
       const path = ctx.step.path
       const preview = taskWorkContext(ctx.replica(), path)
@@ -95,7 +97,7 @@ export function llmHandler(deps: LlmDeps): HostHandler {
  */
 export function titleHandler(deps: LlmDeps): HostHandler {
   return {
-    peerId: 'fos', capability: 'title',
+    peerId: 'fos', ref: standardHostRef('fos', 'title'),
     async effect(ctx) {
       const path = ctx.step.path, request = titleRequestAt(ctx.replica(), path)
       if (!request) throw new Error('There is no text to title here.')
@@ -120,7 +122,7 @@ export type MarketDeps = {
  */
 export function marketHandler(deps: MarketDeps): HostHandler {
   return {
-    peerId: 'fos', capability: 'market',
+    peerId: 'fos', ref: standardHostRef('fos', 'market'),
     async effect(ctx) {
       const path = ctx.step.path
       if (path.length < 2) throw new Error('Market requirements go under a task; the task is what gets listed.')
@@ -145,7 +147,7 @@ export type SearchDeps = {
  */
 export function searchHandler(deps: SearchDeps): HostHandler {
   return {
-    peerId: 'fos', capability: 'search',
+    peerId: 'fos', ref: standardHostRef('fos', 'search'),
     async effect(ctx) {
       const path = ctx.step.path, r = ctx.replica(), cid = resolveScope(r.store, headCid(r), path)!
       // which rows inside are what is decided by their row types: a query row says what to look for, refs are earlier hits
@@ -213,7 +215,7 @@ async function payeeOf(ctx: EffectContext, unit: string, identity: VerifyHandler
  */
 export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHandler {
   return {
-    peerId: 'fos', capability: 'points',
+    peerId: 'fos', ref: standardHostRef('fos', 'points'),
     handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && r.resource === 'points' },
     async effect(ctx) {
       const path = ctx.step.path, req = ctx.step.row!.requirement!
@@ -247,7 +249,7 @@ export type PaymentDeps = {
  */
 export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): HostHandler {
   return {
-    peerId: 'fos', capability: 'send-payment',
+    peerId: 'fos', ref: standardHostRef('fos', 'send-payment'),
     // the row's type decides: a money row with a negative amount is a request for payment
     handles: step => step.row?.type === MONEY_TYPE && !!step.row.requirement,
     async effect(ctx) {
@@ -288,7 +290,7 @@ export function mailRequest(rowTitle: string, taskTitle: string, rows: string[])
 /** `-mail` requirements: the account server sends the email (Postmark) on the user's behalf and records the supply as `fos`. */
 export function mailHandler(deps: MailDeps): HostHandler {
   return {
-    peerId: 'fos', capability: 'mail',
+    peerId: 'fos', ref: standardHostRef('fos', 'mail'),
     async effect(ctx) {
       const r = ctx.replica(), path = ctx.step.path, taskPath = path.slice(0, -1)
       const task = taskPath.length ? view(r, taskPath.slice(0, -1))?.tasks.find(t => t.id === taskPath.at(-1)) : null
@@ -340,11 +342,11 @@ export type HostHandlerDeps = {
  * it. Visiting that URL serves the node's execute view to whoever may run it, and 404 to anyone else.
  */
 export function publicUrlHandler(webUrl: string): HostHandler {
-  return { peerId: 'fos', capability: 'url', submission: (replica, path, now) => syncPublishedUrls(replica, path, webUrl, now) }
+  return { peerId: 'fos', ref: standardHostRef('fos', 'url'), submission: (replica, path, now) => syncPublishedUrls(replica, path, webUrl, now) }
 }
 
 export function relayHandler(): HostHandler {
-  return { peerId: 'fos', capability: 'relay', submission: (replica, path, now) => relayAfterSubmission(replica, path, 'fos', now) }
+  return { peerId: 'fos', ref: standardHostRef('fos', 'relay'), submission: (replica, path, now) => relayAfterSubmission(replica, path, 'fos', now) }
 }
 
 export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
@@ -360,11 +362,11 @@ export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
     mailHandler(deps.mail),
     llmHandler(deps.llm),
     titleHandler(deps.llm),
-    ...(deps.cron ? [{ peerId: 'fos', capability: 'cron' as const }] : []),
+    ...(deps.cron ? [{ peerId: 'fos', ref: standardHostRef('fos', 'cron'), trigger: cronObserver }] : []),
     githubRepoHandler(deps.github),
     calendarHandler(deps.google),
     ...(deps.organize ? [deps.organize] : []),
     ...(deps.tool ? [deps.tool] : []),
-    ...(deps.sms ? [{ peerId: 'integration:phone', capability: 'notify' as const, available: (id: number) => deps.connected(id, 'phone') }] : [])
+    ...(deps.sms ? [{ peerId: 'integration:phone', ref: standardHostRef('integration:phone', 'notify'), available: (id: number) => deps.connected(id, 'phone') }] : [])
   ]
 }

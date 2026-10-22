@@ -3,6 +3,18 @@ import { LIBRARY_ID, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } 
 import { view, type Replica } from './replica'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import type { NodeBranch, NodeRequest } from './node-provider'
+import { nativeRef, publishNativeRef } from './native-refs'
+import { deviceTriggerDefinitions, cronObserver } from './trigger-primitives'
+import { capabilityTarget } from './graph'
+
+/** Explicit host setup for tests exercising observers; construction alone never registers them. */
+export function installTestObservers(r: Replica, peers = [r.meta.peerId], publish = true): Replica {
+  for (const peer of peers) for (const definition of [...deviceTriggerDefinitions, { id: 'test:cron', type: (store: Replica['store']) => capabilityTarget(store, 'cron'), trigger: cronObserver }]) {
+    const ref = nativeRef(r.store, peer, definition)
+    if (publish) r = publishNativeRef(r, [], peer, ref, 0)
+  }
+  return r
+}
 
 /** The root view without the root's own shipped library row: what the tests' rows are compared against. */
 export function userView(r: Replica): NodeView | null {
