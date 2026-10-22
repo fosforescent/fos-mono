@@ -1,6 +1,6 @@
 import { installTestObservers } from '@fosforescent/shared/sync/test-helpers'
 import {
-  addRow, addTask, bindRepository, BRANCH_MERGE_ARGUMENT, createBranch, createReplica,
+  addRow, addTask, bindRepository, createBranch, createReplica,
   loadReplica, nodeTrigger, readNodeValue, runNodeTriggers, selectBranch, serializeReplica,
   setMemberCapabilitiesAt, repositoryPeerId, setNodeTrigger, TEMPLATE_TYPE, view, watchedRefValue,
   type RepositorySnapshot, type Replica
@@ -22,7 +22,7 @@ function fixture() {
 test('server load mediates PR -> Fos request -> Fos merge -> ordinary template trigger, once after reload', async () => {
   let { r, snapshot, fetch, load } = fixture()
   r = addRow(r, [], TEMPLATE_TYPE, 'An arbitrary continuation', 5, { id: 'continue' })
-  r = setNodeTrigger(installTestObservers(r, ['desktop']), ['continue'], { kind: 'ref-change', enabled: true, peer: 'desktop', created: 5, watch: { path: ['project'], branch: 'main', argument: BRANCH_MERGE_ARGUMENT, baseline: watchedRefValue(r, ['project'], 'main', BRANCH_MERGE_ARGUMENT)! } }, 5)
+  r = setNodeTrigger(installTestObservers(r, ['desktop']), ['continue'], { kind: 'ref-change', enabled: true, peer: 'desktop', created: 5, watch: { path: ['project'], branch: 'main', merges: true, baseline: watchedRefValue(r, ['project'], 'main', true)! } }, 5)
   let runs = 0
   const driver = { get: () => r, save: (next: Replica) => { r = next }, now: () => 90_000, available: () => true, evaluate: async () => { runs++ } }
   r = await load(r, 10)
@@ -37,15 +37,14 @@ test('server load mediates PR -> Fos request -> Fos merge -> ordinary template t
   r = await load(r, 30_011)
   expect(fetch).toHaveBeenLastCalledWith(7, 'acme/project', [7], 'feature')
   expect(view(r, ['project', 'note'])?.name).toBe('Phone instructions')
-  expect(readNodeValue(r, ['project'], BRANCH_MERGE_ARGUMENT)).toMatchObject({ source: 'feature', target: 'main' })
   expect(view(r, [])!.tasks.find(t => t.id === 'project')!.branches?.mergeRequests ?? []).toEqual([])
   await runNodeTriggers(driver); expect(runs).toBe(1)
-  const receipt = watchedRefValue(r, ['project'], 'main', BRANCH_MERGE_ARGUMENT)
+  const receipt = watchedRefValue(r, ['project'], 'main', true)
   r = installTestObservers(loadReplica(serializeReplica(r)), ['desktop'], false)
   r = await load(r, 60_012)
-  expect(watchedRefValue(r, ['project'], 'main', BRANCH_MERGE_ARGUMENT)).toBe(receipt)
+  expect(watchedRefValue(r, ['project'], 'main', true)).toBe(receipt)
   await runNodeTriggers(driver); expect(runs).toBe(1)
-  expect(nodeTrigger(r, ['continue'])?.watch?.argument).toBe(BRANCH_MERGE_ARGUMENT)
+  expect(nodeTrigger(r, ['continue'])?.watch?.merges).toBe(true)
 })
 
 test('loading an unbound node, disabled integration or denied repository never fetches GitHub', async () => {

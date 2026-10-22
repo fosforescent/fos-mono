@@ -8,8 +8,8 @@ import { TEMPLATE_TYPE } from './library-types'
 import { compileInstructions } from './ref-compiler'
 import { instructionPrimitives } from './primitives'
 import { receivedRef } from './parameters'
-import { readRowValue, writeRowValue } from './row-values'
-import { executeLeft, isExecuteLeft } from './capabilities'
+import { readRowValue, rowWithLeft, writeRowValue } from './row-values'
+import { executeLeft, isExecuteLeft, isTriggerLeft } from './capabilities'
 import { findRowByAlias, commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
@@ -101,7 +101,9 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     if (depth > 0 && row?.typeCid && isExecuteLeft(r.store, row.typeCid)) return
     // A handler's attempt records (pinned prompts, return slots) are bookkeeping, never steps.
     if (depth > 0 && cid && isAttempt(r, cid)) return
-    if (depth > 0 && cid && argumentRefs(r.store, cid).some(a => a.name === 'fos:trigger')) return
+    // a node with a trigger runs when it fires, not as a step of another evaluation; its trigger row is no step either
+    if (depth > 0 && cid && rowWithLeft(r.store, cid, isTriggerLeft)) return
+    if (depth > 0 && row?.typeCid && isTriggerLeft(r.store, row.typeCid)) return
     const node = view(r, at)
     if (!node) throw new Error('The evaluated node no longer exists.')
     if (node.choices.length) throw new Error('Resolve conflicting choices before evaluation.')

@@ -45,12 +45,13 @@ export function readRowValue<T>(r: Replica, path: Scope, left: LeftMatch): T | n
 /**
  * Set the value of the row with left `left` at `path`, made when the node has none. The row is a constructor row:
  * its right is a node holding the value (as a fetch row's right holds its url and method), not a ref, since a ref on
- * the right of a capability declares a handler. Its identity is the left. `peer`: who holds the value.
+ * the right of a capability declares a handler. Its identity is the left. `peer`: who holds the value; `replacing`:
+ * the row it replaces when the left changes (a trigger row given another observer).
  */
-export function writeRowValue(r: Replica, path: Scope, left: string, value: unknown, now: number, peer?: string): Replica {
+export function writeRowValue(r: Replica, path: Scope, left: string, value: unknown, now: number, peer?: string, replacing: LeftMatch = left): Replica {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new Error('The node no longer exists.')
-  const store = r.store, row = rowWithLeft(store, cid, left)
+  const store = r.store, row = rowWithLeft(store, cid, replacing)
   const alias = row?.alias ?? left
   const built = content(store, constructNodeValue(store, value, alias, row?.ref).cid)
   const holder = peer ?? (row ? content(store, row.ref).data.peerId?.content : undefined)

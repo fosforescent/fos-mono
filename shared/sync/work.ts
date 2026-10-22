@@ -1,5 +1,5 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
-import { isExecuteLeft } from './capabilities'
+import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { constructForm, formText, formTitle } from './forms'
@@ -92,7 +92,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       if (ancestorNotes && !isText(edge)) continue
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
-      if (content(store, child).data.name?.content?.startsWith('fos:') || isExecuteLeft(store, edge[0])) continue
+      if (content(store, child).data.name?.content?.startsWith('fos:') || isHandlerStateLeft(store, edge[0])) continue
       if (headline && content(store, child).data.name?.content === headline) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (isAllocationRow(store, edge) && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue

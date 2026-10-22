@@ -2,19 +2,23 @@ import { installTestObservers } from './test-helpers'
 import { userView } from './test-helpers'
 import { addTask, addRow, createReplica as bareReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica as bareLoadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, writeEvaluationRecord, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
 import { TEMPLATE_TYPE } from './library-types'
-import { bindTemplateTriggers, TRIGGER_TEMPLATE_ARGUMENT } from './triggers'
-import { readNodeValue } from './evaluation'
+import { bindTemplateTriggers } from './triggers'
+import { writeRowValue, readRowValue } from './row-values'
+import { capabilityTarget } from './graph'
+import { isTriggerLeft } from './capabilities'
 
 test('any graph template can declare and rebind a trigger without workflow-specific code', () => {
   let r = addTask(createReplica('device'), [], 'Observed node', 1, 'source')
   r = addRow(r, [], TEMPLATE_TYPE, 'User-defined continuation', 2, { id: 'template' })
-  const declaration = { kind: 'ref-change', peer: '{{executor}}', enabled: true, created: 0, watch: { path: '{{input}}', branch: '{{branch}}', argument: 'user-event' } }
-  r = writeNodeValue(r, ['template'], TRIGGER_TEMPLATE_ARGUMENT, declaration, 3)
+  // the declaration is a trigger row whose fields hold placeholders
+  const declaration = { peer: '{{executor}}', enabled: true, created: 0, watch: { path: '{{input}}', branch: '{{branch}}', merges: true } }
+  r = writeRowValue(r, ['template'], capabilityTarget(r.store, 'ref-change'), declaration, 3)
   r = bindTemplateTriggers(r, ['template'], { executor: 'first-peer', input: ['source'], branch: 'main' }, 4)
-  expect(nodeTrigger(r, ['template'])).toMatchObject({ peer: 'first-peer', watch: { path: ['source'], argument: 'user-event' } })
+  expect(nodeTrigger(r, ['template'])).toMatchObject({ kind: 'ref-change', peer: 'first-peer', watch: { path: ['source'], merges: true } })
+  // bound again from the declaration it keeps
   r = bindTemplateTriggers(r, ['template'], { executor: 'second-peer', input: ['source'], branch: 'main' }, 5)
   expect(nodeTrigger(r, ['template'])?.peer).toBe('second-peer')
-  expect(readNodeValue(r, ['template'], TRIGGER_TEMPLATE_ARGUMENT)).toEqual(declaration)
+  expect(readRowValue<{ declaration: unknown }>(r, ['template'], isTriggerLeft)?.declaration).toEqual(declaration)
   expect(() => bindTemplateTriggers(r, ['template'], {}, 6)).toThrow(/Missing binding/)
 })
 
@@ -81,15 +85,17 @@ test('an incoming proposal fires the request trigger and its saved occurrence is
   await runNodeTriggers(driver); expect(runs).toBe(2) // the older still-open request must not reappear as a new event
 })
 
-test('changing the trigger reuses its argument row and switches its left observer', async () => {
-  const { argumentRefs, capabilityTarget, matchesGraph, headCid, resolveScope } = await import('./index')
+test('changing the trigger reuses its row and switches its left observer', async () => {
+  const { capabilityTarget, matchesGraph, headCid, resolveScope, rowsWithLeft } = await import('./index')
   let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Task', 1, { id: 'task' })
   r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 1, due: 10 }, 1)
-  const args = () => argumentRefs(r.store, resolveScope(r.store, headCid(r), ['task'])!)
-  expect(matchesGraph(r.store, capabilityTarget(r.store, 'timer'), args()[0]!.type)).toBe(true)
+  const rows = () => rowsWithLeft(r.store, resolveScope(r.store, headCid(r), ['task'])!, isTriggerLeft)
+  expect(matchesGraph(r.store, capabilityTarget(r.store, 'timer'), rows()[0]!.edge[0])).toBe(true)
+  const id = rows()[0]!.alias
   r = setNodeTrigger(r, ['task'], { kind: 'request', peer: 'device', enabled: true, created: 2 }, 2)
-  expect(args()).toHaveLength(1)
-  expect(matchesGraph(r.store, capabilityTarget(r.store, 'request'), args()[0]!.type)).toBe(true)
+  expect(rows()).toHaveLength(1)
+  expect(rows()[0]!.alias).toBe(id)
+  expect(matchesGraph(r.store, capabilityTarget(r.store, 'request'), rows()[0]!.edge[0])).toBe(true)
 })
 
 

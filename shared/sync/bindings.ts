@@ -11,7 +11,7 @@ import {
 import { PLAIN_TYPE, isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
 import { refProperties } from './refs'
-import { sameCapabilityType, isExecuteLeft } from './capabilities'
+import { sameCapabilityType, isHandlerStateLeft } from './capabilities'
 import { matchesGraph } from './structural'
 import { parseRefExpression, resolveRefExpression, textRefExpressions, type RefAccess } from './ref-paths'
 
@@ -32,7 +32,7 @@ export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
     const node = content(store, ref.cid)
     if (isLibraryRef(node)) return false
     // an execute row holds the evaluator's journal of this node: its state, never an argument
-    if (isExecuteLeft(store, ref.type)) return false
+    if (isHandlerStateLeft(store, ref.type)) return false
     const pattern = ref.type && content(store, ref.type)
     return node.data.name || valueContent(store, ref.cid).data.name || isRefNode(store, node) &&
       (!typeIdOf(store, ref.type) || !!pattern && (pattern.data.capabilityDefinition || pattern.data.form?.primitive))

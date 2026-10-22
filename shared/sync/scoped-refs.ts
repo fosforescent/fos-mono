@@ -1,4 +1,5 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
+import { isHandlerStateLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
 import { isLibraryRef, content, enclosingScopes, importNodes, reachableNodes, identityCid, isBranchChoice, isGrantEdge, isMemberEdge, isRowEdge, put, readChoice, refNodeContent, isRefNode, refValueCid, typeIdOf, type Scope } from './graph'
 import { matchesGraph } from './structural'
@@ -53,6 +54,8 @@ function declarationRows(store: FosStore, cid: string): Array<{ cid: string; typ
     const left = content(store, edge[0])
     // A library ref is a container: its names resolve as names (namesInLibrary), never as lexical bindings.
     if (isLibraryRef(ref)) return []
+    // a native handler's state rows (an execute row's journal, a trigger row) are no bindings
+    if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) return []
     // Linked library document rows are containers, not implicit lexical names.
     // Explicit names and ref constructor arguments declare bindings.
     const declaration = ref.data.name || !typeIdOf(store, edge[0]) || left.data.capabilityDefinition || left.data.form?.primitive

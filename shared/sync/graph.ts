@@ -44,7 +44,7 @@ import { readGraphValue } from './node-values'
 import { allocationValue } from './destructure'
 import { standardRequirementSatisfied } from './standard-requirements'
 
-import { capabilityPattern, capabilityName, sameCapabilityType, isExecuteLeft } from './capabilities'
+import { capabilityPattern, capabilityName, sameCapabilityType, isExecuteLeft, isTriggerLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { libraryNames, type LibraryNames } from '../library-names'
 import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, MONEY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
@@ -2262,12 +2262,14 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   const owned = new Set<string>()
   const argumentsToCopy = new Set<string>()
   const definitions = new Set<string>()
-  const childEdges = (value: FosNodeContent, definition = false) => value.children.filter((edge) => {
+  const childEdges = (value: FosNodeContent, definition = false, root = false) => value.children.filter((edge) => {
     const type = rowTypeIdOf(store, edge)
     const name = content(store, identityCid(store, edge)).data.name?.content
     // an execute row's value is the evaluator's journal of this node: state, not part of what is copied
     if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return false
-    if (name === 'fos:trigger-state' || (instantiate && (name === 'fos:trigger' || name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' ||name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
+    // the template's own trigger makes instances; the trigger rows inside it are declarations its instances bind
+    if (instantiate && root && isRowEdge(store, edge) && isTriggerLeft(store, plainEdge(store, edge)[0])) return false
+    if ((instantiate && (name === 'fos:consumed' || name === 'fos:execution-time' || name === 'fos:sharing' ||name?.startsWith('fos:guest:') || name?.startsWith('fos:execution:')))) return false
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
     if (isRowEdge(store, edge)) return !(instantiate && !definition && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
@@ -2286,7 +2288,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     }
     // A row's argument refers to its value; it does not take ownership of it.
     if (isRefNode(store, identity) && (argumentsToCopy.has(cid) || identity.data.name || !refValueCid(store, identity) || refBranches(store, identity))) { argumentsToCopy.add(cid); return }
-    for (const edge of childEdges(stripLink(store, identity), definitions.has(cid))) {
+    for (const edge of childEdges(stripLink(store, identity), definitions.has(cid), cid === nodeCid)) {
       const child = identityCid(store, edge)
       const left = content(store, edge[0])
       if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || left.data.capabilityDefinition || left.data.form?.primitive)) argumentsToCopy.add(child)
@@ -2324,7 +2326,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...(data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {}) }
     // Typed arguments keep defaults, including ref-to-ref defaults. They get a fresh identity.
     const target = refValueCid(store, identity)
-    const children = type ? [] : childEdges(value, definitions.has(cid)).map(copyEdge)
+    const children = type ? [] : childEdges(value, definitions.has(cid), cid === nodeCid).map(copyEdge)
     if (!type && isHandle(identity) && target) children.push([store.primitive.targetPointerConstructor.getId(), owned.has(target) ? copy(target) : target])
     let bound = target && owned.has(target) ? copy(target) : target
     const alternatives = type && refBranches(store, identity)

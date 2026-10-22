@@ -51,6 +51,27 @@ export function capabilityName(store: FosStore, cid: string): string | null {
 export function executeLeft(store: FosStore): string { return capabilityPattern(store, 'execute') }
 export function isExecuteLeft(store: FosStore, left: string | null | undefined): boolean { return sameCapabilityType(store, left, executeLeft(store)) }
 
+/**
+ * The trigger definition a row's left carries: a trigger capability's pattern (`timer`, `ref-change`, …), or one
+ * observer's offer of it (a trigger pinned to that declaration; the offer's value keeps the definition).
+ */
+export function triggerDefinitionOf(store: FosStore, left: string | null | undefined): NonNullable<FosDataContent['triggerDefinition']> | undefined {
+  if (!left || !store.table.has(left)) return undefined
+  const node = store.table.get(left)!
+  const target = node.children.find(([key]) => key === store.primitive.targetPointerConstructor.getId())?.[1]
+  const name = capabilityName(store, left)
+  return node.data.triggerDefinition ?? (target ? store.table.get(target)?.data.triggerDefinition : undefined) ?? STANDARD_CAPABILITY_PATTERNS.find(p => p.name === name)?.node.data.triggerDefinition
+}
+/** A trigger row: its left is a trigger capability. */
+export function isTriggerLeft(store: FosStore, left: string | null | undefined): boolean { return !!triggerDefinitionOf(store, left) }
+
+/**
+ * A row holding a native handler's own state for its node: the evaluator's execute row (its journal), a trigger row
+ * (its configuration and state). Such a row is no binding in scope, no argument, no step, no task context and no
+ * data to solve over: it is how the handler keeps track of this node.
+ */
+export function isHandlerStateLeft(store: FosStore, left: string | null | undefined): boolean { return isExecuteLeft(store, left) || isTriggerLeft(store, left) }
+
 /** Old primitive markers and their library pattern are the same type at the wire boundary. */
 export function sameCapabilityType(store: FosStore, a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false

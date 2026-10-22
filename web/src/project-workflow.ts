@@ -2,7 +2,7 @@ import type { App } from './app'
 import {
   WORKFLOW_CONFIG, WORKFLOW_JOB, configureProjectWorkflow, enqueueWorkflowJob, projectWorkflow, projectWorkflows, workflowPath,
   CODING_TEMPLATE, agentRequest, validateAgentRequest, workflowTriggerPath, workflowDefault, instantiateTemplate, addTask,
-  readNodeValue, writeNodeValue, addRow, addMemberAt, setMemberCapabilitiesAt,
+  readNodeValue, writeNodeValue, nodeTrigger, setTriggerEnabled, addRow, addMemberAt, setMemberCapabilitiesAt,
   withBranches, view, ALLOCATION_TYPE, sameValue,
   type ProjectWorkflow, type WorkflowJob, type Replica, type Scope
 } from '../../shared/sync/index'
@@ -106,8 +106,8 @@ export function workflowStatus(app: App): HTMLElement | null {
     const pause = document.createElement('button'); pause.textContent = 'Pause workflow'
     pause.onclick = async () => {
       let r = writeNodeValue(app.state.replica, path, WORKFLOW_CONFIG, { ...config, enabled: false }, app.now())
-      const triggerPath = workflowTriggerPath(r, config.project), trigger = triggerPath && readNodeValue<object>(r, triggerPath, 'fos:trigger')
-      if (trigger && triggerPath) r = writeNodeValue(r, triggerPath, 'fos:trigger', { ...trigger, enabled: false }, app.now())
+      const triggerPath = workflowTriggerPath(r, config.project)
+      if (triggerPath && nodeTrigger(r, triggerPath)) r = setTriggerEnabled(r, triggerPath, false, app.now())
       await app.saveWorkflowReplica(r)
     }
     box.append(pause)

@@ -48,8 +48,8 @@ test('an unfamiliar observer executes only through its scoped declaration, pinne
   r = publishNativeRef(r, [], 'host', ref, 1)
   r = setNodeTrigger(r, ['task'], config, 1)
   expect(triggerOffers(r, ['task']).map((o) => o.cid)).toEqual([ref])
-  const argument = argumentRefs(r.store, resolveScope(r.store, headCid(r), ['task'])!).find((a) => a.name === 'fos:trigger')!
-  expect(argument.type).toBe(ref)
+  // a trigger given one observer's declaration is pinned to it: the row's left is that offer
+  expect(nodeTrigger(r, ['task'])?.handler).toBe(ref)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 2)).toBe('custom-event')
   r = setHandlerEnabledAt(r, [], 'host', 'user-authored-observer', false, 2)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 2)).toBeNull()

@@ -51,7 +51,7 @@ test('library data observes Fos merges, independently of GitHub or direct edits'
   let { r, config } = fixture()
   const path = workflowTriggerPath(r, config.project)!, signal = config.project
   expect(path).not.toBeNull()
-  expect(nodeTrigger(r, path)?.watch).toMatchObject({ path: signal, branch: 'main', argument: 'fos:branch-merge' })
+  expect(nodeTrigger(r, path)?.watch).toMatchObject({ path: signal, branch: 'main', merges: true })
   r = addTask(r, config.project, 'Direct main edit', 4, 'main-note')
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async (target: string[]) => {

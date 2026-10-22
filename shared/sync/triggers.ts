@@ -1,17 +1,23 @@
-import { STANDARD_CAPABILITY_PATTERNS, capabilityName } from './capabilities'
+import { STANDARD_CAPABILITY_PATTERNS, capabilityName, sameCapabilityType, triggerDefinitionOf, isTriggerLeft } from './capabilities'
+export { triggerDefinitionOf, isTriggerLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { nativeRefValues } from './native-refs'
 import { primitiveValue } from './primitives'
 import { refSubmissions } from './scoped-refs'
 import { isRefNode } from './graph'
 export { cronMatches } from './trigger-primitives'
-/** Triggers are named arguments on nodes, supplied by a device or the Home server peer. */
-import { readNodeValue, writeNodeValue } from './evaluation'
+/**
+ * A trigger is a row of its node: its left is the trigger capability (`timer`, `ref-change`, …, a library pattern with a
+ * `triggerDefinition`), its right a node holding its configuration, the peer that observes it and its state. The
+ * observing peer's handler is found the way a requirement's is, by discovery in scope. A template's trigger rows are
+ * declarations: inactive until the template is applied, when their placeholders are bound (`bindTemplateTriggers`).
+ */
 import { addTask, headCid, instantiateTemplate, view, type Replica } from './replica'
 import { newId, resolveScope, valueContent, content, isBranchChoice, readChoice, refBranches, put, withBranches, type Scope } from './graph'
 import { TEMPLATE_TYPE } from './library-types'
-import { argumentRefs } from './bindings'
 import { bindRefInputs } from './refs'
+import { readGraphValue } from './node-values'
+import { rowWithLeft, writeRowValue } from './row-values'
 /** Compatibility spelling at API boundaries; declarations, not this string, determine behavior. */
 export type TriggerKind = string
 export type TriggerDefinition = NonNullable<import('../types').FosDataContent['triggerDefinition']>
@@ -26,19 +32,23 @@ export function triggerOffers(r: Replica, path: Scope) {
     return definition && refSubmissions(r.store, offer.cid).some((cid) => primitiveValue(r.store, cid)) ? [{ ...offer, definition }] : []
   })
 }
-function triggerArgument(r: Replica, path: Scope) {
+/** The node's trigger row: its left is a trigger capability (or one observer's offer of it). */
+function triggerRow(r: Replica, path: Scope) {
   const cid = resolveScope(r.store, headCid(r), path)
-  return cid ? argumentRefs(r.store, cid).find((a) => a.name === TRIGGER_ARGUMENT) : undefined
+  return cid ? rowWithLeft(r.store, cid, isTriggerLeft) : null
 }
-function boundObserver(r: Replica, path: Scope): string | undefined {
-  const arg = triggerArgument(r, path)
-  // The left side is the observer declaration itself, just like an ordinary primitive call.
-  return arg && isRefNode(r.store, content(r.store, arg.type)) ? arg.type : undefined
+/** The offer a trigger row's left pins, when it is one (not the capability itself). */
+const pinnedOffer = (r: Replica, left: string): string | undefined => isRefNode(r.store, content(r.store, left)) ? left : undefined
+/** A trigger row's fields as stored: its configuration, its state, and the declaration it was bound from (a template's). */
+type StoredTrigger = TriggerInput & { state?: TriggerState; declaration?: TriggerInput }
+function storedTrigger(r: Replica, path: Scope): { left: string; value: StoredTrigger } | null {
+  const row = triggerRow(r, path)
+  const value = row ? readGraphValue(r.store, row.ref) as StoredTrigger | undefined : undefined
+  return row && value && typeof value === 'object' ? { left: row.edge[0], value } : null
 }
 export function triggerObserver(r: Replica, path: Scope, t: NodeTrigger): TriggerObserver | null {
-  const bound = boundObserver(r, path)
   const offers = triggerOffers(r, path).filter(
-    (o) => o.enabled && o.active && o.peerId === t.peer && (bound ? o.cid === bound : (o.capability ?? o.id) === t.kind)
+    (o) => o.enabled && o.active && o.peerId === t.peer && (t.handler ? o.cid === t.handler : t.observer ? sameCapabilityType(r.store, o.type, t.observer) : (o.capability ?? o.id) === t.kind)
   )
   if (offers.length !== 1) return null
   return nativeRefValues<unknown>(r, path, t.peer).find((value) => value.ref === offers[0]!.cid)?.native.trigger ?? null
@@ -57,8 +67,11 @@ export type TriggerInput = {
   due?: number
   expression?: string
   response?: AwaitedResponse
-  watch?: { path: Scope; branch: string; baseline: string; argument?: string }
+  /** `merges`: fire when a branch is merged into the watched ref, not when it is edited directly. */
+  watch?: { path: Scope; branch: string; baseline: string; merges?: boolean }
   handler?: string
+  /** The trigger capability its row has on the left; offers of it observe the trigger. Never persisted. */
+  observer?: string
   definition?: TriggerDefinition
   [key: string]: unknown
 }
@@ -71,35 +84,45 @@ export type TriggerState = {
   requestTime?: number
   requestIds?: string[]
 }
-export const TRIGGER_ARGUMENT = 'fos:trigger'
-export const TRIGGER_TEMPLATE_ARGUMENT = 'fos:trigger-template'
-export const TRIGGER_STATE_ARGUMENT = 'fos:trigger-state'
 export function nodeTrigger(r: Replica, path: Scope): NodeTrigger | null {
-  const t = readNodeValue<NodeTrigger>(r, path, TRIGGER_ARGUMENT),
-    arg = triggerArgument(r, path)
-  if (!t || !arg || typeof t.peer !== 'string' || typeof t.created !== 'number' || typeof t.enabled !== 'boolean') return null
-  const type = discoverHandlers(r, path).find(offer => offer.cid === arg.type)?.type ?? arg.type
-  const definition =
-    content(r.store, type).data.triggerDefinition ??
-    STANDARD_CAPABILITY_PATTERNS.find((p) => p.name === capabilityName(r.store, type))?.node.data.triggerDefinition
-  return { ...t, kind: capabilityName(r.store, type) ?? t.kind ?? type, handler: boundObserver(r, path), definition }
+  const stored = storedTrigger(r, path)
+  if (!stored) return null
+  const { state: _state, declaration: _declaration, ...t } = stored.value
+  if (typeof t.peer !== 'string' || typeof t.created !== 'number' || typeof t.enabled !== 'boolean') return null
+  const handler = pinnedOffer(r, stored.left)
+  const type = handler ? triggerOffers(r, path).find(o => o.cid === handler)?.type : stored.left
+  return { ...t, kind: (type && capabilityName(r.store, type)) ?? capabilityName(r.store, stored.left) ?? stored.left, ...(handler ? { handler } : { observer: stored.left }), definition: triggerDefinitionOf(r.store, stored.left) }
 }
-export const triggerState = (r: Replica, path: Scope) => readNodeValue<TriggerState>(r, path, TRIGGER_STATE_ARGUMENT)
+export const triggerState = (r: Replica, path: Scope): TriggerState | null => storedTrigger(r, path)?.value.state ?? null
+/** Record the trigger's state in its row. */
+export function writeTriggerState(r: Replica, path: Scope, state: TriggerState, now: number): Replica {
+  const stored = storedTrigger(r, path)
+  if (!stored) throw new Error('This node has no trigger.')
+  return writeRowValue(r, path, stored.left, { ...stored.value, state }, now)
+}
+/** Switch the trigger on or off without choosing its observer again. */
+export function setTriggerEnabled(r: Replica, path: Scope, enabled: boolean, now: number): Replica {
+  const stored = storedTrigger(r, path)
+  if (!stored) throw new Error('This node has no trigger.')
+  return writeRowValue(r, path, stored.left, { ...stored.value, enabled }, now)
+}
 
-/** Bind trigger declarations carried by a template's graph data. Whole placeholders
- * preserve native values (for example a node path), rather than stringifying them. */
+/** Bind the trigger declarations an applied template brought along (its trigger rows), again from the declaration each
+ * was first bound from. Whole placeholders preserve native values (for example a node path), rather than stringifying them. */
 export function bindTemplateTriggers(r: Replica, path: Scope, bindings: Record<string, unknown>, now: number): Replica {
   let count = 0
   const walk = (at: Scope) => {
     if (at.length - path.length > 32 || ++count > 5000) throw new Error('Template trigger tree is too large.')
-    const declaration = readNodeValue<NodeTrigger>(r, at, TRIGGER_TEMPLATE_ARGUMENT)
-    if (declaration) {
-      const trigger = bindRefInputs(declaration, bindings) as NodeTrigger
+    const stored = storedTrigger(r, at)
+    if (stored) {
+      const { state: _state, declaration: kept, ...current } = stored.value
+      const declaration = kept ?? current
+      const trigger = { ...(bindRefInputs(declaration, bindings) as TriggerInput), kind: capabilityName(r.store, stored.left) ?? stored.left, declaration } as NodeTrigger
       trigger.created = now
       if (trigger.watch) {
         if (!Array.isArray(trigger.watch.path) || !trigger.watch.path.length || typeof trigger.watch.branch !== 'string')
           throw new Error('Bind the trigger to a node path and branch.')
-        trigger.watch.baseline = watchedRefValue(r, trigger.watch.path, trigger.watch.branch, trigger.watch.argument) ?? ''
+        trigger.watch.baseline = watchedRefValue(r, trigger.watch.path, trigger.watch.branch, trigger.watch.merges) ?? ''
       }
       r = setNodeTrigger(r, at, trigger, now)
     }
@@ -109,19 +132,20 @@ export function bindTemplateTriggers(r: Replica, path: Scope, bindings: Record<s
   return r
 }
 
-/** Observe a specific branch without changing the branch displayed by this device. */
-export function watchedRefValue(r: Replica, path: Scope, branch: string, argument?: string): string | null {
+/**
+ * Observe a specific branch of a ref without changing the branch displayed by this device: its value, or with
+ * `merges` what has been merged into it. A merge moves the merged branch's base (`mergeBranch`); a direct edit does not.
+ */
+export function watchedRefValue(r: Replica, path: Scope, branch: string, merges = false): string | null {
   const target = resolveScope(r.store, headCid(r), path)
   if (!target) return null
   const node = content(r.store, target),
     names = isBranchChoice(r.store, node) ? readChoice(r.store, target).options.map((o) => o.peerId) : refBranches(r.store, node)?.names
   if (names && !names.includes(branch)) return null
+  // a merge into the branch records what was merged in as its base (`mergeBranch`)
+  if (merges) return put(r.store, { data: {}, children: isBranchChoice(r.store, node) ? readChoice(r.store, target).options.flatMap((o) => o.base && o.peerId === branch ? [o.base] : []) : [] })
   return withBranches(r.store, { [path.at(-1)!]: branch }, () => {
     const cid = resolveScope(r.store, headCid(r), path)
-    if (cid && argument) {
-      const ref = argumentRefs(r.store, cid).find((a) => a.name === argument)
-      return put(r.store, ref ? valueContent(r.store, ref.cid) : { data: {}, children: [] })
-    }
     return cid ? put(r.store, valueContent(r.store, cid)) : null
   })
 }
@@ -138,7 +162,7 @@ export function setNodeTrigger(r: Replica, path: Scope, trigger: TriggerInput, n
       o.peerId === trigger.peer &&
       o.enabled &&
       o.active &&
-      (trigger.handler ? o.cid === trigger.handler : (o.capability ?? o.id) === trigger.kind)
+      (trigger.handler ? o.cid === trigger.handler : trigger.observer ? sameCapabilityType(r.store, o.type, trigger.observer) : (o.capability ?? o.id) === trigger.kind)
   )
   if (offers.length !== 1) throw new Error('Choose one available observer ref in this scope.')
   const offer = offers[0]!,
@@ -152,8 +176,12 @@ export function setNodeTrigger(r: Replica, path: Scope, trigger: TriggerInput, n
     throw new Error('Set its schedule (' + missingSchedule(config) + ') before enabling the trigger.')
   const observer = nativeRefValues<unknown>(r, path, trigger.peer).find((v) => v.ref === offer.cid)?.native.trigger
   observer?.validate?.({ replica: r, path, config, now, previous: triggerState(r, path) })
-  const { kind: _kind, handler: _handler, definition: _definition, ...fields } = trigger
-  return writeNodeValue(r, path, TRIGGER_ARGUMENT, fields, now, { type: offer.cid, peer: offer.peerId })
+  const { kind: _kind, handler: _handler, observer: _observer, definition: _definition, ...fields } = trigger
+  // what it keeps across a new configuration: its state, and the declaration a template bound it from
+  const prior = storedTrigger(r, path)?.value
+  const kept = { ...(prior?.state ? { state: prior.state } : {}), ...(prior?.declaration && !fields.declaration ? { declaration: prior.declaration } : {}) }
+  // a trigger given one observer's declaration is pinned to it (its left is the offer); otherwise any offer of the capability observes it
+  return writeRowValue(r, path, trigger.handler ? offer.cid : offer.type, { ...fields, ...kept }, now, offer.peerId, isTriggerLeft)
 }
 export function triggerObservation(r: Replica, path: Scope, t: NodeTrigger, now: number): TriggerEvent | null {
   if (!t.enabled || missingSchedule(t)) return null
@@ -197,25 +225,12 @@ export async function runNodeTriggers(driver: {
     try {
       observed = triggerObservation(driver.get(), path, trigger, driver.now())
     } catch (error) {
-      await driver.save(
-        writeNodeValue(
-          driver.get(),
-          path,
-          TRIGGER_STATE_ARGUMENT,
-          {
-            occurrence: `invalid:${trigger.created}`,
-            status: 'failed',
-            target: path,
-            error: error instanceof Error ? error.message : String(error)
-          },
-          driver.now()
-        )
-      )
+      await driver.save(writeTriggerState(driver.get(), path, { occurrence: `invalid:${trigger.created}`, status: 'failed', target: path, error: error instanceof Error ? error.message : String(error) }, driver.now()))
       continue
     }
     const event = observed?.id
     if (observed?.reset && prior) {
-      await driver.save(writeNodeValue(driver.get(), path, TRIGGER_STATE_ARGUMENT, { ...prior, occurrence: '' }, driver.now()))
+      await driver.save(writeTriggerState(driver.get(), path, { ...prior, occurrence: '' }, driver.now()))
       continue
     }
     if (!event || prior?.occurrence === event) continue
@@ -231,14 +246,14 @@ export async function runNodeTriggers(driver: {
     }
     // Claim before evaluating. Failed/interrupted runs require explicit review, not an automatic retry.
     let state: TriggerState = { ...observed?.state, occurrence: event, status: 'running', target }
-    await driver.save(writeNodeValue(r, path, TRIGGER_STATE_ARGUMENT, state, driver.now()))
+    await driver.save(writeTriggerState(r, path, state, driver.now()))
     try {
       await driver.evaluate(target)
       state = { ...state, status: 'finished' }
     } catch (error) {
       state = { ...state, status: 'failed', error: error instanceof Error ? error.message : String(error) }
     }
-    await driver.save(writeNodeValue(driver.get(), path, TRIGGER_STATE_ARGUMENT, state, driver.now()))
+    await driver.save(writeTriggerState(driver.get(), path, state, driver.now()))
   }
 }
 
