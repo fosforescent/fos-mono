@@ -1,4 +1,5 @@
 import { standardHostRef } from './host-runtime'
+import { handlerOfferId } from '@fosforescent/shared/sync/index'
 /** GitHub mediates repository state into ordinary Fos branches and merge requests.
  * No template, agent, deployment or continuation is selected here. */
 import {
@@ -28,7 +29,7 @@ export type RepositoryLoadDeps = {
 export function repositoryLoadHandler(deps: RepositoryLoadDeps): HostHandler {
   const checked = new Map<string, number>()
   return {
-    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo', 'fos:handler:integration:github:repo:load'), available: user => deps.connected(user),
+    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo', handlerOfferId('integration:github', 'repo', 'load')), available: user => deps.connected(user),
     async load(ctx) {
       const { path, now, userId } = ctx
       if (!path.length) return ctx.replica

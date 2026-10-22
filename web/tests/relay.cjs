@@ -78,7 +78,7 @@ async function main() {
   assert(!document.querySelector('.relay-inbox'))
   // the ack goes back on the next sync; the relay takes both out, and the following sync clears the queue here
   desktop.set({ replica: sync(desktop.state.replica, server, 30) })
-  server = c.relayAfterSubmission(server, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID, 'relay:ack:m1'], 'fos', 31)
+  server = c.relayAfterSubmission(server, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID, c.relayAckId('m1')], 'fos', 31)
   assert.deepEqual(c.view(server, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID]).tasks, [])
   desktop.set({ replica: sync(desktop.state.replica, server, 32) })
   assert.deepEqual(c.view(desktop.state.replica, [...HUB, c.memberEntryId('desktop'), c.RELAY_QUEUE_ID]).tasks, [])

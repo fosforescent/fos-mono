@@ -1,3 +1,4 @@
+import { publishedTemplateId } from './graph'
 import { memberEntryId } from './index'
 /**
  * Member edges travel by node exchange like other children of a node: the owner's devices receive and push every
@@ -107,7 +108,7 @@ test('a listing made on the account is visible on the device, and one made on th
   phone = publishTemplate(phone, [HOME_ID, 'shop'], [HOME_ID, 'shop', 'design'], 'Logo design', 23, true)
   phone = syncWith(phone, account, { now: 24 })
   expect(isListed(account.store, resolveScope(account.store, headCid(account), [HOME_ID, 'shop'])!)).toBe(true)
-  expect(marketplaceOffers(account).map(o => [o.id, o.label, o.path])).toEqual([['fos:published:design', 'Logo design', [HOME_ID, 'shop']]])
+  expect(marketplaceOffers(account).map(o => [o.id, o.label, o.path])).toEqual([[publishedTemplateId(phone.meta.peerId, 'design'), 'Logo design', [HOME_ID, 'shop']]])
   // the device's own offer on its entry travelled too
   expect(member(account, [HOME_ID, 'shop'], 'phone')).toBeDefined()
   expect(isDirty(phone)).toBe(false)

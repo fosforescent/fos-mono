@@ -1,3 +1,4 @@
+import { publishedTemplateId } from '@fosforescent/shared/sync/index'
 import { MARKET_PEER, addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
 import { collectRows, indexStore, searchRows, type Embed } from './rowIndex'
 import { COMMENT_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
@@ -84,8 +85,8 @@ test('global search aggregates only handlers offered to the market peer; switchi
   r = publishTemplate(r, [], ['design'], 'Logo capability', 4, true)
   await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)
   const hits = await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)
-  expect(hits.map(h => [h.aliasId, h.type, h.owner])).toEqual([['fos:published:design', 'capability', 'alice']])
-  const offer = discoverHandlers(r, []).find(o => o.id === 'fos:published:design')!
+  expect(hits.map(h => [h.aliasId, h.type, h.owner])).toEqual([[publishedTemplateId(r.meta.peerId, 'design'), 'capability', 'alice']])
+  const offer = discoverHandlers(r, []).find(o => o.id === publishedTemplateId(r.meta.peerId, 'design'))!
   r = setHandlerEnabledAt(r, [], MARKET_PEER, offer.id, false, 5) // the market member's offer, switched off
   await indexStore(prisma, { id: 1, username: 'alice' }, r.store, embed)
   expect(await searchRows(prisma, { userId: 2, query: 'logo', market: true, limit: 10 }, embed)).toEqual([])

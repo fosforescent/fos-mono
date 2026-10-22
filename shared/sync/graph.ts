@@ -1167,7 +1167,7 @@ export function commitRoot(store: FosStore, newTargetCid: string, now: number, m
   ]
   if (mergeSourceCid) children.push([store.primitive.mergeSourceNode.getId(), mergeSourceCid])
   // Per-peer node endpoints are local policy, not part of the shared target.
-  children.push(...previous.children.filter(([i, t]) => i === capabilityTarget(store, 'provideNode') && content(store, t).data.name?.content.startsWith('fos:node-link:')))
+  children.push(...previous.children.filter(([i, t]) => i === capabilityTarget(store, 'provideNode') && !!content(store, t).data.nodeLink))
   const alias = previous.data.alias ?? { id: newId() }
   store.rootNodeId = put(store, { data: { alias, updated: { time: now } }, children })
   store.updateCtxCallback?.(store.exportContext([]))
@@ -1987,6 +1987,15 @@ export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null
  * an entry is, and for whom, is its member edge and its data (`memberEntryPeerAt`).
  */
 export const memberEntryId = (peerId: string): string => hashContent({ data: { peerId: { content: peerId } }, children: [] })
+/**
+ * The identity of `peerId`'s offer of `capability` (a handler ref it advertises, `variant` telling apart two of the
+ * same peer and capability): a content address, the same in every store, standing for nothing it is parsed from.
+ */
+export const handlerOfferId = (peerId: string, capability: string, variant?: string): string =>
+  hashContent({ data: { peerId: { content: peerId }, description: { content: capability }, ...(variant ? { name: { content: variant } } : {}) }, children: [] })
+/** The identity of `peerId`'s offer of the template `templateId` (published as a handler). */
+export const publishedTemplateId = (peerId: string, templateId: string): string =>
+  hashContent({ data: { peerId: { content: peerId }, ref: { id: templateId } }, children: [] })
 
 /** The peer the member entry at `path` is for, when its last step is a member entry of its parent; else null. */
 export function memberEntryPeerAt(store: FosStore, root: string | null, path: Scope): string | null {
@@ -2047,7 +2056,7 @@ export function memberRefContent(store: FosStore, peerId: string, name: string |
     children: [
       ...unique.map((c): FosPathElem => [store.primitive.capabilityNode.getId(), capabilityTarget(store, c)]),
       ...from.map((c): FosPathElem => {
-        const id = `fos:handler:${peerId}:${c}`
+        const id = handlerOfferId(peerId, c)
         const pattern = capabilityTarget(store, c)
         const value = put(store, { data: { peerId: { content: peerId }, description: { content: c }, behavior: { content: id } }, children: [...content(store, pattern).children] })
         const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: c } }, value))

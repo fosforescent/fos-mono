@@ -3,7 +3,7 @@
  * Input definitions reconstruct this host's primitives after loading; only refs
  * present in the graph make values available to execution and lifecycle hooks.
  */
-import { SERVER_TRANSPORT_CAPABILITIES, capabilityTarget, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type Replica, type Scope } from '@fosforescent/shared/sync/index'
+import { SERVER_TRANSPORT_CAPABILITIES, handlerOfferId, capabilityTarget, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 
 export type EffectContext = {
@@ -54,7 +54,7 @@ export type HostHandler = {
 export type HostRuntime = ReturnType<typeof createHostRuntime>
 
 /** Standard-library adapter used by native implementations, not by discovery or dispatch. */
-export function standardHostRef(peer: string, name: string, id = `fos:handler:${peer}:${name}`): PrimitiveDefinition<EffectContext> {
+export function standardHostRef(peer: string, name: string, id = handlerOfferId(peer, name)): PrimitiveDefinition<EffectContext> {
   return { id, label: name, type: store => capabilityTarget(store, name) }
 }
 

@@ -69,7 +69,6 @@ export type NodeAuthority = {
   proposeOnly?: boolean
   capabilities: Capability[]
 }
-const LINK_NAME = 'fos:node-link:'
 const forbiddenFields = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId'])
 export class NodeAccessError extends Error {}
 
@@ -100,13 +99,16 @@ function sourceId(r: Replica, path: Scope): string {
   if (!cid) throw new NodeAccessError('Linked node unavailable.')
   return content(r.store, cid).data.alias?.id ?? cid
 }
-const linkName = (r: Replica, peer: string, path: Scope) => LINK_NAME + JSON.stringify([peer, sourceId(r, path)])
 const localLinkId = (peer: string, other: string, id: string) => hashContent({ data: { description: { content: JSON.stringify([peer, other, id]) } }, children: [] })
 
 function linkAt(r: Replica, path: Scope, peer: string, remoteId: string) {
   // One endpoint per peer at a node. A caller cannot evade a mask by choosing a new link id.
-  const name = linkName(r, peer, path)
-  const edge = content(r.store, r.store.rootNodeId).children.find(e => e[0] === capabilityTarget(r.store, 'provideNode') && content(r.store, e[1]).data.name?.content === name)
+  const node = sourceId(r, path)
+  const edge = content(r.store, r.store.rootNodeId).children.find(e => {
+    if (e[0] !== capabilityTarget(r.store, 'provideNode')) return false
+    const data = content(r.store, e[1]).data
+    return data.nodeLink?.node === node && data.ref?.peer === peer
+  })
   return edge ? { cid: edge[1] } : undefined
 }
 function readMask(r: Replica, path: Scope, peer: string, remoteId: string): NodeMask {
@@ -141,9 +143,8 @@ export function isNodeProjection(r: Replica, path: Scope): boolean {
   const id = sourceId(r, path)
   return content(r.store, r.store.rootNodeId).children.some(e => {
     if (e[0] !== capabilityTarget(r.store, 'provideNode')) return false
-    const ref = content(r.store, e[1])
-    if (ref.data.description?.content !== 'fos:node-projection') return false
-    try { return JSON.parse(ref.data.name?.content?.slice(LINK_NAME.length) ?? 'null')?.[1] === id } catch { return false }
+    const link = content(r.store, e[1]).data.nodeLink
+    return !!link?.projection && link.node === id
   })
 }
 
@@ -163,8 +164,8 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
   const policy = constructNodeValue(r.store, maskOf(mask), previous ? content(r.store, previous.cid).data.alias!.id : id, previous?.cid).cid
   const ref = put(r.store, refNodeContent(r.store, {
     alias: { id: previous ? content(r.store, previous.cid).data.alias!.id : id },
-    ...(previous && content(r.store, previous.cid).data.description ? { description: content(r.store, previous.cid).data.description } : {}),
-    name: { content: linkName(r, peer, path) }, ref: { id: remoteId, peer }
+    nodeLink: { node: sourceId(r, path), ...(previous && content(r.store, previous.cid).data.nodeLink?.projection ? { projection: true } : {}) },
+    ref: { id: remoteId, peer }
   }, policy, previous ? [[r.store.primitive.previousVersion.getId(), previous.cid]] : []))
   if (previous && content(r.store, previous.cid).data.ref?.id === remoteId && refValueCid(r.store, content(r.store, previous.cid)) === policy) return r
   // Endpoint refs belong to this peer's root alias, outside its shared TARGETPOINTER.
@@ -367,7 +368,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   commitRoot(r.store, updateAtScope(r.store, headCid(r), at, () => identity, 'replace'), now)
   r = setNodeLinkMask({ ...r }, at, node.peerId, node.linkId, ownMask, now, request.linkId)
   const endpoint = linkAt(r, at, node.peerId, node.linkId)!, ref = content(r.store, endpoint.cid)
-  const marked = put(r.store, { ...ref, data: { ...ref.data, description: { content: 'fos:node-projection' } } })
+  const marked = put(r.store, { ...ref, data: { ...ref.data, nodeLink: { node: ref.data.nodeLink!.node, projection: true } } })
   const root = content(r.store, r.store.rootNodeId)
   r.store.rootNodeId = put(r.store, { ...root, children: root.children.map(edge => edge[1] === endpoint.cid ? [edge[0], marked] : edge) })
   return { ...r }

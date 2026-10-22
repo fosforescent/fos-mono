@@ -1,3 +1,4 @@
+import { publishedTemplateId } from './graph'
 import { syncWith, userView } from './test-helpers'
 import { MARKET_PEER, content, put, readMembers, resolveScope, stripLink, viewNode } from './graph'
 import { BidError, applyBid, copyBidRow, draftBid, marketGrantsAt, setMarketAt } from './market'
@@ -33,7 +34,7 @@ test('handlers published to the market are the market member’s offers; publish
   r = publishTemplate(r, ['shop'], ['shop', 'design'], 'Logo', 4)
   expect(marketplaceOffers(r)).toEqual([])
   r = publishTemplate(r, ['shop'], ['shop', 'design'], 'Logo', 5, true)
-  expect(marketplaceOffers(r).map(o => [o.id, o.label, o.peerId])).toEqual([['fos:published:design', 'Logo', MARKET_PEER]])
+  expect(marketplaceOffers(r).map(o => [o.id, o.label, o.peerId])).toEqual([[publishedTemplateId(r.meta.peerId, 'design'), 'Logo', MARKET_PEER]])
   expect(userView(r)!.tasks[0]!.market).toBe(true)
 })
 

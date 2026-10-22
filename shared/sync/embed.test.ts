@@ -1,6 +1,6 @@
 import { memberEntryId } from './index'
 import { api } from './embed'
-import { addTask, createReplica, ensureHomeContext, HOME_ID, LIBRARY_ID, view } from './index'
+import { localStoreRowId, addTask, createReplica, ensureHomeContext, HOME_ID, LIBRARY_ID, view } from './index'
 import { exchangeNode } from './node-sync'
 import { SERVER_TRANSPORT_CAPABILITIES } from './graph'
 import type { NodeRequest } from './node-provider'
@@ -79,7 +79,7 @@ test('two stores on one machine link each other and read each other by node exch
   expect(api.linkStore('project', 'home-store', 'Home', true, 4)).toBe(false)
   expect(JSON.parse(api.localStores('project'))).toEqual([{ peerId: 'home-store', name: 'Home' }])
   // the linked store appears like any other peer: under its entry in Settings, a row held by it standing for its Home
-  const held = JSON.parse(api.view('project', JSON.stringify([memberEntryId('home-store')]))).tasks.find((t: { id: string }) => t.id === 'store:home-store')
+  const held = JSON.parse(api.view('project', JSON.stringify([memberEntryId('home-store')]))).tasks.find((t: { id: string }) => t.id === localStoreRowId('home-store'))
   expect(held).toMatchObject({ refId: expect.any(String), refPeer: 'home-store', title: 'Home' })
   // each reads the other's tree through node exchange
   expect(JSON.parse(api.browseStore('project', 'home-store', 5)).join(' | ')).toContain('Project row')

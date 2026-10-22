@@ -1,3 +1,4 @@
+import { publishedTemplateId } from '@fosforescent/shared/sync/index'
 import { memberEntryId } from '@fosforescent/shared/sync/index'
 import { asAccountStore } from './deviceRoot'
 import type { Request, Response } from 'express'
@@ -244,7 +245,7 @@ test('member entries travel through provide-node: listings and offers made on a 
   // the index the server keeps after a save sees the listing and the offer
   const rows = collectRows(stores.get(7)!)
   expect(rows.find(r => r.aliasId === 'shop')).toMatchObject({ market: true })
-  expect(rows.find(r => r.aliasId === 'fos:published:design')).toMatchObject({ type: 'capability', title: 'Logo design', market: true, path: [HOME_ID, 'shop'] })
+  expect(rows.find(r => r.aliasId === publishedTemplateId(phone.meta.peerId, 'design'))).toMatchObject({ type: 'capability', title: 'Logo design', market: true, path: [HOME_ID, 'shop'] })
   expect(isDirty(phone)).toBe(false)
 })
 

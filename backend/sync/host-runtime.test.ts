@@ -1,3 +1,4 @@
+import { handlerOfferId } from '@fosforescent/shared/sync/index'
 import { memberEntryId } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { CAPABILITIES, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
@@ -72,7 +73,7 @@ test('availability follows the handler, and every advertised capability is a kno
 test('reloading and applying host defaults never resurrects a withdrawn declaration', () => {
   const runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search'), effect: async () => {} }])
   let r = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
-  const offer = discoverHandlers(r, []).find(value => value.id === 'fos:handler:fos:search')!
+  const offer = discoverHandlers(r, []).find(value => value.id === handlerOfferId('fos', 'search'))!
   expect(offer).toBeDefined()
   r = addRefCall(r, [], offer.cid, 2, 'call')
   expect(runtime.executors(evaluationSteps(r, ['call'])[0]!, r)).toHaveLength(1)

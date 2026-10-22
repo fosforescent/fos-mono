@@ -59,7 +59,7 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
           const target = isRefNode(store, right) && !refValueCid(store, right) && right.data.alias?.id === node.data.alias?.id ? option.edge[0] : identityCid(store, option.edge)
           return [{ peerId: option.peerId, edge: [put(r.store, { data: {}, children: [] }), walk(store, target, path, role, depth + 1, type)] as FosPathElem }]
         })
-        return putBranches(r.store, 'fos:compiled:sum', null, alternatives)
+        return putBranches(r.store, readChoice(store, current).id, null, alternatives)
       }
       const target = refValueCid(store, node)
       if (target) {
@@ -115,7 +115,7 @@ export function compileRow(r: Replica, path: Scope, options: CompileRefOptions =
 
 /** Persist the residual and its reachable immutable graph together, not just an orphan CID. */
 export function saveRefCompilation(r: Replica, path: Scope, id: string, compiled: CompiledRef, now: number): Replica {
-  const type = put(r.store, { data: { name: { content: 'fos:compiled-ref' } }, children: [] })
+  const type = put(r.store, { data: { description: { content: 'Compiled ref' } }, children: [] })
   const envelope = put(r.store, { data: { refCompilation: { cid: compiled.cid, holes: compiled.holes } }, children: [[r.store.primitive.targetPointerConstructor.getId(), compiled.cid]] })
-  return addRefAt(r, path, id, type, now, envelope, `fos:compiled:${id}`)
+  return addRefAt(r, path, id, type, now, envelope)
 }

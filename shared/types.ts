@@ -268,6 +268,11 @@ export type FosDataContent = {
   proposal?: {
     status: 'open' | 'rejected'
   }
+  /** On a node link endpoint (a provideNode ref on the store root's alias): the local node it links (its id), and whether that node is the other peer's projection here. */
+  nodeLink?: {
+    node: string
+    projection?: boolean
+  }
   group?: {
     id: string;
     name: string;

@@ -14,7 +14,7 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
  */
 
 import { FosStore } from '../dag-implementation/store'
-import { UnsupportedDataVersionError } from '../dag-implementation/cid'
+import { UnsupportedDataVersionError, hashContent } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
 import { constructForm, formFields, formText, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
 import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
@@ -829,13 +829,16 @@ export function linkLocalStore(replica: Replica, peerId: string, name: string, n
   if (member && member.name === name && CAPABILITIES.every(c => member.capabilities.includes(c))) return replica
   let next = editNode(replica, [], now, (node) => withMember(replica.store, node, peerId, name, CAPABILITIES))
   if (!member) {
-    const id = `store:${peerId}`, store = next.store
+    const id = localStoreRowId(peerId), store = next.store
     const held = put(store, { data: { alias: { id }, description: { content: name }, ref: { id, peer: peerId, version: 'unloaded', scope: [...shares] } }, children: [] })
     const entry = [memberEntryId(peerId)]
     next = edit(next, entry, now, (value) => findChildEdge(next, value, id) ? value : { ...value, children: [...value.children, rowEdgeAt(store, PLAIN_TYPE, held, entry)] })
   }
   return next
 }
+
+/** The id of the row standing for the linked store `peerId` under its member entry: a content address. */
+export const localStoreRowId = (peerId: string): string => hashContent({ data: { ref: { id: '', peer: peerId } }, children: [] })
 
 /** The stores this one is linked with on this machine (members reached through files). */
 export function localStores(replica: Replica): Array<{ peerId: string; name: string }> {

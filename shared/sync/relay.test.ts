@@ -3,7 +3,7 @@ import {
   SERVER_TRANSPORT_CAPABILITIES, addMemberAt, addTask, content, createReplica, exchangeNode, headCid, readProposals,
   resolveScope, setMemberCapabilitiesAt, view, type NodeAuthority, type Replica, type Scope,
 } from './index'
-import { RELAY_QUEUE_ID, addRelayAck, addRelayMessage, offerRelay, relayAfterSubmission, relayAt, relayInbox, relayQueues, rowsLeftAt } from './relay'
+import { RELAY_QUEUE_ID, relayAckId, addRelayAck, addRelayMessage, offerRelay, relayAfterSubmission, relayAt, relayInbox, relayQueues, rowsLeftAt } from './relay'
 import { syncWith } from './test-helpers'
 
 const HUB: Scope = ['hub']
@@ -72,8 +72,8 @@ test('the queue rows reach the recipient by ordinary sync, and its ack clears th
   desktop = addRelayAck(desktop, queueOf('desktop'), 'm4', 60)
   expect(relayInbox(desktop, queueOf('desktop'))).toEqual([])
   desktop = syncWith(desktop, server, { now: 61 })
-  expect(view(server, queueOf('desktop'))!.tasks.map(t => t.id)).toEqual(['m4', 'relay:ack:m4'])
-  server = relayAfterSubmission(server, [...queueOf('desktop'), 'relay:ack:m4'], 'fos', 62)
+  expect(view(server, queueOf('desktop'))!.tasks.map(t => t.id)).toEqual(['m4', relayAckId('m4')])
+  server = relayAfterSubmission(server, [...queueOf('desktop'), relayAckId('m4')], 'fos', 62)
   expect(view(server, queueOf('desktop'))!.tasks).toEqual([])
   desktop = syncWith(desktop, server, { now: 63 })
   expect(view(desktop, queueOf('desktop'))!.tasks).toEqual([])
@@ -96,7 +96,7 @@ test('an invited recipient acknowledges with its submission at the relay node', 
   expect(() => exchangeNode(server, { peerId: 'phone', scope: HUB, path: [memberEntryId('desktop'), RELAY_QUEUE_ID], linkId: 'x' }, phone, 21)).toThrow()
   let desktop = addRelayAck(createReplica('desktop'), [], 'm5', 30)
   desktop = syncWith(desktop, server, { invited: HUB })
-  server = relayAfterSubmission(server, [...HUB, 'relay:ack:m5'], 'fos', 40)
+  server = relayAfterSubmission(server, [...HUB, relayAckId('m5')], 'fos', 40)
   expect(view(server, queueOf('desktop'))!.tasks).toEqual([])
   expect(readProposals(server.store, content(server.store, resolveScope(server.store, headCid(server), HUB)!)).filter(p => p.status === 'open')).toEqual([])
 })
