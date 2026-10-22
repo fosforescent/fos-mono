@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
-import { setRefValueAt, visitorExecution, consume, applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { setRefValueAt, visitorExecution, consume, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 void TEMPLATE_TYPE
@@ -225,9 +225,6 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           const candidates = Object.entries(fields).flatMap(([key, value]) => { const field = node.inputs.find(f => f.key === key)!; return field.kind === 'text' && typeof value === 'string' ? [{ path: field.path ?? [field.key], value }] : [] })
           if (candidates.length) r = proposeVisitorValues(r, at.path, peer, candidates, now())
         }
-        // the owner's standing decision: proposals that enough members approved merge now (the standard library's governance)
-        const governed = applyMergePolicy(r, at.path, digest, now())
-        r = governed.replica
         await save(user, r)
         const complete = (policy.execution || req.body.interaction === true) && !executionInputs(r, at.path).length
         return { peer, links, record, complete, expected: put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), at.path)!)) }

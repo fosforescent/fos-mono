@@ -23,9 +23,10 @@ export function libraryNames(get: (cid: string) => FosNodeContent | null | undef
     if (!byNode.has(node)) byNode.set(node, id)
   }
   const groups: string[] = []
-  // a named ref: a `lib:` alias on a ref (it points at a value, or carries a name as a declaration)
+  // a named ref: a `lib:` alias with its name (whether it points at a value or not: node exchange delivers every row
+  // as a ref, so a pointer alone says nothing)
   const named = (node: FosNodeContent | null | undefined): node is FosNodeContent =>
-    !!node?.data.alias?.id.startsWith('lib:') && (!!pointer(node) || !!node.data.name)
+    !!node?.data.alias?.id.startsWith('lib:') && !!node.data.name
   for (const [left, right] of value(root)?.children ?? []) {
     const ref = get(right)
     if (!named(ref)) { if (ref) groups.push(right); continue }

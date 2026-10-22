@@ -47,7 +47,7 @@ import { standardRequirementSatisfied } from './standard-requirements'
 import { capabilityPattern, capabilityName, sameCapabilityType, isExecuteLeft, isTriggerLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { libraryNames, type LibraryNames } from '../library-names'
-import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, MONEY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
+import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, LIBRARY_TYPE, MONEY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { formAttribution, formElements, formTitle, positionFormRows, type FormElement } from './forms'
 import { sameUser, userOf, userPeerId, type UserRecord } from './users'
 import { FosStore } from '../dag-implementation/store'
@@ -216,14 +216,32 @@ export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'po
  */
 
 /**
- * The name of the standard library ref: a ref in every device root (and, for people who contribute, one linked in
- * Home). Its value arrives as a submission: the build's library first, then what its members agree on.
+ * The standard library ref's identity in a device root: a content address (every device root's library ref has the
+ * same one). Code finds a library ref by what it holds (`isLibraryRef`); this is only what a new one is called.
  */
-export const LIBRARY_ID = 'fos:library'
+export const LIBRARY_ID = hashContent({ data: { description: { content: 'Standard library' } }, children: [] })
 
-/** The library ref is a container: the names in its value resolve as names (`namesInLibrary`), never as lexical bindings. */
-export function isLibraryRef(node: FosNodeContent): boolean {
-  return node.data.alias?.id === LIBRARY_ID
+/**
+ * Whether `node` is a library ref: a ref whose value (here, not a peer's unloaded node) is a library, the namespace
+ * that defines the Library type. It is a container: the names in its value resolve as names (`namesInLibrary`), never
+ * as lexical bindings.
+ */
+export function isLibraryRef(store: FosStore, node: FosNodeContent): boolean {
+  if (isHandle(node) || isPeerReference(node)) return false
+  const target = refValueCid(store, node)
+  if (!target || !store.table.has(target)) return false
+  return namesInLibrary(store, valueCidOf(store, target)).byName.has(LIBRARY_TYPE)
+}
+/** The library ref among the rows of the node `cid`, if it has one: its id there and its cid. */
+export function libraryRowOf(store: FosStore, cid: string): { id: string; cid: string } | null {
+  for (const edge of valueContent(store, cid).children) {
+    if (!isRowEdge(store, edge)) continue
+    const child = identityCid(store, edge)
+    if (!store.table.has(child)) continue
+    const node = content(store, child), id = aliasIdOf(node)
+    if (id && isLibraryRef(store, node)) return { id, cid: child }
+  }
+  return null
 }
 
 /** The build's library, stored in `store`: the content of the submission a device root's library ref accepts. */
@@ -311,7 +329,7 @@ function libraryValues(store: FosStore): string[] {
   let root: string
   try { root = rootTargetCid(store) } catch { return [] }
   const home = homeCidOf(store, root)
-  const refs = [findChild(store, root, LIBRARY_ID), home ? findChild(store, home, LIBRARY_ID) : null].filter((cid): cid is string => !!cid)
+  const refs = [libraryRowOf(store, root)?.cid, home ? libraryRowOf(store, home)?.cid : null].filter((cid): cid is string => !!cid)
   const values: string[] = []
   const add = (cid: string) => { if (store.table.has(cid) && !values.includes(cid)) values.push(cid) }
   for (const ref of refs) {
@@ -425,7 +443,7 @@ export function resolveRowType(store: FosStore, type: string, at: Scope = [], ro
  * to `at`, or null when no library above has it. New rows of that type are edges `[this cid, row]`.
  */
 function nearestLibraryType(store: FosStore, typeId: string, at: Scope, root: string): string | null {
-  const library = findNearestRow(store, root, at, (row) => row.id === LIBRARY_ID && !!libraryRowType(store, row.cid, typeId))
+  const library = findNearestRow(store, root, at, (row) => isLibraryRef(store, content(store, row.cid)) && !!libraryRowType(store, row.cid, typeId))
   if (library) return libraryRowType(store, library.cid, typeId)!
   // a draft of a node stands where that node is: its ancestors continue in the host
   const outer = outerScopes.get(store)
@@ -481,25 +499,27 @@ function libraryRowType(store: FosStore, library: string, typeId: string): strin
  * and installing a root received from a peer keeps this device's own.
  */
 export function isShippedLibrary(store: FosStore, path: Scope, edge: FosPathElem): boolean {
-  return !path.length && aliasIdOf(content(store, identityCid(store, edge))) === LIBRARY_ID
+  if (path.length || !isRowEdge(store, edge)) return false
+  const cid = identityCid(store, edge)
+  return store.table.has(cid) && isLibraryRef(store, content(store, cid))
 }
 
 /**
- * The library ref a device root has, `fos:library`, with `first` (the build's library) as its value: what the ref
- * holds once it accepted that submission (its earlier, empty version is its history). Later values arrive as submissions
- * too (sync/library.ts). Any value fits it: its left is the empty node, which constrains nothing. It stays on this
- * device: the fos server does not persist it. Other store roots get none; they are nested in a device root (`nestScope`).
+ * The library ref a device root has, a row of the Library type with `first` (the build's library) as its value: what
+ * the ref holds once it accepted that submission (its earlier, empty version is its history). Later values arrive as
+ * submissions too (sync/library.ts). It stays on this device: the fos server does not persist it. Other store roots get
+ * none; they are nested in a device root (`nestScope`).
  */
 export function ensureLibraryRow(store: FosStore, first: string = shippedLibrary(store)): void {
   setRootType(store, DEVICE_ROOT_TYPE)
   const root = rootTargetCid(store)
-  if (findChild(store, root, LIBRARY_ID)) return
-  const anything = put(store, { data: {}, children: [] })
+  if (libraryRowOf(store, root)) return
+  const type = shippedRef(store, LIBRARY_TYPE)!
   const data = { alias: { id: LIBRARY_ID }, description: { content: 'Standard library' } }
   const empty = put(store, withMember(store, refNodeContent(store, data, null), 'fos', 'fos', ['persist'], ['persist']))
   const library = put(store, withPrev(store, { ...content(store, empty), children: [[store.primitive.targetPointerConstructor.getId(), first], ...content(store, empty).children] }, empty))
   const value = valueContent(store, root)
-  commitRoot(store, put(store, { ...value, children: [...value.children, [anything, library]] }), 0)
+  commitRoot(store, put(store, { ...value, children: [...value.children, [type, library]] }), 0)
 }
 
 /** Stand-in type for a row pinned to template `cid` that this store does not hold (see `resolveReferenceErrors`). */
@@ -1050,7 +1070,7 @@ export function homeCidOf(store: FosStore, rootCid: string): string | null {
   // the Home type the build ships, and the one the root's own library names (not through the names of the store's
   // libraries: finding those starts from Home)
   const types = new Set([shippedRef(store, HOME_TYPE)])
-  const library = findChild(store, rootCid, LIBRARY_ID)
+  const library = libraryRowOf(store, rootCid)?.cid
   const named = library ? namesInLibrary(store, valueCidOf(store, library)).byName.get(HOME_TYPE) : undefined
   if (named) types.add(named)
   // a branched Home is its selected branch's row
@@ -1101,7 +1121,7 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
     const nextValue = put(store, { ...root, children: root.children.map(e => e === edge ? nextEdge : e) })
     return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings)))
   }
-  const movable = homeCid ? [] : root.children.filter(edge => ((isRowEdge(store, edge) && !isRowOfType(store, edge, TEMPLATE_TYPE)) || isChoiceEdge(store, edge)) && content(store, identityCid(store, edge)).data.alias?.id !== LIBRARY_ID)
+  const movable = homeCid ? [] : root.children.filter(edge => ((isRowEdge(store, edge) && !isRowOfType(store, edge, TEMPLATE_TYPE)) || isChoiceEdge(store, edge)) && !isShippedLibrary(store, [], edge))
   const homeValue = homeCid ? valueContent(store, homeCid) : rowContent(HOME_TYPE, HOME_ID, 'Home', 0)
   let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0)
   // a Home that was a template (older data) is no type: it keeps its rows but not a type's pattern rows

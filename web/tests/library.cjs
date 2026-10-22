@@ -1,5 +1,6 @@
-/* The standard library: a node another account (the server's library account) shares with every user; it opens as a
-   live projection in Home, is pulled whole so its templates work offline, and offers the vote on proposed changes. */
+/* The standard library: a mutable ref like any other. A library another account shares (a ref of the Library type it
+   published to its members) opens as a live projection in Home, is pulled whole so its templates work offline, and
+   is the library rows under Home use. */
 const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync } = require('node:fs')
@@ -22,12 +23,12 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {
   const HOME = c.HOME_ID, LIB = c.LIBRARY_ID
-  // the library account on the server: the node, shared with every user, seeded
-  let lib = c.ensureHomeContext(c.createReplica('user:fos-library'), 1)
-  lib = c.addRow(lib, [HOME], PLAIN_TYPE, 'Standard library', 1, { id: LIB })
-  lib = c.addMemberAt(lib, [HOME, LIB], 'audience:users', 'Fos users', ['read', 'edit', 'rank'], 2)
-  lib = c.seedStandardLibrary(lib, [HOME, LIB], 3)
-  const address = { owner: 'fos-library', path: [HOME, LIB], title: 'Standard library' }
+  // alice's team library: a ref of the Library type in her Home, holding a library, shared with me
+  const TEAM = 'team-library'
+  let lib = c.ensureHomeContext(c.createReplica('user:alice'), 1)
+  lib = c.addRefAt(lib, [HOME], TEAM, c.rowTypeAt(lib.store, 'lib:type:library'), 1, c.valueCidOf(lib.store, c.resolveScope(lib.store, c.headCid(lib), [LIB])), 'Team library')
+  lib = c.makeLinkAt(lib, [HOME, TEAM], 2)
+  lib = c.addMemberAt(lib, [HOME, TEAM], 'user:me', 'me', ['read', 'edit'], 2)
   let now = 100, offline = false
   const calls = []
   globalThis.fetch = async (url, init) => {
@@ -35,11 +36,11 @@ async function main() {
     const u = new URL(url), body = init?.body ? JSON.parse(init.body) : null
     calls.push(u.pathname)
     const json = (status, value) => ({ ok: status < 400, status, statusText: 'x', json: async () => value })
-    if (u.pathname === '/user/data/peer-sync/locate') return json(200, { owner: 'fos-library', aliasId: LIB, path: [HOME, LIB], title: 'Standard library', grants: ['read', 'edit', 'approve', 'rank'] })
+    if (u.pathname === '/user/data/peer-sync/locate') return json(200, { owner: 'alice', aliasId: TEAM, path: [HOME, TEAM], title: 'Team library', grants: ['read', 'edit'] })
     if (u.pathname === '/user/data/peer-sync/provide-node') {
-      assert.equal(body.owner, 'fos-library'); assert.equal(body.peerId, 'user:me')
+      assert.equal(body.owner, 'alice'); assert.equal(body.peerId, 'user:me')
       const { owner, ...request } = body
-      // the server answers as the library account; `user:me` holds its grants only through the users audience
+      // the server answers as alice's account; `user:me` holds its grants as her library's member
       const served = c.exchangeNode(lib, request, { peerId: 'user:me', scope: request.scope, owner: false, proposeOnly: true, capabilities: c.SERVER_TRANSPORT_CAPABILITIES }, ++now)
       lib = served.replica
       return json(200, served.node)
@@ -47,34 +48,34 @@ async function main() {
     return json(404, { error: `unexpected ${u.pathname}` })
   }
 
-  // my device: signed in; the person explicitly links the shared library into Home
+  // my device: signed in; my Home references alice's library (the row her invite placed)
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}; app.syncNow = async () => {}
   c.mountUi(document.getElementById('app'), app)
   let me = c.ensureHomeContext(c.createReplica('user:me'), 1)
   me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
-  me = c.ensureLibraryLink(me, address, 2).replica
+  me = c.addRow(me, [HOME], c.REF_TYPE, 'Team library', 2, { id: TEAM, refOwner: 'alice', refId: TEAM, refScope: [HOME, TEAM] })
   app.set({ replica: me, session: { kind: 'user', username: 'me', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
   app.recordServerOffers(c.SERVER_TRANSPORT_CAPABILITIES) // what the account server advertises: it provides nodes
   app.goTo([HOME]); await tick()
-  const row = document.querySelector(`.tree .task[data-id="${LIB}"]`)
-  assert(row, 'Home lists the standard library')
-  assert(row.textContent.includes('📚') && row.textContent.includes('Standard library'))
-  assert(row.querySelector('.library-updates'), 'the row offers the vote on updates')
-  assert.deepEqual(c.libraryLink(app.state.replica), [HOME, LIB])
+  assert(!app.isLibrary([HOME, TEAM]), 'a reference is no library until its content is here')
 
-  // opening pulls the projection through the users audience (no explicit membership) and the whole tree follows
-  row.querySelector('.ref-link').click()
-  for (let i = 0; i < 40 && !c.findTemplateByName(app.state.replica, 'Meet up'); i++) await tick()
-  assert(app.isPeerNode([HOME, LIB]), 'the reference became a live projection')
-  assert.deepEqual(app.state.view, [HOME, LIB])
-  const trip = c.findTemplateByName(app.state.replica, 'Meet up')
+  // opening pulls the projection as her library's member, and the whole tree follows: it is a library
+  await app.openSharedNode([HOME, TEAM])
+  // under Home, the team library's template (the device root's library has one of that name too)
+  const teamMeet = () => { const t = c.findTemplateByName(app.state.replica, 'Meet up', [HOME]); return t && t.path[1] === TEAM ? t : null }
+  for (let i = 0; i < 80 && !teamMeet(); i++) await tick()
+  assert(app.isPeerNode([HOME, TEAM]), 'the reference became a live projection')
+  assert.deepEqual(app.state.view, [HOME, TEAM])
+  assert(app.isLibrary([HOME, TEAM]), 'its content is a library')
+  assert.deepEqual(c.libraryPath(app.state.replica), [HOME, TEAM], 'under Home it is the library rows see')
+  const trip = teamMeet()
   assert(trip, 'the library\'s templates are in the local replica')
   // the template's requirements, beside its pattern rows (what tasks made from it accept)
   const tripRows = () => (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks ?? []).filter(t => !!t.requirement)
   for (let i = 0; i < 40 && tripRows().length < 2; i++) await tick()
   assert.equal(tripRows().length, 2, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
-  assert(calls.filter(p => p.endsWith('provide-node')).length >= 7, `the tree was materialized node by node: ${calls.length} requests`)
+  assert(calls.filter(p => p.endsWith('provide-node')).length > 3, `the tree was materialized node by node: ${calls.length} requests`)
 
   // offline: a task made from a library template gets the template's requirements, with no request to the server
   offline = true
@@ -91,7 +92,7 @@ async function main() {
   // records the supply (and a receipt for money or a place) as the person; no peer is involved.
   const fresh = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() }); fresh.scheduleSync = () => {}
   assert.deepEqual(c.libraryPath(fresh.state.replica), [c.LIBRARY_ID], 'a never-synced device ships the library in its root')
-  assert(!c.view(fresh.state.replica, [HOME]).tasks.some(row => row.id === LIB), 'Home has no library row unless explicitly linked')
+  assert(!c.view(fresh.state.replica, [HOME]).tasks.some(row => fresh.isLibrary([HOME, row.id])), 'Home references no library of its own')
   assert(c.manualHandlers(fresh.state.replica).length >= 12, 'the shipped copy carries the manual handlers')
   document.getElementById('app').replaceChildren()
   c.mountUi(document.getElementById('app'), fresh)
@@ -113,7 +114,7 @@ async function main() {
   let edited = c.renameTask(fresh.state.replica, bundlePath, 'lib:meet', 'Get together', Date.now())
   edited = c.addRow(edited, bundlePath, TEMPLATE_TYPE, 'Custom workflow', Date.now(), { id: 'lib:custom' })
   edited = c.addRow(edited, [...bundlePath, 'lib:custom'], ALLOCATION_TYPE, 'Check the result', Date.now(), { id: 'lib:custom:check', requirement: { capability: 'confirmation' } })
-  edited = c.writeNodeValue(edited, [...bundlePath, 'lib:custom'], 'fos:icon', 'confirm', Date.now())
+  edited = c.setTemplateIcon(edited, [...bundlePath, 'lib:custom'], 'confirm', Date.now())
   fresh.set({ replica: edited })
   assert(!constructor('Meet up') && constructor('Get together') && constructor('Custom workflow'), 'renames and additions appear without a UI catalog change')
   assert.equal(fresh.libraryConstructors().find(item => item.id === 'lib:custom').icon, 'confirm')

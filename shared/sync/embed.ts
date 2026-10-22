@@ -40,8 +40,8 @@ import { acceptSubmission } from './approvals'
 import { sharedAddressAt } from './sharing'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
-import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
-import { capabilityTarget, LIBRARY_ID, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
+import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary } from './library'
+import { capabilityTarget, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
 import { nativeRef, publishNativeRef } from './native-refs'
 import { discoverHandlers } from './handlers'
 import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
@@ -154,11 +154,12 @@ export const api = {
   tree(handle: string, atJson: string): string {
     const r = get(handle)
     const lines: string[] = []
+    const library = libraryRowOf(r.store, headCid(r))?.id
     const walk = (at: Scope, depth: number) => {
       const node = view(r, at)
       if (!node) return
       for (const t of node.tasks) {
-        if (!at.length && t.id === LIBRARY_ID) continue // the library the store ships (not its own rows)
+        if (!at.length && t.id === library) continue // the library the store ships (not its own rows)
         lines.push(`${'  '.repeat(depth)}${t.checkable ? (t.done ? '[x]' : '[ ]') : t.type === NOTE_TYPE ? ' ≡ ' : t.type === COMMENT_TYPE ? ' " ' : t.refId !== undefined ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.refId !== undefined ? `ref ${t.refId.slice(0, 8)}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
@@ -244,18 +245,6 @@ export const api = {
   },
   /** Drop a node sync that failed in transport (what it installed so far stays). */
   nodeSyncAbort(handle: string): void { runs.delete(handle) },
-  /** Where this account references the standard library, with its shared address, or null (`fos library export`). */
-  libraryLink(handle: string): string {
-    const r = get(handle), path = libraryLink(r)
-    if (!path) return 'null'
-    const row = view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
-    const address = sharedAddressAt(r, path)
-    return JSON.stringify({ path, owner: row?.refOwner ?? address?.owner ?? null, refId: row?.refId ?? null, title: row?.title ?? 'Standard library', address })
-  },
-  /** The nodes `fos library export` pulled, as the bundle a client build carries (web/src/library.json). */
-  libraryExport(pulledJson: string, now: number): string {
-    return JSON.stringify(exportProvidedLibrary(JSON.parse(pulledJson) as PulledLibrary, now))
-  },
   libraryExportLocal(handle: string): string { return JSON.stringify(exportLocalLibrary(get(handle))) },
   graphNode(handle: string, atJson: string): string {
     const r = get(handle), cid = resolveScope(r.store, headCid(r), JSON.parse(atJson))

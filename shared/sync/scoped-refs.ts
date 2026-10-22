@@ -53,7 +53,7 @@ function declarationRows(store: FosStore, cid: string): Array<{ cid: string; typ
     const namedRow = (ref.data.name || content(store, refValueCid(store, ref) ?? edge[1]).data.name) && refValueCid(store, ref) && isRowEdge(store, edge)
     const left = content(store, edge[0])
     // A library ref is a container: its names resolve as names (namesInLibrary), never as lexical bindings.
-    if (isLibraryRef(ref)) return []
+    if (isLibraryRef(store, ref)) return []
     // a native handler's state rows (an execute row's journal, a trigger row) are no bindings
     if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) return []
     // Linked library document rows are containers, not implicit lexical names.

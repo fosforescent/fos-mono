@@ -23,7 +23,7 @@ import type { FosStore } from '../dag-implementation/store'
 import {
   commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, memberEntryId, inMemberEntry, moveChild, aliasIdOf,
   capabilityTarget, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
-  LIBRARY_ID, shippedLibrary, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
+  isLibraryRef, shippedLibrary, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
 import { constructForm } from './forms'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
@@ -211,7 +211,7 @@ export function relayAfterSubmission(r: Replica, path: Scope, handlerPeer: strin
 
 /** The library's Relay template as `at` sees it: the nearest library's, else this build's. */
 export function relayTemplate(r: Replica, at: Scope = []): string {
-  const library = findNearestRow(r.store, headCid(r), at, row => row.id === LIBRARY_ID && !!findChild(r.store, row.cid, RELAY_TEMPLATE))
+  const library = findNearestRow(r.store, headCid(r), at, row => isLibraryRef(r.store, content(r.store, row.cid)) && !!findChild(r.store, row.cid, RELAY_TEMPLATE))
   const local = library && findChild(r.store, library.cid, RELAY_TEMPLATE)
   if (local && !isPeerReference(content(r.store, local))) return local
   const shipped = findChild(r.store, shippedLibrary(r.store), RELAY_TEMPLATE)

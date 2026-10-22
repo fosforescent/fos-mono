@@ -30,7 +30,7 @@ export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
   // rows still have a right-hand argument, but do not declare an implicit name.
   return refProperties(store, cid, 'arguments').filter(ref => {
     const node = content(store, ref.cid)
-    if (isLibraryRef(node)) return false
+    if (isLibraryRef(store, node)) return false
     // an execute row holds the evaluator's journal of this node: its state, never an argument
     if (isHandlerStateLeft(store, ref.type)) return false
     const pattern = ref.type && content(store, ref.type)

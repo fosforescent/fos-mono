@@ -3,7 +3,7 @@
  * Input definitions reconstruct this host's primitives after loading; only refs
  * present in the graph make values available to execution and lifecycle hooks.
  */
-import { SERVER_TRANSPORT_CAPABILITIES, capabilityTarget, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type LibraryAddress, type Replica, type Scope } from '@fosforescent/shared/sync/index'
+import { SERVER_TRANSPORT_CAPABILITIES, capabilityTarget, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 
 export type EffectContext = {
@@ -98,8 +98,6 @@ export function createHostRuntime(input: HostHandler[]) {
       materialize(replica, step.path)
       return [...new Set(primitiveExecutors<EffectContext, HostHandler>(replica, step).filter(value => value.native === handler).map(value => value.host))]
     },
-    /** The standard library this host seeds into every account's Home (sync/library.ts), once it exists at startup. */
-    library: null as LibraryAddress | null,
     /** Capabilities `peerId` provides on this host. */
     offers,
     /** What the fos server advertises: its transport facts plus every registered fos service. */

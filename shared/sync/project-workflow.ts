@@ -150,7 +150,7 @@ export function projectWorkflows(r: Replica): Array<{ path: Scope; config: Proje
     if (isWorkflowConfig(config)) { result.push({ path, config: projectWorkflow(r, config.project) ?? config }); return }
     for (const row of view(r, path)?.tasks ?? []) {
       const cid = resolveScope(r.store, headCid(r), [...path, row.id])
-      if (!row.refId && !row.construction && !row.supply && !(cid && isLibraryRef(content(r.store, cid)))) walk([...path, row.id])
+      if (!row.refId && !row.construction && !row.supply && !(cid && isLibraryRef(r.store, content(r.store, cid)))) walk([...path, row.id])
     }
   }
   walk([]); return result

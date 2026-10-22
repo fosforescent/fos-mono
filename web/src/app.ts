@@ -61,7 +61,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, LIBRARY_ID, libraryLink, ensureLibraryLink, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, matchesGraph, isRefNode, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, isLibraryRef, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, matchesGraph, isRefNode, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -1310,8 +1310,8 @@ export class App {
       next = { ...next, meta: { ...next.meta, sharedNodes: { ...next.meta.sharedNodes, [JSON.stringify(path)]: { owner, scope: located.path } } } }
       this.set({ replica: next })
       if (navigate) { this.goTo(path); this.notify('info', `Shared by @${owner}: you can ${(node.grants ?? []).map(g => CAPABILITY_LABEL[g] ?? g).join(', ') || 'read'} here.`) }
-      // the standard library is used offline: pull all of it, not just the node being looked at
-      if (path.at(-1) === LIBRARY_ID) void this.materializeSharedTree(path)
+      // a library is used offline: pull all of it, not just the node being looked at
+      if (this.isLibrary(path)) void this.materializeSharedTree(path)
     } catch (error) { if (navigate) this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   /** Pull every node below a shared projection (its stubs are peer references loaded one by one) so it is complete offline. */
@@ -1337,10 +1337,8 @@ export class App {
   private async syncSharedNodes(pullOnly: boolean): Promise<void> {
     const session = this.state.session, generation = this.authGeneration
     if (!session || session.kind !== 'user' || this.transport() !== 'account') return
-    // the standard library the server put into Home: open it once so its templates are here offline, then keep it current
-    const library = libraryLink(this.state.replica)
-    if (library && !this.state.replica.meta.sharedNodes?.[JSON.stringify(library)] && !this.isPeerNode(library)) await this.openSharedNode(library, false)
-    if (library && this.state.replica.meta.sharedNodes?.[JSON.stringify(library)]) void this.materializeSharedTree(library)
+    // a library referenced here is used offline: keep all of it current, not just the nodes looked at
+    for (const key of Object.keys(this.state.replica.meta.sharedNodes ?? {})) { const root = JSON.parse(key) as Scope; if (this.isLibrary(root)) void this.materializeSharedTree(root) }
     const store = this.state.replica.store
     const valid = () => generation === this.authGeneration && session === this.state.session && store === this.state.replica.store
     for (const [key, info] of Object.entries(this.state.replica.meta.sharedNodes ?? {})) {
@@ -2466,21 +2464,6 @@ export class App {
     const current = replace && path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
     const title = current && !current.requirement && current.type !== HOME_TYPE ? current.title || template.label : template.label
     return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, id)
-  }
-  /**
-   * Link the shared standard library into Home, to propose changes and vote on them (the fos server is its peer).
-   * Under Home it then overrides the library this device ships with.
-   */
-  async contributeToLibrary(): Promise<void> {
-    const session = this.state.session
-    if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to contribute to the standard library.'); return }
-    try {
-      // the build carries the library's address (`fos library export`)
-      const address = (LIBRARY_BUNDLE as LibraryBundle).address
-      if (!address) throw new Error('This build carries no standard library address. Build it after `fos library export`.')
-      this.edit(ensureLibraryLink(this.state.replica, address, this.now()).replica)
-      void this.syncNow('library')
-    } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   publishCurrentTemplate(market = false): void {
     if (!this.canApprove() || this.currentRow()?.type !== TEMPLATE_TYPE) return
@@ -3933,6 +3916,11 @@ export class App {
   /** Whether the row at `path` is a store root's Home (by its type). */
   isHome(path: Scope): boolean {
     return !!path.length && view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.type === HOME_TYPE
+  }
+  /** Whether the row at `path` is a library ref (the device root's, or one referenced here once its content is here). */
+  isLibrary(path: Scope): boolean {
+    const cid = path.length ? resolveScope(this.state.replica.store, headCid(this.state.replica), path) : null
+    return !!cid && isLibraryRef(this.state.replica.store, content(this.state.replica.store, cid))
   }
   goToRoot(): void { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); this.ensureSettings(); this.set({ atRoot: true, view: [], selected: null, collapsed: [...new Set([...this.state.collapsed, HOME_ID])], contextMenu: null }) }
   /** Browser back/forward: return to the node, Settings or execution view a history entry recorded. */

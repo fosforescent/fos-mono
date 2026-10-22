@@ -344,20 +344,15 @@ pub fn cmd_decide(ws: &mut Workspace, prefix: &str, decision: &str) -> Result<()
     Ok(())
 }
 
-/// `fos library export --local --out .fos/library.json` exports the editable tree for builds.
-pub fn cmd_library_export(ws: &mut Workspace, out_path: Option<&Path>, owner: &str, local: bool) -> Result<(), String> {
-    let bundle = if local {
-        ws.core.call_json("libraryExportLocal", &[json!("main")]).map_err(|e| e.to_string())?
-    } else { ws.library_export(owner)? };
+/// `fos library export --out .fos/library.json`: the value of the library ref this store sees (the one referenced in
+/// Home once it is here, else the device root's), the build source.
+pub fn cmd_library_export(ws: &mut Workspace, out_path: Option<&Path>) -> Result<(), String> {
+    let bundle = ws.core.call_json("libraryExportLocal", &[json!("main")]).map_err(|e| e.to_string())?;
     let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())? + "\n";
     match out_path {
         Some(path) => {
             std::fs::write(path, text).map_err(|e| format!("cannot write {}: {}", path.display(), e))?;
-            if local { out(&format!("wrote local library graph to {}", path.display())); }
-            else {
-                let rows = bundle["rows"].as_array().map(|r| r.len()).unwrap_or(0);
-                out(&format!("{} wrote {} top-level rows of @{}'s library to {}", "✓".green(), rows, bundle["address"]["owner"].as_str().unwrap_or("?"), path.display()));
-            }
+            out(&format!("wrote the library graph to {}", path.display()));
         }
         None => print!("{}", text),
     }

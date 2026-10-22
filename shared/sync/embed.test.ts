@@ -1,6 +1,6 @@
 import { memberEntryId } from './index'
 import { api } from './embed'
-import { addTask, createReplica, ensureHomeContext, HOME_ID, view } from './index'
+import { addTask, createReplica, ensureHomeContext, HOME_ID, LIBRARY_ID, view } from './index'
 import { exchangeNode } from './node-sync'
 import { SERVER_TRANSPORT_CAPABILITIES } from './graph'
 import type { NodeRequest } from './node-provider'
@@ -62,7 +62,7 @@ test('a project syncs from its own directory: a device root of its own, with no 
   cliSync('project', server)
   expect(view(server, [HOME_ID])!.tasks.map(t => t.id)).toEqual(['row'])
   // it ships the standard library like any device root; its own rows are at its root
-  expect(JSON.parse(api.view('project', '[]')).tasks.map((t: { id: string }) => t.id)).toEqual(['fos:library', 'row'])
+  expect(JSON.parse(api.view('project', '[]')).tasks.map((t: { id: string }) => t.id)).toEqual([LIBRARY_ID, 'row'])
   expect(JSON.parse(api.meta('project')).localScope).toBeUndefined()
   api.close('project')
 })

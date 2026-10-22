@@ -1,10 +1,11 @@
 /** Rows are made from the nodes the nearest standard library ref names: shipped in every device root, linked in Home. */
 import { FosStore } from '../dag-implementation/store'
-import { HOME_ID, LIBRARY_ID, content, namesInLibrary, readProposals, put, refNodeContent, resolveScope, rowTypeAt, typeIdOf, valueCidOf, valueContent } from './graph'
+import { HOME_ID, LIBRARY_ID, SERVER_MEMBER, content, namesInLibrary, readProposals, put, refNodeContent, resolveScope, rowTypeAt, typeIdOf, valueCidOf, valueContent } from './graph'
 import { exchangeNode, nodeShape, templateNodesAt } from './node-sync'
 import { acceptProvidedNode, type NodeAuthority, type NodeRequest } from './node-provider'
-import { addRefAt, addRow, addTask, applyProposalAt, createReplica, ensureHomeContext, findTemplateByName, headCid, proposeRefAt, view, type Replica } from './replica'
-import { BUILD_PEER, ensureDeviceLibrary, exportLibrary, submitLibrary } from './library'
+import { addRefAt, addRow, addTask, createReplica, ensureHomeContext, findTemplateByName, headCid, proposeRefAt, view, type Replica } from './replica'
+import { ensureDeviceLibrary, exportLibrary, submitLibrary } from './library'
+import { acceptSubmission } from './approvals'
 import { NOTE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 
 /** The node the library ref at `library` names `name`. */
@@ -64,8 +65,8 @@ test('a library value the members accept makes the new rows; rows made before ke
   let r = ensureHomeContext(createReplica('p'), 1)
   r = addTask(r, [HOME_ID], 'Before', 3, 'before')
   const before = edgeOf(r, [HOME_ID], 'before')[0]
-  const submitted = proposeRefAt(r, [LIBRARY_ID], renamed(r, [LIBRARY_ID], TASK_TYPE, 'To-do'), 'member', 4, 'binding:member')
-  r = applyProposalAt(submitted.replica, [LIBRARY_ID], submitted.proposalCid, r.meta.peerId, 4)
+  const submitted = proposeRefAt(r, [LIBRARY_ID], renamed(r, [LIBRARY_ID], TASK_TYPE, 'To-do'), 'member', 4)
+  r = acceptSubmission(submitted.replica, [LIBRARY_ID], submitted.proposalCid, r.meta.peerId, 4).replica
   r = addTask(r, [HOME_ID], 'After', 5, 'after')
   const after = edgeOf(r, [HOME_ID], 'after')[0]
   expect(after).not.toBe(before)
@@ -75,13 +76,16 @@ test('a library value the members accept makes the new rows; rows made before ke
   expect(view(r, [HOME_ID])!.tasks.filter(t => ['before', 'after'].includes(t.id)).map(t => t.type)).toEqual([TASK_TYPE, TASK_TYPE])
 })
 
-test('a later build ships its library as a submission: a library that has a value keeps it, the build is an option', () => {
+test("a later build ships its library as the fos peer's submission: the library keeps its value until it is accepted", () => {
   let r = createReplica('p')
   const current = valueCidOf(r.store, resolveScope(r.store, headCid(r), [LIBRARY_ID])!)
   const later = renamed(r, [LIBRARY_ID], TASK_TYPE, 'Chore')
-  r = submitLibrary(r, [LIBRARY_ID], { address: null, version: '0.0.2', root: later, nodes: {} }, BUILD_PEER, 2)
+  r = submitLibrary(r, [LIBRARY_ID], { version: '0.0.2', root: later, nodes: {} }, SERVER_MEMBER, 2)
   expect(valueCidOf(r.store, resolveScope(r.store, headCid(r), [LIBRARY_ID])!)).toBe(current)
-  expect(readProposals(r.store, content(r.store, resolveScope(r.store, headCid(r), [LIBRARY_ID])!)).some(p => p.peerId === BUILD_PEER)).toBe(true)
+  const submission = readProposals(r.store, content(r.store, resolveScope(r.store, headCid(r), [LIBRARY_ID])!)).find(p => p.peerId === SERVER_MEMBER)!
+  // accepted like any submission: the owner's approval, under the library ref's rule
+  r = acceptSubmission(r, [LIBRARY_ID], submission.cid, r.meta.peerId, 3).replica
+  expect(valueCidOf(r.store, resolveScope(r.store, headCid(r), [LIBRARY_ID])!)).toBe(later)
 })
 
 test('a peer on another version receives rows pinned to it as reference errors and asks for the node', () => {
@@ -112,8 +116,8 @@ test('templates resolve by nearest ancestor like every mutable ref', () => {
 
 test('an exported library is a submission another device takes as it is, so it makes the same rows', () => {
   let owner = createReplica('user:owner')
-  const submitted = proposeRefAt(owner, [LIBRARY_ID], renamed(owner, [LIBRARY_ID], NOTE_TYPE, 'Document'), 'member', 2, 'binding:member')
-  owner = applyProposalAt(submitted.replica, [LIBRARY_ID], submitted.proposalCid, owner.meta.peerId, 2)
+  const submitted = proposeRefAt(owner, [LIBRARY_ID], renamed(owner, [LIBRARY_ID], NOTE_TYPE, 'Document'), 'member', 2)
+  owner = acceptSubmission(submitted.replica, [LIBRARY_ID], submitted.proposalCid, owner.meta.peerId, 2).replica
   const bundle = exportLibrary(owner, [LIBRARY_ID])
   // a device that never synced takes the bundle as its first library value
   const fresh = new FosStore()

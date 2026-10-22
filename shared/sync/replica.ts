@@ -499,7 +499,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const template = kept ?? resolveRowType(replica.store, type, at)
     const body = node.data.scalar?.type === 'text' || node.data.presentation?.headline ? text : rowBody(replica.store, template, text)
     if (content(replica.store, template).data.form) {
-      const constructed = node.data.presentation || node.data.scalar
+      const constructed = projectsTitle(node)
         ? withTextParameters(replica.store, setFormTitle(replica.store, node, body, now))
         : constructRowValue(replica, template, aliasId, body, extras, now, node)
       const next = withChildValue(replica.store, edge, userBound(replica, at, constructed, extras), now)
@@ -773,7 +773,7 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
     // a note's body and a pre-constructor comment (migrated on edit) are rewritten through their type
     if (edge && (valueContent(replica.store, identityCid(replica.store, edge)).data.comment || isRowOfType(replica.store, edge, NOTE_TYPE))) return setRowContentAt(replica, at, taskId, isRowOfType(replica.store, edge, NOTE_TYPE) ? NOTE_TYPE : COMMENT_TYPE, title, {}, now)
   return updateTask(replica, at, taskId, now, (task) => {
-      if (task.data.presentation || task.data.scalar) return withTextParameters(replica.store, setFormTitle(replica.store, task, task.data.presentation?.headline ? title : trimmed, now))
+      if (projectsTitle(task)) return withTextParameters(replica.store, setFormTitle(replica.store, task, task.data.presentation?.headline ? title : trimmed, now))
     if (task.data.description?.content === trimmed) return null
     return withTextParameters(replica.store, { ...task, data: { ...task.data, description: { content: trimmed } } })
   })
@@ -967,6 +967,9 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     return removeProposalByCid(store, relinked, proposalCid)
   })
 }
+
+/** Whether a row's title is a projection of its form (a title or headline field, or a scalar leaf), not its description. */
+const projectsTitle = (node: FosNodeContent): boolean => !!(node.data.presentation?.title || node.data.presentation?.headline || node.data.scalar)
 
 /**
  * The row ref `value` (at `at`) holding `target` as its value: checked against the row's pattern, the previous value

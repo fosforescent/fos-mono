@@ -31,7 +31,7 @@ import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
 import { consumption } from '../../shared/sync/execution-access'
-import { CAPABILITY_LABEL, LIBRARY_ID, libraryLink, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
+import { CAPABILITY_LABEL, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
 import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
 
 type Regions = {
@@ -1638,12 +1638,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
   }
   if (!preview && row?.type === TEMPLATE_TYPE && !row.id.startsWith('lib:type:')) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
-  // the library this device ships with: people who want to propose changes and vote link the shared one into Home
-  if (!preview && row?.id === LIBRARY_ID && state.view.length === 1 && !libraryLink(state.replica)) {
-    const contribute = button('secondary small', 'Contribute to the standard library', () => void app.contributeToLibrary())
-    contribute.title = 'Adds the shared standard library to Home, with the fos server as its peer: propose changes and vote on them. Under Home it is used instead of this one.'
-    controls.append(contribute)
-  }
   const git = !preview && localGitControls(app); if (git) controls.append(git)
   if (row?.construction) controls.append(constructorBody(row, state, app))
   // the account form is its own block under the peer's row, never a column beside it
@@ -1774,7 +1768,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   if (inbox) rows = [inbox, ...rows]
   if (!preview && prefs.layout === 'tree') { const files = filesystemRows(app, prefs.search); if (files) rows.push(files) }
   // a node with nothing of the user's own yet (the seeded standard library does not count) shows the first-run help
-  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => row.id === LIBRARY_ID)) {
+  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => app.isLibrary([...state.view, row.id]))) {
     const hint = document.createElement('li'); hint.className = 'first-run'
     const keys = div('first-run-keys', '')
     if (window.matchMedia?.('(pointer: coarse)').matches) keys.append('Tap ', Object.assign(document.createElement('kbd'), { textContent: '?' }), ' for row syntax and tips')
@@ -2429,14 +2423,6 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
     body.append(button('link ref-link', task.title && task.title !== 'Peer-held node' ? firstLine(task.title) : 'Loading\u2026', () => app.zoomTo(path)))
     body.title = 'Shared node'
     watchPeerNode(body, app, [...app.state.view, ...path])
-    return body
-  }
-  if (task.id === LIBRARY_ID && task.refOwner) {
-    // the standard library: opens as a live projection (its templates then work offline here); Updates is the vote on proposals
-    const open = button('link ref-link', `📚 ${firstLine(task.title) || 'Standard library'}`, () => void app.openSharedNode([...app.state.view, ...path]))
-    open.title = `Shared by @${task.refOwner}: templates every account can use; edits become proposals the members vote on`
-    body.append(arrow, open)
-    if (app.sharedLink(task.id)) { const updates = button('link small library-updates', 'Updates', () => app.openSharedLink(task.id)); updates.title = 'Proposed changes to the library: approve the ones you want merged'; body.append(updates) }
     return body
   }
   if (app.sharedLink(task.id)) {

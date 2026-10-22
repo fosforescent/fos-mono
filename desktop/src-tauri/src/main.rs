@@ -139,7 +139,7 @@ enum Commands {
         #[arg(long, default_value_t = 4777)]
         port: u16,
     },
-    /// Export the local library graph for builds, or pull a shared server library
+    /// Export the library graph this store sees, for builds
     Library {
         #[command(subcommand)]
         action: LibraryAction,
@@ -153,16 +153,10 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum LibraryAction {
-    /// Pull the shared library through your account and write it as JSON (stdout, or --out <file>)
+    /// Write the library ref's value as JSON (stdout, or --out <file>)
     Export {
-        /// Export this directory's editable library graph, without contacting a server
-        #[arg(long)]
-        local: bool,
         #[arg(long)]
         out: Option<PathBuf>,
-        /// The account that owns the library, when your Home does not link one
-        #[arg(long, default_value = "fos-library")]
-        owner: String,
     },
 }
 
@@ -212,7 +206,7 @@ fn main() {
             Commands::Detach => commands::cmd_detach(&mut ws),
             Commands::Approve { id } => commands::cmd_decide(&mut ws, &id, "approve"),
             Commands::Reject { id } => commands::cmd_decide(&mut ws, &id, "reject"),
-            Commands::Library { action: LibraryAction::Export { out, owner, local } } => commands::cmd_library_export(&mut ws, out.as_deref(), &owner, local),
+            Commands::Library { action: LibraryAction::Export { out } } => commands::cmd_library_export(&mut ws, out.as_deref()),
             Commands::Gui | Commands::Init { .. } | Commands::Reset { .. } => unreachable!(),
         }),
     };

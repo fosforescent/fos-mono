@@ -27,6 +27,8 @@ export const TEMPLATE_TYPE = 'lib:type:template'
 export const PATTERN_TYPE = 'lib:type:pattern'
 export const HOME_TYPE = 'lib:type:home'
 export const DEVICE_ROOT_TYPE = 'lib:type:device-root'
+/** A library ref's row type: a ref whose value is a library (a library defines it, so a library is told by what it holds). */
+export const LIBRARY_TYPE = 'lib:type:library'
 export const DOCUMENT_ROOT_TYPE = 'lib:type:document-root'
 export const TEXT_TYPE = 'lib:type:text'
 /** Text rendered as Markdown (math, diagrams) with `{{name}}` bindings: a note's body. */

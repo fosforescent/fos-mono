@@ -224,44 +224,6 @@ impl Workspace {
         Ok(format!("synced {} node(s) on {}{}", synced, self.branch, if conflicts > 0 { format!(", {} conflict(s) to resolve", conflicts) } else { String::new() }))
     }
 
-    /// The standard library as the bundle a client build carries (`fos library export`): pull the account's view
-    /// of Home so its library reference is current, then fetch the shared tree through the account server node by
-    /// node and let the core assemble and export it.
-    /// The shared standard library as the bundle a client build carries: the one linked in Home when there is one, else
-    /// the library account `owner`'s, located through the account (`peer-sync/locate`, which also gives its share id).
-    pub fn library_export(&mut self, owner: &str) -> Result<Value, String> {
-        if let Err(e) = self.sync_with(false) { eprintln!("sync before export failed ({}); using the local replica", e); }
-        let session = self.session.clone().ok_or_else(|| "not signed in: run `fos login`".to_string())?;
-        let link = self.core.call_json("libraryLink", &[json!(HANDLE)]).map_err(|e| e.to_string())?;
-        let owner = link["owner"].as_str().unwrap_or(owner).to_string();
-        let alias = link["refId"].as_str().unwrap_or("fos:library").to_string();
-        let located = client::locate_shared(&session, &owner, &alias)?;
-        let scope = located["path"].clone();
-        let title = link["title"].as_str().or_else(|| located["title"].as_str()).unwrap_or("Standard library").to_string();
-        // a published node's address is its owner and path (who may visit is its membership)
-        let address = json!({ "owner": owner, "path": scope, "title": title });
-        // breadth first, like the app's whole-tree pull; references to other nodes are not followed
-        let mut queue: Vec<Vec<String>> = vec![vec![]];
-        let mut nodes = Vec::new();
-        while !queue.is_empty() {
-            let path = queue.remove(0);
-            if nodes.len() >= 1000 { return Err("the library has more than 1000 nodes; refusing to export".into()); }
-            // a cross-account pull identifies as the account (`user:<me>`), the peer the owner granted the audience to
-            let request = json!({ "peerId": format!("user:{}", session.username), "scope": scope, "path": path, "linkId": format!("fos-cli:{}", path.join("/")) });
-            let node = client::provide_node(&session, &request, Some(&owner))?;
-            if let Some(children) = node["children"].as_array() {
-                for child in children {
-                    // a reference row or a node another peer holds: not served through the library
-                    if child["held"].as_bool() == Some(true) { continue; }
-                    if let Some(id) = child["id"].as_str() { let mut next = path.clone(); next.push(id.to_string()); queue.push(next); }
-                }
-            }
-            nodes.push(json!({ "request": request, "node": node }));
-        }
-        let pulled = json!({ "address": address, "nodes": nodes });
-        self.core.call_json("libraryExport", &[json!(pulled.to_string()), json!(now_ms())]).map_err(|e| e.to_string())
-    }
-
     pub fn status(&self) -> Value {
         let meta = self.meta();
         let view = self.core.call_json("view", &[json!(HANDLE), json!("[]")]).unwrap_or(Value::Null);
