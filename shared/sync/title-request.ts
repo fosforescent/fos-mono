@@ -1,19 +1,17 @@
 /**
  * Asking a peer's `title` handler (the fos server's model) for a headline row's title: a `title` requirement inside
- * the row (`fos:title:<id>`), whose handler reads the row's text (`titleRequestAt`), writes the title as the
- * requirement's `TITLED_VALUE` and supplies it. The asker sets the row's title from it and removes the request.
+ * the row, whose handler reads the row's text (`titleRequestAt`), records the title as its result on the requirement
+ * (`handlerResult`) and supplies it. The asker sets the row's title from it and removes the request.
  */
 import { formText } from './forms'
 import { newId, resolveScope, valueContent, type Scope } from './graph'
 import { ALLOCATION_TYPE } from './library-types'
 import { addRow, headCid, view, type Replica } from './replica'
 
-export const TITLE_REQUEST_PREFIX = 'fos:title:'
-export const TITLED_VALUE = 'fos:titled'
 
 export function requestTitle(replica: Replica, at: Scope, now: number, makeId: () => string = newId): { replica: Replica; path: Scope } {
   if (!at.length || !view(replica, at)) throw new Error('The row to title was removed.')
-  const id = `${TITLE_REQUEST_PREFIX}${makeId()}`
+  const id = makeId()
   return { replica: addRow(replica, at, ALLOCATION_TYPE, 'Title', now, { id, requirement: { capability: 'title' } }), path: [...at, id] }
 }
 

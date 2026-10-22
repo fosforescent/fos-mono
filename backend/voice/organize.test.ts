@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { ORGANIZED_VALUE, addRow, applyProposalAt, createReplica, ensureHomeContext, evaluationRecord, HOME_ID, loadReplica, readNodeValue, serializeReplica, rejectProposalAt, requestOrganize, view, type OrganizedResult, type Replica } from '@fosforescent/shared/sync/index'
+import { handlerResult, addRow, applyProposalAt, createReplica, ensureHomeContext, evaluationRecord, HOME_ID, loadReplica, readNodeValue, serializeReplica, rejectProposalAt, requestOrganize, view, type OrganizedResult, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -112,7 +112,7 @@ test('the organize handler fills a requirement in the target with ONE fos submis
   const request = view(r, target)!.tasks.find(t => t.id === asked.path.at(-1))!
   expect(request.requirement).toMatchObject({ capability: 'organize', satisfied: true })
   expect(view(r, asked.path)!.tasks.find(t => t.supply)!.supply).toMatchObject({ capability: 'organize', by: 'fos' })
-  const result = readNodeValue<OrganizedResult>(r, asked.path, ORGANIZED_VALUE)!
+  const result = handlerResult<OrganizedResult>(r, asked.path)!
   expect(result).toMatchObject({ rows: 4, title: 'Kickoff', under: ['Budget'], proposal: submissions[0]!.id, name: 'Voice note: Kickoff' })
   // what it adds, by node: three rows and the capture under the target, one under Budget (the Hiring group's row is inside it)
   expect(result.additions.map(a => [a.path, a.ids.length])).toEqual([[[], 3], [['budget'], 1]])

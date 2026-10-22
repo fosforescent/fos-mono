@@ -58,12 +58,31 @@ export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, valu
   return { ...r }
 }
 
+/**
+ * What running a row left on it, in its execute row: the evaluator's `journal` when the row was evaluated, and the
+ * `result` its handler recorded when it ran as a step (a payment it opened, what an organizer placed, a title).
+ */
+type ExecutionState = { journal?: EvaluationRecord; result?: unknown }
+function executionState(r: Replica, path: Scope): ExecutionState {
+  const state = readRowValue<ExecutionState>(r, path, isExecuteLeft)
+  return state && typeof state === 'object' ? state : {}
+}
+function writeExecutionState(r: Replica, path: Scope, change: ExecutionState, now: number): Replica {
+  return writeRowValue(r, path, executeLeft(r.store), { ...executionState(r, path), ...change }, now)
+}
 /** Write the journal into the node's execute row (made when the node has none). */
 export function writeEvaluationRecord(r: Replica, path: Scope, record: EvaluationRecord, now: number): Replica {
-  return writeRowValue(r, path, executeLeft(r.store), record, now)
+  return writeExecutionState(r, path, { journal: record }, now)
+}
+/** What the step's handler recorded on the row it ran on. */
+export function handlerResult<T>(r: Replica, path: Scope): T | null {
+  return (executionState(r, path).result as T | undefined) ?? null
+}
+export function writeHandlerResult(r: Replica, path: Scope, result: unknown, now: number): Replica {
+  return writeExecutionState(r, path, { result }, now)
 }
 export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | null {
-  const record = readRowValue<EvaluationRecord>(r, path, isExecuteLeft)
+  const record = executionState(r, path).journal ?? null
   return record && typeof record.id === 'string' && Array.isArray(record.effects) && typeof record.status === 'string' ? record : null
 }
 

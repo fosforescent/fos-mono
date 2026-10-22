@@ -1,6 +1,7 @@
 import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
+import { isHandlerStateLeft } from '../../shared/sync/capabilities'
 import { STANDARD_CAPABILITY_PATTERNS, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, bindingSubmissionName, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { capabilityOfTarget } from '../../shared/sync/graph'
@@ -18,7 +19,7 @@ import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase
 import { requestPeerNode } from './api'
 import { sendPullRequest, type NodeSyncContext } from '../../shared/sync/node-sync'
 import { parsePastedRows } from './paste'
-import { ORGANIZED_VALUE, ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
+import { ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyFromName } from './settings'
@@ -28,7 +29,7 @@ import { writeTriggerState, triggerOffers as discoverTriggerOffers, triggerObser
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeEvaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
-import { requestTitle, TITLED_VALUE, truncateTitle } from '../../shared/sync/index'
+import { requestTitle, truncateTitle, handlerResult } from '../../shared/sync/index'
 import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, memberEntryId, isMemberEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
@@ -385,7 +386,7 @@ export class App {
       let failure: string | null = null
       try { await this.runOnServer(asked.path) } catch (error) { failure = error instanceof Error ? error.message : String(error) }
       if (this.state.replica.store !== store) return
-      const titled = failure ? null : readNodeValue<string>(this.state.replica, asked.path, TITLED_VALUE)
+      const titled = failure ? null : handlerResult<string>(this.state.replica, asked.path)
       let next = this.state.replica
       if (resolveScope(next.store, headCid(next), asked.path)) next = deleteTask(next, path, asked.path.at(-1)!, this.now())
       if (titled && row()?.title === before) next = renameTask(next, path.slice(0, -1), path.at(-1)!, truncateTitle(titled, 120), this.now())
@@ -1194,6 +1195,8 @@ export class App {
     const onScreen = (path: Scope) => path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
     const eager = (path: Scope) => path.includes(own) || (isMemberEntryId(path.at(-1)) && onScreen(path.slice(0, -1)))
     const queue = materializedNodePaths(initial, localRoot, peer), seen = new Set<string>()
+    // a row's handler state (its execute row, its trigger row) syncs whenever the row does: it is that row's state
+    const state = new Set<string>()
     while (queue.length) {
       const path = queue.shift()!
       if (seen.has(JSON.stringify(path))) continue
@@ -1216,7 +1219,7 @@ export class App {
         continue
       }
       const plan = planNodeSync(r, path, { peer, scope, remoteRoot, localRoot, branches, push })
-      const visible = onScreen(path) || eager(path)
+      const visible = onScreen(path) || eager(path) || state.has(JSON.stringify(path))
       if (!visible && !(push && plan.dirty)) continue
       const remote = await send(plan.first)
       if (!valid()) return
@@ -1238,7 +1241,9 @@ export class App {
       for (const child of finalRemote.children) {
         if (child.pinned || (child.held && child.address.peerId !== finalRemote.peerId)) continue
         const next = [...path, child.id]
-        if (isMemberEntryId(child.id) ? visible || child.id === own : eager(next)) queue.push(next)
+        const held = isHandlerStateLeft(this.state.replica.store, child.template) && (visible || plan.dirty)
+        if (held) state.add(JSON.stringify(next))
+        if (isMemberEntryId(child.id) ? visible || child.id === own : eager(next) || held) queue.push(next)
       }
     }
     // an owner's device attached at Home takes its server's own entry above it (its offers, its published key)
@@ -3518,7 +3523,7 @@ export class App {
     if (generation !== this.authGeneration || this.state.session !== session || this.state.replica.store !== store) return false
     // the result is the fos peer's submission on `at`: it arrives with the node's pending submissions (the
     // requirement's `fos:organized` value names it, where named values travel; node sync does not carry them)
-    const value = failure ? null : readNodeValue<OrganizedResult>(this.state.replica, asked.path, ORGANIZED_VALUE)
+    const value = failure ? null : handlerResult<OrganizedResult>(this.state.replica, asked.path)
     const pending = this.remoteProposalsAt(at).filter(p => p.peerId === ORGANIZE_PEER && p.status === 'open')
     const submission = failure ? null : pending.find(p => p.id === value?.proposal) ?? pending.find(p => !earlier.has(p.id)) ?? null
     let next = this.state.replica

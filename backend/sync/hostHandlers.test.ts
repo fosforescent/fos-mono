@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { createHash } from 'node:crypto'
-import { TITLE_SYSTEM, TITLED_VALUE, readNodeValue, requestTitle } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, handlerResult, requestTitle } from '@fosforescent/shared/sync/index'
 import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
@@ -218,9 +218,9 @@ test('the title effect summarizes the text of the row it is in and records the t
   const asked = requestTitle(r, [HOME_ID, 'note'], 3, () => 'one')
   const complete = jest.fn(async () => '"Garden check: dry soil, tomato stakes."\nmore')
   const h = host(asked.replica, createHostRuntime([titleHandler({ complete })]))
-  const done = await h.complete([HOME_ID, 'note'], ['fos:title:one'])
+  const done = await h.complete([HOME_ID, 'note'], ['one'])
   expect(done.body.evaluation.status).toBe('committed')
   expect(complete).toHaveBeenCalledWith(TITLE_SYSTEM, 'We walked the beds this morning\nand the soil is dry; the tomatoes need stakes.')
-  expect(readNodeValue(h.get(), asked.path, TITLED_VALUE)).toBe('Garden check: dry soil, tomato stakes')
-  expect(view(h.get(), [HOME_ID, 'note'])!.tasks.find(t => t.id === 'fos:title:one')!.requirement!.satisfied).toBe(true)
+  expect(handlerResult(h.get(), asked.path)).toBe('Garden check: dry soil, tomato stakes')
+  expect(view(h.get(), [HOME_ID, 'note'])!.tasks.find(t => t.id === 'one')!.requirement!.satisfied).toBe(true)
 })

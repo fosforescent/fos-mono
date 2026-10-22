@@ -57,7 +57,7 @@ async function main() {
       ] }, requests.at(-1).outline.map(e => e.id))
       const submitted = await c.proposeOrganizePlan(server, target, plan, { label: request.label, stamp: 'now', text: request.text }, 10)
       const result = { rows: submitted.rows.length, under: [], captureId: submitted.captureId, title: plan.title, proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
-      server = c.writeNodeValue(submitted.replica, path, c.ORGANIZED_VALUE, result, 10)
+      server = c.writeHandlerResult(submitted.replica, path, result, 10)
       server = c.addSupply(server, target, path.at(-1), { capability: 'organize', by: 'fos', ref: submitted.captureId }, 10)
       return json(200, { evaluation: { status: 'committed' } })
     }
@@ -105,7 +105,6 @@ async function main() {
   const sent = requests.find(r => r.path === '/user/data/events')
   assert.equal(sent.event, 'complete', 'organizing is an evaluation of the requirement, not a route')
   assert.deepEqual(sent.at.slice(0, -1), [HOME, 'garden'], 'the requirement sits in the node it organizes into')
-  assert(sent.at.at(-1).startsWith(c.ORGANIZE_REQUEST_PREFIX))
   assert.deepEqual(sent.request, { label: 'Pasted text', text: 'tomatoes need stakes; start a compost bin' })
   assert.deepEqual(sent.outline.map(e => e.id), ['tomatoes'], 'the outline is the target\'s subtree, without the request')
   assert(!c.view(app.state.replica, [HOME, 'garden']).tasks.some(t => t.id === sent.at.at(-1)), 'the filled request is removed')

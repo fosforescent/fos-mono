@@ -8,7 +8,7 @@ import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, publication, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
-import { TITLE_SYSTEM, TITLED_VALUE, syncPublishedUrls, titleRequestAt, truncateTitle, writeNodeValue } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, syncPublishedUrls, titleRequestAt, truncateTitle, writeHandlerResult } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './host-runtime'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 import type { VerifyHandler } from './verify'
@@ -93,7 +93,7 @@ export function llmHandler(deps: LlmDeps): HostHandler {
 /**
  * `title` requirements (shared/sync/title-request.ts): a short title for the text of the row the requirement is in,
  * from the server's model. The device's own handler truncates; this one summarizes. The title is the requirement's
- * `TITLED_VALUE`; the asker sets it as the row's title and removes the request.
+ * its handler result; the asker sets it as the row's title and removes the request.
  */
 export function titleHandler(deps: LlmDeps): HostHandler {
   return {
@@ -103,7 +103,7 @@ export function titleHandler(deps: LlmDeps): HostHandler {
       if (!request) throw new Error('There is no text to title here.')
       const answer = (await deps.complete(TITLE_SYSTEM, request.text.slice(0, 8000))).trim().split(/\r?\n/)[0]!.replace(/^["'\s]+|["'.\s]+$/g, '')
       const title = truncateTitle(answer, 120) || truncateTitle(request.text)
-      let next = writeNodeValue(ctx.replica(), path, TITLED_VALUE, title, ctx.now())
+      let next = writeHandlerResult(ctx.replica(), path, title, ctx.now())
       next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'title', by: 'fos' }, ctx.now())
       await ctx.update(next)
     }
