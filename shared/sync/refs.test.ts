@@ -15,9 +15,9 @@ function bind(r: Replica, path: string[], target: string, time: number) {
 
 test('typed arguments accept ref values without flattening; replay and stale proposals cannot change the binding', () => {
   let r = createReplica('owner')
-  const type = capabilityTarget(r.store, 'tool')
+  const type = put(r.store, { data: {}, children: [] })
   const value = put(r.store, { data: { description: { content: 'weather' } }, children: [] })
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'provider' } }, value, [], type))
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'provider' } }, value, []))
   r = addRefAt(r, [], 'argument', type, 1)
   expect(refValueCid(r.store, node(r, ['argument']))).toBeNull()
   const first = proposeRefAt(r, ['argument'], handler, 'first', 2)
@@ -41,7 +41,7 @@ test('template instantiation shares deep copying, remaps internal refs and creat
   r = addRow(r, ['template'], REF_TYPE, 'Root ref', 4, { id: 'root-reference', refId: 'template' })
   r = addRow(r, ['template', 'nested'], ALLOCATION_TYPE, 'weather', 5, { id: 'required', requirement: { capability: 'tool' } })
   r = addSupply(r, ['template', 'nested'], 'required', { capability: 'tool', by: 'old-run' }, 6)
-  const type = capabilityTarget(r.store, 'tool')
+  const type = put(r.store, { data: {}, children: [] })
   r = addRefAt(r, ['template', 'nested', 'required'], 'argument', type, 7)
   r = addTask(r, [], 'One', 8, 'one')
   r = addTask(r, [], 'Two', 9, 'two')
@@ -67,10 +67,10 @@ test('copying remaps internal typed-ref targets and retains external defaults', 
   let r = createReplica('owner')
   r = addTask(r, [], 'Parent', 1, 'parent')
   r = addRow(r, ['parent'], NOTE_TYPE, 'Document', 2, { id: 'document' })
-  const type = capabilityTarget(r.store, 'tool')
+  const type = put(r.store, { data: {}, children: [] })
   const document = resolveScope(r.store, headCid(r), ['parent', 'document'])!
   r = addRefAt(r, ['parent'], 'internal', type, 3, document)
-  const external = put(r.store, refNodeContent(r.store, { alias: { id: 'external' } }, document, [], type))
+  const external = put(r.store, refNodeContent(r.store, { alias: { id: 'external' } }, document, []))
   r = addRefAt(r, ['parent'], 'external-default', type, 4, external)
   const copied = copyRowContent(r.store, resolveScope(r.store, headCid(r), ['parent'])!, 5, newId)
   const args = refArguments(r.store, content(r.store, copied), type)
@@ -80,8 +80,8 @@ test('copying remaps internal typed-ref targets and retains external defaults', 
 })
 
 test('concurrent different handler bindings become a choice instead of merging provider values', () => {
-  const r = createReplica('owner'), store = r.store, type = capabilityTarget(store, 'tool')
-  const slot = (target: string | null) => put(store, refNodeContent(store, { alias: { id: 'slot' } }, target, [], type))
+  const r = createReplica('owner'), store = r.store, type = put(store, { data: {}, children: [] })
+  const slot = (target: string | null) => put(store, refNodeContent(store, { alias: { id: 'slot' } }, target, []))
   const parent = (cid: string) => put(store, { data: {}, children: [[type, cid]] })
   const a = put(store, { data: { peerId: { content: 'a' } }, children: [] })
   const b = put(store, { data: { description: { content: 'b' } }, children: [] })
@@ -97,7 +97,7 @@ test('concurrent different handler bindings become a choice instead of merging p
 
 test('binding offers are tied to a version, including when a ref moves away and back to its old value', () => {
   let r = createReplica('owner')
-  const type = capabilityTarget(r.store, 'tool')
+  const type = put(r.store, { data: {}, children: [] })
   const a = put(r.store, { data: { description: { content: 'a' } }, children: [] })
   const b = put(r.store, { data: { description: { content: 'b' } }, children: [] })
   r = addRefAt(r, [], 'arg', type, 1, a)
@@ -112,7 +112,7 @@ test('binding offers are tied to a version, including when a ref moves away and 
 test('distinct supplied values branch with shared incoming identity and content; duplicates reuse their branch', () => {
   let r = addRow(createReplica('owner'), [], PLAIN_TYPE, 'Project', 1, { id: 'project' })
   r = createBranch(r, ['project'], 'feature', 2)
-  const type = capabilityTarget(r.store, 'tool')
+  const type = put(r.store, { data: {}, children: [] })
   const a = put(r.store, { data: { description: { content: 'a' } }, children: [] })
   const b = put(r.store, { data: { description: { content: 'b' } }, children: [] })
   const path = ['project', 'arg']

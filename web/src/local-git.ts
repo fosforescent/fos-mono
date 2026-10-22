@@ -1,3 +1,4 @@
+import { readGraphValue } from '../../shared/sync/node-values'
 import type { App } from './app'
 import { launchAgent } from './agents'
 import { inTauri, tauriInvoke } from './project'
@@ -13,7 +14,7 @@ function binding(app: App, path = app.state.view): Binding | null {
     const arg = argumentRefs(r.store,cid).find(a => a.name === 'local-repository' && a.type === capabilityTarget(r.store,'repo'))
     if (!arg) continue
     const value = refValueCid(r.store,content(r.store,arg.cid))
-    try { const data = JSON.parse(value ? content(r.store,value).data.description?.content ?? '' : ''); if (data.device === r.meta.peerId && typeof data.path === 'string') return { path: data.path, scope, peer: data.peer ?? `git:${r.meta.peerId}:${encodeURIComponent(data.path)}` } } catch { return null }
+    try { const data = (value ? readGraphValue(r.store, value) : null) as { device?: string; path?: string; peer?: string }; if (data?.device === r.meta.peerId && typeof data.path === 'string') return { path: data.path, scope, peer: data.peer ?? `git:${r.meta.peerId}:${encodeURIComponent(data.path)}` } } catch { return null }
   }
   return null
 }

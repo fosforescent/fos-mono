@@ -101,7 +101,7 @@ export function siteAnswers(node: SharedNode): SiteAnswers {
   for (const field of node.inputs) {
     const previous = mine?.fields[field.key]
     if (previous === undefined || field.kind === 'confirmation' || field.kind === 'choice') continue
-    fields[field.key] = { value: field.kind === 'text' ? previous : { amount: typeof previous === 'object' ? previous.amount : Number(previous), type: field.type, unit: field.unit, start: field.start, end: field.end } }
+    fields[field.key] = { value: field.kind === 'text' || field.kind === 'ref' ? previous : { amount: typeof previous === 'object' ? previous.amount : Number(previous), type: field.type, unit: field.unit, start: field.start, end: field.end } }
   }
   for (const [key, source] of Object.entries(node.sources ?? {})) fields[key] = { source }
   return { name: mine?.name ?? '', approvals: new Set(current ? mine!.approvals : []), ranking: current && mine!.ranking.length ? [...mine!.ranking] : rankOptions.map(o => o.id), fields }
@@ -123,16 +123,17 @@ function fieldControl(doc: Document, field: SharedInput, row: SitePage | null, a
     box.append(input); return box
   }
   const input = el(doc, 'input'), type = row?.type
-  input.type = field.kind !== 'text' || type === NUMBER_TYPE ? 'number' : type === TIME_TYPE ? 'datetime-local' : 'text'
+  input.type = field.kind === 'ref' ? 'text' : field.kind !== 'text' || type === NUMBER_TYPE ? 'number' : type === TIME_TYPE ? 'datetime-local' : 'text'
+  if (field.kind === 'ref') input.placeholder = '.peer.handler'
   if (input.type === 'number') { input.step = 'any'; if (field.kind !== 'text') input.min = '0'; if (field.direction === 'consume' && field.amount !== undefined) input.max = String(field.amount) }
   const previous = answers.fields[field.key]?.value
   input.value = typeof previous === 'string' ? (type === TIME_TYPE && /^\d+$/.test(previous) ? new Date(Number(previous)).toISOString().slice(0, 16) : previous) : previous && typeof previous === 'object' ? String((previous as { amount: number }).amount) : ''
   // a time field stores milliseconds; the browser's control speaks local date-times
   input.oninput = () => {
     const text = type === TIME_TYPE && field.kind === 'text' ? (input.value ? String(new Date(input.value).getTime()) : '') : input.value
-    answers.fields[field.key] = { value: field.kind === 'text' ? text : { amount: Number(input.value), type: field.type, unit: field.unit, start: field.start, end: field.end } }
+    answers.fields[field.key] = { value: field.kind === 'text' || field.kind === 'ref' ? text : { amount: Number(input.value), type: field.type, unit: field.unit, start: field.start, end: field.end } }
   }
-  box.append(label(field.kind === 'text' ? (input.type === 'text' ? 'Text ' : 'Value ') : `Amount (${field.unit}) `, input))
+  box.append(label(field.kind === 'ref' ? 'Ref property ' : field.kind === 'text' ? (input.type === 'text' ? 'Text ' : 'Value ') : `Amount (${field.unit}) `, input))
   const extra = interact.fieldExtras?.(field, answers); if (extra) box.append(extra)
   return box
 }

@@ -42,7 +42,7 @@ export type IntegrationDeps = {
   complete(system: string, user: string): Promise<string>
   /** Text a phone number (the SMS channel adapter); null when the platform has no number. */
   sms: ((to: string, text: string) => Promise<void>) | null
-  /** What this host has handlers for per provider (sync/registry.ts); absent means the peer provides nothing yet. */
+  /** What this host has handlers for per provider (sync/host-runtime.ts); absent means the peer provides nothing yet. */
   offers?(providerId: string): Capability[]
   now?: () => number
 }

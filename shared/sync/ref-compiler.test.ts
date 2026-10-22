@@ -1,0 +1,134 @@
+import {
+  addRefAt, addTask, applyProposalAt, capabilityTarget, compileRefGraph, compileRow, content, createReplica,
+  headCid, putBranches, loadReplica, matchesRefPattern, parseRefExpression, proposeRefAt, put, refNodeContent,
+  resolveRefExpression, resolveScope, resolveText, serializeReplica, updateAtScope, commitRoot, refValueCompatible,
+  saveRefCompilation, valueContent, executionInputs, executionInput, executionSnapshot, evaluateNode,
+  resolveRefIdentity
+} from './index'
+
+const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
+const text = (r: ReturnType<typeof createReplica>, value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+
+test('dot and application syntax agree, and ascent is counted before property lookup', () => {
+  expect(parseRefExpression('....ref1.ref2')).toEqual({ up: 3, path: ['ref1', 'ref2'], lexical: false })
+  expect(parseRefExpression('(ref2 (ref1 (.. (.. .))))')).toEqual(parseRefExpression('...ref1.ref2'))
+  expect(() => parseRefExpression('(ref1 .) trailing')).toThrow()
+  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  const name = put(r.store, refNodeContent(r.store, { alias: { id: 'name-id' }, name: { content: 'name' } }, text(r, 'Ada'), []))
+  r = addRefAt(r, [], 'profile-id', text(r, 'profile type'), 1, put(r.store, { data: {}, children: [[type, name]] }), 'profile')
+  r = addTask(r, [], 'Child', 2, 'child')
+  expect(resolveRefExpression(r, ['child'], '..profile.name').locations[0]?.cid).toBe(name)
+  expect(resolveRefExpression(r, ['child'], '.profile.name').status).toBe('missing')
+  expect(resolveText(r, ['child'], 'Hello {..profile.name} / {(name (profile (.. .)))}').text).toBe('Hello Ada / Ada')
+  expect(resolveRefExpression(r, ['child'], '...profile.name').status).toBe('missing')
+})
+
+test('row shorthand constructs expression refs without flattening property names into inputs', () => {
+  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  r = addRefAt(r, [], 'name', type, 1, text(r, 'Ada'), 'name')
+  r = addTask(r, [], 'Hello {..name}', 2, 'hello')
+  const parameters = content(r.store, at(r, ['hello'])).children.map(edge => content(r.store, edge[1]))
+  expect(parameters.some(node => node.data.refExpression?.up === 1)).toBe(true)
+  expect(resolveText(r, ['hello'], 'Hello {..name}').text).toBe('Hello Ada')
+  r = addTask(r, [], '.name', 3, 'direct')
+  expect(compileRefGraph(r, at(r, ['direct']), ['direct']).complete).toBe(true)
+  expect(content(r.store, at(r, ['direct'])).data.refExpression).toEqual(parseRefExpression('.name'))
+})
+
+test('UUID links compile accessible declarations outside their lexical scope', () => {
+  let r = addTask(createReplica(), [], 'Folder', 1, 'folder')
+  const id = '550e8400-e29b-41d4-a716-446655440000', type = r.store.primitive.documentField.getId()
+  r = addRefAt(r, ['folder'], id, type, 2, text(r, 'Nested value'), 'value')
+  const link = put(r.store, { data: { ref: { id } }, children: [] })
+  expect(resolveRefIdentity(r, [], id).locations[0]?.path).toEqual(['folder', id])
+  expect(compileRefGraph(r, link).complete).toBe(true)
+  const denied = compileRefGraph(r, link, [], { canRead: (_store, _cid, path) => path[0] !== 'folder' })
+  expect(denied.complete).toBe(false)
+  expect(denied.holes[0]).toMatchObject({ id, reason: 'denied' })
+})
+
+test('compilation produces a stable partial CID and retains outstanding UUID identities', () => {
+  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  r = addRefAt(r, [], '550e8400-e29b-41d4-a716-446655440000', type, 1, null, 'input')
+  const partial = compileRefGraph(r, at(r, ['550e8400-e29b-41d4-a716-446655440000']))
+  expect(partial.holes).toEqual(expect.arrayContaining([expect.objectContaining({ id: '550e8400-e29b-41d4-a716-446655440000', reason: 'unbound' })]))
+  expect(partial.complete).toBe(false)
+  const saved = saveRefCompilation(r, [], 'compiled-snapshot', partial, 1)
+  const reloaded = loadReplica(serializeReplica(saved))
+  expect(valueContent(reloaded.store, at(reloaded, ['compiled-snapshot'])).data.refCompilation).toEqual({ cid: partial.cid, holes: partial.holes })
+  expect(reloaded.store.table.has(partial.cid)).toBe(true)
+  const restored = loadReplica(serializeReplica(r))
+  expect(compileRefGraph(restored, at(restored, ['550e8400-e29b-41d4-a716-446655440000'])).cid).toBe(partial.cid)
+  const proposal = proposeRefAt(r, ['550e8400-e29b-41d4-a716-446655440000'], text(r, 'Filled'), 'owner', 2)
+  r = applyProposalAt(proposal.replica, ['550e8400-e29b-41d4-a716-446655440000'], proposal.proposalCid, 'owner', 3)
+  const full = compileRefGraph(r, at(r, ['550e8400-e29b-41d4-a716-446655440000']))
+  expect(full.holes).toEqual([])
+  expect(full.cid).not.toBe(partial.cid)
+})
+
+test('nested product holes are execute inputs and may be filled without replacing sibling properties', async () => {
+  let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = r.store.primitive.documentField.getId()
+  const answer = put(r.store, refNodeContent(r.store, { alias: { id: 'answer' }, name: { content: 'Answer' }, refRole: 'output' }, null, []))
+  const sibling = put(r.store, refNodeContent(r.store, { alias: { id: 'sibling' }, name: { content: 'Sibling' } }, text(r, 'Keep'), []))
+  r = addRefAt(r, ['work'], 'record', put(r.store, { data: {}, children: [] }), 2, put(r.store, { data: {}, children: [[type, answer], [type, sibling]] }), 'record')
+  const field = executionInputs(r, ['work']).find(field => field.name === 'Answer')!
+  expect(field.path).toEqual(['record', 'answer'])
+  expect(field.role).toBe('output')
+  expect(executionSnapshot(r, ['work']).canRun).toBe(true)
+  r = executionInput(r, ['work'], { revision: headCid(r), key: field.key, value: 'Supplied' }, 'owner', 3)
+  expect(resolveText(r, ['work'], '{.record.answer} {.record.sibling}').text).toBe('Supplied Keep')
+  expect(executionInputs(r, ['work'])).toEqual([])
+  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 4, handles: () => false, check: () => [] })
+  expect(completed.status).toBe('committed')
+})
+
+test('a nested output may remain open during execution', async () => {
+  let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = r.store.primitive.documentField.getId()
+  const output = put(r.store, refNodeContent(r.store, { alias: { id: 'result' }, name: { content: 'Result' }, refRole: 'output' }, null, []))
+  r = addRefAt(r, ['work'], 'record', put(r.store, { data: {}, children: [] }), 2, put(r.store, { data: {}, children: [[type, output]] }), 'record')
+  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 3, handles: () => false, check: () => [] })
+  expect(completed.status).toBe('committed')
+  expect(compileRow(r, ['work']).right.holes.some(hole => hole.id === 'result')).toBe(true)
+})
+
+test('cached but forbidden values stay holes and are absent from compiled content', () => {
+  let r = createReplica(), type = r.store.primitive.documentField.getId(), secret = text(r, 'private body')
+  r = addRefAt(r, [], 'secret', type, 1, secret, 'secret')
+  const compiled = compileRefGraph(r, at(r, ['secret']), ['secret'], { canRead: (_store, cid) => cid !== secret })
+  expect(compiled.complete).toBe(false)
+  expect(compiled.holes[0]?.reason).toBe('denied')
+  expect(resolveRefExpression(r, [], '.secret', { canRead: (_store, cid) => cid !== at(r, ['secret']) }).status).toBe('denied')
+})
+
+test('branches form sums, rows form products, and capability and handler assignments share checks', () => {
+  let r = createReplica(), a = capabilityTarget(r.store, 'a'), b = capabilityTarget(r.store, 'b')
+  const aHandler = put(r.store, refNodeContent(r.store, { alias: { id: 'handler-a' } }, a, []))
+  const sum = putBranches(r.store, 'sum', null, [{ peerId: 'a', edge: [a, a] }, { peerId: 'b', edge: [b, b] }], 'a')
+  expect(refValueCompatible(r.store, a, a)).toBe(true)
+  expect(refValueCompatible(r.store, a, aHandler)).toBe(true)
+  expect(refValueCompatible(r.store, a, b)).toBe(false)
+  r = addRefAt(r, [], 'choice', sum, 1)
+  for (const value of [aHandler, b]) {
+    const proposal = proposeRefAt(r, ['choice'], value, 'owner', 2)
+    r = applyProposalAt(proposal.replica, ['choice'], proposal.proposalCid, 'owner', 3)
+  }
+  expect(matchesRefPattern(r.store, sum, at(r, ['choice']))).toBe(true)
+  expect(matchesRefPattern(r.store, a, at(r, ['choice']))).toBe(false)
+  const compiled = compileRefGraph(r, at(r, ['choice']))
+  expect(compiled.complete).toBe(true)
+  const bad = proposeRefAt(r, ['choice'], capabilityTarget(r.store, 'c'), 'owner', 4)
+  expect(() => applyProposalAt(bad.replica, ['choice'], bad.proposalCid, 'owner', 5)).toThrow(/incompatible/)
+})
+
+test('Run requires a closed left side while the right can retain output holes', () => {
+  let r = addTask(createReplica(), [], 'Run', 1, 'run'), type = r.store.primitive.documentField.getId()
+  const missing = put(r.store, refNodeContent(r.store, { alias: { id: 'instruction-input' }, name: { content: 'source' } }, null, []))
+  const instruction = put(r.store, { data: {}, children: [[type, missing]] })
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), [], node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === 'run' ? [instruction, edge[1]] : edge) })), 2)
+  expect(compileRow(r, ['run']).canRun).toBe(false)
+  r = addRefAt(r, ['run'], 'source', type, 3, text(r, 'Ready'), 'source')
+  r = addRefAt(r, ['run'], 'result', type, 4, null, 'result')
+  const compiled = compileRow(r, ['run'], { outputs: ['result'] })
+  expect(compiled.canRun).toBe(true)
+  expect(compiled.right.holes.some(hole => hole.id === 'result' && hole.role === 'output')).toBe(true)
+})

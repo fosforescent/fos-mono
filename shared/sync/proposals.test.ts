@@ -1,4 +1,4 @@
-import { addTask, createReplica, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, refTypeCid, refValueCid, argumentRefs, capabilityTarget, copyProposalBranch, view, selectBranch, writeNodeValue, rowEdgeAt } from './index'
+import { addTask, createReplica, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, refValueCid, argumentRefs, capabilityTarget, copyProposalBranch, view, selectBranch, writeNodeValue, rowEdgeAt } from './index'
 import { PLAIN_TYPE } from './library-types'
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
@@ -14,7 +14,7 @@ function setup() {
 test('a proposal is a child mutable ref constructor with branch and merge-request arguments', () => {
   const { r, proposal, branch, base } = setup(), store = r.store, node = content(store, proposal)
   expect(node.data.proposal).toBeUndefined()
-  expect(refTypeCid(store, node)).toBe(store.primitive.proposalField.getId())
+  expect(node.children.some(([key]) => key === store.primitive.instructionPointerConstructor.getId())).toBe(false)
   const args = argumentRefs(store, proposal)
   expect(args.map(a => a.name).sort()).toEqual(['branch', 'request merge', 'status'])
   const branchArg = content(store, args.find(a => a.name === 'branch')!.cid)

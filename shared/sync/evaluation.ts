@@ -1,10 +1,13 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { mergeNodes } from './merge'
+import { constructNodeValue, readGraphValue } from './node-values'
 import { isAttempt } from './work'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { formText } from './forms'
 import { TEMPLATE_TYPE } from './library-types'
-import { findRowByAlias, commitRoot, content, refValueCid, refTypeCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
+import { compileInstructions } from './ref-compiler'
+import { instructionPrimitives } from './primitives'
+import { findRowByAlias, commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
 export const EVALUATION_ARGUMENT = 'fos:evaluation'
@@ -19,18 +22,20 @@ export function readNodeValue<T>(r: Replica, path: Scope, name: string): T | nul
   const cid = resolveScope(r.store, headCid(r), path)
   const arg = cid && argumentRefs(r.store, cid).find(a => a.name === name)
   if (!arg) return null
-  try { return JSON.parse(valueContent(r.store, arg.cid).data.description?.content ?? '') as T } catch { return null }
+  return (readGraphValue(r.store, arg.cid) as T | undefined) ?? null
 }
 export function writeNodeValue(r: Replica, path: Scope, name: string, value: unknown, now: number, handler?: { type: string; peer: string }): Replica {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new Error('The node no longer exists.')
   const arg = argumentRefs(r.store, cid).find(a => a.name === name)
-  const type = handler?.type ?? arg?.type ?? r.store.primitive.documentField.getId()
   const previous = arg ? content(r.store, arg.cid) : null
   const peer = handler?.peer ?? (arg ? valueContent(r.store, arg.cid).data.peerId?.content : undefined)
-  const target = put(r.store, { data: { description: { content: JSON.stringify(value) }, ...(peer ? { peerId: { content: peer } } : {}) }, children: [] })
+  const built = constructNodeValue(r.store, value, previous?.data.alias?.id ?? `${name}:${path.at(-1) ?? r.meta.peerId}`, arg?.cid)
+  const type = handler?.type ?? (arg && arg.type !== r.store.primitive.documentField.getId() && !content(r.store, arg.type).data.name?.content.startsWith('fos:value:') ? arg.type : built.type)
+  const target = peer ? put(r.store, { ...content(r.store, built.cid), data: { ...content(r.store, built.cid).data, peerId: { content: peer } } }) : built.cid
   if (!arg) return addRefAt(r, path, `${name}:${path.at(-1) ?? r.meta.peerId}`, type, now, target, name)
-  const next = put(r.store, refNodeContent(r.store, previous!.data, target, [[r.store.primitive.previousVersion.getId(), arg.cid]], type))
+  const declarations = previous!.children.filter(([key]) => key !== r.store.primitive.targetPointerConstructor.getId() && key !== r.store.primitive.instructionPointerConstructor.getId() && key !== r.store.primitive.previousVersion.getId())
+  const next = put(r.store, refNodeContent(r.store, previous!.data, target, [...declarations, [r.store.primitive.previousVersion.getId(), arg.cid]]))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [type, next] : edge) })), now)
   return { ...r }
 }
@@ -43,7 +48,8 @@ export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, valu
   const children: typeof target.children = Object.entries(links).map(([key, link]) => [r.store.primitive.linkField.getId(), put(r.store, {
     data: { alias: { id: `${ref.data.alias!.id}:${key}` }, name: { content: key }, ref: link }, children: []
   })])
-  const next = put(r.store, refNodeContent(r.store, ref.data, put(r.store, { ...target, children }), [[r.store.primitive.previousVersion.getId(), arg.cid]], arg.type))
+  const declarations = ref.children.filter(([key]) => key !== r.store.primitive.targetPointerConstructor.getId() && key !== r.store.primitive.instructionPointerConstructor.getId() && key !== r.store.primitive.previousVersion.getId())
+  const next = put(r.store, refNodeContent(r.store, ref.data, put(r.store, { ...target, children: [...target.children.filter(([key]) => key !== r.store.primitive.linkField.getId()), ...children] }), [...declarations, [r.store.primitive.previousVersion.getId(), arg.cid]]))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [arg.type, next] : edge) })), now)
   return { ...r }
 }
@@ -80,13 +86,16 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     if (row?.type === TEMPLATE_TYPE) return
     if (row && (row.refId !== undefined || row.supply)) return
     const cid = resolveScope(r.store, headCid(r), at)
+    if (depth > 0 && cid && content(r.store, cid).data.name?.content.startsWith('fos:')) return
     // A handler's attempt records (pinned prompts, return slots) are bookkeeping, never steps.
     if (depth > 0 && cid && isAttempt(r, cid)) return
     if (depth > 0 && cid && argumentRefs(r.store, cid).some(a => a.name === 'fos:trigger')) return
     const node = view(r, at)
     if (!node) throw new Error('The evaluated node no longer exists.')
     if (node.choices.length) throw new Error('Resolve conflicting choices before evaluation.')
-    steps.push({ path: at, row })
+    // Data/argument rows still belong to the graph. Only executable left sides
+    // become evaluation steps; the requested root remains the transaction boundary.
+    if (depth === 0 || row?.checkable || row?.requirement || row?.allocation || instructionPrimitives(r, { path: at, row }).length) steps.push({ path: at, row })
     for (const child of node.tasks) walk([...at, child.id], depth + 1)
   }
   walk(path, 0)
@@ -97,12 +106,14 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   const cid = resolveScope(r.store, headCid(r), step.path)
   if (!cid) return ['The node no longer exists.']
   const issues = [...driver.check(step)]
+  if (instructionPrimitives(r, step).length && !driver.handles(step)) issues.push('The instruction primitive has no available executor on this host.')
+  issues.push(...compileInstructions(r, step.path, { canRead: driver.canRead }).holes.map(hole => `Unfilled instruction ref: ${hole.id} (${hole.reason})`))
   const candidates = contextBindings(r, step.path, driver)
   const outputs = new Set(driver.outputs?.(step) ?? [])
-  for (const arg of argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
-    issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, driver).problems)
+  for (const arg of argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && content(r.store, a.cid).data.refRole !== 'output' && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
+    issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { ...driver, scope: { replica: r, path: step.path } }).problems)
   }
-  issues.push(...resolveText(r, step.path, formText(r.store, valueContent(r.store, cid))).bindings.flatMap(b => b.problems))
+  issues.push(...resolveText(r, step.path, formText(r.store, valueContent(r.store, cid)), [], driver).bindings.flatMap(b => b.problems))
   const req = step.row?.requirement
   if (req?.capability === 'allocation') for (const child of view(r, step.path)?.tasks ?? []) {
     const supplied = child.supply
@@ -119,7 +130,12 @@ const instruction = (r: Replica, path: Scope, outputs: string[] = []) => {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return null
   const { updated: _updated, ...data } = valueContent(r.store, cid).data
-  return JSON.stringify({ data, arguments: argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '')), context: contextBindings(r, path).filter(a => !a.name?.startsWith('fos:') && !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '')) })
+  const args = argumentRefs(r.store, cid)
+  // Output properties are supplied by the effect too. Track their enclosing declaration identities.
+  const input = (a: { cid: string; name?: string; refIds?: string[] }) => !a.name?.startsWith('fos:') &&
+    !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '') &&
+    !a.refIds?.some(id => outputs.includes(id))
+  return JSON.stringify({ data, arguments: args.filter(input), context: contextBindings(r, path).filter(input) })
 }
 
 export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promise<EvaluationRecord> {
@@ -132,7 +148,11 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   const issues = [...allocationProblems(initial, steps), ...steps.flatMap(step => problems(driver.get(), step, driver))]
   if (issues.length) throw new Error([...new Set(issues)].join('\n'))
   const versions = new Map(steps.map(step => [JSON.stringify(step.path), instruction(driver.get(), step.path, driver.outputs?.(step))]))
-  const children = new Map(steps.map(step => [JSON.stringify(step.path), JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.type]))]))
+  const executionShape = (step: EvaluationStep) => {
+    const descendants = evaluationSteps(driver.get(), step.path).slice(1)
+    return JSON.stringify(descendants.filter(child => !descendants.some(parent => parent.path.length < child.path.length && parent.path.every((id, i) => child.path[i] === id))).map(child => [child.path, child.row?.typeCid]))
+  }
+  const children = new Map(steps.map(step => [JSON.stringify(step.path), executionShape(step)]))
   const applied = new Set<string>()
   const record: EvaluationRecord = { id: newId(), status: 'opening', started: driver.now(), effects: [] }
   const save = () => driver.save(writeNodeValue(driver.get(), path, EVALUATION_ARGUMENT, record, driver.now()))
@@ -142,7 +162,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     const current = evaluationRecord(driver.get(), path)
     if (!current || current.id !== record.id || !['opening', 'running', 'committing'].includes(current.status)) throw new Error('The evaluation claim changed. Review recovery before retrying.')
     if (instruction(driver.get(), step.path, driver.outputs?.(step)) !== versions.get(JSON.stringify(step.path))) throw new Error('Instructions changed during evaluation. Review and run again.')
-    if (!applied.has(JSON.stringify(step.path)) && JSON.stringify(view(driver.get(), step.path)?.tasks.map(t => [t.id, t.type])) !== children.get(JSON.stringify(step.path))) throw new Error('The child rows changed during evaluation. Review and run again.')
+    if (!applied.has(JSON.stringify(step.path)) && executionShape(step) !== children.get(JSON.stringify(step.path))) throw new Error('The child rows changed during evaluation. Review and run again.')
     const errors = problems(driver.get(), fresh(step), driver)
     if (errors.length) throw new Error(errors.join('\n'))
   }
@@ -155,12 +175,12 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     for (const step of [...steps].reverse()) {
       check(step)
       const current = fresh(step)
-      if (!current.row?.requirement || current.row.requirement.satisfied || !driver.handles(current)) continue
+      if (current.row?.requirement?.satisfied || !driver.handles(current)) continue
       for (const planned of steps) check(planned)
       const resourceErrors = allocationProblems(driver.get(), steps)
       if (resourceErrors.length) throw new Error(resourceErrors.join('\n'))
       if (!driver.effect) throw new Error('No executor is configured for this handler.')
-      const effect = { path: step.path, title: current.row.title, status: 'attempting' as EvaluationRecord['effects'][number]['status'] }
+      const effect = { path: step.path, title: current.row?.title ?? 'Ref', status: 'attempting' as EvaluationRecord['effects'][number]['status'] }
       record.effects.push(effect); await save() // persist before sending, including an uncertain failed response
       applied.add(JSON.stringify(step.path))
       const beforeCid = resolveScope(driver.get().store, headCid(driver.get()), step.path)!
@@ -170,10 +190,10 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       if (outcome === 'pending') { effect.status = 'pending-review'; awaiting = true; await save(); continue }
       for (const output of expectedOutputs) {
         const r = driver.get(), cid = resolveScope(r.store, headCid(r), [...step.path, output.id])
-        if (!cid || refTypeCid(r.store, content(r.store, cid)) !== output.type || !refValueCid(r.store, content(r.store, cid)) || resolveBinding(r.store, output.type, cid, contextBindings(r, step.path, driver), undefined, driver).status !== 'ready') throw new Error('The handler did not supply a valid return value. Review its result before continuing.')
+        if (!cid || !refValueCid(r.store, content(r.store, cid)) || resolveBinding(r.store, output.type, cid, contextBindings(r, step.path, driver), undefined, driver).status !== 'ready') throw new Error('The handler did not supply a valid return value. Review its result before continuing.')
       }
       effect.status = 'applied'; await save()
-      if (!fresh(step).row?.requirement?.satisfied) throw new Error('The handler has not fulfilled its requirement. Review its result before continuing.')
+      if (current.row?.requirement && !fresh(step).row?.requirement?.satisfied) throw new Error('The handler has not fulfilled its requirement. Review its result before continuing.')
     }
     // A result left for review stops here: the owner accepts it (which supplies the requirement) and completes again.
     if (awaiting) { record.status = 'awaiting-review'; await save(); return record }

@@ -302,7 +302,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
         const child = resolve(path.slice(0, i))
         if (readMembers(store, content(store, selectedIdentity(store, child))).some(m => m.peerId === principal.peerId)
           && (!permission(child, 'execute') || !permission(child, 'edit'))) throw new EventError('Claiming this child requires execute and edit capabilities.')
-        const parent = resolve(path.slice(0, i - 1)), edge = findAliasEdge(store, valueContent(store, parent), path[i - 1])?.edge
+        const parent = resolve(path.slice(0, i - 1)), edge = findAliasEdge(store, valueContent(store, parent), path[i - 1]!)?.edge
         if (edge && (isRowOfType(store, edge, TEMPLATE_TYPE) || (isTaskRow(store, edge) && viewNode(store, child).done))) throw new EventError('Task is no longer outstanding.')
         if (i === path.length && (!edge || !(isTaskRow(store, edge) || (isAllocationRow(store, edge) && !requirementSatisfied(store, child))))) throw new EventError('Choose an outstanding task or unmet requirement.')
       }
@@ -430,8 +430,13 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
     if (event.kind === 'input') {
       if (!editable) throw new EventError('Peer cannot interact with this node.')
       if (event.expected !== cid) throw new EventError('The node changed. Read it again before submitting.')
-      const next = executionInput(r, absolute(path), { revision: headCid(r), key: event.key, value: event.value }, principal.peerId, now)
-      return { replica: next, changed: true, result: { ...executionSnapshot(next, absolute(path)), revision: resolveScope(next.store, headCid(next), absolute(path)) } }
+      const next = executionInput(r, absolute(path), { revision: headCid(r), key: event.key, value: event.value }, principal.peerId, now, {
+        canRead: (source, _cid, target) => {
+          if (source !== store || !within(canonical, target)) return false
+          try { resolve(target.slice(canonical.length)); const mask = owner ? null : nodeLinkMaskAt(r, target, principal.peerId); return !mask?.fields || mask.fields.includes('description') } catch { return false }
+        }
+      })
+      return { replica: next, changed: true, result: { ...executionSnapshot(next, absolute(path), owner ? undefined : { peerId: principal.peerId, scope: canonical, capabilities: [] }), revision: resolveScope(next.store, headCid(next), absolute(path)) } }
     }
     if (event.expected !== attached) throw new EventError('The attachment changed. Read [] and review before retrying.')
     if (event.kind === 'branch') {

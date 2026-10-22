@@ -22,6 +22,7 @@ async function main() {
   r = c.addMemberAt(r, project, 'agent-cli:codex', 'Codex', ['read', 'edit'], now)
   r = c.addMemberAt(r, c.workflowPath(project), r.meta.peerId, 'Desktop', [], now)
   r = c.setMemberCapabilitiesAt(r, c.workflowPath(project), r.meta.peerId, [], [], now, ['ref-change'])
+  r = app.deviceHandlers.publish(r, c.workflowPath(project), r.meta.peerId, now, ['device:agent', 'device:ref-change'])
   r = c.createBranch(r, project, 'feature', ++now)
   r = c.addTask(r, project, 'Phone edited instructions', ++now, 'new-notes')
   await app.saveWorkflowReplica(r)

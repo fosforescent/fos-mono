@@ -1,3 +1,4 @@
+import { standardHostRef } from './host-runtime'
 /**
  * The fos server attests users. `@name` in a row is shorthand for a user object (shared/sync/users.ts, the standard
  * library type `lib:type:user`): account id, username, display name, public key and a verification. Resolving a
@@ -6,7 +7,7 @@
  * event. The handler binds the attested object as the requirement's `user` field, signed with the server's ed25519
  * identity key, and records the supply. There is no route:
  *
- * - the public key is graph data: the handler's `publicKey` is in the registry's `hostOffers().keys`, which
+ * - the public key is graph data: the handler's `publicKey` is in the runtime's `hostOffers().keys`, which
  *   `ensureHomeContext` writes onto the fos member entry of every account's root as the `fos:key:fos` row
  *   (`publishPeerKey`); member entries travel by node exchange, and the owner's devices take that entry above their
  *   Home (`accountContextAbove`), so their own verify handler checks `verification.attestation` over
@@ -20,8 +21,8 @@
  * object (read from the account's profile when it has one) and `ed25519-self` verifications are signed by it.
  */
 import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
-import { USER_SERVER_ATTESTATION, addSupply, bindUserAt, userAttestationPayload, verifyUser, type UserRecord } from '@fosforescent/shared/sync/index'
-import type { EffectContext, HostHandler } from './registry'
+import { USER_SERVER_ATTESTATION, addSupply, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
+import type { EffectContext, HostHandler } from './host-runtime'
 
 export type IdentityKey = { privateKey: KeyObject; publicKey: string }
 
@@ -87,7 +88,7 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
     return found ? attest({ account: String(found.id), username: found.username, name: found.name?.trim() || found.username, publicKey: found.publicKey?.trim() ?? '' }) : null
   }
   return {
-    peerId: peer, capability: 'verify', publicKey: key.publicKey, attest, resolve,
+    peerId: peer, ref: standardHostRef(peer, 'verify'), publicKey: key.publicKey, attest, resolve,
     verify(user) {
       return user.verification?.method === USER_SERVER_ATTESTATION && verifyUser(user, { servers: { [peer]: key.publicKey }, verify: verifyEd25519 }).ok
     },
@@ -95,6 +96,8 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
       // an unknown name fails before the evaluation opens, so nothing is journaled for it
       const name = wanted(ctx)
       if (!await deps.findUser(name)) throw new Error(`No Fos user is named @${name}.`)
+      const r = ctx.replica(), cid = resolveScope(r.store, headCid(r), ctx.step.path)!
+      return { outputs: [`${valueContent(r.store, cid).data.alias?.id ?? 'row'}/field/user`] }
     },
     async effect(ctx) {
       const name = wanted(ctx), path = ctx.step.path

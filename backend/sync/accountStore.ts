@@ -12,7 +12,7 @@ import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
 import { indexStore, vertexEmbed } from '../search/rowIndex'
-import type { HandlerRegistry } from './registry'
+import type { HostRuntime } from './host-runtime'
 
 export type AccountUser = { id: number; username: string }
 
@@ -25,8 +25,8 @@ export type AccountStoreDeps = {
   /** Peer ids of the user's devices currently connected over the WebSocket. */
   onlinePeers?(userId: number): string[]
   now?(): number
-  /** What this host can do (sync/registry.ts); absent (tests) means transport only. */
-  registry?: HandlerRegistry
+  /** What this host can do (sync/host-runtime.ts); absent (tests) means transport only. */
+  runtime?: HostRuntime
 }
 
 /** Peer id the user group uses when labelling its side of a divergence. */

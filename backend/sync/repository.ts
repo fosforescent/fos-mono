@@ -1,3 +1,4 @@
+import { standardHostRef } from './host-runtime'
 /** GitHub mediates repository state into ordinary Fos branches and merge requests.
  * No template, agent, deployment or continuation is selected here. */
 import {
@@ -6,7 +7,7 @@ import {
   selectBranch, setBranchMergeRequest, withBranches, writeNodeValue,
   loadReplica, serializeReplica, type RepositorySnapshot
 } from '@fosforescent/shared/sync/index'
-import type { HostHandler } from './registry'
+import type { HostHandler } from './host-runtime'
 
 type State = { repo: string; checked: number; branch?: string; snapshot: RepositorySnapshot; merged: string[] }
 export type RepositoryLoadDeps = {
@@ -17,7 +18,7 @@ export type RepositoryLoadDeps = {
 export function repositoryLoadHandler(deps: RepositoryLoadDeps): HostHandler {
   const checked = new Map<string, number>()
   return {
-    peerId: 'integration:github', capability: 'repo', available: user => deps.connected(user),
+    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo', 'fos:handler:integration:github:repo:load'), available: user => deps.connected(user),
     async load(ctx) {
       const { path, now, userId } = ctx
       if (!path.length) return ctx.replica

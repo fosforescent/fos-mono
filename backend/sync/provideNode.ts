@@ -1,15 +1,15 @@
 import { nodeRelay } from './nodeRelay'
 import type { Request, Response } from 'express'
 import { createReplica, ensureHomeContext, type Replica, exchangeNode, findRowByAlias, nodeAuthorityAt, parseNodeRequest, rootTargetCid, viewNode, SERVER_TRANSPORT_CAPABILITIES, NodeAccessError, nodeReferenceAt, nodeLinkEndpoint, nodeRequestLinkId, acceptProvidedNode, acceptTemplateNodes, exchangeNodeContext, resolveScope, publication, validateNodeShape, type NodeRequest, type ProvidedNode, type NodeAuthority } from '@fosforescent/shared/sync/index'
-import type { HandlerRegistry } from './registry'
+import type { HostRuntime } from './host-runtime'
 import { withUserLock, serverPeerIdFor, type AccountStoreDeps } from './accountStore'
 
 /**
  * What an account's store carries whenever its owner syncs: Home, with the offers of this host's handlers. The
  * standard library is not linked here: devices ship it, and people who contribute link the shared one themselves.
  */
-export function ensureAccountContext(r: Replica, now: number, registry?: HandlerRegistry): Replica {
-  return ensureHomeContext(r, now, registry?.hostOffers())
+export function ensureAccountContext(r: Replica, now: number, runtime?: HostRuntime): Replica {
+  return ensureHomeContext(r, now, runtime?.hostOffers())
 }
 
 export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user: number, peer: string, address: string[], request: Omit<NodeRequest, 'scope' | 'path'>): Promise<ProvidedNode> } = nodeRelay) {
@@ -24,7 +24,7 @@ export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user
       if (owner && request.peerId !== serverPeerIdFor(claims.username)) throw new NodeAccessError('On another account\'s node you are the peer user:<you>.')
       const account = owner ?? claims.username
       const authority: NodeAuthority = { peerId: claims.kind === 'peer' ? claims.peerId! : request.peerId,
-        scope: claims.kind === 'peer' ? claims.scope! : owner ? request.scope : [], owner: claims.kind !== 'peer' && !owner, proposeOnly: claims.kind === 'peer' || !!owner, capabilities: deps.registry?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES }
+        scope: claims.kind === 'peer' ? claims.scope! : owner ? request.scope : [], owner: claims.kind !== 'peer' && !owner, proposeOnly: claims.kind === 'peer' || !!owner, capabilities: deps.runtime?.serverCapabilities() ?? SERVER_TRANSPORT_CAPABILITIES }
       if (claims.kind === 'peer' && (!claims.peerId || !Array.isArray(claims.scope))) throw new NodeAccessError('Invalid peer credential.')
       const pending = !request.update && !request.proposal ? await withUserLock(`user:${account}`, async () => {
         const loaded = await deps.loadStore(account)
@@ -53,7 +53,7 @@ export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user
         let r = createReplica(serverPeerIdFor(loaded.user.username), loaded.store)
         const before = loaded.store.rootNodeId
         if (claims.kind === 'peer' && (!claims.peerId || !Array.isArray(claims.scope))) throw new NodeAccessError('Invalid peer credential.')
-        if (authority.owner) r = ensureAccountContext(r, deps.now?.() ?? Date.now(), deps.registry)
+        if (authority.owner) r = ensureAccountContext(r, deps.now?.() ?? Date.now(), deps.runtime)
         const now = deps.now?.() ?? Date.now()
         if (pending && upstreamNode) {
           const current = nodeReferenceAt(r, request, authority)
@@ -68,16 +68,16 @@ export function createNodeProvider(deps: AccountStoreDeps, relay: { request(user
         let served = exchangeNode(r, request, authority, now)
         // A normal owner read refreshes connected services after the exchange has validated access.
         // Previewing a proposal or submitting a write never executes a load handler.
-        if (authority.owner && !request.update && !request.proposal && deps.registry) {
+        if (authority.owner && !request.update && !request.proposal && deps.runtime) {
           try {
-            const refreshed = await deps.registry.onLoad({ userId: loaded.user.id, replica: served.replica, path: [...request.scope, ...request.path], branches: request.branches ?? [], now })
+            const refreshed = await deps.runtime.onLoad({ userId: loaded.user.id, replica: served.replica, path: [...request.scope, ...request.path], branches: request.branches ?? [], now })
             if (refreshed !== served.replica) served = exchangeNode(refreshed, request, authority, now)
           } catch (error) { console.error('node load handlers failed:', error) }
         }
         // a submission came in: the handlers that react to one run on that node (the relay moves messages into queues).
         // The answer stays what was exchanged; the writer sees their effect on its next sync.
-        if (request.update && deps.registry) {
-          try { deps.registry.afterSubmission(served.replica, [...request.scope, ...request.path], now) }
+        if (request.update && deps.runtime) {
+          try { deps.runtime.afterSubmission(served.replica, [...request.scope, ...request.path], now) }
           catch (error) { console.error('submission handlers failed:', error) }
         }
         if (served.replica.store.rootNodeId !== before) {

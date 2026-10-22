@@ -94,10 +94,10 @@ test('a pattern matches a row type, and can pin the versions of it that match', 
   const tasks = typeWith([{ type: TASK_TYPE }])
   expect(acceptsChild(store, tasks, [otherVersion, node])).toBe(true)
   expect(acceptsChild(store, tasks, [rowTypeAt(store, NOTE_TYPE, [HOME_ID]), node])).toBe(false)
-  // the wildcard makes the patterns exclusions; no patterns at all accept nothing
+  // the wildcard makes the patterns exclusions; absence of a placement policy imposes no editor restriction
   expect(acceptsChild(store, typeWith([{ any: true }, { type: TASK_TYPE }]), [task, node])).toBe(false)
   expect(acceptsChild(store, typeWith([{ any: true }, { type: TASK_TYPE }]), [rowTypeAt(store, NOTE_TYPE, [HOME_ID]), node])).toBe(true)
-  expect(acceptsChild(store, typeWith([]), [task, node])).toBe(false)
+  expect(acceptsChild(store, typeWith([]), [task, node])).toBe(true)
 })
 
 test('a bare root (as the seed and registration write it) commits as a document root, its rows accepted', () => {

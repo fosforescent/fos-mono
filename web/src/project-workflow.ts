@@ -3,7 +3,7 @@ import {
   WORKFLOW_CONFIG, WORKFLOW_JOB, configureProjectWorkflow, enqueueWorkflowJob, projectWorkflow, projectWorkflows, workflowPath,
   CODING_TEMPLATE, agentRequest, validateAgentRequest, workflowTriggerPath, workflowDefault, instantiateTemplate, addTask,
   readNodeValue, writeNodeValue, addRow, addMemberAt, setMemberCapabilitiesAt,
-  withBranches, view, ALLOCATION_TYPE,
+  withBranches, view, ALLOCATION_TYPE, sameValue,
   type ProjectWorkflow, type WorkflowJob, type Replica, type Scope
 } from '../../shared/sync/index'
 import { agentContext, agentPeerId, launchAgent, localRepository } from './agents'
@@ -13,8 +13,8 @@ import { hashContent, parseCid } from '../../shared/dag-implementation/cid'
 
 const authorizationKey = (app: App, config: ProjectWorkflow) => `fos.workflow:${app.state.replica.meta.peerId}:${JSON.stringify(config.project)}`
 function authorization(app: App, config: ProjectWorkflow): string | null {
-  if (JSON.stringify(projectWorkflow(app.state.replica, config.project)) !== JSON.stringify(config)) return null
-  try { const saved = JSON.parse(localStorage.getItem(authorizationKey(app, config)) ?? 'null'); return saved?.config === JSON.stringify(config) && typeof saved.directory === 'string' ? saved.directory : null } catch { return null }
+  if (!sameValue(projectWorkflow(app.state.replica, config.project), config)) return null
+  try { const saved = JSON.parse(localStorage.getItem(authorizationKey(app, config)) ?? 'null'); return typeof saved?.config === 'string' && sameValue(JSON.parse(saved.config), config) && typeof saved.directory === 'string' ? saved.directory : null } catch { return null }
 }
 export function workflowForScope(r: Replica, scope: Scope): ProjectWorkflow | null {
   for (let depth = scope.length; depth > 0; depth--) { const config = projectWorkflow(r, scope.slice(0, depth)); if (config) return config }
@@ -72,6 +72,7 @@ export function configureWorkflowDialog(app: App, project: Scope): void {
       r = addMemberAt(r, project, peer, provider.selectedOptions[0]!.text, ['read', 'edit'], app.now())
       r = addMemberAt(r, path, config.device, app.state.deviceName, [], app.now())
       r = setMemberCapabilitiesAt(r, path, config.device, [], [], app.now(), ['ref-change'])
+      r = app.deviceHandlers.publish(r, path, config.device, app.now(), ['device:agent'])
       await app.saveWorkflowReplica(r)
       localStorage.setItem(authorizationKey(app, config), JSON.stringify({ config: JSON.stringify(config), directory: directory.value.trim() }))
       dialog.close(); app.notify('info', 'Workflow enabled. Create a project branch, update notes and tasks, then request a coding agent.')

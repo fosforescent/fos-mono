@@ -26,7 +26,7 @@ if (!STRIPE_WEBHOOK_SECRET) {
   throw new Error('STRIPE_WEBHOOK_SECRET not set')
 }
 
-const stripe = new Stripe(STRIPE_TOKEN, { apiVersion: '2024-10-28.acacia' })
+const stripe = new Stripe(STRIPE_TOKEN, { apiVersion: '2025-02-24.acacia' })
 
 export const postSubscriptionWebhook = async (req: Request, res: Response) => {
   let data

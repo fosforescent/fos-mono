@@ -1,3 +1,9 @@
+import { nativeRefValues } from '../../shared/sync/native-refs'
+import { sameValue } from '../../shared/sync/merge'
+import { parseRowInput } from './rows'
+import { STANDARD_CAPABILITY_PATTERNS, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern } from '../../shared/sync/index'
+import { createDeviceHandlers } from './device-handlers'
+import { capabilityOfTarget } from '../../shared/sync/graph'
 import { workClaims, saveWorkClaims } from '../../shared/sync/work-claims'
 import { BUNDLED_LIBRARY as LIBRARY_BUNDLE } from '../../shared/sync/library'
 import { runProjectWorkflows, queueAgentEffect } from './project-workflow'
@@ -8,7 +14,7 @@ import { executionInput, executionSnapshot } from '../../shared/sync/execution-a
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { CAPABILITY_LABEL, MARKET_PEER } from '../../shared/sync/graph'
-import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, CLIENT_CAPABILITIES, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
+import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { parsePastedRows } from './paste'
 import { ORGANIZED_VALUE, ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
@@ -17,7 +23,7 @@ import { microphoneError, recordedType, recordingMimeType, recordingUnsupported 
 import { SETTING_LABELS, settingKeyFromName } from './settings'
 import { exportNodeYaml, parseNodeYaml } from './yaml'
 import { ensureSharedLink, type SharedAddress } from '../../shared/sync/sharing'
-import { cronMatches, missingSchedule, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
+import { triggerOffers as discoverTriggerOffers, triggerObservation, missingSchedule, nodeTrigger, triggerState, triggerOccurrence, configuredTriggers, setNodeTrigger, runNodeTriggers, type TriggerKind } from '../../shared/sync/triggers'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
@@ -44,7 +50,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, LIBRARY_ID, libraryLink, ensureLibraryLink, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, refTypeCid, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, LIBRARY_ID, libraryLink, ensureLibraryLink, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, matchesGraph, isRefNode, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -102,7 +108,6 @@ import {
   setTaskDone,
   view,
   type Capability,
-  type CapabilityKind,
   type MovePosition,
   type NodeView,
   type Replica,
@@ -416,6 +421,23 @@ export class App {
   /** The device synced with by hand (its node links are keyed by it). */
   private manualPeer: string | null = null
 
+  readonly deviceHandlers = createDeviceHandlers({
+    pull: async ({ step }) => {
+      if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
+      await this.syncNow('evaluate pull', true)
+      if (this.state.connection !== 'online') throw new Error('Pull failed; review the sync status.')
+      this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, ref: 'unit' }, this.now()) })
+    },
+    agent: async ({ step, operation }) => {
+      await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, step.path, operation, this.now()))
+      this.notify('info', 'Execution queued for the configured desktop. Track its status in the project workflow.')
+      return 'pending'
+    }
+  })
+  deviceCapabilities(): Capability[] {
+    return [...new Set(this.handlerOffers([]).filter(offer => offer.peerId === this.state.replica.meta.peerId && offer.enabled).flatMap(offer => offer.capability ? [offer.capability] : []))]
+  }
+
   constructor(config: AppConfig) {
     this.config = config
     this.autoCredentials = config.autoLogin
@@ -486,7 +508,7 @@ export class App {
     return () => this.listeners.delete(listener)
   }
 
-  private set(patch: Partial<AppState>): void {
+  private set(patch: Partial<AppState>, render = true): void {
     const previous = this.state
     const contentChanged = patch.replica && headCid(patch.replica) !== this.observedHead
     if (patch.replica) {
@@ -513,7 +535,7 @@ export class App {
     if ('session' in patch && (patch.session !== previous.session || patch.session === null)) {
       this.config.storage.saveSession(patch.session ? { jwt: patch.session.jwt, username: patch.session.username, kind: patch.session.kind, baseUrl: patch.session.baseUrl } : null)
     }
-    for (const listener of this.listeners) listener(this.state)
+    if (render) for (const listener of this.listeners) listener(this.state)
   }
 
   private savePrefs(): void {
@@ -565,11 +587,12 @@ export class App {
    * root; it is nested in the browser's and resolves its rows through it.
    */
   private withRootContext(replica: Replica): Replica {
-    if (!this.config.deviceRoot && !this.config.scopedDocument) return ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now())
+    if (!this.config.deviceRoot && !this.config.scopedDocument) return this.deviceHandlers.publish(ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now()), [], replica.meta.peerId, 0, undefined, 'this-device')
     if (!this.deviceRoot) {
       const stored = this.config.deviceRoot?.serialized
       this.deviceRoot = ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now())
     }
+    this.deviceRoot = this.deviceHandlers.publish(this.deviceRoot, [], replica.meta.peerId, 0, undefined, 'this-device')
     nestScope(replica.store, { store: this.deviceRoot.store, root: headCid(this.deviceRoot), at: [] })
     return replica
   }
@@ -598,11 +621,11 @@ export class App {
   /** Node exchange with another `.fos` store on this machine, on its files, as this store (its member). */
   private localStoreProvider(peerId: string): NodeProvider {
     const io = this.config.localStores!
-    return { id: peerId, capabilities: CLIENT_CAPABILITIES, request: async request => {
+    return { id: peerId, capabilities: this.deviceCapabilities(), request: async request => {
       const stored = await io.read(peerId)
       if (!stored) throw new Error('That store is not on this machine (or where it is is not known here yet).')
       const peer = loadReplica(stored), before = peer.store.rootNodeId
-      const served = exchangeNode(peer, request, { peerId: this.state.replica.meta.peerId, scope: [], capabilities: CLIENT_CAPABILITIES }, this.now())
+      const served = exchangeNode(peer, request, { peerId: this.state.replica.meta.peerId, scope: [], capabilities: this.deviceCapabilities() }, this.now())
       if (served.replica.store.rootNodeId !== before) await io.write(peerId, serializeReplica(served.replica))
       return served.node
     } }
@@ -1023,7 +1046,7 @@ export class App {
         const context = request.branches ?? []
         if (this.config.project && context.some(b => JSON.stringify(b.scope) === JSON.stringify(providerScope) && b.name !== this.currentBranch())) throw new Error('The requested project branch is not checked out.')
         const effective = this.config.project ? { ...request, branches: context.filter(b => JSON.stringify(b.scope) !== JSON.stringify(providerScope)) } : request
-        const result = exchangeNode(this.state.replica, effective, { peerId: `user:${session.username}`, scope: providerScope, owner: true, capabilities: CLIENT_CAPABILITIES }, this.now())
+        const result = exchangeNode(this.state.replica, effective, { peerId: `user:${session.username}`, scope: providerScope, owner: true, capabilities: this.deviceCapabilities() }, this.now())
         if (context.length) result.node.address.branches = context
         this.set({ replica: result.replica })
         return result.node
@@ -1254,9 +1277,15 @@ export class App {
       if (this.state.replica.store !== store) return
       const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), at)
       if (!cid) continue
-      if (isPeerReference(content(this.state.replica.store, cid))) { await this.loadPeerNode(at); loaded++ }
+      if (isPeerReference(content(this.state.replica.store, cid))) {
+        await this.loadPeerNode(at, true); loaded++
+        // Keep background loading responsive without rendering the entire library
+        // once for every property. State and storage still update for each reply.
+        if (loaded % 25 === 0) { this.refresh(); await new Promise(resolve => setTimeout(resolve, 0)) }
+      }
       for (const row of view(this.state.replica, at)?.tasks ?? []) if (row.refId === undefined || row.refPeer) queue.push([...at, row.id])
     }
+    this.refresh()
   }
   /** Shared projections sync with their owner's account as `user:<me>`: pulls, and pushes of local edits as proposals there. */
   private async syncSharedNodes(pullOnly: boolean): Promise<void> {
@@ -1635,7 +1664,7 @@ export class App {
       if (known) { if (p === directPeer && !known.capabilities.includes('direct')) known.capabilities.push('direct'); continue }
       peers.push({ id: p, name: nameOf(p), online: this.isOnline(p), capabilities: p === directPeer ? ['direct'] : [], disabled: [], accepts: [], isAccount: p.startsWith('user:'), member: false, ...(p.startsWith('user:') ? { fosUser: p.slice(5) } : {}) })
     }
-    peers.push({ id: me, name: this.state.deviceName, online: true, capabilities: [], disabled: [], accepts: CLIENT_CAPABILITIES, isAccount: false, member: false })
+    peers.push({ id: me, name: this.state.deviceName, online: true, capabilities: [], disabled: [], accepts: this.deviceCapabilities(), isAccount: false, member: false })
     // the other `.fos` stores on this machine (Home's, other projects') are this device's, not peers of their own
     for (const p of peers) if (!p.parent && p.id !== me && p.capabilities.includes('local')) p.parent = 'device'
     // audiences (anyone, every Fos user) are reached through the server
@@ -1648,7 +1677,7 @@ export class App {
     return peers
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
-  allCapabilities(): Capability[] { return [...CAPABILITIES] }
+  allCapabilities(): Capability[] { return [...new Set([...CAPABILITIES, ...this.handlerOffers().flatMap(offer => offer.capability ? [offer.capability] : [offer.type])])] }
   /**
    * What the account server offers: the list it reported in its last response, else what this device recorded on its
    * fos member from an earlier session, else only the transport facts. Services appear here only when the server's
@@ -1662,7 +1691,7 @@ export class App {
   /** What an integration peer provides: the server's live answer, else what Home recorded for it. */
   integrationOffers(id: string): Capability[] {
     const live = this.state.integrations.find(p => p.id === id)?.provides
-    if (live) return live.filter((c): c is Capability => (CAPABILITIES as string[]).includes(c))
+    if (live) return live.filter((c): c is Capability => typeof c === 'string' && !!c)
     return view(this.state.replica, homePath(this.state.replica))?.members.find(m => m.peerId === `integration:${id}`)?.accepts ?? []
   }
   /** Record the server's reported offers on this device's own fos member (the root is device-local). */
@@ -2013,13 +2042,15 @@ export class App {
   actorName(): string { return this.state.session?.username ?? this.state.deviceName }
   private peerRowReplica(r: Replica, path: Scope, handler: string | undefined): Replica {
     if (!resolveScope(r.store, headCid(r), path)) return r
+    const pattern = capabilityTarget(r.store, 'peer')
     const next = updateAtScope(r.store, headCid(r), path, identity => {
       const cid = put(r.store, identity), value = valueContent(r.store, cid)
       const { name: _name, ...data } = identity.data
       return refNodeContent(r.store, { ...data, ...(handler !== undefined ? { name: { content: handler || 'peer' } } : {}) },
-        put(r.store, value), [...bookkeepingOf(r.store, identity), [r.store.primitive.previousVersion.getId(), cid]], handler !== undefined ? capabilityTarget(r.store, 'peer') : null)
+        put(r.store, { ...value, children: handler === undefined ? value.children : [...value.children, ...content(r.store, pattern).children.filter(row => !value.children.some(edge => edge[0] === row[0]))] }), [...bookkeepingOf(r.store, identity), [r.store.primitive.previousVersion.getId(), cid]])
     }, 'node')
-    commitRoot(r.store, next, this.now()); return { ...r }
+    const root = handler !== undefined && path.length ? updateAtScope(r.store, next, path.slice(0, -1), node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === path.at(-1) ? [pattern, edge[1]] : edge) })) : next
+    commitRoot(r.store, root, this.now()); return { ...r }
   }
   attachNamedPeer(name: string): void {
     const peer = this.knownPeers().find(p => p.name === name || p.id === name)
@@ -2260,7 +2291,7 @@ export class App {
   bindOutputArgument(at: Scope, id: string, cid: string): void {
     const r = this.state.replica, parent = resolveScope(r.store, headCid(r), [...this.state.view, ...at])
     const arg = parent && argumentRefs(r.store, parent).find(a => content(r.store, a.cid).data.alias?.id === id)
-    if (!arg || !r.store.table.has(cid) || refTypeCid(r.store, content(r.store, cid)) !== arg.type) { this.notify('error', 'The placeholder has an incompatible type.'); return }
+    if (!arg || !r.store.table.has(cid) || !matchesGraph(r.store, arg.type, cid)) { this.notify('error', 'The placeholder has an incompatible type.'); return }
     this.setArgumentValue(at, id, cid)
   }
   linkOutput(path: Scope, cid: string): void {
@@ -2299,6 +2330,13 @@ export class App {
       r = instantiateTemplate(r, path.slice(0, -1), path.at(-1)!, id, this.now())
       this.edit(r); this.closeModal(); this.goTo([...parent, id])
     })
+  }
+  parseRowInput(text: string, path = this.constructorContext()) {
+    const declarations = flattenRefs(scopedRefs(this.state.replica, path)).filter(ref => !!ref.name).map(ref => ({
+      name: capabilityOfTarget(this.state.replica.store, ref.type) ?? ref.type, syntax: [ref.name!]
+    }))
+    const offers = this.handlerOffers(path).map(offer => ({ name: offer.capability ?? offer.type, syntax: [offer.label] }))
+    return parseRowInput(text, [...declarations, ...offers, ...STANDARD_CAPABILITY_PATTERNS])
   }
   handlerOffers(path = this.constructorContext()) {
     return discoverHandlers(this.state.replica, path, { isPeerActive: id => id === this.state.replica.meta.peerId || this.isOnline(id) })
@@ -2368,7 +2406,16 @@ export class App {
   }
   insertHandler(cid: string, path = this.constructorContext()): void {
     const offer = this.handlerOffers(path).find(o => o.cid === cid && o.enabled && o.active)
-    if (!offer || offer.type !== this.state.replica.store.primitive.templateField.getId()) throw new Error('This template handler is unavailable.')
+    if (!offer) throw new Error('This handler is unavailable.')
+    if (offer.type !== this.state.replica.store.primitive.templateField.getId()) {
+      const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
+      if (cid && matchesGraph(r.store, offer.type, cid)) {
+        const submission = proposeRefAt(r, path, offer.cid, r.meta.peerId, this.now())
+        this.edit(applyProposalAt(submission.replica, path, submission.proposalCid, r.meta.peerId, this.now()))
+      } else if (refSubmissions(r.store, offer.cid).some(value => primitiveValue(r.store, value))) this.edit(addRefCall(r, path, offer.cid, this.now()))
+      else this.edit(addRefAt(r, path, newId(), offer.type, this.now(), offer.cid, offer.label))
+      return
+    }
     const source = refValueCid(this.state.replica.store, content(this.state.replica.store, offer.cid))
     if (!source) throw new Error('Template is unbound.')
     this.together(() => {
@@ -2386,7 +2433,7 @@ export class App {
     const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
     if (cid) for (const arg of argumentRefs(this.state.replica.store, cid)) {
       if (arg.name?.startsWith('fos:') || refValueCid(this.state.replica.store, content(this.state.replica.store, arg.cid))) continue
-      needs.push(CAPABILITIES.find(c => capabilityTarget(this.state.replica.store, c) === arg.type) ?? content(this.state.replica.store, arg.type).data.name?.content?.replace('fos:type:', '') ?? '')
+      needs.push(capabilityOfTarget(this.state.replica.store, arg.type) ?? content(this.state.replica.store, arg.type).data.name?.content?.replace('fos:type:', '') ?? '')
     }
     return needs
   }
@@ -2412,12 +2459,13 @@ export class App {
     const allocation = parsed.extras?.allocation
     if (allocation?.resource && !this.banks().some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable or has a different resource type.')
     const parentCid = path.length && resolveScope(this.state.replica.store, headCid(this.state.replica), path.slice(0, -1))
-    const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1))
-    const suppliedType = templateCid ? (argument && argument.type === templateCid ? templateCid : put(this.state.replica.store, { data: { name: { content: 'fos:type:task' } }, children: [] })) : localDirectory ? capabilityTarget(this.state.replica.store, 'repo') : parsed.peer !== undefined ? capabilityTarget(this.state.replica.store, 'peer') : parsed.extras?.requirement && CAPABILITIES.includes(parsed.extras.requirement.capability as Capability) ? capabilityTarget(this.state.replica.store, parsed.extras.requirement.capability as Capability) : parsed.extras?.allocation ? put(this.state.replica.store, { data: { name: { content: 'fos:type:allocation' } }, children: [] }) : repo ? capabilityTarget(this.state.replica.store, 'repo') : null
-    if (argument && argument.type !== suppliedType) throw new Error('Choose a constructor matching this input type.')
+    const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1) && !refValueCid(this.state.replica.store, content(this.state.replica.store, a.cid)))
     if (repo && repositoryAt(this.state.replica, target) && repositoryAt(this.state.replica, target) !== repo) throw new Error('Edit the existing repository argument to change its repository.')
     this.together(() => {
-      let r = this.state.replica
+      // Construct before checking compatibility, in an isolated draft so a
+      // rejected value cannot change the live graph or leave an extra row.
+      const live = this.state.replica
+      let r = argument ? loadReplica(serializeReplica(live)) : live
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
       r = replace ? setRowContentAt(r, parent, id, parsed.type, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.type, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
       this.resolveUser(parsed.extras?.user)
@@ -2426,14 +2474,24 @@ export class App {
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
         const peer = `git:${r.meta.peerId}:${encodeURIComponent(localDirectory)}`
-        r = addRefAt(r, target, 'fos:local-repository', capabilityTarget(r.store, 'repo'), this.now(), put(r.store, { data: { description: { content: JSON.stringify({ path: localDirectory, device: r.meta.peerId, peer }) } }, children: [] }), 'local-repository')
+        r = writeNodeValue(r, target, 'local-repository', { path: localDirectory, device: r.meta.peerId, peer }, this.now(), { type: capabilityTarget(r.store, 'repo'), peer })
         r = addMemberAt(r, target, peer, 'Local Git', ['repo'], this.now())
         r = setMemberCapabilitiesAt(r, target, peer, ['repo'], [], this.now(), ['repo'])
       }
       if (argument) {
-        const value = resolveScope(r.store, headCid(r), target)!
+        let value = resolveScope(r.store, headCid(r), target)!
+        if (parsed.extras?.requirement) {
+          // A composed handler supplies its body on the right of the
+          // constructor's property rows; its type is checked from those rows.
+          const constructor = content(r.store, capabilityTarget(r.store, parsed.extras.requirement.capability))
+          value = put(r.store, { data: {}, children: constructor.children.map(([left]) => [left, value]) })
+        }
+        if (!matchesGraph(r.store, argument.type, value)) throw new Error('Choose a constructor matching this input pattern.')
         const proposed = proposeRefAt(r, path, value, r.meta.peerId, this.now())
         r = applyProposalAt(proposed.replica, path, proposed.proposalCid, r.meta.peerId, this.now())
+        for (const [cid, node] of r.store.table) if (!live.store.table.has(cid)) live.store.table.set(cid, node)
+        live.store.rootNodeId = r.store.rootNodeId
+        r = { ...r, store: live.store }
       }
       this.edit(r)
     })
@@ -2499,7 +2557,7 @@ export class App {
   queueFeatureVerification(root: Scope, commit: string, branch: string): void { this.edit(queueSpecificationVerification(this.state.replica, root, commit, branch, this.now())) }
   recordFeatureVerification(root: Scope, report: { commit: string; specifications: FeatureSpecification[]; results: Array<{ id: string; status: string; evidence: string }> }): void {
     const current = specificationRows(this.state.replica, root)
-    if (JSON.stringify(current) !== JSON.stringify(report.specifications)) throw new Error('Specifications changed during verification. Run again.')
+    if (!sameValue(current, report.specifications)) throw new Error('Specifications changed during verification. Run again.')
     const valid = new Set(current.map(spec => spec.id))
     if (report.results.length !== valid.size || new Set(report.results.map(result => result.id)).size !== valid.size || report.results.some(result => !valid.has(result.id) || !['pass', 'fail', 'blocked'].includes(result.status) || typeof result.evidence !== 'string' || !result.evidence.trim() || result.evidence.length > 16000)) throw new Error('Provide one pass, fail, or blocked result with evidence for every specification.')
     const prior = readNodeValue(this.state.replica,root,`fos:verification-result:${report.commit}`)
@@ -2522,9 +2580,19 @@ export class App {
       r = instantiateTemplate(r, parent, id, row.id, this.now())
       this.edit(r); path = [...parent, id]
     }
+    const compiled = this.executionInstructions(path)
+    if (!compiled.complete) { this.notify('error', `Fill instruction refs before running: ${compiled.holes.map(hole => hole.id).join(', ')}`); return }
     this.goTo(path)
     this.execution = { path: [...this.state.view], store: this.state.replica.store }
     this.refresh()
+  }
+  executionInstructions(path = this.state.view) { return compileInstructions(this.state.replica, path) }
+  executionRefFields(path = this.state.view) { return executionInputs(this.state.replica, path).filter(field => field.kind === 'text' || field.kind === 'ref') }
+  submitExecutionField(key: string, value: string): void {
+    const path = this.executionPath()
+    if (!path || this.evaluating) return
+    try { this.edit(executionInput(this.state.replica, path, { revision: headCid(this.state.replica), key, value }, this.state.replica.meta.peerId, this.now())) }
+    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   /**
    * One event of the grammar against this device's replica (the desktop loopback endpoints and local agents). The
@@ -2560,7 +2628,7 @@ export class App {
       const path = dispatched.evaluate.path
       if (JSON.stringify(path) === JSON.stringify(this.executionPath())) {
         const snapshot = executionSnapshot(this.state.replica, path)
-        if (snapshot.inputs.length || !['idle', 'rolled-back', 'awaiting-review'].includes(snapshot.status)) throw new Error('Satisfy the evaluation\'s current inputs before completing it.')
+        if (!snapshot.canRun || snapshot.inputs.some(input => input.role !== 'output') || !['idle', 'rolled-back', 'awaiting-review'].includes(snapshot.status)) throw new Error('Satisfy the evaluation\'s current inputs before completing it.')
         await this.finishExecution()
       } else await this.evaluateAt(path, true)
       await this.config.storage.flush?.()
@@ -2627,16 +2695,15 @@ export class App {
     this.edit(writeNodeValue(this.state.replica, path, 'fos:evaluation', { id: crypto.randomUUID(), status: 'idle', started: this.now(), effects: [] }, this.now()))
   }
   async evaluateCurrent(): Promise<void> { await this.evaluateAt(this.currentRow()?.construction?.name === 'fos:evaluation' ? this.state.view.slice(0, -1) : [...this.state.view]) }
-  /** Requirements the account server's handler registry executes: its search, market and model, the integration peers' repositories and calendar, attached MCP tools. */
+  /** Requirements the account server executes through scoped ref declarations: its search, market and model, the integration peers' repositories and calendar, attached MCP tools. */
   private serverHandles(step: import('../../shared/sync/evaluation').EvaluationStep): boolean {
-    const r = step.row?.requirement
-    if (!r || r.satisfied) return false
-    if (r.capability === 'llm' || r.capability === 'repo' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize') return true
-    if (r.capability === 'tool') return !['fos.pull', AGENT_TOOL].includes(r.tool ?? '')
-    if (r.capability === 'allocation' && r.resource === 'points') return true
-    // a request for money (a money row) goes through the server's payment provider when the fos peer offers payments in this context
-    if (step.row?.type === MONEY_TYPE) return capabilityPeers(this.state.replica, step.path, 'send-payment').includes('fos')
-    return r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined && capabilityPeers(this.state.replica, step.path, 'calendar').some(p => p.startsWith('integration:'))
+    if (step.row?.requirement?.satisfied) return false
+    const replica = this.state.replica
+    if (this.deviceHandlers.executors(replica, step, replica.meta.peerId).length) return false
+    const patterns = step.row ? requirementHandlerTypes(replica.store, step.row) : []
+    return this.handlerOffers(step.path).some(offer => offer.enabled &&
+      (offer.peerId === 'fos' || offer.peerId.startsWith('integration:') || offer.peerId.startsWith('mcp:')) &&
+      (matchesInstructionRef(replica, step, offer) || patterns.some(pattern => sameCapabilityType(replica.store, pattern, offer.type))))
   }
   async evaluateAt(path: Scope, triggered = false): Promise<void> {
     if (!triggered) document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
@@ -2685,19 +2752,15 @@ export class App {
       const record = await evaluateNode(path, {
         get: () => { valid(); return this.state.replica },
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
-        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: step => localPull(step) || workflowEffect(step),
+        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).length > 0,
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
         effect: async (step, operation) => {
-          if (workflowEffect(step)) {
-            await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, step.path, operation, this.now()))
-            this.notify('info', 'Execution queued for the configured desktop. Track its status in the project workflow.')
-            return 'pending'
-          }
-          if (!localPull(step)) throw new Error('No local handler for this constructor.')
-          if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
-          await this.syncNow('evaluate pull', true); valid()
-          if (this.state.connection !== 'online') throw new Error('Pull failed; review the sync status.')
-          this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, ref: 'unit' }, this.now()) })
+          const executors = this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId)
+          if (executors.length !== 1) throw new Error('Choose one available device handler for this constructor.')
+          valid()
+          const result = await executors[0]!.effect!({ step, operation })
+          valid()
+          return result
         }
       })
       if (record.status !== 'committed' && record.status !== 'awaiting-review') throw new Error(record.error ?? 'Evaluation needs recovery.')
@@ -2734,62 +2797,87 @@ export class App {
   }
   currentTrigger() { return nodeTrigger(this.state.replica, this.state.view) }
   currentTriggerState() { return triggerState(this.state.replica, this.state.view) }
-  triggerKinds(path = this.state.view): TriggerKind[] {
-    const peers = this.contextPeers(path), device = peers.find(p => p.id === this.state.replica.meta.peerId), server = peers.find(p => p.name === 'fos')
-    return [...(navigator.locks ? (['timer', 'task-completion', 'request'] as TriggerKind[]).filter(kind => !device?.disabled.includes(kind)) : []), ...(this.isOnline('fos') && this.serverOffers().includes('cron') && !server?.disabled.includes('cron') ? ['cron' as const] : [])]
+  triggerOffers(path = this.state.view) {
+    return discoverTriggerOffers(this.state.replica, path).map((offer) => ({
+      ...offer,
+      active: offer.peerId === this.state.replica.meta.peerId ? !!navigator.locks : this.isOnline(offer.peerId)
+    }))
   }
-  configureTrigger(kind: TriggerKind, value?: string, newTemplate = false, destination = this.state.view, enabled = true): void {
+  triggerKinds(path = this.state.view): TriggerKind[] {
+    return this.triggerOffers(path)
+      .filter((o) => o.enabled && o.active)
+      .map((o) => o.capability ?? o.id)
+  }
+  configureTrigger(selector: string, value?: string, newTemplate = false, destination = this.state.view, enabled = true): void {
     try {
-      const peer = kind === 'cron' ? 'fos' : this.state.replica.meta.peerId
-      if (!this.triggerKinds(destination).includes(kind)) throw new Error('The trigger provider is not active.')
-      // no schedule yet: the trigger is made paused and its node asks for one (`missingSchedule`)
-      if (kind === 'cron' && value) cronMatches(value, this.now())
-      if (kind === 'timer' && value && (!Number.isFinite(Date.parse(value)) || Date.parse(value) < this.now())) throw new Error('Choose a future time.')
-      if ((kind === 'cron' || kind === 'timer') && !value) enabled = false
-      const source = this.state.replica, parentCid = destination.length && resolveScope(source.store, headCid(source), destination.slice(0, -1))
-      const arg = newTemplate && parentCid && argumentRefs(source.store, parentCid).find(a => content(source.store, a.cid).data.alias?.id === destination.at(-1))
-      if (arg && arg.type !== capabilityTarget(source.store, kind)) throw new Error('Choose a trigger matching this input type.')
-      let r = source
-      if (peer === 'fos') {
-        const member = view(r, [])?.members.find(m => m.peerId === 'fos')
-        if (member) r = setMemberCapabilitiesAt(r, [], 'fos', member.capabilities, member.disabled ?? [], this.now(), [...new Set([...(member.accepts ?? []), 'cron'] as Capability[])])
-      } else {
-        const home = homePath(r), member = view(r, home)?.members.find(m => m.peerId === peer)
-        if (!member) r = addMemberAt(r, home, peer, this.state.deviceName, [], this.now())
-        r = setMemberCapabilitiesAt(r, home, peer, member?.capabilities ?? [], member?.disabled ?? [], this.now(), [...new Set([...(member?.accepts ?? []), 'timer', 'task-completion', 'request'] as Capability[])])
+      const offers = this.triggerOffers(destination).filter(
+        (o) => o.enabled && o.active && (o.cid === selector || (o.capability ?? o.id) === selector)
+      )
+      if (offers.length !== 1) throw new Error('Choose one available observer ref in this scope.')
+      const offer = offers[0]!,
+        source = this.state.replica
+      this.deviceHandlers.restore(source, source.meta.peerId)
+      const parentCid = destination.length && resolveScope(source.store, headCid(source), destination.slice(0, -1))
+      const arg =
+        newTemplate &&
+        parentCid &&
+        argumentRefs(source.store, parentCid).find((a) => content(source.store, a.cid).data.alias?.id === destination.at(-1))
+      if (arg && !sameCapabilityType(source.store, arg.type, offer.type)) throw new Error('Choose an observer matching this input type.')
+      let r = source,
+        path = [...destination]
+      const id =
+        newTemplate && view(r, destination.slice(0, -1))?.tasks.find((row) => row.id === destination.at(-1))?.type !== TEMPLATE_TYPE
+          ? newId()
+          : null
+      if (id) path = [...destination, id]
+      const prior = !newTemplate ? nodeTrigger(r, path) : null,
+        schedule = offer.definition.schedule
+      const trigger: import('../../shared/sync/triggers').NodeTrigger = {
+        ...prior,
+        kind: offer.capability ?? offer.id,
+        handler: offer.cid,
+        peer: offer.peerId,
+        enabled,
+        created: this.now()
       }
-      const trigger = { kind, peer, enabled, created: this.now(), ...(kind === 'timer' && value ? { due: Date.parse(value) } : {}), ...(kind === 'cron' && value ? { expression: value } : {}) }
-      let path = [...destination]
-      if (newTemplate && view(r, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.type !== TEMPLATE_TYPE) {
-        const id = newId(); r = addRow(r, destination, TEMPLATE_TYPE, `${kind} workflow`, this.now(), { id }); path = [...destination, id]
-      }
+      if (schedule && value !== undefined)
+        trigger[schedule.field] = schedule.input === 'datetime-local' ? (value ? Date.parse(value) : undefined) : value
+      if (missingSchedule({ ...trigger, definition: offer.definition })) trigger.enabled = false
+      nativeRefValues(source, destination, offer.peerId)
+        .find((v) => v.ref === offer.cid)
+        ?.native.trigger?.validate?.({ replica: source, path, config: trigger, now: this.now(), previous: null })
+      if (id) r = addRow(r, destination, TEMPLATE_TYPE, offer.definition.label, this.now(), { id })
       r = setNodeTrigger(r, path, trigger, this.now())
       if (arg) {
         const proposed = proposeRefAt(r, destination, resolveScope(r.store, headCid(r), path)!, r.meta.peerId, this.now())
         r = applyProposalAt(proposed.replica, destination, proposed.proposalCid, r.meta.peerId, this.now())
       }
       this.edit(r)
-      if (newTemplate) this.notify('info', 'Trigger workflow created. Add the tasks and requirements to run inside it.')
-      this.notify('info', !enabled ? 'Trigger created paused. Add its children, then enable it.' : kind === 'cron' ? 'Cron configured on fos (UTC).' : 'Trigger configured on this device; it runs while this app is open.')
-    } catch (error) { this.notify('error', String(error)) }
+      this.notify('info', trigger.enabled ? 'Observer configured.' : 'Observer created paused. Fill its inputs, then enable it.')
+    } catch (error) {
+      this.notify('error', String(error))
+    }
   }
   toggleTrigger(): void {
     const trigger = this.currentTrigger()
     if (!trigger) return
     const missing = missingSchedule(trigger)
     if (missing && !trigger.enabled) { this.notify('error', `Set its schedule (${missing}) before enabling the trigger.`); return }
-    this.edit(writeNodeValue(this.state.replica, this.state.view, 'fos:trigger', { ...trigger, enabled: !trigger.enabled }, this.now()))
+    this.edit(setNodeTrigger(this.state.replica, this.state.view, { ...trigger, enabled: !trigger.enabled }, this.now()))
   }
   async runTriggers(): Promise<void> {
     if (this.runningTriggers || this.evaluating || this.projectSwitching || !navigator.locks) return
+    this.deviceHandlers.restore(this.state.replica,this.state.replica.meta.peerId)
     const scanKey = headCid(this.state.replica) + JSON.stringify(this.branchSelections)
     if (scanKey !== this.triggerScanKey) { this.triggerScanKey = scanKey; this.triggerCandidates = configuredTriggers(this.state.replica) }
     const due = this.triggerCandidates.some(({ path, trigger }) => {
-      if (!trigger.enabled || trigger.peer !== this.state.replica.meta.peerId || trigger.kind === 'cron') return false
+      if (!trigger.enabled || trigger.peer !== this.state.replica.meta.peerId) return false
       const prior = triggerState(this.state.replica, path)
       if (prior && prior.status !== 'finished') return false
-      const occurrence = triggerOccurrence(this.state.replica, path, trigger, this.now())
-      return occurrence ? occurrence !== prior?.occurrence : trigger.kind === 'task-completion' && !!prior?.occurrence
+      try {
+        const observed = triggerObservation(this.state.replica,path,trigger,this.now())
+        return !!observed && (observed.reset || observed.id !== prior?.occurrence)
+      } catch { return true } // The runner records the observer error for review.
     })
     if (!due) return
     this.runningTriggers = true
@@ -2798,16 +2886,17 @@ export class App {
       await navigator.locks.request(`fos:triggers:${this.state.replica.meta.peerId}`, { ifAvailable: true }, async lock => {
         if (!lock) return
         const persisted = loadReplica(this.config.storage.loadReplica())
+        this.deviceHandlers.restore(persisted,persisted.meta.peerId)
         for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(persisted.store, id, name)
         await runNodeTriggers({
         get: () => { if (this.state.replica.store !== store) throw new Error('Data session changed'); return this.state.replica },
         save: async replica => { if (this.state.replica.store !== store) throw new Error('Data session changed'); this.set({ replica }); await this.config.storage.flush?.(); this.scheduleSync() },
         now: () => this.now(),
         available: (peer, kind, path) => {
-          if (peer !== this.state.replica.meta.peerId || kind === 'cron' || !capabilityPeers(this.state.replica, path, kind).includes(peer)) return false
+          if (peer !== this.state.replica.meta.peerId) return false
           const saved = triggerState(persisted, path), current = nodeTrigger(this.state.replica, path)
           const own = triggerState(this.state.replica, path)
-          if (kind === 'request' && saved && current && triggerOccurrence(persisted, path, current, this.now()) !== triggerOccurrence(this.state.replica, path, current, this.now())) return false
+          if (saved && current && triggerOccurrence(persisted, path, current, this.now()) !== triggerOccurrence(this.state.replica, path, current, this.now())) return false
           if (saved && saved.occurrence !== own?.occurrence && (saved.status !== 'finished' || (current && saved.occurrence === triggerOccurrence(this.state.replica, path, current, this.now())))) return false
           return true
         },
@@ -2849,7 +2938,7 @@ export class App {
     if (!/^[A-Za-z_][\w.-]*$/.test(name) || !typeName.trim()) { this.notify('error', 'Give the placeholder a name and type.'); return }
     const r = this.state.replica
     const template = typeName.startsWith('template:') ? resolveRef(r, typeName.slice(9)) : null
-    const type = template ? resolveScope(r.store, headCid(r), [...template.path, template.row.id])! : typeName === 'text' ? r.store.primitive.documentField.getId() : CAPABILITIES.includes(typeName as Capability) ? capabilityTarget(r.store, typeName as Capability) : put(r.store, { data: { name: { content: `fos:type:${typeName.trim()}` } }, children: [] })
+    const type = template ? templateValuePattern(r.store, resolveScope(r.store, headCid(r), [...template.path, template.row.id])!) : typeName === 'text' ? r.store.primitive.documentField.getId() : flattenRefs(scopedRefs(r, destination)).find(ref => ref.name === typeName.trim())?.type ?? capabilityTarget(r.store, typeName.trim())
     this.edit(addRefAt(r, destination, newId(), type, this.now(), null, name))
   }
   placeholders(at: Scope = []) {
@@ -2857,13 +2946,15 @@ export class App {
     const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
     if (!cid) return []
     const candidates = contextBindings(r, path, { isPeerActive: id => this.isOnline(id) })
-    return argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:')).map(a => ({
+    // Form fields already have editors from their left constructors. This picker
+    // offers explicitly declared ref inputs, including those that now appear as rows.
+    return argumentRefs(r.store, cid).filter(a => !a.name?.startsWith('fos:') && isRefNode(r.store, content(r.store, a.cid))).map(a => ({
       id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
       branches: refBranches(r.store, content(r.store, a.cid)),
-      child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && refTypeCid(r.store, content(r.store, target)) === a.type ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
-      type: a.type === r.store.primitive.documentField.getId() ? 'text' : (CAPABILITIES.find(c => capabilityTarget(r.store, c) === a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type').replace(/^fos:(capability|type):/, ''),
-      status: resolveBinding(r.store, a.type, refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id) }).status,
-      candidates: candidates.filter(c => c.type === a.type && c.cid !== a.cid).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
+      child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && isRefNode(r.store, content(r.store, target)) ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
+      type: a.type === r.store.primitive.documentField.getId() ? 'text' : (capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type').replace(/^fos:(capability|type):/, ''),
+      status: resolveBinding(r.store, a.type, content(r.store, a.cid).data.refExpression ? a.cid : refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id), scope: { replica: r, path } }).status,
+      candidates: candidates.filter(c => c.cid !== a.cid && matchesGraph(r.store, a.type, c.cid)).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
     }))
   }
   selectArgumentBranch(at: Scope, id: string, name: string): void {
@@ -2882,7 +2973,7 @@ export class App {
     if (!parent) return
     const arg = argumentRefs(r.store, parent).find(a => content(r.store, a.cid).data.alias?.id === id)
     if (!arg || refValueCid(r.store, content(r.store, arg.cid))) return
-    const child = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: `${arg.name ?? 'Value'} child` } }, null, [], arg.type))
+    const child = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: `${arg.name ?? 'Value'} child` } }, null, []))
     this.setArgumentValue([], id, child)
   }
   dropArgument(at: Scope, id: string, sourceId: string): void {
@@ -2892,9 +2983,11 @@ export class App {
     const candidate = arg.candidates.find(c => c.cid === sourceId || content(store, c.cid).data.alias?.id === sourceId)
     if (candidate) { this.bindPlaceholder(id, candidate.cid, at); return }
     const source = resolveRef(this.state.replica, sourceId)
-    if (arg.type === 'text' && source && [PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE].includes(source.row.type)) {
+    if (source) {
       const cid = resolveScope(store, headCid(this.state.replica), [...source.path, source.row.id])
-      if (cid) {
+      const parent = resolveScope(store, headCid(this.state.replica), [...this.state.view, ...at])
+      const declaration = parent && argumentRefs(store, parent).find(a => content(store, a.cid).data.alias?.id === id)
+      if (cid && declaration && matchesGraph(store, declaration.type, cid)) {
         this.setArgumentValue(at, id, cid)
         return
       }
@@ -2980,10 +3073,8 @@ export class App {
     const task = this.rowAt(at)
     try {
       if (r.capability === 'llm') { this.openWork(at, req.id); return }
-      const payment = req.type === MONEY_TYPE && capabilityPeers(this.state.replica, [...this.state.view, ...at, req.id], 'send-payment').includes('fos')
-      if (r.capability === 'repo' || r.capability === 'tool' || r.capability === 'market' || r.capability === 'mail' || r.capability === 'search' || r.capability === 'verify' || r.capability === 'organize' || payment || (r.capability === 'allocation' && (r.resource === 'points' || ((r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined)))) {
-        if (r.capability === 'repo' && !r.repo) { this.notify('error', 'Name the repository: "-repo owner/name title".'); return }
-        // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's handler registry)
+      if (this.serverHandles({ path: [...this.state.view, ...at, req.id], row: { ...req, requirement: { ...r, satisfied: false } } })) {
+        // the peer that registered the capability runs it as an evaluation effect of this requirement (the account server's scoped refs)
         await this.evaluateAt([...this.state.view, ...at, req.id])
         this.set({ collapsed: this.state.collapsed.filter((c) => c !== req.id) })
         return
@@ -3009,7 +3100,7 @@ export class App {
     return out
   }
   /** Supply a requirement: a confirmation by this user, a choice, or a reference to an allocation/query row. */
-  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: CapabilityKind; ref?: string; choice?: number }, absolute = false): void {
+  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: string; ref?: string; choice?: number }, absolute = false): void {
     if ((supply.capability === 'confirmation' || supply.capability === 'peer') && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
     const by = this.state.session?.username ?? this.state.deviceName
     const parent = absolute ? at : [...this.state.view, ...at]
@@ -3581,14 +3672,14 @@ export class App {
       void (next.load ? next.load() : this.loadPeerNode(next.path)).finally(() => { this.autoNodeActive--; this.drainAutoNodes() })
     }
   }
-  loadPeerNode(path: Scope): Promise<void> {
+  loadPeerNode(path: Scope, background = false): Promise<void> {
     const key = JSON.stringify(path), existing = this.nodeLoads.get(key)
     if (existing) return existing
-    const pending = this.loadPeerNodeOnce(path).finally(() => this.nodeLoads.delete(key))
+    const pending = this.loadPeerNodeOnce(path, background).finally(() => this.nodeLoads.delete(key))
     this.nodeLoads.set(key, pending)
     return pending
   }
-  private async loadPeerNodeOnce(path: Scope): Promise<void> {
+  private async loadPeerNodeOnce(path: Scope, background = false): Promise<void> {
     const replica = this.state.replica, cid = resolveScope(replica.store, headCid(replica), path)
     if (!cid || !isPeerReference(content(replica.store, cid))) return
     // a member entry is no projection of its own: it loads with its node's sync
@@ -3601,7 +3692,7 @@ export class App {
       provider = { id: ref.peer!, capabilities: link.remoteCapabilities, request: request => link.requestNode(request) }
     } else if (this.virtualPeers?.connected && this.virtualIdentity && this.state.replica.meta.serverPeerId === ref.peer) {
       scope = this.virtualIdentity.scope
-      provider = { id: ref.peer!, capabilities: CLIENT_CAPABILITIES, request: request => this.virtualPeers!.requestNode(request) }
+      provider = { id: ref.peer!, capabilities: this.deviceCapabilities(), request: request => this.virtualPeers!.requestNode(request) }
     } else if (session && (ref.peer === 'fos' || ref.peer === replica.meta.serverPeerId) && this.serverOffers().includes('provideNode') && this.state.policy.from.includes('read')) {
       scope = session.kind === 'peer' ? replica.meta.scope : []
       provider = { id: replica.meta.serverPeerId ?? `user:${session.username}`, capabilities: this.serverOffers(), request: request => requestPeerNode(session, request) }
@@ -3630,7 +3721,7 @@ export class App {
       const holder = provider.id
       if (this.config.localStores && localStores(next).some(s => s.peerId === holder) && !path.some(id => next.meta.heldNodes?.[id]))
         next = { ...next, meta: { ...next.meta, heldNodes: { ...next.meta.heldNodes, [path.at(-1)!]: { peer: holder, scope: address } } } }
-      this.set({ replica: next })
+      this.set({ replica: next }, !background)
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   goTo(path: Scope): void {
@@ -3989,7 +4080,7 @@ export class App {
     try {
       this.virtualPeers = new VirtualPeers(guest, {
         provide: (peer, request) => {
-          const served = exchangeNode(this.state.replica, request, { peerId: peer.id, scope: peer.scope, proposeOnly: !this.virtualGrants(peer)?.includes('autopush'), capabilities: CLIENT_CAPABILITIES }, this.now())
+          const served = exchangeNode(this.state.replica, request, { peerId: peer.id, scope: peer.scope, proposeOnly: !this.virtualGrants(peer)?.includes('autopush'), capabilities: this.deviceCapabilities() }, this.now())
           this.set({ replica: served.replica })
           if (request.update) this.scheduleSync()
           return served.node
@@ -4087,7 +4178,7 @@ export class App {
       this.set({ direct: { role: 'guest', phase: 'answer', code: answer, remoteName: hostName } })
       const opened = await link
       this.attachLink(opened, 'guest')
-      opened.send({ t: 'hello', peerId: this.state.replica.meta.peerId, name: this.state.deviceName, capabilities: CLIENT_CAPABILITIES, scope: [] })
+      opened.send({ t: 'hello', peerId: this.state.replica.meta.peerId, name: this.state.deviceName, capabilities: this.deviceCapabilities(), scope: [] })
     } catch (error) {
       this.set({ direct: { role: 'guest', phase: 'error', error: error instanceof Error ? error.message : String(error) } })
     }
@@ -4111,7 +4202,7 @@ export class App {
       if (!link) return
       try {
         if (!this.approvedNodePeer || link.remotePeerId !== this.approvedNodePeer) throw new Error('Peer connection has not been approved.')
-        const served = exchangeNode(this.state.replica, message.request, { peerId: this.approvedNodePeer, scope: role === 'host' ? this.hostScope : [], capabilities: CLIENT_CAPABILITIES }, this.now())
+        const served = exchangeNode(this.state.replica, message.request, { peerId: this.approvedNodePeer, scope: role === 'host' ? this.hostScope : [], capabilities: this.deviceCapabilities() }, this.now())
         this.set({ replica: served.replica })
         if (message.request.update) this.scheduleSync()
         link.send({ t: 'node-result', id: message.id, node: served.node })
@@ -4151,7 +4242,7 @@ export class App {
       if (d.pendingPeer.peerId !== this.link.remotePeerId) { this.notify('error', 'Peer identity does not match this connection.'); return }
       this.approvedNodePeer = d.pendingPeer.peerId
       this.set({ replica: addMemberAt(this.state.replica, this.hostScope, d.pendingPeer.peerId, d.pendingPeer.name, ['read', 'edit'], this.now()) })
-      this.link.send({ t: 'welcome', peerId: this.state.replica.meta.peerId, name: this.state.deviceName, capabilities: CLIENT_CAPABILITIES, scope: this.hostScope })
+      this.link.send({ t: 'welcome', peerId: this.state.replica.meta.peerId, name: this.state.deviceName, capabilities: this.deviceCapabilities(), scope: this.hostScope })
       this.set({ direct: { role: 'host', phase: 'connected', remoteName: d.pendingPeer.name }, modal: null })
       this.notify('info', `${d.pendingPeer.name} is now syncing with this device.`)
     } else {
@@ -4190,7 +4281,7 @@ export class App {
       let replica = this.state.replica
       const results = requests.map(request => {
         try {
-          const served = exchangeNode(replica, request, { peerId: request.peerId, scope: this.hostScope, owner: true, capabilities: CLIENT_CAPABILITIES }, this.now())
+          const served = exchangeNode(replica, request, { peerId: request.peerId, scope: this.hostScope, owner: true, capabilities: this.deviceCapabilities() }, this.now())
           replica = served.replica
           return { node: served.node }
         } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }

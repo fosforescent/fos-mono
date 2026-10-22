@@ -31,7 +31,6 @@ import {
   putChoice,
   readProposal,
   refNodeContent,
-  refTypeCid,
   refValueCid,
   sameShape,
   stripLink,
@@ -135,8 +134,7 @@ function mergeNode(
     const valueOf = (r: { node: FosNodeContent } | null): string | null => (r ? refValueCid(store, r.node) : null)
     const oursValue = valueOf(o) ?? put(store, stripLink(store, ours))
     const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs))
-    const typed = refTypeCid(store, o.node) || refTypeCid(store, t.node)
-    if (typed && refTypeCid(store, o.node) !== refTypeCid(store, t.node)) return { kind: 'conflict' }
+    const typed = !!(o.node.data.name || t.node.data.name || b && !valueOf(b))
     let mergedValue: string | null
     if (typed) {
       const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b)
@@ -163,7 +161,7 @@ function mergeNode(
       ? (o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)])
       : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))]
     const data = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data
-    return { kind: 'node', cid: put(store, refNodeContent(store, data, mergedValue, [...bookkeeping, ...prev], refTypeCid(store, o.node) ?? refTypeCid(store, t.node))) }
+    return { kind: 'node', cid: put(store, refNodeContent(store, data, mergedValue, [...bookkeeping, ...prev])) }
   }
 
   const data = mergeData(base.data, ours.data, theirs.data, isTop)

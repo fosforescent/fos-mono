@@ -1,3 +1,4 @@
+import { installTestObservers } from '@fosforescent/shared/sync/test-helpers'
 import {
   addRow, addTask, bindRepository, BRANCH_MERGE_ARGUMENT, createBranch, createReplica,
   loadReplica, nodeTrigger, readNodeValue, runNodeTriggers, selectBranch, serializeReplica,
@@ -14,14 +15,14 @@ function fixture() {
   const snapshot: RepositorySnapshot = { repo: 'acme/project', defaultBranch: 'main', canPush: true, branches: [{ name: 'main', sha: 'b'.repeat(40) }, { name: 'feature', sha: 'a'.repeat(40) }], pulls: [{ number: 7, title: 'Feature', url: 'https://github.com/acme/project/pull/7', head: 'feature', base: 'main', sha: 'a'.repeat(40), headRepo: 'acme/project', state: 'open' }] }
   const fetch = jest.fn(async () => snapshot)
   const handler = repositoryLoadHandler({ connected: async () => true, snapshot: fetch })
-  const load = (replica: Replica, now: number) => handler.load!({ userId: 7, replica, path: ['project'], branches: [{ scope: ['project'], name: 'feature' }], now })
+  const load = async (replica: Replica, now: number) => installTestObservers(await handler.load!({ userId: 7, replica, path: ['project'], branches: [{ scope: ['project'], name: 'feature' }], now }), ['desktop'], false)
   return { r, snapshot, fetch, load }
 }
 
 test('server load mediates PR -> Fos request -> Fos merge -> ordinary template trigger, once after reload', async () => {
   let { r, snapshot, fetch, load } = fixture()
   r = addRow(r, [], TEMPLATE_TYPE, 'An arbitrary continuation', 5, { id: 'continue' })
-  r = setNodeTrigger(r, ['continue'], { kind: 'ref-change', enabled: true, peer: 'desktop', created: 5, watch: { path: ['project'], branch: 'main', argument: BRANCH_MERGE_ARGUMENT, baseline: watchedRefValue(r, ['project'], 'main', BRANCH_MERGE_ARGUMENT)! } }, 5)
+  r = setNodeTrigger(installTestObservers(r, ['desktop']), ['continue'], { kind: 'ref-change', enabled: true, peer: 'desktop', created: 5, watch: { path: ['project'], branch: 'main', argument: BRANCH_MERGE_ARGUMENT, baseline: watchedRefValue(r, ['project'], 'main', BRANCH_MERGE_ARGUMENT)! } }, 5)
   let runs = 0
   const driver = { get: () => r, save: (next: Replica) => { r = next }, now: () => 90_000, available: () => true, evaluate: async () => { runs++ } }
   r = await load(r, 10)
@@ -40,7 +41,7 @@ test('server load mediates PR -> Fos request -> Fos merge -> ordinary template t
   expect(view(r, [])!.tasks.find(t => t.id === 'project')!.branches?.mergeRequests ?? []).toEqual([])
   await runNodeTriggers(driver); expect(runs).toBe(1)
   const receipt = watchedRefValue(r, ['project'], 'main', BRANCH_MERGE_ARGUMENT)
-  r = loadReplica(serializeReplica(r))
+  r = installTestObservers(loadReplica(serializeReplica(r)), ['desktop'], false)
   r = await load(r, 60_012)
   expect(watchedRefValue(r, ['project'], 'main', BRANCH_MERGE_ARGUMENT)).toBe(receipt)
   await runNodeTriggers(driver); expect(runs).toBe(1)

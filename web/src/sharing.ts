@@ -117,6 +117,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
   let answers: SiteAnswers | null = null
   const fieldExtras = (field: SharedInput, current: SiteAnswers): HTMLElement => {
     const box = element('div')
+    if (field.kind === 'ref') return box
     const search = element('input'); search.placeholder = 'Find a value in your context'; search.setAttribute('aria-label', `Find value for ${field.name}`)
     const matches = element('div'), linked = element('p', current.fields[field.key]?.source ? 'Linked to your context; saving refreshes the requested value.' : '')
     const choose = (id: string) => {

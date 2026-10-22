@@ -6,7 +6,7 @@
  * enough members approved them (sharing.ts `submit` → `applyMergePolicy`).
  */
 import { DEFAULT_MERGE_POLICY, LIBRARY_ID, LIBRARY_VERSION, addRow, createReplica, ensureHomeContext, exportLibraryRows, headCid, homePath, libraryInfo, mergePolicy, seedStandardLibrary, addMemberAt, setMemberCapabilitiesAt, setMergePolicy, view, type LibraryAddress, type LibraryBundle, type Replica } from '@fosforescent/shared/sync/index'
-import type { HandlerRegistry } from './registry'
+import type { HostRuntime } from './host-runtime'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { PLAIN_TYPE } from '@fosforescent/shared/sync/library-types'
 
@@ -20,7 +20,7 @@ export type LibraryDeps = AccountStoreDeps & {
 
 
 /** The library's node in the owner's store, created, shared and seeded as needed. Returns its address. */
-export async function ensureStandardLibrary(deps: LibraryDeps, owner: string, registry?: HandlerRegistry): Promise<LibraryAddress> {
+export async function ensureStandardLibrary(deps: LibraryDeps, owner: string, runtime?: HostRuntime): Promise<LibraryAddress> {
   if (!await deps.loadStore(owner)) await deps.createAccount(owner)
   return withUserLock(`user:${owner}`, async () => {
     const loaded = await deps.loadStore(owner)
@@ -28,7 +28,7 @@ export async function ensureStandardLibrary(deps: LibraryDeps, owner: string, re
     const now = deps.now?.() ?? Date.now()
     let r = createReplica(`user:${owner}`, loaded.store)
     const before = headCid(r)
-    r = ensureHomeContext(r, now, registry?.hostOffers())
+    r = ensureHomeContext(r, now, runtime?.hostOffers())
     const home = homePath(r)
     if (!view(r, home)?.tasks.some(t => t.id === LIBRARY_ID)) r = addRow(r, home, PLAIN_TYPE, LIBRARY_TITLE, now, { id: LIBRARY_ID })
     const path = [...home, LIBRARY_ID]

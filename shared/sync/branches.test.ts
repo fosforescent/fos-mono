@@ -110,7 +110,7 @@ test('default branch survives serialization and a scoped attachment pins ancesto
 })
 
 test('merge requests are typed children of branch constructors and survive edits, reload and removal', async () => {
-  const { setBranchMergeRequest, readChoice, resolveScope, content, capabilityTarget, refTypeCid } = await import('./index')
+  const { setBranchMergeRequest, readChoice, resolveScope, content, capabilityTarget } = await import('./index')
   let r = addTask(createReplica('a'), [], 'Project', 1, 'p')
   r = createBranch(r, ['p'], 'feature', 2)
   r = setBranchMergeRequest(r, ['p'], 'feature', true, 3)
@@ -119,7 +119,7 @@ test('merge requests are typed children of branch constructors and survive edits
   expect(record.options.filter(o => o.requestMerge).map(o => o.peerId)).toEqual(['feature'])
   const pointers = content(r.store, choice).children.map(e => content(r.store, e[1]))
   const request = pointers.flatMap(p => p.children.map(e => content(r.store, e[1]))).find(c => c.data.name?.content === 'request merge')!
-  expect(refTypeCid(r.store, request)).toBe(r.store.primitive.approveAction.getId())
+  expect(pointers.flatMap(pointer => pointer.children).find(([, cid]) => content(r.store, cid) === request)?.[0]).toBe(r.store.primitive.approveAction.getId())
   r = renameTask(r, [], 'p', 'Changed on feature', 4)
   r = loadReplica(serializeReplica(r))
   expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
@@ -141,7 +141,7 @@ test('a merge request and a concurrent branch edit are both retained', async () 
   a = setBranchMergeRequest(a, ['p'], 'feature', true, 3)
   b = addTask(b, ['p'], 'Concurrent task', 4, 'task')
   importNodes(a.store, reachableNodes(b.store, [headCid(b)]))
-  for (const [ours, theirs] of [[headCid(a), headCid(b)], [headCid(b), headCid(a)]]) {
+  for (const [ours, theirs] of [[headCid(a), headCid(b)], [headCid(b), headCid(a)]] as const) {
     const result = mergeNodes(a.store, base, ours, theirs, { ours: 'a', theirs: 'b' })
     const r = { ...a }
     commitRoot(r.store, result.cid, 5)

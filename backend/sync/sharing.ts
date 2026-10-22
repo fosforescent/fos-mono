@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
+import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
 import { applyMergePolicy, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, writeParticipation, argumentRefs, content, createReplica, readNodeValue, writeLinkedNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
@@ -26,7 +27,7 @@ async function locks<T>(names: string[], work: () => Promise<T>): Promise<T> {
   const next = (i: number): Promise<T> => i === keys.length ? work() : withUserLock(`user:${keys[i]}`, () => next(i + 1))
   return next(0)
 }
-/** `evaluate` is the host's evaluation service (its handler registry runs the effects of a finished execution). */
+/** `evaluate` is the host's evaluation service (its handler runtime runs the effects of a finished execution). */
 export function createSharingHandlers(deps: AccountStoreDeps, secret: string, evaluate?: (username: string, request: { path: Scope; branches: Record<string, string>; expected: string }) => Promise<unknown>) {
   if (!secret) throw new Error('Sharing requires a signing secret.')
   // A guest receipt cannot be used as an account or peer-sync JWT, even if presented to another endpoint.
@@ -67,7 +68,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
   const projectField = (field: SharedInput, value: any): Participation['fields'][string] => {
     if (field.kind === 'confirmation') { if (value !== true) throw new Failure(400, 'Confirmation is required.'); return true }
     if (field.kind === 'choice') { if (!Number.isInteger(value) || value < 0 || value >= (field.options?.length ?? 0)) throw new Failure(400, 'Choose a declared option.'); return value }
-    if (field.kind === 'text') {
+    if (field.kind === 'text' || field.kind === 'ref') {
       if (typeof value !== 'string' || value.length > 8000) throw new Failure(400, `Invalid text for ${field.name}.`)
       return value
     }
@@ -133,7 +134,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         if (own) {
           let context = createReplica(`user:${account}`, own.store)
           const before = headCid(context)
-          if (account !== at.owner) context = ensureHomeContext(context, now(), deps.registry?.hostOffers())
+          if (account !== at.owner) context = ensureHomeContext(context, now(), deps.runtime?.hostOffers())
           context = ensureSharedLink(context, at, node.title, now()).replica
           if (headCid(context) !== before) await save(own.user, context)
         }
@@ -201,7 +202,12 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           if (journal && !['idle', 'rolled-back'].includes(journal.status)) throw new Failure(409, 'This execution no longer accepts input.')
           for (const [key, value] of Object.entries(fields)) {
             const field = node.inputs.find(f => f.key === key)!, target = [...at.path, ...field.path!]
-            if (field.kind === 'text') {
+            if (field.kind === 'ref') {
+              r = executionInput(r, at.path, { revision: headCid(r), key, value }, peer, now(), {
+                canRead: (store, _cid, path) => store === r.store && path.length >= at.path.length && at.path.every((id, index) => path[index] === id) && servedTo(r, at.path, path, peer) &&
+                  (!nodeLinkMaskAt(r, path, peer)?.fields || nodeLinkMaskAt(r, path, peer)!.fields!.includes('description'))
+              })
+            } else if (field.kind === 'text') {
               const proposed = proposeRefAt(r, target, put(r.store, { data: { description: { content: value as string } }, children: [] }), r.meta.peerId, now())
               r = applyProposalAt(proposed.replica, target, proposed.proposalCid, r.meta.peerId, now())
             } else if (field.direction === 'consume') r = writeNodeValue(r, target, 'fos:consumed', { peer, value, time: now() }, now())
@@ -228,7 +234,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
         const complete = (policy.execution || req.body.interaction === true) && !executionInputs(r, at.path).length
         return { peer, links, record, complete, expected: put(r.store, valueContent(r.store, resolveScope(r.store, headCid(r), at.path)!)) }
       })
-      // The last input finishes the execution: the host evaluates it (its registry runs the effects, e.g. a fos-points
+      // The last input finishes the execution: the host evaluates it (its runtime runs the effects, e.g. a fos-points
       // payout) outside the request's locks, since the evaluator takes the owner's lock itself.
       if (outcome.complete) {
         try {

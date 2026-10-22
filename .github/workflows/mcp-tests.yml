@@ -22,6 +22,6 @@ jobs:
           cache: npm
       - run: npm ci --legacy-peer-deps --ignore-scripts
       - name: Scoped MCP and evaluation regressions
-        run: npm test --prefix backend -- --runInBand sync/events.test.ts sync/registry.test.ts channels/textCommands.test.ts sync/provideNode.test.ts sync/evaluation.test.ts integrations/mcpPeers.test.ts search/rowIndex.test.ts search/routes.test.ts
+        run: npm test --prefix backend -- --runInBand sync/events.test.ts sync/host-runtime.test.ts channels/textCommands.test.ts sync/provideNode.test.ts sync/evaluation.test.ts integrations/mcpPeers.test.ts search/rowIndex.test.ts search/routes.test.ts
       - name: Shared graph regressions
         run: npm test --prefix shared -- --runInBand sync

@@ -15,15 +15,15 @@ async function main() {
     send(text) { this.sent.push(JSON.parse(text)); queueMicrotask(() => this.other.dispatchEvent(new MessageEvent('message', { data: text }))) }
     close() { this.readyState = 'closed'; this.dispatchEvent(new Event('close')) }
   }
-  const host = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
-  const guest = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
+  const host = new c.App({ baseUrl: 'http://localhost', autoLogin: null, scopedDocument: true, storage: c.createMemoryStorage() })
+  const guest = new c.App({ baseUrl: 'http://localhost', autoLogin: null, scopedDocument: true, storage: c.createMemoryStorage() })
   for (const app of [host, guest]) { app.scheduleSync = () => {}; app.syncNow = async () => {} }
   let r = c.addTask(c.createReplica('host'), [], 'Parent', 1, 'parent')
   r = c.addTask(r, ['parent'], 'Child', 2, 'child')
   r = c.addTask(r, ['parent', 'child'], 'Grandchild secret', 3, 'grandchild')
   c.commitRoot(r.store, c.updateAtScope(r.store, c.headCid(r), [], value => ({ ...value, data: { ...value.data, description: { content: 'Shared root text' } } })), 3)
-  host.set({ replica: r, direct: { role: 'host', phase: 'connected', pendingPeer: { peerId: 'guest', name: 'Guest' } } })
-  guest.set({ replica: c.createReplica('guest'), direct: { role: 'guest', phase: 'connected' } })
+  host.set({ replica: host.withRootContext(r), direct: { role: 'host', phase: 'connected', pendingPeer: { peerId: 'guest', name: 'Guest' } } })
+  guest.set({ replica: guest.withRootContext(c.createReplica('guest')), direct: { role: 'guest', phase: 'connected' } })
   const a = new Channel(), b = new Channel(); a.other = b; b.other = a
   const hostLink = new c.DirectLink({ close() {} }, a), guestLink = new c.DirectLink({ close() {} }, b)
   hostLink.remotePeerId = 'guest'; guestLink.remotePeerId = 'host'

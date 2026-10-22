@@ -25,6 +25,7 @@
  * Links in plain rows and comments are rendered as anchors; image and YouTube links as embeds.
  */
 
+import { parseCapabilityName, type CapabilitySyntax } from '../../shared/sync/capabilities'
 import { ALLOCATION_TYPE, MONEY_TYPE, NOTE_TYPE, COMMENT_TYPE, PLAIN_TYPE, QUERY_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType, unverifiedUser, type ResourceType, type RowExtras, type TaskView, type UserRecord } from '../../shared/sync/index'
 
 export type ParsedInput = {
@@ -158,7 +159,7 @@ function markerType(text: string): { type: ResourceType; length: number } | null
  *   "@calendar 1h", "@money 50", "@inventory 2" the same by bank word · "@name text" the person `name` (they allocate themself)
  *   "? text" or "search: text" search · "market text" · "mail text" · "choice: a | b" · anything else is a confirmation
  */
-export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { label: string; templateName?: string } {
+export function parseRequirement(text: string, declarations?: CapabilitySyntax[]): Omit<RowExtras, 'store'> & { label: string; templateName?: string } {
   const t = text.trim()
   let m: RegExpMatchArray | null
   if ((m = t.match(/^\[\s?[xX]?\]\s*(.*)$/s))) {
@@ -177,17 +178,23 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
   if (typed) return allocationRequirement(typed.type, t.slice(typed.length))
   if ((m = t.match(/^@(calendar|account|money|inventory|points|ff)\b\s*:?\s*(.*)$/is))) return allocationRequirement(BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType, m[2] ?? '')
   if ((m = t.match(/^@(?:person\s+)?([^\s@]+)\s*:?\s*(.*)$/s))) return { requirement: { capability: 'peer' }, user: unverifiedUser(m[1] as string), label: (m[2] ?? '').trim() }
-  if ((m = t.match(/^(?:\?|search\s*:?)\s*(.*)$/is))) return { requirement: { capability: 'search' }, label: (m[1] ?? '').trim() }
-  if ((m = t.match(/^market\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'market' }, label: (m[1] ?? '').trim() }
-  if ((m = t.match(/^mail\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'mail' }, label: (m[1] ?? '').trim() }
-  // "-llm what should I cook" asks the language model; "-repo owner/name fix the login bug" opens an issue there
-  if ((m = t.match(/^(?:llm|ai|ask)\b\s*:?\s*(.*)$/is))) return { requirement: { capability: 'llm' }, label: (m[1] ?? '').trim() }
-  if ((m = t.match(/^repo\b\s*:?\s*(?:([\w.-]+\/[\w.-]+)\s*)?(.*)$/is))) return { requirement: { capability: 'repo', ...(m[1] ? { repo: m[1] } : {}) }, label: (m[2] ?? '').trim() }
-  // "-tool weather Paris": an MCP peer attached above runs its `weather` tool with the rest as input
-  if ((m = t.match(/^(?:tool|mcp)\b\s*:?\s*(?:([\w.-]+)\s*)?(.*)$/is))) return { requirement: { capability: 'tool', ...(m[1] ? { tool: m[1] } : {}) }, label: (m[2] ?? '').trim() }
-  if ((m = t.match(/^choice\s*:?\s*(.*)$/i))) {
-    const options = (m[1] ?? '').split('|').map((o) => o.trim()).filter(Boolean)
-    return { requirement: { capability: 'choice', options }, label: `choice: ${options.join(' | ')}` }
+  const declared = parseCapabilityName(t, declarations)
+  if (declared) {
+    const { capability, rest } = declared
+    // Standard syntax adapters parse their arguments; declarations determine the capability.
+    if (capability === 'repo') {
+      const args = /^(?:([\w.-]+\/[\w.-]+)\s*)?(.*)$/s.exec(rest)!
+      return { requirement: { capability, ...(args[1] ? { repo: args[1] } : {}) }, label: args[2] ?? '' }
+    }
+    if (capability === 'tool') {
+      const args = /^(?:([\w.-]+)\s*)?(.*)$/s.exec(rest)!
+      return { requirement: { capability, ...(args[1] ? { tool: args[1] } : {}) }, label: args[2] ?? '' }
+    }
+    if (capability === 'choice') {
+      const options = rest.split('|').map(option => option.trim()).filter(Boolean)
+      return { requirement: { capability, options }, label: `choice: ${options.join(' | ')}` }
+    }
+    return { requirement: { capability }, label: rest || (capability === 'confirmation' ? 'confirmation' : '') }
   }
   return { requirement: { capability: 'confirmation' }, label: t.replace(/^confirm(?:ation)?\s*:?\s*/i, '') || 'confirmation' }
 }
@@ -196,17 +203,17 @@ export function parseRequirement(text: string): Omit<RowExtras, 'store'> & { lab
 const flowType = (resource: ResourceType | undefined) => resource === 'account' ? MONEY_TYPE : ALLOCATION_TYPE
 
 /** A typed row: the marker decides the row type (see the file comment); anything else is a plain row. */
-export function parseRowInput(raw: string): ParsedInput {
+export function parseRowInput(raw: string, declarations?: CapabilitySyntax[]): ParsedInput {
   const lines = raw.replace(/\r\n/g, '\n').split('\n')
   // Markdown owns its newlines; other cells use indentation to construct children.
   if (lines.length > 1 && !/^>/.test(lines[0] ?? '') && lines.slice(1).every((line) => !line.trim() || /^\s+/.test(line))) {
-    const root = parseRowInput(lines[0] ?? '')
+    const root = parseRowInput(lines[0] ?? '', declarations)
     const parents: Array<{ indent: number; row: ParsedInput }> = [{ indent: -1, row: root }]
     for (const line of lines.slice(1)) {
       if (!line.trim()) continue
       const indent = line.match(/^\s*/)?.[0].replace(/\t/g, '  ').length ?? 0
       while (parents.length > 1 && parents[parents.length - 1]!.indent >= indent) parents.pop()
-      const child = parseRowInput(line.trimStart())
+      const child = parseRowInput(line.trimStart(), declarations)
       const parent = parents[parents.length - 1]!.row
       ;(parent.children ??= []).push(child)
       parents.push({ indent, row: child })
@@ -224,7 +231,7 @@ export function parseRowInput(raw: string): ParsedInput {
   }
   if ((m = text.match(/^>\s?(.*)$/s))) return { type: NOTE_TYPE, text: m[1] ?? '', done: false }
   if ((m = text.match(/^\/\/\s*(.*)$/s))) return { type: COMMENT_TYPE, text: m[1] ?? '', done: false }
-  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? ''); return { type: flowType(extras.requirement?.capability === 'allocation' ? extras.requirement.resource : undefined), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
+  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? '', declarations); return { type: flowType(extras.requirement?.capability === 'allocation' ? extras.requirement.resource : undefined), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
   if ((m = text.match(/^\?\s*(.*)$/s))) return { type: QUERY_TYPE, text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
   if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff)\b\s*:?\s*(.*)$/is))) {
     const type = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType

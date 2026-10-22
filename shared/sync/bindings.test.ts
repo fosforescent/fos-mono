@@ -5,21 +5,21 @@ import { PLAIN_TYPE, NOTE_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from './library
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
 
 test('data and handlers use the same recursively resolved arguments; missing dependencies and cycles stay blocked', () => {
-  const r = createReplica(), s = r.store, text = s.primitive.documentField.getId(), callable = s.primitive.llmCapability.getId()
+  const r = createReplica(), s = r.store, text = s.primitive.documentField.getId(), callable = put(s, { data: {}, children: [] })
   const value = literal(r, 'context')
-  const arg = put(s, refNodeContent(s, { alias: { id: 'input' }, name: { content: 'mytext' } }, null, [], text))
+  const arg = put(s, refNodeContent(s, { alias: { id: 'input' }, name: { content: 'mytext' } }, null, []))
   const body = put(s, { data: {}, children: [[text, arg]] })
-  const handler = put(s, refNodeContent(s, {}, body, [], callable))
+  const handler = put(s, refNodeContent(s, {}, body, []))
   expect(resolveBinding(s, callable, handler).status).toBe('missing')
   expect(resolveBinding(s, callable, handler, [{ cid: value, type: text, name: 'mytext' }]).status).toBe('ready')
   expect(resolveBinding(s, text, handler).status).toBe('conflict')
-  const ungrounded = put(s, refNodeContent(s, { alias: { id: 'a' } }, null, [], text))
-  const other = put(s, refNodeContent(s, { alias: { id: 'b' } }, ungrounded, [], text))
-  expect(resolveBinding(s, text, ungrounded, [{ cid: other, type: text }]).status).toBe('cycle')
+  const ungrounded = put(s, refNodeContent(s, { alias: { id: 'a' } }, null, []))
+  const other = put(s, refNodeContent(s, { alias: { id: 'b' } }, ungrounded, []))
+  expect(resolveBinding(s, callable, ungrounded, [{ cid: other, type: callable }]).status).toBe('cycle')
 })
 
 test('explicit bindings stay pinned and multiple providers are a choice', () => {
-  const r = createReplica(), type = r.store.primitive.llmCapability.getId()
+  const r = createReplica(), type = r.store.primitive.documentField.getId()
   const a = literal(r, 'a'), b = literal(r, 'b'), candidates = [a,b].map(cid => ({ cid, type }))
   expect(resolveBinding(r.store, type, null, candidates).status).toBe('ambiguous')
   expect(resolveBinding(r.store, type, a, candidates).cid).toBe(a)
@@ -69,7 +69,7 @@ test('handler requirements participate in readiness without executing anything',
   let r = addRow(createReplica(), [], PLAIN_TYPE, 'handler', 1, { id: 'handler' })
   r = addRow(r, ['handler'], ALLOCATION_TYPE, 'Approve first', 2, { id: 'approval', requirement: { capability: 'confirmation' } })
   const handler = resolveScope(r.store, headCid(r), ['handler'])!
-  expect(resolveBinding(r.store, r.store.primitive.llmCapability.getId(), handler).status).toBe('missing')
+  expect(resolveBinding(r.store, put(r.store, { data: {}, children: [] }), handler).status).toBe('missing')
 })
 
 test('a disabled or removed Fos binding cannot enable a previously available action', () => {
@@ -83,12 +83,12 @@ test('a disabled or removed Fos binding cannot enable a previously available act
 test('offline peers cannot satisfy explicit or transitive handler dependencies', () => {
   const r = createReplica('device'), store = r.store
   const type = capabilityTarget(store, 'llm')
-  const peer = put(store, { data: { peerId: { content: 'fos' }, description: { content: 'llm' } }, children: [] })
-  const bound = put(store, refNodeContent(store, { alias: { id: 'handler' } }, peer, [], type))
+  const peer = put(store, { data: { peerId: { content: 'fos' }, description: { content: 'llm' } }, children: content(store, type).children })
+  const bound = put(store, refNodeContent(store, { alias: { id: 'handler' } }, peer, []))
   expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
   expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => true }).status).toBe('ready')
   const higherOrder = put(store, { data: {}, children: [[type, bound]] })
-  expect(resolveBinding(store, store.primitive.documentField.getId(), higherOrder, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
+  expect(resolveBinding(store, put(store, { data: {}, children: [] }), higherOrder, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
 })
 
 test('disabling an offered handler removes availability without removing its configuration', async () => {
@@ -102,11 +102,11 @@ test('disabling an offered handler removes availability without removing its con
 })
 
 test('editing memberships preserves typed handlers in their original direction', async () => {
-  const { withMember, memberHandlers } = await import('./index')
+  const { withMember, memberHandlers, advertisement } = await import('./index')
   const r = createReplica(), store = r.store, type = capabilityTarget(store, 'llm')
-  const to = put(store, refNodeContent(store, { alias: { id: 'to' } }, literal(r, 'to'), [], type))
-  const from = put(store, refNodeContent(store, { alias: { id: 'from' } }, literal(r, 'from'), [], type))
-  const member = put(store, { data: { peerId: { content: 'peer' } }, children: [[store.primitive.capabilityNode.getId(), to], [store.primitive.acceptsNode.getId(), from]] })
+  const to = put(store, refNodeContent(store, { alias: { id: 'to' } }, literal(r, 'to'), []))
+  const from = put(store, refNodeContent(store, { alias: { id: 'from' } }, literal(r, 'from'), []))
+  const member = put(store, { data: { peerId: { content: 'peer' } }, children: [[store.primitive.capabilityNode.getId(), advertisement(store, type, to)], [store.primitive.acceptsNode.getId(), advertisement(store, type, from)]] })
   const updated = withMember(store, { data: {}, children: [[store.primitive.memberField.getId(), member]] }, 'peer', 'Peer', ['llm'], [], ['llm'])
   expect(memberHandlers(store, updated, 'peer', store.primitive.capabilityNode.getId())).toEqual([to])
   expect(memberHandlers(store, updated, 'peer', store.primitive.acceptsNode.getId())).toEqual([from])

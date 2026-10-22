@@ -1,5 +1,6 @@
+import { installTestObservers } from './test-helpers'
 import { userView } from './test-helpers'
-import { addTask, addRow, createReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
+import { addTask, addRow, createReplica as bareReplica, cronMatches, setNodeTrigger, triggerState, runNodeTriggers, view, setTaskDone, renameTask, loadReplica as bareLoadReplica, serializeReplica, requestContinuation, triggerOccurrence, nodeTrigger, writeNodeValue, rejectProposalAt, dispatchEvent, addMemberAt, setMemberCapabilitiesAt, put, valueContent, resolveScope, headCid } from './index'
 import { TEMPLATE_TYPE } from './library-types'
 import { bindTemplateTriggers, TRIGGER_TEMPLATE_ARGUMENT } from './triggers'
 import { readNodeValue } from './evaluation'
@@ -80,15 +81,15 @@ test('an incoming proposal fires the request trigger and its saved occurrence is
   await runNodeTriggers(driver); expect(runs).toBe(2) // the older still-open request must not reappear as a new event
 })
 
-test('changing the trigger reuses its typed argument and switches its capability type', async () => {
-  const { argumentRefs, capabilityTarget, headCid, resolveScope } = await import('./index')
+test('changing the trigger reuses its argument row and switches its left observer', async () => {
+  const { argumentRefs, capabilityTarget, matchesGraph, headCid, resolveScope } = await import('./index')
   let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Task', 1, { id: 'task' })
   r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 1, due: 10 }, 1)
   const args = () => argumentRefs(r.store, resolveScope(r.store, headCid(r), ['task'])!)
-  expect(args()[0]!.type).toBe(capabilityTarget(r.store, 'timer'))
+  expect(matchesGraph(r.store, capabilityTarget(r.store, 'timer'), args()[0]!.type)).toBe(true)
   r = setNodeTrigger(r, ['task'], { kind: 'request', peer: 'device', enabled: true, created: 2 }, 2)
   expect(args()).toHaveLength(1)
-  expect(args()[0]!.type).toBe(capabilityTarget(r.store, 'request'))
+  expect(matchesGraph(r.store, capabilityTarget(r.store, 'request'), args()[0]!.type)).toBe(true)
 })
 
 
@@ -106,7 +107,7 @@ test('child evaluation creates a fresh template instance for each completed pare
   await runNodeTriggers(driver)
   expect(targets).toHaveLength(2)
   expect(targets[0]).not.toEqual(targets[1])
-  expect(() => setNodeTrigger(r, ['parent'], { kind: 'cron', peer: 'fos', enabled: true, created: 1, expression: '* * * * *' }, 1)).toThrow('Triggers require a template')
+  expect(() => setNodeTrigger(r, ['parent'], { kind: 'cron', peer: 'fos', enabled: true, created: 1, expression: '* * * * *' }, 1)).toThrow('This observer instantiates a template.')
 })
 
 test('a response trigger continues the requester when the asked peer commits or rejects', async () => {
@@ -125,7 +126,7 @@ test('a response trigger continues the requester when the asked peer commits or 
   // or B's refusal: on B's side the request is a proposal (device A is an invited peer; B's device accepts requests)
   let b = addTask(addTask(createReplica('device-b'), [], 'Plan trip', 1, 'trip'), [], 'Book flights', 1, 'flights')
   b = addMemberAt(b, [], 'device-a', 'A', ['read', 'edit'], 6)
-  b = setMemberCapabilitiesAt(addMemberAt(b, [], 'device-b', 'B', [], 6), [], 'device-b', [], [], 6, ['request'])
+  b = installTestObservers(setMemberCapabilitiesAt(addMemberAt(b, [], 'device-b', 'B', [], 6), [], 'device-b', [], [], 6, ['request']))
   const asked = dispatchEvent(b, { kind: 'complete', path: ['flights'], expected: put(b.store, valueContent(b.store, resolveScope(b.store, headCid(b), ['flights'])!)) }, { peerId: 'device-a', owner: false, scope: [] }, 6)
   const proposalId = (asked.result as { proposalId: string }).proposalId
   expect(userView(asked.replica)!.proposals.some(p => p.id === proposalId && p.name === 'evaluate flights')).toBe(true)
@@ -133,3 +134,6 @@ test('a response trigger continues the requester when the asked peer commits or 
   const waiting = requestContinuation(refused, ['trip'], { request: 'evaluate flights', node: ['flights'], requestedAt: 5 }, 8)
   expect(triggerOccurrence(waiting, ['trip'], nodeTrigger(waiting, ['trip'])!, 9)).toBe('response:evaluate flights:rejected')
 })
+
+function createReplica(id: string) { return installTestObservers(bareReplica(id), [id, 'first-peer', 'second-peer', 'fos']) }
+function loadReplica(data: Parameters<typeof bareLoadReplica>[0]) { const r = bareLoadReplica(data); return installTestObservers(r, [r.meta.peerId, 'desktop', 'device-a', 'device-b'], false) }

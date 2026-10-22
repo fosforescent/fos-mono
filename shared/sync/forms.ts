@@ -7,8 +7,9 @@ import type { FosNodeContent, FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import { content, identityCid, isPeerReference, put, refNodeContent, valueContent, withChildValue } from './graph'
 import { truncateTitle } from './title'
+import { constructNodeValue, readGraphValue } from './node-values'
 
-export type FormInput = string | number | FormInput[] | { [key: string]: FormInput }
+export type FormInput = null | boolean | string | number | FormInput[] | { [key: string]: FormInput }
 
 function inputAt(input: FormInput | undefined, path: string[]): FormInput | undefined {
   let value = input
@@ -43,9 +44,9 @@ export function constructForm(store: FosStore, template: string, id: string, inp
   const data: FosNodeContent['data'] = { alias: { id }, created: { time: now }, updated: { time: now } }
   if (form.primitive) {
     const numeric = form.primitive === 'number' || form.primitive === 'time'
-    const value = input ?? (numeric ? 0 : '')
-    if (typeof value !== (numeric ? 'number' : 'string') || (typeof value === 'number' && !Number.isFinite(value))) throw new Error(`Expected ${form.primitive}.`)
-    data.scalar = { type: form.primitive, value: value as string | number }
+    const value = input === undefined ? (numeric ? 0 : form.primitive === 'boolean' ? false : form.primitive === 'null' ? null : '') : input
+    if (form.primitive === 'null' ? value !== null : typeof value !== (numeric ? 'number' : form.primitive === 'boolean' ? 'boolean' : 'string') || (typeof value === 'number' && !Number.isFinite(value))) throw new Error(`Expected ${form.primitive}.`)
+    data.scalar = { type: form.primitive, value: value as string | number | boolean | null }
     return { data, children: [] }
   }
   data.presentation = { ...(form.title ? { title: form.title } : {}), ...(form.headline ? { headline: form.headline } : {}), ...(form.attribution ? { attribution: form.attribution } : {}), ...(form.repeat ? { sequence: true } : {}) }
@@ -55,6 +56,10 @@ export function constructForm(store: FosStore, template: string, id: string, inp
     input = { ...input, text: body }
   }
   const fields = formFields(store, template)
+  if (form.open && !fields.length) {
+    const built = constructNodeValue(store, input ?? (form.repeat ? [] : {}), id)
+    return { ...content(store, built.cid), data: { ...data, ...content(store, built.cid).data } }
+  }
   if (new Set(fields.map(field => field.name)).size !== fields.length) throw new Error('Constructor parameter names must be unique.')
   if (form.repeat && fields.length !== 1) throw new Error('A repeated template needs one parameter row.')
   if (input !== undefined && (form.repeat ? !Array.isArray(input) : !input || typeof input !== 'object' || Array.isArray(input))) throw new Error(form.repeat ? 'Expected a sequence.' : 'Expected named constructor inputs.')
@@ -78,7 +83,7 @@ export function formValueAt(store: FosStore, node: FosNodeContent, path: string[
   for (const name of path) {
     const edge = value.children.find(e => {
       const identity = content(store, identityCid(store, e))
-      return !isPeerReference(identity) && valueContent(store, identityCid(store, e)).data.name?.content === name
+      return !isPeerReference(identity) && (identity.data.name?.content ?? valueContent(store, identityCid(store, e)).data.name?.content) === name
     })
     if (!edge) return null
     value = valueContent(store, identityCid(store, edge))
@@ -95,6 +100,7 @@ export function formRecord(store: FosStore, template: string, node: FosNodeConte
   if (!form || depth > 64) return undefined
   if (form.primitive) return node.data.scalar?.value
   const fields = formFields(store, template)
+  if (form.open && !fields.length) return readGraphValue(store, put(store, node))
   const valueOf = (edge: FosPathElem) => isPeerReference(content(store, identityCid(store, edge))) ? null : valueContent(store, identityCid(store, edge))
   if (form.repeat) {
     const field = fields[0]
@@ -103,7 +109,7 @@ export function formRecord(store: FosStore, template: string, node: FosNodeConte
   }
   const out: { [key: string]: FormInput } = {}
   for (const field of fields) {
-    const edge = node.children.find(e => e[0] === field.type && valueContent(store, identityCid(store, e)).data.name?.content === field.name)
+    const edge = node.children.find(e => e[0] === field.type && (content(store, identityCid(store, e)).data.name?.content ?? valueContent(store, identityCid(store, e)).data.name?.content) === field.name)
     const value = edge ? valueOf(edge) : null
     const record = value ? formRecord(store, field.type, value, depth + 1) : undefined
     if (record !== undefined) out[field.name] = record
@@ -154,11 +160,12 @@ function setFieldText(store: FosStore, node: FosNodeContent, path: string[], tex
     if (!names.length) {
       if (!value.data.scalar) throw new Error('This constructor has no editable scalar title.')
       const type = value.data.scalar.type
-      const scalar = type === 'number' || type === 'time' ? Number(text) : text
+      const scalar = type === 'number' || type === 'time' ? Number(text) : type === 'boolean' ? text === 'true' : type === 'null' ? null : text
+      if (type === 'boolean' && !['true', 'false'].includes(text) || type === 'null' && text !== 'null') throw new Error(`Expected ${type}.`)
       if (typeof scalar === 'number' && (!text.trim() || !Number.isFinite(scalar))) throw new Error(`Expected ${type}.`)
       return { ...value, data: { ...value.data, scalar: { type, value: scalar }, updated: { time: now } } }
     }
-    const edge = value.children.find(e => valueContent(store, identityCid(store, e)).data.name?.content === names[0])
+    const edge = value.children.find(e => (content(store, identityCid(store, e)).data.name?.content ?? valueContent(store, identityCid(store, e)).data.name?.content) === names[0])
     if (!edge || isPeerReference(content(store, identityCid(store, edge)))) throw new Error('Load this field before editing it.')
     const next = withChildValue(store, edge, rewrite(valueContent(store, identityCid(store, edge)), names.slice(1)), now)
     return { ...value, data: { ...value.data, updated: { time: now } }, children: value.children.map(e => e === edge ? next : e) }
@@ -177,7 +184,7 @@ export function formAttribution(store: FosStore, node: FosNodeContent, definitio
 /** UI structure comes from the pinned definition's parameter rows, including nested products. */
 export type FormElement = {
   label: string; path: string[]; primitive?: NonNullable<FosNodeContent['data']['scalar']>['type'];
-  value?: string | number; repeat?: boolean; fields: FormElement[]; available: boolean
+  value?: string | number | boolean | null; repeat?: boolean; fields: FormElement[]; available: boolean
 }
 
 export function formElements(store: FosStore, template: string, node: FosNodeContent, path: string[] = [], label = '', depth = 0): FormElement {
@@ -194,7 +201,8 @@ export function formElements(store: FosStore, template: string, node: FosNodeCon
     if (isPeerReference(identity)) { result.fields.push({ label: fieldLabel, path: fieldPath, fields: [], available: false }); return }
     result.fields.push(formElements(store, type, valueContent(store, identityCid(store, edge)), fieldPath, fieldLabel, depth + 1))
   }
-  if (form.repeat && fields[0]) node.children.filter(([type]) => type === fields[0]!.type).forEach((edge, index) => append(fields[0]!.type, edge, `${fields[0]!.label} ${index + 1}`))
+  if (form.open && !fields.length) node.children.forEach(edge => append(edge[0], edge, content(store, identityCid(store, edge)).data.name?.content ?? ''))
+  else if (form.repeat && fields[0]) node.children.filter(([type]) => type === fields[0]!.type).forEach((edge, index) => append(fields[0]!.type, edge, `${fields[0]!.label} ${index + 1}`))
   else for (const field of fields) append(field.type, node.children.find(edge => valueContent(store, identityCid(store, edge)).data.name?.content === field.name), field.label)
   return result
 }
